@@ -1,4 +1,4 @@
-import std/[macros, macrocache, genasts, json]
+import std/[macros, macrocache, genasts, json, strutils]
 import misc/[custom_logger, custom_async, util]
 import platform/filesystem
 import scripting_base, popup, document_editor, expose
@@ -31,53 +31,59 @@ macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; ret
     default(`returnType`)
 
 proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} =
-  var files: seq[string] = @[]
-
-  files.add path
+  let (files, _) = await fs.getApplicationDirectoryListing(path)
 
   var editorImports = createEditorWasmImports()
 
   for file in files:
-    let module = await newWasmModule(file, @[editorImports])
-    if module.getSome(module):
-      log(lvlInfo, fmt"Loaded wasm module {file}")
+    if not file.endsWith(".wasm"):
+      continue
 
-      if findFunction(module, "handleUnknownPopupActionWasm", bool, proc(popup: int32, action: cstring, arg: cstring): bool).getSome(f):
-        self.unknownPopupActions.add (module, f)
+    try:
+      log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"
+      let module = await newWasmModule(file, @[editorImports])
+      if module.getSome(module):
+        log(lvlInfo, fmt"Loaded wasm module '{file}'")
 
-      if findFunction(module, "handleUnknownDocumentEditorActionWasm", bool, proc(editor: int32, action: cstring, arg: cstring): bool).getSome(f):
-        self.unknownEditorActions.add (module, f)
+        if findFunction(module, "handleUnknownPopupActionWasm", bool, proc(popup: int32, action: cstring, arg: cstring): bool).getSome(f):
+          self.unknownPopupActions.add (module, f)
 
-      if findFunction(module, "handleGlobalActionWasm", bool, proc(action: cstring, arg: cstring): bool).getSome(f):
-        self.unknownGlobalActions.add (module, f)
+        if findFunction(module, "handleUnknownDocumentEditorActionWasm", bool, proc(editor: int32, action: cstring, arg: cstring): bool).getSome(f):
+          self.unknownEditorActions.add (module, f)
 
-      if findFunction(module, "handleEditorModeChangedWasm", void, proc(editor: int32, oldMode: cstring, newMode: cstring): void).getSome(f):
-        self.editorModeChangedCallbacks.add (module, f)
+        if findFunction(module, "handleGlobalActionWasm", bool, proc(action: cstring, arg: cstring): bool).getSome(f):
+          self.unknownGlobalActions.add (module, f)
 
-      if findFunction(module, "postInitializeWasm", bool, proc(): bool).getSome(f):
-        self.postInitializeCallbacks.add (module, f)
+        if findFunction(module, "handleEditorModeChangedWasm", void, proc(editor: int32, oldMode: cstring, newMode: cstring): void).getSome(f):
+          self.editorModeChangedCallbacks.add (module, f)
 
-      if findFunction(module, "handleCallbackWasm", bool, proc(id: int32, arg: cstring): bool).getSome(f):
-        self.handleCallbackCallbacks.add (module, f)
+        if findFunction(module, "postInitializeWasm", bool, proc(): bool).getSome(f):
+          self.postInitializeCallbacks.add (module, f)
 
-      if findFunction(module, "handleAnyCallbackWasm", cstring, proc(id: int32, arg: cstring): cstring).getSome(f):
-        self.handleAnyCallbackCallbacks.add (module, f)
+        if findFunction(module, "handleCallbackWasm", bool, proc(id: int32, arg: cstring): bool).getSome(f):
+          self.handleCallbackCallbacks.add (module, f)
 
-      if findFunction(module, "handleScriptActionWasm", cstring, proc(name: cstring, arg: cstring): cstring).getSome(f):
-        self.handleScriptActionCallbacks.add (module, f)
+        if findFunction(module, "handleAnyCallbackWasm", cstring, proc(id: int32, arg: cstring): cstring).getSome(f):
+          self.handleAnyCallbackCallbacks.add (module, f)
 
-      if findFunction(module, "absytree_main", void, proc(): void).getSome(f):
-        log lvlInfo, "Run absytree_main"
-        f()
-        log lvlInfo, "Finished absytree_main"
+        if findFunction(module, "handleScriptActionWasm", cstring, proc(name: cstring, arg: cstring): cstring).getSome(f):
+          self.handleScriptActionCallbacks.add (module, f)
 
-      self.modules.add module
+        if findFunction(module, "absytree_main", void, proc(): void).getSome(f):
+          log lvlInfo, "Run absytree_main"
+          f()
+          log lvlInfo, "Finished absytree_main"
 
-    else:
-      log(lvlError, fmt"Failed to create wasm module for file {file}")
+        self.modules.add module
+
+      else:
+        log(lvlError, fmt"Failed to create wasm module for file {file}")
+
+    except:
+      log lvlError, &"Failde to load wasm module '{file}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
-  await self.loadModules("./config/absytree_config_wasm.wasm")
+  await self.loadModules("./config/wasm")
 
 method deinit*(self: ScriptContextWasm) = discard
 
