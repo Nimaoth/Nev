@@ -15,18 +15,11 @@ method loadFileBinaryAsync*(self: FileSystem, name: string): Future[ArrayBuffer]
 
 method saveFile*(self: FileSystem, path: string, content: string) {.base.} = discard
 
+method getApplicationDirectoryListing*(self: FileSystem, path: string):
+  Future[tuple[files: seq[string], folders: seq[string]]] {.base.} = discard
 method getApplicationFilePath*(self: FileSystem, name: string): string {.base.} = discard
 method loadApplicationFile*(self: FileSystem, name: string): string {.base.} = discard
 method saveApplicationFile*(self: FileSystem, name: string, content: string) {.base.} = discard
-
-when defined(js):
-  import filesystem_browser
-  let fs*: FileSystem = new FileSystemBrowser
-
-else:
-  import filesystem_desktop
-  let fs*: FileSystem = new FileSystemDesktop
-  fs.init getAppDir()
 
 proc normalizePathUnix*(path: string): string =
   var stripLeading = false
@@ -38,3 +31,12 @@ proc normalizePathUnix*(path: string): string =
     result[0] = result[0].toUpperAscii
 
 proc `//`*(a: string, b: string): string = (a / b).normalizePathUnix
+
+when defined(js):
+  import filesystem_browser
+  let fs*: FileSystem = new FileSystemBrowser
+
+else:
+  import filesystem_desktop
+  let fs*: FileSystem = new FileSystemDesktop
+  fs.init getAppDir()
