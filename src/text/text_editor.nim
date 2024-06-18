@@ -795,7 +795,9 @@ proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool = true, includeAfter: bool = true): Cursor {.expose: "editor.text".} =
   var cursor = cursor
-  var column = cursor.column
+
+  if cursor.line notin 0..self.document.lines.high:
+    return cursor
 
   template currentLine: openArray[char] = self.document.lines[cursor.line].toOpenArray
 
@@ -803,7 +805,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
 
   if offset > 0:
     for i in 0..<offset:
-      if column >= lastIndex:
+      if cursor.column >= lastIndex:
         if not wrap:
           break
         if cursor.line < self.document.lines.high:
@@ -819,7 +821,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
 
   elif offset < 0:
     for i in 0..<(-offset):
-      if column == 0:
+      if cursor.column == 0:
         if not wrap:
           break
         if cursor.line > 0:
@@ -1078,7 +1080,7 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.
 
   let previousRune = line.runeAt(line.runeStart(cursor.column - 1))
   let triggerChars = IdentChars + {'.'}
-  if previousRune.char in triggerChars:
+  if previousRune.int <= char.high.int and previousRune.char in triggerChars:
     return true
 
   if previousRune.isAlpha:
