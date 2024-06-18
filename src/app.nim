@@ -1465,11 +1465,33 @@ proc toggleFlag*(self: App, flag: string) {.expose("editor").} =
   self.setFlag(flag, newValue)
   self.platform.requestRender(true)
 
-proc setOption*(self: App, option: string, value: JsonNode) {.expose("editor").} =
+proc extendJson*(a: var JsonNode, b: JsonNode) =
+  if (a.kind, b.kind) == (JObject, JObject):
+    for (key, value) in b.fields.pairs:
+      if a.hasKey(key):
+        a.fields[key].extendJson(value)
+      else:
+        a[key] = value
+
+  elif (a.kind, b.kind) == (JArray, JArray):
+    for value in b.elems:
+      a.elems.add value
+
+  else:
+    a = b
+
+proc setOption*(self: App, option: string, value: JsonNode, override: bool = true) {.expose("editor").} =
   if self.isNil:
     return
 
   self.platform.requestRender(true)
+
+  if option == "":
+    if not override:
+      self.options.extendJson(value)
+    else:
+      self.options = value
+    return
 
   let pathItems = option.split(".")
   var node = self.options
@@ -1481,7 +1503,12 @@ proc setOption*(self: App, option: string, value: JsonNode) {.expose("editor").}
     node = node[key]
   if node.isNil or node.kind != JObject:
     return
-  node[pathItems[^1]] = value
+
+  let key = pathItems[^1]
+  if not override and node.hasKey(key):
+    node.fields[key].extendJson(value)
+  else:
+    node[key] = value
 
 proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true

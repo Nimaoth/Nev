@@ -335,9 +335,9 @@ proc toggleFlag*(flag: string) =
       argsJsonString.cstring)
 
 
-proc editor_setOption_void_App_string_JsonNode_wasm(arg: cstring): cstring {.
+proc editor_setOption_void_App_string_JsonNode_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc setOption*(option: string; value: JsonNode) =
+proc setOption*(option: string; value: JsonNode; override: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when string is JsonNode:
@@ -349,8 +349,13 @@ proc setOption*(option: string; value: JsonNode) =
       value
     else:
       value.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      override
+    else:
+      override.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_setOption_void_App_string_JsonNode_wasm(
+  let res {.used.} = editor_setOption_void_App_string_JsonNode_bool_wasm(
       argsJsonString.cstring)
 
 
