@@ -5,7 +5,6 @@
 *.exp
 *.ilk
 *.lib
-*.wasm
 *.wat
 *.dll
 *.so
@@ -41,10 +40,18 @@ release_windows
 release_linux
 release_web
 scripting/nim/lib
+casts
 
 *.absytree-session
 
 ast2
+ast3
+astd
+astn
+astt
+astt2
+astt3
+ue_clang_tool
 
 loc.csv
 count_loc.ps1
@@ -67,3 +74,16 @@ C:/Users/nimao/.nimble/pkgs2/nim-2.1.1-176b5408d81c16446680d7ce56d1b7b0d23f9a6d
 C:/Users/nimao/.nimble/pkgs2/nim-2.1.1-ee369ca2ef4fd48e55732c09c5f8b67a4a22daa4
 
 fonts/openmoji-svg-color
+
+test.nim
+text_buffer.nim
+
+config/lsp.json
+config/lsp-linux.json
+compile_commands.json
+compile_arguments.txt
+lldb-dap-log.txt
+nimhelp.txt
+log.txt
+.clang-ignore
+tools/uht.nim
