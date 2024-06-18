@@ -94,8 +94,7 @@ task buildTerminal, "Build the terminal version":
   selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi --stackTrace:on --lineTrace:on --debuginfo -g -D:debug --nilChecks:on --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
-  # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi --stacktrace --linetrace --debuginfo -g -D:debug --lineDir:off --nilChecks:on --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
   # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
@@ -129,4 +128,4 @@ task buildBrowser, "Build the browser version":
 
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":
-    selfExec fmt"c -d:release -o:./absytree_config_wasm.wasm {getCommandLineParams()} ./absytree_config_wasm.nim"
+    selfExec fmt"c -d:release -o:wasm/{projectName()}.wasm {getCommandLineParams()}"

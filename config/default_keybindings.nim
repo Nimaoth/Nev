@@ -98,7 +98,7 @@ addTextCommandBlock "", "<C-k><C-s>":
 
 if getBackend() == Terminal:
   # Disable animations in terminal because they don't look great
-  changeAnimationSpeed 100000
+  changeAnimationSpeed 10000
 
 # Triple click to selects a line
 setOption "editor.text.triple-click-command", "extend-select-move"
@@ -110,3 +110,6 @@ setOption "editor.text.whitespace.char", "·"
 # Triple click selects a vim paragraph
 # setOption "editor.text.triple-click-command", "extend-select-move"
 # setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true]
+
+when defined(wasm):
+  include absytree_runtime_impl
