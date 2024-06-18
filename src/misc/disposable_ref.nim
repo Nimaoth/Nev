@@ -13,7 +13,7 @@ type
 
 proc `=copy`*[T: Disposable](a: var DisposableRef[T], b: DisposableRef[T]) {.error.}
 proc `=dup`*[T: Disposable](a: DisposableRef[T]): DisposableRef[T] {.error.}
-proc `=destroy`*[T: Disposable](a: DisposableRef[T]) =
+proc `=destroy`*[T: Disposable](a: var DisposableRef[T]) =
   when defined(js):
     {.emit: ["if (", a, " === undefined) return;"].}
   if not a.count.isNil:
