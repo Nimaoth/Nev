@@ -1521,6 +1521,19 @@ proc help*(self: App, about: string = "") {.expose("editor").} =
   textDocument.load()
   discard self.createAndAddView(textDocument)
 
+proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async.} =
+  if self.workspace.folders.len == 0:
+    discard self.callScriptAction(callback, Option[string].none.toJson)
+    return
+
+  let workspace = self.workspace.folders[0]
+  let content = await workspace.loadFile(path)
+
+  discard self.callScriptAction(callback, content.some.toJson)
+
+proc loadWorkspaceFile*(self: App, path: string, callback: string) {.expose("editor").} =
+  asyncCheck self.loadWorkspaceFileImpl(path, callback)
+
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
   log lvlInfo, fmt"current font size: {self.platform.fontSize}"
@@ -2286,7 +2299,7 @@ proc gotoNextLocation*(self: App) {.expose("editor").} =
   self.currentLocationListIndex = (self.currentLocationListIndex + 1) mod self.finderItems.len
   let item = self.finderItems[self.currentLocationListIndex]
 
-  let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+  let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
     log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
       fmt"Expected path or json object with path property {item}"
     return
@@ -2309,7 +2322,7 @@ proc gotoPrevLocation*(self: App) {.expose("editor").} =
   self.currentLocationListIndex = (self.currentLocationListIndex - 1 + self.finderItems.len) mod self.finderItems.len
   let item = self.finderItems[self.currentLocationListIndex]
 
-  let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+  let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
     log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
       fmt"Expected path or json object with path property {item}"
     return
@@ -2342,7 +2355,7 @@ proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
   popup.scale.x = if self.previewer.isSome: 0.8 else: 0.4
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+    let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
       return
@@ -2436,7 +2449,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   popup.scale.y = 0.85
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+    let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
       return
@@ -2472,7 +2485,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   popup.scale.y = 0.85
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+    let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
       return

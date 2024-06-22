@@ -2112,7 +2112,7 @@ import finder/[workspace_file_previewer]
 
 proc openLocationFromFinderItem(self: TextDocumentEditor, item: FinderItem) =
   try:
-    let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+    let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
       return
