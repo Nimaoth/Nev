@@ -10,7 +10,7 @@ type FileSystem* = ref object of RootObj
 method init*(self: FileSystem, appDir: string) {.base.} = discard
 
 method loadFile*(self: FileSystem, path: string): string {.base.} = discard
-method loadFileAsync*(self: FileSystem, name: string): Future[string] {.base.} = discard
+method loadFileAsync*(self: FileSystem, path: string): Future[string] {.base.} = discard
 method loadFileBinaryAsync*(self: FileSystem, name: string): Future[ArrayBuffer] {.base.} = discard
 
 method saveFile*(self: FileSystem, path: string, content: string) {.base.} = discard
@@ -19,6 +19,7 @@ method getApplicationDirectoryListing*(self: FileSystem, path: string):
   Future[tuple[files: seq[string], folders: seq[string]]] {.base.} = discard
 method getApplicationFilePath*(self: FileSystem, name: string): string {.base.} = discard
 method loadApplicationFile*(self: FileSystem, name: string): string {.base.} = discard
+method loadApplicationFileAsync*(self: FileSystem, name: string): Future[string] {.base.} = "".toFuture
 method saveApplicationFile*(self: FileSystem, name: string, content: string) {.base.} = discard
 
 proc normalizePathUnix*(path: string): string =
