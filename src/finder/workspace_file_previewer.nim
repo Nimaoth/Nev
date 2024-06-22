@@ -1,4 +1,4 @@
-import std/[tables, json, options, strformat, strutils]
+import std/[tables, json, options, strformat, strutils, os]
 import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils]
 import workspaces/workspace
 import text/[text_editor, text_document]
@@ -19,6 +19,7 @@ type
     revision: int
     triggerLoadTask: DelayedTask
     currentPath: string
+    currentIsFile: Option[bool]
     currentLocation: Option[Cursor]
     currentStaged: bool
     currentDiff: bool
@@ -42,12 +43,13 @@ method deinit*(self: WorkspaceFilePreviewer) =
 
   self[] = default(typeof(self[]))
 
-proc parsePathAndLocationFromItemData*(item: FinderItem): Option[(string, Option[Cursor])] =
+proc parsePathAndLocationFromItemData*(item: FinderItem):
+    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool]]] =
   if item.data.WorkspacePath.decodePath().getSome(ws):
-    return (ws.path, Cursor.none).some
+    return (ws.path, Cursor.none, bool.none).some
 
   if not item.data.startsWith("{"):
-    return (item.data, Cursor.none).some
+    return (item.data, Cursor.none, bool.none).some
 
   let jsonData = item.data.parseJson.catch:
     return
@@ -62,6 +64,11 @@ proc parsePathAndLocationFromItemData*(item: FinderItem): Option[(string, Option
   if path.kind != JString:
     return
 
+  let isFile = if jsonData.hasKey("isFile") and jsonData["isFile"].kind == JBool:
+    jsonData["isFile"].getBool.some
+  else:
+    bool.none
+
   var cursor: Option[Cursor] = if jsonData.hasKey "line":
     (
       jsonData["line"].getInt,
@@ -71,7 +78,7 @@ proc parsePathAndLocationFromItemData*(item: FinderItem): Option[(string, Option
   else:
     Cursor.none
 
-  return (path.getStr, cursor).some
+  return (path.getStr, cursor, isFile).some
 
 proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   let revision = self.revision
@@ -101,7 +108,25 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   elif self.tempDocument.isNotNil:
     logScope lvlInfo, &"[loadAsync] Show preview using temp document for '{path}'"
     var content = ""
-    self.workspace.loadFile(path, content.addr).await
+
+    if self.currentIsFile.getSome(isFile):
+      if isFile:
+        await self.workspace.loadFile(path, content.addr)
+      else:
+        let listing = await self.workspace.getDirectoryListing(path)
+
+        for dir in listing.folders:
+          let name = dir.extractFilename
+          content.add &"🗀 {name}\n"
+
+        for file in listing.files:
+          let name = file.extractFilename
+          content.add &"🗎  {name}\n"
+
+    else:
+      # Just assume it's a file, returns empty string when it's a directory which is fine
+      await self.workspace.loadFile(path, content.addr)
+
     if editor.document.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
       return
@@ -145,17 +170,19 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
 
   var path: string
   var location: Option[Cursor]
+  var isFile = bool.none
 
   let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).some.catch: VCSFileInfo.none
   if fileInfo.isSome:
     path = fileInfo.get.path
   else:
-    let pathAndLocation = item.parsePathAndLocationFromItemData.getOr:
+    let infos = item.parsePathAndLocationFromItemData.getOr:
       log lvlError, fmt"Failed to preview item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
       return
-    path = pathAndLocation[0]
-    location = pathAndLocation[1]
+    path = infos.path
+    location = infos.location
+    isFile = infos.isFile
 
   if fileInfo.getSome(fileInfo) and not fileInfo.isUntracked:
     self.currentDiff = true
@@ -186,6 +213,7 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
   else:
     self.currentPath = path
     self.currentLocation = location
+    self.currentIsFile = isFile
 
     if self.triggerLoadTask.isNil:
       self.triggerLoadTask = startDelayed(100, repeat=false):

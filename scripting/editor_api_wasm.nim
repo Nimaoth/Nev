@@ -378,6 +378,25 @@ proc help*(about: string = "") =
   let res {.used.} = editor_help_void_App_string_wasm(argsJsonString.cstring)
 
 
+proc editor_loadWorkspaceFile_void_App_string_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc loadWorkspaceFile*(path: string; callback: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      callback
+    else:
+      callback.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_loadWorkspaceFile_void_App_string_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_changeFontSize_void_App_float32_wasm(arg: cstring): cstring {.
     importc.}
 proc changeFontSize*(amount: float32) =

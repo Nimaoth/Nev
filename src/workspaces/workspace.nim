@@ -70,10 +70,14 @@ method setFileReadOnly*(self: WorkspaceFolder, relativePath: string, readOnly: b
 method isFileReadOnly*(self: WorkspaceFolder, relativePath: string): Future[bool] {.base.} =
   false.toFuture
 
-method fileExists*(self: WorkspaceFolder, path: string): Future[bool] {.base.} = false.toFuture
+method fileExists*(self: WorkspaceFolder, path: string): Future[bool] {.base.} =
+  false.toFuture
 
-method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} = discard
-method loadFile*(self: WorkspaceFolder, relativePath: string, data: ptr string): Future[void] {.base.} = discard
+method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} =
+  discard
+
+method loadFile*(self: WorkspaceFolder, relativePath: string, data: ptr string): Future[void] {.base.} =
+  discard
 
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} =
   discard
