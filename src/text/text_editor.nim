@@ -567,54 +567,6 @@ method handleDeactivate*(self: TextDocumentEditor) =
   if self.diffDocument.isNotNil:
     self.diffDocument.clearStyledTextCache()
 
-proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
-    wrap: bool = false, includeAfter: bool = false): Cursor =
-  var cursor = cursor
-  let line = cursor.line + offset
-  if line < 0:
-    cursor = (0, cursor.column)
-  elif line >= self.document.lines.len:
-    cursor = (self.document.lines.len - 1, cursor.column)
-  else:
-    cursor.line = line
-    cursor.column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
-  return self.clampCursor(cursor, includeAfter)
-
-proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
-    includeAfter: bool): Cursor =
-  return (cursor.line, 0)
-
-proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
-    includeAfter: bool): Cursor =
-  return (cursor.line, self.document.lastValidIndex cursor.line)
-
-proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
-  includeAfter: bool = true, wrap: bool = true): Selection
-proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
-  includeAfter: bool = true, wrap: bool = true): Selection
-
-proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
-    wrap: bool, includeAfter: bool): Cursor =
-  return self.getPrevFindResult(cursor, offset, includeAfter=includeAfter).first
-
-proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
-    wrap: bool, includeAfter: bool): Cursor =
-  return self.getNextFindResult(cursor, offset, includeAfter=includeAfter).first
-
-proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
-    includeAfter: bool): Cursor =
-  return (cursor.line, self.document.lineLength(cursor.line) div 2)
-
-proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
-    includeAfter: bool): Cursor =
-  if self.lastRenderedLines.len == 0:
-    return cursor
-
-  let r = self.visibleTextRange()
-  let line = clamp((r.first.line + r.last.line) div 2, 0, self.document.lines.len - 1)
-  let column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
-  return (line, column)
-
 proc scrollToTop*(self: TextDocumentEditor) =
   if self.disableScrolling:
     return
@@ -791,6 +743,54 @@ proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
   result.last.line = clamp(self.previousBaseIndex - baseLine + self.screenLineCount + buffer,
     0, self.lineCount - 1)
   result.last.column = self.document.lastValidIndex(result.last.line)
+
+proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
+    wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
+  var cursor = cursor
+  let line = cursor.line + offset
+  if line < 0:
+    cursor = (0, cursor.column)
+  elif line >= self.document.lines.len:
+    cursor = (self.document.lines.len - 1, cursor.column)
+  else:
+    cursor.line = line
+    cursor.column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
+  return self.clampCursor(cursor, includeAfter)
+
+proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
+    includeAfter: bool): Cursor {.expose: "editor.text".} =
+  return (cursor.line, 0)
+
+proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
+    includeAfter: bool): Cursor {.expose: "editor.text".} =
+  return (cursor.line, self.document.lastValidIndex cursor.line)
+
+proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
+  includeAfter: bool = true, wrap: bool = true): Selection
+proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
+  includeAfter: bool = true, wrap: bool = true): Selection
+
+proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
+    wrap: bool, includeAfter: bool): Cursor {.expose: "editor.text".} =
+  return self.getPrevFindResult(cursor, offset, includeAfter=includeAfter).first
+
+proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
+    wrap: bool, includeAfter: bool): Cursor {.expose: "editor.text".} =
+  return self.getNextFindResult(cursor, offset, includeAfter=includeAfter).first
+
+proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
+    includeAfter: bool): Cursor {.expose: "editor.text".} =
+  return (cursor.line, self.document.lineLength(cursor.line) div 2)
+
+proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
+    includeAfter: bool): Cursor {.expose: "editor.text".} =
+  if self.lastRenderedLines.len == 0:
+    return cursor
+
+  let r = self.visibleTextRange()
+  let line = clamp((r.first.line + r.last.line) div 2, 0, self.document.lines.len - 1)
+  let column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
+  return (line, column)
 
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool = true, includeAfter: bool = true): Cursor {.expose: "editor.text".} =

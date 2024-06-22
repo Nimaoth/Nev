@@ -83,14 +83,7 @@ loadDefaultKeybindings(true)
 loadModelKeybindings()
 loadVimKeybindings()
 
-# if getHostOs() == "linux":
-#   loadLspConfigFromFile("config/lsp-linux.json")
-# else:
-#   loadLspConfigFromFile("config/lsp.json")
-
-loadLspConfigFromFile("config/lsp.json")
 loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
-loadDebuggerConfig("config/launch.json")
 loadVSCodeDebuggerConfig(".vscode/launch.json")
 
 addTextCommandBlock "", "<C-k><C-s>":
