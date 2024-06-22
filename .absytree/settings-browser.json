@@ -1,0 +1,11 @@
+
+{
+    "+editor": {
+        "+text": {
+            "+languages-server": {
+                "url": "localhost",
+                "port": 3001
+            }
+        }
+    }
+}

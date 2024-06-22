@@ -231,7 +231,7 @@
     }
   },
   "plugin-post-load-commands": [
-    "load-default-options",
+    "load-theme \"tokyo-night-color-theme\"",
     "load-default-keybindings true",
     "load-model-keybindings",
     "load-vim-keybindings",

@@ -4,52 +4,6 @@ import misc/[timer]
 
 import languages
 
-# Only when compiled to wasm.
-# Delete if you want
-proc loadDefaultOptions*() {.expose("load-default-options").} =
-  infof "Loading default settings"
-
-  info fmt"Backend: {getBackend()}"
-  case getBackend()
-  of Terminal:
-    setOption "text.scroll-speed", 3
-    setOption "text.cursor-margin", 0.5
-    setOption "text.cursor-margin-relative", true
-    setOption "ast.scroll-speed", 1
-    setOption "ast.indent", 2
-    setOption "ast.indent-line-width", 2
-    setOption "ast.indent-line-alpha", 0.2
-    setOption "ast.inline-blocks", false
-    setOption "ast.vertical-division", false
-    setOption "model.scroll-speed", 1
-
-  of Gui:
-    setOption "text.scroll-speed", 50
-    setOption "text.cursor-margin", 0.5
-    setOption "text.cursor-margin-relative", true
-    setOption "ast.scroll-speed", 50
-    setOption "ast.indent", 20
-    setOption "ast.indent-line-width", 2
-    setOption "ast.indent-line-alpha", 1
-    setOption "ast.inline-blocks", true
-    setOption "ast.vertical-division", true
-    setOption "model.scroll-speed", 50
-
-  of Browser:
-    setOption "text.scroll-speed", 50
-    setOption "text.cursor-margin", 0.5
-    setOption "text.cursor-margin-relative", true
-    setOption "ast.scroll-speed", 50
-    setOption "ast.indent", 20
-    setOption "ast.indent-line-width", 2
-    setOption "ast.indent-line-alpha", 1
-    setOption "ast.inline-blocks", true
-    setOption "ast.vertical-division", true
-    setOption "model.scroll-speed", 50
-    addCommand "editor", "<C-r>", "do-nothing"
-
-  loadTheme "tokyo-night-color-theme"
-
 proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default-keybindings").} =
   let t = startTimer()
   defer:
@@ -59,9 +13,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
 
   if clearExisting:
     clearCommands "editor"
-    clearCommands "editor.ast"
-    clearCommands "editor.ast.completion"
-    clearCommands "editor.ast.goto"
     clearCommands "editor.model.completion"
     clearCommands "editor.model.goto"
     clearCommands "command-line-low"
@@ -76,22 +27,10 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER><*-T>1", "load-theme", "synthwave-color-theme"
   addCommand "editor", "<LEADER><*-T>2", "load-theme", "tokyo-night-storm-color-theme"
 
-  addCommand "editor", "<LEADER><*-a>i", "toggle-flag", "ast.inline-blocks"
-  addCommand "editor", "<LEADER><*-a>d", "toggle-flag", "ast.vertical-division"
-
-  addCommand "editor", "<LEADER>tt", proc() =
-    setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") * 2, 1, 1000000))
-    echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
-
-  addCommand "editor", "<LEADER>tr", proc() =
-    setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") div 2, 1, 1000000))
-    echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
-
   addCommand "editor", "<LEADER>ft", "toggle-flag", "editor.log-frame-time"
   # addCommand "editor", "<C-SPACE>pp", proc() =
     # toggleFlag "editor.poll"
     # echo "-> ", getFlag("editor.poll")
-  addCommand "editor", "<LEADER>ftd", "toggle-flag", "ast.render-vnode-depth"
   addCommand "editor", "<LEADER>fl", "toggle-flag", "logging"
   addCommand "editor", "<LEADER>ffs", "toggle-flag", "render-selected-value"
   addCommand "editor", "<LEADER>ffr", "toggle-flag", "log-render-duration"
