@@ -74,48 +74,19 @@ To enable these features pass `-D:enableNimscript=true` and `-D:enableAst=true` 
 - Copy the generated files to the AbsytreeBrowser directory:
   - `cp lib/binding_web/tree-sitter.js <.../AbsytreeBrowser> && cp lib/binding_web/tree-sitter.wasm <.../AbsytreeBrowser>`
 
-## Configuration
+## Configuration and plugins
 
-### options.json
-`options.json` contains simple values which are used by the editor. This file is automatically created when exiting the editor with the current options.
-When the editor launches it loads the current options from this file again (before running any scripts/plugins)
+Configuration is done using JSON files.
 
-### Scripts/Plugins
-
-Absytree supports different scripting languages/mechanisms. The editor API is exposed to each one and can be used to create new commands, change options, etc.
-- NimScript: Only supported in the desktop version. The editor bundles part of the Nim compiler so it can run NimScript code.
-  Allows easy hot reloading of the config file, but right now only one nimscript file is supported.
+Absytree also supports different plugin mechanisms. The editor API is exposed to each one and can be used to create new commands, change options, etc.
+- NimScript (optional): Only supported in the desktop version. The editor bundles part of the Nim compiler so it can run NimScript code.
+  Allows easy hot reloading of the config file, but right now only one nimscript file is supported. Needs to be enabled with `-d:enableNimscript`.
   Slightly increases startup time of the editor.
 - Wasm: Works on the desktop and in the browser. In theory any language can be used to write plugins if it can compile to wasm.
   Probably better performance than NimScript.
 - In the future the builtin language framework will be usable as a scripting language as well by compiling to wasm.
 
-At startup Absytree loads the following scripts in order:
-- `config/absytree_config_wasm.wasm`
-- `config/absytree_config.nim` (NimScript, only in desktop version)
-
-At the moment `config/absytree_config_wasm.wasm` is generated from `config/absytree_config.nim` by compiling it to wasm using `config/config.nims` (uses Emscripten). So `absytree_config.nim` can be used as NimScript or as a wasm plugin.
-
-The editor API is exactly the same in both cases.
-
-Inside `absytree_config.nim` one can check if it's being used in wasm or NimScript using the following check:
-
-    when defined(wasm):
-      # Script was compiled to wasm
-    else:
-      # Script is being interpreted as NimScript
-
-`absytree_config.nim` must import `absytree_runtime`, which contains some utility functions. `absytree_runtime` also exports `absytree_api`,
-which contains every function exposed by the editor. `absytree_api` is automatically generated when compiling the editor.
-
-There are a few utility scripts for defining key bindings.
-- `import keybindings_normal`: Standard keybindings, like most text editors. (e.g. no modes)
-- `import keybindings_vim`: [Vim](https://github.com/neovim/neovim) inspired keybindings, work in progress. Will probably never be 100% compatible.
-- `import keybindings_helix`: [Helix](https://github.com/helix-editor/helix) inspired keybindings, work in progress. Will probably never be 100% compatible.
-
-Each of these files defines a `load*Bindings()` function which applies the corresponding key bindings. After calling this function one can still override specific keys.
-
-More details in [Getting Started](docs/getting_started.md)
+More details in [Configuration](docs/configuration.md) and [Getting Started](docs/getting_started.md)
 
 ### Compiling Nim config files to wasm
 - You need to have Emscripten installed.
