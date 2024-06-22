@@ -2841,7 +2841,7 @@ proc getItemsFromDirectory(workspace: WorkspaceFolder, directory: string): Futur
 
   return list
 
-proc exploreFiles*(self: App) {.expose("editor").} =
+proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
@@ -2852,7 +2852,7 @@ proc exploreFiles*(self: App) {.expose("editor").} =
   let workspace = self.workspace.folders[0]
 
   let currentDirectory = new string
-  currentDirectory[] = ""
+  currentDirectory[] = root
 
   let source = newAsyncCallbackDataSource () => workspace.getItemsFromDirectory(currentDirectory[])
   var finder = newFinder(source, filterAndSort=true)
@@ -2890,6 +2890,21 @@ proc exploreFiles*(self: App) {.expose("editor").} =
     return true
 
   self.pushPopup popup
+
+proc exploreUserConfigDir*(self: App) {.expose("editor").} =
+  when not defined(js):
+    let homeDir = getHomeDir().catch:
+      log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
+      return
+
+    self.exploreFiles(homeDir // ".absytree")
+
+proc exploreAppConfigDir*(self: App) {.expose("editor").} =
+  self.exploreFiles(fs.getApplicationFilePath("config"))
+
+proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
+  if self.workspace.folders.len > 0:
+    self.exploreFiles(self.workspace.folders[0].getWorkspacePath())
 
 proc openPreviousEditor*(self: App) {.expose("editor").} =
   if self.editorHistory.len == 0:
