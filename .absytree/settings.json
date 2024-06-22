@@ -5,8 +5,8 @@
     },
     "+editor": {
         "+text": {
-            "+lsp": {
 
+            "+lsp": {
                 "+cpp": {
                     "args": [
                         "--offset-encoding=utf-8",

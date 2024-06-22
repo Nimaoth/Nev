@@ -11,16 +11,7 @@ else:
   setOption "editor.text.languages-server.url", ""
   setOption "editor.text.languages-server.port", 0
 
-proc loadLspConfigFromFile*(file: string) =
-  try:
-    let str = loadApplicationFile(file).get
-    let json = str.parseJson()
-    infof"Loaded lsp config from file"
-    setOption "editor.text.lsp", json
-  except:
-    info &"Failed to load lsp config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
-proc loadSnippetsFromFile*(file: string, language: string) =
+proc loadSnippetsFromFile*(file: string, language: string) {.expose("load-snippets-from-file").} =
   try:
     let str = loadApplicationFile(file).get
     let json = str.parseJson()
@@ -30,17 +21,7 @@ proc loadSnippetsFromFile*(file: string, language: string) =
   except:
     info &"Failed to load lsp config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-proc loadDebuggerConfig*(file: string) =
-  try:
-    let str = loadApplicationFile(file).get
-    let json = str.parseJson()
-    infof"Loaded debugger config from {file}"
-    for key, value in json.fields.pairs:
-      setOption "debugger.configuration." & key, value
-  except:
-    info &"Failed to load debugger config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
-proc loadVSCodeDebuggerConfig*(file: string) =
+proc loadVSCodeDebuggerConfig*(file: string) {.expose("load-vscode-debugger-config").} =
   try:
     let str = loadApplicationFile(file).get
     let json = str.parseJson()
