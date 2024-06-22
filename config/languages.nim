@@ -2,15 +2,6 @@ import absytree_runtime
 
 {.used.}
 
-let useLSPWebsocketProxy = getBackend() == Browser
-
-if useLSPWebsocketProxy:
-  setOption "editor.text.languages-server.url", "localhost"
-  setOption "editor.text.languages-server.port", 3001
-else:
-  setOption "editor.text.languages-server.url", ""
-  setOption "editor.text.languages-server.port", 0
-
 proc loadSnippetsFromFile*(file: string, language: string) {.expose("load-snippets-from-file").} =
   try:
     let str = loadApplicationFile(file).get
@@ -30,4 +21,3 @@ proc loadVSCodeDebuggerConfig*(file: string) {.expose("load-vscode-debugger-conf
       setOption "debugger.configuration." & value["name"].getStr, value
   except:
     info &"Failed to load debugger config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-

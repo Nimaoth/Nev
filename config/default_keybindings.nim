@@ -8,10 +8,6 @@ proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
   # infof "handleAction: {action}, {args}"
 
   case action
-  of "set-max-loop-iterations":
-    setOption("ast.max-loop-iterations", args[0].getInt)
-    return true
-
   of "set-search-query":
     if getActiveEditor().isTextEditor(editor):
       editor.setSearchQuery args[0].getStr
