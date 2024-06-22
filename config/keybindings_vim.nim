@@ -145,6 +145,13 @@ proc copySelection(editor: TextDocumentEditor, register: string = ""): Selection
 
   return selections.mapIt(it.normalized.first.toSelection)
 
+proc vimUpdateSelections(editor: TextDocumentEditor, selections: Selections) =
+  if editor.vimState.selectLines:
+    editor.selections = selections.mapIt editor.doMoveCursorLine(it.normalized.first, 1).toSelection
+
+  else:
+    editor.selections = selections
+
 proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.expose("vim-delete-selection").} =
   let newSelections = editor.copySelection(getVimDefaultRegister())
   let selectionsToDelete = editor.selections
@@ -152,9 +159,9 @@ proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool, old
     editor.selections = oldSelections.get
   editor.addNextCheckpoint("insert")
   let inclusiveEnd = (not editor.vimState.selectLines) and (editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
-  discard editor.delete(selectionsToDelete, inclusiveEnd=inclusiveEnd)
+  editor.vimUpdateSelections editor.delete(
+    selectionsToDelete, inclusiveEnd=inclusiveEnd)
   editor.vimState.deleteInclusiveEnd = true
-  editor.selections = newSelections
   editor.setMode "normal"
 
 proc vimChangeSelection*(editor: TextDocumentEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.expose("vim-change-selection").} =
@@ -164,9 +171,9 @@ proc vimChangeSelection*(editor: TextDocumentEditor, forceInclusiveEnd: bool, ol
     editor.selections = oldSelections.get
   editor.addNextCheckpoint("insert")
   # todo: figure out if we should check for selectLines here as well
-  discard editor.delete(selectionsToDelete, inclusiveEnd=editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
+  editor.vimUpdateSelections editor.delete(
+    selectionsToDelete, inclusiveEnd=editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
   editor.vimState.deleteInclusiveEnd = true
-  editor.selections = newSelections
   editor.setMode "insert"
 
 proc vimYankSelection*(editor: TextDocumentEditor) {.expose("vim-yank-selection").} =
@@ -1369,7 +1376,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-k><C-t>", "reload-treesitter"
   addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
   addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
-  addCommand "editor", "<C-k><C-r>", "reload-config"
+  addCommand "editor", "<C-k><C-r>", "reload-plugin"
+  addCommand "editor", "<C-k><S-r>", "reload-config"
   addCommand "editor", "<C-k><CS-r>", "reload-state"
   addTextCommandBlock "", "<C-k><C-z>": collectGarbage()
 

@@ -141,16 +141,11 @@
     },
 
     "+debugger": {
-        "type+": {
+        "+type": {
             "lldb-dap": {
                 "connection": "stdio",
                 "path": "/bin/lldb-dap-18",
-                "args": [],
-                "exe": {
-                    "connection": "stdio",
-                    "path": "D:/llvm/bin/lldb-dap.exe",
-                    "args": []
-                }
+                "args": []
             },
             "lldb-dap-tcp-launch": {
                 "connection": "tcp",
@@ -177,125 +172,7 @@
                 "port": 5678
             },
             "lldb-dap2": {}
-          },
-
-          "configuration+": {
-            "test1": {
-                "type": "lldb-dap",
-                "request": "launch",
-                "program": "/mnt/c/Absytree/temp/test_dbg",
-                "args": [],
-                "cwd": "/mnt/c/Absytree"
-            },
-            "test2": {
-                "type": "lldb-dap2"
-            },
-            "test3": {
-                "type": "lldb-dap-tcp-launch",
-                "request": "launch",
-                "program": "C:/Absytree/temp/test_dbg.exe",
-                "args": [],
-                "cwd": "C:/Absytree"
-            },
-            "test4": {
-                "type": "lldb-dap-debug-tcp-launch",
-                "request": "launch",
-                "program": "C:/Absytree/temp/test_dbg.exe",
-                "args": [],
-                "cwd": "C:/Absytree"
-            },
-            "Python Debugger: Current File": {
-                "name": "Python Debugger: Current File",
-                "type": "debugpy",
-                "request": "launch",
-                "program": "${file}",
-                "console": "integratedTerminal"
-            },
-            "Launch LLDB Test": {
-                "type": "lldb",
-                "request": "launch",
-                "name": "Launch LLDB Test",
-                "target": "/mnt/c/Absytree/test_dbg --test",
-                "program": "/mnt/c/Absytree/test_dbg",
-                "cwd": "${workspaceRoot}",
-                "valuesFormatting": "parseText"
-            },
-            "Debug Nim Project": {
-                "type": "lldb",
-                "request": "launch",
-                "name": "Debug Nim Project",
-                "program": "astd.exe",
-                "args": [
-                    "-n"
-                ],
-                "cwd": "C:/Absytree",
-                "terminal": "console"
-            },
-            "Debug Test Project": {
-                "type": "lldb",
-                "request": "launch",
-                "name": "Debug Test Project",
-                "program": "${workspaceRoot}/test.exe",
-                "args": [],
-                "cwd": "${workspaceRoot}",
-                "terminal": "console"
-            },
-            "Debug absytree_server": {
-                "name": "Debug absytree_server",
-                "program": "${workspaceFolder}/absytree_server.js",
-                "request": "launch",
-                "skipFiles": [
-                    "<node_internals>/**"
-                ],
-                "type": "node"
-            },
-            "Debug UE": {
-                "name": "Debug UE",
-                "program": "C:/Program Files/Epic Games/UE_5.3/Engine/Binaries/Win64/UnrealEditor-Win64-DebugGame.exe",
-                "args": [
-                    "D:/dev/Unreal/EditorPlugin/EditorPlugin.uproject",
-                    "-skipcompile"
-                ],
-                "request": "launch",
-                "type": "lldb",
-                "initCommands": [
-                    "settings set symbols.load-on-demand true"
-                ]
-            },
-            "Debug UE 2": {
-                "name": "Debug UE 2",
-                "program": "C:/Program Files/Epic Games/UE_5.3/Engine/Binaries/Win64/UnrealEditor-Win64-DebugGame.exe",
-                "args": [
-                    "D:/dev/Unreal/EditorPlugin/EditorPlugin.uproject",
-                    "-skipcompile"
-                ],
-                "request": "launch",
-                "type": "lldb-port",
-                "initCommands": [
-                    "settings set symbols.load-on-demand true"
-                ]
-            },
-            "Test win port ondemand": {
-                "name": "Test win port ondemand",
-                "program": "C:/Absytree/temp/test_dbg.exe",
-                "request": "launch",
-                "type": "lldb-port",
-                "initCommands": [
-                    "settings set symbols.load-on-demand true"
-                ]
-            },
-            "Test win port": {
-                "name": "Test win port",
-                "program": "C:/Absytree/temp/test_dbg.exe",
-                "request": "launch",
-                "type": "lldb-port"
-            },
-            "Test win": {
-                "name": "Test win",
-                "program": "C:/Absytree/temp/test_dbg.exe",
-                "request": "launch",
-                "type": "lldb"
-            }
+          }
         }
 
     }

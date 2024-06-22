@@ -54,6 +54,258 @@ proc screenLineCount*(self: TextDocumentEditor): int =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc doMoveCursorLine*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                       wrap: bool = false; includeAfter: bool = false): Cursor =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_doMoveCursorHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc doMoveCursorHome*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                       wrap: bool; includeAfter: bool): Cursor =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_doMoveCursorHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc doMoveCursorEnd*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                      wrap: bool; includeAfter: bool): Cursor =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_doMoveCursorPrevFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc doMoveCursorPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
+                                 offset: int; wrap: bool; includeAfter: bool): Cursor =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_doMoveCursorPrevFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_doMoveCursorNextFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc doMoveCursorNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
+                                 offset: int; wrap: bool; includeAfter: bool): Cursor =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_doMoveCursorNextFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_doMoveCursorLineCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc doMoveCursorLineCenter*(self: TextDocumentEditor; cursor: Cursor;
+                             offset: int; wrap: bool; includeAfter: bool): Cursor =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_doMoveCursorLineCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_doMoveCursorCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc doMoveCursorCenter*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                         wrap: bool; includeAfter: bool): Cursor =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_doMoveCursorCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
