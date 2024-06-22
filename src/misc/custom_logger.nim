@@ -1,4 +1,4 @@
-import std/[strformat, options, macros, genasts, strutils, math]
+import std/[strformat, options, macros, genasts, strutils, math, os]
 from logging import nil
 import util, timer
 export strformat
@@ -37,6 +37,10 @@ proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultF
 
 proc enableFileLogger*(self: CustomLogger, filename = "messages.log") =
   when not defined(js):
+    let filename = if filename.isAbsolute:
+      filename
+    else:
+      getAppDir() / filename
     var file = open(filename, fmWrite)
     self.fileLogger = logging.newFileLogger(file, self.levelThreshold, "", flushThreshold=logging.lvlAll).some
 
