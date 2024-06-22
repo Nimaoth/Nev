@@ -1,4 +1,4 @@
-import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
+import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts, options]
 import misc/[event, util, myjsonutils, macro_utils]
 import absytree_api, script_expose
 
@@ -200,6 +200,16 @@ template withKeys*(keys: varargs[string], body: untyped): untyped =
     defer:
       keysPrefix = oldValue
     body
+
+proc loadWorkspaceFile*(path: string, action: proc(content: Option[string]): void {.closure, gcsafe.}) =
+  let key = "$loadWorkspaceFile" & $callbackId
+  callbackId += 1
+  scriptActions[key] = proc(args: JsonNode): JsonNode =
+    action(args.jsonTo(Option[string]))
+    scriptActions.del(key)
+    return newJNull()
+  addScriptAction(key, "", @[("path", "string"), ("callback", "proc(content: Option[string])")], "")
+  loadWorkspaceFile(path, key)
 
 macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
   let (stmts, str) = bindArgs(args)

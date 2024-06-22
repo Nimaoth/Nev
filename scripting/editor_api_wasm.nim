@@ -863,11 +863,42 @@ proc chooseGitActiveFiles*(all: bool = false) =
       argsJsonString.cstring)
 
 
-proc editor_exploreFiles_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exploreFiles*() =
+proc editor_exploreFiles_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc exploreFiles*(root: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      root
+    else:
+      root.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_exploreFiles_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_exploreUserConfigDir_void_App_wasm(arg: cstring): cstring {.importc.}
+proc exploreUserConfigDir*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreFiles_void_App_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_exploreUserConfigDir_void_App_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_exploreAppConfigDir_void_App_wasm(arg: cstring): cstring {.importc.}
+proc exploreAppConfigDir*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_exploreAppConfigDir_void_App_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_exploreWorkspacePrimary_void_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc exploreWorkspacePrimary*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_exploreWorkspacePrimary_void_App_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_openPreviousEditor_void_App_wasm(arg: cstring): cstring {.importc.}
