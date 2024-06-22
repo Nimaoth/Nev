@@ -738,7 +738,7 @@ proc vimUnindent(editor: TextDocumentEditor) {.expose("vim-unindent").} =
   editor.addNextCheckpoint "insert"
   editor.unindent()
 
-proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
+proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   let t = startTimer()
   defer:
     infof"loadVimKeybindings: {t.elapsed.ms} ms"

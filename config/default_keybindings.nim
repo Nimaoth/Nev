@@ -42,29 +42,13 @@ proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {
   else: return false
 
 proc handleDocumentEditorAction*(id: EditorId, action: string, args: JsonNode): bool {.wasmexport.} =
-  when not defined(wasm):
-    return false
-
-  # infof "handleDocumentEditorAction: {action}, {args}"
   return false
 
 proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
-  when not defined(wasm):
-    return false
-
-  # infof "handleTextEditorAction: {action}, {args}"
-
-  case action
-  else: return false
+  return false
 
 proc handleModelEditorAction*(editor: ModelDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
-  when not defined(wasm):
-    return false
-
-  # infof "handleModelEditorAction: {action}, {args}"
-
-  case action
-  else: return false
+  return false
 
 proc postInitialize*(): bool {.wasmexport.} =
   infof "post initialize"
@@ -73,36 +57,14 @@ proc postInitialize*(): bool {.wasmexport.} =
 import default_config
 
 import keybindings_vim
-# import keybindings_vim_like
-# import keybindings_helix
+import keybindings_vim_like
+import keybindings_helix
 import keybindings_normal
 import languages
-
-loadDefaultOptions()
-loadDefaultKeybindings(true)
-loadModelKeybindings()
-loadVimKeybindings()
-
-loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
-loadVSCodeDebuggerConfig(".vscode/launch.json")
-
-addTextCommandBlock "", "<C-k><C-s>":
-  loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
 
 if getBackend() == Terminal:
   # Disable animations in terminal because they don't look great
   changeAnimationSpeed 10000
-
-# Triple click to selects a line
-setOption "editor.text.triple-click-command", "extend-select-move"
-setOption "editor.text.triple-click-command-args", %[%"line", %true]
-
-setOption "editor.text.whitespace.char", "·"
-# setOption "editor.text.whitespace.char", " "
-
-# Triple click selects a vim paragraph
-# setOption "editor.text.triple-click-command", "extend-select-move"
-# setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true]
 
 when defined(wasm):
   include absytree_runtime_impl

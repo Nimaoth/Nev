@@ -6,7 +6,7 @@ import languages
 
 # Only when compiled to wasm.
 # Delete if you want
-proc loadDefaultOptions*() =
+proc loadDefaultOptions*() {.expose("load-default-options").} =
   infof "Loading default settings"
 
   info fmt"Backend: {getBackend()}"
@@ -50,7 +50,7 @@ proc loadDefaultOptions*() =
 
   loadTheme "tokyo-night-color-theme"
 
-proc loadDefaultKeybindings*(clearExisting: bool = false) =
+proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default-keybindings").} =
   let t = startTimer()
   defer:
     infof"loadDefaultKeybindings: {t.elapsed.ms} ms"
