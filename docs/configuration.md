@@ -135,23 +135,6 @@ In theory WASM plugins can be written in any language that supports compiling to
 are currently no C header files for the editor API, so for now the recommended way
 to write plugins is to use Nim and Emscripten.
 
-Inside `absytree_config.nim` one can check if it's being used in wasm or NimScript using the following check:
-
-    when defined(wasm):
-      # Script was compiled to wasm
-    else:
-      # Script is being interpreted as NimScript
-
-`absytree_config.nim` must import `absytree_runtime`, which contains some utility functions. `absytree_runtime` also exports `absytree_api`,
-which contains every function exposed by the editor. `absytree_api` is automatically generated when compiling the editor.
-
-There are a few utility scripts for defining key bindings.
-- `import keybindings_normal`: Standard keybindings, like most text editors. (e.g. no modes)
-- `import keybindings_vim`: [Vim](https://github.com/neovim/neovim) inspired keybindings, work in progress. Will probably never be 100% compatible.
-- `import keybindings_helix`: [Helix](https://github.com/helix-editor/helix) inspired keybindings, work in progress. Will probably never be 100% compatible.
-
-Each of these files defines a `load*Bindings()` function which applies the corresponding key bindings. After calling this function one can still override specific keys.
-
 Here is an example of a basic plugin:
 
 ```nim
