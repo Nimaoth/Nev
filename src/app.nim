@@ -1461,8 +1461,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
     else:
       fs.saveFile(path, serialized.pretty)
 
-  fs.saveApplicationFile("./config/options.json", self.options.pretty)
-
 proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =
   self.platform.requestRender(redrawEverything)
 
