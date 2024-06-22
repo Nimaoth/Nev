@@ -99,7 +99,7 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
 
   self.modules.setLen 0
 
-  await self.loadModules("./config/absytree_config_wasm.wasm")
+  await self.loadModules("./config/wasm")
 
 method handleUnknownPopupAction*(self: ScriptContextWasm, popup: Popup, action: string, arg: JsonNode): bool =
   result = false
