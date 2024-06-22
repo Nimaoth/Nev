@@ -166,6 +166,9 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>gg", "choose-git-active-files", false
   addCommand "editor", "<LEADER>GG", "choose-git-active-files", true
   addCommand "editor", "<LEADER>ge", "explore-files"
+  addCommand "editor", "<LEADER>gw", "explore-workspace-primary"
+  addCommand "editor", "<LEADER>gu", "explore-user-config-dir"
+  addCommand "editor", "<LEADER>ga", "explore-app-config-dir"
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommandBlock "editor", "<LEADER>log":
     runAction "logs"
