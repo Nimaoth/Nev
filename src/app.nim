@@ -898,29 +898,86 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode) =
     when not defined(js):
       log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
 
+proc loadSettingsFrom*(self: App, directory: string,
+    loadFile: proc(context: string, path: string): Future[Option[string]]) {.async.} =
+
+  let backend = $self.backend
+  let platform = when defined(windows):
+    "windows"
+  elif defined(linux):
+    "linux"
+  elif defined(wasm):
+    "wasm"
+  elif defined(js):
+    "js"
+  else:
+    "other"
+
+  block:
+    let filenames = [
+      &"{directory}/settings.json",
+      &"{directory}/settings-{platform}.json",
+      &"{directory}/settings-{backend}.json",
+      &"{directory}/settings-{platform}-{backend}.json",
+    ]
+
+    let settings = await all(
+      loadFile("settings", filenames[0]),
+      loadFile("settings", filenames[1]),
+      loadFile("settings", filenames[2]),
+      loadFile("settings", filenames[3]),
+    )
+
+    assert filenames.len == settings.len
+
+    for i in 0..<filenames.len:
+      if settings[i].isSome:
+        try:
+          log lvlInfo, &"Apply settings from {filenames[i]}"
+          let json = settings[i].get.parseJson()
+          self.setOption("", json, override=false)
+
+        except CatchableError:
+          log(lvlError, &"Failed to load settings from {filenames[i]}: {getCurrentExceptionMsg()}")
+
+  block:
+    let filenames = [
+      &"{directory}/keybindings.json",
+      &"{directory}/keybindings-{platform}.json",
+      &"{directory}/keybindings-{backend}.json",
+      &"{directory}/keybindings-{platform}-{backend}.json",
+    ]
+
+    let settings = await all(
+      loadFile("keybindings", filenames[0]),
+      loadFile("keybindings", filenames[1]),
+      loadFile("keybindings", filenames[2]),
+      loadFile("keybindings", filenames[3]),
+    )
+
+    for i in 0..<filenames.len:
+      if settings[i].isSome:
+        try:
+          log lvlInfo, &"Apply keybindings from {filenames[i]}"
+          let json = settings[i].get.parseJson()
+          self.loadKeybindingsFromJson(json)
+
+        except CatchableError:
+          log(lvlError, fmt"Failed to load keybindings from {filenames[i]}: {getCurrentExceptionMsg()}")
+
 proc loadOptionsFromAppDir*(self: App) {.async.} =
-  try:
-    log lvlInfo, &"Load settings from app:config/settings.json"
-    let settings = await fs.loadApplicationFileAsync("./config/settings.json")
-    if settings.len > 0:
-      let json = settings.parseJson()
-      self.setOption("", json, override=false)
-    else:
-      log lvlInfo, &"No settings.json in app dir"
+  proc loadFile(context: string, path: string): Future[Option[string]] {.async.} =
+    try:
+      log lvlInfo, &"Try load {context} from app:{path}"
+      let content = await fs.loadApplicationFileAsync(path)
+      if content.len > 0:
+        return content.some
+    except CatchableError:
+      log(lvlError, fmt"Failed to load {context} from app dir: {getCurrentExceptionMsg()}")
 
-  except CatchableError:
-    log(lvlError, fmt"Failed to load settings from app:config/settings.json: {getCurrentExceptionMsg()}")
+    return string.none
 
-  try:
-    log lvlInfo, &"Load keybindings from app:config/keybindings.json"
-    let keybindings = await fs.loadApplicationFileAsync("./config/keybindings.json")
-    if keybindings.len > 0:
-      let json = keybindings.parseJson()
-      self.loadKeybindingsFromJson(json)
-    else:
-      log lvlInfo, &"No keybindings.json in app dir"
-  except CatchableError:
-    log(lvlError, fmt"Failed to load keybindings from app:config/keybindings.json: {getCurrentExceptionMsg()}")
+  await self.loadSettingsFrom("config", loadFile)
 
 proc loadOptionsFromHomeDir*(self: App) {.async.} =
   when not defined(js):
@@ -932,44 +989,32 @@ proc loadOptionsFromHomeDir*(self: App) {.async.} =
       log lvlInfo, &"Not loading settings from home dir"
       return
 
-    try:
-      log lvlInfo, &"Load settings from ~/.absytree/settings.json"
-      let settings = await fs.loadFileAsync(homeDir // ".absytree/settings.json")
-      if settings.len > 0:
-        let json = settings.parseJson()
-        self.setOption("", json, override=false)
-    except CatchableError:
-      log(lvlError, fmt"Failed to load settings from ~/.absytree/settings.json: {getCurrentExceptionMsg()}")
+    proc loadFile(context: string, path: string): Future[Option[string]] {.async.} =
+      try:
+        log lvlInfo, &"Try load {context} from {homeDir}/{path}"
+        let content = await fs.loadFileAsync(homeDir // path)
+        if content.len > 0:
+          return content.some
+      except CatchableError:
+        log(lvlError, fmt"Failed to load {context} from home {homeDir}: {getCurrentExceptionMsg()}")
 
-    try:
-      log lvlInfo, &"Load keybindings from ~/.absytree/keybindings.json"
-      let keybindings = await fs.loadFileAsync(homeDir // ".absytree/keybindings.json")
-      if keybindings.len > 0:
-        let json = keybindings.parseJson()
-        self.loadKeybindingsFromJson(json)
-    except CatchableError:
-      log(lvlError, fmt"Failed to load keybindings from ~/.absytree/keybindings.json: {getCurrentExceptionMsg()}")
+      return string.none
+
+    await self.loadSettingsFrom(".absytree", loadFile)
 
 proc loadOptionsFromWorkspace*(self: App, w: WorkspaceFolder) {.async.} =
-  try:
-    log lvlInfo, &"Load settings from {w.name}:.absytree/settings.json"
-    let settings = await w.loadFile(".absytree/settings.json")
-    if settings.len > 0:
-      let json = settings.parseJson()
-      self.setOption("", json, override=false)
+  proc loadFile(context: string, path: string): Future[Option[string]] {.async.} =
+    try:
+      log lvlInfo, &"Try load {context} from {w.name}/{path}"
+      let content = await w.loadFile(path)
+      if content.len > 0:
+        return content.some
+    except CatchableError:
+      log(lvlError, fmt"Failed to load {context} from workspace {w.name}: {getCurrentExceptionMsg()}")
 
-  except CatchableError:
-    log(lvlError, fmt"Failed to load settings from workspace {w.name}: {getCurrentExceptionMsg()}")
+    return string.none
 
-  try:
-    log lvlInfo, &"Load keybindings from {w.name}:.absytree/keybindings.json"
-    let keybindings = await w.loadFile(".absytree/keybindings.json")
-    if keybindings.len > 0:
-      let json = keybindings.parseJson()
-      self.loadKeybindingsFromJson(json)
-
-  except CatchableError:
-    log(lvlError, fmt"Failed to load keybindings from workspace {w.name}: {getCurrentExceptionMsg()}")
+  await self.loadSettingsFrom(".absytree", loadFile)
 
 proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
