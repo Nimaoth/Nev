@@ -135,10 +135,6 @@ In theory WASM plugins can be written in any language that supports compiling to
 are currently no C header files for the editor API, so for now the recommended way
 to write plugins is to use Nim and Emscripten.
 
-At the moment `config/absytree_config_wasm.wasm` is generated from `config/absytree_config.nim` by compiling it to wasm using `config/config.nims` (uses Emscripten). So `absytree_config.nim` can be used as NimScript or as a wasm plugin.
-
-The editor API is exactly the same in both cases.
-
 Inside `absytree_config.nim` one can check if it's being used in wasm or NimScript using the following check:
 
     when defined(wasm):
