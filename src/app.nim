@@ -715,6 +715,17 @@ when enableNimscript and not defined(js):
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
+proc runConfigCommands(self: App, key: string) =
+  let startupCommands = self.getOption(key, newJArray())
+  if startupCommands.isNil or startupCommands.kind != JArray:
+    return
+
+  for command in startupCommands:
+    if command.kind == JString:
+      let (action, arg) = command.getStr.parseAction
+      log lvlInfo, &"[runConfigCommands: {key}] {action} {arg}"
+      discard self.handleAction(action, arg, record=false)
+
 proc initScripting(self: App, options: AppOptions) {.async.} =
   if not options.disableWasmPlugins:
     try:
@@ -762,6 +773,8 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
         self.initializeCalled = true
       except CatchableError:
         log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
+
+  self.runConfigCommands("plugin-post-load-commands")
 
 proc setupDefaultKeybindings(self: App) =
   log lvlInfo, fmt"Applying default builtin keybindings"
@@ -1141,6 +1154,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   await self.loadOptionsFromAppDir()
   await self.loadOptionsFromHomeDir()
+
+  self.runConfigCommands("startup-commands")
 
   self.commandHistory = state.commandHistory
 
