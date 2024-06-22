@@ -50,6 +50,44 @@ method loadApplicationFile*(self: FileSystemDesktop, name: string): string =
     log lvlError, fmt"Failed to load application file {path}: {getCurrentExceptionMsg()}"
     return ""
 
+proc loadFileThread(args: tuple[path: string, data: ptr string]):
+    tuple[ok: bool] {.gcsafe.} =
+
+  try:
+    args.data[] = readFile(args.path)
+    result.ok = true
+  except:
+    result.ok = false
+
+method loadFileAsync*(self: FileSystemDesktop, path: string): Future[string] {.async.} =
+  log lvlInfo, fmt"loadFile '{path}'"
+  try:
+    var data = ""
+    let res = await spawnAsync(loadFileThread, (path, data.addr))
+    if not res.ok:
+      log lvlError, &"Failed to load file '{path}'"
+      return ""
+
+    return data.move
+  except:
+    log lvlError, fmt"Failed to load application file {path}: {getCurrentExceptionMsg()}"
+    return ""
+
+method loadApplicationFileAsync*(self: FileSystemDesktop, name: string): Future[string] {.async.} =
+  let path = self.getApplicationFilePath name
+  log lvlInfo, fmt"loadApplicationFile {name} -> {path}"
+  try:
+    var data = ""
+    let res = await spawnAsync(loadFileThread, (path, data.addr))
+    if not res.ok:
+      log lvlError, &"Failed to load file '{path}'"
+      return ""
+
+    return data.move
+  except:
+    log lvlError, fmt"Failed to load application file {path}: {getCurrentExceptionMsg()}"
+    return ""
+
 method saveApplicationFile*(self: FileSystemDesktop, name: string, content: string) =
   let path = self.getApplicationFilePath name
   log lvlInfo, fmt"saveApplicationFile {name} -> {path}"

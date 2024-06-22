@@ -7,13 +7,7 @@ import languages
 # Only when compiled to wasm.
 # Delete if you want
 proc loadDefaultOptions*() =
-  infof "Loading default options.nim"
-
-  setOption "editor.restore-open-workspaces", true
-  setOption "editor.restore-open-editors", true
-  setOption "editor.frame-time-smoothing", 0.8
-
-  setOption "editor.text.auto-start-language-server", true
+  infof "Loading default settings"
 
   info fmt"Backend: {getBackend()}"
   case getBackend()
@@ -77,7 +71,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   setLeaders @["<SPACE>", "<C-b>"]
 
   addCommand "editor", "<C-x><C-x>", "quit"
-  addCommand "editor", "<CAS-r>", "reload-config"
+  addCommand "editor", "<CAS-r>", "reload-plugin"
 
   addCommand "editor", "<LEADER><*-T>1", "load-theme", "synthwave-color-theme"
   addCommand "editor", "<LEADER><*-T>2", "load-theme", "tokyo-night-storm-color-theme"

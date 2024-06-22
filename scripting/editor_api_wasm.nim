@@ -899,11 +899,24 @@ proc setGithubAccessToken*(token: string) =
       argsJsonString.cstring)
 
 
-proc editor_reloadConfig_void_App_wasm(arg: cstring): cstring {.importc.}
-proc reloadConfig*() =
+proc editor_reloadConfig_void_App_bool_wasm(arg: cstring): cstring {.importc.}
+proc reloadConfig*(clearOptions: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      clearOptions
+    else:
+      clearOptions.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_reloadConfig_void_App_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_reloadPlugin_void_App_wasm(arg: cstring): cstring {.importc.}
+proc reloadPlugin*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_reloadConfig_void_App_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_reloadPlugin_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_reloadState_void_App_wasm(arg: cstring): cstring {.importc.}

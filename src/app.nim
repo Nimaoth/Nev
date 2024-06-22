@@ -258,6 +258,8 @@ proc getOrOpenDocument*(self: App, path: string, workspace = WorkspaceFolder.non
 proc tryCloseDocument*(self: App, document: Document, force: bool): bool
 proc closeUnusedDocuments*(self: App)
 proc tryOpenExisting*(self: App, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor]
+proc setOption*(self: App, option: string, value: JsonNode, override: bool = true)
+proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "")
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -775,7 +777,7 @@ proc setupDefaultKeybindings(self: App) =
   setOption[bool](self, "editor.text.cursor.wide.", false)
 
   editorConfig.addCommand("", "<C-x><C-x>", "quit")
-  editorConfig.addCommand("", "<CAS-r>", "reload-config")
+  editorConfig.addCommand("", "<CAS-r>", "reload-plugin")
   editorConfig.addCommand("", "<C-w><LEFT>", "prev-view")
   editorConfig.addCommand("", "<C-w><RIGHT>", "next-view")
   editorConfig.addCommand("", "<C-w><C-x>", "close-current-view true")
@@ -871,6 +873,103 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
     self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
+
+proc loadKeybindingsFromJson*(self: App, json: JsonNode) =
+  try:
+    for (scope, commands) in json.fields.pairs:
+      for (keys, command) in commands.fields.pairs:
+        if command.kind == JString:
+          let commandStr = command.getStr
+          let spaceIndex = commandStr.find(" ")
+
+          let (name, args) = if spaceIndex == -1:
+            (commandStr, "")
+          else:
+            (commandStr[0..<spaceIndex], commandStr[spaceIndex+1..^1])
+
+          self.addCommandScript(scope, "", keys, name, args)
+
+        elif command.kind == JObject:
+          let name = command["command"].getStr
+          let args = command["args"].elems.mapIt($it).join(" ")
+          self.addCommandScript(scope, "", keys, name, args)
+
+  except CatchableError:
+    when not defined(js):
+      log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
+
+proc loadOptionsFromAppDir*(self: App) {.async.} =
+  try:
+    log lvlInfo, &"Load settings from app:config/settings.json"
+    let settings = await fs.loadApplicationFileAsync("./config/settings.json")
+    if settings.len > 0:
+      let json = settings.parseJson()
+      self.setOption("", json, override=false)
+    else:
+      log lvlInfo, &"No settings.json in app dir"
+
+  except CatchableError:
+    log(lvlError, fmt"Failed to load settings from app:config/settings.json: {getCurrentExceptionMsg()}")
+
+  try:
+    log lvlInfo, &"Load keybindings from app:config/keybindings.json"
+    let keybindings = await fs.loadApplicationFileAsync("./config/keybindings.json")
+    if keybindings.len > 0:
+      let json = keybindings.parseJson()
+      self.loadKeybindingsFromJson(json)
+    else:
+      log lvlInfo, &"No keybindings.json in app dir"
+  except CatchableError:
+    log(lvlError, fmt"Failed to load keybindings from app:config/keybindings.json: {getCurrentExceptionMsg()}")
+
+proc loadOptionsFromHomeDir*(self: App) {.async.} =
+  when not defined(js):
+    let homeDir = getHomeDir().catch:
+      log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
+      return
+
+    if homeDir.len == 0:
+      log lvlInfo, &"Not loading settings from home dir"
+      return
+
+    try:
+      log lvlInfo, &"Load settings from ~/.absytree/settings.json"
+      let settings = await fs.loadFileAsync(homeDir // ".absytree/settings.json")
+      if settings.len > 0:
+        let json = settings.parseJson()
+        self.setOption("", json, override=false)
+    except CatchableError:
+      log(lvlError, fmt"Failed to load settings from ~/.absytree/settings.json: {getCurrentExceptionMsg()}")
+
+    try:
+      log lvlInfo, &"Load keybindings from ~/.absytree/keybindings.json"
+      let keybindings = await fs.loadFileAsync(homeDir // ".absytree/keybindings.json")
+      if keybindings.len > 0:
+        let json = keybindings.parseJson()
+        self.loadKeybindingsFromJson(json)
+    except CatchableError:
+      log(lvlError, fmt"Failed to load keybindings from ~/.absytree/keybindings.json: {getCurrentExceptionMsg()}")
+
+proc loadOptionsFromWorkspace*(self: App, w: WorkspaceFolder) {.async.} =
+  try:
+    log lvlInfo, &"Load settings from {w.name}:.absytree/settings.json"
+    let settings = await w.loadFile(".absytree/settings.json")
+    if settings.len > 0:
+      let json = settings.parseJson()
+      self.setOption("", json, override=false)
+
+  except CatchableError:
+    log(lvlError, fmt"Failed to load settings from workspace {w.name}: {getCurrentExceptionMsg()}")
+
+  try:
+    log lvlInfo, &"Load keybindings from {w.name}:.absytree/keybindings.json"
+    let keybindings = await w.loadFile(".absytree/keybindings.json")
+    if keybindings.len > 0:
+      let json = keybindings.parseJson()
+      self.loadKeybindingsFromJson(json)
+
+  except CatchableError:
+    log(lvlError, fmt"Failed to load keybindings from workspace {w.name}: {getCurrentExceptionMsg()}")
 
 proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
@@ -974,7 +1073,6 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
   discard self.commandLineTextEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
 
-
   var state = EditorState()
   if not options.dontRestoreConfig:
     if options.sessionOverride.getSome(session):
@@ -996,14 +1094,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
     else:
       log lvlInfo, &"Don't restore session file."
 
-  try:
-    if not options.dontRestoreOptions:
-      self.options = fs.loadApplicationFile("./config/options.json").parseJson
-      log(lvlInfo, fmt"Restoring options")
-
-  except CatchableError:
-    when not defined(js):
-      log(lvlError, fmt"Failed to load previous options from options file: {getCurrentExceptionMsg()}")
+  await self.loadOptionsFromAppDir()
+  await self.loadOptionsFromHomeDir()
 
   self.commandHistory = state.commandHistory
 
@@ -1398,6 +1490,8 @@ proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool =
   if gWorkspace.isNil:
     setGlobalWorkspace(workspaceFolder)
 
+  asyncCheck self.loadOptionsFromWorkspace(workspaceFolder)
+
   return true
 
 proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder] =
@@ -1465,11 +1559,22 @@ proc toggleFlag*(self: App, flag: string) {.expose("editor").} =
   self.setFlag(flag, newValue)
   self.platform.requestRender(true)
 
-proc extendJson*(a: var JsonNode, b: JsonNode) =
+proc extendJson*(a: var JsonNode, b: JsonNode, extend: bool) =
+  if not extend:
+    a = b
+    return
+
+  func parse(action: string): (string, bool) =
+    if action.startsWith("+"):
+      (action[1..^1], true)
+    else:
+      (action, false)
+
   if (a.kind, b.kind) == (JObject, JObject):
-    for (key, value) in b.fields.pairs:
+    for (action, value) in b.fields.pairs:
+      let (key, extend) = action.parse()
       if a.hasKey(key):
-        a.fields[key].extendJson(value)
+        a.fields[key].extendJson(value, extend)
       else:
         a[key] = value
 
@@ -1488,7 +1593,7 @@ proc setOption*(self: App, option: string, value: JsonNode, override: bool = tru
 
   if option == "":
     if not override:
-      self.options.extendJson(value)
+      self.options.extendJson(value, true)
     else:
       self.options = value
     return
@@ -1506,7 +1611,7 @@ proc setOption*(self: App, option: string, value: JsonNode, override: bool = tru
 
   let key = pathItems[^1]
   if not override and node.hasKey(key):
-    node.fields[key].extendJson(value)
+    node.fields[key].extendJson(value, true)
   else:
     node[key] = value
 
@@ -2823,7 +2928,7 @@ proc clearScriptActionsFor(self: App, scriptContext: ScriptContext) =
   for key in keysToRemove:
     self.scriptActions.del key
 
-proc reloadConfigAsync*(self: App) {.async.} =
+proc reloadPluginAsync*(self: App) {.async.} =
   if self.wasmScriptContext.isNotNil:
     log lvlInfo, "Reload wasm plugins"
     try:
@@ -2855,8 +2960,23 @@ proc reloadConfigAsync*(self: App) {.async.} =
     except CatchableError:
       log lvlError, &"Failed to reload nimscript config: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-proc reloadConfig*(self: App) {.expose("editor").} =
+proc reloadConfigAsync*(self: App) {.async.} =
+  await self.loadOptionsFromAppDir()
+  await self.loadOptionsFromHomeDir()
+
+  if self.workspace.folders.len > 0:
+    await self.loadOptionsFromWorkspace(self.workspace.folders[0])
+
+proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
+  ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
+  log lvlInfo, &"Reload config"
+  if clearOptions:
+    self.options = newJObject()
   asyncCheck self.reloadConfigAsync()
+
+proc reloadPlugin*(self: App) {.expose("editor").} =
+  log lvlInfo, &"Reload current plugin"
+  asyncCheck self.reloadPluginAsync()
 
 proc reloadState*(self: App) {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
