@@ -231,8 +231,6 @@ proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.a
 proc recordCommand*(self: App, command: string, args: string)
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
 proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentEditor]
-proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
-proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: string): EventResponse
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string)
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool
 proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode
@@ -276,8 +274,6 @@ implTrait AppInterface, App:
 
   openWorkspaceFile(Option[DocumentEditor], App, string, WorkspaceFolder)
   openFile(Option[DocumentEditor], App, string)
-  handleUnknownDocumentEditorAction(EventResponse, App, DocumentEditor, string, JsonNode)
-  handleUnknownPopupAction(EventResponse, App, Popup, string, string)
   handleModeChanged(void, App, DocumentEditor, string, string)
   invokeCallback(bool, App, string, JsonNode)
   invokeAnyCallback(JsonNode, App, string, JsonNode)
@@ -432,38 +428,6 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
     let (view_rect, remaining) = if i mod 2 == 0: rect.splitV(ratio.percent) else: rect.splitH(ratio.percent)
     rect = remaining
     result.add view_rect
-
-proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: string): EventResponse =
-  try:
-    var args = newJArray()
-    for a in newStringStream(arg).parseJsonFragments():
-      args.add a
-
-    withScriptContext self, self.scriptContext:
-      if self.scriptContext.handleUnknownPopupAction(popup, action, args):
-        return Handled
-    withScriptContext self, self.wasmScriptContext:
-      if self.wasmScriptContext.handleUnknownPopupAction(popup, action, args):
-        return Handled
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-
-  return Failed
-
-proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
-  try:
-    withScriptContext self, self.scriptContext:
-      if self.scriptContext.handleUnknownDocumentEditorAction(editor, action, args):
-        return Handled
-    withScriptContext self, self.wasmScriptContext:
-      if self.wasmScriptContext.handleUnknownDocumentEditorAction(editor, action, args):
-        return Handled
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-
-  return Failed
 
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
@@ -3667,22 +3631,6 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
 
   try:
     withScriptContext self, self.scriptContext:
-      if self.scriptContext.handleGlobalAction(action, args):
-        return true
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-
-  try:
-    withScriptContext self, self.wasmScriptContext:
-      if self.wasmScriptContext.handleGlobalAction(action, args):
-        return true
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-
-  try:
-    withScriptContext self, self.scriptContext:
       let res = self.scriptContext.handleScriptAction(action, args)
       if res.isNotNil:
         return true
@@ -3709,13 +3657,7 @@ template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
       addCallable(myImpl):
         proc postInitialize(): bool
       addCallable(myImpl):
-        proc handleGlobalAction(action: string, args: JsonNode): bool
-      addCallable(myImpl):
-        proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
-      addCallable(myImpl):
         proc handleEditorModeChanged(id: EditorId, oldMode: string, newMode: string)
-      addCallable(myImpl):
-        proc handleUnknownPopupAction(id: EditorId, action: string, args: JsonNode): bool
       addCallable(myImpl):
         proc handleCallback(id: int, args: JsonNode): bool
       addCallable(myImpl):

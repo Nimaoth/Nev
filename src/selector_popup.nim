@@ -172,14 +172,14 @@ proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
     self.handleCanceled()
   self.app.popPopup(self)
 
-proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
+proc prev*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
 
   assert self.finder.isNotNil
 
   if self.finder.filteredItems.getSome(list) and list.len > 0:
-    self.selected = (self.selected + list.len - 1) mod list.len
+    self.selected = (self.selected + max(0, list.len - count)) mod list.len
 
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
@@ -190,14 +190,14 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
 
   self.markDirty()
 
-proc next*(self: SelectorPopup) {.expose("popup.selector").} =
+proc next*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
 
   assert self.finder.isNotNil
 
   if self.finder.filteredItems.getSome(list) and list.len > 0:
-    self.selected = (self.selected + 1) mod list.len
+    self.selected = (self.selected + count) mod list.len
 
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
@@ -238,9 +238,6 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
       args.add a
     if self.customCommands[action](self, args):
       return Handled
-
-  if self.app.handleUnknownPopupAction(self, action, arg) == Handled:
-    return Handled
 
   var args = newJArray()
   args.add api.SelectorPopup(id: self.id).toJson

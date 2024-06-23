@@ -152,8 +152,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "popup.selector", "<C-p>", "prev"
   addCommand "popup.selector", "<DOWN>", "next"
   addCommand "popup.selector", "<C-n>", "next"
-  addCommand "popup.selector", "<C-u>", "prev-x"
-  addCommand "popup.selector", "<C-d>", "next-x"
+  addCommand "popup.selector", "<C-u>", "prev", 5
+  addCommand "popup.selector", "<C-d>", "next", 5
   addCommand "popup.selector", "<TAB>", "toggle-focus-preview"
   addCommand "popup.selector.preview", "<TAB>", "toggle-focus-preview"
   addCommandBlock "popup.selector", "<C-l>":

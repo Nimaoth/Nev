@@ -2989,16 +2989,6 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   var args = args.copy
   args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
 
-  if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
-    dec self.commandCount
-    while self.commandCount > 0:
-      if self.app.handleUnknownDocumentEditorAction(self, action, args) != Handled:
-        break
-      dec self.commandCount
-    self.commandCount = self.commandCountRestore
-    self.commandCountRestore = 0
-    return Handled
-
   if self.app.invokeAnyCallback(action, args).isNotNil:
     dec self.commandCount
     while self.commandCount > 0:

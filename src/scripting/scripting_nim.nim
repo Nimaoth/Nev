@@ -309,17 +309,8 @@ macro invoke*(self: ScriptContext; pName: untyped;
 
     call
 
-method handleUnknownPopupAction*(self: ScriptContextNim, popup: Popup, action: string, arg: JsonNode): bool =
-  return self.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool)
-
-method handleUnknownDocumentEditorAction*(self: ScriptContextNim, editor: DocumentEditor, action: string, arg: JsonNode): bool =
-  return self.invoke(handleEditorAction, editor.id, action, arg, returnType = bool)
-
 method handleEditorModeChanged*(self: ScriptContextNim, editor: DocumentEditor, oldMode: string, newMode: string) =
   self.invoke(handleEditorModeChanged, editor.id, oldMode, newMode, returnType = void)
-
-method handleGlobalAction*(self: ScriptContextNim, action: string, arg: JsonNode): bool =
-  return self.invoke(handleGlobalAction, action, arg, returnType = bool)
 
 method postInitialize*(self: ScriptContextNim): bool =
   return self.invoke(postInitialize, returnType = bool)

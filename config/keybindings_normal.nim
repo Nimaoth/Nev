@@ -83,7 +83,7 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
   addTextCommand "", "miw", "select-inside-current"
 
   addTextCommandBlock "", "<C-f>":
-    commandLine("set-search-query \\")
+    commandLine(".set-search-query \\")
     if getActiveEditor().isTextEditor(editor):
       var arr = newJArray()
       arr.add newJString("file")

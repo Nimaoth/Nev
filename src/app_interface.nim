@@ -15,8 +15,6 @@ traitRef AppInterface:
   method recordCommand*(self: AppInterface, command: string, args: string)
   method openWorkspaceFile*(self: AppInterface, path: string, workspace: WorkspaceFolder): Option[DocumentEditor]
   method openFile*(self: AppInterface, path: string): Option[DocumentEditor]
-  method handleUnknownDocumentEditorAction*(self: AppInterface, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
-  method handleUnknownPopupAction*(self: AppInterface, popup: Popup, action: string, args: string): EventResponse
   method handleModeChanged*(self: AppInterface, editor: DocumentEditor, oldMode: string, newMode: string)
   method invokeCallback*(self: AppInterface, context: string, args: JsonNode): bool
   method invokeAnyCallback*(self: AppInterface, context: string, args: JsonNode): JsonNode
