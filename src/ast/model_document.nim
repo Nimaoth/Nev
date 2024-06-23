@@ -3674,10 +3674,6 @@ method handleAction*(self: ModelDocumentEditor, action: string, arg: string, rec
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
-      self.markDirty()
-      return Handled
-
     if dispatch(action, args).isSome:
       self.markDirty()
       return Handled

@@ -1005,7 +1005,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.updateTargetColumn()
 
   addTextCommandBlock "", "/":
-    commandLine(r"set-search-query \")
+    commandLine(r".set-search-query \")
     if getActiveEditor().isTextEditor(editor):
       var arr = newJArray()
       arr.add newJString("file")

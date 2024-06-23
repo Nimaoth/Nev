@@ -15,9 +15,6 @@ logCategory "scripting-wasm"
 type ScriptContextWasm* = ref object of ScriptContext
   modules: seq[WasmModule]
 
-  unknownPopupActions: seq[tuple[module: WasmModule, callback: proc(popup: int32, action: cstring, arg: cstring): bool]]
-  unknownEditorActions: seq[tuple[module: WasmModule, callback: proc(editor: int32, action: cstring, arg: cstring): bool]]
-  unknownGlobalActions: seq[tuple[module: WasmModule, callback: proc(action: cstring, arg: cstring): bool]]
   editorModeChangedCallbacks: seq[tuple[module: WasmModule, callback: proc(editor: int32, oldMode: cstring, newMode: cstring): void]]
   postInitializeCallbacks: seq[tuple[module: WasmModule, callback: proc(): bool]]
   handleCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): bool]]
@@ -44,15 +41,6 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
       let module = await newWasmModule(file, @[editorImports])
       if module.getSome(module):
         log(lvlInfo, fmt"Loaded wasm module '{file}'")
-
-        if findFunction(module, "handleUnknownPopupActionWasm", bool, proc(popup: int32, action: cstring, arg: cstring): bool).getSome(f):
-          self.unknownPopupActions.add (module, f)
-
-        if findFunction(module, "handleUnknownDocumentEditorActionWasm", bool, proc(editor: int32, action: cstring, arg: cstring): bool).getSome(f):
-          self.unknownEditorActions.add (module, f)
-
-        if findFunction(module, "handleGlobalActionWasm", bool, proc(action: cstring, arg: cstring): bool).getSome(f):
-          self.unknownGlobalActions.add (module, f)
 
         if findFunction(module, "handleEditorModeChangedWasm", void, proc(editor: int32, oldMode: cstring, newMode: cstring): void).getSome(f):
           self.editorModeChangedCallbacks.add (module, f)
@@ -88,9 +76,6 @@ method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
 method deinit*(self: ScriptContextWasm) = discard
 
 method reload*(self: ScriptContextWasm): Future[void] {.async.} =
-  self.unknownPopupActions.setLen 0
-  self.unknownEditorActions.setLen 0
-  self.unknownGlobalActions.setLen 0
   self.editorModeChangedCallbacks.setLen 0
   self.postInitializeCallbacks.setLen 0
   self.handleCallbackCallbacks.setLen 0
@@ -100,30 +85,6 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
   self.modules.setLen 0
 
   await self.loadModules("./config/wasm")
-
-method handleUnknownPopupAction*(self: ScriptContextWasm, popup: Popup, action: string, arg: JsonNode): bool =
-  result = false
-
-  let argStr = $arg
-  for (m, f) in self.unknownPopupActions:
-    if f(popup.id.int32, action.cstring, argStr.cstring):
-      return true
-
-method handleUnknownDocumentEditorAction*(self: ScriptContextWasm, editor: DocumentEditor, action: string, arg: JsonNode): bool =
-  result = false
-
-  let argStr = $arg
-  for (m, f) in self.unknownEditorActions:
-    if f(editor.id.int32, action.cstring, argStr.cstring):
-      return true
-
-method handleGlobalAction*(self: ScriptContextWasm, action: string, arg: JsonNode): bool =
-  result = false
-
-  let argStr = $arg
-  for (m, f) in self.unknownGlobalActions:
-    if f(action.cstring, argStr.cstring):
-      return true
 
 method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
   for (m, f) in self.editorModeChangedCallbacks:

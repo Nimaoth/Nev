@@ -9,9 +9,6 @@ method init*(self: ScriptContext, path: string): Future[void] {.base.} = discard
 method deinit*(self: ScriptContext) {.base.} = discard
 method reload*(self: ScriptContext): Future[void] {.base.} = discard
 
-method handleUnknownPopupAction*(self: ScriptContext, popup: Popup, action: string, arg: JsonNode): bool {.base.} = discard
-method handleUnknownDocumentEditorAction*(self: ScriptContext, editor: DocumentEditor, action: string, arg: JsonNode): bool {.base.} = discard
-method handleGlobalAction*(self: ScriptContext, action: string, arg: JsonNode): bool {.base.} = discard
 method handleEditorModeChanged*(self: ScriptContext, editor: DocumentEditor, oldMode: string, newMode: string) {.base.} = discard
 method postInitialize*(self: ScriptContext): bool {.base.} = discard
 method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base.} = discard

@@ -47,31 +47,41 @@ proc cancel*(self: SelectorPopup) =
       argsJsonString.cstring)
 
 
-proc popup_selector_prev_void_SelectorPopup_wasm(arg: cstring): cstring {.
+proc popup_selector_prev_void_SelectorPopup_int_wasm(arg: cstring): cstring {.
     importc.}
-proc prev*(self: SelectorPopup) =
+proc prev*(self: SelectorPopup; count: int = 1) =
   var argsJson = newJArray()
   argsJson.add block:
     when SelectorPopup is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      count
+    else:
+      count.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = popup_selector_prev_void_SelectorPopup_wasm(
+  let res {.used.} = popup_selector_prev_void_SelectorPopup_int_wasm(
       argsJsonString.cstring)
 
 
-proc popup_selector_next_void_SelectorPopup_wasm(arg: cstring): cstring {.
+proc popup_selector_next_void_SelectorPopup_int_wasm(arg: cstring): cstring {.
     importc.}
-proc next*(self: SelectorPopup) =
+proc next*(self: SelectorPopup; count: int = 1) =
   var argsJson = newJArray()
   argsJson.add block:
     when SelectorPopup is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      count
+    else:
+      count.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = popup_selector_next_void_SelectorPopup_wasm(
+  let res {.used.} = popup_selector_next_void_SelectorPopup_int_wasm(
       argsJsonString.cstring)
 
 
