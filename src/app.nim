@@ -172,6 +172,7 @@ type
 
     onEditorRegistered*: Event[DocumentEditor]
     onEditorDeregistered*: Event[DocumentEditor]
+    onConfigChanged*: Event[void]
 
     logDocument: Document
 
@@ -223,6 +224,8 @@ implTrait ConfigProvider, App:
     if node.isNil or node.kind != JObject:
       return
     node[pathItems[^1]] = value
+
+  proc onConfigChanged*(self: App): var Event[void] = self.onConfigChanged
 
 proc handleLog(self: App, level: Level, args: openArray[string])
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
@@ -308,7 +311,7 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
 proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
-proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool
+proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): Future[bool]
 proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder]
 proc setLayout*(self: App, layout: string)
 
@@ -508,6 +511,7 @@ proc setOption*[T](editor: App, path: string, value: T) =
   else:
     {.fatal: ("Can't set option with type " & $T).}
 
+  editor.onConfigChanged.invoke()
   editor.platform.requestRender(true)
 
 proc setFlag*(self: App, flag: string, value: bool)
@@ -1144,7 +1148,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
       folder.id = wf.id.parseId
       folder.name = wf.name
-      if self.addWorkspaceFolder(folder):
+      if self.addWorkspaceFolder(folder).await:
         when not defined(js):
           log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
 
@@ -1152,7 +1156,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   if self.workspace.folders.len == 0:
     when not defined(js):
       log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
-      discard self.addWorkspaceFolder newWorkspaceFolderLocal(".")
+      discard await self.addWorkspaceFolder newWorkspaceFolderLocal(".")
 
   when enableAst:
     if state.astProjectWorkspaceId != "":
@@ -1500,7 +1504,7 @@ proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("ed
 proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setConsumeAllInput(value)
 
-proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool =
+proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): Future[bool] {.async.} =
   for wf in self.workspace.folders:
     if wf.openWorkspaceKind == workspaceFolder.openWorkspaceKind and wf.settings == workspaceFolder.settings:
       return false
@@ -1512,7 +1516,7 @@ proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool =
   if gWorkspace.isNil:
     setGlobalWorkspace(workspaceFolder)
 
-  asyncCheck self.loadOptionsFromWorkspace(workspaceFolder)
+  await self.loadOptionsFromWorkspace(workspaceFolder)
 
   return true
 
@@ -1527,10 +1531,10 @@ proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
     wf.clearDirectoryCache()
 
 proc openGithubWorkspace*(self: App, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
-  discard self.addWorkspaceFolder newWorkspaceFolderGithub(user, repository, branchOrHash)
+  asyncCheck self.addWorkspaceFolder newWorkspaceFolderGithub(user, repository, branchOrHash)
 
 proc openAbsytreeServerWorkspace*(self: App, url: string) {.expose("editor").} =
-  discard self.addWorkspaceFolder newWorkspaceFolderAbsytreeServer(url)
+  asyncCheck self.addWorkspaceFolder newWorkspaceFolderAbsytreeServer(url)
 
 proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.expose("editor").} =
   if not self.scriptActions.contains(context):
@@ -1567,7 +1571,7 @@ proc addScriptAction*(self: App, name: string, docs: string = "", params: seq[tu
 when not defined(js):
   proc openLocalWorkspace*(self: App, path: string) {.expose("editor").} =
     let path = if path.isAbsolute: path else: path.absolutePath
-    discard self.addWorkspaceFolder newWorkspaceFolderLocal(path)
+    asyncCheck self.addWorkspaceFolder newWorkspaceFolderLocal(path)
 
 proc getFlag*(self: App, flag: string, default: bool = false): bool {.expose("editor").} =
   return getOption[bool](self, flag, default)
@@ -1618,6 +1622,7 @@ proc setOption*(self: App, option: string, value: JsonNode, override: bool = tru
       self.options.extendJson(value, true)
     else:
       self.options = value
+    self.onConfigChanged.invoke()
     return
 
   let pathItems = option.split(".")
@@ -1636,6 +1641,8 @@ proc setOption*(self: App, option: string, value: JsonNode, override: bool = tru
     node.fields[key].extendJson(value, true)
   else:
     node[key] = value
+
+  self.onConfigChanged.invoke()
 
 proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
@@ -3408,6 +3415,7 @@ template createScriptSetOption(path, value: untyped): untyped =
     if node.isNil or node.kind != JObject:
       return
     node[pathItems[^1]] = value
+    gEditor.onConfigChanged.invoke()
 
 proc scriptGetOptionInt*(path: string, default: int): int {.expose("editor").} =
   result = createScriptGetOption(path, default, getInt)
