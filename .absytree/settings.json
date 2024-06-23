@@ -174,5 +174,9 @@
             },
             "lldb-dap2": {}
         }
-    }
+    },
+    "+plugin-post-load-commands": [
+        "load-vscode-snippets \".vscode/nim-snippets.code-snippets\" \"nim\"",
+        "load-vscode-debugger-config \".vscode/launch.json\""
+    ]
 }

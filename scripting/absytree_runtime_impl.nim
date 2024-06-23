@@ -11,11 +11,14 @@ proc handleEditorModeChanged*(editor: EditorId, oldMode: string, newMode: string
 
 when defined(wasm):
   proc postInitializeWasm(): bool {.wasmexport.} =
-    try:
-      return postInitialize()
-    except:
-      info &"postInitializeWasm failed: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-      return false
+    when compiles(postInitialize()):
+      try:
+        return postInitialize()
+      except:
+        info &"postInitializeWasm failed: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+        return false
+    else:
+      true
 
   proc handleEditorModeChangedWasm(id: int32, oldMode: cstring, newMode: cstring) {.wasmexport.} =
     # infof"handleEditorModeChangedWasm {id} {oldMode} {newMode}"

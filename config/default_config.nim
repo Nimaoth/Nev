@@ -2,8 +2,6 @@ import absytree_runtime
 import std/[json]
 import misc/[timer]
 
-import languages
-
 proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default-keybindings").} =
   let t = startTimer()
   defer:

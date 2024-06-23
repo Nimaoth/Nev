@@ -1,9 +1,10 @@
 import std/[json, options]
-import misc/[traits, util]
+import misc/[traits, util, event]
 
 traitRef ConfigProvider:
   method getConfigValue(self: ConfigProvider, path: string): Option[JsonNode]
   method setConfigValue(self: ConfigProvider, path: string, value: JsonNode)
+  method onConfigChanged*(self: ConfigProvider): var Event[void]
 
 proc getValue*[T](self: ConfigProvider, path: string, default: T = T.default): T =
   template createScriptGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =

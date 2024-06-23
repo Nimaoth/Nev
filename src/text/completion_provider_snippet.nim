@@ -12,9 +12,16 @@ type
     textInsertedHandle: Id
     textDeletedHandle: Id
     unfilteredCompletions: seq[CompletionItem]
+    didCacheCompletionItems: bool = false
     configProvider: ConfigProvider
+    onConfigChangedHandle: Id
 
-proc addSnippetCompletions(self: CompletionProviderSnippet) =
+proc invalidateCompletionItemCache(self: CompletionProviderSnippet) =
+  self.unfilteredCompletions.setLen 0
+  self.didCacheCompletionItems = false
+
+proc cacheCompletionItems(self: CompletionProviderSnippet) =
+  self.didCacheCompletionItems = true
   try:
     let snippets = self.configProvider.getValue("editor.text.snippets." & self.document.languageId, newJObject())
     for (name, definition) in snippets.fields.pairs:
@@ -38,10 +45,16 @@ proc refilterCompletions(self: CompletionProviderSnippet) =
   # debugf"[Snip.refilterCompletions] {self.location}: '{self.currentFilterText}'"
   let timer = startTimer()
 
+  if not self.didCacheCompletionItems:
+    self.cacheCompletionItems()
+
+  # todo: make this configurable
+  let config = defaultCompletionMatchingConfig
+
   self.filteredCompletions.setLen 0
   for item in self.unfilteredCompletions:
     let text = item.filterText.get(item.label)
-    let score = matchFuzzySublime(self.currentFilterText, text, defaultCompletionMatchingConfig).score.float
+    let score = matchFuzzySublime(self.currentFilterText, text, config).score.float
 
     if score < 0:
       continue
@@ -60,7 +73,8 @@ proc updateFilterText(self: CompletionProviderSnippet) =
   let selection = self.document.getCompletionSelectionAt(self.location)
   self.currentFilterText = self.document.contentString(selection)
 
-proc handleTextInserted(self: CompletionProviderSnippet, document: TextDocument, location: Selection, text: string) =
+proc handleTextInserted(self: CompletionProviderSnippet, document: TextDocument, location: Selection,
+    text: string) =
   self.location = location.getChangedSelection(text).last
   self.updateFilterText()
   self.refilterCompletions()
@@ -74,9 +88,15 @@ method forceUpdateCompletions*(provider: CompletionProviderSnippet) =
   provider.updateFilterText()
   provider.refilterCompletions()
 
-proc newCompletionProviderSnippet*(configProvider: ConfigProvider, document: TextDocument): CompletionProviderSnippet =
+proc newCompletionProviderSnippet*(configProvider: ConfigProvider, document: TextDocument):
+    CompletionProviderSnippet =
+
   let self = CompletionProviderSnippet(configProvider: configProvider, document: document)
-  self.addSnippetCompletions()
+
+  # todo: unsubscribe
+  self.onConfigChangedHandle = configProvider.onConfigChanged.subscribe proc() =
+    self.invalidateCompletionItemCache()
+
   self.textInsertedHandle = self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
   self.textDeletedHandle = self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
   self

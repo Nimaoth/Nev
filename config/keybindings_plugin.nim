@@ -11,7 +11,6 @@ import keybindings_vim
 import keybindings_vim_like
 import keybindings_helix
 import keybindings_normal
-import languages
 
 if getBackend() == Terminal:
   # Disable animations in terminal because they don't look great

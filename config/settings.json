@@ -234,8 +234,6 @@
     "load-theme \"tokyo-night-color-theme\"",
     "load-default-keybindings true",
     "load-model-keybindings",
-    "load-vim-keybindings",
-    "load-snippets-from-file \".vscode/nim-snippets.code-snippets\" \"nim\"",
-    "load-vscode-debugger-config \".vscode/launch.json\""
+    "load-vim-keybindings"
   ]
 }
