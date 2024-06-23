@@ -10,13 +10,13 @@ Configuration is split up into two main parts:
 The json config files contain simple values like `ui.background.transparent` as well as more complex things
 like debugger launch configurations and LSP settings.
 
-Settings can be specified in multiple places. The final settings are computed by loading the following files
+Settings and basic keybindings can be specified in multiple places. The final settings are computed by loading the following files
 in order:
 
 - `{app_dir}/config/settings.json` and `{app_dir}/config/keybindings.json`, where `{app_dir}` is the directory
   where the editor is installed.
 - `~/.absytree/settings.json` and `~/.absytree/keybindings.json`, where `~` is the users home directory.
-- `{workspace_dir}/config/settings.json` and `{workspace_dir}/config/keybindings.json`, where `{workspace_dir}`
+- `{workspace_dir}/.absytree/settings.json` and `{workspace_dir}/.absytree/keybindings.json`, where `{workspace_dir}`
   is the primary directory of the workspace.
 
 Additionally to the `settings.json` and `keybindings.json` files, the editor also tries to load the following files from each of the directories:
@@ -32,6 +32,9 @@ These additional settings files are useful for having different cofiguration on 
 
 As these config files just specify plain values and can't contain any logic, more complex configuration has
 to be done using WASM or Nimscript plugins.
+
+The `keybindings*.json` files can only bind existing commands (builtin or from plugins).
+To create new commands plugins have to be used.
 
 ### How to override/extend configuration
 
