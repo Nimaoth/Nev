@@ -4,6 +4,13 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc editor_splitView_void_App_wasm(arg: cstring): cstring {.importc.}
+proc splitView*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_splitView_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_showDebuggerView_void_App_wasm(arg: cstring): cstring {.importc.}
 proc showDebuggerView*() =
   var argsJson = newJArray()
@@ -775,6 +782,13 @@ proc createFile*(path: string) =
       argsJsonString.cstring)
 
 
+proc editor_browseKeybinds_void_App_wasm(arg: cstring): cstring {.importc.}
+proc browseKeybinds*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_browseKeybinds_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_chooseFile_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc chooseFile*(view: string = "new") =
   var argsJson = newJArray()
@@ -1129,10 +1143,11 @@ proc addLeader*(leader: string) =
       argsJsonString.cstring)
 
 
-proc editor_addCommandScript_void_App_string_string_string_string_string_wasm(
+proc editor_addCommandScript_void_App_string_string_string_string_string_string_wasm(
     arg: cstring): cstring {.importc.}
 proc addCommandScript*(context: string; subContext: string; keys: string;
-                       action: string; arg: string = "") =
+                       action: string; arg: string = "";
+                       description: string = "") =
   var argsJson = newJArray()
   argsJson.add block:
     when string is JsonNode:
@@ -1159,8 +1174,13 @@ proc addCommandScript*(context: string; subContext: string; keys: string;
       arg
     else:
       arg.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      description
+    else:
+      description.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_addCommandScript_void_App_string_string_string_string_string_wasm(
+  let res {.used.} = editor_addCommandScript_void_App_string_string_string_string_string_string_wasm(
       argsJsonString.cstring)
 
 

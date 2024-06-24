@@ -226,12 +226,27 @@ proc addCommand*(context: string, keys: string, action: proc(): void) =
   # addCommandScript(context, "", keysPrefix & keys, "lambda-action", key.toJsonString)
   addCommandScript(context, "", keysPrefix & keys, key, "")
 
+proc addCommandDesc*(context: string, keys: string, desc: string, action: proc(): void) =
+  let key = "$" & context & keys
+  scriptActions[key] = proc(args: JsonNode): JsonNode =
+    action()
+    return newJNull()
+
+  addCommandScript(context, "", keysPrefix & keys, key, "", desc)
+
 proc addCommand*[T: proc](context: string, keys: string, args: string, action: T) =
   let key = "$" & context & keys
   scriptActions[key] = proc(args: JsonNode): JsonNode =
     return callJson(action, args)
 
   addCommandScript(context, "", keysPrefix & keys, key, args)
+
+proc addCommandDesc*[T: proc](context: string, keys: string, args: string, desc: string, action: T) =
+  let key = "$" & context & keys
+  scriptActions[key] = proc(args: JsonNode): JsonNode =
+    return callJson(action, args)
+
+  addCommandScript(context, "", keysPrefix & keys, key, args, desc)
 
 template addCommandBlock*(context: string, keys: string, body: untyped): untyped =
   addCommand context, keys, proc() =
@@ -269,6 +284,16 @@ macro addEditorCommand*(mode: string, keys: string, action: string, args: vararg
 # Text commands
 template addTextCommandBlock*(mode: string, keys: string, body: untyped): untyped =
   addCommand getContextWithMode("editor.text", mode), keys, proc() =
+    try:
+      let editor {.inject, used.} = TextDocumentEditor(id: getActiveEditor())
+      body
+    except:
+      let m {.inject.} = mode
+      let k {.inject.} = keys
+      infof"TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+
+template addTextCommandBlockDesc*(mode: string, keys: string, desc: string, body: untyped): untyped =
+  addCommandDesc getContextWithMode("editor.text", mode), keys, desc, proc() =
     try:
       let editor {.inject, used.} = TextDocumentEditor(id: getActiveEditor())
       body
