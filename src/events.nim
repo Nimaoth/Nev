@@ -301,3 +301,6 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
     result = Failed
   else:
     result = Ignored
+
+proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[string, string]] =
+  config.commands

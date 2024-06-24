@@ -955,7 +955,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   const numLinesToShow = 25
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
 
-  const docsWidth = 50.0
+  const docsWidth = 75.0
   const maxLabelLen = 30
   const maxTypeLen = 30
   updateBaseIndexAndScrollOffset(bottom - top, self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.len, totalLineHeight, self.scrollToCompletion)

@@ -3,17 +3,19 @@ import misc/[custom_logger, custom_async, util, response]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import platform/filesystem
-import dispatch_tables, app_interface, document_editor
+import dispatch_tables, app_interface, document_editor, command_info
 
 logCategory "language_server_absytree_commands"
 
 type LanguageServerAbsytreeCommands* = ref object of LanguageServer
   app: AppInterface
   files: Table[string, string]
+  commandInfos: CommandInfos
 
-proc newLanguageServerAbsytreeCommands*(app: AppInterface): LanguageServer =
+proc newLanguageServerAbsytreeCommands*(app: AppInterface, commandInfos: CommandInfos): LanguageServer =
   var server = new LanguageServerAbsytreeCommands
   server.app = app
+  server.commandInfos = commandInfos
   return server
 
 method getDefinition*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor):
@@ -29,7 +31,8 @@ method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string,
 
   var useActive = false
   if self.files.contains(filename):
-    if self.files[filename].startsWith("."):
+    let commandName = self.files[filename]
+    if commandName.startsWith("."):
       useActive = true
 
   var completions: seq[CompletionItem]
@@ -40,22 +43,43 @@ method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string,
         continue
 
       for value in table.functions.values:
+
+        var docs = ""
+        if self.commandInfos.getInfos(value.name).getSome(infos):
+          for i, info in infos:
+            if i > 0:
+              docs.add "\n"
+            docs.add &"[{info.context}] {info.keys} -> {info.command}"
+          docs.add "\n\n"
+
+        docs.add value.docs
+
         completions.add CompletionItem(
           label: value.name,
           # scope: table.scope,
           kind: CompletionKind.Function,
           detail: value.signature.some,
-          documentation: CompletionItemDocumentationVariant.init(value.docs).some,
+          documentation: CompletionItemDocumentationVariant.init(docs).some,
         )
   else:
     for table in globalDispatchTables.mitems:
       for value in table.functions.values:
+        var docs = ""
+        if self.commandInfos.getInfos(value.name).getSome(infos):
+          for i, info in infos:
+            if i > 0:
+              docs.add "\n"
+            docs.add &"[{info.context}] {info.keys} -> {info.command}"
+          docs.add "\n\n"
+
+        docs.add value.docs
+
         completions.add CompletionItem(
           label: value.name,
           # scope: table.scope,
           kind: CompletionKind.Function,
           detail: value.signature.some,
-          documentation: CompletionItemDocumentationVariant.init(value.docs).some,
+          documentation: CompletionItemDocumentationVariant.init(docs).some,
         )
 
   return CompletionList(items: completions).success

@@ -7,7 +7,7 @@ import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, command_info
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config
@@ -136,6 +136,7 @@ type
     bIsReplayingCommands: bool = false
 
     eventHandlerConfigs: Table[string, EventHandlerConfig]
+    commandInfos*: CommandInfos
 
     options: JsonNode
     callbacks: Table[string, int]
@@ -1040,6 +1041,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
   self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
 
+  self.commandInfos = CommandInfos()
+
   self.editorDefaults.add TextDocumentEditor()
   when enableAst:
     self.editorDefaults.add ModelDocumentEditor()
@@ -1088,7 +1091,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.commandLineMode = false
 
-  self.absytreeCommandsServer = newLanguageServerAbsytreeCommands(self.asAppInterface)
+  self.absytreeCommandsServer = newLanguageServerAbsytreeCommands(self.asAppInterface, self.commandInfos)
   let commandLineTextDocument = newTextDocument(self.asConfigProvider, language="absytree-commands".some, languageServer=self.absytreeCommandsServer.some)
   self.documents.add commandLineTextDocument
   self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.asConfigProvider)
@@ -1551,7 +1554,11 @@ proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.e
     log(lvlError, getCurrentException().getStackTrace())
     return nil
 
-proc addScriptAction*(self: App, name: string, docs: string = "", params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "") {.expose("editor").} =
+proc addScriptAction*(self: App, name: string, docs: string = "",
+    params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "", active: bool = false,
+    context: string = "script")
+    {.expose("editor").} =
+
   if self.scriptActions.contains(name):
     log lvlError, fmt"Duplicate script action {name}"
     return
@@ -1566,7 +1573,16 @@ proc addScriptAction*(self: App, name: string, docs: string = "", params: seq[tu
     return self.callScriptAction(name, arg)
 
   let signature = "(" & params.mapIt(it[0] & ": " & it[1]).join(", ") & ")" & returnType
-  extendGlobalDispatchTable "script", ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
+  if active:
+    extendActiveDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
+  else:
+    extendGlobalDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
+
+proc invalidateCommandToKeysMap*(self: App) =
+  self.commandInfos.invalidate()
+
+proc rebuildCommandToKeysMap*(self: App) =
+  self.commandInfos.rebuild(self.eventHandlerConfigs)
 
 when not defined(js):
   proc openLocalWorkspace*(self: App, path: string) {.expose("editor").} =
@@ -1921,6 +1937,7 @@ proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.currentHistoryEntry = 0
   self.commandLineMode = true
   self.commandLineTextEditor.TextDocumentEditor.setMode("insert")
+  self.rebuildCommandToKeysMap()
   self.platform.requestRender()
 
 proc exitCommandLine*(self: App) {.expose("editor").} =
@@ -3042,6 +3059,7 @@ proc logOptions*(self: App) {.expose("editor").} =
 proc clearCommands*(self: App, context: string) {.expose("editor").} =
   log(lvlInfo, fmt"Clearing keybindings for {context}")
   self.getEventHandlerConfig(context).clearCommands()
+  self.invalidateCommandToKeysMap()
 
 proc getAllEditors*(self: App): seq[EditorId] {.expose("editor").} =
   for id in self.editors.keys:
@@ -3198,10 +3216,12 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
     (context, subContext)
 
   self.getEventHandlerConfig(context).addCommand(subContext, keys, command)
+  self.invalidateCommandToKeysMap()
 
 proc removeCommand*(self: App, context: string, keys: string) {.expose("editor").} =
   # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   self.getEventHandlerConfig(context).removeCommand(keys)
+  self.invalidateCommandToKeysMap()
 
 proc getActivePopup*(): EditorId {.expose("editor").} =
   if gEditor.isNil:

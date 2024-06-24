@@ -240,11 +240,12 @@ proc callScriptAction*(context: string; args: JsonNode): JsonNode =
   result = parseJson($res).jsonTo(typeof(result))
 
 
-proc editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_wasm(
+proc editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_bool_string_wasm(
     arg: cstring): cstring {.importc.}
 proc addScriptAction*(name: string; docs: string = "";
                       params: seq[tuple[name: string, typ: string]] = @[];
-                      returnType: string = "") =
+                      returnType: string = ""; active: bool = false;
+                      context: string = "script") =
   var argsJson = newJArray()
   argsJson.add block:
     when string is JsonNode:
@@ -266,8 +267,18 @@ proc addScriptAction*(name: string; docs: string = "";
       returnType
     else:
       returnType.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      active
+    else:
+      active.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      context
+    else:
+      context.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_wasm(
+  let res {.used.} = editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_bool_string_wasm(
       argsJsonString.cstring)
 
 
