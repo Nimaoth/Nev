@@ -840,16 +840,16 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   # Normal mode
   addCommand "editor", ":", "command-line"
 
-  addTextCommandBlock "", "<C-e>":
+  addTextCommandBlockDesc "", "<C-e>", "exit to normal mode":
     editor.selection = editor.selection
     editor.setMode("normal")
-  addTextCommandBlock "", "<ESCAPE>":
+  addTextCommandBlockDesc "", "<ESCAPE>", "exit to normal mode and clear things":
     if editor.mode == "normal":
       editor.selection = editor.selection
     editor.clearTabStops()
     editor.setMode("normal")
 
-  addTextCommandBlock "", ".": replayCommands(".")
+  addTextCommandBlockDesc "", ".", "replay commands": replayCommands(".")
   addCommand "editor.text.normal", "@<CHAR>", "<CHAR>", proc(editor: TextDocumentEditor, c: string) =
     let register = if c == "@":
       getOption("editor.current-macro-register", "")
@@ -865,7 +865,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     setRegisterText("", c)
     startRecordingCommands(c)
 
-  addTextCommandBlock "", "Q":
+  addTextCommandBlockDesc "", "Q", "stop recording macro":
     if isReplayingCommands() or not isRecordingCommands(getCurrentMacroRegister()):
       return
     stopRecordingCommands(getCurrentMacroRegister())
@@ -991,22 +991,22 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addSubCommandWithCount "", "move", "j", "vim-move-cursor-line", 1
 
   # search
-  addTextCommandBlock "", "*":
+  addTextCommandBlockDesc "", "*", "set search query to word":
     editor.selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b").first.toSelection
-  addTextCommandBlock "visual", "*":
+  addTextCommandBlockDesc "visual", "*", "set search query to selection":
     editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
     editor.selection = editor.selection.first.toSelection
     editor.setMode("normal")
-  addTextCommandBlock "", "n":
+  addTextCommandBlockDesc "", "n", "go to next search result":
     editor.selection = editor.getNextFindResult(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
-  addTextCommandBlock "", "N":
+  addTextCommandBlockDesc "", "N", "go to previous search result":
     editor.selection = editor.getPrevFindResult(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
 
-  addTextCommandBlock "", "/":
+  addTextCommandBlockDesc "", "/", "open search bar":
     commandLine(r".set-search-query \")
     if getActiveEditor().isTextEditor(editor):
       var arr = newJArray()
@@ -1015,7 +1015,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.setMode("insert")
       editor.updateTargetColumn()
 
-  addTextCommandBlock "", r"\\":
+  addTextCommandBlockDesc "", r"\\", "open global search bar":
     commandLine(r"search-global \")
     if getActiveEditor().isTextEditor(editor):
       var arr = newJArray()
@@ -1033,40 +1033,40 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addSubCommandWithCountBlock "", "move", "<C-u>": editor.vimMoveCursorLine(-editor.screenLineCount div 2, count, center=true)
   addSubCommandWithCountBlock "", "move", "<PAGE_UP>": editor.vimMoveCursorLine(-editor.screenLineCount, count, center=true)
 
-  addTextCommandBlock "", "z<ENTER>":
+  addTextCommandBlockDesc "", "z<ENTER>", "scroll line to top":
     if editor.getCommandCount != 0:
       editor.selection = (editor.getCommandCount, 0).toSelection
     editor.moveFirst "line-no-indent"
     editor.vimFinishMotion()
     editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
 
-  addTextCommandBlock "", "zt":
+  addTextCommandBlockDesc "", "zt", "scroll line to top":
     if editor.getCommandCount != 0:
       editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
       editor.vimFinishMotion()
     editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
 
-  addTextCommandBlock "", "z.":
+  addTextCommandBlockDesc "", "z.", "center line":
     if editor.getCommandCount != 0:
       editor.selection = (editor.getCommandCount, 0).toSelection
     editor.moveFirst "line-no-indent"
     editor.vimFinishMotion()
     editor.centerCursor()
 
-  addTextCommandBlock "", "zz":
+  addTextCommandBlockDesc "", "zz", "center line":
     if editor.getCommandCount != 0:
       editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
       editor.vimFinishMotion()
     editor.centerCursor()
 
-  addTextCommandBlock "", "z-":
+  addTextCommandBlockDesc "", "z-", "scroll line to bottom":
     if editor.getCommandCount != 0:
       editor.selection = (editor.getCommandCount, 0).toSelection
     editor.moveFirst "line-no-indent"
     editor.vimFinishMotion()
     editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
 
-  addTextCommandBlock "", "zb":
+  addTextCommandBlockDesc "", "zb", "scroll line to bottom":
     if editor.getCommandCount != 0:
       editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
       editor.vimFinishMotion()

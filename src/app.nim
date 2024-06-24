@@ -137,6 +137,7 @@ type
 
     eventHandlerConfigs: Table[string, EventHandlerConfig]
     commandInfos*: CommandInfos
+    commandDescriptions*: Table[string, string]
 
     options: JsonNode
     callbacks: Table[string, int]
@@ -261,7 +262,7 @@ proc tryCloseDocument*(self: App, document: Document, force: bool): bool
 proc closeUnusedDocuments*(self: App)
 proc tryOpenExisting*(self: App, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor]
 proc setOption*(self: App, option: string, value: JsonNode, override: bool = true)
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "")
+proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "")
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -1265,6 +1266,13 @@ proc getEditor(): Option[App] =
 
 static:
   addInjector(App, getEditor)
+
+proc splitView*(self: App) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  if self.tryGetCurrentEditorView().getSome(view):
+    discard self.createAndAddView(view.document)
 
 proc showDebuggerView*(self: App) {.expose("editor").} =
   for view in self.views:
@@ -2270,6 +2278,38 @@ method setQuery*(self: WorkspaceFilesDataSource, query: string) =
 
   self.onWorkspaceFileCacheUpdatedHandle = some(self.workspace.onCachedFilesUpdated.subscribe () => self.handleCachedFilesUpdated())
 
+proc browseKeybinds*(self: App) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  proc getItems(): seq[FinderItem] =
+    var items = newSeq[FinderItem]()
+    for (context, c) in self.eventHandlerConfigs.pairs:
+      if not c.commands.contains(""):
+        continue
+      for (keys, command) in c.commands[""].pairs:
+        var name = command
+
+        let (action, args) = command.parseAction
+        let key = context & keys
+        if key in self.commandDescriptions:
+          name = self.commandDescriptions[key]
+
+        items.add(FinderItem(
+          displayName: name,
+          filterText: command & " |" & keys,
+          detail: keys & "\t" & context & "\t" & command,
+        ))
+
+    return items
+
+  let source = newSyncDataSource(getItems)
+  let finder = newFinder(source, filterAndSort=true)
+  var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some)
+  popup.scale.x = 0.6
+
+  self.pushPopup popup
+
 proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
@@ -3206,7 +3246,7 @@ proc addLeader*(self: App, leader: string) {.expose("editor").} =
   for config in self.eventHandlerConfigs.values:
     config.setLeaders self.leaders
 
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
+proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "") {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
   # log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
 
@@ -3214,6 +3254,9 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
     (context[0..<i], context[i+1..^1] & subContext)
   else:
     (context, subContext)
+
+  if description.len > 0:
+    self.commandDescriptions[context & subContext & keys] = description
 
   self.getEventHandlerConfig(context).addCommand(subContext, keys, command)
   self.invalidateCommandToKeysMap()

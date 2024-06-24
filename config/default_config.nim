@@ -77,6 +77,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     addCommand "editor", "r", "move-current-view-to-top"
     addCommand "editor", "h", "open-previous-editor"
     addCommand "editor", "f", "open-next-editor"
+    addCommand "editor", "s", "split-view"
 
   if getBackend() != Terminal:
     addCommand "editor", "<CA-v>", "create-view"
@@ -107,6 +108,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gu", "explore-user-config-dir"
   addCommand "editor", "<LEADER>ga", "explore-app-config-dir"
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
+  addCommand "editor", "<LEADER>gk", "browse-keybinds"
   addCommandBlock "editor", "<LEADER>log":
     runAction "logs"
     if getActiveEditor().isTextEditor(ed):
