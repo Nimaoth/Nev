@@ -6,7 +6,7 @@ export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, s
 
 var scriptActions* = initTable[string, proc(args: JsonNode): JsonNode]()
 
-macro expose*(name: string, fun: typed): untyped =
+proc exposeImpl*(context: NimNode, name: NimNode, fun: NimNode, active: bool): NimNode =
   # defer:
   #   echo result.repr
 
@@ -30,17 +30,26 @@ macro expose*(name: string, fun: typed): untyped =
     params.add (param[0].repr, param[1].repr)
 
   if def == fun:
-    return genAst(name, def, jsonWrapper, jsonWrapperName, documentationStr, params, returnType):
+    return genAst(name, def, jsonWrapper, jsonWrapperName, documentationStr, params, returnType, active, context):
       def
       jsonWrapper
       scriptActions[name] = jsonWrapperName
-      addScriptAction(name, documentationStr, params, returnType)
+      addScriptAction(name, documentationStr, params, returnType, active, context)
 
   else:
-    return genAst(name, jsonWrapper, jsonWrapperName, documentationStr, params, returnType):
+    return genAst(name, jsonWrapper, jsonWrapperName, documentationStr, params, returnType, active, context):
       jsonWrapper
       scriptActions[name] = jsonWrapperName
-      addScriptAction(name, documentationStr, params, returnType)
+      addScriptAction(name, documentationStr, params, returnType, active, context)
+
+macro expose*(name: string, fun: typed): untyped =
+  return exposeImpl(newLit"script", name, fun, active=false)
+
+macro expose*(context, string, name: string, fun: typed): untyped =
+  return exposeImpl(context, name, fun, active=false)
+
+macro exposeActive*(context: string, name: string, fun: typed): untyped =
+  return exposeImpl(context, name, fun, active=true)
 
 macro callJson*(fun: typed, args: JsonNode): JsonNode =
   ## Calls a function with a json object as argument, converting the json object to nim types
@@ -52,7 +61,7 @@ macro callJson*(fun: typed, args: JsonNode): JsonNode =
       jsonWrapper
       jsonWrapperName(args)
 
-proc exportImpl(name: string, implementNims: bool, def: NimNode): NimNode =
+proc scriptActionExportImpl(name: string, implementNims: bool, def: NimNode): NimNode =
   # defer:
   #   echo result.repr
 
@@ -75,7 +84,7 @@ proc exportImpl(name: string, implementNims: bool, def: NimNode): NimNode =
       static:
         echo "Expose script action ", name, " (", params, ", ", returnType, ")"
       scriptActions[name] = jsonWrapperName
-      addScriptAction(name, documentationStr, params, returnType)
+      addScriptAction(name, documentationStr, params, returnType, false)
 
   else:
     let argsName2 = genSym(nskVar)
@@ -98,10 +107,10 @@ macro scriptActionWasm*(name: static string, def: untyped): untyped =
   ## Register as a script action
   ## If called in wasm then it directly runs the function
   ## If called in nimscript the script action is executed instead
-  return exportImpl(name, false, def)
+  return scriptActionExportImpl(name, false, def)
 
 macro scriptActionWasmNims*(name: static string, def: untyped): untyped =
   ## Register as a script action
   ## If called in wasm then it directly runs the function
   ## If called in nimscript the script action. If no script action is found, runs directly in nimscript
-  return exportImpl(name, true, def)
+  return scriptActionExportImpl(name, true, def)

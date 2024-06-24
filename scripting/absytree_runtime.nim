@@ -208,7 +208,7 @@ proc loadWorkspaceFile*(path: string, action: proc(content: Option[string]): voi
     action(args.jsonTo(Option[string]))
     scriptActions.del(key)
     return newJNull()
-  addScriptAction(key, "", @[("path", "string"), ("callback", "proc(content: Option[string])")], "")
+  addScriptAction(key, "", @[("path", "string"), ("callback", "proc(content: Option[string])")], "", false)
   loadWorkspaceFile(path, key)
 
 macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
