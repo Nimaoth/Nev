@@ -350,6 +350,7 @@ proc loadVSCodeKeybindings*() {.scriptActionWasmNims("load-vscode-keybindings").
   addCommand "editor", "<C-g>u", "explore-user-config-dir"
   addCommand "editor", "<C-g>a", "explore-app-config-dir"
   addCommand "editor", "<C-g>s", "search-global-interactive"
+  addCommand "editor", "<CS-f>", "search-global-interactive"
 
   addTextCommand "", "<C-x>", "vscode-delete-line"
 
