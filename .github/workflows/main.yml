@@ -69,17 +69,17 @@ jobs:
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
       - if: always()
         run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
+      #- if: always()
+      #  run: PATH=/github/home/.nimble/bin:$PATH nimble buildBrowser
       - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildBrowser
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast
       - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt
-      - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:astg
 
       # create release packages
       - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims
       - run: ls -la release_linux
-      - run: ls -la release_web
+      #- run: ls -la release_web
 
       # make zips
       - name: Zip release_linux
@@ -87,11 +87,11 @@ jobs:
         with:
           files: release_linux
           dest: release_linux.zip
-      - name: Zip release_web
-        uses: vimtor/action-zip@v1
-        with:
-          files: release_web
-          dest: release_web.zip
+      #- name: Zip release_web
+      #  uses: vimtor/action-zip@v1
+      #  with:
+      #    files: release_web
+      #    dest: release_web.zip
 
       # upload artifacts
       - name: Upload release_linux
@@ -99,11 +99,11 @@ jobs:
         with:
           name: release_linux
           path: release_linux.zip
-      - name: Upload release_web
-        uses: actions/upload-artifact@v3
-        with:
-          name: release_web
-          path: release_web.zip
+      #- name: Upload release_web
+      #  uses: actions/upload-artifact@v3
+      #  with:
+      #    name: release_web
+      #    path: release_web.zip
 
   # TreeSitter fails to build for some reason (it turns the return type of some functions from StackAction into forceStackAction, which doesn't exist)
   # build-absytree-windows:
