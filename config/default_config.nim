@@ -70,13 +70,17 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     addCommand "editor", "a", "create-keybind-autocomplete-view"
     addCommand "editor", "x", "close-current-view", keepHidden=true, restoreHidden=false
     addCommand "editor", "X", "close-current-view", keepHidden=false, restoreHidden=true
+    addCommand "editor", "h", "prev-view"
     addCommand "editor", "n", "prev-view"
     addCommand "editor", "t", "next-view"
+    addCommand "editor", "l", "next-view"
     addCommand "editor", "N", "move-current-view-prev"
+    addCommand "editor", "H", "move-current-view-prev"
     addCommand "editor", "T", "move-current-view-next"
+    addCommand "editor", "L", "move-current-view-next"
     addCommand "editor", "r", "move-current-view-to-top"
-    addCommand "editor", "h", "open-previous-editor"
-    addCommand "editor", "f", "open-next-editor"
+    addCommand "editor", "z", "open-previous-editor"
+    addCommand "editor", "y", "open-next-editor"
     addCommand "editor", "s", "split-view"
 
   if getBackend() != Terminal:
