@@ -110,49 +110,49 @@ jobs:
       #    path: release_web.zip
 
   # TreeSitter fails to build for some reason (it turns the return type of some functions from StackAction into forceStackAction, which doesn't exist)
-  # build-absytree-windows:
-  #   name: Build Absytree Windows
-  #   runs-on: windows-2022
-  #   steps:
-  #     - name: Checkout the repo
-  #       uses: actions/checkout@v4.1.7
-  #     - uses: jiro4989/setup-nim-action@v1
-  #       with:
-  #         nim-version: 'devel'
-  #         repo-token: ${{ secrets.GITHUB_TOKEN }}
-  #     - name: nimble setup
-  #       continue-on-error: true
-  #       run: nimble setup
+  build-absytree-windows:
+    name: Build Absytree Windows
+    runs-on: windows-2022
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v4.1.7
+      - uses: jiro4989/setup-nim-action@v1.5.2
+        with:
+          nim-version: '2.x'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: nimble setup
+        continue-on-error: true
+        run: nimble setup
 
-  #     - name: nimble setup
-  #       run: nimble setup
+      - name: nimble setup
+        run: nimble setup
 
-  #     # windows builds
-  #     - if: always()
-  #       run: nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt.exe
-  #     - if: always()
-  #       run: nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast.exe
-  #     - if: always()
-  #       run: nimble buildAbsytreeServerWindows
-  #     - if: always()
-  #       run: nimble buildLspWsWindows
+      # windows builds
+      - if: always()
+        run: nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast.exe
+      - if: always()
+        run: nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:astg.exe
+      - if: always()
+        run: nimble buildAbsytreeServerWindows
+      - if: always()
+        run: nimble buildLspWsWindows
 
-  #     # create release packages
-  #     - run: nim ./tools/package_release.nims
+      # create release packages
+      - run: nim ./tools/package_release.nims
 
-  #     # make zips
-  #     - name: Zip release_windows
-  #       uses: vimtor/action-zip@v1.2
-  #       with:
-  #         files: release_windows
-  #         dest: release_windows.zip
+      # make zips
+      - name: Zip release_windows
+        uses: vimtor/action-zip@v1.2
+        with:
+          files: release_windows
+          dest: release_windows.zip
 
-  #     # upload artifacts
-  #     - name: Upload release_windows
-  #       uses: actions/upload-artifact@v4.3.3
-  #       with:
-  #         name: release_windows
-  #         path: release_windows.zip
+      # upload artifacts
+      - name: Upload release_windows
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: release_windows
+          path: release_windows.zip
 
   run-tests:
     name: Run tests
