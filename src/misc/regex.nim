@@ -189,50 +189,20 @@ proc escapeRegex*(s: string): string =
       result.add("\\x")
       result.add(toHex(ord(c), 2))
 
-when defined(js):
-  import std/jsre
-  export jsre
+import pkg/regex
 
-  import custom_unicode, util
+type Regex* = Regex2
+func re*(s: string, flags: RegexFlags = {}): Regex {.raises: [RegexError].} = re2(s, flags)
 
-  type Regex* = object
-    impl: RegExp
+proc findBounds*(text: string, regex: Regex, start: int): tuple[first: int, last: int] =
+  for b in text.findAllBounds(regex, start):
+    return (b.a, b.b)
+  return (-1, -1)
 
-  proc findBoundsJs*(self: RegExp; pattern: cstring): seq[RuneIndex] {.importjs: "((#.exec(#)) || {indices: [[-1, 0]]}).indices[0]".}
-
-  proc findBounds*(text: string, regex: Regex, start: int): tuple[first: int, last: int] =
-    regex.impl.lastIndex = 0
-    let bounds = regex.impl.findBoundsJs(text[start..^1].cstring)
-    if bounds[0].int != -1:
-      result.first = text.toOpenArray.runeOffset(bounds[0], start)
-      result.last = text.toOpenArray.runeOffset(bounds[1] - 1.RuneCount, start)
-    else:
-      result = (-1, -1)
-
-  proc matchLenJs*(self: RegExp; pattern: cstring): int {.importjs: "((#.exec(#)) || {index:-1}).index".}
-
-  proc matchLen*(text: string, regex: Regex, start: int): int =
-    regex.impl.lastIndex = 0
-    result = regex.impl.matchLenJs(text[start..^1].cstring)
-    if result != -1:
-      result += start
-
-  proc match*(text: string, regex: Regex, start: int): bool =
-    return text.matchLen(regex, start) != -1
-
-  proc re*(text: string, ignoreCase: bool = false): Regex =
-    var flags = "dg"
-    if ignoreCase:
-      flags.add "i"
-    return Regex(impl: newRegExp(text.cstring, flags.cstring))
-
-  proc contains*(text: string, regex: Regex): bool =
-    let bounds = text.findBounds(regex, 0)
-    return bounds[0] != -1
-
-else:
-  import std/re
-  export re
+proc matchLen*(text: string, regex: Regex, start: int): int =
+  for b in text.findAllBounds(regex, start):
+    return b.b - b.a + 1
+  return -1
 
 iterator findAllBounds*(buf: string, pattern: Regex): tuple[first: int, last: int] =
   var start = 0
@@ -248,10 +218,10 @@ proc glob*(pattern: string): Regex =
     # js doesn't support (?s) syntax in the regex, but we can pass a flag
     # to the regex itself to make it case insensitive
     let regexString = globToRegexString(pattern, isDos=false, ignoreCase=false)
-    return re(regexString, ignoreCase=true)
+    return re2(regexString, ignoreCase=true)
   else:
     let regexString = globToRegexString(pattern, isDos=false, ignoreCase=true)
-    return re(regexString)
+    return re2(regexString)
 
 type Globs* = object
   negatedPatterns: seq[string]
