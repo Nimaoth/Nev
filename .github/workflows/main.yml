@@ -95,12 +95,12 @@ jobs:
 
       # upload artifacts
       - name: Upload release_linux
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.3.3
         with:
           name: release_linux
           path: release_linux.zip
       #- name: Upload release_web
-      #  uses: actions/upload-artifact@v3
+      #  uses: actions/upload-artifact@v4.3.3
       #  with:
       #    name: release_web
       #    path: release_web.zip
@@ -145,7 +145,7 @@ jobs:
 
   #     # upload artifacts
   #     - name: Upload release_windows
-  #       uses: actions/upload-artifact@v3
+  #       uses: actions/upload-artifact@v4.3.3
   #       with:
   #         name: release_windows
   #         path: release_windows.zip
@@ -171,7 +171,7 @@ jobs:
         if: always()
         run: testament html
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4.3.3
         if: always()
         with:
           name: testresults.html
@@ -185,7 +185,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.7
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4.1.7
         with:
           name: testresults.html
         continue-on-error: true
@@ -197,7 +197,7 @@ jobs:
           source: ./
           destination: ./_site
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v3.0.1
 
   # Deployment job
   deploy:
