@@ -116,9 +116,9 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
-      - uses: jiro4989/setup-nim-action@v1
+      - uses: jiro4989/setup-nim-action@v1.5.2
         with:
-          nim-version: 'stable'
+          nim-version: '2.x'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: nimble setup
         continue-on-error: true
