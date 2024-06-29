@@ -2310,7 +2310,7 @@ proc browseKeybinds*(self: App) {.expose("editor").} =
 
   self.pushPopup popup
 
-proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
+proc chooseFile*(self: App) {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
   ## Press <ESCAPE> to close the dialogue
@@ -2333,7 +2333,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
 
   self.pushPopup popup
 
-proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
+proc chooseOpen*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
@@ -2526,7 +2526,7 @@ proc gotoPrevLocation*(self: App) {.expose("editor").} =
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
 
-proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
+proc chooseLocation*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 

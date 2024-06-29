@@ -12,6 +12,17 @@ import keybindings_vim_like
 import keybindings_helix
 import keybindings_normal
 
+proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
+  let keybindings = getOption("keybindings", "")
+  infof"loadConfiguredKeybindings {keybindings}"
+  case keybindings
+  of "vim":
+    loadDefaultKeybindings(true)
+    loadVimKeybindings()
+  of "vscode":
+    loadDefaultKeybindings(true)
+    loadVSCodeKeybindings()
+
 if getBackend() == Terminal:
   # Disable animations in terminal because they don't look great
   changeAnimationSpeed 10000
