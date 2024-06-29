@@ -230,10 +230,9 @@
       "transparent": false
     }
   },
+  "keybindings": "vim",
   "plugin-post-load-commands": [
     "load-theme \"tokyo-night-color-theme\"",
-    "load-default-keybindings true",
-    "load-model-keybindings",
-    "load-vim-keybindings"
+    "load-configured-keybindings"
   ]
 }
