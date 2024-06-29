@@ -2988,9 +2988,16 @@ proc exploreUserConfigDir*(self: App) {.expose("editor").} =
 proc exploreAppConfigDir*(self: App) {.expose("editor").} =
   self.exploreFiles(fs.getApplicationFilePath("config"))
 
+proc exploreHelp*(self: App) {.expose("editor").} =
+  self.exploreFiles(fs.getApplicationFilePath("docs"))
+
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
   if self.workspace.folders.len > 0:
     self.exploreFiles(self.workspace.folders[0].getWorkspacePath())
+
+proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
+  if self.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
+    self.exploreFiles(view.document.filename.splitPath.head)
 
 proc openPreviousEditor*(self: App) {.expose("editor").} =
   if self.editorHistory.len == 0:

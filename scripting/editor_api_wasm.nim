@@ -899,12 +899,28 @@ proc exploreAppConfigDir*() =
       argsJsonString.cstring)
 
 
+proc editor_exploreHelp_void_App_wasm(arg: cstring): cstring {.importc.}
+proc exploreHelp*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_exploreHelp_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_exploreWorkspacePrimary_void_App_wasm(arg: cstring): cstring {.
     importc.}
 proc exploreWorkspacePrimary*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_exploreWorkspacePrimary_void_App_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_exploreCurrentFileDirectory_void_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc exploreCurrentFileDirectory*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_exploreCurrentFileDirectory_void_App_wasm(
       argsJsonString.cstring)
 
 
