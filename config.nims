@@ -4,13 +4,14 @@ switch("path", "src")
 
 switch("d", "mingw")
 switch("mm", "orc")
+switch("d", "useMalloc")
 switch("tlsEmulation", "off")
-switch("d", "ssl")
 
 
 # performance
 switch("panics", "on")
 switch("d", "release")
+# switch("opt", "size")
 
 
 # checks
@@ -44,8 +45,24 @@ switch("d", "wasm3VerboseErrorMessages")
 
 # Configure which treesitter languages are compiled into the editor (ignored on js backend)
 # switch("d", "treesitterBuiltins=cpp,nim,agda,bash,c,css,go,html,java,javascript,python,ruby,rust,scala,csharp,zig,haskell")
-switch("d", "treesitterBuiltins=cpp,nim,c,css,html,javascript,python,rust,csharp")
+# switch("d", "treesitterBuiltins=cpp,nim,c,css,html,javascript,python,rust,csharp")
+switch("d", "treesitterBuiltins=cpp,nim,csharp,rust,python,javascript")
 
+when defined(musl):
+  const muslGcc = findExe("musl-gcc")
+  echo "Build static binary with musl " & muslGcc
+  --gcc.exe:muslGcc
+  --gcc.linkerexe:muslGcc
+  --passL:"-static"
+
+  # Disable system clipboard because it doesn't build with musl right now
+  switch("d", "enableSystemClipboard=false")
+
+  # Remove nim from treesitterBuiltins because it doesn't build with musl right now
+  switch("d", "treesitterBuiltins=cpp,csharp,rust,python,javascript")
+
+else:
+  switch("d", "ssl")
 
 # switches for debugging
 # switch("d", "wasm3EnableStrace2")
