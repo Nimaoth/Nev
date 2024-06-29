@@ -97,10 +97,10 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<CS-s>", "save-app-state"
   addCommand "editor", "<LEADER><LEADER>", "command-line"
   addCommand "editor", "<LEADER>gt", "choose-theme"
-  addCommand "editor", "<LEADER>gf", "choose-file", "new"
-  addCommand "editor", "<LEADER>go", "choose-open", "new"
+  addCommand "editor", "<LEADER>gf", "choose-file"
+  addCommand "editor", "<LEADER>go", "choose-open"
   addCommand "editor", "<LEADER>gd", "choose-open-document"
-  addCommand "editor", "<LEADER>gl", "choose-location", "new"
+  addCommand "editor", "<LEADER>gl", "choose-location"
   addCommand "editor", "<LEADER>gg", "choose-git-active-files", false
   addCommand "editor", "<LEADER>GG", "choose-git-active-files", true
   addCommand "editor", "<LEADER>ge", "explore-files"

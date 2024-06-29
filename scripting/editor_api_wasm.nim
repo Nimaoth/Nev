@@ -789,30 +789,18 @@ proc browseKeybinds*() =
   let res {.used.} = editor_browseKeybinds_void_App_wasm(argsJsonString.cstring)
 
 
-proc editor_chooseFile_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc chooseFile*(view: string = "new") =
+proc editor_chooseFile_void_App_wasm(arg: cstring): cstring {.importc.}
+proc chooseFile*() =
   var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      view
-    else:
-      view.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_chooseFile_void_App_string_wasm(
-      argsJsonString.cstring)
+  let res {.used.} = editor_chooseFile_void_App_wasm(argsJsonString.cstring)
 
 
-proc editor_chooseOpen_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc chooseOpen*(view: string = "new") =
+proc editor_chooseOpen_void_App_wasm(arg: cstring): cstring {.importc.}
+proc chooseOpen*() =
   var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      view
-    else:
-      view.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_chooseOpen_void_App_string_wasm(
-      argsJsonString.cstring)
+  let res {.used.} = editor_chooseOpen_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_chooseOpenDocument_void_App_wasm(arg: cstring): cstring {.importc.}
@@ -839,17 +827,11 @@ proc gotoPrevLocation*() =
       argsJsonString.cstring)
 
 
-proc editor_chooseLocation_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc chooseLocation*(view: string = "new") =
+proc editor_chooseLocation_void_App_wasm(arg: cstring): cstring {.importc.}
+proc chooseLocation*() =
   var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      view
-    else:
-      view.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_chooseLocation_void_App_string_wasm(
-      argsJsonString.cstring)
+  let res {.used.} = editor_chooseLocation_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_searchGlobalInteractive_void_App_wasm(arg: cstring): cstring {.

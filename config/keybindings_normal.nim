@@ -335,13 +335,15 @@ proc loadVSCodeKeybindings*() {.scriptActionWasmNims("load-vscode-keybindings").
 
   addCommand "editor", "<A-F4>", "quit"
 
+  addCommand "editor", "<CS-p>", "command-line"
+  addCommand "editor", "<F1>", "command-line"
   addCommand "editor", "<LEADER><LEADER>", "command-line"
   addCommand "editor", "<C-g>t", "choose-theme"
-  addCommand "editor", "<C-g>f", "choose-file", "new"
-  addCommand "editor", "<C-p>", "choose-file", "new"
-  addCommand "editor", "<C-g>o", "choose-open", "new"
+  addCommand "editor", "<C-g>f", "choose-file"
+  addCommand "editor", "<C-p>", "choose-file"
+  addCommand "editor", "<C-g>o", "choose-open"
   addCommand "editor", "<C-g>d", "choose-open-document"
-  addCommand "editor", "<C-g>l", "choose-location", "new"
+  addCommand "editor", "<C-g>l", "choose-location"
   addCommand "editor", "<C-g>g", "choose-git-active-files", false
   addCommand "editor", "<C-g>e", "explore-files"
   addCommand "editor", "<C-g>w", "explore-workspace-primary"
