@@ -49,11 +49,12 @@ switch("d", "wasm3VerboseErrorMessages")
 switch("d", "treesitterBuiltins=cpp,nim,csharp,rust,python,javascript")
 
 when defined(musl):
-  const muslGcc = findExe("musl-gcc")
+  var muslGcc = findExe("musl-gcc")
+  # muslGcc = "/home/nimaoth/musl/musl/bin/musl-gcc"
   echo "Build static binary with musl " & muslGcc
-  --gcc.exe:muslGcc
-  --gcc.linkerexe:muslGcc
-  --passL:"-static"
+  switch("gcc.exe", muslGcc)
+  switch("gcc.linkerexe", muslGcc)
+  switch("passL", "-static" )
 
   # Disable system clipboard because it doesn't build with musl right now
   switch("d", "enableSystemClipboard=false")
