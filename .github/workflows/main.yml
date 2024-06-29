@@ -74,9 +74,11 @@ jobs:
       #- if: always()
       #  run: PATH=/github/home/.nimble/bin:$PATH nimble buildBrowser
       - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true -d:musl --out:ast
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast
       - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false -d:musl --out:astg
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true -d:musl --out:ast-musl
+      - if: always()
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast-gui
 
       # create release packages
       - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims
