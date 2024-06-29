@@ -73,8 +73,9 @@ if fileExists "ast.exe":
   cpFile2 "tools/lsp-ws.exe", releaseWindows
 
 if fileExists "ast":
-  cpFile2 "astg", releaseLinux
+  cpFile2 "ast-gui", releaseLinux
   cpFile2 "ast", releaseLinux
+  cpFile2 "ast-musl", releaseLinux
   cpFile2 "tools/absytree-server", releaseLinux
   cpFile2 "tools/lsp-ws", releaseLinux
 
