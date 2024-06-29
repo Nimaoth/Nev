@@ -16,7 +16,7 @@ While a finder is open the following keybinding contexts are pushed:
 - `popup.selector`: General finder keybindings
 - `popup.selector.xyz`: Specific finder keybindings. `xyz` is an identifer that identifies a specific kind of finder (e.g. `git` for `choose-git-active-files`)
 
-When the preview is focused the following contexts are pushed instead.
+When the preview is focused the following contexts are pushed instead:
 - `editor.text`: The preview editor
 - `editor.selector.preview`: For overriding keybindings of the text editor while in a preview
 
@@ -26,7 +26,7 @@ Default keybindings:
   - `<C-p>` or `<UP>`: Select previous entry.
   - `<C-y>` or `<ENTER>`: Confirm selection. Behaviour depends on the specific finder.
   - `<ESCAPE>`: Close the finder.
-- Normal:
+- VSCode:
   - `<DOWN>`: Select next entry.
   - `<UP>`: Select previous entry.
   - `<ENTER>`: Confirm selection. Behaviour depends on the specific finder.
@@ -67,8 +67,8 @@ If you don't intend to add more changes you can ignore it.
 
 Custom commands:
 - `stage-selected` (default: `<C-a>`): Stages the selected file
-- `unstage-selected` (default: `<C-u>`): Stages the selected file
-- `revert-selected` (default: `<C-r>`): Stages the selected file
+- `unstage-selected` (default: `<C-u>`): Unstages the selected file
+- `revert-selected` (default: `<C-r>`): Reverts the selected file
 
 The following GIF shows an example of using this command after making some modifications to a file.
 
