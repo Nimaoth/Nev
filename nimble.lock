@@ -302,15 +302,15 @@
       }
     },
     "treesitter": {
-      "version": "0.1.5",
-      "vcsRevision": "6a210bfd675d99a7f551b55ce07cb7ba032aaf57",
+      "version": "0.1.6",
+      "vcsRevision": "fbf08c356488d6435d91ba317c7f76b46a2bcf89",
       "url": "https://github.com/Nimaoth/nimtreesitter-api",
       "downloadMethod": "git",
       "dependencies": [
         "nimgen"
       ],
       "checksums": {
-        "sha1": "30b622b5d195d2af2a60574e0efd1995508e097a"
+        "sha1": "42011552650a9dba03aae3285f793875f387358c"
       }
     },
     "urlly": {
