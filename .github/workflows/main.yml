@@ -35,7 +35,7 @@ jobs:
         - ${{ github.workspace }}:/app
     steps:
       - name: Checkout the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4.1.7
 
       - run: apt-get update
         continue-on-error: true
@@ -83,12 +83,12 @@ jobs:
 
       # make zips
       - name: Zip release_linux
-        uses: vimtor/action-zip@v1
+        uses: vimtor/action-zip@v1.2
         with:
           files: release_linux
           dest: release_linux.zip
       #- name: Zip release_web
-      #  uses: vimtor/action-zip@v1
+      #  uses: vimtor/action-zip@v1.2
       #  with:
       #    files: release_web
       #    dest: release_web.zip
@@ -111,7 +111,7 @@ jobs:
   #   runs-on: windows-2022
   #   steps:
   #     - name: Checkout the repo
-  #       uses: actions/checkout@v3
+  #       uses: actions/checkout@v4.1.7
   #     - uses: jiro4989/setup-nim-action@v1
   #       with:
   #         nim-version: 'devel'
@@ -138,7 +138,7 @@ jobs:
 
   #     # make zips
   #     - name: Zip release_windows
-  #       uses: vimtor/action-zip@v1
+  #       uses: vimtor/action-zip@v1.2
   #       with:
   #         files: release_windows
   #         dest: release_windows.zip
@@ -159,7 +159,7 @@ jobs:
         - ${{ github.workspace }}:/app
     steps:
       - name: Checkout the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4.1.7
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: nimble setup
@@ -184,7 +184,7 @@ jobs:
     if: always()
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4.1.7
       - uses: actions/download-artifact@v3
         with:
           name: testresults.html
@@ -210,4 +210,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4.0.5
