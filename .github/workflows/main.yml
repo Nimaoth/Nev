@@ -116,10 +116,13 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
-      - uses: jiro4989/setup-nim-action@v1.5.2
+      #- uses: jiro4989/setup-nim-action@v1.5.2
+      #  with:
+      #    nim-version: '2.x'
+      #    repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: iffy/install-nim@v5
         with:
-          nim-version: '2.x'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: binary:2.0.6
       - name: nimble setup
         continue-on-error: true
         run: nimble setup
