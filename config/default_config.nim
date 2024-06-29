@@ -111,6 +111,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gw", "explore-workspace-primary"
   addCommand "editor", "<LEADER>gu", "explore-user-config-dir"
   addCommand "editor", "<LEADER>ga", "explore-app-config-dir"
+  addCommand "editor", "<LEADER>gh", "explore-help"
+  addCommand "editor", "<LEADER>gp", "explore-current-file-directory"
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommand "editor", "<LEADER>gk", "browse-keybinds"
   addCommandBlock "editor", "<LEADER>log":
