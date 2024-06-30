@@ -21,7 +21,6 @@
         },
 
         "+nim": {
-            "path": "",
             "workspace": {
                 "project": [],
                 "projectMapping": [
