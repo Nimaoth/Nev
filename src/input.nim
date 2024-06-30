@@ -400,7 +400,7 @@ proc handleNextInput(
   #   return @[nextState]
 
   if keys.len == 0:
-    log(lvlError, fmt"Failed to parse input")
+    log lvlError, &"Failed to parse input '{input.join()}' at index {index}"
     return
 
   for key in keys:
