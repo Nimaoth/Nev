@@ -2,7 +2,7 @@
 
 ## Installation
 
-Languages currently have to be installed manually. If you already have language servers installed through another editor (e.g. VSCode, NeoVim etc.) then you should be able to use that version aswell.
+Language servers currently have to be installed manually. If you already have a language server installed through another editor (e.g. VSCode, NeoVim etc.) then you should be able to use that version aswell.
 
 ## Configuration
 
@@ -57,18 +57,18 @@ The following LSP features are currently supported:
 
 | Feature | Vim | VSCode | Note |
 | ----------- | --- | --- | --- |
-| textDocument/definition | `gd` |  |  |
-| textDocument/declaration | `gD` |  |  |
-| textDocument/typeDefinition | `gT` |  |  |
-| textDocument/implementation | `gi` |  |  |
-| textDocument/documentSymbol | `gs` |  |  |
-| textDocument/references | `gr` |  |  |
-| textDocument/hover | `K` |  |  |
+| textDocument/definition | `gd` | `<C-g><C-d>` or `<F12>` |  |
+| textDocument/declaration | `gD` | `<C-g><CS-d>` |  |
+| textDocument/typeDefinition | `gT` | `<C-g><CS-t>` |  |
+| textDocument/implementation | `gi` | `<C-g><C-i>` |  |
+| textDocument/documentSymbol | `gs` | `<C-g><C-s>` or `<CS-o>` |  |
+| textDocument/references | `gr` | `<C-g><C-r>` or `<S-F12>` |  |
+| textDocument/hover | `K` | `<C-g><C-k>` |  |
+| textDocument/diagnostic | `H` | `<C-g><C-h>` |  |
+| textDocument/switchSourceHeader | `go` | `<C-g><C-o>` | Only for C/C++ with `clangd` |
+| workspace/symbol | `gw` | `<C-g><C-w>` or `<C-t>` |  |
 | textDocument/inlayHints |  |  | No keybindings necessary |
-| textDocument/diagnostic |  |  | No keybindings necessary |
 | textDocument/completion |  |  | See below |
-| textDocument/switchSourceHeader | `gr` |  | Only for C/C++ with `clangd` |
-| workspace/symbol | `gw` |  |  |
 
 ### Auto completion
 
