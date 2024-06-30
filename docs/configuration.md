@@ -1,5 +1,7 @@
 # Configuration and plugins
 
+- Configuration for [language servers](lsp.md#configuration)
+
 ## Settings
 
 Settings are specified using JSON files.
