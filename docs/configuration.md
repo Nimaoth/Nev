@@ -1,6 +1,7 @@
 # Configuration and plugins
 
 - Configuration for [language servers](lsp.md#configuration)
+- Configuration for [Treesitter](treesitter.md#configuration)
 
 ## Settings
 
