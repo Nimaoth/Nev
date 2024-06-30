@@ -805,7 +805,7 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   if self.languageId == "":
     return
 
-  let config = self.configProvider.getValue("editor.text.treesitter." & self.languageId, newJObject())
+  let config = self.configProvider.getValue("treesitter." & self.languageId, newJObject())
   var language = await loadLanguage(self.languageId, config)
 
   if language.isNone:

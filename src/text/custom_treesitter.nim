@@ -457,8 +457,8 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
       else:
         "so"
 
-      let dllPath = if config.hasKey(fileExtension):
-        config[fileExtension].getStr
+      let dllPath = if config.hasKey("path"):
+        config["path"].getStr
       else:
         fmt"./languages/{languageId}.{fileExtension}"
 
