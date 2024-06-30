@@ -23,7 +23,7 @@ proc invalidateCompletionItemCache(self: CompletionProviderSnippet) =
 proc cacheCompletionItems(self: CompletionProviderSnippet) =
   self.didCacheCompletionItems = true
   try:
-    let snippets = self.configProvider.getValue("editor.text.snippets." & self.document.languageId, newJObject())
+    let snippets = self.configProvider.getValue("snippets." & self.document.languageId, newJObject())
     for (name, definition) in snippets.fields.pairs:
       # todo: handle language scope
       # let scopes = definition["scope"].getStr.split(",")

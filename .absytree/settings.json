@@ -1,143 +1,134 @@
 {
-    "+test": {
-        "project": "hello",
-        "foo": 3
-    },
-    "+editor": {
-        "+text": {
+    "+lsp": {
 
-            "+lsp": {
-                "+cpp": {
-                    "args": [
-                        "--offset-encoding=utf-8",
-                        "--background-index",
-                        "--limit-results=100",
-                        "--limit-references=2000",
-                        "--clang-tidy"
-                    ]
-                },
+        "+cpp": {
+            "args": [
+                "--offset-encoding=utf-8",
+                "--background-index",
+                "--limit-results=100",
+                "--limit-references=2000",
+                "--clang-tidy"
+            ]
+        },
 
-                "+c": {
-                    "args": [
-                        "--offset-encoding=utf-8",
-                        "--background-index",
-                        "--limit-results=100",
-                        "--limit-references=2000"
-                    ]
-                },
+        "+c": {
+            "args": [
+                "--offset-encoding=utf-8",
+                "--background-index",
+                "--limit-results=100",
+                "--limit-references=2000"
+            ]
+        },
 
-                "+nim": {
-                    "path": "",
-                    "workspace": {
-                        "project": [],
-                        "projectMapping": [
-                            {
-                                "projectFile": "src/text/text_buffer.nim",
-                                "fileRegex": ".*text_buffer.nim"
-                            },
-                            {
-                                "projectFile": "src/misc/smallseq.nim",
-                                "fileRegex": ".*smallseq.nim"
-                            },
-                            {
-                                "projectFile": "src/text/snippet.nim",
-                                "fileRegex": ".*snippet.nim"
-                            },
-                            {
-                                "projectFile": "src/text/text_editor.nim",
-                                "fileRegex": ".*text_editor.nim"
-                            },
-                            {
-                                "projectFile": "src/text/text_document.nim",
-                                "fileRegex": ".*text_document.nim"
-                            },
-                            {
-                                "projectFile": "src/app.nim",
-                                "fileRegex": ".*app.nim"
-                            },
-                            {
-                                "projectFile": "src/text/diff_git.nim",
-                                "fileRegex": ".*diff_git.nim"
-                            },
-                            {
-                                "projectFile": "src/text/completion.nim",
-                                "fileRegex": ".*completion.nim"
-                            },
-                            {
-                                "projectFile": "src/text/completion_provider_document.nim",
-                                "fileRegex": ".*completion_provider_document.nim"
-                            },
-                            {
-                                "projectFile": "src/text/completion_provider_lsp.nim",
-                                "fileRegex": ".*completion_provider_lsp.nim"
-                            },
-                            {
-                                "projectFile": "src/text/completion_provider_snippet.nim",
-                                "fileRegex": ".*completion_provider_snippet.nim"
-                            },
-                            {
-                                "projectFile": "src/platform/gui_platform.nim",
-                                "fileRegex": ".*gui_platform.nim"
-                            },
-                            {
-                                "projectFile": "src/platform/terminal_platform.nim",
-                                "fileRegex": ".*terminal_platform.nim"
-                            },
-                            {
-                                "projectFile": "src/platform/tui.nim",
-                                "fileRegex": ".*tui.nim"
-                            },
-                            {
-                                "projectFile": "src/ui/widget_builder_text_document.nim",
-                                "fileRegex": ".*widget_builder_text_document.nim"
-                            },
-                            {
-                                "projectFile": "src/ui/node.nim",
-                                "fileRegex": ".*node.nim"
-                            },
-                            {
-                                "projectFile": "test.nim",
-                                "fileRegex": ".*test.nim"
-                            }
-                          ],
-                          "test-project": "",
-                          "buildOnSave": false,
-                          "buildCommand": "c",
-                          "runOutputDirectory": "",
-                          "lintOnSave": true,
-                          "enableNimsuggest": false,
-                          "useNimsuggestCheck": false,
-                          "logNimsuggest": true,
-                          "licenseString": "",
-                          "nimsuggestRestartTimeout": 10,
-                          "nimprettyIndent": 0,
-                          "nimprettyMaxLineLen": 80,
-                          "inlayHints": {
-                            "typeHints": {
-                                "enable": true
-                            },
-                            "exceptionHints": {
-                                "enable": true,
-                                "hintStringLeft": "🔔",
-                                "hintStringRight": ""
-                            }
-                        }
+        "+nim": {
+            "path": "",
+            "workspace": {
+                "project": [],
+                "projectMapping": [
+                    {
+                        "projectFile": "src/text/text_buffer.nim",
+                        "fileRegex": ".*text_buffer.nim"
+                    },
+                    {
+                        "projectFile": "src/misc/smallseq.nim",
+                        "fileRegex": ".*smallseq.nim"
+                    },
+                    {
+                        "projectFile": "src/text/snippet.nim",
+                        "fileRegex": ".*snippet.nim"
+                    },
+                    {
+                        "projectFile": "src/text/text_editor.nim",
+                        "fileRegex": ".*text_editor.nim"
+                    },
+                    {
+                        "projectFile": "src/text/text_document.nim",
+                        "fileRegex": ".*text_document.nim"
+                    },
+                    {
+                        "projectFile": "src/app.nim",
+                        "fileRegex": ".*app.nim"
+                    },
+                    {
+                        "projectFile": "src/text/diff_git.nim",
+                        "fileRegex": ".*diff_git.nim"
+                    },
+                    {
+                        "projectFile": "src/text/completion.nim",
+                        "fileRegex": ".*completion.nim"
+                    },
+                    {
+                        "projectFile": "src/text/completion_provider_document.nim",
+                        "fileRegex": ".*completion_provider_document.nim"
+                    },
+                    {
+                        "projectFile": "src/text/completion_provider_lsp.nim",
+                        "fileRegex": ".*completion_provider_lsp.nim"
+                    },
+                    {
+                        "projectFile": "src/text/completion_provider_snippet.nim",
+                        "fileRegex": ".*completion_provider_snippet.nim"
+                    },
+                    {
+                        "projectFile": "src/platform/gui_platform.nim",
+                        "fileRegex": ".*gui_platform.nim"
+                    },
+                    {
+                        "projectFile": "src/platform/terminal_platform.nim",
+                        "fileRegex": ".*terminal_platform.nim"
+                    },
+                    {
+                        "projectFile": "src/platform/tui.nim",
+                        "fileRegex": ".*tui.nim"
+                    },
+                    {
+                        "projectFile": "src/ui/widget_builder_text_document.nim",
+                        "fileRegex": ".*widget_builder_text_document.nim"
+                    },
+                    {
+                        "projectFile": "src/ui/node.nim",
+                        "fileRegex": ".*node.nim"
+                    },
+                    {
+                        "projectFile": "test.nim",
+                        "fileRegex": ".*test.nim"
                     }
-                }
-            },
-
-            "+snippets": {
-                "+nim": {
-                    "Print to console": {
-                        "scope": "nim",
-                        "prefix": "log",
-                        "body": [
-                            "log lvl${1:Info}, &\"[${TM_FILENAME/(.*)\\..*$/${1:/capitalize}/}] $2\""
-                        ]
+                ],
+                "test-project": "",
+                "buildOnSave": false,
+                "buildCommand": "c",
+                "runOutputDirectory": "",
+                "lintOnSave": true,
+                "enableNimsuggest": false,
+                "useNimsuggestCheck": false,
+                "logNimsuggest": true,
+                "licenseString": "",
+                "nimsuggestRestartTimeout": 10,
+                "nimprettyIndent": 0,
+                "nimprettyMaxLineLen": 80,
+                "inlayHints": {
+                    "typeHints": {
+                        "enable": true
+                    },
+                    "exceptionHints": {
+                        "enable": true,
+                        "hintStringLeft": "🔔",
+                        "hintStringRight": ""
                     }
                 }
             }
+        }
+    },
 
+    "+snippets": {
+        "+nim": {
+            "Print to console": {
+                "scope": "nim",
+                "prefix": "log",
+                "body": [
+                    "log lvl${1:Info}, &\"[${TM_FILENAME/(.*)\\..*$/${1:/capitalize}/}] $2\""
+                ]
+            }
         }
     },
 
@@ -175,6 +166,7 @@
             "lldb-dap2": {}
         }
     },
+
     "+plugin-post-load-commands": [
         "load-vscode-snippets \".vscode/nim-snippets.code-snippets\" \"nim\"",
         "load-vscode-debugger-config \".vscode/launch.json\""

@@ -1,238 +1,241 @@
 {
-  "test": {
-    "app": "hello",
-    "foo": 1
-  },
-  "editor": {
-    "text": {
-      "lsp": {
+    "lsp": {
         "cpp": {
-          "path": "clangd",
-          "args": [
-            "--offset-encoding=utf-8"
-          ]
+            "path": "clangd",
+            "args": [
+                "--offset-encoding=utf-8"
+            ]
         },
         "c": {
-          "path": "clangd",
-          "args": [
-            "--offset-encoding=utf-8"
-          ]
+            "path": "clangd",
+            "args": [
+                "--offset-encoding=utf-8"
+            ]
         },
         "zig": {
-          "path": "zls"
+            "path": "zls"
         },
         "rust": {
-          "path": "rust-analyzer"
+            "path": "rust-analyzer"
         },
         "csharp": {
-          "path": "OmniSharp"
+            "path": "OmniSharp"
         },
         "nim": {
-          "path": "nimlangserver",
-          "args": [
-            "--stdio"
-          ]
+            "path": "nimlangserver",
+            "args": [
+                "--stdio"
+            ]
         }
-      },
-      "language": {
+    },
+
+    "languages": {
         "nim": {
-          "tabWidth": 2,
-          "indent": "spaces",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "[",
-            "enum",
-            "object"
-          ],
-          "lineComment": "#"
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "[",
+                "enum",
+                "object"
+            ],
+            "lineComment": "#"
         },
         "python": {
-          "tabWidth": 2,
-          "indent": "spaces",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "["
-          ],
-          "lineComment": "#"
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "#"
         },
         "javascript": {
-          "tabWidth": 4,
-          "indent": "spaces",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "["
-          ],
-          "lineComment": "//",
-          "blockComment": [
-            "/*",
-            "*/"
-          ],
-          "ignoreContextLinePrefix": "{"
+            "tabWidth": 4,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ],
+            "ignoreContextLinePrefix": "{"
         },
         "typescript": {
-          "tabWidth": 4,
-          "indent": "tab",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "["
-          ],
-          "lineComment": "//",
-          "blockComment": [
-            "/*",
-            "*/"
-          ]
+            "tabWidth": 4,
+            "indent": "tab",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ]
         },
         "rust": {
-          "tabWidth": 4,
-          "indent": "spaces",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "["
-          ],
-          "lineComment": "//",
-          "blockComment": [
-            "/*",
-            "*/"
-          ]
+            "tabWidth": 4,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ]
         },
         "c": {
-          "tabWidth": 4,
-          "indent": "spaces",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "["
-          ],
-          "lineComment": "//",
-          "blockComment": [
-            "/*",
-            "*/"
-          ]
+            "tabWidth": 4,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ]
         },
         "cpp": {
-          "tabWidth": 4,
-          "indent": "spaces",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "["
-          ],
-          "lineComment": "//",
-          "blockComment": [
-            "/*",
-            "*/"
-          ]
+            "tabWidth": 4,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ]
         },
         "java": {
-          "tabWidth": 4,
-          "indent": "tab",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "["
-          ],
-          "lineComment": "//",
-          "blockComment": [
-            "/*",
-            "*/"
-          ]
+            "tabWidth": 4,
+            "indent": "tab",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ]
         },
         "zig": {
-          "tabWidth": 4,
-          "indent": "tab",
-          "indentAfter": [
-            ":",
-            "=",
-            "(",
-            "{",
-            "["
-          ],
-          "lineComment": "//"
+            "tabWidth": 4,
+            "indent": "tab",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//"
         },
         "json": {
-          "tabWidth": 4,
-          "indent": "tab",
-          "indentAfter": [
-            ":",
-            "{",
-            "["
-          ],
-          "lineComment": "//"
+            "tabWidth": 4,
+            "indent": "tab",
+            "indentAfter": [
+                ":",
+                "{",
+                "["
+            ],
+            "lineComment": "//"
         }
-      },
-      "auto-start-language-server": true,
-      "snippets": {
-        "nim": {
-          "procedure": {
-            "scope": "nim",
-            "prefix": "proc",
-            "body": [
-              "proc ${1:name}($2): ${3:returnType} = ${0:discard}"
-            ]
-          }
-        }
-      },
-      "triple-click-command": "extend-select-move",
-      "triple-click-command-args": [
-        "line",
-        true
-      ],
-      "whitespace": {
-        "char": "·"
-      },
-      "highlight-treesitter-errors": false
     },
-    "restore-open-workspaces": true,
-    "restore-open-editors": true,
-    "frame-time-smoothing": 0.8,
-    "maxViews": 2
-  },
-  "debugger": {
-    "type": {
-      "lldb-dap": {
-        "connection": "stdio",
-        "path": "lldb-dap",
-        "args": []
-      },
-      "lldb-dap-tcp-launch": {
-        "connection": "tcp",
-        "path": "lldb-dap"
-      },
-      "lldb": {
-        "connection": "tcp",
-        "path": "lldb-dap"
-      }
-    }
-  },
-  "ui": {
-    "background": {
-      "transparent": false
-    }
-  },
-  "keybindings": "vim",
-  "plugin-post-load-commands": [
-    "load-theme \"tokyo-night-color-theme\"",
-    "load-configured-keybindings"
-  ]
+
+    "snippets": {
+        "nim": {
+            "procedure": {
+                "scope": "nim",
+                "prefix": "proc",
+                "body": [
+                    "proc ${1:name}($2): ${3:returnType} = ${0:discard}"
+                ]
+            }
+        }
+    },
+
+    "editor": {
+        "text": {
+            "auto-start-language-server": true,
+            "triple-click-command": "extend-select-move",
+            "triple-click-command-args": [
+                "line",
+                true
+            ],
+            "whitespace": {
+                "char": "·"
+            },
+            "highlight-treesitter-errors": false
+        },
+        "restore-open-workspaces": true,
+        "restore-open-editors": true,
+        "frame-time-smoothing": 0.8,
+        "maxViews": 2
+    },
+
+    "debugger": {
+        "type": {
+            "lldb-dap": {
+                "connection": "stdio",
+                "path": "lldb-dap",
+                "args": []
+            },
+            "lldb-dap-tcp-launch": {
+                "connection": "tcp",
+                "path": "lldb-dap"
+            },
+            "lldb": {
+                "connection": "tcp",
+                "path": "lldb-dap"
+            }
+        }
+    },
+
+    "ui": {
+        "background": {
+            "transparent": false
+        }
+    },
+
+    "keybindings": "vim",
+
+    "plugin-post-load-commands": [
+        "load-theme \"tokyo-night-color-theme\"",
+        "load-configured-keybindings"
+    ]
 }

@@ -13,7 +13,7 @@ proc loadVSCodeSnippets*(file: string, language: string) {.expose("load-vscode-s
       let json = content.get.parseJson()
       infof"Loaded snippet config for {language} from {file}"
       # todo: better deal with languages
-      setOption "editor.text.snippets." & language, json
+      setOption "snippets." & language, json
     except:
       info &"Failed to load VSCode snippets: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
