@@ -874,7 +874,7 @@ proc newTextDocument*(
     self.languageId = language
 
   if self.languageId != "":
-    if (let value = self.configProvider.getValue("editor.text.language." & self.languageId, newJNull()); value.kind == JObject):
+    if (let value = self.configProvider.getValue("languages." & self.languageId, newJNull()); value.kind == JObject):
       self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
       if value.hasKey("indent"):
         case value["indent"].str:

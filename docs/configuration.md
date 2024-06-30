@@ -212,8 +212,8 @@ There are a lot of settings which can be changed using `proc setOption*[T](path:
 
 You can get the current value of a setting with `proc getOption*[T](path: string, default: T = T.default): T`
 
-    setOption "editor.text.lsp.zig.path", "zls"
-    echo getOption[string]("editor.text.lsp.zig.path") # zls
+    setOption "lsp.zig.path", "zls"
+    echo getOption[string]("lsp.zig.path") # zls
 
 # Mouse settings
 To change the behaviour of single/double/triple clicking you can specify which command should be executed after clicking:

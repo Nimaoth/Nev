@@ -30,7 +30,7 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
       continue
 
     res.add gAppInterface.configProvider.getValue(
-      "editor.text.lsp." & item.section.get & ".workspace", newJNull())
+      "lsp." & item.section.get & ".workspace", newJNull())
 
   return res
 
@@ -46,7 +46,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
 
     return lsp.some
 
-  let config = gAppInterface.configProvider.getValue("editor.text.lsp." & languageId, newJObject())
+  let config = gAppInterface.configProvider.getValue("lsp." & languageId, newJObject())
   if config.isNil:
     return LanguageServerLSP.none
 
