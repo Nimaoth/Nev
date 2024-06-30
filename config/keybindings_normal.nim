@@ -362,17 +362,15 @@ proc loadVSCodeKeybindings*() {.scriptActionWasmNims("load-vscode-keybindings").
 
   addTextCommand "", "<C-ENTER>", "vscode-todo", "insert-line-below"
   addTextCommand "", "<CS-ENTER>", "vscode-todo", "insert-line-above"
-  addTextCommand "", r"<CS-\\>", "vscode-todo", "jump-to-matching-bracket"
-  addTextCommand "", "<CS-]", "indent"
-  addTextCommand "", "<CS-[", "unindent"
+  addTextCommand "", r"<CS-\>>", "vscode-todo", "jump-to-matching-bracket"
+  addTextCommand "", "<CS-]>", "indent"
+  addTextCommand "", "<CS-[>", "unindent"
   addTextCommand "", "<C-UP>", "scroll-lines", -1
   addTextCommand "", "<C-DOWN>", "scroll-lines", 1
   addTextCommand "", "<A-PAGE_UP>", "vscode-todo", "scroll-page-up"
   addTextCommand "", "<A-PAGE_DOWN>", "vscode-todo", "scroll-page-down"
   addTextCommand "", "<C-k><C-c>", "toggle-line-comment"
 
-  addTextCommand "", "<C-t>", "goto-workspace-symbol"
-  addTextCommand "", "<CS-o>", "goto-symbol"
   addTextCommand "", "<CS-k>", "vscode-todo", "delete-line"
 
   addTextCommandBlock "", "<F8>":
@@ -421,4 +419,19 @@ proc loadVSCodeKeybindings*() {.scriptActionWasmNims("load-vscode-keybindings").
   addCommand "editor.text.completion", "<TAB>", "apply-selected-completion"
 
   # lsp
+  addTextCommand "", "<C-g><C-d>", "goto-definition"
+  addTextCommand "", "<C-g><C-D>", "goto-declaration"
+  addTextCommand "", "<C-g><C-i>", "goto-implementation"
+  addTextCommand "", "<C-g><C-T>", "goto-type-definition"
+  addTextCommand "", "<C-g><C-s>", "goto-symbol"
+  addTextCommand "", "<C-g><C-w>", "goto-workspace-symbol"
+  addTextCommand "", "<C-g><C-r>", "goto-references"
+  addTextCommand "", "<C-g><C-o>", "switch-source-header"
+  addTextCommand "", "<C-g><C-k>", "show-hover-for-current"
+  addTextCommand "", "<C-g><C-h>", "show-diagnostics-for-current"
+
   addTextCommand "", "<C-SPACE>", "get-completions"
+  addTextCommand "", "<F12>", "goto-definition"
+  addTextCommand "", "<CS-o>", "goto-symbol"
+  addTextCommand "", "<C-t>", "goto-workspace-symbol"
+  addTextCommand "", "<S-F12>", "goto-references"
