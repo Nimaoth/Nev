@@ -51,6 +51,9 @@ proc loadStandardKeybindings() =
   addTextCommand "", "<SPACE>", "insert-text", " "
   addTextCommand "", "<TAB>", "insert-indent"
 
+  addTextCommandBlock "", "<PAGE_UP>": editor.moveCursorLine(-editor.screenLineCount div 2, wrap=false)
+  addTextCommandBlock "", "<PAGE_DOWN>": editor.moveCursorLine(editor.screenLineCount div 2, wrap=false)
+
   addTextCommandBlockDesc "", "<ESCAPE>", "Clear selection and tab stops":
     editor.selection = editor.selection
     editor.clearTabStops()
@@ -313,11 +316,21 @@ proc loadVSCodeKeybindings*() {.scriptActionWasmNims("load-vscode-keybindings").
     editor.updateTargetColumn()
 
   addTextCommand "", "<A-ENTER>", "set-all-find-result-to-selection"
-  addTextCommand "", "<C-d>", "add-next-find-result-to-selection"
+  addTextCommandBlock "", "<C-d>":
+    if editor.selections.len == 1 and editor.selection.isEmpty:
+      let selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b")
+      editor.selection = selection
+    else:
+      let next = editor.getNextFindResult(editor.selection.last, includeAfter=true)
+      editor.selections = editor.selections & next
+      editor.scrollToCursor Last
+      editor.updateTargetColumn()
+
   addTextCommand "", "<C-k><C-d>", "vscode-todo", "move-selection-to-last-find-match"
 
   addTextCommand "", "<CA-UP>", "add-cursor-above"
   addTextCommand "", "<CA-DOWN>", "add-cursor-below"
+  addTextCommand "", "<C-r>", "select-prev"
 
   addCommand "editor.text.completion", "<ESCAPE>", "hide-completions"
   addCommand "editor.text.completion", "<UP>", "select-prev-completion"
