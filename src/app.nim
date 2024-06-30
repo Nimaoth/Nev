@@ -3686,12 +3686,12 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
     self.recordCommand(action, arg)
 
   if action.startsWith("."): # active action
-    if self.tryGetCurrentEditorView().getSome(view):
-      return case view.editor.handleAction(action[1..^1], arg, record=false)
-      of Handled:
-        true
-      else:
-        false
+    if self.getActiveEditor().getSome(editor):
+      return case editor.handleAction(action[1..^1], arg, record=false)
+        of Handled:
+          true
+        else:
+          false
 
     log lvlError, fmt"No current view"
     return false
