@@ -8,8 +8,6 @@ proc postInitialize*(): bool {.wasmexport.} =
 import default_config
 
 import keybindings_vim
-import keybindings_vim_like
-import keybindings_helix
 import keybindings_normal
 
 proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
