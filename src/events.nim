@@ -219,6 +219,8 @@ proc anyInProgress*(handlers: openArray[EventHandler]): bool =
 
 proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool): EventResponse =
   if input != 0:
+    # debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, handleInput: {handleUnknownAsInput}"
+
     # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
     # (ctrl, alt, win) then it doesn't produce input
     if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
@@ -258,7 +260,7 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
 
   var anyProgressed = false
   var anyFailed = false
-  var allowHandlingUnknownAsInput = true
+  var allowHandlingUnknownAsInput = not anyInProgress
   # Go through handlers in reverse
   for i in 0..<handlers.len:
     let handlerIndex = handlers.len - i - 1
