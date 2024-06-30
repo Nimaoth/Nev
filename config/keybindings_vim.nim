@@ -1322,6 +1322,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "", "go", "switch-source-header"
   addTextCommand "", "K", "show-hover-for-current"
   addTextCommand "", "H", "show-diagnostics-for-current"
+
   addTextCommand "", "<C-r>", "select-prev"
   addTextCommand "", "<C-m>", "select-next"
   addTextCommand "", "U", "vim-redo", enterNormalModeBefore=false
