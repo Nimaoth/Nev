@@ -20,7 +20,8 @@ After changing the settings restart the editor.
 | Description | Vim | VSCode |
 | ----------- | --- | ------ |
 | Open command line | `<LEADER><LEADER>` or `:` | `<CS-p>` or `<F1>` |
-| Find file in workspace | `<LEADER>gf` | `<C-g>f` or `<C-p>`  |
+| Help | `<LEADER>gh` | `<C-g>h` |
+| Find file in workspace | `<LEADER>gf` | `<C-g>f` or `<C-p>` |
 | Find open file | `<LEADER>go` | `<C-g>o` |
 | File explorer for entire workspace | `<LEADER>ge` | `<C-g>e` |
 | File explorer for primary workspace folder | `<LEADER>gw` | `<C-g>w` |
@@ -50,6 +51,7 @@ so e.g. `<C-w>x` and `<LEADER>wx` both work
 
 ## Most important commands (most of these have keybindings, see above and [browse-keybinds](finders.md#browse-keybinds))
 - `help`: Show the documentation
+- `explore-help`: Browse all documentation files
 - `create-file "path/to/filename.xyz"`: Create and open a file with the specified path.
 - [`choose-file`](finders.md#choose-file): Search for a file in all workspace folders.
 - [`choose-open`](finders.md#choose-open): Search for a file in open files.
