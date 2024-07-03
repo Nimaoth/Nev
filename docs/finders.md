@@ -101,6 +101,10 @@ Same usage as `explore-files`
 Search for config files that are installed with the editor.
 Same usage as `explore-files`
 
+## `explore-help`
+### Custom context: `popup.selector.file-explorer`
+Open a file explorer for the builtin docs (what you're reading right now).
+
 ## `browse-keybinds`
 
 This command opens a finder which allows you to search through the list of all keybindings by command or key combination.
