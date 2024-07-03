@@ -4,6 +4,21 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc editor_text_getFileName_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getFileName*(self: TextDocumentEditor): string =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getFileName_string_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_lineCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc lineCount*(self: TextDocumentEditor): int =

@@ -725,6 +725,11 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
+proc getFileName(self: TextDocumentEditor): string {.expose: "editor.text".} =
+  if self.document.isNil:
+    return ""
+  return self.document.filename
+
 proc lineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   return self.document.lines.len
 
