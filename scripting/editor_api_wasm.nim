@@ -11,6 +11,20 @@ proc splitView*() =
   let res {.used.} = editor_splitView_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_disableLogFrameTime_void_App_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc disableLogFrameTime*(disable: bool) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      disable
+    else:
+      disable.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_disableLogFrameTime_void_App_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_showDebuggerView_void_App_wasm(arg: cstring): cstring {.importc.}
 proc showDebuggerView*() =
   var argsJson = newJArray()
@@ -412,6 +426,25 @@ proc loadWorkspaceFile*(path: string; callback: string) =
       callback.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_loadWorkspaceFile_void_App_string_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_writeWorkspaceFile_void_App_string_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc writeWorkspaceFile*(path: string; content: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      content
+    else:
+      content.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_writeWorkspaceFile_void_App_string_string_wasm(
       argsJsonString.cstring)
 
 

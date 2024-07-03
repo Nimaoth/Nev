@@ -127,7 +127,8 @@ type
     lastBounds*: Rect
     closeRequested*: bool
 
-    logFrameTime*: bool = false
+    logNextFrameTime*: bool = false
+    disableLogFrameTime*: bool = false
 
     registers: Table[string, Register]
     recordingKeys: seq[string]
@@ -1274,6 +1275,9 @@ proc splitView*(self: App) {.expose("editor").} =
   if self.tryGetCurrentEditorView().getSome(view):
     discard self.createAndAddView(view.document)
 
+proc disableLogFrameTime*(self: App, disable: bool) {.expose("editor").} =
+  self.disableLogFrameTime = disable
+
 proc showDebuggerView*(self: App) {.expose("editor").} =
   for view in self.views:
     if view of DebuggerView:
@@ -1691,6 +1695,15 @@ proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async.} 
 
 proc loadWorkspaceFile*(self: App, path: string, callback: string) {.expose("editor").} =
   asyncCheck self.loadWorkspaceFileImpl(path, callback)
+
+proc writeWorkspaceFile*(self: App, path: string, content: string) {.expose("editor").} =
+  if self.workspace.folders.len == 0:
+    log lvlError, &"[writeWorkspaceFile] No workspace"
+    return
+
+  log lvlInfo, &"[writeWorkspaceFile] {path}"
+  let workspace = self.workspace.folders[0]
+  asyncCheck workspace.saveFile(path, content)
 
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
@@ -3179,7 +3192,7 @@ proc recordInputToHistory*(self: App, input: string) =
 
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   # logScope lvlDebug, &"handleKeyPress {inputToString(input, modifiers)}"
-  self.logFrameTime = true
+  self.logNextFrameTime = true
 
   for register in self.recordingKeys:
     if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
@@ -3204,7 +3217,7 @@ proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
 
 proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleRune {inputToString(input, modifiers)}"
-  self.logFrameTime = true
+  self.logNextFrameTime = true
 
   let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
   case self.currentEventHandlers.handleEvent(input, modifiers):
