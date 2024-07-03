@@ -27,6 +27,8 @@ from scripting_api import Backend
 logCategory "app"
 createJavascriptPrototype("editor")
 
+const defaultSessionName = ".absytree-session"
+
 type
   EditorView* = ref object of View
     document*: Document
@@ -1115,10 +1117,10 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
       when not defined(js):
         # In the browser we don't have access to the local file system.
         # Outside the browser we look for a session file in the current directory.
-        if fileExists(".absytree-session"):
-          self.sessionFile = ".absytree-session"
+        if fileExists(defaultSessionName):
+          self.sessionFile = defaultSessionName
       else:
-        self.sessionFile = "app:.absytree-session"
+        self.sessionFile = "app:" & defaultSessionName
 
     if self.sessionFile != "":
       self.restoreStateFromConfig(state)
@@ -3108,9 +3110,9 @@ proc reloadState*(self: App) {.expose("editor").} =
 
 proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
+  let sessionFile = if sessionFile == "": defaultSessionName else: sessionFile
   self.sessionFile = sessionFile
-  if self.sessionFile != "":
-    self.saveAppState()
+  self.saveAppState()
   self.requestRender()
 
 proc logOptions*(self: App) {.expose("editor").} =
