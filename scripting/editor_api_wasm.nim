@@ -4,6 +4,31 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc editor_reapplyConfigKeybindings_void_App_bool_bool_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc reapplyConfigKeybindings*(app: bool = false; home: bool = false;
+                               workspace: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      app
+    else:
+      app.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      home
+    else:
+      home.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      workspace
+    else:
+      workspace.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_reapplyConfigKeybindings_void_App_bool_bool_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_splitView_void_App_wasm(arg: cstring): cstring {.importc.}
 proc splitView*() =
   var argsJson = newJArray()

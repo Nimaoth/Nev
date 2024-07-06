@@ -29,6 +29,17 @@ createJavascriptPrototype("editor")
 
 const defaultSessionName = ".absytree-session"
 
+let platformName = when defined(windows):
+  "windows"
+elif defined(linux):
+  "linux"
+elif defined(wasm):
+  "wasm"
+elif defined(js):
+  "js"
+else:
+  "other"
+
 type
   EditorView* = ref object of View
     document*: Document # todo: remove
@@ -209,6 +220,8 @@ type
     previewer: Option[DisposableRef[Previewer]]
 
     closeUnusedDocumentsTask: DelayedTask
+
+    homeDir: string
 
 var gEditor* {.exportc.}: App = nil
 
@@ -878,122 +891,121 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode) =
       log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
 
 proc loadSettingsFrom*(self: App, directory: string,
-    loadFile: proc(context: string, path: string): Future[Option[string]]) {.async.} =
+    loadFile: proc(self: App, context: string, path: string): Future[Option[string]]) {.async.} =
 
-  let backend = $self.backend
-  let platform = when defined(windows):
-    "windows"
-  elif defined(linux):
-    "linux"
-  elif defined(wasm):
-    "wasm"
-  elif defined(js):
-    "js"
-  else:
-    "other"
+  let filenames = [
+    &"{directory}/settings.json",
+    &"{directory}/settings-{platformName}.json",
+    &"{directory}/settings-{self.backend}.json",
+    &"{directory}/settings-{platformName}-{self.backend}.json",
+  ]
 
-  block:
-    let filenames = [
-      &"{directory}/settings.json",
-      &"{directory}/settings-{platform}.json",
-      &"{directory}/settings-{backend}.json",
-      &"{directory}/settings-{platform}-{backend}.json",
-    ]
+  let settings = await all(
+    loadFile(self, "settings", filenames[0]),
+    loadFile(self, "settings", filenames[1]),
+    loadFile(self, "settings", filenames[2]),
+    loadFile(self, "settings", filenames[3]),
+  )
 
-    let settings = await all(
-      loadFile("settings", filenames[0]),
-      loadFile("settings", filenames[1]),
-      loadFile("settings", filenames[2]),
-      loadFile("settings", filenames[3]),
-    )
+  assert filenames.len == settings.len
 
-    assert filenames.len == settings.len
+  for i in 0..<filenames.len:
+    if settings[i].isSome:
+      try:
+        log lvlInfo, &"Apply settings from {filenames[i]}"
+        let json = settings[i].get.parseJson()
+        self.setOption("", json, override=false)
 
-    for i in 0..<filenames.len:
-      if settings[i].isSome:
-        try:
-          log lvlInfo, &"Apply settings from {filenames[i]}"
-          let json = settings[i].get.parseJson()
-          self.setOption("", json, override=false)
+      except CatchableError:
+        log(lvlError, &"Failed to load settings from {filenames[i]}: {getCurrentExceptionMsg()}")
 
-        except CatchableError:
-          log(lvlError, &"Failed to load settings from {filenames[i]}: {getCurrentExceptionMsg()}")
+proc loadKeybindings*(self: App, directory: string,
+    loadFile: proc(self: App, context: string, path: string): Future[Option[string]]) {.async.} =
 
-  block:
-    let filenames = [
-      &"{directory}/keybindings.json",
-      &"{directory}/keybindings-{platform}.json",
-      &"{directory}/keybindings-{backend}.json",
-      &"{directory}/keybindings-{platform}-{backend}.json",
-    ]
+  let filenames = [
+    &"{directory}/keybindings.json",
+    &"{directory}/keybindings-{platformName}.json",
+    &"{directory}/keybindings-{self.backend}.json",
+    &"{directory}/keybindings-{platformName}-{self.backend}.json",
+  ]
 
-    let settings = await all(
-      loadFile("keybindings", filenames[0]),
-      loadFile("keybindings", filenames[1]),
-      loadFile("keybindings", filenames[2]),
-      loadFile("keybindings", filenames[3]),
-    )
+  let settings = await all(
+    loadFile(self, "keybindings", filenames[0]),
+    loadFile(self, "keybindings", filenames[1]),
+    loadFile(self, "keybindings", filenames[2]),
+    loadFile(self, "keybindings", filenames[3]),
+  )
 
-    for i in 0..<filenames.len:
-      if settings[i].isSome:
-        try:
-          log lvlInfo, &"Apply keybindings from {filenames[i]}"
-          let json = settings[i].get.parseJson()
-          self.loadKeybindingsFromJson(json)
+  for i in 0..<filenames.len:
+    if settings[i].isSome:
+      try:
+        log lvlInfo, &"Apply keybindings from {filenames[i]}"
+        let json = settings[i].get.parseJson()
+        self.loadKeybindingsFromJson(json)
 
-        except CatchableError:
-          log(lvlError, fmt"Failed to load keybindings from {filenames[i]}: {getCurrentExceptionMsg()}")
+      except CatchableError:
+        log(lvlError, fmt"Failed to load keybindings from {filenames[i]}: {getCurrentExceptionMsg()}")
 
-proc loadOptionsFromAppDir*(self: App) {.async.} =
-  proc loadFile(context: string, path: string): Future[Option[string]] {.async.} =
+proc loadConfigFileFromAppDir(self: App, context: string, path: string):
+    Future[Option[string]] {.async.} =
+  try:
+    log lvlInfo, &"Try load {context} from app:{path}"
+    let content = await fs.loadApplicationFileAsync(path)
+    if content.len > 0:
+      return content.some
+  except CatchableError:
+    log(lvlError, fmt"Failed to load {context} from app dir: {getCurrentExceptionMsg()}")
+
+  return string.none
+
+proc loadConfigFileFromHomeDir(self: App, context: string, path: string):
+    Future[Option[string]] {.async.} =
+  when not defined(js):
     try:
-      log lvlInfo, &"Try load {context} from app:{path}"
-      let content = await fs.loadApplicationFileAsync(path)
+      if self.homeDir.len == 0:
+        log lvlInfo, &"No home directory"
+        return
+
+      log lvlInfo, &"Try load {context} from {self.homeDir}/{path}"
+      let content = await fs.loadFileAsync(self.homeDir // path)
       if content.len > 0:
         return content.some
     except CatchableError:
-      log(lvlError, fmt"Failed to load {context} from app dir: {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to load {context} from home {self.homeDir}: {getCurrentExceptionMsg()}")
 
-    return string.none
+  return string.none
 
-  await self.loadSettingsFrom("config", loadFile)
+proc loadConfigFileFromWorkspaceDir(self: App, context: string, path: string):
+    Future[Option[string]] {.async.} =
+  try:
+    log lvlInfo, &"Try load {context} from {self.workspace.name}/{path}"
+    let content = await self.workspace.loadFile(path)
+    if content.len > 0:
+      return content.some
+  except CatchableError:
+    log(lvlError,
+      fmt"Failed to load {context} from workspace {self.workspace.name}: {getCurrentExceptionMsg()}")
+
+  return string.none
+
+proc loadOptionsFromAppDir*(self: App) {.async.} =
+  await all(
+    self.loadSettingsFrom("config", loadConfigFileFromAppDir),
+    self.loadKeybindings("config", loadConfigFileFromAppDir)
+  )
 
 proc loadOptionsFromHomeDir*(self: App) {.async.} =
   when not defined(js):
-    let homeDir = getHomeDir().catch:
-      log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
-      return
+    await all(
+      self.loadSettingsFrom(".absytree", loadConfigFileFromHomeDir),
+      self.loadKeybindings(".absytree", loadConfigFileFromHomeDir)
+    )
 
-    if homeDir.len == 0:
-      log lvlInfo, &"Not loading settings from home dir"
-      return
-
-    proc loadFile(context: string, path: string): Future[Option[string]] {.async.} =
-      try:
-        log lvlInfo, &"Try load {context} from {homeDir}/{path}"
-        let content = await fs.loadFileAsync(homeDir // path)
-        if content.len > 0:
-          return content.some
-      except CatchableError:
-        log(lvlError, fmt"Failed to load {context} from home {homeDir}: {getCurrentExceptionMsg()}")
-
-      return string.none
-
-    await self.loadSettingsFrom(".absytree", loadFile)
-
-proc loadOptionsFromWorkspace*(self: App, w: Workspace) {.async.} =
-  proc loadFile(context: string, path: string): Future[Option[string]] {.async.} =
-    try:
-      log lvlInfo, &"Try load {context} from {w.name}/{path}"
-      let content = await w.loadFile(path)
-      if content.len > 0:
-        return content.some
-    except CatchableError:
-      log(lvlError, fmt"Failed to load {context} from workspace {w.name}: {getCurrentExceptionMsg()}")
-
-    return string.none
-
-  await self.loadSettingsFrom(".absytree", loadFile)
+proc loadOptionsFromWorkspace*(self: App) {.async.} =
+  await all(
+    self.loadSettingsFrom(".absytree", loadConfigFileFromWorkspaceDir),
+    self.loadKeybindings(".absytree", loadConfigFileFromWorkspaceDir)
+  )
 
 proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
@@ -1022,6 +1034,11 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.timer = startTimer()
   self.frameTimer = startTimer()
+
+  when not defined(js):
+    self.homeDir = getHomeDir().normalizePathUnix.catch:
+      log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
+      ""
 
   self.layout = HorizontalLayout()
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
@@ -1257,6 +1274,20 @@ proc getEditor(): Option[App] =
 
 static:
   addInjector(App, getEditor)
+
+proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = false, workspace: bool = false)
+    {.async.} =
+  log lvlInfo, &"reapplyConfigKeybindingsAsync app={app}, home={home}, workspace={workspace}"
+  if app:
+    await self.loadKeybindings("config", loadConfigFileFromAppDir)
+  if home:
+    await self.loadKeybindings(".absytree", loadConfigFileFromHomeDir)
+  if workspace:
+    await self.loadKeybindings(".absytree", loadConfigFileFromWorkspaceDir)
+
+proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false)
+    {.expose("editor").} =
+  asyncCheck self.reapplyConfigKeybindingsAsync(app, home, workspace)
 
 proc splitView*(self: App) {.expose("editor").} =
   defer:
@@ -1516,7 +1547,7 @@ proc setWorkspaceFolder(self: App, workspaceFolder: Workspace): Future[bool] {.a
   if gWorkspace.isNil:
     setGlobalWorkspace(workspaceFolder)
 
-  await self.loadOptionsFromWorkspace(workspaceFolder)
+  await self.loadOptionsFromWorkspace()
 
   return true
 
@@ -2993,11 +3024,11 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
 
 proc exploreUserConfigDir*(self: App) {.expose("editor").} =
   when not defined(js):
-    let homeDir = getHomeDir().catch:
-      log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
+    if self.homeDir.len == 0:
+      log lvlInfo, &"No home directory"
       return
 
-    self.exploreFiles(homeDir // ".absytree")
+    self.exploreFiles(self.homeDir // ".absytree")
 
 proc exploreAppConfigDir*(self: App) {.expose("editor").} =
   self.exploreFiles(fs.getApplicationFilePath("config"))
@@ -3084,7 +3115,7 @@ proc reloadPluginAsync*(self: App) {.async.} =
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadOptionsFromAppDir()
   await self.loadOptionsFromHomeDir()
-  await self.loadOptionsFromWorkspace(self.workspace)
+  await self.loadOptionsFromWorkspace()
 
 proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
