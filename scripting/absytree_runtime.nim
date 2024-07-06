@@ -159,7 +159,8 @@ proc getOption*[T](path: string, default: T = T.default): T =
   elif T is string:
     return scriptGetOptionString(path, default)
   else:
-    {.fatal: ("Can't get option with type " & $T).}
+    let json: JsonNode = scriptGetOptionJson(path, newJNull())
+    return json.jsonTo T
 
 proc setOption*[T](path: string, value: T) =
   # echo "setOption ", path, ", ", value
@@ -175,6 +176,12 @@ proc setOption*[T](path: string, value: T) =
     scriptSetOptionString(path, value)
   else:
     {.fatal: ("Can't set option with type " & $T).}
+
+proc getSessionData*[T](path: string, default: T = T.default): T =
+  return getSessionDataJson(path, default.toJson).jsonTo(T)
+
+proc setSessionData*[T](path: string, value: T) =
+  setSessionDataJson(path, value.toJson)
 
 proc bindArgs*(args: NimNode): tuple[stmts: NimNode, arg: NimNode] =
   var stmts = nnkStmtList.newTree()

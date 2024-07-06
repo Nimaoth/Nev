@@ -1552,6 +1552,70 @@ proc scriptGetTextEditorLineCount*(editorId: EditorId): int =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_setSessionDataJson_void_App_string_JsonNode_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setSessionDataJson*(path: string; value: JsonNode; override: bool = true) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  argsJson.add block:
+    when JsonNode is JsonNode:
+      value
+    else:
+      value.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      override
+    else:
+      override.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_setSessionDataJson_void_App_string_JsonNode_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_getSessionDataJson_JsonNode_App_string_JsonNode_wasm(arg: cstring): cstring {.
+    importc.}
+proc getSessionDataJson*(path: string; default: JsonNode): JsonNode =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  argsJson.add block:
+    when JsonNode is JsonNode:
+      default
+    else:
+      default.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_getSessionDataJson_JsonNode_App_string_JsonNode_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_scriptGetOptionJson_JsonNode_string_JsonNode_wasm(arg: cstring): cstring {.
+    importc.}
+proc scriptGetOptionJson*(path: string; default: JsonNode): JsonNode =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  argsJson.add block:
+    when JsonNode is JsonNode:
+      default
+    else:
+      default.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_scriptGetOptionJson_JsonNode_string_JsonNode_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_scriptGetOptionInt_int_string_int_wasm(arg: cstring): cstring {.
     importc.}
 proc scriptGetOptionInt*(path: string; default: int): int =
