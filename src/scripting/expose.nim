@@ -342,6 +342,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         except:
           let name = `pureFunctionNameStr`
           logging.log lvlError, "Failed to run function " & name & &": Invalid arguments: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+          return "null"
 
       static:
         addWasmImportedFunction(`moduleName`, `jsonStringWrapperFunctionName`, `jsonStringWrapperFunctionWasm`):
