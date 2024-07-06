@@ -4,17 +4,31 @@ import absytree_internal
 
 ## This file is auto generated, don't modify.
 
+proc reapplyConfigKeybindings*(app: bool = false; home: bool = false;
+                               workspace: bool = false) =
+  editor_reapplyConfigKeybindings_void_App_bool_bool_bool_impl(app, home,
+      workspace)
+proc splitView*() =
+  editor_splitView_void_App_impl()
+proc disableLogFrameTime*(disable: bool) =
+  editor_disableLogFrameTime_void_App_bool_impl(disable)
+proc showDebuggerView*() =
+  editor_showDebuggerView_void_App_impl()
+proc setLocationListFromCurrentPopup*() =
+  editor_setLocationListFromCurrentPopup_void_App_impl()
 proc getBackend*(): Backend =
   editor_getBackend_Backend_App_impl()
+proc getHostOs*(): string =
+  editor_getHostOs_string_App_impl()
 proc loadApplicationFile*(path: string): Option[string] =
   ## Load a file from the application directory (path is relative to the executable)
   editor_loadApplicationFile_Option_string_App_string_impl(path)
 proc toggleShowDrawnNodes*() =
   editor_toggleShowDrawnNodes_void_App_impl()
-proc setMaxViews*(maxViews: int) =
+proc setMaxViews*(maxViews: int; openExisting: bool = false) =
   ## Set the maximum number of views that can be open at the same time
   ## Closes any views that exceed the new limit
-  editor_setMaxViews_void_App_int_impl(maxViews)
+  editor_setMaxViews_void_App_int_bool_impl(maxViews, openExisting)
 proc saveAppState*() =
   editor_saveAppState_void_App_impl()
 proc requestRender*(redrawEverything: bool = false) =
@@ -38,9 +52,10 @@ proc callScriptAction*(context: string; args: JsonNode): JsonNode =
   editor_callScriptAction_JsonNode_App_string_JsonNode_impl(context, args)
 proc addScriptAction*(name: string; docs: string = "";
                       params: seq[tuple[name: string, typ: string]] = @[];
-                      returnType: string = "") =
-  editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_impl(
-      name, docs, params, returnType)
+                      returnType: string = ""; active: bool = false;
+                      context: string = "script") =
+  editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_bool_string_impl(
+      name, docs, params, returnType, active, context)
 proc openLocalWorkspace*(path: string) =
   editor_openLocalWorkspace_void_App_string_impl(path)
 proc getFlag*(flag: string; default: bool = false): bool =
@@ -49,12 +64,16 @@ proc setFlag*(flag: string; value: bool) =
   editor_setFlag_void_App_string_bool_impl(flag, value)
 proc toggleFlag*(flag: string) =
   editor_toggleFlag_void_App_string_impl(flag)
-proc setOption*(option: string; value: JsonNode) =
-  editor_setOption_void_App_string_JsonNode_impl(option, value)
+proc setOption*(option: string; value: JsonNode; override: bool = true) =
+  editor_setOption_void_App_string_JsonNode_bool_impl(option, value, override)
 proc quit*() =
   editor_quit_void_App_impl()
 proc help*(about: string = "") =
   editor_help_void_App_string_impl(about)
+proc loadWorkspaceFile*(path: string; callback: string) =
+  editor_loadWorkspaceFile_void_App_string_string_impl(path, callback)
+proc writeWorkspaceFile*(path: string; content: string) =
+  editor_writeWorkspaceFile_void_App_string_string_impl(path, content)
 proc changeFontSize*(amount: float32) =
   editor_changeFontSize_void_App_float32_impl(amount)
 proc changeLineDistance*(amount: float32) =
@@ -69,21 +88,35 @@ proc changeLayoutProp*(prop: string; change: float32) =
   editor_changeLayoutProp_void_App_string_float32_impl(prop, change)
 proc toggleStatusBarLocation*() =
   editor_toggleStatusBarLocation_void_App_impl()
-proc createAndAddView*() =
-  editor_createAndAddView_void_App_impl()
 proc logs*() =
   editor_logs_void_App_impl()
 proc toggleConsoleLogger*() =
   editor_toggleConsoleLogger_void_App_impl()
-proc getOpenEditors*(): seq[EditorId] =
-  editor_getOpenEditors_seq_EditorId_App_impl()
+proc showEditor*(editorId: EditorId; viewIndex: Option[int] = int.none) =
+  ## Make the given editor visible
+  ## If viewIndex is none, the editor will be opened in the currentView,
+  ## Otherwise the editor will be opened in the view with the given index.
+  editor_showEditor_void_App_EditorId_Option_int_impl(editorId, viewIndex)
+proc getVisibleEditors*(): seq[EditorId] =
+  ## Returns a list of all editors which are currently shown
+  editor_getVisibleEditors_seq_EditorId_App_impl()
 proc getHiddenEditors*(): seq[EditorId] =
+  ## Returns a list of all editors which are currently hidden
   editor_getHiddenEditors_seq_EditorId_App_impl()
-proc closeView*(index: int; keepHidden: bool = true) =
+proc getExistingEditor*(path: string): Option[EditorId] =
+  ## Returns an existing editor for the given file if one exists,
+  ## or none otherwise.
+  editor_getExistingEditor_Option_EditorId_App_string_impl(path)
+proc getOrOpenEditor*(path: string): Option[EditorId] =
+  ## Returns an existing editor for the given file if one exists,
+  ## otherwise a new editor is created for the file.
+  ## The returned editor will not be shown automatically.
+  editor_getOrOpenEditor_Option_EditorId_App_string_impl(path)
+proc closeView*(index: int; keepHidden: bool = true; restoreHidden: bool = true) =
   ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
-  editor_closeView_void_App_int_bool_impl(index, keepHidden)
-proc closeCurrentView*(keepHidden: bool = true) =
-  editor_closeCurrentView_void_App_bool_impl(keepHidden)
+  editor_closeView_void_App_int_bool_bool_impl(index, keepHidden, restoreHidden)
+proc closeCurrentView*(keepHidden: bool = true; restoreHidden: bool = true) =
+  editor_closeCurrentView_void_App_bool_bool_impl(keepHidden, restoreHidden)
 proc closeOtherViews*(keepHidden: bool = true) =
   ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
   editor_closeOtherViews_void_App_bool_impl(keepHidden)
@@ -95,6 +128,8 @@ proc nextView*() =
   editor_nextView_void_App_impl()
 proc prevView*() =
   editor_prevView_void_App_impl()
+proc toggleMaximizeView*() =
+  editor_toggleMaximizeView_void_App_impl()
 proc moveCurrentViewPrev*() =
   editor_moveCurrentViewPrev_void_App_impl()
 proc moveCurrentViewNext*() =
@@ -111,8 +146,8 @@ proc selectNextCommandInHistory*() =
   editor_selectNextCommandInHistory_void_App_impl()
 proc executeCommandLine*(): bool =
   editor_executeCommandLine_bool_App_impl()
-proc writeFile*(path: string = ""; app: bool = false) =
-  editor_writeFile_void_App_string_bool_impl(path, app)
+proc writeFile*(path: string = ""; appFile: bool = false) =
+  editor_writeFile_void_App_string_bool_impl(path, appFile)
 proc loadFile*(path: string = "") =
   editor_loadFile_void_App_string_impl(path)
 proc removeFromLocalStorage*() =
@@ -125,15 +160,41 @@ proc chooseTheme*() =
   editor_chooseTheme_void_App_impl()
 proc createFile*(path: string) =
   editor_createFile_void_App_string_impl(path)
-proc chooseFile*(view: string = "new") =
+proc browseKeybinds*() =
+  editor_browseKeybinds_void_App_impl()
+proc chooseFile*() =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
   ## Press <ESCAPE> to close the dialogue
-  editor_chooseFile_void_App_string_impl(view)
-proc chooseOpen*(view: string = "new") =
-  editor_chooseOpen_void_App_string_impl(view)
-proc chooseGitActiveFiles*() =
-  editor_chooseGitActiveFiles_void_App_impl()
+  editor_chooseFile_void_App_impl()
+proc chooseOpen*() =
+  editor_chooseOpen_void_App_impl()
+proc chooseOpenDocument*() =
+  editor_chooseOpenDocument_void_App_impl()
+proc gotoNextLocation*() =
+  editor_gotoNextLocation_void_App_impl()
+proc gotoPrevLocation*() =
+  editor_gotoPrevLocation_void_App_impl()
+proc chooseLocation*() =
+  editor_chooseLocation_void_App_impl()
+proc searchGlobalInteractive*() =
+  editor_searchGlobalInteractive_void_App_impl()
+proc searchGlobal*(query: string) =
+  editor_searchGlobal_void_App_string_impl(query)
+proc chooseGitActiveFiles*(all: bool = false) =
+  editor_chooseGitActiveFiles_void_App_bool_impl(all)
+proc exploreFiles*(root: string = "") =
+  editor_exploreFiles_void_App_string_impl(root)
+proc exploreUserConfigDir*() =
+  editor_exploreUserConfigDir_void_App_impl()
+proc exploreAppConfigDir*() =
+  editor_exploreAppConfigDir_void_App_impl()
+proc exploreHelp*() =
+  editor_exploreHelp_void_App_impl()
+proc exploreWorkspacePrimary*() =
+  editor_exploreWorkspacePrimary_void_App_impl()
+proc exploreCurrentFileDirectory*() =
+  editor_exploreCurrentFileDirectory_void_App_impl()
 proc openPreviousEditor*() =
   editor_openPreviousEditor_void_App_impl()
 proc openNextEditor*() =
@@ -141,8 +202,17 @@ proc openNextEditor*() =
 proc setGithubAccessToken*(token: string) =
   ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
   editor_setGithubAccessToken_void_App_string_impl(token)
-proc reloadConfig*() =
-  editor_reloadConfig_void_App_impl()
+proc reloadConfig*(clearOptions: bool = false) =
+  ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
+  editor_reloadConfig_void_App_bool_impl(clearOptions)
+proc reloadPlugin*() =
+  editor_reloadPlugin_void_App_impl()
+proc reloadState*() =
+  ## Reloads some of the state stored in the session file (default: config/config.json)
+  editor_reloadState_void_App_impl()
+proc saveSession*(sessionFile: string = "") =
+  ## Reloads some of the state stored in the session file (default: config/config.json)
+  editor_saveSession_void_App_string_impl(sessionFile)
 proc logOptions*() =
   editor_logOptions_void_App_impl()
 proc clearCommands*(context: string) =
@@ -168,9 +238,10 @@ proc setLeaders*(leaders: seq[string]) =
 proc addLeader*(leader: string) =
   editor_addLeader_void_App_string_impl(leader)
 proc addCommandScript*(context: string; subContext: string; keys: string;
-                       action: string; arg: string = "") =
-  editor_addCommandScript_void_App_string_string_string_string_string_impl(
-      context, subContext, keys, action, arg)
+                       action: string; arg: string = "";
+                       description: string = "") =
+  editor_addCommandScript_void_App_string_string_string_string_string_string_impl(
+      context, subContext, keys, action, arg, description)
 proc removeCommand*(context: string; keys: string) =
   editor_removeCommand_void_App_string_string_impl(context, keys)
 proc getActivePopup*(): EditorId =
@@ -190,8 +261,8 @@ proc sourceCurrentDocument*() =
   ## Runs the content of the active editor as javascript using `eval()`.
   ## "use strict" is prepended to the content to force strict mode.
   editor_sourceCurrentDocument_void_App_impl()
-proc getEditor*(index: int): EditorId =
-  editor_getEditor_EditorId_int_impl(index)
+proc getEditorInView*(index: int): EditorId =
+  editor_getEditorInView_EditorId_int_impl(index)
 proc scriptIsSelectorPopup*(editorId: EditorId): bool =
   editor_scriptIsSelectorPopup_bool_EditorId_impl(editorId)
 proc scriptIsTextEditor*(editorId: EditorId): bool =
@@ -220,6 +291,13 @@ proc scriptGetTextEditorLine*(editorId: EditorId; line: int): string =
   editor_scriptGetTextEditorLine_string_EditorId_int_impl(editorId, line)
 proc scriptGetTextEditorLineCount*(editorId: EditorId): int =
   editor_scriptGetTextEditorLineCount_int_EditorId_impl(editorId)
+proc setSessionDataJson*(path: string; value: JsonNode; override: bool = true) =
+  editor_setSessionDataJson_void_App_string_JsonNode_bool_impl(path, value,
+      override)
+proc getSessionDataJson*(path: string; default: JsonNode): JsonNode =
+  editor_getSessionDataJson_JsonNode_App_string_JsonNode_impl(path, default)
+proc scriptGetOptionJson*(path: string; default: JsonNode): JsonNode =
+  editor_scriptGetOptionJson_JsonNode_string_JsonNode_impl(path, default)
 proc scriptGetOptionInt*(path: string; default: int): int =
   editor_scriptGetOptionInt_int_string_int_impl(path, default)
 proc scriptGetOptionFloat*(path: string; default: float): float =
