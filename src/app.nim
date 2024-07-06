@@ -249,7 +249,6 @@ proc getActiveEditor*(self: App): Option[DocumentEditor]
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
 proc getEditorForPath*(self: App, path: string): Option[DocumentEditor]
 proc getPopupForId*(self: App, id: EditorId): Option[Popup]
-proc createSelectorPopup*(self: App): Popup
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup
 proc pushPopup*(self: App, popup: Popup)
 proc popPopup*(self: App, popup: Popup)
@@ -290,7 +289,6 @@ implTrait AppInterface, App:
   getEditorForId(Option[DocumentEditor], App, EditorId)
   getEditorForPath(Option[DocumentEditor], App, string)
   getPopupForId(Option[Popup], App, EditorId)
-  createSelectorPopup(Popup, App)
   pushSelectorPopup(ISelectorPopup, App, SelectorPopupBuilder)
   pushPopup(void, App, Popup)
   popPopup(void, App, Popup)
@@ -1750,7 +1748,7 @@ proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.non
   else:
     EditorView(document: editor.getDocument(), editor: editor)
 
-  if viewIndex.getSome(index):
+  if viewIndex.getSome(_):
     # todo
     discard
   else:
@@ -2190,10 +2188,6 @@ proc removeFromLocalStorage*(self: App) {.expose("editor").} =
 
       log lvlError, fmt"removeFromLocalStorage: Unknown document type"
 
-proc createSelectorPopup*(self: App): Popup =
-  # todo: delete this function
-  discard
-
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
   self.setTheme(fmt"themes/{name}.json")
 
@@ -2333,7 +2327,6 @@ proc browseKeybinds*(self: App) {.expose("editor").} =
       for (keys, command) in c.commands[""].pairs:
         var name = command
 
-        let (action, args) = command.parseAction
         let key = context & keys
         if key in self.commandDescriptions:
           name = self.commandDescriptions[key]
@@ -2554,8 +2547,6 @@ proc gotoPrevLocation*(self: App) {.expose("editor").} =
 proc chooseLocation*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
-
-  let workspace = self.workspace
 
   proc getItems(): seq[FinderItem] =
     return self.finderItems

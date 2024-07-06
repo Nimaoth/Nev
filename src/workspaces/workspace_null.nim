@@ -1,8 +1,7 @@
-import std/[os, json, options, sequtils, strutils, asyncfile, unicode]
-import misc/[custom_async, custom_logger, async_process, util, regex, timer, event]
+import std/[json, options]
+import misc/[custom_async, custom_logger, util]
 import platform/filesystem
 import workspace
-import vcs/[vcs, vcs_git, vcs_perforce]
 
 logCategory "ws-null"
 
@@ -47,10 +46,6 @@ method saveFile*(self: WorkspaceFolderNull, relativePath: string, content: strin
 method getDirectoryListing*(self: WorkspaceFolderNull, relativePath: string):
     Future[DirectoryListing] {.async.} =
   return DirectoryListing()
-
-proc searchWorkspaceFolder(self: WorkspaceFolderNull, query: string, root: string, maxResults: int):
-    Future[seq[SearchResult]] {.async.} =
-  return @[]
 
 method searchWorkspace*(self: WorkspaceFolderNull, query: string, maxResults: int):
     Future[seq[SearchResult]] {.async.} =
