@@ -292,7 +292,6 @@ proc listAdd(list: Option[string] = string.none, name: Option[string] = string.n
   list[].items.add item
 
   sync()
-  dumpState()
 
 proc listSet(index: int, list: Option[string] = string.none, name: Option[string] = string.none) {.expose("harpoon-list-set").} =
   infof"[harpoon] listSet: {index}, {list}, {name}"
@@ -311,7 +310,6 @@ proc listSet(index: int, list: Option[string] = string.none, name: Option[string
   list[].items[index] = item
 
   sync()
-  dumpState()
 
 proc listSelect(index: int, list: Option[string] = string.none, options: JsonNode = newJNull()) {.expose("harpoon-list-select").} =
   infof"[harpoon] listSelect: {index}, {list}, {options}"
@@ -357,25 +355,6 @@ proc sync() {.expose("harpoon-sync").} =
   gHarpoon.data.sync()
 
 setup(newJObject())
-
-# var list = gHarpoon.getList(string.none).addr
-
-# list[].items.add HarpoonItem(
-#   value: "C:/Absytree/src/platform/tui.nim",
-#   context: (10, 0).Cursor.toJson,
-# )
-
-# list[].items.add HarpoonItem(
-#   value: "C:/Absytree/src/text/language/lsp_types.nim",
-#   context: (20, 0).Cursor.toJson,
-# )
-
-# list[].items.add HarpoonItem(
-#   value: "C:/Absytree/config/keybindings_vim.nim",
-#   context: (30, 0).Cursor.toJson,
-# )
-
-dumpState()
 
 when defined(wasm):
   include absytree_runtime_impl
