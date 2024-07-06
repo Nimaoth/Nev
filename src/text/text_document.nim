@@ -210,7 +210,6 @@ proc runeIndexInLine*(self: TextDocument, cursor: Cursor): RuneIndex =
 
 proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
-  self.styledTextCache.clear()
 
 proc applyTreesitterChanges(self: TextDocument) =
   if self.currentTree.isNotNil:
@@ -317,6 +316,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
 
   inc self.version
 
+  self.styledTextCache.clear()
   self.notifyTextChanged()
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
@@ -342,6 +342,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 
   inc self.version
 
+  self.styledTextCache.clear()
   self.notifyTextChanged()
 
 func content*(self: TextDocument): seq[string] =
@@ -1530,9 +1531,14 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
       undoOp.children.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
 
-    self.updateDiagnosticPositionsAfterInsert (oldCursor, cursor)
+    let inserted = (oldCursor, cursor)
+    if inserted.first.line == inserted.last.line:
+      self.styledTextCache.del(inserted.first.line)
+    else:
+      self.styledTextCache.clear()
+
     if notify:
-      self.textInserted.invoke((self, (oldCursor, cursor), text))
+      self.textInserted.invoke((self, inserted, text))
 
   self.currentContentFailedToParse = false
 
@@ -1603,6 +1609,11 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     if record:
       undoOp.children.add UndoOp(kind: Insert, cursor: selection.first, text: deletedText)
+
+    if selection.first.line == selection.last.line:
+      self.styledTextCache.del(selection.first.line)
+    else:
+      self.styledTextCache.clear()
 
     self.updateDiagnosticPositionsAfterDelete selection
     if notify:
