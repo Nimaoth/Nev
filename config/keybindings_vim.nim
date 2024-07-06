@@ -726,7 +726,7 @@ proc vimToggleCase(editor: TextDocumentEditor, moveCursorRight: bool) {.exposeAc
     editor.updateTargetColumn()
 
 proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-current-view-or-quit").} =
-  let openEditors = getOpenEditors().len + getHiddenEditors().len
+  let openEditors = getVisibleEditors().len + getHiddenEditors().len
   if openEditors == 1:
     absytree_runtime.quit()
   else:
@@ -1331,7 +1331,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   addTextCommand "", "<CA-UP>", "add-cursor-above"
   addTextCommand "", "<CA-DOWN>", "add-cursor-below"
-  addTextCommand "", "<C-g>", "add-cursor-above"
+  addTextCommand "", "<C-h>", "add-cursor-above"
   addTextCommand "", "<C-f>", "add-cursor-below"
 
   addTextCommandBlock "", "L":

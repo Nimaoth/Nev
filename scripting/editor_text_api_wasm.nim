@@ -3088,9 +3088,24 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_wasm(
+proc editor_text_getSelection_Selection_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getSelection*(self: TextDocumentEditor): Selection =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getSelection_Selection_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
     arg: cstring): cstring {.importc.}
-proc setSelection*(self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
+proc setSelection*(self: TextDocumentEditor; selection: Selection) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -3098,17 +3113,31 @@ proc setSelection*(self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
     else:
       self.toJson()
   argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
+    when Selection is JsonNode:
+      selection
     else:
-      cursor.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      nextMode
-    else:
-      nextMode.toJson()
+      selection.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Cursor_string_wasm(
+  let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setTargetSelection_void_TextDocumentEditor_Selection_wasm(
+    arg: cstring): cstring {.importc.}
+proc setTargetSelection*(self: TextDocumentEditor; selection: Selection) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selection is JsonNode:
+      selection
+    else:
+      selection.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setTargetSelection_void_TextDocumentEditor_Selection_wasm(
       argsJsonString.cstring)
 
 

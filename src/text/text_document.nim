@@ -1531,7 +1531,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
       undoOp.children.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
 
-    let inserted = (oldCursor, cursor)
+    let inserted: Selection = (oldCursor, cursor)
     if inserted.first.line == inserted.last.line:
       self.styledTextCache.del(inserted.first.line)
     else:

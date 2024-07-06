@@ -127,10 +127,13 @@ proc insertText*(editor: AnyDocumentEditor, text: string) =
   scriptInsertTextInto(editor.id, text)
 
 proc selection*(editor: TextDocumentEditor): Selection =
-  return scriptTextEditorSelection(editor.id)
+  return editor.getSelection()
 
 proc `selection=`*(editor: TextDocumentEditor, selection: Selection) =
-  scriptSetTextEditorSelection(editor.id, selection)
+  editor.setSelection(selection)
+
+proc `targetSelection=`*(editor: TextDocumentEditor, selection: Selection) =
+  editor.setTargetSelection(selection)
 
 proc selections*(editor: TextDocumentEditor): seq[Selection] =
   return scriptTextEditorSelections(editor.id)

@@ -548,12 +548,31 @@ proc toggleConsoleLogger*() =
       argsJsonString.cstring)
 
 
-proc editor_getOpenEditors_seq_EditorId_App_wasm(arg: cstring): cstring {.
+proc editor_showEditor_void_App_EditorId_Option_int_wasm(arg: cstring): cstring {.
     importc.}
-proc getOpenEditors*(): seq[EditorId] =
+proc showEditor*(editorId: EditorId; viewIndex: Option[int] = int.none) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when EditorId is JsonNode:
+      editorId
+    else:
+      editorId.toJson()
+  argsJson.add block:
+    when Option[int] is JsonNode:
+      viewIndex
+    else:
+      viewIndex.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_showEditor_void_App_EditorId_Option_int_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_getVisibleEditors_seq_EditorId_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc getVisibleEditors*(): seq[EditorId] =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_getOpenEditors_seq_EditorId_App_wasm(
+  let res {.used.} = editor_getVisibleEditors_seq_EditorId_App_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
@@ -564,6 +583,36 @@ proc getHiddenEditors*(): seq[EditorId] =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_getHiddenEditors_seq_EditorId_App_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_getExistingEditor_Option_EditorId_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc getExistingEditor*(path: string): Option[EditorId] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_getExistingEditor_Option_EditorId_App_string_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_getOrOpenEditor_Option_EditorId_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc getOrOpenEditor*(path: string): Option[EditorId] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_getOrOpenEditor_Option_EditorId_App_string_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
@@ -1282,8 +1331,8 @@ proc sourceCurrentDocument*() =
       argsJsonString.cstring)
 
 
-proc editor_getEditor_EditorId_int_wasm(arg: cstring): cstring {.importc.}
-proc getEditor*(index: int): EditorId =
+proc editor_getEditorInView_EditorId_int_wasm(arg: cstring): cstring {.importc.}
+proc getEditorInView*(index: int): EditorId =
   var argsJson = newJArray()
   argsJson.add block:
     when int is JsonNode:
@@ -1291,7 +1340,8 @@ proc getEditor*(index: int): EditorId =
     else:
       index.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_getEditor_EditorId_int_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_getEditorInView_EditorId_int_wasm(
+      argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
 
