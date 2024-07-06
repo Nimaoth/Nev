@@ -32,7 +32,7 @@ switch("d", "release")
 
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
-# switch("d", "enableNimscript=true")
+switch("d", "enableNimscript=true")
 # switch("d", "enableAst=true")
 
 
@@ -54,7 +54,7 @@ when defined(musl):
   echo "Build static binary with musl " & muslGcc
   switch("gcc.exe", muslGcc)
   switch("gcc.linkerexe", muslGcc)
-  switch("passL", "-static" )
+  switch("passL", "-static")
 
   # Disable system clipboard because it doesn't build with musl right now
   switch("d", "enableSystemClipboard=false")
