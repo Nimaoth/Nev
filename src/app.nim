@@ -98,6 +98,7 @@ type EditorState = object
   astProjectPath: Option[string]
 
   debuggerState: Option[JsonNode]
+  sessionData: JsonNode
 
 type
   RegisterKind* {.pure.} = enum Text, AstNode
@@ -143,6 +144,7 @@ type
     commandDescriptions*: Table[string, string]
 
     options: JsonNode
+    sessionData: JsonNode
     callbacks: Table[string, int]
 
     workspace*: Workspace
@@ -846,6 +848,8 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
     if state.fallbackFonts.len > 0: self.fallbackFonts = state.fallbackFonts
 
     self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
+
+    self.sessionData = state.sessionData
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
@@ -1113,6 +1117,9 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
       self.restoreStateFromConfig(state)
     else:
       log lvlInfo, &"Don't restore session file."
+
+  if self.sessionData.isNil:
+    self.sessionData = newJObject()
 
   await self.loadOptionsFromAppDir()
   await self.loadOptionsFromHomeDir()
@@ -1414,6 +1421,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fallbackFonts = self.fallbackFonts
 
   state.commandHistory = self.commandHistory
+  state.sessionData = self.sessionData
 
   if getDebugger().getSome(debugger):
     state.debuggerState = debugger.getStateJson().some
@@ -1777,6 +1785,9 @@ proc getExistingEditor*(self: App, path: string): Option[EditorId] {.expose("edi
   defer:
     log lvlInfo, &"getExistingEditor {path} -> {result}"
 
+  if path.len == 0:
+    return EditorId.none
+
   for id, editor in self.editors.pairs:
     if editor.getDocument() == nil:
       continue
@@ -1792,6 +1803,9 @@ proc getOrOpenEditor*(self: App, path: string): Option[EditorId] {.expose("edito
   ## The returned editor will not be shown automatically.
   defer:
     log lvlInfo, &"getOrOpenEditor {path} -> {result}"
+
+  if path.len == 0:
+    return EditorId.none
 
   if self.getExistingEditor(path).getSome(id):
     return id.some
@@ -3483,6 +3497,46 @@ template createScriptSetOption(path, value: untyped): untyped =
       return
     node[pathItems[^1]] = value
     gEditor.onConfigChanged.invoke()
+
+proc setSessionDataJson*(self: App, path: string, value: JsonNode, override: bool = true) {.expose("editor").} =
+  if self.isNil or path.len == 0:
+    return
+
+  let pathItems = path.split(".")
+  var node = self.sessionData
+  for key in pathItems[0..^2]:
+    if node.kind != JObject:
+      return
+    if not node.contains(key):
+      node[key] = newJObject()
+    node = node[key]
+  if node.isNil or node.kind != JObject:
+    return
+
+  let key = pathItems[^1]
+  if not override and node.hasKey(key):
+    node.fields[key].extendJson(value, true)
+  else:
+    node[key] = value
+
+  self.onConfigChanged.invoke()
+
+proc getSessionDataJson*(self: App, path: string, default: JsonNode): JsonNode {.expose("editor").} =
+  if self.isNil:
+    return default
+  let node = self.sessionData{path.split(".")}
+  if node.isNil:
+    return default
+  return node
+
+proc scriptGetOptionJson*(path: string, default: JsonNode): JsonNode {.expose("editor").} =
+  block:
+    if gEditor.isNil:
+      return default
+    let node = gEditor.options{path.split(".")}
+    if node.isNil:
+      return default
+    return node
 
 proc scriptGetOptionInt*(path: string, default: int): int {.expose("editor").} =
   result = createScriptGetOption(path, default, getInt)
