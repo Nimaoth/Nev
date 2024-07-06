@@ -11,7 +11,7 @@ logCategory "workspace-file-previewer"
 
 type
   WorkspaceFilePreviewer* = ref object of Previewer
-    workspace: WorkspaceFolder
+    workspace: Workspace
     configProvider: ConfigProvider
     editor: TextDocumentEditor
     tempDocument: TextDocument
@@ -24,7 +24,7 @@ type
     currentStaged: bool
     currentDiff: bool
 
-proc newWorkspaceFilePreviewer*(workspace: WorkspaceFolder, configProvider: ConfigProvider,
+proc newWorkspaceFilePreviewer*(workspace: Workspace, configProvider: ConfigProvider,
     openNewDocuments: bool = false): WorkspaceFilePreviewer =
   new result
   result.workspace = workspace

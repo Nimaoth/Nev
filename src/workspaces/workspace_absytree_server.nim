@@ -9,7 +9,7 @@ type
     done: bool
     listing: DirectoryListing
 
-  WorkspaceFolderAbsytreeServer* = ref object of WorkspaceFolder
+  WorkspaceFolderAbsytreeServer* = ref object of Workspace
     baseUrl*: string
     cachedDirectoryListings: Table[string, DirectoryListingWrapper]
     cachedRelativePaths: Table[string, Option[string]]

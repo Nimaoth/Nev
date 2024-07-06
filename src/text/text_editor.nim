@@ -2296,7 +2296,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 type
   LspWorkspaceSymbolsDataSource* = ref object of DataSource
-    workspace: WorkspaceFolder
+    workspace: Workspace
     languageServer: LanguageServer
     query: string
     delayedTask: DelayedTask
@@ -2325,7 +2325,7 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
   items.setLen(index)
   self.onItemsChanged.invoke items
 
-proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: WorkspaceFolder):
+proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: Workspace):
     LspWorkspaceSymbolsDataSource =
 
   new result

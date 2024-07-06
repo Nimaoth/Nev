@@ -7,7 +7,7 @@ import vcs/[vcs, vcs_git, vcs_perforce]
 logCategory "ws-null"
 
 type
-  WorkspaceFolderNull* = ref object of WorkspaceFolder
+  WorkspaceFolderNull* = ref object of Workspace
 
 method settings*(self: WorkspaceFolderNull): JsonNode =
   result = newJObject()

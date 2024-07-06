@@ -849,7 +849,7 @@ proc newTextDocument*(
     filename: string = "",
     content: string = "",
     app: bool = false,
-    workspaceFolder: Option[WorkspaceFolder] = WorkspaceFolder.none,
+    workspaceFolder: Option[Workspace] = Workspace.none,
     language: Option[string] = string.none,
     languageServer: Option[LanguageServer] = LanguageServer.none,
     load: bool = false,
@@ -973,7 +973,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
-proc loadAsync(self: TextDocument, ws: WorkspaceFolder, reloadTreesitter: bool = false): Future[void] {.async.} =
+proc loadAsync(self: TextDocument, ws: Workspace, reloadTreesitter: bool = false): Future[void] {.async.} =
 
   logScope lvlInfo, &"loadAsync '{self.filename}'"
   # self.content = await ws.loadFile(self.filename)
@@ -1046,7 +1046,7 @@ proc setFileAndContent*(self: TextDocument, filename: string, content: sink stri
   self.autoDetectIndentStyle()
   self.onLoaded.invoke self
 
-proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[WorkspaceFolder]) =
+proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[Workspace]) =
   let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   if filename.len == 0:
     raise newException(IOError, "Missing filename")

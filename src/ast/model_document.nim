@@ -260,7 +260,7 @@ proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode
 method `$`*(document: ModelDocument): string =
   return document.filename
 
-proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[WorkspaceFolder]): ModelDocument =
+proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[Workspace]): ModelDocument =
   new(result)
   let self = result
 
@@ -296,7 +296,7 @@ template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
 template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
 
 proc requestEditorForModel(self: ModelDocumentEditor, model: Model): Option[ModelDocumentEditor] =
-  let editor: Option[DocumentEditor] = self.app.openWorkspaceFile(model.path, self.document.workspace.get)
+  let editor: Option[DocumentEditor] = self.app.openWorkspaceFile(model.path)
   if editor.getSome(editor) and editor of ModelDocumentEditor:
     return editor.ModelDocumentEditor.some
   return ModelDocumentEditor.none
@@ -3307,7 +3307,7 @@ proc createNewModelAsync*(self: ModelDocumentEditor, name: string) {.async.} =
     let serialized = $model.toJson
     await ws.saveFile(model.path, serialized)
 
-    discard self.app.openWorkspaceFile(model.path, ws)
+    discard self.app.openWorkspaceFile(model.path)
   else:
     log lvlError, fmt"Failed to create model: no workspace"
 
@@ -3319,7 +3319,7 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlError, fmt"No project set for model document '{self.document.filename}'"
     return
 
-  let workspace: WorkspaceFolder = self.document.workspace.get
+  let workspace: Workspace = self.document.workspace.get
 
   proc getModelsAsync(): Future[ItemList] {.async.} =
     let files = await workspace.getDirectoryListingRec("")

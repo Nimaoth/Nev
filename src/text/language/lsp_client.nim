@@ -24,7 +24,7 @@ type
     isInitialized: bool
     pendingRequests: seq[string]
     workspaceFolders: seq[string]
-    workspace*: Option[ws.WorkspaceFolder]
+    workspace*: Option[ws.Workspace]
     serverCapabilities: ServerCapabilities
     fullDocumentSync*: bool = false
     onMessage*: Event[tuple[verbosity: MessageType, message: string]]

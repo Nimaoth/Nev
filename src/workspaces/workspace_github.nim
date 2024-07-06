@@ -5,7 +5,7 @@ import workspace, platform/filesystem
 logCategory "ws-github"
 
 type
-  WorkspaceFolderGithub* = ref object of WorkspaceFolder
+  WorkspaceFolderGithub* = ref object of Workspace
     baseUrl: string
     user*: string
     repository*: string

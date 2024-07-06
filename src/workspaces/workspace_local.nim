@@ -1,4 +1,4 @@
-import std/[os, json, options, sequtils, strutils, asyncfile]
+import std/[os, json, options, sequtils, strutils, asyncfile, unicode]
 import misc/[custom_async, custom_logger, async_process, util, regex, timer, event]
 import platform/filesystem
 import workspace
@@ -7,7 +7,7 @@ import vcs/[vcs, vcs_git, vcs_perforce]
 logCategory "ws-local"
 
 type
-  WorkspaceFolderLocal* = ref object of WorkspaceFolder
+  WorkspaceFolderLocal* = ref object of Workspace
     path*: string
     additionalPaths: seq[string]
     versionControlSystems*: seq[VersionControlSystem]
@@ -142,7 +142,14 @@ proc loadFileThread(args: tuple[path: string, data: ptr string]):
 
   try:
     args.data[] = readFile(args.path)
-    result.ok = true
+
+    let invalidUtf8Index = args.data[].validateUtf8
+    if invalidUtf8Index >= 0:
+      args.data[] = &"Invalid utf-8 byte at {invalidUtf8Index}"
+      result.ok = false
+    else:
+      result.ok = true
+
   except:
     result.ok = false
 
@@ -154,7 +161,6 @@ method loadFile*(self: WorkspaceFolderLocal, relativePath: string): Future[strin
     let res = await spawnAsync(loadFileThread, (path, data.addr))
     if not res.ok:
       log lvlError, &"Failed to load file '{path}'"
-      return ""
 
     return data.move
   except:
