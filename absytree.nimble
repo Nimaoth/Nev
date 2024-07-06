@@ -31,7 +31,7 @@ requires "https://github.com/Nimaoth/windy >= 0.0.2"
 requires "https://github.com/Nimaoth/wasm3 >= 0.1.13"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.2"
-requires "https://github.com/Nimaoth/nimscripter >= 1.0.19"
+requires "https://github.com/Nimaoth/nimscripter >= 1.0.20"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.6"
 
 # Use this to include all treesitter languages (takes longer to download)
