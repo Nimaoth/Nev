@@ -252,13 +252,13 @@
       }
     },
     "nimscripter": {
-      "version": "1.0.19",
-      "vcsRevision": "30d69e31b6740e6fa87c2ff29b0ff111ad39ca28",
+      "version": "1.0.20",
+      "vcsRevision": "254bdc9bd4bfd7046cc47b04d9298bef643aae5d",
       "url": "https://github.com/Nimaoth/nimscripter",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "72c706cd43a204b602bbfaf78a5a561f9fc8d08a"
+        "sha1": "2868f872b72008be43e098a7db3cf1f08c6b1469"
       }
     },
     "nimtreesitter": {
