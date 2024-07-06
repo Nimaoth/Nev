@@ -20,7 +20,7 @@ type AnyDocumentEditor = TextDocumentEditor | ModelDocumentEditor
 var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
 var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
 var anyCallbacks = initTable[int, proc(args: JsonNode): JsonNode]()
-var onEditorModeChanged*: Event[tuple[editor: EditorId, oldMode: string, newMode: string]]
+var onEditorModeChanged* = initEvent[tuple[editor: EditorId, oldMode: string, newMode: string]]()
 var callbackId = 0
 
 when defined(wasm):

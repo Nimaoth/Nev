@@ -739,10 +739,15 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 
         if self.homeDir != "":
           let scriptPath = self.homeDir / ".absytree/custom.nims"
-          if createScriptContext(scriptPath, searchPaths).await.getSome(scriptContext):
-            self.nimsScriptContext = scriptContext
+          if fileExists(scriptPath):
+            log lvlInfo, &"Found '{scriptPath}'"
+            if createScriptContext(scriptPath, searchPaths).await.getSome(scriptContext):
+              self.nimsScriptContext = scriptContext
+            else:
+              log lvlError, "Failed to create nim script context"
+
           else:
-            log lvlError, "Failed to create nim script context"
+            log lvlInfo, &"No custom.nims found in home ~/.absytree"
 
           withScriptContext self, self.nimsScriptContext:
             log(lvlInfo, fmt"init nim script config")
