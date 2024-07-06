@@ -93,9 +93,9 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   let document = if self.currentStaged:
     Document.none
   elif self.openNewDocuments:
-    app.getOrOpenDocument(path, self.workspace.some, app=false)
+    app.getOrOpenDocument(path, app=false)
   else:
-    app.getDocument(path, self.workspace.some, app=false)
+    app.getDocument(path, app=false)
 
   if document.getSome(document):
     if not (document of TextDocument):

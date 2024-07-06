@@ -208,6 +208,9 @@ when not defined(js):
   import workspace_local
   export workspace_local
 
+import workspace_null
+export workspace_null
+
 import workspace_github
 export workspace_github
 
