@@ -11,7 +11,10 @@ import keybindings_vim
 import keybindings_normal
 
 proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
-  let keybindings = getOption("keybindings", "")
+  let keybindings = getOption("keybindings.preset", "")
+  let reapplyApp = getOption("keybindings.reapply-app", false)
+  let reapplyHome = getOption("keybindings.reapply-home", true)
+  let reapplyWorkspace = getOption("keybindings.reapply-workspace", true)
   infof"loadConfiguredKeybindings {keybindings}"
   case keybindings
   of "vim":
@@ -20,6 +23,8 @@ proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
   of "vscode":
     loadDefaultKeybindings(true)
     loadVSCodeKeybindings()
+
+  reapplyConfigKeybindings(reapplyApp, reapplyHome, reapplyWorkspace)
 
 if getBackend() == Terminal:
   # Disable animations in terminal because they don't look great

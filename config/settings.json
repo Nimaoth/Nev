@@ -232,7 +232,9 @@
         }
     },
 
-    "keybindings": "vim",
+    "keybindings": {
+        "preset": "vim"
+    },
 
     "plugin-post-load-commands": [
         "load-theme \"tokyo-night-color-theme\"",
