@@ -259,7 +259,7 @@ proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.as
     log lvlError, &"Failed to find file '{path}'"
     return
 
-  let editor = self.app.openWorkspaceFile(path, nil)
+  let editor = self.app.openWorkspaceFile(path)
 
   if editor.getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor

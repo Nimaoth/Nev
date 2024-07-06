@@ -2093,8 +2093,8 @@ proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
 
 proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Selection]) =
-  let editor = if self.document.workspace.getSome(workspace):
-    self.app.openWorkspaceFile(filename, workspace)
+  let editor = if self.document.workspace.isSome:
+    self.app.openWorkspaceFile(filename)
   else:
     self.app.openFile(filename)
 
@@ -2219,8 +2219,8 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.getSome(ls):
     let filename = await ls.switchSourceHeader(self.document.fullPath)
     if filename.getSome(filename):
-      if self.document.workspace.getSome(workspace):
-        discard self.app.openWorkspaceFile(filename, workspace)
+      if self.document.workspace.isSome:
+        discard self.app.openWorkspaceFile(filename)
       else:
         discard self.app.openFile(filename)
 
