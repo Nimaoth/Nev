@@ -172,7 +172,10 @@ proc defaultEncode(item: HarpoonItem): string =
   return $item.toJson
 
 proc defaultDecode(value: string): HarpoonItem =
-  return value.parseJson.jsonTo(HarpoonItem)
+  try:
+    return value.parseJson.jsonTo(HarpoonItem)
+  except:
+    return HarpoonItem()
 
 proc defaultCreateListItem(config: HarpoonPartialConfigItem, name: Option[string]): HarpoonItem =
   let activeEditor = if getActiveEditor().isTextEditor(ed):
@@ -226,7 +229,11 @@ proc encode(list: HarpoonList): Option[seq[string]] =
   for item in list.items:
     var encoded = ""
     if encodeCallback != "":
-      encodeCallback.invoke(encoded, item)
+      try:
+        encodeCallback.invoke(encoded, item)
+      except:
+        infof"Failed to encode item {item}"
+        continue
     else:
       encoded = defaultEncode(item)
 
@@ -253,7 +260,7 @@ proc getList(self: Harpoon, name: Option[string] = string.none): var HarpoonList
   else:
     key = ""
 
-  let lists = self.lists.mgetOrPut(key).addr
+  let lists = self.lists.mgetOrPut(key, initTable[string, HarpoonList]()).addr
 
   if lists[].contains(name):
     return self.lists[key][name]

@@ -6,8 +6,12 @@ proc handleAnyCallback*(id: int, args: JsonNode): JsonNode = handleAnyCallbackIm
 proc handleScriptAction*(name: string, args: JsonNode): JsonNode = handleScriptActionImpl(name, args)
 
 proc handleEditorModeChanged*(editor: EditorId, oldMode: string, newMode: string) =
-  # infof"handleEditorModeChanged {editor} {oldMode} {newMode}"
-  onEditorModeChanged.invoke (editor, oldMode, newMode)
+  try:
+    # todo: in nimscript this crashes?
+    when not defined(nimscript):
+      onEditorModeChanged.invoke (editor, oldMode, newMode)
+  except:
+    info &"handleEditorModeChanged failed: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 when defined(wasm):
   proc postInitializeWasm(): bool {.wasmexport.} =
