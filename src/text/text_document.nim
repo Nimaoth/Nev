@@ -1537,6 +1537,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     else:
       self.styledTextCache.clear()
 
+    self.updateDiagnosticPositionsAfterInsert inserted
     if notify:
       self.textInserted.invoke((self, inserted, text))
 

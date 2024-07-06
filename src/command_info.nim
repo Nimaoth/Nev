@@ -25,7 +25,7 @@ proc rebuild*(self: CommandInfos, eventHandlerConfigs {.byref.}: Table[string, E
     if not c.commands.contains(""):
       continue
     for (keys, command) in c.commands[""].pairs:
-      let (action, args) = command.parseAction
+      let (action, _) = command.parseAction
       self.commandToKeys.mgetOrPut(action, @[]).add(CommandKeyInfo(
         keys: keys,
         command: command,
