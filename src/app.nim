@@ -275,7 +275,7 @@ proc getDocument*(self: App, path: string, appFile = false): Option[Document]
 proc getOrOpenDocument*(self: App, path: string, appFile = false, load = true): Option[Document]
 proc tryCloseDocument*(self: App, document: Document, force: bool): bool
 proc closeUnusedDocuments*(self: App)
-proc tryOpenExisting*(self: App, path: string): Option[DocumentEditor]
+proc tryOpenExisting*(self: App, path: string, appFile: bool = false): Option[DocumentEditor]
 proc setOption*(self: App, option: string, value: JsonNode, override: bool = true)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "")
 
@@ -2158,17 +2158,19 @@ proc loadWorkspaceFile*(self: App, path: string) =
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
-proc tryOpenExisting*(self: App, path: string): Option[DocumentEditor] =
+proc tryOpenExisting*(self: App, path: string, appFile: bool = false): Option[DocumentEditor] =
   for i, view in self.views:
     if view of EditorView and view.EditorView.document.filename == path and
-        view.EditorView.document.workspace == self.workspace.some:
+        (view.EditorView.document.workspace == self.workspace.some or
+        view.EditorView.document.appFile == appFile):
       log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.currentView = i
       return view.EditorView.editor.some
 
   for i, view in self.hiddenViews:
     if view of EditorView and view.EditorView.document.filename == path and
-        view.EditorView.document.workspace == self.workspace.some:
+        (view.EditorView.document.workspace == self.workspace.some or
+        view.EditorView.document.appFile == appFile):
       log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
       self.addView(view)
@@ -2197,7 +2199,7 @@ proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentE
     self.platform.requestRender()
 
   log lvlInfo, fmt"[openFile] Open file '{path}' (appFile = {appFile})"
-  if self.tryOpenExisting(path).getSome(ed):
+  if self.tryOpenExisting(path, appFile).getSome(ed):
     log lvlInfo, fmt"[openFile] found existing editor"
     return ed.some
 
