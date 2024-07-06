@@ -31,7 +31,7 @@ const defaultSessionName = ".absytree-session"
 
 type
   EditorView* = ref object of View
-    document*: Document
+    document*: Document # todo: remove
     editor*: DocumentEditor
 
 method activate*(view: EditorView) =
@@ -130,7 +130,7 @@ type
     closeRequested*: bool
 
     logNextFrameTime*: bool = false
-    disableLogFrameTime*: bool = false
+    disableLogFrameTime*: bool = true
 
     registers: Table[string, Register]
     recordingKeys: seq[string]
@@ -145,7 +145,8 @@ type
     options: JsonNode
     callbacks: Table[string, int]
 
-    workspace*: Workspace
+    workspaceOld*: Workspace
+    workspace*: WorkspaceFolder
 
     scriptContext*: ScriptContext
     wasmScriptContext*: ScriptContextWasm
@@ -317,7 +318,6 @@ proc handleDropFile*(self: App, path, content: string)
 
 proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
 proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): Future[bool]
-proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder]
 proc setLayout*(self: App, layout: string)
 
 template withScriptContext(self: App, scriptContext: untyped, body: untyped): untyped =
@@ -453,7 +453,10 @@ proc getFlag*(self: App, flag: string, default: bool = false): bool
 proc createEditorForDocument(self: App, document: Document): DocumentEditor =
   for editor in self.editorDefaults:
     if editor.canEdit document:
-      return editor.createWithDocument(document, self.asConfigProvider)
+      result = editor.createWithDocument(document, self.asConfigProvider)
+      result.injectDependencies self.asAppInterface
+      discard result.onMarkedDirty.subscribe () => self.platform.requestRender()
+      return
 
   log(lvlError, "No editor found which can edit " & $document)
   return nil
@@ -577,16 +580,12 @@ proc addView*(self: App, view: View, addToHistory = true, append = false) =
 
 proc createView*(self: App, document: Document): View =
   var editor = self.createEditorForDocument document
-  editor.injectDependencies self.asAppInterface
-  discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
   return EditorView(document: document, editor: editor)
 
 proc createView(self: App, editorState: OpenEditor): View
 
 proc createAndAddView*(self: App, document: Document, append = false): DocumentEditor =
   var editor = self.createEditorForDocument document
-  editor.injectDependencies self.asAppInterface
-  discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
   var view = EditorView(document: document, editor: editor)
   self.addView(view, append=append)
   return editor
@@ -636,13 +635,8 @@ proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor] =
   return DocumentEditor.none
 
 proc getEditorForPath*(self: App, path: string): Option[DocumentEditor] =
-  let folder = if self.workspace.folders.len > 0:
-    self.workspace.folders[0]
-  else:
-    return DocumentEditor.none
-
-  let path = folder.getAbsolutePath(path)
-  return self.tryOpenExisting(path, folder.some)
+  let path = self.workspace.getAbsolutePath(path)
+  return self.tryOpenExisting(path, self.workspace.some)
 
 proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
   for popup in self.popups:
@@ -1051,7 +1045,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   when enableAst:
     self.editorDefaults.add ModelDocumentEditor()
 
-  self.workspace.new()
+  self.workspaceOld.new()
 
   self.logDocument = newTextDocument(self.asConfigProvider, "log", load=false, createLanguageServer=false)
   self.documents.add self.logDocument
@@ -1160,22 +1154,14 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
           log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
 
   # Open current working dir as local workspace if no workspace exists yet
-  if self.workspace.folders.len == 0:
+  if self.workspaceOld.folders.len == 0:
     when not defined(js):
       log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
       discard await self.addWorkspaceFolder newWorkspaceFolderLocal(".")
 
   when enableAst:
-    if state.astProjectWorkspaceId != "":
-      if self.getWorkspaceFolder(state.astProjectWorkspaceId.parseId).getSome(ws):
-        setProjectWorkspace(ws)
-      else:
-        when not defined(js):
-          log lvlError, fmt"Failed to restore project workspace {state.astProjectWorkspaceId}"
-
-    if gProjectWorkspace.isNil and self.workspace.folders.len > 0:
-      log lvlWarn, fmt"Use first workspace as project workspace"
-      setProjectWorkspace(self.workspace.folders[0])
+    if self.workspace.isNotNil:
+      setProjectWorkspace(self.workspace)
 
   # Restore open editors
   if options.fileToOpen.getSome(filePath):
@@ -1376,9 +1362,7 @@ proc getOrOpenDocument*(self: App, path: string, workspace = WorkspaceFolder.non
 
 # todo: change return type to Option[View]
 proc createView(self: App, editorState: OpenEditor): View =
-  let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
-
-  let document = self.getOrOpenDocument(editorState.filename, workspaceFolder, editorState.appFile).getOr:
+  let document = self.getOrOpenDocument(editorState.filename, self.workspace.some, editorState.appFile).getOr:
     log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session")
     return
 
@@ -1449,7 +1433,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
     state.layout = "fibonacci"
 
   # Save open workspace folders
-  for workspaceFolder in self.workspace.folders:
+  for workspaceFolder in self.workspaceOld.folders:
     let kind = workspaceFolder.openWorkspaceKind()
 
     state.workspaceFolders.add OpenWorkspace(
@@ -1522,13 +1506,14 @@ proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("edit
   self.getEventHandlerConfig(context).setConsumeAllInput(value)
 
 proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): Future[bool] {.async.} =
-  for wf in self.workspace.folders:
-    if wf.openWorkspaceKind == workspaceFolder.openWorkspaceKind and wf.settings == workspaceFolder.settings:
-      return false
+  log(lvlInfo, fmt"Opening workspace {workspaceFolder.name}")
+
   if workspaceFolder.id == idNone():
     workspaceFolder.id = newId()
-  log(lvlInfo, fmt"Opening workspace {workspaceFolder.name}")
-  self.workspace.folders.add workspaceFolder
+
+  if self.workspace.isNil:
+    self.workspace = workspaceFolder
+    self.workspaceOld.folders = @[self.workspace]
 
   if gWorkspace.isNil:
     setGlobalWorkspace(workspaceFolder)
@@ -1537,14 +1522,8 @@ proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): Future[boo
 
   return true
 
-proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder] =
-  for wf in self.workspace.folders:
-    if wf.id == id:
-      return wf.some
-  return WorkspaceFolder.none
-
 proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
-  for wf in self.workspace.folders:
+  for wf in self.workspaceOld.folders:
     wf.clearDirectoryCache()
 
 proc openGithubWorkspace*(self: App, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
@@ -1686,12 +1665,7 @@ proc help*(self: App, about: string = "") {.expose("editor").} =
   discard self.createAndAddView(textDocument)
 
 proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async.} =
-  if self.workspace.folders.len == 0:
-    discard self.callScriptAction(callback, Option[string].none.toJson)
-    return
-
-  let workspace = self.workspace.folders[0]
-  let content = await workspace.loadFile(path)
+  let content = await self.workspace.loadFile(path)
 
   discard self.callScriptAction(callback, content.some.toJson)
 
@@ -1699,13 +1673,8 @@ proc loadWorkspaceFile*(self: App, path: string, callback: string) {.expose("edi
   asyncCheck self.loadWorkspaceFileImpl(path, callback)
 
 proc writeWorkspaceFile*(self: App, path: string, content: string) {.expose("editor").} =
-  if self.workspace.folders.len == 0:
-    log lvlError, &"[writeWorkspaceFile] No workspace"
-    return
-
   log lvlInfo, &"[writeWorkspaceFile] {path}"
-  let workspace = self.workspace.folders[0]
-  asyncCheck workspace.saveFile(path, content)
+  asyncCheck self.workspace.saveFile(path, content)
 
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
@@ -1740,17 +1709,8 @@ proc logs*(self: App) {.expose("editor").} =
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
   logger.toggleConsoleLogger()
 
-proc getOpenEditors*(self: App): seq[EditorId] {.expose("editor").} =
-  for view in self.views:
-    if view of EditorView:
-      result.add view.EditorView.editor.id
-
-proc getHiddenEditors*(self: App): seq[EditorId] {.expose("editor").} =
-  for view in self.hiddenViews:
-    if view of EditorView:
-      result.add view.EditorView.editor.id
-
 proc getViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
+  ## Returns the index of the view for the given editor.
   for i, view in self.views:
     if view of EditorView and view.EditorView.editor == editor:
       return i.some
@@ -1758,11 +1718,101 @@ proc getViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
   return int.none
 
 proc getHiddenViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
+  ## Returns the index of the hidden view for the given editor.
   for i, view in self.hiddenViews:
     if view of EditorView and view.EditorView.editor == editor:
       return i.some
 
   return int.none
+
+proc getHiddenViewForEditor*(self: App, editorId: EditorId): Option[int] =
+  ## Returns the index of the hidden view for the given editor.
+  for i, view in self.hiddenViews:
+    if view of EditorView and view.EditorView.editor.id == editorId:
+      return i.some
+
+  return int.none
+
+proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.none) {.expose("editor").} =
+  ## Make the given editor visible
+  ## If viewIndex is none, the editor will be opened in the currentView,
+  ## Otherwise the editor will be opened in the view with the given index.
+
+  let editor = self.getEditorForId(editorId).getOr:
+    log lvlError, &"No editor with id {editorId} exists"
+    return
+
+  assert editor.getDocument().isNotNil
+
+  log lvlInfo, &"showEditor editorId={editorId}, viewIndex={viewIndex}, filename={editor.getDocument().filename}"
+
+  for i, view in self.views:
+    if view of EditorView and view.EditorView.editor == editor:
+      self.currentView = i
+      return
+
+  let hiddenView = self.getHiddenViewForEditor(editor)
+  let view: View = if hiddenView.getSome(index):
+    let view = self.hiddenViews[index]
+    self.hiddenViews.removeSwap(index)
+    view
+  else:
+    EditorView(document: editor.getDocument(), editor: editor)
+
+  if viewIndex.getSome(index):
+    # todo
+    discard
+  else:
+    let oldView = self.views[self.currentView]
+    oldView.deactivate()
+    self.hiddenViews.add oldView
+
+    self.views[self.currentView] = view
+    view.activate()
+
+proc getVisibleEditors*(self: App): seq[EditorId] {.expose("editor").} =
+  ## Returns a list of all editors which are currently shown
+  for view in self.views:
+    if view of EditorView:
+      result.add view.EditorView.editor.id
+
+proc getHiddenEditors*(self: App): seq[EditorId] {.expose("editor").} =
+  ## Returns a list of all editors which are currently hidden
+  for view in self.hiddenViews:
+    if view of EditorView:
+      result.add view.EditorView.editor.id
+
+proc getExistingEditor*(self: App, path: string): Option[EditorId] {.expose("editor").} =
+  ## Returns an existing editor for the given file if one exists,
+  ## or none otherwise.
+  defer:
+    log lvlInfo, &"getExistingEditor {path} -> {result}"
+
+  for id, editor in self.editors.pairs:
+    if editor.getDocument() == nil:
+      continue
+    if editor.getDocument().filename != path:
+      continue
+    return id.some
+
+  return EditorId.none
+
+proc getOrOpenEditor*(self: App, path: string): Option[EditorId] {.expose("editor").} =
+  ## Returns an existing editor for the given file if one exists,
+  ## otherwise a new editor is created for the file.
+  ## The returned editor will not be shown automatically.
+  defer:
+    log lvlInfo, &"getOrOpenEditor {path} -> {result}"
+
+  if self.getExistingEditor(path).getSome(id):
+    return id.some
+
+  let path = self.workspace.getAbsolutePath(path)
+  let document = self.openDocument(path, self.workspace.some).getOr:
+    return EditorId.none
+
+  let editor = self.createEditorForDocument document
+  return editor.id.some
 
 proc closeEditor*(self: App, editor: DocumentEditor) =
   let document = editor.getDocument()
@@ -2119,21 +2169,14 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
   defer:
     self.platform.requestRender()
 
-  let folder = if folder.isNotNil:
-    folder
-  elif self.workspace.folders.len > 0:
-    self.workspace.folders[0]
-  else:
-    return DocumentEditor.none
+  let path = self.workspace.getAbsolutePath(path)
 
-  let path = folder.getAbsolutePath(path)
-
-  log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {folder.name} ({folder.id})"
-  if self.tryOpenExisting(path, folder.some).getSome(editor):
+  log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
+  if self.tryOpenExisting(path, self.workspace.some).getSome(editor):
     log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
     return editor.some
 
-  let document = self.getOrOpenDocument(path, folder.some).getOr:
+  let document = self.getOrOpenDocument(path, self.workspace.some).getOr:
     log(lvlError, fmt"Failed to load file {path}")
     return DocumentEditor.none
 
@@ -2218,13 +2261,7 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
 
   log lvlInfo, fmt"createFile: '{path}'"
 
-  # todo: handle workspace better
-  let workspace = if self.workspace.folders.len > 0:
-    self.workspace.folders[0].some
-  else:
-    WorkspaceFolder.none
-
-  let document = self.openDocument(fullPath, workspace, load=false).getOr:
+  let document = self.openDocument(fullPath, self.workspace.some, load=false).getOr:
     log(lvlError, fmt"Failed to create file {path}")
     return
 
@@ -2333,10 +2370,7 @@ proc chooseFile*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  if self.workspace.folders.len == 0:
-    return
-
-  let workspace = self.workspace.folders[0]
+  let workspace = self.workspace
 
   let finder = newFinder(newWorkspaceFilesDataSource(workspace), filterAndSort=true)
   var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some)
@@ -2392,10 +2426,7 @@ proc chooseOpen*(self: App) {.expose("editor").} =
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     if item.data.WorkspacePath.decodePath().getSome(path):
-      if self.getWorkspaceFolder(path.id).getSome(workspace):
-        discard self.openWorkspaceFile(path.path, workspace)
-      else:
-        log lvlError, fmt"Failed to open location {path.path} in non-existent workspace {path.id}"
+      discard self.openWorkspaceFile(path.path, self.workspace)
     else:
       discard self.openFile(item.data)
       log lvlError, fmt"Failed to open location {item}"
@@ -2463,11 +2494,8 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     if item.data.WorkspacePath.decodePath().getSome(path):
-      if self.getWorkspaceFolder(path.id).getSome(workspace):
-        if self.getDocument(path.path, workspace.some).getSome(document):
-          discard self.createAndAddView(document)
-      else:
-        log lvlError, fmt"Failed to open location {path.path} in non-existent workspace {path.id}"
+      if self.getDocument(path.path, self.workspace.some).getSome(document):
+        discard self.createAndAddView(document)
     else:
       if self.getDocument(item.data).getSome(document):
         discard self.createAndAddView(document)
@@ -2482,10 +2510,9 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
 
     if popup.getSelectedItem().getSome(item):
       if item.data.WorkspacePath.decodePath().getSome(path):
-        if self.getWorkspaceFolder(path.id).getSome(workspace):
-          if self.getDocument(path.path, workspace.some).getSome(document):
-            discard self.tryCloseDocument(document, force=true)
-            source.retrigger()
+        if self.getDocument(path.path, self.workspace.some).getSome(document):
+          discard self.tryCloseDocument(document, force=true)
+          source.retrigger()
       else:
         if self.getDocument(item.data).getSome(document):
           discard self.tryCloseDocument(document, force=true)
@@ -2499,9 +2526,6 @@ proc gotoNextLocation*(self: App) {.expose("editor").} =
   if self.finderItems.len == 0:
     return
 
-  if self.workspace.folders.len == 0:
-    return
-
   self.currentLocationListIndex = (self.currentLocationListIndex + 1) mod self.finderItems.len
   let item = self.finderItems[self.currentLocationListIndex]
 
@@ -2512,7 +2536,7 @@ proc gotoNextLocation*(self: App) {.expose("editor").} =
 
   log lvlInfo, &"[gotoNextLocation] Found {path}:{location}"
 
-  let workspace = self.workspace.folders[0]
+  let workspace = self.workspace
   let editor = self.openWorkspaceFile(path, workspace)
   if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
@@ -2520,9 +2544,6 @@ proc gotoNextLocation*(self: App) {.expose("editor").} =
 
 proc gotoPrevLocation*(self: App) {.expose("editor").} =
   if self.finderItems.len == 0:
-    return
-
-  if self.workspace.folders.len == 0:
     return
 
   self.currentLocationListIndex = (self.currentLocationListIndex - 1 + self.finderItems.len) mod self.finderItems.len
@@ -2535,7 +2556,7 @@ proc gotoPrevLocation*(self: App) {.expose("editor").} =
 
   log lvlInfo, &"[gotoPrevLocation] Found {path}:{location}"
 
-  let workspace = self.workspace.folders[0]
+  let workspace = self.workspace
   let editor = self.openWorkspaceFile(path, workspace)
   if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
@@ -2545,10 +2566,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  if self.workspace.folders.len == 0:
-    return
-
-  let workspace = self.workspace.folders[0]
+  let workspace = self.workspace
 
   proc getItems(): seq[FinderItem] =
     return self.finderItems
@@ -2640,10 +2658,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  if self.workspace.folders.len == 0:
-    return
-
-  let workspace = self.workspace.folders[0]
+  let workspace = self.workspace
 
   let maxResults = getOption[int](self, "editor.max-search-results", 1000)
   let source = newWorkspaceSearchDataSource(workspace, maxResults)
@@ -2676,10 +2691,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  if self.workspace.folders.len == 0:
-    return
-
-  let workspace = self.workspace.folders[0]
+  let workspace = self.workspace
 
   let maxResults = getOption[int](self, "editor.max-search-results", 1000)
   let source = newAsyncCallbackDataSource () => workspace.searchWorkspaceItemList(query, maxResults)
@@ -2829,10 +2841,7 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  if self.workspace.folders.len == 0:
-    return
-
-  let workspace = self.workspace.folders[0]
+  let workspace = self.workspace
 
   let source = newAsyncCallbackDataSource () =>
     workspace.getChangedFilesFromGitAsync(all)
@@ -2946,11 +2955,7 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  if self.workspace.folders.len == 0:
-    log lvlError, &"Failed to open file explorer, no workspace"
-    return
-
-  let workspace = self.workspace.folders[0]
+  let workspace = self.workspace
 
   let currentDirectory = new string
   currentDirectory[] = root
@@ -3007,8 +3012,7 @@ proc exploreHelp*(self: App) {.expose("editor").} =
   self.exploreFiles(fs.getApplicationFilePath("docs"))
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
-  if self.workspace.folders.len > 0:
-    self.exploreFiles(self.workspace.folders[0].getWorkspacePath())
+  self.exploreFiles(self.workspace.getWorkspacePath())
 
 proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
   if self.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
@@ -3086,9 +3090,7 @@ proc reloadPluginAsync*(self: App) {.async.} =
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadOptionsFromAppDir()
   await self.loadOptionsFromHomeDir()
-
-  if self.workspace.folders.len > 0:
-    await self.loadOptionsFromWorkspace(self.workspace.folders[0])
+  await self.loadOptionsFromWorkspace(self.workspace)
 
 proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
@@ -3366,7 +3368,7 @@ proc sourceCurrentDocument*(self: App) {.expose("editor").} =
       else:
         log(lvlWarn, fmt"Did not load config file because user declined.")
 
-proc getEditor*(index: int): EditorId {.expose("editor").} =
+proc getEditorInView*(index: int): EditorId {.expose("editor").} =
   if gEditor.isNil:
     return EditorId(-1)
   if index >= 0 and index < gEditor.views.len and gEditor.views[index] of EditorView:

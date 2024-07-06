@@ -2828,10 +2828,14 @@ proc assignKeys*(self: TextDocumentEditor, cursors: openArray[Cursor]): seq[stri
       if result.len == cursors.len:
         return
 
-proc setSelection*(self: TextDocumentEditor, cursor: Cursor, nextMode: string) {.expose("editor.text").} =
-  self.selection = cursor.toSelection
-  self.scrollToCursor()
-  self.setMode(nextMode)
+proc getSelection*(self: TextDocumentEditor): Selection {.expose("editor.text").} =
+  self.selection
+
+proc setSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
+  self.selection = selection
+
+proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
+  self.targetSelection = selection
 
 proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("editor.text").} =
   const mode = "choose-cursor"
