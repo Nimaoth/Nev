@@ -7,7 +7,7 @@ type Document* = ref object of RootObj
   appFile*: bool                        ## Whether this is an application file (e.g. stored in local storage on the browser)
   isBackedByFile*: bool = false
   filename*: string
-  workspace*: Option[WorkspaceFolder]   ## The workspace this document belongs to
+  workspace*: Option[Workspace]   ## The workspace this document belongs to
   revision*: int
   undoableRevision*: int
   lastSavedRevision*: int               ## Undobale revision at the time we saved the last time

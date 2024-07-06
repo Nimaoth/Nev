@@ -26,6 +26,7 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
   var res = newSeq[JsonNode]()
 
   for item in params.items:
+    # todo: implement scopeUri support
     if item.section.isNone:
       continue
 
@@ -35,7 +36,7 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
   return res
 
 proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
-    languagesServer: Option[(string, int)] = (string, int).none, workspace = ws.WorkspaceFolder.none):
+    languagesServer: Option[(string, int)] = (string, int).none, workspace = ws.Workspace.none):
     Future[Option[LanguageServerLSP]] {.async.} =
 
   if languageServers.contains(languageId):

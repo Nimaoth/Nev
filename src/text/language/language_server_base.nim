@@ -85,7 +85,7 @@ type Diagnostic* = object
   data*: Option[JsonNode]
   removed*: bool = false
 
-var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = WorkspaceFolder.none): Future[Option[LanguageServer]] = nil
+var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = Workspace.none): Future[Option[LanguageServer]] = nil
 
 method start*(self: LanguageServer): Future[void] {.base.} = discard
 method stop*(self: LanguageServer) {.base.} = discard

@@ -8,18 +8,18 @@ import ast/[model_state, base_language, editor_language, ast_ids, model]
 
 const projectPath = "./model/playground.ast-project"
 var gProject*: Project = nil
-var gProjectWorkspace*: WorkspaceFolder = nil
+var gProjectWorkspace*: Workspace = nil
 
 logCategory "ast-project"
 
 proc loadModelAsync*(project: Project, path: string): Future[Option[Model]] {.async.}
-proc resolveModel*(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.}
-proc resolveLanguage*(project: Project, ws: WorkspaceFolder, id: LanguageId): Future[Option[Language]] {.async.}
+proc resolveModel*(project: Project, ws: Workspace, id: ModelId): Future[Option[Model]] {.async.}
+proc resolveLanguage*(project: Project, ws: Workspace, id: LanguageId): Future[Option[Language]] {.async.}
 
-proc setProjectWorkspace*(ws: WorkspaceFolder) =
+proc setProjectWorkspace*(ws: Workspace) =
   gProjectWorkspace = ws
 
-proc getProjectWorkspace*(): Future[WorkspaceFolder] {.async.} =
+proc getProjectWorkspace*(): Future[Workspace] {.async.} =
   while gProjectWorkspace.isNil:
     log lvlInfo, fmt"[getProjectWorkspace] Waiting for project workspace to load..."
     sleepAsync(100).await
@@ -75,7 +75,7 @@ proc loadModelAsync*(project: Project, path: string): Future[Option[Model]] {.as
 
   return model.some
 
-proc resolveLanguage*(project: Project, ws: WorkspaceFolder, id: LanguageId): Future[Option[Language]] {.async.} =
+proc resolveLanguage*(project: Project, ws: Workspace, id: LanguageId): Future[Option[Language]] {.async.} =
   if id == IdBaseLanguage:
     return base_language.baseLanguage.some
   elif id == IdBaseInterfaces:
@@ -105,7 +105,7 @@ proc resolveLanguage*(project: Project, ws: WorkspaceFolder, id: LanguageId): Fu
   else:
     return Language.none
 
-proc resolveModel*(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
+proc resolveModel*(project: Project, ws: Workspace, id: ModelId): Future[Option[Model]] {.async.} =
   if id == baseInterfacesModel.id:
     return lang_builder.baseInterfacesModel.some
   if id == baseLanguageModel.id:

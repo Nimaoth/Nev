@@ -1316,9 +1316,9 @@ proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
 
   return true
 
-proc loadFromJsonAsync*(model: Model, project: Project, workspace: WorkspaceFolder, path: string, json: JsonNode,
-  resolveLanguage: proc(project: Project, workspace: WorkspaceFolder, id: LanguageId): Future[Option[Language]],
-  resolveModel: proc(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]],
+proc loadFromJsonAsync*(model: Model, project: Project, workspace: Workspace, path: string, json: JsonNode,
+  resolveLanguage: proc(project: Project, workspace: Workspace, id: LanguageId): Future[Option[Language]],
+  resolveModel: proc(project: Project, workspace: Workspace, id: ModelId): Future[Option[Model]],
   opt = Joptions()): Future[bool] {.async.} =
   model.path = path
   if json.kind != JObject:

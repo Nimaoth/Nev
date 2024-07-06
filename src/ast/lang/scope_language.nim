@@ -32,7 +32,7 @@ scopeComputers[IdScopeDefinition] = proc(ctx: ModelComputationContextBase, node:
 
   return nodes
 
-proc resolveLanguage(project: Project, workspace: WorkspaceFolder, id: LanguageId): Future[Option[Language]] {.async.} =
+proc resolveLanguage(project: Project, workspace: Workspace, id: LanguageId): Future[Option[Language]] {.async.} =
   if id == IdLangLanguage:
     assert lang_language.langLanguage.isNotNil
     return lang_language.langLanguage.some
@@ -46,7 +46,7 @@ proc resolveLanguage(project: Project, workspace: WorkspaceFolder, id: LanguageI
   else:
     log lvlError, "createScopeLanguage::resolveLanguage: unknown language id: ", id
 
-proc resolveModel(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
+proc resolveModel(project: Project, workspace: Workspace, id: ModelId): Future[Option[Model]] {.async.} =
   assert baseInterfacesModel.isNotNil
   if id == baseInterfacesModel.id:
     return lang_builder.baseInterfacesModel.some

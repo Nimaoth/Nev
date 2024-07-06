@@ -145,7 +145,7 @@ type
     options: JsonNode
     callbacks: Table[string, int]
 
-    workspace*: WorkspaceFolder
+    workspace*: Workspace
 
     scriptContext*: ScriptContext
     wasmScriptContext*: ScriptContextWasm
@@ -313,8 +313,8 @@ proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
-proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
-proc setWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): Future[bool]
+proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind
+proc setWorkspaceFolder(self: App, workspaceFolder: Workspace): Future[bool]
 proc setLayout*(self: App, layout: string)
 
 template withScriptContext(self: App, scriptContext: untyped, body: untyped): untyped =
@@ -979,7 +979,7 @@ proc loadOptionsFromHomeDir*(self: App) {.async.} =
 
     await self.loadSettingsFrom(".absytree", loadFile)
 
-proc loadOptionsFromWorkspace*(self: App, w: WorkspaceFolder) {.async.} =
+proc loadOptionsFromWorkspace*(self: App, w: Workspace) {.async.} =
   proc loadFile(context: string, path: string): Future[Option[string]] {.async.} =
     try:
       log lvlInfo, &"Try load {context} from {w.name}/{path}"
@@ -1127,7 +1127,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   if self.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
-      var workspace: WorkspaceFolder = nil
+      var workspace: Workspace = nil
       case wf.kind
       of OpenWorkspaceKind.Local:
         when not defined(js):
@@ -1381,7 +1381,7 @@ proc setMaxViews*(self: App, maxViews: int, openExisting: bool = false) {.expose
   self.updateActiveEditor(false)
   self.platform.requestRender()
 
-proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind =
+proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind =
   when not defined(js):
     if workspaceFolder of WorkspaceFolderLocal:
       return OpenWorkspaceKind.Local
@@ -1499,7 +1499,7 @@ proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("ed
 proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setConsumeAllInput(value)
 
-proc setWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): Future[bool] {.async.} =
+proc setWorkspaceFolder(self: App, workspaceFolder: Workspace): Future[bool] {.async.} =
   log(lvlInfo, fmt"Opening workspace {workspaceFolder.name}")
 
   if workspaceFolder.id == idNone():
@@ -2285,10 +2285,10 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
 
 type
   WorkspaceFilesDataSource* = ref object of DataSource
-    workspace: WorkspaceFolder
+    workspace: Workspace
     onWorkspaceFileCacheUpdatedHandle: Option[Id]
 
-proc newWorkspaceFilesDataSource(workspace: WorkspaceFolder): WorkspaceFilesDataSource =
+proc newWorkspaceFilesDataSource(workspace: Workspace): WorkspaceFilesDataSource =
   new result
   result.workspace = workspace
 
@@ -2586,7 +2586,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
 
   self.pushPopup popup
 
-proc searchWorkspaceItemList(workspace: WorkspaceFolder, query: string, maxResults: int): Future[ItemList] {.async.} =
+proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int): Future[ItemList] {.async.} =
   let searchResults = workspace.searchWorkspace(query, maxResults).await
   log lvlInfo, fmt"Found {searchResults.len} results"
 
@@ -2610,7 +2610,7 @@ proc searchWorkspaceItemList(workspace: WorkspaceFolder, query: string, maxResul
 
 type
   WorkspaceSearchDataSource* = ref object of DataSource
-    workspace: WorkspaceFolder
+    workspace: Workspace
     query: string
     delayedTask: DelayedTask
     minQueryLen: int = 2
@@ -2625,7 +2625,7 @@ proc getWorkspaceSearchResults(self: WorkspaceSearchDataSource): Future[void] {.
   debugf"[searchWorkspace] {t.elapsed.ms}ms"
   self.onItemsChanged.invoke list
 
-proc newWorkspaceSearchDataSource(workspace: WorkspaceFolder, maxResults: int): WorkspaceSearchDataSource =
+proc newWorkspaceSearchDataSource(workspace: Workspace, maxResults: int): WorkspaceSearchDataSource =
   new result
   result.workspace = workspace
   result.maxResults = maxResults
@@ -2709,7 +2709,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
 
   self.pushPopup popup
 
-proc getChangedFilesFromGitAsync(workspace: WorkspaceFolder, all: bool): Future[ItemList] {.async.} =
+proc getChangedFilesFromGitAsync(workspace: Workspace, all: bool): Future[ItemList] {.async.} =
   let vcsList = workspace.getAllVersionControlSystems()
   var items = newSeq[FinderItem]()
 
@@ -2752,7 +2752,7 @@ proc getChangedFilesFromGitAsync(workspace: WorkspaceFolder, all: bool): Future[
 
   return newItemList(items)
 
-proc stageSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
+proc stageSelectedFileAsync(popup: SelectorPopup, workspace: Workspace,
     source: AsyncCallbackDataSource): Future[void] {.async.} =
 
   log lvlInfo, fmt"Stage selected entry ({popup.selected})"
@@ -2773,7 +2773,7 @@ proc stageSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
 
     source.retrigger()
 
-proc unstageSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
+proc unstageSelectedFileAsync(popup: SelectorPopup, workspace: Workspace,
     source: AsyncCallbackDataSource): Future[void] {.async.} =
 
   log lvlInfo, fmt"Unstage selected entry ({popup.selected})"
@@ -2794,7 +2794,7 @@ proc unstageSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
 
     source.retrigger()
 
-proc revertSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
+proc revertSelectedFileAsync(popup: SelectorPopup, workspace: Workspace,
     source: AsyncCallbackDataSource): Future[void] {.async.} =
 
   log lvlInfo, fmt"Revert selected entry ({popup.selected})"
@@ -2815,7 +2815,7 @@ proc revertSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
 
     source.retrigger()
 
-proc diffStagedFileAsync(self: App, workspace: WorkspaceFolder, path: string): Future[void] {.async.} =
+proc diffStagedFileAsync(self: App, workspace: Workspace, path: string): Future[void] {.async.} =
   log lvlInfo, fmt"Diff staged '({path})'"
 
   let stagedDocument = newTextDocument(self.asConfigProvider, path, load = false,
@@ -2903,7 +2903,7 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
 
   self.pushPopup popup
 
-proc getItemsFromDirectory(workspace: WorkspaceFolder, directory: string): Future[ItemList] {.async.} =
+proc getItemsFromDirectory(workspace: Workspace, directory: string): Future[ItemList] {.async.} =
 
   let listing = await workspace.getDirectoryListing(directory)
 
