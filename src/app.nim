@@ -720,6 +720,8 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
     except CatchableError:
       log(lvlError, fmt"Failed to load wasm configs: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
+  self.runConfigCommands("wasm-plugin-post-load-commands")
+
   when enableNimscript and not defined(js):
     await sleepAsync(1)
 
@@ -753,6 +755,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
       except CatchableError:
         log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
+  self.runConfigCommands("nims-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
 
 proc setupDefaultKeybindings(self: App) =
