@@ -1,7 +1,5 @@
 import std/[sugar]
-import id, custom_logger, util
-
-logCategory "event"
+import id, util
 
 type Event*[T] = object
   handlers: seq[tuple[id: Id, callback: (T) -> void]]

@@ -5,6 +5,9 @@ import scripting_api
 
 template varargs*() {.pragma.}
 
+proc editor_text_getFileName_string_TextDocumentEditor_impl*(
+    self: TextDocumentEditor): string =
+  discard
 proc editor_text_lineCount_int_TextDocumentEditor_impl*(self: TextDocumentEditor): int =
   discard
 proc editor_text_lineLength_int_TextDocumentEditor_int_impl*(
@@ -12,6 +15,34 @@ proc editor_text_lineLength_int_TextDocumentEditor_int_impl*(
   discard
 proc editor_text_screenLineCount_int_TextDocumentEditor_impl*(
     self: TextDocumentEditor): int =
+  discard
+proc editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool = false;
+    includeAfter: bool = false): Cursor =
+  discard
+proc editor_text_doMoveCursorHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
+    includeAfter: bool): Cursor =
+  discard
+proc editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
+    includeAfter: bool): Cursor =
+  discard
+proc editor_text_doMoveCursorPrevFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
+    includeAfter: bool): Cursor =
+  discard
+proc editor_text_doMoveCursorNextFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
+    includeAfter: bool): Cursor =
+  discard
+proc editor_text_doMoveCursorLineCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
+    includeAfter: bool): Cursor =
+  discard
+proc editor_text_doMoveCursorCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
+    includeAfter: bool): Cursor =
   discard
 proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
     self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool = true;
@@ -38,6 +69,12 @@ proc editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_impl
   discard
 proc editor_text_invertSelection_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
+  discard
+proc editor_text_getRevision_int_TextDocumentEditor_impl*(
+    self: TextDocumentEditor): int =
+  discard
+proc editor_text_getUsage_string_TextDocumentEditor_impl*(
+    self: TextDocumentEditor): string =
   discard
 proc editor_text_getText_string_TextDocumentEditor_Selection_bool_impl*(
     self: TextDocumentEditor; selection: Selection; inclusiveEnd: bool = false): string =
@@ -88,12 +125,21 @@ proc editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_impl*(
 proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_impl*(
+    self: TextDocumentEditor; cursor: Cursor): bool =
+  discard
+proc editor_text_autoShowCompletions_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_insertText_void_TextDocumentEditor_string_bool_impl*(
     self: TextDocumentEditor; text: string; autoIndent: bool = true) =
   discard
 proc editor_text_indent_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
   discard
 proc editor_text_unindent_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
+  discard
+proc editor_text_insertIndent_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
   discard
 proc editor_text_undo_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; checkpoint: string = "word") =
@@ -152,7 +198,10 @@ proc editor_text_getPrevChange_Selection_TextDocumentEditor_Cursor_impl*(
 proc editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_impl*(
     self: TextDocumentEditor; cursor: Cursor): Selection =
   discard
-proc editor_text_updateDiff_void_TextDocumentEditor_impl*(
+proc editor_text_updateDiff_void_TextDocumentEditor_bool_impl*(
+    self: TextDocumentEditor; gotoFirstDiff: bool = false) =
+  discard
+proc editor_text_checkoutFile_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl*(
@@ -303,8 +352,9 @@ proc editor_text_moveFirst_void_TextDocumentEditor_string_SelectionCursor_bool_i
     which: SelectionCursor = SelectionCursor.Config; all: bool = true;
     count: int = 0) =
   discard
-proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_impl*(
-    self: TextDocumentEditor; query: string; escapeRegex: bool = false) =
+proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_impl*(
+    self: TextDocumentEditor; query: string; escapeRegex: bool = false;
+    prefix: string = ""; suffix: string = "") =
   discard
 proc editor_text_setSearchQueryFromMove_Selection_TextDocumentEditor_string_int_string_string_impl*(
     self: TextDocumentEditor; move: string; count: int = 0; prefix: string = "";
@@ -316,11 +366,29 @@ proc editor_text_toggleLineComment_void_TextDocumentEditor_impl*(
 proc editor_text_gotoDefinition_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_gotoDeclaration_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
+proc editor_text_gotoTypeDefinition_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
+proc editor_text_gotoImplementation_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
+proc editor_text_gotoReferences_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
+proc editor_text_switchSourceHeader_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_getCompletions_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
 proc editor_text_gotoSymbol_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
+  discard
+proc editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_impl*(
+    self: TextDocumentEditor; query: string = "") =
   discard
 proc editor_text_hideCompletions_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
@@ -342,6 +410,9 @@ proc editor_text_selectNextTabStop_void_TextDocumentEditor_impl*(
   discard
 proc editor_text_selectPrevTabStop_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
+  discard
+proc editor_text_applyCompletion_void_TextDocumentEditor_JsonNode_impl*(
+    self: TextDocumentEditor; completion: JsonNode) =
   discard
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
@@ -369,6 +440,12 @@ proc editor_text_updateDiagnosticsForCurrent_void_TextDocumentEditor_impl*(
 proc editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_setReadOnly_void_TextDocumentEditor_bool_impl*(
+    self: TextDocumentEditor; readOnly: bool) =
+  discard
+proc editor_text_setFileReadOnly_void_TextDocumentEditor_bool_impl*(
+    self: TextDocumentEditor; readOnly: bool) =
+  discard
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl*(
     self: TextDocumentEditor): bool =
   discard
@@ -381,8 +458,14 @@ proc editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_impl*(
 proc editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
-proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl*(
-    self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
+proc editor_text_getSelection_Selection_TextDocumentEditor_impl*(
+    self: TextDocumentEditor): Selection =
+  discard
+proc editor_text_setSelection_void_TextDocumentEditor_Selection_impl*(
+    self: TextDocumentEditor; selection: Selection) =
+  discard
+proc editor_text_setTargetSelection_void_TextDocumentEditor_Selection_impl*(
+    self: TextDocumentEditor; selection: Selection) =
   discard
 proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; action: string) =
@@ -402,214 +485,108 @@ proc editor_text_runTripleClickCommand_void_TextDocumentEditor_impl*(
 proc editor_text_runDragCommand_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
-proc popup_selector_updateCompletions_void_SelectorPopup_impl*(
-    self: SelectorPopup) =
+proc debugger_prevDebuggerView_void_Debugger_impl*() =
   discard
-proc popup_selector_getSelectedItem_JsonNode_SelectorPopup_impl*(
+proc debugger_nextDebuggerView_void_Debugger_impl*() =
+  discard
+proc debugger_setDebuggerView_void_Debugger_string_impl*(view: string) =
+  discard
+proc debugger_selectFirstVariable_void_Debugger_impl*() =
+  discard
+proc debugger_selectLastVariable_void_Debugger_impl*() =
+  discard
+proc debugger_prevThread_void_Debugger_impl*() =
+  discard
+proc debugger_nextThread_void_Debugger_impl*() =
+  discard
+proc debugger_prevStackFrame_void_Debugger_impl*() =
+  discard
+proc debugger_nextStackFrame_void_Debugger_impl*() =
+  discard
+proc debugger_openFileForCurrentFrame_void_Debugger_impl*() =
+  discard
+proc debugger_prevVariable_void_Debugger_impl*() =
+  discard
+proc debugger_nextVariable_void_Debugger_impl*() =
+  discard
+proc debugger_expandVariable_void_Debugger_impl*() =
+  discard
+proc debugger_collapseVariable_void_Debugger_impl*() =
+  discard
+proc debugger_stopDebugSession_void_Debugger_impl*() =
+  discard
+proc debugger_stopDebugSessionDelayed_void_Debugger_impl*() =
+  discard
+proc debugger_runConfiguration_void_Debugger_string_impl*(name: string) =
+  discard
+proc debugger_chooseRunConfiguration_void_Debugger_impl*() =
+  discard
+proc debugger_runLastConfiguration_void_Debugger_impl*() =
+  discard
+proc debugger_addBreakpoint_void_Debugger_EditorId_int_impl*(editorId: EditorId;
+    line: int) =
+  discard
+proc debugger_removeBreakpoint_void_Debugger_string_int_impl*(path: string;
+    line: int) =
+  discard
+proc debugger_toggleBreakpointEnabled_void_Debugger_string_int_impl*(
+    path: string; line: int) =
+  discard
+proc debugger_toggleAllBreakpointsEnabled_void_Debugger_impl*() =
+  discard
+proc debugger_toggleBreakpointsEnabled_void_Debugger_impl*() =
+  discard
+proc debugger_editBreakpoints_void_Debugger_impl*() =
+  discard
+proc debugger_continueExecution_void_Debugger_impl*() =
+  discard
+proc debugger_stepOver_void_Debugger_impl*() =
+  discard
+proc debugger_stepIn_void_Debugger_impl*() =
+  discard
+proc debugger_stepOut_void_Debugger_impl*() =
+  discard
+proc popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_impl*(
     self: SelectorPopup): JsonNode =
   discard
 proc popup_selector_accept_void_SelectorPopup_impl*(self: SelectorPopup) =
   discard
 proc popup_selector_cancel_void_SelectorPopup_impl*(self: SelectorPopup) =
   discard
-proc popup_selector_prev_void_SelectorPopup_impl*(self: SelectorPopup) =
+proc popup_selector_prev_void_SelectorPopup_int_impl*(self: SelectorPopup;
+    count: int = 1) =
   discard
-proc popup_selector_next_void_SelectorPopup_impl*(self: SelectorPopup) =
+proc popup_selector_next_void_SelectorPopup_int_impl*(self: SelectorPopup;
+    count: int = 1) =
   discard
-proc editor_model_scrollPixels_void_ModelDocumentEditor_float32_impl*(
-    self: ModelDocumentEditor; amount: float32) =
+proc popup_selector_toggleFocusPreview_void_SelectorPopup_impl*(
+    self: SelectorPopup) =
   discard
-proc editor_model_scrollLines_void_ModelDocumentEditor_float32_impl*(
-    self: ModelDocumentEditor; lines: float32) =
+proc popup_selector_setFocusPreview_void_SelectorPopup_bool_impl*(
+    self: SelectorPopup; focus: bool) =
   discard
-proc editor_model_setMode_void_ModelDocumentEditor_string_impl*(
-    self: ModelDocumentEditor; mode: string) =
+proc editor_reapplyConfigKeybindings_void_App_bool_bool_bool_impl*(
+    app: bool = false; home: bool = false; workspace: bool = false) =
   discard
-proc editor_model_mode_string_ModelDocumentEditor_impl*(self: ModelDocumentEditor): string =
+proc editor_splitView_void_App_impl*() =
   discard
-proc editor_model_getContextWithMode_string_ModelDocumentEditor_string_impl*(
-    self: ModelDocumentEditor; context: string): string =
+proc editor_disableLogFrameTime_void_App_bool_impl*(disable: bool) =
   discard
-proc editor_model_isThickCursor_bool_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor): bool =
+proc editor_showDebuggerView_void_App_impl*() =
   discard
-proc editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_gotoPrevReference_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_gotoNextReference_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_gotoPrevInvalidNode_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_gotoNextInvalidNode_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_gotoPrevNodeOfClass_void_ModelDocumentEditor_string_bool_impl*(
-    self: ModelDocumentEditor; className: string; select: bool = false) =
-  discard
-proc editor_model_gotoNextNodeOfClass_void_ModelDocumentEditor_string_bool_impl*(
-    self: ModelDocumentEditor; className: string; select: bool = false) =
-  discard
-proc editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_invertSelection_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_selectPrev_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_selectNext_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorRight_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorLeftLine_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorRightLine_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorLineStart_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorLineEnd_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorLineStartInline_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorLineEndInline_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorUp_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorDown_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorLeftCell_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_moveCursorRightCell_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_selectNode_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_selectPrevNeighbor_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_selectNextNeighbor_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_selectNextPlaceholder_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; select: bool = false) =
-  discard
-proc editor_model_deleteLeft_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_deleteRight_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_replaceLeft_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_replaceRight_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_createNewNode_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_insertTextAtCursor_bool_ModelDocumentEditor_string_impl*(
-    self: ModelDocumentEditor; input: string): bool =
-  discard
-proc editor_model_undo_void_ModelDocumentEditor_impl*(self: ModelDocumentEditor) =
-  discard
-proc editor_model_redo_void_ModelDocumentEditor_impl*(self: ModelDocumentEditor) =
-  discard
-proc editor_model_toggleUseDefaultCellBuilder_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_showCompletions_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_showCompletionWindow_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_hideCompletions_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_selectPrevCompletion_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_selectNextCompletion_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_printSelectionInfo_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_clearModelCache_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_copyNode_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_pasteNode_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_addLanguage_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_createNewModel_void_ModelDocumentEditor_string_impl*(
-    self: ModelDocumentEditor; name: string) =
-  discard
-proc editor_model_addModelToProject_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_importModel_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_compileLanguage_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_addRootNode_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_saveProject_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_loadLanguageModel_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
-proc editor_model_findDeclaration_void_ModelDocumentEditor_bool_impl*(
-    self: ModelDocumentEditor; global: bool) =
+proc editor_setLocationListFromCurrentPopup_void_App_impl*() =
   discard
 proc editor_getBackend_Backend_App_impl*(): Backend =
+  discard
+proc editor_getHostOs_string_App_impl*(): string =
   discard
 proc editor_loadApplicationFile_Option_string_App_string_impl*(path: string): Option[
     string] =
   discard
 proc editor_toggleShowDrawnNodes_void_App_impl*() =
   discard
-proc editor_setMaxViews_void_App_int_impl*(maxViews: int) =
+proc editor_setMaxViews_void_App_int_bool_impl*(maxViews: int;
+    openExisting: bool = false) =
   discard
 proc editor_saveAppState_void_App_impl*() =
   discard
@@ -637,9 +614,10 @@ proc editor_openAbsytreeServerWorkspace_void_App_string_impl*(url: string) =
 proc editor_callScriptAction_JsonNode_App_string_JsonNode_impl*(context: string;
     args: JsonNode): JsonNode =
   discard
-proc editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_impl*(
+proc editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_bool_string_impl*(
     name: string; docs: string = "";
-    params: seq[tuple[name: string, typ: string]] = @[]; returnType: string = "") =
+    params: seq[tuple[name: string, typ: string]] = @[];
+    returnType: string = ""; active: bool = false; context: string = "script") =
   discard
 proc editor_openLocalWorkspace_void_App_string_impl*(path: string) =
   discard
@@ -650,12 +628,18 @@ proc editor_setFlag_void_App_string_bool_impl*(flag: string; value: bool) =
   discard
 proc editor_toggleFlag_void_App_string_impl*(flag: string) =
   discard
-proc editor_setOption_void_App_string_JsonNode_impl*(option: string;
-    value: JsonNode) =
+proc editor_setOption_void_App_string_JsonNode_bool_impl*(option: string;
+    value: JsonNode; override: bool = true) =
   discard
 proc editor_quit_void_App_impl*() =
   discard
 proc editor_help_void_App_string_impl*(about: string = "") =
+  discard
+proc editor_loadWorkspaceFile_void_App_string_string_impl*(path: string;
+    callback: string) =
+  discard
+proc editor_writeWorkspaceFile_void_App_string_string_impl*(path: string;
+    content: string) =
   discard
 proc editor_changeFontSize_void_App_float32_impl*(amount: float32) =
   discard
@@ -672,19 +656,28 @@ proc editor_changeLayoutProp_void_App_string_float32_impl*(prop: string;
   discard
 proc editor_toggleStatusBarLocation_void_App_impl*() =
   discard
-proc editor_createAndAddView_void_App_impl*() =
-  discard
 proc editor_logs_void_App_impl*() =
   discard
 proc editor_toggleConsoleLogger_void_App_impl*() =
   discard
-proc editor_getOpenEditors_seq_EditorId_App_impl*(): seq[EditorId] =
+proc editor_showEditor_void_App_EditorId_Option_int_impl*(editorId: EditorId;
+    viewIndex: Option[int] = int.none) =
+  discard
+proc editor_getVisibleEditors_seq_EditorId_App_impl*(): seq[EditorId] =
   discard
 proc editor_getHiddenEditors_seq_EditorId_App_impl*(): seq[EditorId] =
   discard
-proc editor_closeView_void_App_int_bool_impl*(index: int; keepHidden: bool = true) =
+proc editor_getExistingEditor_Option_EditorId_App_string_impl*(path: string): Option[
+    EditorId] =
   discard
-proc editor_closeCurrentView_void_App_bool_impl*(keepHidden: bool = true) =
+proc editor_getOrOpenEditor_Option_EditorId_App_string_impl*(path: string): Option[
+    EditorId] =
+  discard
+proc editor_closeView_void_App_int_bool_bool_impl*(index: int;
+    keepHidden: bool = true; restoreHidden: bool = true) =
+  discard
+proc editor_closeCurrentView_void_App_bool_bool_impl*(keepHidden: bool = true;
+    restoreHidden: bool = true) =
   discard
 proc editor_closeOtherViews_void_App_bool_impl*(keepHidden: bool = true) =
   discard
@@ -695,6 +688,8 @@ proc editor_moveCurrentViewToTop_void_App_impl*() =
 proc editor_nextView_void_App_impl*() =
   discard
 proc editor_prevView_void_App_impl*() =
+  discard
+proc editor_toggleMaximizeView_void_App_impl*() =
   discard
 proc editor_moveCurrentViewPrev_void_App_impl*() =
   discard
@@ -713,7 +708,7 @@ proc editor_selectNextCommandInHistory_void_App_impl*() =
 proc editor_executeCommandLine_bool_App_impl*(): bool =
   discard
 proc editor_writeFile_void_App_string_bool_impl*(path: string = "";
-    app: bool = false) =
+    appFile: bool = false) =
   discard
 proc editor_loadFile_void_App_string_impl*(path: string = "") =
   discard
@@ -725,11 +720,37 @@ proc editor_chooseTheme_void_App_impl*() =
   discard
 proc editor_createFile_void_App_string_impl*(path: string) =
   discard
-proc editor_chooseFile_void_App_string_impl*(view: string = "new") =
+proc editor_browseKeybinds_void_App_impl*() =
   discard
-proc editor_chooseOpen_void_App_string_impl*(view: string = "new") =
+proc editor_chooseFile_void_App_impl*() =
   discard
-proc editor_chooseGitActiveFiles_void_App_impl*() =
+proc editor_chooseOpen_void_App_impl*() =
+  discard
+proc editor_chooseOpenDocument_void_App_impl*() =
+  discard
+proc editor_gotoNextLocation_void_App_impl*() =
+  discard
+proc editor_gotoPrevLocation_void_App_impl*() =
+  discard
+proc editor_chooseLocation_void_App_impl*() =
+  discard
+proc editor_searchGlobalInteractive_void_App_impl*() =
+  discard
+proc editor_searchGlobal_void_App_string_impl*(query: string) =
+  discard
+proc editor_chooseGitActiveFiles_void_App_bool_impl*(all: bool = false) =
+  discard
+proc editor_exploreFiles_void_App_string_impl*(root: string = "") =
+  discard
+proc editor_exploreUserConfigDir_void_App_impl*() =
+  discard
+proc editor_exploreAppConfigDir_void_App_impl*() =
+  discard
+proc editor_exploreHelp_void_App_impl*() =
+  discard
+proc editor_exploreWorkspacePrimary_void_App_impl*() =
+  discard
+proc editor_exploreCurrentFileDirectory_void_App_impl*() =
   discard
 proc editor_openPreviousEditor_void_App_impl*() =
   discard
@@ -737,7 +758,13 @@ proc editor_openNextEditor_void_App_impl*() =
   discard
 proc editor_setGithubAccessToken_void_App_string_impl*(token: string) =
   discard
-proc editor_reloadConfig_void_App_impl*() =
+proc editor_reloadConfig_void_App_bool_impl*(clearOptions: bool = false) =
+  discard
+proc editor_reloadPlugin_void_App_impl*() =
+  discard
+proc editor_reloadState_void_App_impl*() =
+  discard
+proc editor_saveSession_void_App_string_impl*(sessionFile: string = "") =
   discard
 proc editor_logOptions_void_App_impl*() =
   discard
@@ -763,9 +790,9 @@ proc editor_setLeaders_void_App_seq_string_impl*(leaders: seq[string]) =
   discard
 proc editor_addLeader_void_App_string_impl*(leader: string) =
   discard
-proc editor_addCommandScript_void_App_string_string_string_string_string_impl*(
+proc editor_addCommandScript_void_App_string_string_string_string_string_string_impl*(
     context: string; subContext: string; keys: string; action: string;
-    arg: string = "") =
+    arg: string = ""; description: string = "") =
   discard
 proc editor_removeCommand_void_App_string_string_impl*(context: string;
     keys: string) =
@@ -782,7 +809,7 @@ proc editor_logRootNode_void_App_impl*() =
   discard
 proc editor_sourceCurrentDocument_void_App_impl*() =
   discard
-proc editor_getEditor_EditorId_int_impl*(index: int): EditorId =
+proc editor_getEditorInView_EditorId_int_impl*(index: int): EditorId =
   discard
 proc editor_scriptIsSelectorPopup_bool_EditorId_impl*(editorId: EditorId): bool =
   discard
@@ -813,6 +840,15 @@ proc editor_scriptGetTextEditorLine_string_EditorId_int_impl*(editorId: EditorId
     line: int): string =
   discard
 proc editor_scriptGetTextEditorLineCount_int_EditorId_impl*(editorId: EditorId): int =
+  discard
+proc editor_setSessionDataJson_void_App_string_JsonNode_bool_impl*(path: string;
+    value: JsonNode; override: bool = true) =
+  discard
+proc editor_getSessionDataJson_JsonNode_App_string_JsonNode_impl*(path: string;
+    default: JsonNode): JsonNode =
+  discard
+proc editor_scriptGetOptionJson_JsonNode_string_JsonNode_impl*(path: string;
+    default: JsonNode): JsonNode =
   discard
 proc editor_scriptGetOptionInt_int_string_int_impl*(path: string; default: int): int =
   discard

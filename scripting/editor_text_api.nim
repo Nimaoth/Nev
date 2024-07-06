@@ -4,6 +4,8 @@ import absytree_internal
 
 ## This file is auto generated, don't modify.
 
+proc getFileName*(self: TextDocumentEditor): string =
+  editor_text_getFileName_string_TextDocumentEditor_impl(self)
 proc lineCount*(self: TextDocumentEditor): int =
   editor_text_lineCount_int_TextDocumentEditor_impl(self)
 proc lineLength*(self: TextDocumentEditor; line: int): int =
@@ -12,6 +14,34 @@ proc screenLineCount*(self: TextDocumentEditor): int =
   ## Returns the number of lines that can be shown on the screen
   ## This value depends on the size of the view this editor is in and the font size
   editor_text_screenLineCount_int_TextDocumentEditor_impl(self)
+proc doMoveCursorLine*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                       wrap: bool = false; includeAfter: bool = false): Cursor =
+  editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorHome*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                       wrap: bool; includeAfter: bool): Cursor =
+  editor_text_doMoveCursorHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorEnd*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                      wrap: bool; includeAfter: bool): Cursor =
+  editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
+                                 offset: int; wrap: bool; includeAfter: bool): Cursor =
+  editor_text_doMoveCursorPrevFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
+                                 offset: int; wrap: bool; includeAfter: bool): Cursor =
+  editor_text_doMoveCursorNextFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorLineCenter*(self: TextDocumentEditor; cursor: Cursor;
+                             offset: int; wrap: bool; includeAfter: bool): Cursor =
+  editor_text_doMoveCursorLineCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorCenter*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                         wrap: bool; includeAfter: bool): Cursor =
+  editor_text_doMoveCursorCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
 proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
                          wrap: bool = true; includeAfter: bool = true): Cursor =
   editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
@@ -25,8 +55,10 @@ proc findSurroundEnd*(editor: TextDocumentEditor; cursor: Cursor; count: int;
   editor_text_findSurroundEnd_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl(
       editor, cursor, count, c0, c1, depth)
 proc setMode*(self: TextDocumentEditor; mode: string) =
-  ## Sets the current mode of the editor. If `mode` is "", then no additional scope will be pushed on the scope stac.k
-  ## If mode is e.g. "insert", then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"
+  ## Sets the current mode of the editor.
+  ## If `mode` is "", then no additional scope will be pushed on the scope stac.k
+  ## If mode is e.g. "insert",
+  ## then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"
   ## Don't use "completion", as that is used for when a completion window is open.
   editor_text_setMode_void_TextDocumentEditor_string_impl(self, mode)
 proc mode*(self: TextDocumentEditor): string =
@@ -43,6 +75,10 @@ proc updateTargetColumn*(self: TextDocumentEditor;
 proc invertSelection*(self: TextDocumentEditor) =
   ## Inverts the current selection. Discards all but the last cursor.
   editor_text_invertSelection_void_TextDocumentEditor_impl(self)
+proc getRevision*(self: TextDocumentEditor): int =
+  editor_text_getRevision_int_TextDocumentEditor_impl(self)
+proc getUsage*(self: TextDocumentEditor): string =
+  editor_text_getUsage_string_TextDocumentEditor_impl(self)
 proc getText*(self: TextDocumentEditor; selection: Selection;
               inclusiveEnd: bool = false): string =
   editor_text_getText_string_TextDocumentEditor_Selection_bool_impl(self,
@@ -86,6 +122,12 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
   editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_impl(self)
 proc selectParentCurrentTs*(self: TextDocumentEditor) =
   editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl(self)
+proc shouldShowCompletionsAt*(self: TextDocumentEditor; cursor: Cursor): bool =
+  ## Returns true if the completion window should automatically open at the given position
+  editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_impl(self,
+      cursor)
+proc autoShowCompletions*(self: TextDocumentEditor) =
+  editor_text_autoShowCompletions_void_TextDocumentEditor_impl(self)
 proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true) =
   editor_text_insertText_void_TextDocumentEditor_string_bool_impl(self, text,
       autoIndent)
@@ -93,6 +135,8 @@ proc indent*(self: TextDocumentEditor) =
   editor_text_indent_void_TextDocumentEditor_impl(self)
 proc unindent*(self: TextDocumentEditor) =
   editor_text_unindent_void_TextDocumentEditor_impl(self)
+proc insertIndent*(self: TextDocumentEditor) =
+  editor_text_insertIndent_void_TextDocumentEditor_impl(self)
 proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =
   editor_text_undo_void_TextDocumentEditor_string_impl(self, checkpoint)
 proc redo*(self: TextDocumentEditor; checkpoint: string = "word") =
@@ -149,8 +193,10 @@ proc getPrevChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
 proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
   editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_impl(self,
       cursor)
-proc updateDiff*(self: TextDocumentEditor) =
-  editor_text_updateDiff_void_TextDocumentEditor_impl(self)
+proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) =
+  editor_text_updateDiff_void_TextDocumentEditor_bool_impl(self, gotoFirstDiff)
+proc checkoutFile*(self: TextDocumentEditor) =
+  editor_text_checkoutFile_void_TextDocumentEditor_impl(self)
 proc addNextFindResultToSelection*(self: TextDocumentEditor;
                                    includeAfter: bool = true; wrap: bool = true) =
   editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
@@ -313,9 +359,10 @@ proc moveFirst*(self: TextDocumentEditor; move: string;
   editor_text_moveFirst_void_TextDocumentEditor_string_SelectionCursor_bool_int_impl(
       self, move, which, all, count)
 proc setSearchQuery*(self: TextDocumentEditor; query: string;
-                     escapeRegex: bool = false) =
-  editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_impl(self,
-      query, escapeRegex)
+                     escapeRegex: bool = false; prefix: string = "";
+                     suffix: string = "") =
+  editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_impl(
+      self, query, escapeRegex, prefix, suffix)
 proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
                              count: int = 0; prefix: string = "";
                              suffix: string = ""): Selection =
@@ -325,10 +372,23 @@ proc toggleLineComment*(self: TextDocumentEditor) =
   editor_text_toggleLineComment_void_TextDocumentEditor_impl(self)
 proc gotoDefinition*(self: TextDocumentEditor) =
   editor_text_gotoDefinition_void_TextDocumentEditor_impl(self)
+proc gotoDeclaration*(self: TextDocumentEditor) =
+  editor_text_gotoDeclaration_void_TextDocumentEditor_impl(self)
+proc gotoTypeDefinition*(self: TextDocumentEditor) =
+  editor_text_gotoTypeDefinition_void_TextDocumentEditor_impl(self)
+proc gotoImplementation*(self: TextDocumentEditor) =
+  editor_text_gotoImplementation_void_TextDocumentEditor_impl(self)
+proc gotoReferences*(self: TextDocumentEditor) =
+  editor_text_gotoReferences_void_TextDocumentEditor_impl(self)
+proc switchSourceHeader*(self: TextDocumentEditor) =
+  editor_text_switchSourceHeader_void_TextDocumentEditor_impl(self)
 proc getCompletions*(self: TextDocumentEditor) =
   editor_text_getCompletions_void_TextDocumentEditor_impl(self)
 proc gotoSymbol*(self: TextDocumentEditor) =
   editor_text_gotoSymbol_void_TextDocumentEditor_impl(self)
+proc gotoWorkspaceSymbol*(self: TextDocumentEditor; query: string = "") =
+  editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_impl(self,
+      query)
 proc hideCompletions*(self: TextDocumentEditor) =
   editor_text_hideCompletions_void_TextDocumentEditor_impl(self)
 proc selectPrevCompletion*(self: TextDocumentEditor) =
@@ -343,6 +403,9 @@ proc selectNextTabStop*(self: TextDocumentEditor) =
   editor_text_selectNextTabStop_void_TextDocumentEditor_impl(self)
 proc selectPrevTabStop*(self: TextDocumentEditor) =
   editor_text_selectPrevTabStop_void_TextDocumentEditor_impl(self)
+proc applyCompletion*(self: TextDocumentEditor; completion: JsonNode) =
+  editor_text_applyCompletion_void_TextDocumentEditor_JsonNode_impl(self,
+      completion)
 proc applySelectedCompletion*(self: TextDocumentEditor) =
   editor_text_applySelectedCompletion_void_TextDocumentEditor_impl(self)
 proc showHoverFor*(self: TextDocumentEditor; cursor: Cursor) =
@@ -367,6 +430,11 @@ proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) =
   editor_text_updateDiagnosticsForCurrent_void_TextDocumentEditor_impl(self)
 proc showDiagnosticsForCurrent*(self: TextDocumentEditor) =
   editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_impl(self)
+proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) =
+  ## Sets the interal readOnly flag, but doesn't not change permissions of the underlying file
+  editor_text_setReadOnly_void_TextDocumentEditor_bool_impl(self, readOnly)
+proc setFileReadOnly*(self: TextDocumentEditor; readOnly: bool) =
+  editor_text_setFileReadOnly_void_TextDocumentEditor_bool_impl(self, readOnly)
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool =
   editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl(self)
 proc runSavedCommands*(self: TextDocumentEditor) =
@@ -377,9 +445,14 @@ proc clearCurrentCommandHistory*(self: TextDocumentEditor;
       retainLast)
 proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
   editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_impl(self)
-proc setSelection*(self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
-  editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl(self,
-      cursor, nextMode)
+proc getSelection*(self: TextDocumentEditor): Selection =
+  editor_text_getSelection_Selection_TextDocumentEditor_impl(self)
+proc setSelection*(self: TextDocumentEditor; selection: Selection) =
+  editor_text_setSelection_void_TextDocumentEditor_Selection_impl(self,
+      selection)
+proc setTargetSelection*(self: TextDocumentEditor; selection: Selection) =
+  editor_text_setTargetSelection_void_TextDocumentEditor_Selection_impl(self,
+      selection)
 proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
   editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl(self,
       action)

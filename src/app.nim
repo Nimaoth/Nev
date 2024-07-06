@@ -160,7 +160,7 @@ type
 
     workspace*: Workspace
 
-    scriptContext*: ScriptContext
+    nimsScriptContext*: ScriptContext
     wasmScriptContext*: ScriptContextWasm
     initializeCalled: bool
 
@@ -357,8 +357,8 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
     return false
   let id = self.callbacks[context]
   try:
-    withScriptContext self, self.scriptContext:
-      if self.scriptContext.handleCallback(id, args):
+    withScriptContext self, self.nimsScriptContext:
+      if self.nimsScriptContext.handleCallback(id, args):
         return true
     withScriptContext self, self.wasmScriptContext:
       if self.wasmScriptContext.handleCallback(id, args):
@@ -374,8 +374,8 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
   if self.callbacks.contains(context):
     let id = self.callbacks[context]
     try:
-      withScriptContext self, self.scriptContext:
-        let res = self.scriptContext.handleAnyCallback(id, args)
+      withScriptContext self, self.nimsScriptContext:
+        let res = self.nimsScriptContext.handleAnyCallback(id, args)
         if res.isNotNil:
           return res
 
@@ -391,8 +391,8 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
 
   else:
     try:
-      withScriptContext self, self.scriptContext:
-        let res = self.scriptContext.handleScriptAction(context, args)
+      withScriptContext self, self.nimsScriptContext:
+        let res = self.nimsScriptContext.handleScriptAction(context, args)
         if res.isNotNil:
           return res
 
@@ -449,8 +449,8 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
 
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
-    withScriptContext self, self.scriptContext:
-      self.scriptContext.handleEditorModeChanged(editor, oldMode, newMode)
+    withScriptContext self, self.nimsScriptContext:
+      self.nimsScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
     withScriptContext self, self.wasmScriptContext:
       self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
   except CatchableError:
@@ -735,16 +735,18 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
           if path.hasPrefix("app://", rest):
             path = fs.getApplicationFilePath(rest)
 
-        if createScriptContext("./config/absytree_config.nim", searchPaths).await.getSome(scriptContext):
-          self.scriptContext = scriptContext
-        else:
-          log lvlError, "Failed to create nim script context"
+        if self.homeDir != "":
+          let scriptPath = self.homeDir / ".absytree/custom.nims"
+          if createScriptContext(scriptPath, searchPaths).await.getSome(scriptContext):
+            self.nimsScriptContext = scriptContext
+          else:
+            log lvlError, "Failed to create nim script context"
 
-        withScriptContext self, self.scriptContext:
-          log(lvlInfo, fmt"init nim script config")
-          await self.scriptContext.init("./config")
-          log(lvlInfo, fmt"post init nim script config")
-          discard self.scriptContext.postInitialize()
+          withScriptContext self, self.nimsScriptContext:
+            log(lvlInfo, fmt"init nim script config")
+            await self.nimsScriptContext.init(self.homeDir / ".absytree")
+            log(lvlInfo, fmt"post init nim script config")
+            discard self.nimsScriptContext.postInitialize()
 
         log(lvlInfo, fmt"finished configs")
         self.initializeCalled = true
@@ -1108,9 +1110,9 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.documents.add commandLineTextDocument
   self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
-  self.commandLineTextEditor.TextDocumentEditor.usage = "command-line"
-  self.commandLineTextEditor.TextDocumentEditor.disableScrolling = true
-  self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
+  self.getCommandLineTextEditor.usage = "command-line"
+  self.getCommandLineTextEditor.disableScrolling = true
+  self.getCommandLineTextEditor.lineNumbers = api.LineNumbers.None.some
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
   discard self.commandLineTextEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
 
@@ -1239,8 +1241,8 @@ proc shutdown*(self: App) =
   for document in self.documents:
     document.deinit()
 
-  if self.scriptContext.isNotNil:
-    self.scriptContext.deinit()
+  if self.nimsScriptContext.isNotNil:
+    self.nimsScriptContext.deinit()
   if self.wasmScriptContext.isNotNil:
     self.wasmScriptContext.deinit()
 
@@ -2043,7 +2045,7 @@ proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.commandHistory[0] = ""
   self.currentHistoryEntry = 0
   self.commandLineMode = true
-  self.commandLineTextEditor.TextDocumentEditor.setMode("insert")
+  self.getCommandLineTextEditor.setMode("insert")
   self.rebuildCommandToKeysMap()
   self.platform.requestRender()
 
@@ -3100,14 +3102,14 @@ proc reloadPluginAsync*(self: App) {.async.} =
     except CatchableError:
       log lvlError, &"Failed to reload wasm plugins: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-  if self.scriptContext.isNotNil:
+  if self.nimsScriptContext.isNotNil:
     try:
-      self.clearScriptActionsFor(self.scriptContext)
-      withScriptContext self, self.scriptContext:
-        await self.scriptContext.reload()
+      self.clearScriptActionsFor(self.nimsScriptContext)
+      withScriptContext self, self.nimsScriptContext:
+        await self.nimsScriptContext.reload()
       if not self.initializeCalled:
-        withScriptContext self, self.scriptContext:
-          discard self.scriptContext.postInitialize()
+        withScriptContext self, self.nimsScriptContext:
+          discard self.nimsScriptContext.postInitialize()
         self.initializeCalled = true
     except CatchableError:
       log lvlError, &"Failed to reload nimscript config: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
@@ -3741,7 +3743,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
     # popups*: seq[Popup]
 
     # theme*: Theme
-    # scriptContext*: ScriptContext
+    # nimsScriptContext*: ScriptContext
     # wasmScriptContext*: ScriptContextWasm
 
     # workspace*: Workspace
@@ -3790,8 +3792,8 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
     return true
 
   try:
-    withScriptContext self, self.scriptContext:
-      let res = self.scriptContext.handleScriptAction(action, args)
+    withScriptContext self, self.nimsScriptContext:
+      let res = self.nimsScriptContext.handleScriptAction(action, args)
       if res.isNotNil:
         return true
 
