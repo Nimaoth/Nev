@@ -42,12 +42,8 @@ jobs:
       - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools -y
         continue-on-error: true
 
-
-      - name: Install latest nightly
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-            toolchain: stable
-            override: true
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@1.70
 
       - name: Setup cmake
         uses: jwlawson/actions-setup-cmake@v2
