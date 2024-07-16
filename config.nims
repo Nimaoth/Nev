@@ -48,6 +48,18 @@ switch("d", "wasm3VerboseErrorMessages")
 # switch("d", "treesitterBuiltins=cpp,nim,c,css,html,javascript,python,rust,csharp")
 switch("d", "treesitterBuiltins=cpp,nim,csharp,rust,python,javascript")
 
+# Enable wasi support in nimwasmtime
+switch("d", "nimWasmtimeWasi")
+
+# Enable wasm parser support in treesitter
+switch("d", "treesitterFeatureWasm")
+
+# Static linking doesn't work on windows for some reason, so dynamically link
+when defined(windows):
+  switch("d", "nimWasmtimeStatic=false")
+else:
+  switch("d", "nimWasmtimeStatic=true")
+
 when defined(musl):
   var muslGcc = findExe("musl-gcc")
   # muslGcc = "/home/nimaoth/musl/musl/bin/musl-gcc"
