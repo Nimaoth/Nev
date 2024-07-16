@@ -152,9 +152,9 @@ jobs:
       - run: echo %TEMP%
         continue-on-error: true
 
-      - run: $env:TMP = "C:\Temp"
+      - run: $env:TMP = "$env:USERPROFILE\T"
         continue-on-error: true
-      - run: $env:TEMP = "C:\Temp"
+      - run: $env:TEMP = "$env:USERPROFILE\T"
         continue-on-error: true
       - run: echo $env:TMP $env:TEMP
         continue-on-error: true
