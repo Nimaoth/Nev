@@ -1438,7 +1438,7 @@ proc displayDiff(tb: TerminalBuffer) =
         if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
           displayBuffer.setAttribs(c)
 
-        displayBuffer.add $c.ch
+        displayBuffer.add c.ch
 
       when defined(windows):
         # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
@@ -1469,7 +1469,7 @@ proc displayDiff(tb: TerminalBuffer) =
         if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
           displayBuffer.setAttribs(c)
 
-        displayBuffer.add $c.ch
+        displayBuffer.add c.ch
         inc bufXPos
 
     flushDisplayBuffer()
