@@ -119,38 +119,18 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
 
-      - run: rustc --version
-        continue-on-error: true
-      - run: cmake --version
-        continue-on-error: true
-
-      - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.29.3'
-
-      #- uses: hecrj/setup-rust-action@v2
+      # If I want a specific cmake version
+      # - name: Setup cmake
+      #  uses: jwlawson/actions-setup-cmake@v2
       #  with:
-      #    rust-version: stable
-      - name: Install latest nightly
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-            toolchain: stable
-            override: true
+      #    cmake-version: '3.29.3'
 
-      - run: rustc --version
-        continue-on-error: true
-      - run: cmake --version
-        continue-on-error: true
-
-      - run: SET TMP=C:\Temp
-        continue-on-error: true
-      - run: SET TEMP=C:\Temp
-        continue-on-error: true
-      - run: echo %TMP%
-        continue-on-error: true
-      - run: echo %TEMP%
-        continue-on-error: true
+      # If I want a specific rust version
+      #- name: Install latest nightly
+      #  uses: actions-rs/toolchain@v1.0.6
+      #  with:
+      #      toolchain: stable
+      #      override: true
 
       - run: $env:TMP = "$env:USERPROFILE\T"
         continue-on-error: true
@@ -206,6 +186,15 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
+
+      - name: Install stable rust toolchain
+        uses: dtolnay/rust-toolchain@1.78
+
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.29.3'
+
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: nimble setup
