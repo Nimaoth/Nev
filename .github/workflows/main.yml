@@ -42,6 +42,14 @@ jobs:
       - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools -y
         continue-on-error: true
 
+      - name: Install stable rust toolchain
+        uses: dtolnay/rust-toolchain@1.78
+
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.29.3'
+
       # install choosenim and nim
       #- run: wget https://nim-lang.org/choosenim/init.sh -O init-choosenim.sh
       #- run: ls -la
@@ -110,6 +118,47 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
+
+      - run: rustc --version
+        continue-on-error: true
+      - run: cmake --version
+        continue-on-error: true
+
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.29.3'
+
+      #- uses: hecrj/setup-rust-action@v2
+      #  with:
+      #    rust-version: stable
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1.0.6
+        with:
+            toolchain: stable
+            override: true
+
+      - run: rustc --version
+        continue-on-error: true
+      - run: cmake --version
+        continue-on-error: true
+
+      - run: SET TMP=C:\Temp
+        continue-on-error: true
+      - run: SET TEMP=C:\Temp
+        continue-on-error: true
+      - run: echo %TMP%
+        continue-on-error: true
+      - run: echo %TEMP%
+        continue-on-error: true
+
+      - run: $env:TMP = "$env:USERPROFILE\T"
+        continue-on-error: true
+      - run: $env:TEMP = "$env:USERPROFILE\T"
+        continue-on-error: true
+      - run: echo $env:TMP $env:TEMP
+        continue-on-error: true
+
       - uses: iffy/install-nim@v5
         with:
           version: binary:2.0.6
