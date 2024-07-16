@@ -272,13 +272,15 @@
       }
     },
     "nimwasmtime": {
-      "version": "0.1.0",
-      "vcsRevision": "a2b89b89f988f39da79a3f01662f5561434de872",
+      "version": "0.1.1",
+      "vcsRevision": "2d1e93e1d3dfb269df0069aa45c218ea52a61bd5",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
-      "dependencies": [],
+      "dependencies": [
+        "nimgen"
+      ],
       "checksums": {
-        "sha1": "cb65404ffbbece50f048f64f41dc0e850fe129ea"
+        "sha1": "79a7650a0fe9518cda5120d1d738d478f13ffb76"
       }
     },
     "npeg": {
