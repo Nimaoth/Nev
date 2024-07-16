@@ -42,6 +42,14 @@ jobs:
       - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools -y
         continue-on-error: true
 
+      - uses: hecrj/setup-rust-action@v2
+        with:
+          rust-version: stable
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.29.3'
+
       # install choosenim and nim
       #- run: wget https://nim-lang.org/choosenim/init.sh -O init-choosenim.sh
       #- run: ls -la
@@ -110,6 +118,13 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
+
+      - uses: hecrj/setup-rust-action@v2
+        with:
+          rust-version: stable
+
+      - run: winget install Kitware.CMake
+
       - uses: iffy/install-nim@v5
         with:
           version: binary:2.0.6
