@@ -119,6 +119,13 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
 
+      - run: cargo --help
+        continue-on-error: true
+      - run: cmake --help
+        continue-on-error: true
+
+      - run: SET TMP=C:\Temp
+
       - name: Setup cmake
         uses: jwlawson/actions-setup-cmake@v2
         with:
@@ -132,6 +139,11 @@ jobs:
         with:
             toolchain: stable
             override: true
+
+      - run: cargo --help
+        continue-on-error: true
+      - run: cmake --help
+        continue-on-error: true
 
       - uses: iffy/install-nim@v5
         with:
