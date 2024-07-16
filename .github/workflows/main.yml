@@ -42,6 +42,8 @@ jobs:
       - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools -y
         continue-on-error: true
 
+      - run: export PATH="/github/home/.cargo/bin"
+
       - uses: hecrj/setup-rust-action@v2
         with:
           rust-version: stable
@@ -119,11 +121,14 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
 
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.29.3'
+
       - uses: hecrj/setup-rust-action@v2
         with:
           rust-version: stable
-
-      - run: winget install Kitware.CMake
 
       - uses: iffy/install-nim@v5
         with:
