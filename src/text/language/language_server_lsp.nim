@@ -25,6 +25,7 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
     Future[seq[JsonNode]] {.async.} =
   var res = newSeq[JsonNode]()
 
+  log lvlInfo, &"handleWorkspaceConfigurationRequest {params}"
   for item in params.items:
     # todo: implement scopeUri support
     if item.section.isNone:
@@ -63,7 +64,9 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
   else:
     @[]
 
-  let userOptions = config.fields.getOrDefault("config", newJNull())
+  let section = config.fields.getOrDefault("section", newJNull()).jsonTo(string).catch(languageId)
+  let userOptions = gAppInterface.configProvider.getValue(
+    "lsp." & section & ".workspace", newJNull())
 
   var client = LSPClient(workspace: workspace, userInitializationOptions: userOptions)
   var lsp = LanguageServerLSP(client: client, languageId: languageId)
