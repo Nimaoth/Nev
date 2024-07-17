@@ -35,6 +35,8 @@ type
 
     userInitializationOptions*: JsonNode
 
+proc notifyConfigurationChanged*(client: LSPClient, settings: JsonNode) {.async.}
+
 proc waitInitialized*(client: LSPCLient): Future[bool] = client.initializedFuture.future
 
 method close(connection: LSPConnection) {.base.} = discard
@@ -484,6 +486,9 @@ proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int,
 
   await client.sendNotification("textDocument/didChange", params)
 
+proc notifyConfigurationChanged*(client: LSPClient, settings: JsonNode) {.async.} =
+  await client.sendNotification("textDocument/didChangeConfiguration", settings)
+
 proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int, content: string) {.async.} =
   let path = client.translatePath(path).await
   let params = %*{
@@ -782,4 +787,8 @@ proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
   debugf"lspLogServerDebug {val}"
   logServerDebug = val
 
+genDispatcher("lsp")
 addActiveDispatchTable "lsp", genDispatchTable("lsp"), global=true
+
+proc dispatchEvent*(action: string, args: JsonNode): bool =
+  dispatch(action, args).isSome
