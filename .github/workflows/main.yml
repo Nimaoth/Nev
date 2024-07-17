@@ -80,7 +80,7 @@ jobs:
           path: ~/.nimble
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
 
-      - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
+      - name: nimble setup
         continue-on-error: true
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
@@ -167,10 +167,12 @@ jobs:
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
+        name: nimble setup
         continue-on-error: true
         run: nimble setup
 
       - name: nimble setup
+        continue-on-error: true
         run: nimble setup
 
       # windows builds
@@ -211,6 +213,11 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v4.1.7
 
+      - run: apt-get update
+        continue-on-error: true
+      - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl wget build-essential git musl-tools -y
+        continue-on-error: true
+
       - name: Install stable rust toolchain
         uses: dtolnay/rust-toolchain@1.78
 
@@ -221,7 +228,18 @@ jobs:
 
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
+
+      - name: Cache nimble modules
+        id: cache-nimble
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-nimble-modules
+        with:
+          path: ~/.nimble
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
+
       - name: nimble setup
+        continue-on-error: true
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       - name: Run tests
