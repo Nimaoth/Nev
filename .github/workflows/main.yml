@@ -70,7 +70,19 @@ jobs:
       #- run: echo "export PATH=/github/home/.nimble/bin:\$PATH" > ~/.profile
       #- run: source ~/.profile
       #  continue-on-error: true
-      - run: PATH=/github/home/.nimble/bin:$PATH nimble setup
+
+      - name: Cache nimble modules
+        id: cache-nimble
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-nimble-modules
+        with:
+          path: ~/.nimble
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
+
+      - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       # linux builds
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
@@ -144,7 +156,17 @@ jobs:
       - uses: iffy/install-nim@v5
         with:
           version: binary:2.0.6
-      - name: nimble setup
+
+      - name: Cache nimble modules
+        id: cache-nimble
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-nimble-modules
+        with:
+          path: ~/.nimble
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
+
+      - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         continue-on-error: true
         run: nimble setup
 
