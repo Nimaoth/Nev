@@ -144,7 +144,18 @@ jobs:
       - uses: iffy/install-nim@v5
         with:
           version: binary:2.0.6
+
+      - name: Cache nimble modules
+        id: cache-nimble
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-nimble-modules
+        with:
+          path: ~/.nimble
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
+
       - name: nimble setup
+      - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         continue-on-error: true
         run: nimble setup
 
