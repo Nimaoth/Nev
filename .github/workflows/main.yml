@@ -78,7 +78,7 @@ jobs:
           cache-name: cache-nimble-modules
         with:
           path: ~/.nimble
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}
 
       - name: nimble setup
         continue-on-error: true
@@ -164,7 +164,7 @@ jobs:
           cache-name: cache-nimble-modules
         with:
           path: ~/.nimble
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: nimble setup
@@ -221,6 +221,8 @@ jobs:
       - name: Install stable rust toolchain
         uses: dtolnay/rust-toolchain@1.78
 
+      - run: rustup target add x86_64-unknown-linux-musl
+
       - name: Setup cmake
         uses: jwlawson/actions-setup-cmake@v2
         with:
@@ -236,7 +238,7 @@ jobs:
           cache-name: cache-nimble-modules
         with:
           path: ~/.nimble
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/nimble.lock') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}
 
       - name: nimble setup
         continue-on-error: true
