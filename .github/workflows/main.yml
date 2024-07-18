@@ -93,7 +93,7 @@ jobs:
       - if: always()
         run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast
       - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true -d:musl --out:ast-musl
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true -d:musl -d:nimWasmtimeBuildMusl --out:ast-musl
       - if: always()
         run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast-gui
 
