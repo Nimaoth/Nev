@@ -48,8 +48,11 @@ switch("d", "wasm3VerboseErrorMessages")
 # switch("d", "treesitterBuiltins=cpp,nim,c,css,html,javascript,python,rust,csharp")
 switch("d", "treesitterBuiltins=cpp,nim,csharp,rust,python,javascript")
 
+# Automatically build wasmtime when compiling the editor
+switch("d", "nimWasmtimeBuild")
+
 # Enable wasi support in nimwasmtime
-switch("d", "nimWasmtimeWasi")
+switch("d", "nimWasmtimeFeatureWasi")
 
 # Enable wasm parser support in treesitter
 switch("d", "treesitterFeatureWasm")
