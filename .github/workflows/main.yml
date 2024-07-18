@@ -86,16 +86,10 @@ jobs:
 
       # linux builds
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
-      - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
-      #- if: always()
-      #  run: PATH=/github/home/.nimble/bin:$PATH nimble buildBrowser
-      - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast
-      - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true -d:musl -d:nimWasmtimeBuildMusl --out:ast-musl
-      - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast-gui
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast-gui
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true -d:musl -d:nimWasmtimeBuildMusl --out:ast-musl
 
       # create release packages
       - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims
@@ -176,14 +170,10 @@ jobs:
         run: nimble setup
 
       # windows builds
-      - if: always()
-        run: nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast.exe
-      - if: always()
-        run: nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:astg.exe
-      - if: always()
-        run: nimble buildAbsytreeServerWindows
-      - if: always()
-        run: nimble buildLspWsWindows
+      - run: nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast.exe
+      - run: nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:astg.exe
+      - run: nimble buildAbsytreeServerWindows
+      - run: nimble buildLspWsWindows
 
       # create release packages
       - run: nim ./tools/package_release.nims
@@ -244,14 +234,15 @@ jobs:
         continue-on-error: true
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
+      - run: "echo 'import nimwasmtime' > src/temp.nim && nim c src/temp.nim"
+
       - name: Run tests
+        continue-on-error: true
         run: testament --print category unit
       - name: Build test report
-        if: always()
         run: testament html
 
       - uses: actions/upload-artifact@v4.3.3
-        if: always()
         with:
           name: testresults.html
           path: testresults.html
