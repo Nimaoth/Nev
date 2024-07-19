@@ -546,6 +546,12 @@ proc debugger_stepIn_void_Debugger_impl*() =
   discard
 proc debugger_stepOut_void_Debugger_impl*() =
   discard
+proc lsp_lspLogVerbose_void_bool_impl*(val: bool) =
+  discard
+proc lsp_lspToggleLogServerDebug_void_impl*() =
+  discard
+proc lsp_lspLogServerDebug_void_bool_impl*(val: bool) =
+  discard
 proc popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_impl*(
     self: SelectorPopup): JsonNode =
   discard
@@ -901,10 +907,4 @@ proc editor_inputKeys_void_App_string_impl*(input: string) =
 proc editor_collectGarbage_void_App_impl*() =
   discard
 proc editor_printStatistics_void_App_impl*() =
-  discard
-proc lsp_lspLogVerbose_void_bool_impl*(val: bool) =
-  discard
-proc lsp_lspToggleLogServerDebug_void_impl*() =
-  discard
-proc lsp_lspLogServerDebug_void_bool_impl*(val: bool) =
   discard
