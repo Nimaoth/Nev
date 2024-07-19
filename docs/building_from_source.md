@@ -2,7 +2,8 @@
 
 ## Setup
 - Requires OpenGL 4.1 for the GUI version
-- Install Nim version 2.0.2. (we need some file from the compiler source so you need to install nim using choosenim, the prebuilt binaries from the nim website or build nim from source, because
+- Install Rust and cargo (required for wasmtime)
+- Install Nim version 2.0.6. (we need some file from the compiler source so you need to install nim using choosenim, the prebuilt binaries from the nim website or build nim from source, because
   some linux package repositories, e.g. arch, don't seem to include the compiler source code, which this editor needs for nimscript)
 - Clone the repository
 - Run `nimble setup`
