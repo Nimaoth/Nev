@@ -36,7 +36,7 @@ requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.11"
 requires "https://github.com/Nimaoth/nimwasmtime >= 0.1.5"
 
 # Use this to include all treesitter languages (takes longer to download)
-requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.3"
+requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.5"
 
 # Use these to only install specific treesitter languages. These don't work with the lock file
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.3"
@@ -92,18 +92,18 @@ task buildDesktop, "Build the desktop version":
   # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
 task buildTerminal, "Build the terminal version":
-  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi --stacktrace --linetrace --debuginfo -g -D:debug --lineDir:off --nilChecks:on --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
-  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild --debuginfo -g -D:debug --lineDir:off --nilChecks:on --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
-  selfExec fmt"c -o:ast{exe} {crossCompileWinArgs} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:ast{exe} {crossCompileWinArgs} -d:exposeScriptingApi -d:nimWasmtimeBuild {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDll, "Build the dll version":
   # Disable clipboard for now because it breaks hot reloading
-  selfExec fmt"c -o:ast.dll -d:exposeScriptingApi -d:enableSystemClipboard=false --noMain --app:lib {getCommandLineParams()} ./src/absytree_dynlib.nim"
+  selfExec fmt"c -o:ast.dll -d:exposeScriptingApi -d:nimWasmtimeBuild -d:enableSystemClipboard=false --noMain --app:lib {getCommandLineParams()} ./src/absytree_dynlib.nim"
 
 task buildWorkspaceServer, "Build the server for hosting workspaces":
   selfExec fmt"c -o:./tools/workspace-server{exe} {getCommandLineParams()} ./src/servers/workspace_server.nim"

@@ -262,13 +262,13 @@
       }
     },
     "nimtreesitter": {
-      "version": "0.1.3",
-      "vcsRevision": "5942d3249fa51ff73722270eab8a034204dd2cff",
+      "version": "0.1.5",
+      "vcsRevision": "fb3cb90b534f464f93416813663a7734a0d8d313",
       "url": "https://github.com/Nimaoth/nimtreesitter",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "23baf44d42d16e47e8f173a10f2ff55dd7f21382"
+        "sha1": "05ef2b4a9e16c0e1d20a290ca549dbac21be0012"
       }
     },
     "nimwasmtime": {
