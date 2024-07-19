@@ -492,6 +492,8 @@
                 "punctuation.definition.constant",
                 "constant.language",
                 "constant.numeric",
+                "number",
+                "float",
                 "support.constant"
                 // "constant.language.null",
                 // "constant.language.undefined",
@@ -509,6 +511,7 @@
             "name": "String, Symbols",
             "scope": [
                 "string",
+                "character",
                 "constant.other.symbol",
                 "constant.other.key",
                 "meta.attribute-selector"
@@ -607,7 +610,9 @@
                 "keyword.control.as",
                 "keyword.other",
                 "keyword.operator.bitwise.shift",
+                "type.qualifier",
                 "punctuation",
+                "operator",
                 "expression.embbeded.vue punctuation.definition.tag",
                 "text.html.twig meta.tag.inline.any.html",
                 "meta.tag.template.value.twig meta.function.arguments.twig",
@@ -638,6 +643,7 @@
                 "keyword.control.export",
                 "keyword.control.from",
                 "keyword.control.default",
+                "include",
                 "meta.import keyword.other"
             ],
             "settings": {
@@ -649,6 +655,8 @@
             "scope": [
                 "keyword",
                 "keyword.control",
+                "conditional",
+                "repeat",
                 "keyword.other.important"
             ],
             "settings": {
@@ -729,6 +737,15 @@
             }
         },
         {
+            "name": "Builtin Variables",
+            "scope": [
+                "variable.builtin"
+            ],
+            "settings": {
+                "foreground": "#a4afdd"
+            }
+        },
+        {
             "name": "Variable Array Key",
             "scope": "meta.array.literal variable",
             "settings": {
@@ -738,6 +755,7 @@
         {
             "name": "Object Key",
             "scope": [
+                "field",
                 "meta.object-literal.key",
                 "entity.name.type.hcl",
                 "string.alias.graphql",
@@ -807,6 +825,9 @@
             "name": "Function Definition",
             "scope": [
                 "entity.name.function",
+                "function",
+                "method",
+                "function.call",
                 "variable.other.enummember",
                 "meta.function-call",
                 "meta.function-call entity.name.function",
@@ -823,6 +844,7 @@
             "scope": [
                 "variable.parameter.function.language.special",
                 "variable.parameter",
+                "parameter",
                 "meta.function.parameters punctuation.definition.variable",
                 "meta.function.parameter variable"
             ],
@@ -869,6 +891,7 @@
             "scope": [
                 "support.class",
                 "support.type",
+                "type",
                 "variable.other.readwrite.alias",
                 "support.orther.namespace.use.php",
                 "meta.use.php",

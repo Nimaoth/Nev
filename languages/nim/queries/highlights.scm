@@ -1,73 +1,190 @@
-((ident) @support.type.nim
- (#match? @support.type.nim "^[A-Z].*$"))
-(typeDesc (primaryTypeDesc (symbol (ident) @storage.type)))
-((ident) @storage.type
- (#match? @storage.type "^(int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float|float32|float64|bool|string|char|typed|untyped|openArray|seq|array|set)$"))
-((ident) @keyword
- (#match? @keyword "^(end|echo|declared|low|high|ord|async|await|if|else|elif|some|none|void|return|for|try|except|when|let|var|const)$"))
+; SPDX-FileCopyrightText: 2023 Leorize <leorize+oss@disroot.org>
+; SPDX-License-Identifier: MPL-2.0
 
-(routine (keyw) (symbol (ident) @variable.function))
+; Punctuations
+[ "." ";" "," ":" ] @punctuation.delimiter
+[ "(" ")" "[" "]" "{" "}" "{." ".}" ] @punctuation.bracket
 
-"=" @punctuation
-":" @punctuation
-"." @punctuation
-"," @punctuation
-";" @punctuation
-"(" @punctuation
-")" @punctuation
-"[" @punctuation
-"]" @punctuation
-"{" @punctuation
-"}" @punctuation
+; Operator by default, but could be overriden
+[ "=" ] @operator
 
-(primary
-  (primarySuffix) @variable.function
-  .
-  (primarySuffix (functionCall))
-)
-(primary
-  .
-  (_) @variable.function
-  .
-  (primarySuffix (functionCall))
-)
+; Special
+(blank_identifier) @variable.builtin
 
-(ident) @variable
+; Calls
+(call
+  function: [
+    (identifier) @function.call
+    (dot_expression
+      right: (identifier) @function.call)
+  ])
+(generalized_string
+  function: [
+    (identifier) @function.call
+    (dot_expression
+      right: (identifier) @function.call)
+  ])
 
+; Declarations
+(exported_symbol "*" @type.qualifier)
+(_ "=" @punctuation.delimiter [body: (_) value: (_)])
+(proc_declaration name: (_) @function)
+(func_declaration name: (_) @function)
+(converter_declaration name: (_) @function)
+(method_declaration name: (_) @method)
+(template_declaration name: (_) @function.macro)
+(macro_declaration name: (_) @function.macro)
+(symbol_declaration name: (_) @variable)
+(parameter_declaration
+  (symbol_declaration_list
+    (symbol_declaration name: (_) @parameter)))
+(_
+  [
+    type: [
+      (type_expression (identifier))
+      (type_expression (accent_quoted (identifier)))
+    ] @type
+    return_type: [
+      (type_expression (identifier))
+      (type_expression (accent_quoted (identifier)))
+    ] @type
+  ])
+
+; Exceptions
 [
-  (str_lit)
-  (char_lit)
-  (rstr_lit)
-  (triplestr_lit)
-  (generalized_str_lit)
-  (interpolated_str_lit)
-] @string
+  "try"
+  "except"
+  "finally"
+  "raise"
+] @exception
 
-[
-  (int_lit)
-  (float_lit)
-  (float_suffix)
-  (int_suffix)
-] @constant.numeric
+(except_branch values: (expression_list
+  [
+    (identifier) @type
+    (infix_expression
+      left: (identifier) @type
+      operator: "as"
+      right: (identifier) @variable)
+  ]))
 
-(customNumericLitSuffix) @support.type
+; Expressions
+(dot_expression
+  right: (identifier) @field)
 
-[
-  "true"
-  "false"
-] @constant.numeric
-
+; Literal/comments
 [
   (comment)
-  (docComment)
+  (block_comment)
 ] @comment
 
-(operator) @keyword.operator
+[
+  (documentation_comment)
+  (block_documentation_comment)
+] @comment.documentation
 
-(keyw) @keyword
+(interpreted_string_literal) @string
+(long_string_literal) @string
+(raw_string_literal) @string
+(generalized_string) @string
+(char_literal) @character
+(escape_sequence) @string.escape
+(integer_literal) @number
+(float_literal) @float
+(custom_numeric_literal) @number
+(nil_literal) @constant.builtin
+
+; Keyword
+[
+  "if"
+  "when"
+  "case"
+  "elif"
+  "else"
+] @conditional
+
+(of_branch "of" @conditional)
 
 [
+  "import"
+  "include"
+  "export"
+] @include
+
+(import_from_statement "from" @include)
+(except_clause "except" @include)
+
+[
+  "for"
+  "while"
+  "continue"
+  "break"
+] @repeat
+
+(for "in" @repeat)
+
+[
+  "macro"
+  "template"
+  "const"
+  "let"
+  "var"
+  "asm"
+  "bind"
+  "block"
+  "concept"
+  "defer"
+  "discard"
+  "distinct"
+  "do"
+  "enum"
+  "mixin"
   "nil"
-  "else"
+  "object"
+  "out"
+  "ptr"
+  "ref"
+  "static"
+  "tuple"
+  "type"
 ] @keyword
 
+[
+  "proc"
+  "func"
+  "method"
+  "converter"
+  "iterator"
+] @keyword.function
+
+[
+  "and"
+  "or"
+  "xor"
+  "not"
+  "div"
+  "mod"
+  "shl"
+  "shr"
+  "from"
+  "as"
+  "of"
+  "in"
+  "notin"
+  "is"
+  "isnot"
+  "cast"
+] @keyword.operator
+
+[
+  "return"
+  "yield"
+] @keyword.return
+
+; Operators
+(infix_expression operator: _ @operator)
+(prefix_expression operator: _ @operator)
+
+((identifier) @type
+  (#match? @type "^[A-Z].*$"))
+((identifier) @type
+  (#match? @type "^(openArray|typedesc)$"))
