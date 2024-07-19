@@ -142,6 +142,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   currentSnippetData*: Option[SnippetData]
 
   textChangedHandle: Id
+  onRequestRerenderHandle: Id
   loadedHandle: Id
   savedHandle: Id
   textInsertedHandle: Id
@@ -314,6 +315,7 @@ proc clearDocument*(self: TextDocumentEditor) =
   if self.document.isNotNil:
     log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
     self.document.textChanged.unsubscribe(self.textChangedHandle)
+    self.document.onRequestRerender.unsubscribe(self.onRequestRerenderHandle)
     self.document.onLoaded.unsubscribe(self.loadedHandle)
     self.document.onSaved.unsubscribe(self.savedHandle)
     self.document.textInserted.unsubscribe(self.textInsertedHandle)
@@ -354,6 +356,9 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
+
+  self.onRequestRerenderHandle = document.onRequestRerender.subscribe () =>
+    self.markDirty()
 
   self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) => (block:
       if self.isNil or self.document.isNil:
@@ -1544,8 +1549,9 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.configProvider,
         language=self.document.languageId.some, createLanguageServer = false)
-      self.diffDocument.readOnly = true
 
+    self.diffDocument.languageId = self.document.languageId
+    self.diffDocument.readOnly = true
     self.document.content = stagedFileContent
     self.diffChanges = changes
     self.diffDocument.content = committedFileContent
@@ -1562,8 +1568,9 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.configProvider,
         language=self.document.languageId.some, createLanguageServer = false)
-      self.diffDocument.readOnly = true
 
+    self.diffDocument.languageId = self.document.languageId
+    self.diffDocument.readOnly = true
     self.diffChanges = changes
     self.diffDocument.content = stagedFileContent
 
@@ -1717,7 +1724,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selection
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   log(lvlInfo, "reloadTreesitter")
 
-  asyncCheck self.document.initTreesitter()
+  self.document.reloadTreesitterLanguage()
   self.platform.requestRender()
 
 proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
