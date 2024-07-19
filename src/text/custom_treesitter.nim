@@ -237,7 +237,7 @@ else:
     var queryError: ts.TSQueryError = ts.TSQueryErrorNone
     result = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
     if queryError != ts.TSQueryErrorNone:
-      log(lvlError, fmt"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}: {source}")
+      log lvlError, &"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}\n{source}"
       return nil
 
   proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
