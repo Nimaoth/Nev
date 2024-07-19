@@ -61,6 +61,11 @@ switch("d", "treesitterFeatureWasm")
 # Static linking doesn't work on windows for some reason, so dynamically link
 when defined(windows):
   switch("d", "nimWasmtimeStatic=false")
+
+  # todo: This doesn't work for GUI, crashes with nil access
+  # switch("d", "nimWasmtimeStatic=true")
+  # switch("passC", "-static")
+  # switch("passL", "-lucrt -lws2_32 -lntdll -luserenv -lole32 -lbcrypt")
 else:
   switch("d", "nimWasmtimeStatic=true")
 
