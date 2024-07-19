@@ -91,6 +91,7 @@ if packageWindows:
     cpFile2 "astg.exe", releaseWindows
     cpFile2 "ast.exe", releaseWindows
     cpFile2 "astt.exe", releaseWindows, optional=true
+    cpFile2 "wasmtime.dll", releaseWindows, optional=true
     cpFile2 "tools/absytree-server.exe", releaseWindows
     cpFile2 "tools/lsp-ws.exe", releaseWindows
 
