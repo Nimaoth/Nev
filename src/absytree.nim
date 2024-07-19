@@ -273,3 +273,13 @@ waitFor runApp()
 when enableGui:
   if backend.get == Gui:
     myDisableTrueColors()
+
+when defined(windows):
+  import std/[os, compilesettings]
+  import wasmh
+
+  static:
+    const dllIn = wasmDir / "target/release/wasmtime.dll"
+    const dllOut = querySetting(SingleValueSetting.outDir) / "wasmtime.dll"
+    echo "[absytree.nim] run tools/copy_wasmtime_dll.nims"
+    echo staticExec &"nim \"-d:inDir={dllIn}\" \"-d:outDir={dllOut}\" --hints:off --skipUserCfg --skipProjCfg --skipParentCfg ../tools/copy_wasmtime_dll.nims"
