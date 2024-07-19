@@ -1,4 +1,4 @@
-import std/[os]
+import std/[os, parseopt]
 
 # Helper functions
 
@@ -13,14 +13,15 @@ proc cpDir2(src: string, dst: string) =
     echo "[ERROR] Dir " & src & " does not exist"
     exitCode = 1
 
-proc cpFile2(src: string, dst: string) =
+proc cpFile2(src: string, dst: string, optional: bool = false) =
   let name = src.splitPath[1]
   if fileExists src:
     echo "Copy ", name, " to ", dst/name
     cpFile src, dst/name
   else:
-    echo "[ERROR] File " & src & " does not exist"
-    exitCode = 1
+    if not optional:
+      echo "[ERROR] File " & src & " does not exist"
+      exitCode = 1
 
 template catch(exp: untyped, then: untyped): untyped =
   try:
@@ -62,35 +63,63 @@ proc copySharedFilesTo(dir: string) =
   cpFile2 "absytree.nimble", dir
   cpFile2 "config.nims", dir
 
-copySharedFilesTo releaseWindows
-copySharedFilesTo releaseLinux
-# copySharedFilesTo releaseWeb
+var packageWindows = false
+var packageLinux = false
+var packageWeb = false
 
-if fileExists "ast.exe":
-  cpFile2 "astg.exe", releaseWindows
-  cpFile2 "ast.exe", releaseWindows
-  cpFile2 "tools/absytree-server.exe", releaseWindows
-  cpFile2 "tools/lsp-ws.exe", releaseWindows
+var optParser = initOptParser("")
+for kind, key, val in optParser.getopt():
+  case kind
+  of cmdArgument:
+    discard
 
-if fileExists "ast":
-  cpFile2 "ast-gui", releaseLinux
-  cpFile2 "ast", releaseLinux
-  cpFile2 "ast-musl", releaseLinux
-  cpFile2 "tools/absytree-server", releaseLinux
-  cpFile2 "tools/lsp-ws", releaseLinux
+  of cmdLongOption, cmdShortOption:
+    case key
+    of "windows", "w":
+      packageWindows = true
+    of "linux", "l":
+      packageLinux = true
+    of "web", "W":
+      packageWeb = true
 
-# if fileExists "build/ast.js":
-#   cpFile2 "build/ast.js", releaseWeb
-#   cpFile2 "web/absytree_browser.html", releaseWeb
-#   cpFile2 "web/ast_glue.js", releaseWeb
-#   cpFile2 "web/scripting_runtime.js", releaseWeb
-#   withDir releaseWeb:
-#     catch exec("wget -Otree-sitter.js https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.js"):
-#       echo "[ERROR] Failed to download tree-sitter.js"
-#       exitCode = 1
+  of cmdEnd: assert(false) # cannot happen
 
-#     catch exec("wget -Otree-sitter.wasm https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.wasm"):
-#       echo "[ERROR] Failed to download tree-sitter.wasm"
-#       exitCode = 1
+if packageWindows:
+  echo "Package windows..."
+  copySharedFilesTo releaseWindows
+  if fileExists "ast.exe":
+    cpFile2 "astg.exe", releaseWindows
+    cpFile2 "ast.exe", releaseWindows
+    cpFile2 "astt.exe", releaseWindows, optional=true
+    cpFile2 "tools/absytree-server.exe", releaseWindows
+    cpFile2 "tools/lsp-ws.exe", releaseWindows
+
+if packageLinux:
+  echo "Package linux..."
+  copySharedFilesTo releaseLinux
+  if fileExists "ast":
+    cpFile2 "astg", releaseLinux
+    cpFile2 "ast", releaseLinux
+    cpFile2 "astt", releaseLinux, optional=true
+    cpFile2 "ast-musl", releaseLinux
+    cpFile2 "tools/absytree-server", releaseLinux
+    cpFile2 "tools/lsp-ws", releaseLinux
+
+if packageWeb:
+  echo "Package web..."
+  if fileExists "build/ast.js":
+    copySharedFilesTo releaseWeb
+    cpFile2 "build/ast.js", releaseWeb
+    cpFile2 "web/absytree_browser.html", releaseWeb
+    cpFile2 "web/ast_glue.js", releaseWeb
+    cpFile2 "web/scripting_runtime.js", releaseWeb
+    withDir releaseWeb:
+      catch exec("wget -Otree-sitter.js https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.js"):
+        echo "[ERROR] Failed to download tree-sitter.js"
+        exitCode = 1
+
+      catch exec("wget -Otree-sitter.wasm https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.wasm"):
+        echo "[ERROR] Failed to download tree-sitter.wasm"
+        exitCode = 1
 
 quit exitCode
