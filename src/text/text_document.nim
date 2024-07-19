@@ -74,13 +74,14 @@ variantp TextDocumentChange:
 type TextDocument* = ref object of Document
   lines*: seq[string]
   lineIds*: seq[int32]
-  languageId*: string
+  mLanguageId: string
   version*: int
 
   nextLineIdCounter: int32 = 0
 
   isLoadingAsync*: bool = false
 
+  onRequestRerender*: Event[void]
   onLoaded*: Event[TextDocument]
   onSaved*: Event[void]
   textChanged*: Event[TextDocument]
@@ -102,7 +103,6 @@ type TextDocument* = ref object of Document
   nextCheckpoints: seq[string]
 
   currentContentFailedToParse: bool
-  tsParser: TSParser
   tsLanguage: TSLanguage
   currentTree: TSTree
   highlightQuery: TSQuery
@@ -122,6 +122,8 @@ type TextDocument* = ref object of Document
   onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
 
 var allTextDocuments*: seq[TextDocument] = @[]
+
+proc reloadTreesitterLanguage*(self: TextDocument)
 
 proc getTotalTextSize*(self: UndoOp): int =
   for c in self.checkpoints:
@@ -211,6 +213,9 @@ proc runeIndexInLine*(self: TextDocument, cursor: Cursor): RuneIndex =
 proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
 
+proc notifyRequestRerender*(self: TextDocument) =
+  self.onRequestRerender.invoke()
+
 proc applyTreesitterChanges(self: TextDocument) =
   if self.currentTree.isNotNil:
     for change in self.changes:
@@ -241,29 +246,42 @@ proc applyTreesitterChanges(self: TextDocument) =
   self.changes.setLen 0
 
 proc reparseTreesitter*(self: TextDocument) =
+  # debugf"reparseTreesitter {self.filename}"
   self.applyTreesitterChanges()
 
   if self.currentContentFailedToParse:
     # We already tried to parse the current content and it failed, don't try again
     return
 
-  if self.tsParser.isNotNil:
-    let strValue = self.lines.join("\n")
+  if self.tsLanguage.isNotNil:
+    withParser parser:
+      parser.setLanguage(self.tsLanguage)
 
-    try:
-      if self.currentTree.isNotNil:
-        self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
-      else:
-        self.currentTree = self.tsParser.parseString(strValue)
-      self.currentContentFailedToParse = false
-    except:
-      log lvlError, &"Failed to parse treesitter tree for '{self.filename}': {getCurrentExceptionMsg()}"
-      self.currentContentFailedToParse = true
+      let strValue = self.lines.join("\n")
+
+      try:
+        if self.currentTree.isNotNil:
+          self.currentTree = parser.parseString(strValue, self.currentTree.some)
+        else:
+          self.currentTree = parser.parseString(strValue)
+          self.styledTextCache.clear()
+        self.currentContentFailedToParse = false
+      except:
+        log lvlError, &"Failed to parse treesitter tree for '{self.filename}': {getCurrentExceptionMsg()}"
+        self.currentContentFailedToParse = true
 
 proc tsTree*(self: TextDocument): TsTree =
   if self.changes.len > 0 or self.currentTree.isNil:
     self.reparseTreesitter()
   return self.currentTree
+
+proc languageId*(self: TextDocument): string =
+  self.mLanguageId
+
+proc `languageId=`*(self: TextDocument, languageId: string) =
+  if self.mLanguageId != languageId:
+    self.mLanguageId = languageId
+    self.reloadTreesitterLanguage()
 
 proc `content=`*(self: TextDocument, value: sink string) =
   self.revision.inc
@@ -552,7 +570,7 @@ proc insertTextBefore*(self: TextDocument, line: var StyledLine, offset: RuneInd
     index += line.parts[i].text.runeLen
 
 proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Selection] =
-  if self.tsParser.isNil or self.errorQuery.isNil or self.tsTree.isNil:
+  if self.errorQuery.isNil or self.tsTree.isNil:
     return
 
   for match in self.errorQuery.matches(self.tsTree.root, tsRange(tsPoint(selection.first.line, 0), tsPoint(selection.last.line, 0))):
@@ -665,11 +683,10 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       let diagnosticMessage: string = "     ■ " & diagnostic.message[0..<maxIndex]
       line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, canWrap: false, priority: 1000000000)
 
-
 proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
   var regexes = initTable[string, Regex]()
 
-  if self.tsParser.isNil or self.highlightQuery.isNil or self.tsTree.isNil:
+  if self.highlightQuery.isNil or self.tsTree.isNil:
     return
 
   let lineLen = self.lines[line.index].len
@@ -789,11 +806,9 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
     self.replaceTabs(result)
     self.addDiagnosticsUnderline(result)
 
-proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
-  logScope lvlInfo, &"initTreesitter {self.filename}"
-  if not self.tsParser.isNil:
-    self.tsParser.deinit()
-    self.tsParser = nil
+proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
+  logScope lvlInfo, &"loadTreesitterLanguage {self.filename}"
+
   if not self.highlightQuery.isNil:
     self.highlightQuery.deinit()
     self.highlightQuery = nil
@@ -801,27 +816,30 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
     self.errorQuery.deinit()
     self.errorQuery = nil
 
+  self.currentContentFailedToParse = false
+  self.tsLanguage = nil
+  self.currentTree.delete()
   self.styledTextCache.clear()
 
   if self.languageId == "":
     return
 
+  let prevLanguageId = self.languageId
   let config = self.configProvider.getValue("treesitter." & self.languageId, newJObject())
-  var language = await loadLanguage(self.languageId, config)
+  var language = await getTreesitterLanguage(self.languageId, config)
+
+  if prevLanguageId != self.languageId:
+    log lvlWarn, &"loadTreesitterLanguage {prevLanguageId}: ignore, newer language was set"
+    return
 
   if language.isNone:
-    log(lvlWarn, fmt"Treesitter language is not available for '{self.languageId}'")
+    log lvlWarn, &"Treesitter language is not available for '{self.languageId}'"
     return
 
-  self.tsParser = createTSParser()
-  if self.tsParser.isNil:
-    log(lvlWarn, fmt"Failed to create treesitter parser for '{self.languageId}'")
-    return
-
-  self.tsParser.setLanguage(language.get)
+  log lvlInfo, &"loadTreesitterLanguage {prevLanguageId}: Loaded language, apply"
+  self.currentContentFailedToParse = false
   self.tsLanguage = language.get
-
-  self.reparseTreesitter()
+  self.currentTree.delete()
 
   try:
     let queryString = fs.loadApplicationFile(fmt"./languages/{self.languageId}/queries/highlights.scm")
@@ -841,8 +859,10 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   except CatchableError:
     log(lvlError, fmt"No error queries found for '{self.languageId}'")
 
-  # We now have a treesitter grammar + highlight query, so retrigger rendering
-  self.notifyTextChanged()
+  self.notifyRequestRerender()
+
+proc reloadTreesitterLanguage*(self: TextDocument) =
+  asyncCheck self.loadTreesitterLanguage()
 
 proc newTextDocument*(
     configProvider: ConfigProvider,
@@ -887,8 +907,6 @@ proc newTextDocument*(
         of "tabs":
           self.indentStyle = IndentStyle(kind: Tabs)
 
-  asyncCheck self.initTreesitter()
-
   let autoStartServer = self.configProvider.getValue("editor.text.auto-start-language-server", false)
 
   self.content = content
@@ -910,13 +928,12 @@ proc newTextDocument*(
 
 method deinit*(self: TextDocument) =
   logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
+  if self.currentTree.isNotNil:
+    self.currentTree.delete()
   if self.highlightQuery.isNotNil:
     self.highlightQuery.deinit()
-  if not self.errorQuery.isNil:
+  if self.errorQuery.isNotNil:
     self.errorQuery.deinit()
-
-  if not self.tsParser.isNil:
-    self.tsParser.deinit()
 
   if self.languageServer.getSome(ls):
     ls.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
@@ -996,8 +1013,6 @@ proc loadAsync(self: TextDocument, ws: Workspace, reloadTreesitter: bool = false
   self.isLoadingAsync = false
   self.onLoaded.invoke self
 
-  await self.initTreesitter()
-
 proc setReadOnly*(self: TextDocument, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
   self.readOnly = readOnly
@@ -1026,21 +1041,9 @@ proc setFileAndContent*(self: TextDocument, filename: string, content: sink stri
   else:
     self.languageId = ""
 
-  if not self.tsParser.isNil:
-    self.tsParser.deinit()
-    self.tsParser = nil
-  if not self.highlightQuery.isNil:
-    self.highlightQuery.deinit()
-    self.highlightQuery = nil
-  if not self.errorQuery.isNil:
-    self.errorQuery.deinit()
-    self.errorQuery = nil
-
   self.undoOps.setLen 0
   self.redoOps.setLen 0
   self.content = content.move
-
-  asyncCheck self.initTreesitter()
 
   self.styledTextCache.clear()
   self.autoDetectIndentStyle()
@@ -1059,9 +1062,6 @@ proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[W
   else:
     self.languageId = ""
 
-  if not self.tsParser.isNil:
-    self.tsParser.deinit()
-    self.tsParser = nil
   if not self.highlightQuery.isNil:
     self.highlightQuery.deinit()
     self.highlightQuery = nil
@@ -1504,7 +1504,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     for k in (i+1)..result.high:
       result[k] = result[k].add((oldCursor, cursor))
 
-    if not self.tsParser.isNil:
+    if not self.tsLanguage.isNil:
       let (_, end_column) = traverse(oldCursor.line, oldCursor.column, text)
       self.changes.add(Insert(startByte, startByte + text.len, oldCursor.column, end_column, oldCursor.line, cursor.line))
 
@@ -1603,7 +1603,7 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     for k in (i+1)..result.high:
       result[k] = result[k].subtract(selection)
 
-    if not self.tsParser.isNil:
+    if not self.tsLanguage.isNil:
       self.changes.add(Delete(startByte, endByte, first.column, last.column, selection.first.line, selection.last.line))
 
     inc self.version

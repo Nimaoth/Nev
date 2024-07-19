@@ -132,6 +132,8 @@ else:
 
   import compilation_config
 
+  import nimwasmtime
+
   when useBuiltinTreesitterLanguage("nim"):
     import treesitter_nim/treesitter_nim/nim
   when useBuiltinTreesitterLanguage("cpp"):
@@ -423,10 +425,23 @@ else:
 # Available on all targets
 
 when not defined(js):
-  import std/[tables]
+  import std/[tables, os, strutils]
   var treesitterDllCache = initTable[string, LibHandle]()
 
+  var wasmEngine = WasmEngine.new(WasmConfig.new())
+  var wasmStore: ptr TSWasmStore = nil
+
   import std/macros
+
+  proc getLanguageWasmStore(): ptr TSWasmStore =
+    if wasmStore == nil:
+      var err: TSWasmError
+      wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine.it), err.addr)
+      if err.kind != TSWasmErrorKindNone:
+        log lvlError, &"Failed to create wasm store: {err}"
+        return nil
+
+    return wasmStore
 
 proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
   when defined(js):
@@ -447,50 +462,90 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
 
   else:
     try:
-      let ctorSymbolName = if config.hasKey("constructor"):
-        config["constructor"].getStr
-      else:
-        fmt"tree_sitter_{languageId}"
-
       const fileExtension = when defined(windows):
         "dll"
       else:
         "so"
 
-      let dllPath = if config.hasKey("path"):
-        config["path"].getStr
+      var candidates: seq[tuple[path: string, ctor: string]] = @[]
+
+      proc addCandidate(path: string) =
+        let path = fs.getApplicationFilePath(path)
+        if fileExists(path):
+          let ctor = if path.endsWith(".wasm"):
+            languageId
+          else:
+            &"tree_sitter_{languageId}"
+          candidates.add (path, ctor)
+
+      if config.hasKey("path"):
+        addCandidate config["path"].getStr
       else:
-        fmt"./languages/{languageId}.{fileExtension}"
+        addCandidate &"./languages/tree-sitter-{languageId}.wasm"
+        addCandidate &"./languages/{languageId}.wasm"
+        addCandidate &"./languages/tree-sitter-{languageId}.{fileExtension}"
+        addCandidate &"./languages/{languageId}.{fileExtension}"
 
-      let absolutePath = fs.getApplicationFilePath(dllPath)
+      for (path, ctorSymbolName) in candidates:
+        log lvlInfo, &"Trying to load treesitter from '{path}' using function '{ctorSymbolName}'"
 
-      log(lvlInfo, fmt"Trying to load treesitter from '{absolutePath}' using function '{ctorSymbolName}'")
-      let lib = if treesitterDllCache.contains(absolutePath):
-        treesitterDllCache[absolutePath]
-      else:
-        let lib = loadLib(absolutePath)
-        if lib.isNil:
-          log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{absolutePath}'")
-          return TSLanguage.none
-        treesitterDllCache[absolutePath] = lib
-        lib
+        if path.endsWith(".wasm"):
+          let wasmStore = getLanguageWasmStore()
+          if wasmStore == nil:
+            continue
 
-      let ctor = cast[TSLanguageCtor](lib.symAddr(ctorSymbolName.cstring))
-      if ctor.isNil:
-        log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{absolutePath}'")
-        return TSLanguage.none
+          let wasmBytes = await fs.loadFileAsync(path)
+          if wasmBytes.len == 0:
+            log lvlError, &"Failed to load wasm file {path}"
+            continue
 
-      let tsLanguage = ctor()
-      if tsLanguage.isNil:
-        log(lvlError, fmt"Failed to create language from dll '{languageId}': '{absolutePath}'")
-        return TSLanguage.none
+          logScope lvlInfo, &"Create wasm language from module for {languageId}"
 
-      return TSLanguage(impl: tsLanguage).some
+          var err: TSWasmError
+          let language = tsWasmStoreLoadLanguage(wasmStore, ctorSymbolName.cstring, wasmBytes.cstring,
+            wasmBytes.len.uint32, err.addr)
+          if err.kind != TSWasmErrorKindNone:
+            log lvlError, &"Failed to create wasm language: {err}"
+            continue
+
+          if language == nil:
+            log lvlError, &"Failed to create wasm language"
+            continue
+
+          return TSLanguage(impl: language).some
+
+        else:
+          let lib = if treesitterDllCache.contains(path):
+            treesitterDllCache[path]
+          else:
+            let lib = loadLib(path)
+            if lib.isNil:
+              log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{path}'")
+              continue
+            treesitterDllCache[path] = lib
+            lib
+
+          let ctor = cast[TSLanguageCtor](lib.symAddr(ctorSymbolName.cstring))
+          if ctor.isNil:
+            log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{path}'")
+            continue
+
+          let tsLanguage = ctor()
+          if tsLanguage.isNil:
+            log(lvlError, fmt"Failed to create language from dll '{languageId}': '{path}'")
+            continue
+
+          return TSLanguage(impl: tsLanguage).some
+
+      return TSLanguage.none
     except CatchableError:
       log(lvlError, fmt"Failed to load language from dll: '{languageId}': {getCurrentExceptionMsg()}")
       return TSLanguage.none
 
-proc loadLanguage*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+var loadedLanguages: Table[string, TSLanguage]
+var loadingLanguages: Table[string, Future[Option[TSLanguage]]]
+
+proc loadLanguage(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
   let language = await loadLanguageDynamically(languageId, config)
   if language.isSome:
     return language
@@ -499,7 +554,6 @@ proc loadLanguage*(languageId: string, config: JsonNode): Future[Option[TSLangua
     return TSLanguage.none
   else:
     log(lvlInfo, fmt"No dll language for {languageId}, try builtin")
-
 
     macro nameof(t: untyped): untyped =
       return t.repr.newLit
@@ -539,12 +593,84 @@ proc loadLanguage*(languageId: string, config: JsonNode): Future[Option[TSLangua
       log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
       TSLanguage.none
 
+proc getTreesitterLanguage*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+  log lvlInfo, &"getTreesitterLanguage {languageId}: {config}"
+  if loadingLanguages.contains(languageId):
+    let res = await loadingLanguages[languageId]
+    return res
+
+  elif loadedLanguages.contains(languageId):
+    return loadedLanguages[languageId].some
+
+  else:
+    loadingLanguages[languageId] = loadLanguage(languageId, config)
+    let language = await loadingLanguages[languageId]
+    if language.getSome(language):
+      loadedLanguages[languageId] = language
+      loadingLanguages.del(languageId)
+
+    return language
+
 proc createTsParser*(): TSParser =
   when defined(js):
     result = newTsParser()
     result.setTimeoutMicros(1_000_000)
   else:
-    return TSParser(impl: ts.tsParserNew())
+    let wasmStore: ptr TSWasmStore = if wasmEngine.it != nil:
+      var err: TSWasmError
+      let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine.it), err.addr)
+      if err.kind != TSWasmErrorKindNone:
+        log lvlError, &"Failed to create wasm store: {err}"
+      wasmStore
+
+    else:
+      nil
+
+    let parser = ts.tsParserNew()
+
+    if wasmStore != nil:
+      log lvlInfo, &"Use wasm store"
+      parser.tsParserSetWasmStore(wasmStore)
+
+    return TSParser(impl: parser)
+
+proc createTsParser*(language: TSLanguage): Option[TSParser] =
+  when defined(js):
+    result = newTsParser().some
+    result.get.setTimeoutMicros(1_000_000)
+  else:
+    let wasmStore: ptr TSWasmStore = if language.impl.tsLanguageIsWasm():
+      assert wasmEngine.it != nil
+      var err: TSWasmError
+      let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine.it), err.addr)
+      if err.kind != TSWasmErrorKindNone:
+        log lvlError, &"Failed to create wasm store: {err}"
+        return TSParser.none
+
+      wasmStore
+
+    else:
+      nil
+
+    let parser = ts.tsParserNew()
+    if wasmStore != nil:
+      log lvlInfo, &"Use wasm store"
+      parser.tsParserSetWasmStore(wasmStore)
+    assert ts.tsParserSetLanguage(parser, language.impl)
+    return TSParser(impl: parser).some
+
+var parsers: seq[TSParser]
+
+template withParser*(p: untyped, body: untyped): untyped =
+  if parsers.len == 0:
+    parsers.add createTsParser()
+
+  let p = parsers.pop()
+  defer:
+    parsers.add p
+
+  block:
+    body
 
 proc deinit*(self: TSParser) =
   when not defined(js):
@@ -563,6 +689,11 @@ proc toCursor*(point: TSPoint): Cursor = (point.row, point.column)
 proc toSelection*(rang: TSRange): scripting_api.Selection = (rang.first.toCursor, rang.last.toCursor)
 
 proc freeDynamicLibraries*() =
+  for p in parsers:
+    let store = p.impl.tsParserTakeWasmStore()
+    p.deinit()
+  parsers.setLen 0
+
   when not defined(js):
     for (path, lib) in treesitterDllCache.pairs:
       lib.unloadLib()
