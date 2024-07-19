@@ -12,7 +12,7 @@ traitRef AppInterface:
   method setRegisterTextAsync*(self: AppInterface, text: string, register: string): Future[void]
   method getRegisterTextAsync*(self: AppInterface, register: string): Future[string]
   method recordCommand*(self: AppInterface, command: string, args: string)
-  method openWorkspaceFile*(self: AppInterface, path: string): Option[DocumentEditor]
+  method openWorkspaceFile*(self: AppInterface, path: string, append: bool = false): Option[DocumentEditor]
   method openFile*(self: AppInterface, path: string): Option[DocumentEditor]
   method handleModeChanged*(self: AppInterface, editor: DocumentEditor, oldMode: string, newMode: string)
   method invokeCallback*(self: AppInterface, context: string, args: JsonNode): bool

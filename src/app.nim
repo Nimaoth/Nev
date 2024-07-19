@@ -252,7 +252,7 @@ proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
 proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.}
 proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.}
 proc recordCommand*(self: App, command: string, args: string)
-proc openWorkspaceFile*(self: App, path: string): Option[DocumentEditor]
+proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[DocumentEditor]
 proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentEditor]
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string)
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool
@@ -275,7 +275,7 @@ proc getDocument*(self: App, path: string, appFile = false): Option[Document]
 proc getOrOpenDocument*(self: App, path: string, appFile = false, load = true): Option[Document]
 proc tryCloseDocument*(self: App, document: Document, force: bool): bool
 proc closeUnusedDocuments*(self: App)
-proc tryOpenExisting*(self: App, path: string, appFile: bool = false): Option[DocumentEditor]
+proc tryOpenExisting*(self: App, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor]
 proc setOption*(self: App, option: string, value: JsonNode, override: bool = true)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "")
 
@@ -292,7 +292,7 @@ implTrait AppInterface, App:
   proc onEditorRegisteredEvent*(self: App): var Event[DocumentEditor] = self.onEditorRegistered
   proc onEditorDeregisteredEvent*(self: App): var Event[DocumentEditor] = self.onEditorDeregistered
 
-  openWorkspaceFile(Option[DocumentEditor], App, string)
+  openWorkspaceFile(Option[DocumentEditor], App, string, bool)
   openFile(Option[DocumentEditor], App, string)
   handleModeChanged(void, App, DocumentEditor, string, string)
   invokeCallback(bool, App, string, JsonNode)
@@ -661,6 +661,7 @@ proc getAllDocuments*(self: App): seq[Document] =
 
 import text/[text_editor, text_document]
 import text/language/debugger
+import text/language/lsp_client
 when enableAst:
   import ast/[model_document]
 import selector_popup
@@ -2158,7 +2159,7 @@ proc loadWorkspaceFile*(self: App, path: string) =
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
-proc tryOpenExisting*(self: App, path: string, appFile: bool = false): Option[DocumentEditor] =
+proc tryOpenExisting*(self: App, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor] =
   for i, view in self.views:
     if view of EditorView and view.EditorView.document.filename == path and
         (view.EditorView.document.workspace == self.workspace.some or
@@ -2173,7 +2174,7 @@ proc tryOpenExisting*(self: App, path: string, appFile: bool = false): Option[Do
         view.EditorView.document.appFile == appFile):
       log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
-      self.addView(view)
+      self.addView(view, append=append)
       return view.EditorView.editor.some
 
   return DocumentEditor.none
@@ -2199,7 +2200,7 @@ proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentE
     self.platform.requestRender()
 
   log lvlInfo, fmt"[openFile] Open file '{path}' (appFile = {appFile})"
-  if self.tryOpenExisting(path, appFile).getSome(ed):
+  if self.tryOpenExisting(path, appFile, append = false).getSome(ed):
     log lvlInfo, fmt"[openFile] found existing editor"
     return ed.some
 
@@ -2211,14 +2212,14 @@ proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentE
 
   return self.createAndAddView(document).some
 
-proc openWorkspaceFile*(self: App, path: string): Option[DocumentEditor] =
+proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
 
   let path = self.workspace.getAbsolutePath(path)
 
   log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
-  if self.tryOpenExisting(path).getSome(editor):
+  if self.tryOpenExisting(path, append = append).getSome(editor):
     log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
     return editor.some
 
@@ -2226,7 +2227,7 @@ proc openWorkspaceFile*(self: App, path: string): Option[DocumentEditor] =
     log(lvlError, fmt"Failed to load file {path}")
     return DocumentEditor.none
 
-  return self.createAndAddView(document).some
+  return self.createAndAddView(document, append = append).some
 
 proc removeFromLocalStorage*(self: App) {.expose("editor").} =
   ## Browser only
@@ -2873,6 +2874,40 @@ proc diffStagedFileAsync(self: App, workspace: Workspace, path: string): Future[
 
   let editor = self.createAndAddView(stagedDocument).TextDocumentEditor
   editor.updateDiff()
+
+when not defined(js):
+  import misc/async_process
+
+proc installTreesitterParserAsync*(self: App, language: string) {.async.} =
+  when not defined(js):
+    try:
+      let repo = self.getOption(&"languages.{language}.treesitter", "")
+      debugf"repo: {repo}"
+      let parts = repo.split("/")
+      if parts.len != 2:
+        log lvlError, &"Invalid value for languages.{language}.treesitter: '{repo}'. Expected 'user/repo'"
+        return
+
+      let url = &"https://github.com/{repo}"
+      let dirName = parts[1]
+
+      let languagesRoot = fs.getApplicationFilePath("languages")
+      let repoPath = languagesRoot // dirName
+
+      if not dirExists(languagesRoot // dirName):
+        log lvlInfo, &"[installTreesitterParser] clone repository {url}"
+        let gitCloneRes = runProcessAsync("git", @["clone", url], workingDir=languagesRoot).await.join("\n")
+        log lvlInfo, &"git clone {url}:\n{gitCloneRes.indent(1)}"
+
+      let gitCloneRes = runProcessAsync("tree-sitter", @["build", "--wasm", repoPath], workingDir=languagesRoot).await.join("\n")
+      log lvlInfo, &"tree-sitter build --wasm {repoPath}:\n{gitCloneRes.indent(1)}"
+
+    except:
+      log lvlError, &"Failed to install treesitter parser for {language}: {getCurrentExceptionMsg()}"
+
+proc installTreesitterParser*(self: App, language: string) {.expose("editor").} =
+  when not defined(js):
+    asyncCheck self.installTreesitterParserAsync(language)
 
 proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
   defer:
@@ -3779,7 +3814,18 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
   if record:
     self.recordCommand(action, arg)
 
+  var args = newJArray()
+  try:
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+  except CatchableError:
+    log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+
   if action.startsWith("."): # active action
+    if lsp_client.dispatchEvent(action[1..^1], args):
+      return true
+
     if self.getActiveEditor().getSome(editor):
       return case editor.handleAction(action[1..^1], arg, record=false)
         of Handled:
@@ -3789,14 +3835,6 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
 
     log lvlError, fmt"No current view"
     return false
-
-  var args = newJArray()
-  try:
-    for a in newStringStream(arg).parseJsonFragments():
-      args.add a
-  except CatchableError:
-    log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
 
   if debugger.dispatchEvent(action, args):
     return true

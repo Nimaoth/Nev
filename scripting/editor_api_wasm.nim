@@ -963,6 +963,20 @@ proc searchGlobal*(query: string) =
       argsJsonString.cstring)
 
 
+proc editor_installTreesitterParser_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc installTreesitterParser*(language: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      language
+    else:
+      language.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_installTreesitterParser_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_chooseGitActiveFiles_void_App_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc chooseGitActiveFiles*(all: bool = false) =
