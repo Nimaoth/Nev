@@ -16,7 +16,8 @@
             "path": "zls"
         },
         "rust": {
-            "path": "rust-analyzer"
+            "path": "rust-analyzer",
+            "section": "rust-analyzer"
         },
         "csharp": {
             "path": "OmniSharp"
@@ -31,6 +32,7 @@
 
     "languages": {
         "nim": {
+            "treesitter": "alaviss/tree-sitter-nim",
             "tabWidth": 2,
             "indent": "spaces",
             "indentAfter": [
@@ -45,6 +47,7 @@
             "lineComment": "#"
         },
         "python": {
+            "treesitter": "tree-sitter/tree-sitter-python",
             "tabWidth": 2,
             "indent": "spaces",
             "indentAfter": [
@@ -57,6 +60,7 @@
             "lineComment": "#"
         },
         "javascript": {
+            "treesitter": "tree-sitter/tree-sitter-javascript",
             "tabWidth": 4,
             "indent": "spaces",
             "indentAfter": [
@@ -74,6 +78,7 @@
             "ignoreContextLinePrefix": "{"
         },
         "typescript": {
+            "treesitter": "tree-sitter/tree-sitter-typescript",
             "tabWidth": 4,
             "indent": "tab",
             "indentAfter": [
@@ -90,6 +95,7 @@
             ]
         },
         "rust": {
+            "treesitter": "tree-sitter/tree-sitter-rust",
             "tabWidth": 4,
             "indent": "spaces",
             "indentAfter": [
@@ -106,6 +112,7 @@
             ]
         },
         "c": {
+            "treesitter": "tree-sitter/tree-sitter-c",
             "tabWidth": 4,
             "indent": "spaces",
             "indentAfter": [
@@ -122,6 +129,7 @@
             ]
         },
         "cpp": {
+            "treesitter": "tree-sitter/tree-sitter-cpp",
             "tabWidth": 4,
             "indent": "spaces",
             "indentAfter": [
@@ -138,6 +146,7 @@
             ]
         },
         "java": {
+            "treesitter": "tree-sitter/tree-sitter-java",
             "tabWidth": 4,
             "indent": "tab",
             "indentAfter": [
@@ -154,6 +163,7 @@
             ]
         },
         "zig": {
+            "treesitter": "maxxnino/tree-sitter-zig",
             "tabWidth": 4,
             "indent": "tab",
             "indentAfter": [
@@ -166,6 +176,7 @@
             "lineComment": "//"
         },
         "json": {
+            "treesitter": "maxxnino/tree-sitter-json",
             "tabWidth": 4,
             "indent": "tab",
             "indentAfter": [
@@ -174,6 +185,18 @@
                 "["
             ],
             "lineComment": "//"
+        }
+    },
+
+    "snippets": {
+        "nim": {
+            "procedure": {
+                "scope": "nim",
+                "prefix": "proc",
+                "body": [
+                    "proc ${1:name}($2): ${3:returnType} = ${0:discard}"
+                ]
+            }
         }
     },
 
