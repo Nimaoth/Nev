@@ -88,7 +88,7 @@ jobs:
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:ast
-      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast-gui
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:astg
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true -d:musl -d:nimWasmtimeBuildMusl --out:ast-musl
 
       # create release packages
