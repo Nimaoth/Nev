@@ -11,6 +11,7 @@ switch("tlsEmulation", "off")
 # performance
 switch("panics", "on")
 switch("d", "release")
+# switch("d", "lto")
 # switch("opt", "size")
 
 
@@ -46,10 +47,10 @@ switch("d", "wasm3VerboseErrorMessages")
 # Configure which treesitter languages are compiled into the editor (ignored on js backend)
 # switch("d", "treesitterBuiltins=cpp,nim,agda,bash,c,css,go,html,java,javascript,python,ruby,rust,scala,csharp,zig,haskell")
 # switch("d", "treesitterBuiltins=cpp,nim,c,css,html,javascript,python,rust,csharp")
-switch("d", "treesitterBuiltins=cpp,nim,csharp,rust,python,javascript")
+switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript")
 
 # Automatically build wasmtime when compiling the editor
-switch("d", "nimWasmtimeBuild")
+# switch("d", "nimWasmtimeBuildDebug")
 
 # Enable wasi support in nimwasmtime
 switch("d", "nimWasmtimeFeatureWasi")
@@ -75,7 +76,7 @@ when defined(musl):
   switch("d", "enableSystemClipboard=false")
 
   # Remove nim from treesitterBuiltins because it doesn't build with musl right now
-  switch("d", "treesitterBuiltins=cpp,csharp,rust,python,javascript")
+  switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript")
 
 else:
   switch("d", "ssl")
