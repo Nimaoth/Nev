@@ -92,7 +92,7 @@ jobs:
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true -d:musl -d:nimWasmtimeBuildMusl --out:ast-musl
 
       # create release packages
-      - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims
+      - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims -l
       - run: ls -la release_linux
       #- run: ls -la release_web
 
@@ -176,7 +176,7 @@ jobs:
       - run: nimble buildLspWsWindows
 
       # create release packages
-      - run: nim ./tools/package_release.nims
+      - run: nim ./tools/package_release.nims -w
 
       # make zips
       - name: Zip release_windows
