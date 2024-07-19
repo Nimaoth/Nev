@@ -234,7 +234,7 @@ jobs:
         continue-on-error: true
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
-      - run: "echo 'import nimwasmtime' > src/temp.nim && nim c src/temp.nim"
+      - run: "echo 'import nimwasmtime' > src/temp.nim && nim c -d:nimWasmtimeBuild src/temp.nim"
 
       - name: Run tests
         continue-on-error: true
