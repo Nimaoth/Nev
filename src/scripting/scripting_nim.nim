@@ -289,7 +289,7 @@ template createScriptContextConstructor*(addins: untyped): untyped =
   proc createScriptContextNim(filepath: string, searchPaths: seq[string]): Future[Option[ScriptContext]] {.async.} =
     return await newScriptContext(filepath, "absytree_internal", addins, "include absytree_runtime_impl", searchPaths)
 
-macro invoke*(self: ScriptContext; pName: untyped;
+macro invoke(self: ScriptContext; pName: untyped;
     args: varargs[typed]; returnType: typedesc = void): untyped =
   ## Invoke but takes an option and unpacks it, if `intr.`isNone, assertion is raised
   let inter = quote do:
@@ -310,16 +310,35 @@ macro invoke*(self: ScriptContext; pName: untyped;
     call
 
 method handleEditorModeChanged*(self: ScriptContextNim, editor: DocumentEditor, oldMode: string, newMode: string) =
-  self.invoke(handleEditorModeChanged, editor.id, oldMode, newMode, returnType = void)
+  try:
+    self.invoke(handleEditorModeChanged, editor.id, oldMode, newMode, returnType = void)
+  except:
+    log lvlError, &"Failed to run handleEditorModeChanged {editor.id}, {oldMode}, {newMode}: {getCurrentExceptionMsg()}"
 
 method postInitialize*(self: ScriptContextNim): bool =
-  return self.invoke(postInitialize, returnType = bool)
+  try:
+    return self.invoke(postInitialize, returnType = bool)
+  except:
+    log lvlError, &"Failed to run postInitialize: {getCurrentExceptionMsg()}"
+    return false
 
 method handleCallback*(self: ScriptContextNim, id: int, arg: JsonNode): bool =
-  return self.invoke(handleCallback, id, arg, returnType = bool)
+  try:
+    return self.invoke(handleCallback, id, arg, returnType = bool)
+  except:
+    log lvlError, &"Failed to run handleCallback {id}, {arg}: {getCurrentExceptionMsg()}"
+    return false
 
 method handleAnyCallback*(self: ScriptContextNim, id: int, arg: JsonNode): JsonNode =
-  return self.invoke(handleAnyCallback, id, arg, returnType = JsonNode)
+  try:
+    return self.invoke(handleAnyCallback, id, arg, returnType = JsonNode)
+  except:
+    log lvlError, &"Failed to run handleAnyCallback {id}, {arg}: {getCurrentExceptionMsg()}"
+    return nil
 
 method handleScriptAction*(self: ScriptContextNim, name: string, args: JsonNode): JsonNode =
-  return self.invoke(handleScriptAction, name, args, returnType = JsonNode)
+  try:
+    return self.invoke(handleScriptAction, name, args, returnType = JsonNode)
+  except:
+    log lvlError, &"Failed to run handleScriptAction {name}, {args}: {getCurrentExceptionMsg()}"
+    return nil
