@@ -50,6 +50,17 @@ switch("d", "wasm3VerboseErrorMessages")
 switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript")
 
 # Automatically build wasmtime when compiling the editor
+const absytreeBuildWasmtime {.booldefine.} = false
+const absytreeCI {.booldefine.} = false
+const absytreeCINimbleCached {.booldefine.} = false
+when absytreeCI and not absytreeCINimbleCached:
+  echo "Will build wasmtime"
+  switch("d", "nimWasmtimeBuild")
+
+when not absytreeCI and absytreeBuildWasmtime:
+  echo "Will build wasmtime"
+  switch("d", "nimWasmtimeBuild")
+
 # switch("d", "nimWasmtimeBuildDebug")
 
 # Enable wasi support in nimwasmtime
