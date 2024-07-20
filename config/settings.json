@@ -185,6 +185,12 @@
                 "["
             ],
             "lineComment": "//"
+        },
+        "markdown": {
+            "treesitter": "tree-sitter-grammars/tree-sitter-markdown",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "blockComment": [ "<!--", "-->" ]
         }
     },
 
