@@ -1,103 +1,165 @@
-"break" @keyword
-"case" @keyword
-"const" @keyword
-"continue" @keyword
-"default" @keyword
-"do" @keyword
-"else" @keyword
-"enum" @keyword
-"extern" @keyword
-"for" @keyword
-"if" @keyword
-"inline" @keyword
-"return" @keyword
-"sizeof" @keyword
-"static" @keyword
-"struct" @keyword
-"class" @keyword
-"switch" @keyword
-"typedef" @keyword
-"union" @keyword
-"volatile" @keyword
-"while" @keyword
-"virtual" @keyword
-"override" @keyword
-"public" @keyword
-"protected" @keyword
-"private" @keyword
+; Keywords
+[
+  "break" @keyword
+  "case" @keyword
+  "const" @keyword
+  "continue" @keyword
+  "default" @keyword
+  "do" @keyword
+  "else" @keyword
+  "enum" @keyword
+  "extern" @keyword
+  "for" @keyword
+  "if" @keyword
+  "inline" @keyword
+  "return" @keyword
+  "sizeof" @keyword
+  "static" @keyword
+  "struct" @keyword
+  "typedef" @keyword
+  "union" @keyword
+  "volatile" @keyword
+  "while" @keyword
 
-"#define" @keyword
-"#elif" @keyword
-"#else" @keyword
-"#endif" @keyword
-"#if" @keyword
-"#ifdef" @keyword
-"#ifndef" @keyword
-"#include" @keyword
-(preproc_directive) @keyword
+  "#define"
+  "#elif"
+  "#else"
+  "#endif"
+  "#if"
+  "#ifdef"
+  "#ifndef"
+  "#include"
+  "catch"
+  "class"
+  "co_await"
+  "co_return"
+  "co_yield"
+  "constexpr"
+  "constinit"
+  "consteval"
+  "delete"
+  "explicit"
+  "final"
+  "friend"
+  "mutable"
+  "namespace"
+  "noexcept"
+  "new"
+  "override"
+  "private"
+  "protected"
+  "public"
+  "template"
+  "throw"
+  "try"
+  "typename"
+  "using"
+  "concept"
+  "requires"
+  (virtual)
+  (preproc_directive)
+] @keyword
 
-"--" @keyword.operator
-"-" @keyword.operator
-"-=" @keyword.operator
-"->" @keyword.operator
-"=" @keyword.operator
-"!=" @keyword.operator
-"*" @keyword.operator
-"&" @keyword.operator
-"&&" @keyword.operator
-"+" @keyword.operator
-"++" @keyword.operator
-"+=" @keyword.operator
-"<" @keyword.operator
-"==" @keyword.operator
-">" @keyword.operator
-"||" @keyword.operator
+[
+  "--"
+  "-"
+  "-="
+  "->"
+  "="
+  "!="
+  "*"
+  "&"
+  "&&"
+  "+"
+  "++"
+  "+="
+  "<"
+  "=="
+  ">"
+  "||"
+] @keyword.operator
 
-"." @punctuation
-";" @punctuation
-":" @punctuation
-"," @punctuation
-"(" @punctuation
-")" @punctuation
-"[" @punctuation
-"]" @punctuation
-"{" @punctuation
-"}" @punctuation
+[
+  "."
+  ";"
+  ":"
+  ","
+  "::"
+] @punctuation.delimiter
 
-(auto) @keyword
-(this) @keyword
+[
+  "("
+  ")"
+  "["
+  "]"
+  "{"
+  "}"
+] @punctuation.bracket
 
+; Strings
+
+(raw_string_literal) @string
 (string_literal) @string
 (system_lib_string) @string
 
-(null) @constant
-(number_literal) @constant.numeric
+
+; Functions
+
+(call_expression
+  function: (qualified_identifier
+    name: (identifier) @function))
+
+(template_function
+  name: (identifier) @function)
+
+(template_method
+  name: (field_identifier) @function)
+
+(template_function
+  name: (identifier) @function)
+
+(function_declarator
+  declarator: (qualified_identifier
+    name: (identifier) @function))
+
+(function_declarator
+  declarator: (field_identifier) @function)
+
+; Types
+
+((namespace_identifier) @type
+ (#match? @type "^[A-Z]"))
+
+(auto) @type
+
+; Constants
+
+(this) @variable.builtin
+(null "nullptr" @constant)
+
+(number_literal) @number
 (char_literal) @constant.numeric
 
-((identifier) @support.type
-  (#match? @support.type "^[FUTI][A-Z].*$"))
-
-(qualified_identifier
-  scope: (namespace_identifier) @support.type
-  name: (identifier) @variable.function)
-
-(qualified_identifier
-  scope: (namespace_identifier) @support.type
-  name: (template_function
-    name: (identifier) @variable.function))
+(call_expression
+  function: (identifier) @function.special
+  (#match? @function.special "^[A-Z][A-Z\\d_]*$"))
 
 (call_expression
-  function: (identifier) @variable.function)
+  function: (identifier) @function.call)
 (call_expression
   function: (field_expression
-    field: (field_identifier) @variable.function))
+    field: (field_identifier) @function.call))
 (call_expression
   function: (template_function
-    name: (identifier) @variable.function))
+    name: (identifier) @function.call))
 (function_declarator
-  declarator: (identifier) @variable.function)
+  declarator: (identifier) @function)
 (preproc_function_def
-  name: (identifier) @variable.function.special)
+  name: (identifier) @function.special)
+(preproc_ifdef
+  name: (identifier) @type)
+(preproc_def
+  name: (identifier) @type)
 
 (field_declaration
   declarator: (function_declarator

@@ -1,3 +1,8 @@
+(identifier) @variable
+
+((identifier) @constant
+ (#match? @constant "^[A-Z][A-Z\\d_]*$"))
+
 "break" @keyword
 "case" @keyword
 "const" @keyword
@@ -30,52 +35,47 @@
 "#include" @keyword
 (preproc_directive) @keyword
 
-"--" @keyword.operator
-"-" @keyword.operator
-"-=" @keyword.operator
-"->" @keyword.operator
-"=" @keyword.operator
-"!=" @keyword.operator
-"*" @keyword.operator
-"&" @keyword.operator
-"&&" @keyword.operator
-"+" @keyword.operator
-"++" @keyword.operator
-"+=" @keyword.operator
-"<" @keyword.operator
-"==" @keyword.operator
-">" @keyword.operator
-"||" @keyword.operator
+"--" @operator
+"-" @operator
+"-=" @operator
+"->" @operator
+"=" @operator
+"!=" @operator
+"*" @operator
+"&" @operator
+"&&" @operator
+"+" @operator
+"++" @operator
+"+=" @operator
+"<" @operator
+"==" @operator
+">" @operator
+"||" @operator
 
-"." @punctuation
-";" @punctuation
+"." @delimiter
+";" @delimiter
 
 (string_literal) @string
 (system_lib_string) @string
 
 (null) @constant
-(number_literal) @constant.numeric
-(char_literal) @constant.numeric
+(number_literal) @number
+(char_literal) @number
+
+(field_identifier) @property
+(statement_identifier) @label
+(type_identifier) @type
+(primitive_type) @type
+(sized_type_specifier) @type
 
 (call_expression
-  function: (identifier) @variable.function)
+  function: (identifier) @function)
 (call_expression
   function: (field_expression
-    field: (field_identifier) @variable.function))
+    field: (field_identifier) @function))
 (function_declarator
-  declarator: (identifier) @variable.function)
+  declarator: (identifier) @function)
 (preproc_function_def
-  name: (identifier) @variable.function.special)
-
-(field_identifier) @variable
-(statement_identifier) @label
-(type_identifier) @storage.type
-(primitive_type) @storage.type
-(sized_type_specifier) @storage.type
-
-((identifier) @constant
- (#match? @constant "^[A-Z][A-Z\\d_]*$"))
-
-(identifier) @variable
+  name: (identifier) @function.special)
 
 (comment) @comment
