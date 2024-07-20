@@ -28,6 +28,7 @@ proc getLanguageForFile*(filename: string): Option[string] =
   of "nim", "nims", "nimble": "nim"
   of "zig": "zig"
   of "md": "markdown"
+  of "scm": "query"
   else:
     # Unsupported language
     # log(lvlWarn, fmt"Unknown file extension '{extension}'")

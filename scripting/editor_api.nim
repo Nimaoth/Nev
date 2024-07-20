@@ -181,6 +181,8 @@ proc searchGlobalInteractive*() =
   editor_searchGlobalInteractive_void_App_impl()
 proc searchGlobal*(query: string) =
   editor_searchGlobal_void_App_string_impl(query)
+proc installTreesitterParser*(language: string) =
+  editor_installTreesitterParser_void_App_string_impl(language)
 proc chooseGitActiveFiles*(all: bool = false) =
   editor_chooseGitActiveFiles_void_App_bool_impl(all)
 proc exploreFiles*(root: string = "") =

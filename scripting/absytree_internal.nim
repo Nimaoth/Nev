@@ -744,6 +744,8 @@ proc editor_searchGlobalInteractive_void_App_impl*() =
   discard
 proc editor_searchGlobal_void_App_string_impl*(query: string) =
   discard
+proc editor_installTreesitterParser_void_App_string_impl*(language: string) =
+  discard
 proc editor_chooseGitActiveFiles_void_App_bool_impl*(all: bool = false) =
   discard
 proc editor_exploreFiles_void_App_string_impl*(root: string = "") =
