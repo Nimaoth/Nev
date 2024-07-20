@@ -87,23 +87,23 @@ proc getCommandLineParams(): string =
   return commandLineParams[3..^1].join(" ")
 
 task buildDesktop, "Build the desktop version":
-  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
-  # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild {getCommandLineParams()} ./src/absytree.nim"
-  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime {getCommandLineParams()} ./src/absytree.nim"
+  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
 task buildTerminal, "Build the terminal version":
-  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild --debuginfo -g -D:debug --lineDir:off --nilChecks:on --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
-  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:nimWasmtimeBuild --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --debuginfo -g -D:debug --lineDir:off --nilChecks:on --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
-  selfExec fmt"c -o:ast{exe} {crossCompileWinArgs} -d:exposeScriptingApi -d:nimWasmtimeBuild {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:ast{exe} {crossCompileWinArgs} -d:exposeScriptingApi -d:absytreeBuildWasmtime {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDll, "Build the dll version":
   # Disable clipboard for now because it breaks hot reloading
-  selfExec fmt"c -o:ast.dll -d:exposeScriptingApi -d:nimWasmtimeBuild -d:enableSystemClipboard=false --noMain --app:lib {getCommandLineParams()} ./src/absytree_dynlib.nim"
+  selfExec fmt"c -o:ast.dll -d:exposeScriptingApi -d:absytreeBuildWasmtime -d:enableSystemClipboard=false --noMain --app:lib {getCommandLineParams()} ./src/absytree_dynlib.nim"
 
 task buildWorkspaceServer, "Build the server for hosting workspaces":
   selfExec fmt"c -o:./tools/workspace-server{exe} {getCommandLineParams()} ./src/servers/workspace_server.nim"
