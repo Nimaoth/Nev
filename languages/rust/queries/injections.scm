@@ -1,4 +1,3 @@
-
 ((macro_invocation
   (token_tree) @injection.content)
  (#set! injection.language "rust")

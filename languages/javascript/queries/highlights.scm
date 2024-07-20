@@ -1,29 +1,17 @@
-; Special identifiers
-;--------------------
+; Variables
+;----------
 
-([
-    (identifier)
-    (shorthand_property_identifier)
-    (shorthand_property_identifier_pattern)
- ] @constant
- (#match? @constant "^[A-Z_][A-Z\\d_]+$"))
+(identifier) @variable
 
+; Properties
+;-----------
 
-((identifier) @constructor
- (#match? @constructor "^[A-Z]"))
-
-((identifier) @variable.builtin
- (#match? @variable.builtin "^(arguments|module|console|window|document)$")
- (#is-not? local))
-
-((identifier) @function.builtin
- (#eq? @function.builtin "require")
- (#is-not? local))
+(property_identifier) @property
 
 ; Function and method definitions
 ;--------------------------------
 
-(function
+(function_expression
   name: (identifier) @function)
 (function_declaration
   name: (identifier) @function)
@@ -32,20 +20,20 @@
 
 (pair
   key: (property_identifier) @function.method
-  value: [(function) (arrow_function)])
+  value: [(function_expression) (arrow_function)])
 
 (assignment_expression
   left: (member_expression
     property: (property_identifier) @function.method)
-  right: [(function) (arrow_function)])
+  right: [(function_expression) (arrow_function)])
 
 (variable_declarator
   name: (identifier) @function
-  value: [(function) (arrow_function)])
+  value: [(function_expression) (arrow_function)])
 
 (assignment_expression
   left: (identifier) @function
-  right: [(function) (arrow_function)])
+  right: [(function_expression) (arrow_function)])
 
 ; Function and method calls
 ;--------------------------
@@ -57,15 +45,28 @@
   function: (member_expression
     property: (property_identifier) @function.method))
 
-; Variables
-;----------
+; Special identifiers
+;--------------------
+(glimmer_opening_tag) @tag.builtin
+(glimmer_closing_tag) @tag.builtin
 
-(identifier) @variable
+((identifier) @constructor
+ (#match? @constructor "^[A-Z]"))
 
-; Properties
-;-----------
+([
+    (identifier)
+    (shorthand_property_identifier)
+    (shorthand_property_identifier_pattern)
+ ] @constant
+ (#match? @constant "^[A-Z_][A-Z\\d_]+$"))
 
-(property_identifier) @property
+((identifier) @variable.builtin
+ (#match? @variable.builtin "^(arguments|module|console|window|document)$")
+ (#is-not? local))
+
+((identifier) @function.builtin
+ (#eq? @function.builtin "require")
+ (#is-not? local))
 
 ; Literals
 ;---------
@@ -78,7 +79,7 @@
   (false)
   (null)
   (undefined)
-] @variable.other.constant
+] @constant.builtin
 
 (comment) @comment
 
@@ -88,20 +89,17 @@
 ] @string
 
 (regex) @string.special
-(number) @constant.numeric
+(number) @number
 
 ; Tokens
 ;-------
 
-(template_substitution
-  "${" @punctuation.special
-  "}" @punctuation.special) @embedded
-
 [
   ";"
+  (optional_chain)
   "."
   ","
-] @punctuation
+] @punctuation.delimiter
 
 [
   "-"
@@ -157,7 +155,11 @@
   "]"
   "{"
   "}"
-]  @punctuation
+]  @punctuation.bracket
+
+(template_substitution
+  "${" @punctuation.special
+  "}" @punctuation.special) @embedded
 
 [
   "as"

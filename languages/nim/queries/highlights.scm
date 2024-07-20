@@ -11,6 +11,11 @@
 ; Special
 (blank_identifier) @variable.builtin
 
+((identifier) @type
+  (#match? @type "^[A-Z].*$"))
+((identifier) @type
+  (#match? @type "^(openArray|typedesc)$"))
+
 ; Calls
 (call
   function: [
@@ -175,6 +180,8 @@
   "cast"
 ] @keyword.operator
 
+(accent_quoted (identifier)) @operator
+
 [
   "return"
   "yield"
@@ -183,8 +190,3 @@
 ; Operators
 (infix_expression operator: _ @operator)
 (prefix_expression operator: _ @operator)
-
-((identifier) @type
-  (#match? @type "^[A-Z].*$"))
-((identifier) @type
-  (#match? @type "^(openArray|typedesc)$"))
