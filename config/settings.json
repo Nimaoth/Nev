@@ -31,6 +31,17 @@
     },
 
     "languages": {
+        "query": {
+            "treesitter": "tree-sitter-grammars/tree-sitter-query",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": ";"
+        },
         "nim": {
             "treesitter": "alaviss/tree-sitter-nim",
             "tabWidth": 2,
