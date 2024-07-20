@@ -1,4 +1,4 @@
-import std/[options, json]
+import std/[options, json, tables]
 import misc/[custom_logger, custom_async, util, custom_unicode]
 import platform/filesystem
 
@@ -175,14 +175,16 @@ else:
   when useBuiltinTreesitterLanguage("typescript"):
     import treesitter_typescript/treesitter_typescript/typescript
 
+  type TSQuery* = ref object
+    impl: ptr ts.TSQuery
+
   type TSLanguage* = ref object
+    languageId: string
     impl: ptr ts.TSLanguage
+    queries: Table[string, Option[TSQuery]]
 
   type TSParser* = ref object
     impl: ptr ts.TSParser
-
-  type TSQuery* = ref object
-    impl: ptr ts.TSQuery
 
   type TsTree* = ref object
     impl: ptr ts.TSTree
@@ -232,13 +234,33 @@ else:
       ts.tsTreeDelete(self.impl)
     self = nil
 
-  proc query*(self: TSLanguage, source: string): TSQuery =
+  proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, force = false):
+      Option[TSQuery] =
+
+    if not force and self.queries.contains(id):
+      return self.queries[id]
+
+    logScope lvlInfo, &"Create '{id}' query for {self.languageId}"
+
     var errorOffset: uint32 = 0
     var queryError: ts.TSQueryError = ts.TSQueryErrorNone
-    result = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
+    let query = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
+
     if queryError != ts.TSQueryErrorNone:
       log lvlError, &"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}\n{source}"
-      return nil
+      if cacheOnFail:
+        self.queries[id] = TSQuery.none
+      return TSQuery.none
+
+    self.queries[id] = query.some
+    query.some
+
+  proc queryFile*(self: TSLanguage, id: string, path: string, cacheOnFail = true, force = false): Future[Option[TSQuery]] {.async.} =
+    if not false and self.queries.contains(id):
+      return self.queries[id]
+
+    let queryString = await fs.loadFileAsync(path)
+    return self.query(id, queryString, cacheOnFail, force)
 
   proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
     let oldTreePtr: ptr ts.TSTree = if oldTree.getSome(tree):
@@ -512,7 +534,7 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
             log lvlError, &"Failed to create wasm language"
             continue
 
-          return TSLanguage(impl: language).some
+          return TSLanguage(languageId: languageId, impl: language).some
 
         else:
           let lib = if treesitterDllCache.contains(path):
@@ -535,7 +557,7 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
             log(lvlError, fmt"Failed to create language from dll '{languageId}': '{path}'")
             continue
 
-          return TSLanguage(impl: tsLanguage).some
+          return TSLanguage(languageId: languageId, impl: tsLanguage).some
 
       return TSLanguage.none
     except CatchableError:
@@ -565,7 +587,7 @@ proc loadLanguage(languageId: string, config: JsonNode): Future[Option[TSLanguag
           static:
             echo "Including builtin treesitter language '", nameof(constructor), "'"
           log lvlInfo, fmt"Loading builtin language"
-          l = TSLanguage(impl: constructor()).some
+          l = TSLanguage(languageId: languageId, impl: constructor()).some
         l
 
     return case languageId

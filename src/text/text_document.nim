@@ -809,13 +809,8 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   logScope lvlInfo, &"loadTreesitterLanguage {self.filename}"
 
-  if not self.highlightQuery.isNil:
-    self.highlightQuery.deinit()
-    self.highlightQuery = nil
-  if not self.errorQuery.isNil:
-    self.errorQuery.deinit()
-    self.errorQuery = nil
-
+  self.highlightQuery = nil
+  self.errorQuery = nil
   self.currentContentFailedToParse = false
   self.tsLanguage = nil
   self.currentTree.delete()
@@ -841,24 +836,30 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.tsLanguage = language.get
   self.currentTree.delete()
 
-  try:
-    let queryString = fs.loadApplicationFile(fmt"./languages/{self.languageId}/queries/highlights.scm")
-    self.highlightQuery = language.get.query(queryString)
-    if self.highlightQuery.isNil:
-      log(lvlError, fmt"Failed to create highlight query for '{self.languageId}'")
-  except CatchableError:
+  # todo: this awaits, check if still current request afterwards
+  let highlightQueryPath = fs.getApplicationFilePath(&"languages/{self.languageId}/queries/highlights.scm")
+  if language.get.queryFile("highlight", highlightQueryPath).await.getSome(query):
+    if prevLanguageId != self.languageId:
+      return
+
+    self.highlightQuery = query
+  else:
     log(lvlError, fmt"No highlight queries found for '{self.languageId}'")
 
-  try:
-    var errorQueryString = fs.loadApplicationFile(fmt"./languages/{self.languageId}/queries/errors.scm")
-    if errorQueryString.len == 0:
-      errorQueryString = "(ERROR) @error"
-    self.errorQuery = language.get.query(errorQueryString)
-    if self.errorQuery.isNil:
-      log(lvlError, fmt"Failed to create error query for '{self.languageId}'")
-  except CatchableError:
+  let errorQueryPath = fs.getApplicationFilePath(&"languages/{self.languageId}/queries/errors.scm")
+  if language.get.queryFile("error", errorQueryPath, cacheOnFail = false).await.getSome(query):
+    if prevLanguageId != self.languageId:
+      return
+    self.errorQuery = query
+  elif language.get.query("error", "(ERROR) @error").getSome(query):
+    self.errorQuery = query
+  else:
     log(lvlError, fmt"No error queries found for '{self.languageId}'")
 
+  if prevLanguageId != self.languageId:
+    return
+
+  self.styledTextCache.clear()
   self.notifyRequestRerender()
 
 proc reloadTreesitterLanguage*(self: TextDocument) =
@@ -930,10 +931,8 @@ method deinit*(self: TextDocument) =
   logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
   if self.currentTree.isNotNil:
     self.currentTree.delete()
-  if self.highlightQuery.isNotNil:
-    self.highlightQuery.deinit()
-  if self.errorQuery.isNotNil:
-    self.errorQuery.deinit()
+  self.highlightQuery = nil
+  self.errorQuery = nil
 
   if self.languageServer.getSome(ls):
     ls.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
@@ -1062,12 +1061,8 @@ proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[W
   else:
     self.languageId = ""
 
-  if not self.highlightQuery.isNil:
-    self.highlightQuery.deinit()
-    self.highlightQuery = nil
-  if not self.errorQuery.isNil:
-    self.errorQuery.deinit()
-    self.errorQuery = nil
+  self.highlightQuery = nil
+  self.errorQuery = nil
 
   self.styledTextCache.clear()
 
