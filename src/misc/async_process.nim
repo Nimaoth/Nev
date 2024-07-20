@@ -338,8 +338,10 @@ type RunProcessThreadArgs = tuple
   args: seq[string]
   maxLines: int
   workingDir: string
+  captureOut: bool = true
+  captureErr: bool = true
 
-proc readProcessOutputThread(args: RunProcessThreadArgs): seq[string] {.gcsafe.} =
+proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[string], ref Exception) {.gcsafe.} =
   try:
     when debugAsyncProcess:
       asyncProcessDebugOutput.send(fmt"Start process {args}")
@@ -347,12 +349,25 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): seq[string] {.gcsafe.}
     let process = startProcess(args.processName, workingDir=args.workingDir, args=args.args,
       options={poUsePath, poDaemon})
 
-    for line in process.lines:
-      result.add(line)
-      if result.len >= args.maxLines:
-        when debugAsyncProcess:
-          asyncProcessDebugOutput.send("{args}: Stop, max lines reached")
-        break
+    if args.captureOut:
+      var outp = process.outputStream
+      var line = newStringOfCap(120)
+      while outp.readLine(line):
+        result[0].add(line)
+        if result[0].len >= args.maxLines:
+          when debugAsyncProcess:
+            asyncProcessDebugOutput.send("{args}: Stop, max lines reached")
+          break
+
+    if args.captureErr:
+      var errp = process.errorStream
+      var line = newStringOfCap(120)
+      while errp.readLine(line):
+        result[1].add(line)
+        if result[1].len >= args.maxLines:
+          when debugAsyncProcess:
+            asyncProcessDebugOutput.send("{args}: Stop, max lines reached")
+          break
 
     try:
       process.kill()
@@ -362,8 +377,22 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): seq[string] {.gcsafe.}
   except CatchableError:
     when debugAsyncProcess:
       asyncProcessDebugOutput.send fmt"Failed to run {args}: {getCurrentExceptionMsg()}"
-    return @[]
+    result[2] = getCurrentException()
 
-proc runProcessAsync*(name: string, args: seq[string] = @[], workingDir: string = "", maxLines: int = int.high): Future[seq[string]] =
+proc runProcessAsync*(name: string, args: seq[string] = @[], workingDir: string = "",
+    maxLines: int = int.high): Future[seq[string]] {.async.} =
+
   log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
-  return spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir))
+  let (lines, _, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, false))
+  if err != nil:
+    raise err
+  return lines
+
+proc runProcessAsyncOutput*(name: string, args: seq[string] = @[], workingDir: string = "",
+    maxLines: int = int.high): Future[tuple[output: string, err: string]] {.async.} =
+
+  log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
+  let (outLines, errLines, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, true))
+  if err != nil:
+    raise err
+  return (outLines.join("\n"), errLines.join("\n"))

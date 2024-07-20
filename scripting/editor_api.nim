@@ -181,8 +181,31 @@ proc searchGlobalInteractive*() =
   editor_searchGlobalInteractive_void_App_impl()
 proc searchGlobal*(query: string) =
   editor_searchGlobal_void_App_string_impl(query)
-proc installTreesitterParser*(language: string) =
-  editor_installTreesitterParser_void_App_string_impl(language)
+proc installTreesitterParser*(language: string; host: string = "github.com") =
+  ## Install a treesitter parser by downloading the repository and building a wasm module.
+  ## `language` can either be a language id (`nim`, `cpp`, `markdown`, etc), `<username>/<repository>`
+  ## or `<username>/<repository>/<some/path>`.
+  ## 
+  ## todo: copy queries to `languages/<language>/queries`
+  ## 
+  ## If you specify a language id then the repository name will be read from the setting
+  ## `languages.<language>.treesitter`
+  ## 
+  ## The repository will be cloned in `<installdir>/languages/<repository>`.
+  ## 
+  ## ## Requirements:
+  ## - `git`
+  ## - `tree-sitter-cli` (`npm install tree-sitter-cli` or `cargo install tree-sitter-cli`)
+  ## All required programs need to be in `PATH`.
+  ## 
+  ## ## Example:
+  ## - Assuming `languages.cpp.treesitter` is set to "tree-sitter/tree-sitter-cpp"
+  ## - `install-treesitter-parser "cpp"` will clone/pull the repository
+  ##   `https://github.com/tree-sitter/tree-sitter-cpp` and then build the parser
+  ## - `install-treesitter-parser "tree-sitter/tree-sitter-ocaml/grammars/ocaml"` will clone/pull
+  ##   the repository `https://github.com/tree-sitter/tree-sitter-ocaml` and then build the parser from
+  ##   the directory `<installdir>/languages/tree-sitter-ocaml/grammars/ocaml`
+  editor_installTreesitterParser_void_App_string_string_impl(language, host)
 proc chooseGitActiveFiles*(all: bool = false) =
   editor_chooseGitActiveFiles_void_App_bool_impl(all)
 proc exploreFiles*(root: string = "") =

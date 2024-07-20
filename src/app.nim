@@ -2884,36 +2884,82 @@ proc diffStagedFileAsync(self: App, workspace: Workspace, path: string): Future[
 when not defined(js):
   import misc/async_process
 
-proc installTreesitterParserAsync*(self: App, language: string) {.async.} =
+proc installTreesitterParserAsync*(self: App, language: string, host: string) {.async.} =
   when not defined(js):
     try:
-      let repo = self.getOption(&"languages.{language}.treesitter", "")
-      debugf"repo: {repo}"
+      let (language, repo) = if (let i = language.find("/"); i != -1):
+        let first = i + 1
+        let k = language.find("/", first)
+        let last = if k == -1:
+          language.len
+        else:
+          k
+
+        (language[first..<last].replace("tree-sitter-", ""), language)
+      else:
+        (language, self.getOption(&"languages.{language}.treesitter", ""))
+
+      log lvlInfo, &"Install treesitter parser for {language} from {repo}"
       let parts = repo.split("/")
-      if parts.len != 2:
+      if parts.len < 2:
         log lvlError, &"Invalid value for languages.{language}.treesitter: '{repo}'. Expected 'user/repo'"
         return
 
-      let url = &"https://github.com/{repo}"
-      let dirName = parts[1]
-
       let languagesRoot = fs.getApplicationFilePath("languages")
-      let repoPath = languagesRoot // dirName
+      let userName = parts[0]
+      let repoName = parts[1]
+      let subFolder = parts[2..^1].join("/")
+      let repoPath = languagesRoot // repoName
+      let grammarPath = repoPath // subFolder
+      let url = &"https://{host}/{userName}/{repoName}"
 
-      if not dirExists(languagesRoot // dirName):
+      if not dirExists(repoPath):
         log lvlInfo, &"[installTreesitterParser] clone repository {url}"
-        let gitCloneRes = runProcessAsync("git", @["clone", url], workingDir=languagesRoot).await.join("\n")
-        log lvlInfo, &"git clone {url}:\n{gitCloneRes.indent(1)}"
+        let (output, err) = await runProcessAsyncOutput("git", @["clone", url], workingDir=languagesRoot)
+        log lvlInfo, &"git clone {url}:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
 
-      let gitCloneRes = runProcessAsync("tree-sitter", @["build", "--wasm", repoPath], workingDir=languagesRoot).await.join("\n")
-      log lvlInfo, &"tree-sitter build --wasm {repoPath}:\n{gitCloneRes.indent(1)}"
+      else:
+        log lvlInfo, &"[installTreesitterParser] Update repository {url}"
+        let (output, err) = await runProcessAsyncOutput("git", @["pull"], workingDir=repoPath)
+        log lvlInfo, &"git pull:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
+
+      block:
+        let (output, err) = await runProcessAsyncOutput("tree-sitter", @["build", "--wasm", grammarPath],
+          workingDir=languagesRoot)
+        log lvlInfo, &"tree-sitter build --wasm {repoPath}:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
 
     except:
       log lvlError, &"Failed to install treesitter parser for {language}: {getCurrentExceptionMsg()}"
 
-proc installTreesitterParser*(self: App, language: string) {.expose("editor").} =
+proc installTreesitterParser*(self: App, language: string, host: string = "github.com") {.
+    expose("editor").} =
+
+  ## Install a treesitter parser by downloading the repository and building a wasm module.
+  ## `language` can either be a language id (`nim`, `cpp`, `markdown`, etc), `<username>/<repository>`
+  ## or `<username>/<repository>/<some/path>`.
+  ##
+  ## todo: copy queries to `languages/<language>/queries`
+  ##
+  ## If you specify a language id then the repository name will be read from the setting
+  ## `languages.<language>.treesitter`
+  ##
+  ## The repository will be cloned in `<installdir>/languages/<repository>`.
+  ##
+  ## ## Requirements:
+  ## - `git`
+  ## - `tree-sitter-cli` (`npm install tree-sitter-cli` or `cargo install tree-sitter-cli`)
+  ## All required programs need to be in `PATH`.
+  ##
+  ## ## Example:
+  ## - Assuming `languages.cpp.treesitter` is set to "tree-sitter/tree-sitter-cpp"
+  ## - `install-treesitter-parser "cpp"` will clone/pull the repository
+  ##   `https://github.com/tree-sitter/tree-sitter-cpp` and then build the parser
+  ## - `install-treesitter-parser "tree-sitter/tree-sitter-ocaml/grammars/ocaml"` will clone/pull
+  ##   the repository `https://github.com/tree-sitter/tree-sitter-ocaml` and then build the parser from
+  ##   the directory `<installdir>/languages/tree-sitter-ocaml/grammars/ocaml`
+
   when not defined(js):
-    asyncCheck self.installTreesitterParserAsync(language)
+    asyncCheck self.installTreesitterParserAsync(language, host)
 
 proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
   defer:
