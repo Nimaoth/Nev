@@ -189,20 +189,26 @@ proc escapeRegex*(s: string): string =
       result.add("\\x")
       result.add(toHex(ord(c), 2))
 
-import pkg/regex
+import pkg/regex as reg
 
-type Regex* = Regex2
-func re*(s: string, flags: RegexFlags = {}): Regex {.raises: [RegexError].} = re2(s, flags)
+type Regex* = reg.Regex2
+func re*(s: string, flags: reg.RegexFlags = {}): Regex {.raises: [RegexError].} = reg.re2(s, flags)
 
 proc findBounds*(text: string, regex: Regex, start: int): tuple[first: int, last: int] =
-  for b in text.findAllBounds(regex, start):
+  for b in reg.findAllBounds(text, regex, start):
     return (b.a, b.b)
   return (-1, -1)
 
 proc matchLen*(text: string, regex: Regex, start: int): int =
-  for b in text.findAllBounds(regex, start):
+  for b in reg.findAllBounds(text, regex, start):
     return b.b - b.a + 1
   return -1
+
+func contains*(text: string, regex: Regex): bool =
+  reg.contains(text, regex)
+
+func match*(text: string, regex: Regex): bool =
+  reg.match(text, regex)
 
 iterator findAllBounds*(buf: string, pattern: Regex): tuple[first: int, last: int] =
   var start = 0
@@ -218,10 +224,10 @@ proc glob*(pattern: string): Regex =
     # js doesn't support (?s) syntax in the regex, but we can pass a flag
     # to the regex itself to make it case insensitive
     let regexString = globToRegexString(pattern, isDos=false, ignoreCase=false)
-    return re2(regexString, ignoreCase=true)
+    return reg.re2(regexString, ignoreCase=true)
   else:
     let regexString = globToRegexString(pattern, isDos=false, ignoreCase=true)
-    return re2(regexString)
+    return reg.re2(regexString)
 
 type Globs* = object
   negatedPatterns: seq[string]
