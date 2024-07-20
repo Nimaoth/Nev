@@ -892,7 +892,7 @@ proc newTextDocument*(
 
   if language.getSome(language):
     self.languageId = language
-  elif getLanguageForFile(filename).getSome(language):
+  elif getLanguageForFile(self.configProvider, filename).getSome(language):
     self.languageId = language
 
   if self.languageId != "":
@@ -1035,7 +1035,7 @@ proc setFileAndContent*(self: TextDocument, filename: string, content: sink stri
   self.filename = filename
   self.isBackedByFile = false
 
-  if getLanguageForFile(filename).getSome(language):
+  if getLanguageForFile(self.configProvider, filename).getSome(language):
     self.languageId = language
   else:
     self.languageId = ""
@@ -1056,7 +1056,7 @@ proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[W
   self.workspace = workspace
   self.filename = filename
   self.isBackedByFile = true
-  if getLanguageForFile(filename).getSome(language):
+  if getLanguageForFile(self.configProvider, filename).getSome(language):
     self.languageId = language
   else:
     self.languageId = ""
@@ -1111,7 +1111,7 @@ method load*(self: TextDocument, filename: string = "") =
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
   let languageId = if self.languageId != "":
     self.languageId
-  elif getLanguageForFile(self.filename).getSome(languageId):
+  elif getLanguageForFile(self.configProvider, self.filename).getSome(languageId):
     languageId
   else:
     return LanguageServer.none
