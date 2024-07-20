@@ -764,6 +764,8 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
   self.runConfigCommands("nims-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
 
+  log lvlInfo, &"Finished loading plugins"
+
 proc setupDefaultKeybindings(self: App) =
   log lvlInfo, fmt"Applying default builtin keybindings"
 
@@ -1152,6 +1154,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   await self.loadOptionsFromAppDir()
   await self.loadOptionsFromHomeDir()
 
+  log lvlInfo, &"Finished loading app and user settings"
+
   self.runConfigCommands("startup-commands")
 
   self.commandHistory = state.commandHistory
@@ -1226,6 +1230,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.closeUnusedDocumentsTask = startDelayed(2000, repeat=true):
     self.closeUnusedDocuments()
+
+  log lvlInfo, &"Finished creating app"
 
   return self
 

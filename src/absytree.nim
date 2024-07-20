@@ -228,6 +228,9 @@ proc runApp(): Future[void] {.async.} =
 
       frameTime = ed.frameTimer.elapsed.ms
 
+    if frameIndex == 0:
+      log lvlInfo, "First render done"
+
     logger.flush()
 
     let pollTimer = startTimer()
