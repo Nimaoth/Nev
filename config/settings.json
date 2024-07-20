@@ -19,7 +19,7 @@
             "path": "rust-analyzer",
             "section": "rust-analyzer"
         },
-        "csharp": {
+        "c_sharp": {
             "path": "OmniSharp"
         },
         "nim": {
@@ -30,7 +30,44 @@
         }
     },
 
+    "language-mappings": {
+        "\.(agda|lagda)$": "agda",
+        "\.(c|cc|h|inc)$": "c",
+        "\.sh$": "bash",
+        "\.cs$": "c_sharp",
+        "\.(cpp|tcc|hpp)$": "cpp",
+        "\.css$": "css",
+        "\.go$": "go",
+        "\.hs$": "haskell",
+        "\.(html|htmx)$": "html",
+        "\.java$": "java",
+        "\.(js|jsx)$": "javascript",
+        "\.json$": "json",
+        "\.ocaml$": "ocaml",
+        "\.php$": "php",
+        "\.py$": "python",
+        "\.ruby$": "ruby",
+        "\.rs$": "rust",
+        "\.scala$": "scala",
+        "\.(ts|tsx)$": "typescript",
+        "\.(nim|nims|nimble)$": "nim",
+        "\.zig$": "zig",
+        "\.md$": "markdown",
+        "\.scm$": "query",
+        "/(vector|string|thread|iostream)$": "cpp",
+        ".+/MSVC/.+/include(/.+?)*/[a-z0-9_]+$": "cpp",
+        ".+/include/c\\+\\+(/.+?)+/[a-z0-9_]+$": "cpp"
+    },
+
     "languages": {
+        "html": {
+            "treesitter": "tree-sitter/tree-sitter-html",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                ">"
+            ]
+        },
         "query": {
             "treesitter": "tree-sitter-grammars/tree-sitter-query",
             "tabWidth": 2,
@@ -156,6 +193,23 @@
                 "*/"
             ]
         },
+        "c_sharp": {
+            "treesitter": "tree-sitter/tree-sitter-c-sharp",
+            "tabWidth": 4,
+            "indent": "tab",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ]
+        },
         "java": {
             "treesitter": "tree-sitter/tree-sitter-java",
             "tabWidth": 4,
@@ -202,6 +256,9 @@
             "tabWidth": 2,
             "indent": "spaces",
             "blockComment": [ "<!--", "-->" ]
+        },
+        "ocaml": {
+            "treesitter": "tree-sitter/tree-sitter-ocaml/grammars/ocaml"
         }
     },
 
