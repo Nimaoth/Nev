@@ -527,7 +527,9 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
       let res = WasmModule()
 
       try:
-        res.env = loadWasmEnv(fs.loadApplicationFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
+        let appPath = fs.getApplicationFilePath(path)
+        let content = await fs.loadFileAsync(path)
+        res.env = loadWasmEnv(content, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
       except CatchableError:
         log lvlError, &"Failed to create wasm env for {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         return WasmModule.none
