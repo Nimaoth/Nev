@@ -270,7 +270,13 @@
             "lineComment": "//"
         },
         "markdown": {
-            "treesitter": "tree-sitter-grammars/tree-sitter-markdown",
+            "treesitter": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "blockComment": [ "<!--", "-->" ]
+        },
+        "markdown-inline": {
+            "treesitter": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown-inline",
             "tabWidth": 2,
             "indent": "spaces",
             "blockComment": [ "<!--", "-->" ]
