@@ -2,7 +2,7 @@
 
 import std/[strutils, os]
 
-import misc/[custom_async, array_buffer]
+import misc/[custom_async, array_buffer, regex]
 
 type FileSystem* = ref object of RootObj
   discard
@@ -21,6 +21,12 @@ method getApplicationFilePath*(self: FileSystem, name: string): string {.base.} 
 method loadApplicationFile*(self: FileSystem, name: string): string {.base.} = discard
 method loadApplicationFileAsync*(self: FileSystem, name: string): Future[string] {.base.} = "".toFuture
 method saveApplicationFile*(self: FileSystem, name: string, content: string) {.base.} = discard
+
+method findFile*(self: FileSystem, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.base, async.} =
+  return newSeq[string]()
+
+method copyFile*(self: FileSystem, source: string, dest: string): Future[bool] {.base, async.} =
+  return false
 
 proc normalizePathUnix*(path: string): string =
   var stripLeading = false

@@ -1,5 +1,5 @@
 import std/[os]
-import misc/[custom_logger, custom_async]
+import misc/[custom_logger, custom_async, regex]
 import filesystem
 
 logCategory "fs-desktop"
@@ -95,3 +95,40 @@ method saveApplicationFile*(self: FileSystemDesktop, name: string, content: stri
     writeFile(path, content)
   except:
     log lvlError, fmt"Failed to save application file {path}: {getCurrentExceptionMsg()}"
+
+proc findFilesRec(dir: string, filename: Regex, maxResults: int, res: var seq[string]) =
+  for (kind, path) in walkDir(dir, relative=false):
+    case kind
+    of pcFile:
+      if path.contains(filename):
+        res.add path
+        if res.len >= maxResults:
+          return
+
+    of pcDir:
+      findFilesRec(path, filename, maxResults, res)
+      if res.len >= maxResults:
+        return
+    else:
+      discard
+
+proc findFileThread(args: tuple[root: string, filename: string, maxResults: int]): seq[string] {.gcsafe.} =
+  try:
+    let filenameRegex = re(args.filename)
+    findFilesRec(args.root, filenameRegex, args.maxResults, result)
+  except:
+    discard
+
+method findFile*(self: FileSystemDesktop, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async.} =
+  let res = await spawnAsync(findFileThread, (root, filenameRegex, maxResults))
+  return res
+
+method copyFile*(self: FileSystemDesktop, source: string, dest: string): Future[bool] {.async.} =
+  try:
+    let dir = dest.splitPath.head
+    createDir(dir)
+    copyFileWithPermissions(source, dest)
+    return true
+  except:
+    log lvlError, &"Failed to copy file '{source}' to '{dest}': {getCurrentExceptionMsg()}"
+    return false

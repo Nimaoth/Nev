@@ -2911,6 +2911,7 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
       let subFolder = parts[2..^1].join("/")
       let repoPath = languagesRoot // repoName
       let grammarPath = repoPath // subFolder
+      let queryDir = languagesRoot // language // "queries"
       let url = &"https://{host}/{userName}/{repoName}"
 
       if not dirExists(repoPath):
@@ -2922,6 +2923,18 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
         log lvlInfo, &"[installTreesitterParser] Update repository {url}"
         let (output, err) = await runProcessAsyncOutput("git", @["pull"], workingDir=repoPath)
         log lvlInfo, &"git pull:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
+
+      block:
+        log lvlInfo, &"Copy highlight queries"
+        let highlightQueries = await fs.findFile(repoPath, r"highlights.scm$")
+        for path in highlightQueries:
+          let dir = path.splitPath.head
+          let list = await fs.getApplicationDirectoryListing(dir)
+          for f in list.files:
+            if f.endsWith(".scm"):
+              let fileName = f.splitPath.tail
+              log lvlInfo, &"Copy '{f}' to '{queryDir}'"
+              discard await fs.copyFile(f, queryDir // fileName)
 
       block:
         let (output, err) = await runProcessAsyncOutput("tree-sitter", @["build", "--wasm", grammarPath],
