@@ -20,11 +20,23 @@ proc editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool
     self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool = false;
     includeAfter: bool = false): Cursor =
   discard
+proc editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool = false;
+    includeAfter: bool = false): Cursor =
+  discard
 proc editor_text_doMoveCursorHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
     self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
     includeAfter: bool): Cursor =
   discard
 proc editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
+    includeAfter: bool): Cursor =
+  discard
+proc editor_text_doMoveCursorVisualHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
+    includeAfter: bool): Cursor =
+  discard
+proc editor_text_doMoveCursorVisualEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl*(
     self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool;
     includeAfter: bool): Cursor =
   discard
@@ -226,11 +238,24 @@ proc editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool
     cursor: SelectionCursor = SelectionCursor.Config; all: bool = true;
     wrap: bool = true; includeAfter: bool = true) =
   discard
+proc editor_text_moveCursorVisualLine_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_impl*(
+    self: TextDocumentEditor; distance: int;
+    cursor: SelectionCursor = SelectionCursor.Config; all: bool = true;
+    wrap: bool = true; includeAfter: bool = true) =
+  discard
 proc editor_text_moveCursorHome_void_TextDocumentEditor_SelectionCursor_bool_impl*(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
     all: bool = true) =
   discard
 proc editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
+    all: bool = true; includeAfter: bool = true) =
+  discard
+proc editor_text_moveCursorVisualHome_void_TextDocumentEditor_SelectionCursor_bool_impl*(
+    self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
+    all: bool = true) =
+  discard
+proc editor_text_moveCursorVisualEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_impl*(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
     all: bool = true; includeAfter: bool = true) =
   discard

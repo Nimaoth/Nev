@@ -265,6 +265,14 @@ proc renderLine*(
     var subLinePartIndex = 0
     var previousInlayNode: UINode = nil
     var insertDiagnosticLater: bool = false
+
+    var textStartX = 0.0
+    if options.signWidth > 0:
+      textStartX += options.signWidth
+
+    if lineNumberText.len > 0:
+      textStartX += options.lineNumberTotalWidth
+
     while partIndex < line.parts.len or insertDiagnosticLater: # outer loop for wrapped lines within this line
 
       builder.panel(flagsInner + LayoutHorizontal):
@@ -326,6 +334,13 @@ proc renderLine*(
           if part.textRange.isSome or part.modifyCursorAtEndOfLine:
             cursorBaseNode = subLine
             cursorBaseXW = partNode.bounds.xw
+
+          if part.textRange.isSome:
+            part.visualRange = (
+              ((partNode.bounds.x - textStartX + 0.5) / builder.charWidth).int,
+              ((partNode.bounds.xw - textStartX + 0.5) / builder.charWidth).int,
+              subLineIndex,
+            ).some
 
           # cursor
           for curs in cursors:
