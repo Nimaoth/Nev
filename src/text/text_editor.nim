@@ -466,8 +466,8 @@ proc preRender*(self: TextDocumentEditor) =
     self.updateSearchResults()
 
   if self.showCompletions and self.completionsDirty:
-    measureBlock "refilter completions":
-      self.refilterCompletions()
+    # measureBlock "refilter completions":
+    self.refilterCompletions()
 
 iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection,
     includeAfter: bool = true): Selection =
