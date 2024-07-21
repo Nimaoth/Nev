@@ -689,7 +689,7 @@ proc setTheme*(self: App, path: string) =
   self.platform.requestRender()
 
 when enableNimscript and not defined(js):
-  var createScriptContext: proc(filepath: string, searchPaths: seq[string]): Future[Option[ScriptContext]] = nil
+  var createScriptContext: proc(filepath: string, searchPaths: seq[string], stdPath: Option[string]): Future[Option[ScriptContext]] = nil
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
@@ -742,7 +742,15 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
           let scriptPath = self.homeDir / ".absytree/custom.nims"
           if fileExists(scriptPath):
             log lvlInfo, &"Found '{scriptPath}'"
-            if createScriptContext(scriptPath, searchPaths).await.getSome(scriptContext):
+
+            let stdPath = block:
+              let stdPath = fs.getApplicationFilePath("nim_std")
+              if dirExists(stdPath):
+                stdPath.some
+              else:
+                string.none
+
+            if createScriptContext(scriptPath, searchPaths, stdPath).await.getSome(scriptContext):
               self.nimsScriptContext = scriptContext
             else:
               log lvlError, "Failed to create nim script context"
@@ -3954,7 +3962,7 @@ template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
 
     createScriptContextConstructor(addins)
 
-    proc createScriptContextImpl(filepath: string, searchPaths: seq[string]): Future[Option[ScriptContext]] = createScriptContextNim(filepath, searchPaths)
+    proc createScriptContextImpl(filepath: string, searchPaths: seq[string], stdPath: Option[string]): Future[Option[ScriptContext]] = createScriptContextNim(filepath, searchPaths, stdPath)
     createScriptContext = createScriptContextImpl
 
   createEditorWasmImportConstructor()

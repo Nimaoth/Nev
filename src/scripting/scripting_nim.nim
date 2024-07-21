@@ -221,10 +221,11 @@ proc myFindNimStdLib(): Option[string] =
     log lvlError, &"Failed to find nim std path using nim dump: {getCurrentExceptionMsg()}"
     return string.none
 
-proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string, searchPaths: seq[string]): Future[Option[ScriptContext]] {.async.} =
-  let stdPath = myFindNimStdLib().getOr:
-    log lvlError, "Failed to find nim std path"
-    return ScriptContext.none
+proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string, searchPaths: seq[string], stdPath: Option[string]): Future[Option[ScriptContext]] {.async.} =
+  let stdPath = stdPath.getOr:
+    myFindNimStdLib().getOr:
+      log lvlError, "Failed to find nim std path"
+      return ScriptContext.none
 
   let res = ScriptContextNim()
   res.script = NimScriptPath(path)
@@ -286,8 +287,8 @@ proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
     writeFile(fmt"scripting/absytree_internal.nim", script_internal_content)
 
 template createScriptContextConstructor*(addins: untyped): untyped =
-  proc createScriptContextNim(filepath: string, searchPaths: seq[string]): Future[Option[ScriptContext]] {.async.} =
-    return await newScriptContext(filepath, "absytree_internal", addins, "include absytree_runtime_impl", searchPaths)
+  proc createScriptContextNim(filepath: string, searchPaths: seq[string], stdPath: Option[string]): Future[Option[ScriptContext]] {.async.} =
+    return await newScriptContext(filepath, "absytree_internal", addins, "include absytree_runtime_impl", searchPaths, stdPath)
 
 macro invoke(self: ScriptContext; pName: untyped;
     args: varargs[typed]; returnType: typedesc = void): untyped =
