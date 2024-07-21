@@ -1,4 +1,4 @@
-import std/[os, parseopt]
+import std/[os, parseopt, compilesettings]
 
 # Helper functions
 
@@ -35,10 +35,6 @@ const releaseWindows = "release_windows"
 const releaseLinux = "release_linux"
 const releaseWeb = "release_web"
 
-mkDir releaseWindows
-mkDir releaseLinux
-# mkDir releaseWeb
-
 proc copySharedFilesTo(dir: string) =
   cpDir2 "config", dir
   cpDir2 "fonts", dir
@@ -46,22 +42,31 @@ proc copySharedFilesTo(dir: string) =
   cpDir2 "themes", dir
   cpDir2 "scripting", dir
   cpDir2 "docs", dir
-  mkDir dir/"src"
-  mkDir dir/"src/misc"
-  cpFile2 "src/scripting_api.nim", dir/"src"
-  cpFile2 "src/input_api.nim", dir/"src"
-  cpFile2 "src/misc/timer.nim", dir/"src/misc"
-  cpFile2 "src/misc/id.nim", dir/"src/misc"
-  cpFile2 "src/misc/myjsonutils.nim", dir/"src/misc"
-  cpFile2 "src/misc/event.nim", dir/"src/misc"
-  cpFile2 "src/misc/util.nim", dir/"src/misc"
-  cpFile2 "src/misc/macro_utils.nim", dir/"src/misc"
-  cpFile2 "src/misc/wrap.nim", dir/"src/misc"
-  cpFile2 "src/misc/custom_unicode.nim", dir/"src/misc"
+  mkDir dir / "src"
+  mkDir dir / "src/misc"
+  cpFile2 "src/scripting_api.nim", dir / "src"
+  cpFile2 "src/input_api.nim", dir / "src"
+  cpFile2 "src/misc/timer.nim", dir / "src/misc"
+  cpFile2 "src/misc/id.nim", dir / "src/misc"
+  cpFile2 "src/misc/myjsonutils.nim", dir / "src/misc"
+  cpFile2 "src/misc/event.nim", dir / "src/misc"
+  cpFile2 "src/misc/util.nim", dir / "src/misc"
+  cpFile2 "src/misc/macro_utils.nim", dir / "src/misc"
+  cpFile2 "src/misc/wrap.nim", dir / "src/misc"
+  cpFile2 "src/misc/custom_unicode.nim", dir / "src/misc"
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
   cpFile2 "absytree.nimble", dir
   cpFile2 "config.nims", dir
+
+  let stdPath = querySetting(libPath)
+  mkDir dir / "nim_std"
+  cpDir2 stdPath / "pure", dir / "nim_std"
+  cpDir2 stdPath / "core", dir / "nim_std"
+  cpDir2 stdPath / "std", dir / "nim_std"
+  cpDir2 stdPath / "system", dir / "nim_std"
+  cpFile2 stdPath / "system.nim", dir / "nim_std"
+  cpFile2 stdPath / "stdlib.nimble", dir / "nim_std"
 
 var packageWindows = false
 var packageLinux = false
@@ -86,6 +91,7 @@ for kind, key, val in optParser.getopt():
 
 if packageWindows:
   echo "Package windows..."
+  mkDir releaseWindows
   copySharedFilesTo releaseWindows
   if fileExists "ast.exe":
     cpFile2 "astg.exe", releaseWindows
@@ -97,6 +103,7 @@ if packageWindows:
 
 if packageLinux:
   echo "Package linux..."
+  mkDir releaseLinux
   copySharedFilesTo releaseLinux
   if fileExists "ast":
     cpFile2 "astg", releaseLinux
@@ -108,6 +115,7 @@ if packageLinux:
 
 if packageWeb:
   echo "Package web..."
+  mkDir releaseWeb
   if fileExists "build/ast.js":
     copySharedFilesTo releaseWeb
     cpFile2 "build/ast.js", releaseWeb
