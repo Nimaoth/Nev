@@ -51,8 +51,8 @@ switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript,json")
 # Automatically build wasmtime when compiling the editor
 const absytreeBuildWasmtime {.booldefine.} = false
 const absytreeCI {.booldefine.} = false
-const absytreeCINimbleCached {.booldefine.} = false
-when absytreeCI and not absytreeCINimbleCached:
+const absytreeCINimbleCached {.strdefine.} = ""
+when absytreeCI and absytreeCINimbleCached != "true":
   echo "Will build wasmtime"
   switch("d", "nimWasmtimeBuild")
 
