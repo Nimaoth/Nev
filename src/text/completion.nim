@@ -83,7 +83,7 @@ proc updateCombinedCompletions(self: CompletionEngine) =
   self.combinedCompletions.sort(cmp, Descending)
   self.combinedDirty = false
 
-  log lvlInfo, &"[Comp] Combine completions took {timer.elapsed.ms}. {self.combinedCompletions.len} completions."
+  # log lvlInfo, &"[Comp] Combine completions took {timer.elapsed.ms}. {self.combinedCompletions.len} completions."
 
 proc handleProviderCompletionsUpdated(self: CompletionEngine, provider: CompletionProvider) =
   self.combinedDirty = true
