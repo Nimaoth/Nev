@@ -174,6 +174,8 @@ else:
     import treesitter_scala/treesitter_scala/scala
   when useBuiltinTreesitterLanguage("typescript"):
     import treesitter_typescript/treesitter_typescript/typescript
+  when useBuiltinTreesitterLanguage("json"):
+    import treesitter_json/treesitter_json/json
 
   type TSQuery* = ref object
     impl: ptr ts.TSQuery
@@ -611,6 +613,7 @@ proc loadLanguage(languageId: string, config: JsonNode): Future[Option[TSLanguag
     of "typescript": tryGetLanguage(treeSitterTypecript)
     of "nim": tryGetLanguage(treeSitterNim)
     of "zig": tryGetLanguage(treeSitterZig)
+    of "json": tryGetLanguage(treeSitterJson)
     else:
       log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
       TSLanguage.none

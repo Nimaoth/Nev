@@ -46,8 +46,7 @@ switch("d", "wasm3VerboseErrorMessages")
 
 # Configure which treesitter languages are compiled into the editor (ignored on js backend)
 # switch("d", "treesitterBuiltins=cpp,nim,agda,bash,c,css,go,html,java,javascript,python,ruby,rust,scala,csharp,zig,haskell")
-# switch("d", "treesitterBuiltins=cpp,nim,c,css,html,javascript,python,rust,csharp")
-switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript")
+switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript,json")
 
 # Automatically build wasmtime when compiling the editor
 const absytreeBuildWasmtime {.booldefine.} = false
@@ -90,9 +89,6 @@ when defined(musl):
 
   # Disable system clipboard because it doesn't build with musl right now
   switch("d", "enableSystemClipboard=false")
-
-  # Remove nim from treesitterBuiltins because it doesn't build with musl right now
-  switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript")
 
 else:
   switch("d", "ssl")
