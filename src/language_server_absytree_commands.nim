@@ -26,7 +26,7 @@ method saveTempFile*(self: LanguageServerAbsytreeCommands, filename: string, con
   # debugf"LanguageServerAbsytreeCommands.saveTempFile '{filename}' '{content}'"
   self.files[filename] = content
 
-method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
+method getCompletions*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   await self.requestSave(filename, filename)
 
   var useActive = false

@@ -463,8 +463,7 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
 
   return res.success
 
-# todo: romve languageId
-method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor):
+method getCompletions*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Response[CompletionList]] {.async.} =
   return await self.client.getCompletions(filename, location.line, location.column)
 
