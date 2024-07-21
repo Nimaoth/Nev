@@ -48,6 +48,7 @@ type StyledText* = object
   opacity*: Option[float]
   joinNext*: bool
   textRange*: Option[tuple[startOffset: int, endOffset: int, startIndex: RuneIndex, endIndex: RuneIndex]]
+  visualRange*: Option[tuple[startColumn: int, endColumn: int, subLine: int]]
   underline*: bool
   underlineColor*: Color
   inlayContainCursor*: bool

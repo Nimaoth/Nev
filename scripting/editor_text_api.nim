@@ -18,6 +18,11 @@ proc doMoveCursorLine*(self: TextDocumentEditor; cursor: Cursor; offset: int;
                        wrap: bool = false; includeAfter: bool = false): Cursor =
   editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
       self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorVisualLine*(self: TextDocumentEditor; cursor: Cursor;
+                             offset: int; wrap: bool = false;
+                             includeAfter: bool = false): Cursor =
+  editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
 proc doMoveCursorHome*(self: TextDocumentEditor; cursor: Cursor; offset: int;
                        wrap: bool; includeAfter: bool): Cursor =
   editor_text_doMoveCursorHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
@@ -25,6 +30,14 @@ proc doMoveCursorHome*(self: TextDocumentEditor; cursor: Cursor; offset: int;
 proc doMoveCursorEnd*(self: TextDocumentEditor; cursor: Cursor; offset: int;
                       wrap: bool; includeAfter: bool): Cursor =
   editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorVisualHome*(self: TextDocumentEditor; cursor: Cursor;
+                             offset: int; wrap: bool; includeAfter: bool): Cursor =
+  editor_text_doMoveCursorVisualHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
+proc doMoveCursorVisualEnd*(self: TextDocumentEditor; cursor: Cursor;
+                            offset: int; wrap: bool; includeAfter: bool): Cursor =
+  editor_text_doMoveCursorVisualEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
       self, cursor, offset, wrap, includeAfter)
 proc doMoveCursorPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
                                  offset: int; wrap: bool; includeAfter: bool): Cursor =
@@ -221,6 +234,12 @@ proc moveCursorLine*(self: TextDocumentEditor; distance: int;
                      includeAfter: bool = true) =
   editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_impl(
       self, distance, cursor, all, wrap, includeAfter)
+proc moveCursorVisualLine*(self: TextDocumentEditor; distance: int;
+                           cursor: SelectionCursor = SelectionCursor.Config;
+                           all: bool = true; wrap: bool = true;
+                           includeAfter: bool = true) =
+  editor_text_moveCursorVisualLine_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_impl(
+      self, distance, cursor, all, wrap, includeAfter)
 proc moveCursorHome*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config;
                      all: bool = true) =
@@ -230,6 +249,16 @@ proc moveCursorEnd*(self: TextDocumentEditor;
                     cursor: SelectionCursor = SelectionCursor.Config;
                     all: bool = true; includeAfter: bool = true) =
   editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_impl(
+      self, cursor, all, includeAfter)
+proc moveCursorVisualHome*(self: TextDocumentEditor;
+                           cursor: SelectionCursor = SelectionCursor.Config;
+                           all: bool = true) =
+  editor_text_moveCursorVisualHome_void_TextDocumentEditor_SelectionCursor_bool_impl(
+      self, cursor, all)
+proc moveCursorVisualEnd*(self: TextDocumentEditor;
+                          cursor: SelectionCursor = SelectionCursor.Config;
+                          all: bool = true; includeAfter: bool = true) =
+  editor_text_moveCursorVisualEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_impl(
       self, cursor, all, includeAfter)
 proc moveCursorTo*(self: TextDocumentEditor; str: string;
                    cursor: SelectionCursor = SelectionCursor.Config;

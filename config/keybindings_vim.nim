@@ -299,6 +299,14 @@ proc vimMotionLine*(editor: TextDocumentEditor, cursor: Cursor, count: int): Sel
   if not editor.vimState.cursorIncludeEol and lineLen > 0: lineLen.dec
   result = ((cursor.line, 0), (cursor.line, lineLen))
 
+proc vimMotionVisualLine*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
+  var lineLen = editor.lineLength(cursor.line)
+  result = editor.getSelectionForMove(cursor, "visual-line", count)
+  if not editor.vimState.cursorIncludeEol and result.last.column > result.first.column:
+    result.last.column.dec
+  elif result.last.column < lineLen: # This is the case if we're not in the last visual sub line
+    result.last.column.dec
+
 proc vimMotionWord*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
 
@@ -446,6 +454,7 @@ proc vimMotionSurroundSingleQuotesOuter*(editor: TextDocumentEditor, cursor: Cur
 
 # todo
 addCustomTextMove "vim-line", vimMotionLine
+addCustomTextMove "vim-visual-line", vimMotionVisualLine
 addCustomTextMove "vim-word", vimMotionWord
 addCustomTextMove "vim-WORD", vimMotionWordBig
 addCustomTextMove "vim-word-inner", vimMotionWord
@@ -647,6 +656,16 @@ proc vimMoveCursorLine(editor: TextDocumentEditor, direction: int, count: int = 
   if editor.vimState.selectLines:
     editor.vimSelectLine()
 
+proc vimMoveCursorVisualLine(editor: TextDocumentEditor, direction: int, count: int = 1, center: bool = false) {.exposeActive(editorContext, "vim-move-cursor-visual-line").} =
+  if editor.vimState.selectLines:
+    editor.moveCursorLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
+  else:
+    editor.moveCursorVisualLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
+  if center:
+    editor.setNextScrollBehaviour(CenterAlways)
+  if editor.vimState.selectLines:
+    editor.vimSelectLine()
+
 proc vimMoveFirst(editor: TextDocumentEditor, move: string) {.exposeActive(editorContext, "vim-move-first").} =
   editor.moveFirst(move)
   if editor.vimState.selectLines:
@@ -665,6 +684,15 @@ proc vimMoveToEndOfLine(editor: TextDocumentEditor, count: int = 1) =
   if count > 1:
     editor.moveCursorLine(count - 1)
   editor.moveLast("vim-line")
+  editor.scrollToCursor Last
+  editor.updateTargetColumn()
+
+proc vimMoveToEndOfVisualLine(editor: TextDocumentEditor, count: int = 1) =
+  # infof"vimMoveToEndOfLine {count}"
+  let count = max(1, count)
+  if count > 1:
+    editor.moveCursorLine(count - 1)
+  editor.moveLast("vim-visual-line")
   editor.scrollToCursor Last
   editor.updateTargetColumn()
 
@@ -933,11 +961,13 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addSubCommandWithCount "", "move", "<RIGHT>", "vim-move-cursor-column", 1
 
   addSubCommand "", "move", "0", "vim-move-first", "line"
-  addSubCommand "", "move", "<HOME>", "vim-move-first", "line"
+  # addSubCommand "", "move", "<HOME>", "vim-move-first", "line"
+  addSubCommand "", "move", "<HOME>", "vim-move-first", "visual-line"
   addSubCommand "", "move", "^", "vim-move-first", "line-no-indent"
 
   addSubCommandWithCount "", "move", "$", vimMoveToEndOfLine
-  addSubCommandWithCount "", "move", "<END>", vimMoveToEndOfLine
+  # addSubCommandWithCount "", "move", "<END>", vimMoveToEndOfLine
+  addSubCommandWithCount "", "move", "<END>", vimMoveToEndOfVisualLine
 
   addSubCommand "", "move", "g0", "vim-move-first", "line"
   addSubCommand "", "move", "g^", "vim-move-first", "line-no-indent"
@@ -952,12 +982,12 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.updateTargetColumn()
 
   # navigation (vertical)
-  addSubCommandWithCount "", "move", "k", "vim-move-cursor-line", -1
-  addSubCommandWithCount "", "move", "<UP>", "vim-move-cursor-line", -1
+  addSubCommandWithCount "", "move", "k", "vim-move-cursor-visual-line", -1
+  addSubCommandWithCount "", "move", "<UP>", "vim-move-cursor-visual-line", -1
 
-  addSubCommandWithCount "", "move", "j", "vim-move-cursor-line", 1
-  addSubCommandWithCount "", "move", "<DOWN>", "vim-move-cursor-line", 1
-  addSubCommandWithCount "", "move", "<C-j>", "vim-move-cursor-line", 1
+  addSubCommandWithCount "", "move", "j", "vim-move-cursor-visual-line", 1
+  addSubCommandWithCount "", "move", "<DOWN>", "vim-move-cursor-visual-line", 1
+  addSubCommandWithCount "", "move", "<C-j>", "vim-move-cursor-visual-line", 1
 
   addSubCommandWithCountBlock "", "move", "-": vimMoveCursorLineFirstChar(editor, -1, count)
   addSubCommandWithCountBlock "", "move", "+": vimMoveCursorLineFirstChar(editor, 1, count)
@@ -987,8 +1017,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.moveFirst "line-no-indent"
       editor.scrollToCursor Last
 
-  addSubCommandWithCount "", "move", "k", "vim-move-cursor-line", -1
-  addSubCommandWithCount "", "move", "j", "vim-move-cursor-line", 1
+  addSubCommandWithCount "", "move", "k", "vim-move-cursor-visual-line", -1
+  addSubCommandWithCount "", "move", "j", "vim-move-cursor-visual-line", 1
 
   # search
   addTextCommandBlockDesc "", "*", "set search query to word":
