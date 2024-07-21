@@ -36,7 +36,7 @@ requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.11"
 requires "https://github.com/Nimaoth/nimwasmtime >= 0.1.5"
 
 # Use this to include all treesitter languages (takes longer to download)
-requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.5"
+requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.6"
 
 # Use these to only install specific treesitter languages. These don't work with the lock file
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.3"
@@ -85,6 +85,13 @@ proc getCommandLineParams(): string =
   if commandLineParams.len < 3:
     return ""
   return commandLineParams[3..^1].join(" ")
+
+task setup2, "Setup":
+  exec "nimble setup"
+  when defined(windows):
+    cpFile "nimble.paths", "nimble-win.paths"
+  else:
+    cpFile "nimble.paths", "nimble-linux.paths"
 
 task buildDesktop, "Build the desktop version":
   selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
