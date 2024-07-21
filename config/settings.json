@@ -271,12 +271,14 @@
         },
         "markdown": {
             "treesitter": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
+            "treesitter-queries": "tree-sitter-markdown/queries",
             "tabWidth": 2,
             "indent": "spaces",
             "blockComment": [ "<!--", "-->" ]
         },
-        "markdown-inline": {
+        "markdown_inline": {
             "treesitter": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown-inline",
+            "treesitter-queries": "tree-sitter-markdown-inline/queries",
             "tabWidth": 2,
             "indent": "spaces",
             "blockComment": [ "<!--", "-->" ]

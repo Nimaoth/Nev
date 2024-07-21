@@ -2895,9 +2895,11 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
         else:
           k
 
-        (language[first..<last].replace("tree-sitter-", ""), language)
+        (language[first..<last].replace("tree-sitter-", "").replace("-", "_"), language)
       else:
         (language, self.getOption(&"languages.{language}.treesitter", ""))
+
+      let queriesSubDir = self.getOption(&"languages.{language}.treesitter-queries", "").catch("")
 
       log lvlInfo, &"Install treesitter parser for {language} from {repo}"
       let parts = repo.split("/")
@@ -2926,10 +2928,15 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
 
       block:
         log lvlInfo, &"Copy highlight queries"
-        let highlightQueries = await fs.findFile(repoPath, r"highlights.scm$")
-        for path in highlightQueries:
-          let dir = path.splitPath.head
-          let list = await fs.getApplicationDirectoryListing(dir)
+
+        let queryDirs = if queriesSubDir != "":
+          @[repoPath // queriesSubDir]
+        else:
+          let highlightQueries = await fs.findFile(repoPath, r"highlights.scm$")
+          highlightQueries.mapIt(it.splitPath.head)
+
+        for path in queryDirs:
+          let list = await fs.getApplicationDirectoryListing(path)
           for f in list.files:
             if f.endsWith(".scm"):
               let fileName = f.splitPath.tail
