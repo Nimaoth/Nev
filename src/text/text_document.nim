@@ -125,6 +125,7 @@ type TextDocument* = ref object of Document
 var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
+proc clearStyledTextCache*(self: TextDocument)
 
 proc getTotalTextSize*(self: UndoOp): int =
   for c in self.checkpoints:
@@ -335,7 +336,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
 
   inc self.version
 
-  self.styledTextCache.clear()
+  self.clearStyledTextCache()
   self.notifyTextChanged()
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
@@ -361,7 +362,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 
   inc self.version
 
-  self.styledTextCache.clear()
+  self.clearStyledTextCache()
   self.notifyTextChanged()
 
 func content*(self: TextDocument): seq[string] =
@@ -815,7 +816,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.currentContentFailedToParse = false
   self.tsLanguage = nil
   self.currentTree.delete()
-  self.styledTextCache.clear()
+  self.clearStyledTextCache()
 
   if self.languageId == "":
     return
@@ -860,7 +861,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   if prevLanguageId != self.languageId:
     return
 
-  self.styledTextCache.clear()
+  self.clearStyledTextCache()
   self.notifyRequestRerender()
 
 proc reloadTreesitterLanguage*(self: TextDocument) =
@@ -1045,7 +1046,7 @@ proc setFileAndContent*(self: TextDocument, filename: string, content: sink stri
   self.redoOps.setLen 0
   self.content = content.move
 
-  self.styledTextCache.clear()
+  self.clearStyledTextCache()
   self.autoDetectIndentStyle()
   self.onLoaded.invoke self
 
@@ -1065,7 +1066,7 @@ proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[W
   self.highlightQuery = nil
   self.errorQuery = nil
 
-  self.styledTextCache.clear()
+  self.clearStyledTextCache()
 
   if self.workspace.getSome(ws):
     asyncCheck self.loadAsync(ws, true)
@@ -1186,7 +1187,7 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
 proc clearDiagnostics*(self: TextDocument) =
   self.diagnosticsPerLine.clear()
   self.currentDiagnostics.setLen 0
-  self.styledTextCache.clear()
+  self.clearStyledTextCache()
 
 proc clearStyledTextCache*(self: TextDocument) =
   self.styledTextCache.clear()
@@ -1531,7 +1532,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     if inserted.first.line == inserted.last.line:
       self.styledTextCache.del(inserted.first.line)
     else:
-      self.styledTextCache.clear()
+      self.clearStyledTextCache()
 
     self.updateDiagnosticPositionsAfterInsert inserted
     if notify:
@@ -1610,7 +1611,7 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     if selection.first.line == selection.last.line:
       self.styledTextCache.del(selection.first.line)
     else:
-      self.styledTextCache.clear()
+      self.clearStyledTextCache()
 
     self.updateDiagnosticPositionsAfterDelete selection
     if notify:
