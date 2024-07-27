@@ -136,13 +136,18 @@ template logCategory*(category: static string, noDebug = false): untyped =
       logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
 
   template logScope(level: logging.Level, text: string): untyped {.used.} =
-    let timer = startTimer()
     let txt = text
     logging.log(level, "[" & category & "] " & txt)
     inc logger.indentLevel
+    let timer = startTimer()
     defer:
-      dec logger.indentLevel
-      logging.log(level, "[" & category & "] " & txt & " finished. (" & $timer.elapsed.ms & " ms)")
+      block:
+        let elapsedMs = timer.elapsed.ms
+        let split = elapsedMs.splitDecimal
+        let elapsedMsInt = split.intpart.int
+        let elapsedUsInt = (split.floatpart * 1000).int
+        dec logger.indentLevel
+        logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
 
   when noDebug:
     macro debug(x: varargs[typed, `$`]): untyped {.used.} =
