@@ -274,6 +274,31 @@ else:
       return nil
     return TSTree(impl: tree)
 
+  type GetTextCallback* = proc(index: int, position: Cursor): (ptr char, int)
+  proc getTextRangeTreesitter(payload: pointer; byteIndex: uint32; position: ts.TSPoint; bytesRead: ptr uint32): cstring {.stdcall.} =
+
+    let callback = cast[ptr GetTextCallback](payload)[]
+    let (p, len) = callback(byteIndex.int, (position.row.int, position.column.int))
+    bytesRead[] = len.uint32
+    return cast[cstring](p)
+
+  proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree =
+    let input = TSInput(
+      payload: text.addr,
+      read: cast[typeof(TSInput().read)](getTextRangeTreesitter),
+      encoding: TSInputEncoding.TSInputEncodingUTF8
+    )
+
+    let oldTreeImpl = if oldTree.isNotNil:
+      oldTree.impl
+    else:
+      nil
+
+    let tree = self.impl.tsParserParse(oldTreeImpl, input)
+    if tree.isNil:
+      return nil
+    return TSTree(impl: tree)
+
   when not declared(c_malloc):
     proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>", used.}
     proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>", used.}
