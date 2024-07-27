@@ -247,8 +247,25 @@ proc applyTreesitterChanges(self: TextDocument) =
 
   self.changes.setLen 0
 
+let nl = "\n"
+proc getTextRangeTreesitter(self: TextDocument; byteIndex: int, cursor: Cursor): (ptr char, int) =
+  if cursor.line notin 0..self.lines.high:
+    return (nil, 0)
+
+  if cursor.column == self.lines[cursor.line].len:
+    return (nl[0].addr, 1)
+
+  if cursor.column notin 0..self.lines[cursor.line].high:
+    return (nil, 0)
+
+  let lineLen = self.lines[cursor.line].len
+  return (
+    self.lines[cursor.line][cursor.column].addr,
+    lineLen - cursor.column
+  )
+
 proc reparseTreesitter*(self: TextDocument) =
-  # debugf"reparseTreesitter {self.filename}"
+  # logScope lvlInfo, &"reparseTreesitter({self.filename})"
   self.applyTreesitterChanges()
 
   if self.currentContentFailedToParse:
@@ -259,14 +276,14 @@ proc reparseTreesitter*(self: TextDocument) =
     withParser parser:
       parser.setLanguage(self.tsLanguage)
 
-      let strValue = self.lines.join("\n")
-
       try:
-        if self.currentTree.isNotNil:
-          self.currentTree = parser.parseString(strValue, self.currentTree.some)
-        else:
-          self.currentTree = parser.parseString(strValue)
-          self.styledTextCache.clear()
+        if self.currentTree.isNil:
+          self.clearStyledTextCache()
+
+        self.currentTree = parser.parseCallback(self.currentTree):
+          proc(index: int, cursor: Cursor): (ptr char, int) =
+            return self.getTextRangeTreesitter(index, cursor)
+
         self.currentContentFailedToParse = false
       except:
         log lvlError, &"Failed to parse treesitter tree for '{self.filename}': {getCurrentExceptionMsg()}"
@@ -579,34 +596,39 @@ proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Select
     for capture in match.captures:
       result.add capture.node.getRange.toSelection
 
+let spacePattern = re"[ ]+"
+let tabPattern = re"\t"
+
 proc replaceSpaces(self: TextDocument, line: var StyledLine) =
   # override whitespace
   let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
-  let ch = self.configProvider.getValue("editor.text.whitespace.char", "·")
   if opacity <= 0:
     return
 
-  let pattern = re"[ ]+"
-  let bounds = self.lines[line.index].findAllBounds(line.index, pattern)
+  let bounds = self.lines[line.index].findAllBounds(line.index, spacePattern)
+  if bounds.len == 0:
+    return
+
   for s in bounds:
     line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true))
     line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.last.column, returnLen=true))
 
+  let ch = self.configProvider.getValue("editor.text.whitespace.char", "·")
   for s in bounds:
     let start = self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true)
     let text = ch.repeat(s.last.column - s.first.column)
     line.overrideStyleAndText(start, text, "comment", 0, opacity=opacity.some)
 
 proc replaceTabs(self: TextDocument, line: var StyledLine) =
+  let bounds = self.lines[line.index].findAllBounds(line.index, tabPattern)
+  if bounds.len == 0:
+    return
+
   let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
-  let pattern = re"\t"
-  let bounds = self.lines[line.index].findAllBounds(line.index, pattern)
+
   for s in bounds:
     line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true))
     line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.last.column, returnLen=true))
-
-  if bounds.len == 0:
-    return
 
   let tabWidth = self.tabWidth
   var currentOffset = 0
@@ -686,10 +708,12 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, canWrap: false, priority: 1000000000)
 
 proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
-  var regexes = initTable[string, Regex]()
+  # logScope lvlInfo, &"applyTreesitterHighlighting({line.index}, {self.filename})"
 
   if self.highlightQuery.isNil or self.tsTree.isNil:
     return
+
+  var regexes = initTable[string, Regex]()
 
   let lineLen = self.lines[line.index].len
 
@@ -698,7 +722,6 @@ proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
 
     for capture in match.captures:
       let scope = capture.name
-
       let node = capture.node
 
       var matches = true
@@ -798,6 +821,11 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
     if i >= self.lines.len:
       log lvlError, fmt"getStyledText({i}) out of range {self.lines.len}"
       return StyledLine()
+
+    if self.changes.len > 0 or self.currentTree.isNil:
+      self.reparseTreesitter()
+
+    # logScope lvlInfo, &"getStyledText({i}, {self.filename})"
 
     var line = self.lines[i]
     result = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)])
@@ -1176,8 +1204,8 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
             data: d.data,
           )
           self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
+          self.styledTextCache.del(selection.first.line)
 
-        self.styledTextCache.clear()
         self.onDiagnosticsUpdated.invoke()
 
     self.onLanguageServerAttached.invoke (self, ls)
