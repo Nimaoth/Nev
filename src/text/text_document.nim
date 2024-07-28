@@ -707,13 +707,13 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       let diagnosticMessage: string = "     ■ " & diagnostic.message[0..<maxIndex]
       line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, canWrap: false, priority: 1000000000)
 
+var regexes = initTable[string, Regex]()
 proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
   # logScope lvlInfo, &"applyTreesitterHighlighting({line.index}, {self.filename})"
 
   if self.highlightQuery.isNil or self.tsTree.isNil:
     return
 
-  var regexes = initTable[string, Regex]()
 
   let lineLen = self.lines[line.index].len
 
@@ -739,12 +739,9 @@ proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
 
           case $predicate.operator
           of "match?":
-            let regex = if regexes.contains(value):
-              regexes[value]
-            else:
-              let regex = re(value)
-              regexes[value] = regex
-              regex
+            if not regexes.contains(value):
+              regexes[value] = re(value)
+            let regex {.cursor.} = regexes[value]
 
             let nodeText = self.contentString(node.getRange)
             if nodeText.matchLen(regex, 0) != nodeText.len:
@@ -752,12 +749,9 @@ proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
               break
 
           of "not-match?":
-            let regex = if regexes.contains(value):
-              regexes[value]
-            else:
-              let regex = re(value)
-              regexes[value] = regex
-              regex
+            if not regexes.contains(value):
+              regexes[value] = re(value)
+            let regex {.cursor.} = regexes[value]
 
             let nodeText = self.contentString(node.getRange)
             if nodeText.matchLen(regex, 0) == nodeText.len:
@@ -828,7 +822,9 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
     # logScope lvlInfo, &"getStyledText({i}, {self.filename})"
 
     var line = self.lines[i]
-    result = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)])
+    var parts = newSeqOfCap[StyledText](50)
+    parts.add StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)
+    result = StyledLine(index: i, parts: parts.move)
     self.styledTextCache[i] = result
 
     self.applyTreesitterHighlighting(result)
