@@ -491,11 +491,15 @@ iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection,
 proc clearCustomHighlights*(self: TextDocumentEditor, id: Id) =
   ## Removes all custom highlights associated with the given id
 
+  var anyChanges = false
   for highlights in self.customHighlights.mvalues:
     for i in countdown(highlights.high, 0):
       if highlights[i].id == id:
         highlights.removeSwap(i)
-  self.markDirty()
+        anyChanges = true
+
+  if anyChanges:
+    self.markDirty()
 
 proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
     tint: Color = color(1, 1, 1)) =
@@ -3105,13 +3109,21 @@ addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
   assert i in 0..self.document.lines.high
-  result = StyledLine(index: i, parts: self.document.getStyledText(i).parts)
+  result = self.document.getStyledText(i)
+
+  # Since the original StyledLine is cached, if we modify it here we need to create a copy
+  var copied = false
+  template copyLine(): untyped =
+    if not copied:
+      copied = true
+      result = StyledLine(index: i, parts: result.parts)
 
   let chars = (self.lastTextAreaBounds.w / self.platform.charWidth - 2).RuneCount
   if chars > 0.RuneCount:
     var i = 0
     while i < result.parts.len:
       if result.parts[i].text.runeLen > chars:
+        copyLine()
         splitPartAt(result, i, chars.RuneIndex)
       inc i
 
@@ -3119,6 +3131,7 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
   let cursorIndentLevel = self.document.getIndentForLine(self.selection.last.line)
   let currentIndentLevel = self.document.getIndentForLine(i)
   if currentIndentLevel > cursorIndentLevel:
+    copyLine()
     let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
     let start = self.document.lines[i].toOpenArray.runeIndex(cursorIndentLevel, returnLen=true)
     result.splitAt(start)
@@ -3126,6 +3139,7 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
     result.overrideStyleAndText(start, "|", "comment", -1, opacity=opacity.some)
 
   if self.styledTextOverrides.contains(i):
+    copyLine()
     result.overrideStyle(0.RuneIndex, result.runeLen.RuneIndex, "comment", -1)
 
     for override in self.styledTextOverrides[i]:
@@ -3138,6 +3152,7 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
     if inlayHint.location.line != i:
       continue
 
+    copyLine()
     self.document.insertText(result, inlayHint.location.column.RuneIndex, inlayHint.label,
       "comment", containCursor=true)
 
