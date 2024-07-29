@@ -29,7 +29,7 @@ else:
       if totalClients < maxClients:
         inc totalClients
         return newAsyncHttpClient(userAgent = "Thunder Client (https://www.thunderclient.com)")
-      await sleepAsync(1)
+      await sleepAsync(10)
     return clients.pop
 
   template withClient(client, body: untyped): untyped =

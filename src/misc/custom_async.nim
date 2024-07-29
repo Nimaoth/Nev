@@ -33,24 +33,24 @@ else:
   proc spawnAsync*[A](f: proc(options: A) {.gcsafe.}, options: A): Future[void] {.async.} =
     let flowVar: FlowVarBase = spawn runAsyncVoid(f, options)
     while not flowVar.isReady:
-      await sleepAsync(1)
+      await sleepAsync(10)
 
   proc spawnAsync*[T, A](f: proc(options: A): T {.gcsafe.}, options: A): Future[T] {.async.} =
     let flowVar: FlowVar[T] = spawn runAsync(f, options)
     while not flowVar.isReady:
-      await sleepAsync(1)
+      await sleepAsync(10)
 
     return ^flowVar
 
   proc spawnAsync*(f: proc() {.gcsafe.}): Future[void] {.async.} =
     let flowVar: FlowVarBase = spawn runAsyncVoid(f)
     while not flowVar.isReady:
-      await sleepAsync(1)
+      await sleepAsync(10)
 
   proc spawnAsync*[T](f: proc(): T {.gcsafe.}): Future[T] {.async.} =
     let flowVar: FlowVar[T] = spawn runAsync(f)
     while not flowVar.isReady:
-      await sleepAsync(1)
+      await sleepAsync(10)
 
     return ^flowVar
 

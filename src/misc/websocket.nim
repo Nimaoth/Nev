@@ -40,7 +40,7 @@ when defined(js):
 
   proc sendSendBufferWhenReady(ws: WebSocket): Future[void] {.async.} =
     while ws.socket.readyState == 0:
-      await sleepAsync(1)
+      await sleepAsync(10)
 
     if ws.socket.readyState != 1:
       return
@@ -69,7 +69,7 @@ when defined(js):
     while ws.recvBuffer.len == 0:
       if ws.socket.readyState > 1:
         raise newException(IOError, "web socket closed")
-      await sleepAsync(1)
+      await sleepAsync(10)
     let res = move ws.recvBuffer[0]
     ws.recvBuffer.delete(0..0)
     return res

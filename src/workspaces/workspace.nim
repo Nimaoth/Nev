@@ -176,7 +176,7 @@ proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: Ca
       continue
     folders.add(fullPath)
 
-  await sleepAsync(1)
+  await sleepAsync(10)
 
   await callback(resultItems)
 
