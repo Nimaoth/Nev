@@ -1,16 +1,17 @@
 import std/[asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros]
-import custom_logger, custom_async, util
+import custom_logger, custom_async, util, timer
 
 logCategory "asyncprocess"
 
 type AsyncChannel*[T] = ref object
   chan: ptr Channel[T]
   closed: bool
+  buffer: T
 
 type AsyncProcess* = ref object
   name: string
   args: seq[string]
-  onRestarted*: proc(): Future[void]
+  onRestarted*: proc(): Future[void] {.gcsafe.}
   dontRestart: bool
   process: Process
   input: AsyncChannel[char]
@@ -77,17 +78,63 @@ proc destroy*(process: AsyncProcess) =
 proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async.} =
   var buffer = ""
   while buffer.len < amount:
-    while buffer.len < amount and achan.chan[].peek > 0:
-      let c = achan.chan[].recv
+    var timer = startTimer()
+
+    while buffer.len < amount:
+      let (ok, c) = achan.chan[].tryRecv
+      if not ok:
+        await sleepAsync 10
+        timer = startTimer()
+        continue
+
       if c == '\0':
         # End of input
         return buffer
 
       buffer.add c
 
+      if timer.elapsed.ms > 2:
+        await sleepAsync 10
+        timer = startTimer()
+
     if buffer.len < amount:
-      await sleepAsync 1
+      await sleepAsync 10
+
   return buffer
+
+proc recv*[T: string](achan: AsyncChannel[T], amount: int): Future[string] {.async.} =
+  while achan.buffer.len < amount:
+    var timer = startTimer()
+
+    while achan.buffer.len < amount:
+      let (ok, str) = achan.chan[].tryRecv
+      if not ok:
+        await sleepAsync 10
+        timer = startTimer()
+        continue
+
+      if str == "":
+        # End of input
+        break
+
+      if achan.buffer.len == 0 and str.len == amount:
+        return str
+
+      achan.buffer.add str
+
+      if timer.elapsed.ms > 2:
+        await sleepAsync 10
+        timer = startTimer()
+
+    if achan.buffer.len < amount:
+      await sleepAsync 10
+
+  if achan.buffer.len < amount:
+    return ""
+
+  let res = achan.buffer[0..<amount]
+  achan.buffer = achan.buffer[amount..^1]
+  return res
 
 proc recvLine*[T: char](achan: AsyncChannel[T]): Future[string] {.async.} =
   var buffer = ""
@@ -110,7 +157,7 @@ proc recvLine*[T: char](achan: AsyncChannel[T]): Future[string] {.async.} =
           return "\r\n"
         cr = false
         return buffer
-    await sleepAsync 1
+    await sleepAsync 10
 
   return ""
 
@@ -146,13 +193,27 @@ proc tryRecvLine*[T: char](achan: AsyncChannel[T]): Future[Option[string]] {.asy
         cr = false
         return buffer.some
 
-    await sleepAsync 1
+    await sleepAsync 10
 
   return string.none
 
 proc send*[T](achan: AsyncChannel[Option[T]], data: T) {.async.} =
-  while not achan.chan[].trySend(data.some):
-    await sleepAsync 1
+  while not achan.closed and not achan.chan[].trySend(data.some):
+    await sleepAsync 10
+
+proc send*[T](achan: AsyncChannel[T], data: sink T) {.async.} =
+  while not achan.closed and not achan.chan[].trySend(data.move):
+    await sleepAsync 10
+
+proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
+  while not achan.closed:
+    let (ok, data) = achan.chan[].tryRecv()
+    if ok:
+      return data.some
+
+    await sleepAsync 10
+
+  return T.none
 
 proc recv*(process: AsyncProcess, amount: int): Future[string] =
   if process.input.isNil or process.input.chan.isNil:
@@ -266,20 +327,20 @@ proc start*(process: AsyncProcess): bool =
 
   return true
 
-proc restartServer(process: AsyncProcess) {.async.} =
+proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
   var startCounter = 0
 
   while true:
     while process.serverDiedNotifications[].peek == 0:
       # echo "process active"
-      await sleepAsync(1)
+      await sleepAsync(10)
 
     # echo "process dead"
     while process.serverDiedNotifications[].peek > 0:
       discard process.serverDiedNotifications[].recv
 
     if startCounter > 0 and process.dontRestart:
-      log(lvlInfo, "Don't restart")
+      # log(lvlInfo, "Don't restart")
       return
 
     inc startCounter
@@ -291,7 +352,7 @@ proc restartServer(process: AsyncProcess) {.async.} =
       process.onRestarted().await
 
 
-proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true): AsyncProcess =
+proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true): AsyncProcess {.gcsafe.} =
   let process = AsyncProcess()
   process.name = name
   process.args = @args
@@ -329,7 +390,7 @@ when debugAsyncProcess:
       while asyncProcessDebugOutput.peek > 0:
          let line = asyncProcessDebugOutput.recv
          debugf"> {line}"
-      await sleepAsync 1
+      await sleepAsync 10
 
   asyncCheck readAsyncProcessDebugOutput()
 
