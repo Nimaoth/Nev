@@ -47,7 +47,7 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
   # Right now we need to sleep a bit here because this function is triggered by textInserted and
   # the update to the LSP is also sent in textInserted, but it's bound after this and so it would be called
   # to late. The sleep makes sure we run the getCompletions call below after the server got the file change.
-  await sleepAsync(1)
+  await sleepAsync(2)
 
   # debugf"[getLspCompletionsAsync] start"
   let completions = await self.languageServer.getCompletions(self.document.fullPath, location)
