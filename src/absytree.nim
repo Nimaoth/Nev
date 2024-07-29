@@ -14,8 +14,8 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, macros]
-import misc/[custom_logger]
+import std/[parseopt, options, macros, strutils]
+import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
 
 when enableGui:
@@ -33,6 +33,7 @@ elif enableTerminal: Backend.Terminal.some
 else: Backend.none
 
 var logToFile = false
+var logToConsole = true
 var disableLogging = false
 var opts = AppOptions()
 
@@ -60,7 +61,10 @@ block: ## Parse command line options
           quit(1)
 
       of "log-to-file", "f":
-        logToFile = true
+        logToFile = val.parseBool.catch(true)
+
+      of "log-to-console", "k":
+        logToConsole = val.parseBool.catch(true)
 
       of "no-log", "l":
         disableLogging = true
@@ -103,7 +107,7 @@ if not disableLogging: ## Enable loggers
     logger.enableFileLogger()
 
   when defined(allowConsoleLogger):
-    if backend.get != Terminal:
+    if backend.get != Terminal and logToConsole:
       logger.enableConsoleLogger()
 
 import std/[strformat]
@@ -170,9 +174,6 @@ var renderedLastFrame = false
 
 proc runApp(): Future[void] {.async.} =
   var ed = await newEditor(backend.get, rend, opts)
-
-  addTimer 2, false, proc(fd: AsyncFD): bool =
-    return false
 
   var frameIndex = 0
   var frameTime = 0.0
@@ -241,7 +242,7 @@ proc runApp(): Future[void] {.async.} =
       try:
         pollBudgetMs += clamp(15 - totalTimer.elapsed.ms, minPollPerFrameMs, maxPollPerFrameMs)
         var totalPollTime = 0.0
-        while pollBudgetMs > maxPollPerFrameMs:
+        while pollBudgetMs > maxPollPerFrameMs and hasPendingOperations():
           let start = startTimer()
           poll(maxPollPerFrameMs.int)
           pollBudgetMs -= start.elapsed.ms
@@ -250,11 +251,6 @@ proc runApp(): Future[void] {.async.} =
         # log(lvlError, fmt"Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
         discard
     let pollTime = pollTimer.elapsed.ms
-
-    # let timeToSleep = 8 - totalTimer.elapsed.ms
-    # if timeToSleep > 1:
-    #   # debugf"sleep for {timeToSleep.int}ms"
-    #   sleep(timeToSleep.int)
 
     let totalTime = totalTimer.elapsed.ms
     if not ed.disableLogFrameTime and
