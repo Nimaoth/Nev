@@ -1183,6 +1183,10 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       let uri = diagnostics.uri.decodeUrl.parseUri
       if uri.path.normalizePathUnix == self.filename:
+
+        for line in self.diagnosticsPerLine.keys:
+          self.styledTextCache.del(line)
+
         self.currentDiagnostics.setLen diagnostics.diagnostics.len
         self.diagnosticsPerLine.clear()
 
