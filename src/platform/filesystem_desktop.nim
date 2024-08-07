@@ -43,11 +43,11 @@ method getApplicationFilePath*(self: FileSystemDesktop, name: string): string =
 
 method loadApplicationFile*(self: FileSystemDesktop, name: string): string =
   let path = self.getApplicationFilePath name
-  log lvlInfo, fmt"loadApplicationFile {name} -> {path}"
+  log lvlInfo, fmt"loadApplicationFile1 {name} -> {path}"
   try:
     return readFile(path)
   except:
-    log lvlError, fmt"Failed to load application file {path}: {getCurrentExceptionMsg()}"
+    log lvlError, &"Failed to load application file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return ""
 
 proc loadFileThread(args: tuple[path: string, data: ptr string]):
@@ -70,12 +70,12 @@ method loadFileAsync*(self: FileSystemDesktop, path: string): Future[string] {.a
 
     return data.move
   except:
-    log lvlError, fmt"Failed to load application file {path}: {getCurrentExceptionMsg()}"
+    log lvlError, &"Failed to load application file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return ""
 
 method loadApplicationFileAsync*(self: FileSystemDesktop, name: string): Future[string] {.async.} =
   let path = self.getApplicationFilePath name
-  log lvlInfo, fmt"loadApplicationFile {name} -> {path}"
+  log lvlInfo, fmt"loadApplicationFile2 {name} -> {path}"
   try:
     var data = ""
     let res = await spawnAsync(loadFileThread, (path, data.addr))
@@ -85,7 +85,7 @@ method loadApplicationFileAsync*(self: FileSystemDesktop, name: string): Future[
 
     return data.move
   except:
-    log lvlError, fmt"Failed to load application file {path}: {getCurrentExceptionMsg()}"
+    log lvlError, &"Failed to load application file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return ""
 
 method saveApplicationFile*(self: FileSystemDesktop, name: string, content: string) =
@@ -94,7 +94,7 @@ method saveApplicationFile*(self: FileSystemDesktop, name: string, content: stri
   try:
     writeFile(path, content)
   except:
-    log lvlError, fmt"Failed to save application file {path}: {getCurrentExceptionMsg()}"
+    log lvlError, &"Failed to save application file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 proc findFilesRec(dir: string, filename: Regex, maxResults: int, res: var seq[string]) =
   for (kind, path) in walkDir(dir, relative=false):
