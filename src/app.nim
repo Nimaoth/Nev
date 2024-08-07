@@ -471,6 +471,36 @@ proc createEditorForDocument(self: App, document: Document): DocumentEditor =
   log(lvlError, "No editor found which can edit " & $document)
   return nil
 
+proc getOption*[T](editor: App, path: string, default: Option[T] = T.none): Option[T] =
+  template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
+    block:
+      if editor.isNil:
+        return default
+      let node = editor.options{path.split(".")}
+      if node.isNil:
+        return default
+      accessor(node, defaultValue)
+
+  when T is bool:
+    return createScriptGetOption(editor, path, T.default, getBool).some
+  elif T is enum:
+    return parseEnum[T](createScriptGetOption(editor, path, "", getStr)).some.catch(default)
+  elif T is Ordinal:
+    return createScriptGetOption(editor, path, T.default.int, getInt).T.some
+  elif T is float32 | float64:
+    return createScriptGetOption(editor, path, T.default, getFloat).some
+  elif T is string:
+    return createScriptGetOption(editor, path, T.default, getStr).some
+  elif T is JsonNode:
+    if editor.isNil:
+      return default
+    let node = editor.options{path.split(".")}
+    if node.isNil:
+      return default
+    return node.some
+  else:
+    {.fatal: ("Can't get option with type " & $T).}
+
 proc getOption*[T](editor: App, path: string, default: T = T.default): T =
   template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
     block:
@@ -1028,6 +1058,36 @@ proc loadOptionsFromWorkspace*(self: App) {.async.} =
     self.loadKeybindings(".absytree", loadConfigFileFromWorkspaceDir)
   )
 
+import asynchttpserver, asyncnet
+
+proc processClient(client: AsyncSocket) {.async.} =
+  log lvlInfo, &"Process client"
+  let self: App = ({.gcsafe.}: gEditor)
+  while not client.isClosed:
+    let line = await client.recvLine()
+    if line.len == 0:
+      break
+
+    log lvlInfo, &"Run command from client: '{line}'"
+    let command = line
+    let (action, arg) = parseAction(command)
+    discard self.handleAction(action, arg, record=true)
+
+proc serve(port: Port) {.async.} =
+  log lvlInfo, &"Listen for connections on port {port.int}"
+  var server = newAsyncSocket()
+  server.setSockOpt(OptReuseAddr, true)
+  server.bindAddr(port)
+  server.listen()
+
+  while true:
+    let client = await server.accept()
+
+    asyncCheck processClient(client)
+
+proc listenForConnection*(self: App, port: Port) {.async.} =
+  await serve(port)
+
 proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
@@ -1165,6 +1225,9 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   log lvlInfo, &"Finished loading app and user settings"
 
   self.runConfigCommands("startup-commands")
+
+  if self.getOption("command-server-port", Port.none).getSome(port):
+    asyncCheck self.listenForConnection(port)
 
   self.commandHistory = state.commandHistory
 
