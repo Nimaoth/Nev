@@ -1,4 +1,4 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts, locks]
 import misc/[custom_logger, async_http_client, websocket, util, event, myjsonutils, custom_async, response]
 import scripting/expose
 import platform/filesystem
@@ -10,15 +10,28 @@ import misc/async_process
 
 export lsp_types
 
+var file = open(getAppDir() / "lsp.log", fmWrite)
+var fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+var fileLoggerLock: Lock
+fileLoggerLock.initLock()
+
+let mainThreadId = getThreadId()
+template isMainThread(): untyped = getThreadId() == mainThreadId
+
 # logCategory "lsp"
 proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.used.} =
   var args = args
   if includeCategory:
-    args.insert(0, newLit("[" & "lsp" & "] "))
+    args.insert(0, newLit("[" & "lsp-client" & "] "))
 
   return genAst(level, args):
+    {.gcsafe.}:
+      fileLoggerLock.acquire()
+      defer:
+        fileLoggerLock.release()
+      logging.log(fileLogger, level, args)
     # logging.log(level, args)
-    echo level, ": ", args
+    # echo level, ": ", args
 
 macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
   return logImpl(level, args, true)
@@ -65,12 +78,60 @@ var logServerDebug = false
 type
   LSPConnection = ref object of RootObj
 
+  LSPClientResponseKind* = enum
+    GetDefinition
+    GetDeclaration
+    GetTypeDefinition
+    GetImplementation
+    GetReferences
+    GetSwitchSourceHeader
+    GetHover
+    GetInlayHint
+    GetDocumentSymbol
+    GetSymbol
+    GetDiagnostic
+    GetCompletion
+
+  LSPClientResponse* = object
+    id*: int
+    case kind*: LSPClientResponseKind
+    of GetDefinition: getDefinition*: Response[DefinitionResponse]
+    of GetDeclaration: getDeclaration*: Response[DeclarationResponse]
+    of GetTypeDefinition: getTypeDefinition*: Response[TypeDefinitionResponse]
+    of GetImplementation: getImplementation*: Response[ImplementationResponse]
+    of GetReferences: getReferences*: Response[ReferenceResponse]
+    of GetSwitchSourceHeader: getSwitchSourceHeader*: Response[string]
+    of GetHover: getHover*: Response[DocumentHoverResponse]
+    of GetInlayHint: getInlayHint*: Response[InlayHintResponse]
+    of GetDocumentSymbol: getDocumentSymbol*: Response[DocumentSymbolResponse]
+    of GetSymbol: getSymbol*: Response[WorkspaceSymbolResponse]
+    of GetDiagnostic: getDiagnostic*: Response[DocumentDiagnosticResponse]
+    of GetCompletion: getCompletion*: Response[CompletionResponse]
+
+  LSPClientRequest = object
+    id: int
+    meth: string
+    body: JsonNode
+
   LSPClientObject* = object
     connection: LSPConnection
     nextId: int
-    activeRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[JsonNode]]]]
+    activeRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[JsonNode]]]] # Worker Thread
+    activeDefinitionRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[DefinitionResponse]]]] # Main thread
+    activeDeclarationRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[DeclarationResponse]]]] # Main thread
+    activeTypeDefinitionRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[TypeDefinitionResponse]]]] # Main thread
+    activeImplementationRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[ImplementationResponse]]]] # Main thread
+    activeReferencesRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[ReferenceResponse]]]] # Main thread
+    activeSwitchSourceHeaderRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[string]]]] # Main thread
+    activeHoverRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[DocumentHoverResponse]]]] # Main thread
+    activeInlayHintsRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[InlayHintResponse]]]] # Main thread
+    activeSymbolsRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[DocumentSymbolResponse]]]] # Main thread
+    activeWorkspaceSymbolsRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[WorkspaceSymbolResponse]]]] # Main thread
+    activeDiagnosticsRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[DocumentDiagnosticResponse]]]] # Main thread
+    activeCompletionsRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[CompletionResponse]]]] # Main thread
     requestsPerMethod: Table[string, seq[int]]
     canceledRequests: HashSet[int]
+    idToMethod: Table[int, string]
     isInitialized: bool
     pendingRequests: seq[string]
     workspaceFolders: seq[string]
@@ -94,6 +155,8 @@ type
     diagnosticChannel*: AsyncChannel[PublicDiagnosticsParams]
     symbolsRequestChannel*: AsyncChannel[string]
     symbolsResponseChannel*: AsyncChannel[Response[DocumentSymbolResponse]]
+    requestChannel*: AsyncChannel[LSPClientRequest]
+    responseChannel*: AsyncChannel[LSPClientResponse]
     notifyTextDocumentOpenedChannel*: AsyncChannel[tuple[languageId: string, path: string, content: string]]
     notifyTextDocumentClosedChannel*: AsyncChannel[string]
     notifyTextDocumentChangedChannel*: AsyncChannel[tuple[path: string, version: int, changes: seq[TextDocumentContentChangeEvent], content: string]]
@@ -117,6 +180,8 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     diagnosticChannel: newAsyncChannel[PublicDiagnosticsParams](),
     symbolsRequestChannel: newAsyncChannel[string](),
     symbolsResponseChannel: newAsyncChannel[Response[DocumentSymbolResponse]](),
+    requestChannel: newAsyncChannel[LSPClientRequest](),
+    responseChannel: newAsyncChannel[LSPClientResponse](),
     notifyTextDocumentOpenedChannel: newAsyncChannel[tuple[languageId: string, path: string, content: string]](),
     notifyTextDocumentClosedChannel: newAsyncChannel[string](),
     notifyTextDocumentChangedChannel: newAsyncChannel[tuple[path: string, version: int, changes: seq[TextDocumentContentChangeEvent], content: string]](),
@@ -191,6 +256,18 @@ proc deinit*(client: LSPClient) =
   client.connection = nil
   client.nextId = 0
   client.activeRequests.clear()
+  client.activeDefinitionRequests.clear()
+  client.activeDeclarationRequests.clear()
+  client.activeTypeDefinitionRequests.clear()
+  client.activeImplementationRequests.clear()
+  client.activeReferencesRequests.clear()
+  client.activeSwitchSourceHeaderRequests.clear()
+  client.activeHoverRequests.clear()
+  client.activeInlayHintsRequests.clear()
+  client.activeSymbolsRequests.clear()
+  client.activeWorkspaceSymbolsRequests.clear()
+  client.activeDiagnosticsRequests.clear()
+  client.activeCompletionsRequests.clear()
   client.requestsPerMethod.clear()
   client.canceledRequests.clear()
   client.isInitialized = false
@@ -292,7 +369,9 @@ proc sendResult(client: LSPClient, meth: string, id: int, res: JsonNode) {.async
 
   await client.connection.send(msg)
 
-proc sendRequest(client: LSPClient, meth: string, params: JsonNode): Future[Response[JsonNode]] {.async.} =
+proc sendRequestInternal(client: LSPClient, meth: string, params: JsonNode): Future[Response[JsonNode]] {.async.} =
+  assert not isMainThread()
+
   let id = client.nextId
   inc client.nextId
   await client.sendRPC(meth, params, id.some)
@@ -306,14 +385,104 @@ proc sendRequest(client: LSPClient, meth: string, params: JsonNode): Future[Resp
 
   return await requestFuture.future
 
+proc handleRequests(client: LSPClient) {.async, gcsafe.} =
+  assert not isMainThread()
+
+  while client != nil:
+    let request = client.requestChannel.recv().await.getOr:
+      log lvlInfo, &"handleRequests: channel closed"
+      return
+
+    debugf"handleRequest: {request}"
+
+    client.idToMethod[request.id] = request.meth
+    await client.sendRPC(request.meth, request.body, request.id.some)
+
+  log lvlInfo, &"handleRequests: client gone"
+
+proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
+  assert isMainThread()
+
+  while client != nil:
+    let response = client.responseChannel.recv().await.getOr:
+      log lvlInfo, &"handleResponses: channel closed"
+      return
+
+    debugf"handleResponse: {response.id}"
+    let id = response.id
+
+    template dispatch(requests: untyped, parsedResponse: untyped): untyped =
+      if requests.contains(id):
+        # debugf"[LSP.run] Complete request {id}"
+        let (meth, future) = requests[id]
+        future.complete parsedResponse
+        requests.del(id)
+        let index = client.requestsPerMethod[meth].find(id)
+        assert index != -1
+        client.requestsPerMethod[meth].delete index
+      elif client.canceledRequests.contains(id):
+        # Request was canceled
+        # debugf"[LSP.run] Received response for canceled request {id}"
+        client.canceledRequests.excl id
+      else:
+        log(lvlError, fmt"[handleResponses] received response with id {id} but got no active request for that id: {response}")
+
+    case response.kind
+    of GetDefinition: dispatch(client.activeDefinitionRequests, response.getDefinition)
+    of GetDeclaration: dispatch(client.activeDeclarationRequests, response.getDeclaration)
+    of GetTypeDefinition: dispatch(client.activeTypeDefinitionRequests, response.getTypeDefinition)
+    of GetImplementation: dispatch(client.activeImplementationRequests, response.getImplementation)
+    of GetReferences: dispatch(client.activeReferencesRequests, response.getReferences)
+    of GetSwitchSourceHeader: dispatch(client.activeSwitchSourceHeaderRequests, response.getSwitchSourceHeader)
+    of GetHover: dispatch(client.activeHoverRequests, response.getHover)
+    of GetInlayHint: dispatch(client.activeInlayHintsRequests, response.getInlayHint)
+    of GetDocumentSymbol: dispatch(client.activeSymbolsRequests, response.getDocumentSymbol)
+    of GetSymbol: dispatch(client.activeWorkspaceSymbolsRequests, response.getSymbol)
+    of GetDiagnostic: dispatch(client.activeDiagnosticsRequests, response.getDiagnostic)
+    of GetCompletion: dispatch(client.activeCompletionsRequests, response.getCompletion)
+
+  log lvlInfo, &"handleResponses: client gone"
+
+proc sendRequest[T](client: LSPClient, requests: ptr Table[int, tuple[meth: string, future: ResolvableFuture[T]]], meth: string, params: JsonNode): Future[T] {.async.} =
+  assert isMainThread()
+
+  let id = client.nextId
+  inc client.nextId
+
+  let requestFuture = newResolvableFuture[T]("LSPCLient." & meth & "." & $id)
+
+  requests[][id] = (meth, requestFuture)
+
+  if not client.requestsPerMethod.contains(meth):
+    client.requestsPerMethod[meth] = @[]
+  client.requestsPerMethod[meth].add id
+
+  await client.requestChannel.send(LSPClientRequest(id: id, meth: meth, body: params))
+  return await requestFuture.future
+
 proc cancelAllOf*(client: LSPClient, meth: string) =
+  assert isMainThread()
+
   if not client.requestsPerMethod.contains(meth):
     return
 
   var futures: seq[(int, ResolvableFuture[Response[JsonNode]])]
   for id in client.requestsPerMethod[meth]:
-    let (_, future) = client.activeRequests[id]
-    futures.add (id, future)
+    case meth
+    of "textDocument/definition": client.activeDefinitionRequests[id].future.complete(canceled[DefinitionResponse]())
+    of "textDocument/declaration": client.activeDeclarationRequests[id].future.complete(canceled[DeclarationResponse]())
+    of "textDocument/typeDefinition": client.activeTypeDefinitionRequests[id].future.complete(canceled[TypeDefinitionResponse]())
+    of "textDocument/implementation": client.activeImplementationRequests[id].future.complete(canceled[ImplementationResponse]())
+    of "textDocument/references": client.activeReferencesRequests[id].future.complete(canceled[ReferenceResponse]())
+    of "textDocument/switchSourceHeader": client.activeSwitchSourceHeaderRequests[id].future.complete(canceled[string]())
+    of "textDocument/hover": client.activeHoverRequests[id].future.complete(canceled[DocumentHoverResponse]())
+    of "textDocument/inlayHint": client.activeInlayHintsRequests[id].future.complete(canceled[InlayHintResponse]())
+    of "textDocument/documentSymbol": client.activeSymbolsRequests[id].future.complete(canceled[DocumentSymbolResponse]())
+    of "workspace/symbol": client.activeWorkspaceSymbolsRequests[id].future.complete(canceled[WorkspaceSymbolResponse]())
+    of "textDocument/diagnostic": client.activeDiagnosticsRequests[id].future.complete(canceled[DocumentDiagnosticResponse]())
+    of "textDocument/completion": client.activeCompletionsRequests[id].future.complete(canceled[CompletionResponse]())
+    else: continue
+
     client.activeRequests.del id
     client.canceledRequests.incl id
 
@@ -418,7 +587,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
 
   log(lvlInfo, fmt"[initialize] {params.pretty}")
 
-  let res = await client.sendRequest("initialize", params)
+  let res = await client.sendRequestInternal("initialize", params)
   if res.isError:
     log lvlError, &"Failed to initialize lsp: {res.error}"
     # client.initializedFuture.complete(false)
@@ -611,7 +780,7 @@ proc getDefinition*(client: LSPClient, filename: string, line: int, column: int)
     )
   ).toJson
 
-  return (await client.sendRequest("textDocument/definition", params)).to DefinitionResponse
+  return await client.sendRequest(client.activeDefinitionRequests.addr, "textDocument/definition", params)
 
 proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DeclarationResponse]] {.async.} =
   debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
@@ -627,7 +796,7 @@ proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int
     )
   ).toJson
 
-  return (await client.sendRequest("textDocument/declaration", params)).to DeclarationResponse
+  return await client.sendRequest(client.activeDeclarationRequests.addr, "textDocument/declaration", params)
 
 proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[TypeDefinitionResponse]] {.async.} =
   debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
@@ -643,7 +812,7 @@ proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column:
     )
   ).toJson
 
-  return (await client.sendRequest("textDocument/typeDefinition", params)).to TypeDefinitionResponse
+  return await client.sendRequest(client.activeTypeDefinitionRequests.addr, "textDocument/typeDefinition", params)
 
 proc getImplementation*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ImplementationResponse]] {.async.} =
   debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
@@ -659,7 +828,7 @@ proc getImplementation*(client: LSPClient, filename: string, line: int, column: 
     )
   ).toJson
 
-  return (await client.sendRequest("textDocument/implementation", params)).to ImplementationResponse
+  return await client.sendRequest(client.activeImplementationRequests.addr, "textDocument/implementation", params)
 
 proc getReferences*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ReferenceResponse]] {.async.} =
   debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
@@ -676,7 +845,7 @@ proc getReferences*(client: LSPClient, filename: string, line: int, column: int)
     context: ReferenceContext(includeDeclaration: true)
   ).toJson
 
-  return (await client.sendRequest("textDocument/references", params)).to ReferenceResponse
+  return await client.sendRequest(client.activeReferencesRequests.addr, "textDocument/references", params)
 
 proc switchSourceHeader*(client: LSPClient, filename: string): Future[Response[string]] {.async.} =
   let path = client.translatePath(filename)
@@ -685,7 +854,7 @@ proc switchSourceHeader*(client: LSPClient, filename: string): Future[Response[s
 
   let params = TextDocumentIdentifier(uri: $path.toUri).toJson
 
-  return (await client.sendRequest("textDocument/switchSourceHeader", params)).to string
+  return await client.sendRequest(client.activeSwitchSourceHeaderRequests.addr, "textDocument/switchSourceHeader", params)
 
 proc getHover*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DocumentHoverResponse]] {.async.} =
   let path = client.translatePath(filename)
@@ -700,7 +869,7 @@ proc getHover*(client: LSPClient, filename: string, line: int, column: int): Fut
     )
   ).toJson
 
-  return (await client.sendRequest("textDocument/hover", params)).to DocumentHoverResponse
+  return await client.sendRequest(client.activeHoverRequests.addr, "textDocument/hover", params)
 
 proc getInlayHints*(client: LSPClient, filename: string, selection: ((int, int), (int, int))): Future[Response[InlayHintResponse]] {.async.} =
   let path = client.translatePath(filename)
@@ -721,9 +890,11 @@ proc getInlayHints*(client: LSPClient, filename: string, selection: ((int, int),
     )
   ).toJson
 
-  return (await client.sendRequest("textDocument/inlayHint", params)).to InlayHintResponse
+  return await client.sendRequest(client.activeInlayHintsRequests.addr, "textDocument/inlayHint", params)
 
 proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentSymbolResponse]] {.async.} =
+  assert isMainThread()
+
   debugf"[getSymbols] {filename.absolutePath}"
   let path = client.translatePath(filename)
 
@@ -733,7 +904,7 @@ proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentS
     textDocument: TextDocumentIdentifier(uri: $path.toUri),
   ).toJson
 
-  return (await client.sendRequest("textDocument/documentSymbol", params)).to DocumentSymbolResponse
+  return await client.sendRequest(client.activeSymbolsRequests.addr, "textDocument/documentSymbol", params)
 
 proc getWorkspaceSymbols*(client: LSPClient, query: string): Future[Response[WorkspaceSymbolResponse]] {.async.} =
   debugf"[getWorkspaceSymbols]"
@@ -743,7 +914,7 @@ proc getWorkspaceSymbols*(client: LSPClient, query: string): Future[Response[Wor
     query: query
   ).toJson
 
-  return (await client.sendRequest("workspace/symbol", params)).to WorkspaceSymbolResponse
+  return await client.sendRequest(client.activeWorkspaceSymbolsRequests.addr, "workspace/symbol", params)
 
 proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[DocumentDiagnosticResponse]] {.async.} =
   debugf"[getSymbols] {filename.absolutePath}"
@@ -755,7 +926,7 @@ proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[Docum
     textDocument: TextDocumentIdentifier(uri: $path.toUri),
   ).toJson
 
-  return (await client.sendRequest("textDocument/diagnostic", params)).to DocumentDiagnosticResponse
+  return await client.sendRequest(client.activeDiagnosticsRequests.addr, "textDocument/diagnostic", params)
 
 proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
   debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
@@ -775,7 +946,7 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
     },
   }
 
-  let response = (await client.sendRequest("textDocument/completion", params)).to CompletionResponse
+  let response = await client.sendRequest(client.activeCompletionsRequests.addr, "textDocument/completion", params)
 
   if response.isError or response.isCanceled:
     return response.to CompletionList
@@ -842,6 +1013,7 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
       else:
         # debugf"[LSP.run] {response}"
         let id = response["id"].getInt
+
         if client.activeRequests.contains(id):
           # debugf"[LSP.run] Complete request {id}"
           let parsedResponse = response.toResponse JsonNode
@@ -855,8 +1027,41 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
           # Request was canceled
           # debugf"[LSP.run] Received response for canceled request {id}"
           client.canceledRequests.excl id
+        elif client.idToMethod.contains(id):
+          let meth = client.idToMethod[id]
+          client.idToMethod.del(id)
+          debugf"[run] received response with id {id} and method {meth}"
+          let parsedResponse = response.toResponse JsonNode
+          case meth
+
+          of "textDocument/definition": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetDefinition, getDefinition: parsedResponse.to(DefinitionResponse)))
+          of "textDocument/declaration": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetDeclaration, getDeclaration: parsedResponse.to(DeclarationResponse)))
+          of "textDocument/typeDefinition": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetTypeDefinition, getTypeDefinition: parsedResponse.to(TypeDefinitionResponse)))
+          of "textDocument/implementation": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetImplementation, getImplementation: parsedResponse.to(ImplementationResponse)))
+          of "textDocument/references": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetReferences, getReferences: parsedResponse.to(ReferenceResponse)))
+          of "textDocument/switchSourceHeader": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetSwitchSourceHeader, getSwitchSourceHeader: parsedResponse.to(string)))
+          of "textDocument/hover": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetHover, getHover: parsedResponse.to(DocumentHoverResponse)))
+          of "textDocument/inlayHint": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetInlayHint, getInlayHint: parsedResponse.to(InlayHintResponse)))
+          of "textDocument/documentSymbol": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetDocumentSymbol, getDocumentSymbol: parsedResponse.to(DocumentSymbolResponse)))
+          of "workspace/symbol": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetSymbol, getSymbol: parsedResponse.to(WorkspaceSymbolResponse)))
+          of "textDocument/diagnostic": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetDiagnostic, getDiagnostic: parsedResponse.to(DocumentDiagnosticResponse)))
+          of "textDocument/completion": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetCompletion, getCompletion: parsedResponse.to(CompletionResponse)))
+
         else:
           log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
+
     except:
       log lvlError, &"[run] error: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       discard
@@ -931,11 +1136,12 @@ proc handleNotifiesChanged(client: LSPClient) {.async, gcsafe.} =
 proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
   asyncCheck client.connect()
   asyncCheck client.runAsync()
-  asyncCheck client.handleGetSymbols()
   asyncCheck client.handleNotifiesOpened()
   asyncCheck client.handleNotifiesClosed()
   asyncCheck client.handleNotifiesChanged()
+  asyncCheck client.handleRequests()
 
+  # todo: cleanup
   while true:
     if hasPendingOperations():
       poll()
