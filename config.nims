@@ -93,6 +93,8 @@ when defined(musl):
 else:
   switch("d", "ssl")
 
+patchFile("stdlib", "excpt", "patches/excpt")
+
 # switches for debugging
 # switch("d", "wasm3EnableStrace2")
 # switch("d", "wasm3RecordBacktraces")
