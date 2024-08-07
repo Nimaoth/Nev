@@ -530,6 +530,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if partIndex.getSome(partIndex):
       let styledLine = self.getStyledText(line)
       let (startRune, _) = styledLine.getTextRange(partIndex)
+      if partIndex notin 0..<styledLine.parts.len:
+        return
+
       let part = styledLine.parts[partIndex]
       let isInlay = part.textRange.isNone
       let offset = self.getCursorPos(builder, part.text, line, startRune, if isInlay: vec2() else: pos)
@@ -562,6 +565,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     let newCursor = if partIndex.getSome(partIndex):
       let styledLine = self.getStyledText(line)
       let (startRune, _) = styledLine.getTextRange(partIndex)
+      if partIndex notin 0..<styledLine.parts.len:
+        return
+
       let part = styledLine.parts[partIndex]
       let isInlay = part.textRange.isNone
       let offset = self.getCursorPos(builder, part.text, line, startRune, if isInlay: vec2() else: pos)
@@ -585,6 +591,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     let styledLine = self.getStyledText(line)
     let (startRune, _) = styledLine.getTextRange(partIndex)
+    if partIndex notin 0..<styledLine.parts.len:
+      return
+
     let part = styledLine.parts[partIndex]
     let offset = self.getCursorPos(builder, part.text, line, startRune, pos)
     self.lastHoverLocationBounds = node.boundsAbsolute.some
@@ -596,6 +605,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     let styledLine = self.getStyledText(line)
     let (startRune, _) = styledLine.getTextRange(partIndex)
+    if partIndex notin 0..<styledLine.parts.len:
+      return
+
     let part = styledLine.parts[partIndex]
     let offset = self.getCursorPos(builder, part.text, line, startRune, pos)
     self.lastHoverLocationBounds = node.boundsAbsolute.some
