@@ -108,7 +108,7 @@ proc logErrors(process: AsyncProcess): Future[void] {.async.} =
 
 var socket: WebSocket = nil
 
-proc callback(req: Request): Future[void] {.async.} =
+proc callback(req: Request): Future[void] {.async, gcsafe.} =
   log lvlInfo, fmt"Connection requested from {req}"
   let process: AsyncProcess = ({.gcsafe.}: process)
 
@@ -139,14 +139,15 @@ proc callback(req: Request): Future[void] {.async.} =
     logger.flush()
   quit(0)
 
-proc checkProcessStatus(): Future[void] {.async.} =
+proc checkProcessStatus(): Future[void] {.async, gcsafe.} =
+  let process: AsyncProcess = ({.gcsafe.}: process)
   while true:
     await sleepAsync(1000)
     if not process.isAlive:
       log lvlError, "Process died"
       quit(1)
 
-process.onRestarted = proc() {.async.} =
+process.onRestarted = proc() {.async, gcsafe.} =
   asyncCheck checkProcessStatus()
   var server = newAsyncHttpServer()
   await server.serve(Port(port), callback)
