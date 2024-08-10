@@ -75,6 +75,10 @@ proc getEnclosing(line: string, column: int, predicate: proc(c: char): bool): (i
     dec startColumn
   return (startColumn, endColumn)
 
+proc vimHandleSelectWorld(editor: TextDocumentEditor, cursor: Cursor, mode: string) {.exposeActive(editorContext, "vim-handle-select-word").} =
+  editor.setSelection(cursor.toSelection)
+  editor.setMode(mode)
+
 proc vimSelectLine(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-select-line").} =
   editor.selections = editor.selections.mapIt (if it.isBackwards:
       ((it.first.line, editor.lineLength(it.first.line)), (it.last.line, 0))
@@ -1414,7 +1418,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addCommand "editor", "<C-k><CS-r>", "reload-state"
   addTextCommandBlock "", "<C-k><C-z>": collectGarbage()
 
-  addTextCommand "", "M", "enter-choose-cursor-mode", "set-selection"
+  addTextCommand "", "M", "enter-choose-cursor-mode", "vim-handle-select-word"
 
   addTextCommandBlock "", "gt":
     editor.selection = editor.getNextDiagnostic(editor.selection.last, 1).first.toSelection
