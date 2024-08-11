@@ -1210,8 +1210,8 @@ proc stepOut*(self: Debugger) {.expose("debugger").} =
 genDispatcher("debugger")
 addGlobalDispatchTable "debugger", genDispatchTable("debugger")
 
-proc dispatchEvent*(action: string, args: JsonNode): bool =
-  dispatch(action, args).isSome
+proc dispatchEvent*(action: string, args: JsonNode): Option[JsonNode] =
+  dispatch(action, args)
 
 proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
   # debugf"[textedit] handleAction {action}, '{args}'"

@@ -2293,9 +2293,10 @@ proc getFlag*(self: TextDocumentEditor; name: string): bool =
   result = parseJson($res).jsonTo(typeof(result))
 
 
-proc editor_text_runAction_bool_TextDocumentEditor_string_JsonNode_wasm(
+proc editor_text_runAction_Option_JsonNode_TextDocumentEditor_string_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
-proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): bool =
+proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): Option[
+    JsonNode] =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -2313,7 +2314,7 @@ proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): bool 
     else:
       args.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_runAction_bool_TextDocumentEditor_string_JsonNode_wasm(
+  let res {.used.} = editor_text_runAction_Option_JsonNode_TextDocumentEditor_string_JsonNode_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 

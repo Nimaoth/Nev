@@ -457,7 +457,7 @@ proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newM
     log(lvlError, fmt"Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
-proc handleAction(self: App, action: string, arg: string, record: bool): bool
+proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode]
 proc getFlag*(self: App, flag: string, default: bool = false): bool
 
 proc createEditorForDocument(self: App, document: Document): DocumentEditor =
@@ -1063,22 +1063,37 @@ import asynchttpserver, asyncnet
 proc processClient(client: AsyncSocket) {.async.} =
   log lvlInfo, &"Process client"
   let self: App = ({.gcsafe.}: gEditor)
-  while not client.isClosed:
-    let line = await client.recvLine()
-    if line.len == 0:
-      break
 
-    log lvlInfo, &"Run command from client: '{line}'"
-    let command = line
-    let (action, arg) = parseAction(command)
-    discard self.handleAction(action, arg, record=true)
+  try:
+    while not client.isClosed:
+      let line = await client.recvLine()
+      if line.len == 0:
+        break
+
+      log lvlInfo, &"Run command from client: '{line}'"
+      let command = line
+      let (action, arg) = parseAction(command)
+      let response = self.handleAction(action, arg, record=true)
+      if response.getSome(r):
+        await client.send($r & "\n")
+      else:
+        await client.send("\n")
+
+  except:
+    log lvlError, &"Failed to read data from connection: {getCurrentExceptionMsg()}"
 
 proc serve(port: Port) {.async.} =
   log lvlInfo, &"Listen for connections on port {port.int}"
-  var server = newAsyncSocket()
-  server.setSockOpt(OptReuseAddr, true)
-  server.bindAddr(port)
-  server.listen()
+  var server: AsyncSocket
+
+  try:
+    server = newAsyncSocket()
+    server.setSockOpt(OptReuseAddr, true)
+    server.bindAddr(port)
+    server.listen()
+  except:
+    log lvlError, &"Failed to create server on port {port.int}: {getCurrentExceptionMsg()}"
+    return
 
   while true:
     let client = await server.accept()
@@ -1157,7 +1172,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   assignEventHandler(self.eventHandler, self.getEventHandlerConfig("editor")):
     onAction:
-      if self.handleAction(action, arg, record=true):
+      if self.handleAction(action, arg, record=true).isSome:
         Handled
       else:
         Ignored
@@ -1166,7 +1181,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   assignEventHandler(self.commandLineEventHandlerHigh, self.getEventHandlerConfig("command-line-high")):
     onAction:
-      if self.handleAction(action, arg, record=true):
+      if self.handleAction(action, arg, record=true).isSome:
         Handled
       else:
         Ignored
@@ -1175,7 +1190,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   assignEventHandler(self.commandLineEventHandlerLow, self.getEventHandlerConfig("command-line-low")):
     onAction:
-      if self.handleAction(action, arg, record=true):
+      if self.handleAction(action, arg, record=true).isSome:
         Handled
       else:
         Ignored
@@ -2199,7 +2214,7 @@ proc executeCommandLine*(self: App): bool {.expose("editor").} =
   if arg.startsWith("\\"):
     arg = $newJString(arg[1..^1])
 
-  return self.handleAction(action, arg, record=true)
+  return self.handleAction(action, arg, record=true).isSome
 
 proc writeFile*(self: App, path: string = "", appFile: bool = false) {.expose("editor").} =
   defer:
@@ -3356,7 +3371,7 @@ proc setMode*(self: App, mode: string) {.expose("editor").} =
     let config = self.getModeConfig(mode)
     assignEventHandler(self.modeEventHandler, config):
       onAction:
-        if self.handleAction(action, arg, record=true):
+        if self.handleAction(action, arg, record=true).isSome:
           Handled
         else:
           Ignored
@@ -3951,7 +3966,7 @@ proc recordCommand*(self: App, command: string, args: string) =
       self.registers[register].text.add "\n"
     self.registers[register].text.add command & " " & args
 
-proc handleAction(self: App, action: string, arg: string, record: bool): bool =
+proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
   logScope lvlInfo, &"[handleAction] '{action} {arg}'"
 
   if record:
@@ -3966,43 +3981,39 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
     log(lvlError, getCurrentException().getStackTrace())
 
   if action.startsWith("."): # active action
-    if lsp_client.dispatchEvent(action[1..^1], args):
-      return true
+    if lsp_client.dispatchEvent(action[1..^1], args).getSome(r):
+      return r.some
 
     if self.getActiveEditor().getSome(editor):
-      return case editor.handleAction(action[1..^1], arg, record=false)
-        of Handled:
-          true
-        else:
-          false
+      return editor.handleAction(action[1..^1], arg, record=false)
 
     log lvlError, fmt"No current view"
-    return false
+    return JsonNode.none
 
-  if debugger.dispatchEvent(action, args):
-    return true
+  if debugger.dispatchEvent(action, args).getSome(r):
+    return r.some
 
   try:
     withScriptContext self, self.nimsScriptContext:
       let res = self.nimsScriptContext.handleScriptAction(action, args)
       if res.isNotNil:
-        return true
+        return res.some
 
     withScriptContext self, self.wasmScriptContext:
       let res = self.wasmScriptContext.handleScriptAction(action, args)
       if res.isNotNil:
-        return true
+        return res.some
   except CatchableError:
     log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
-    return dispatch(action, args).isSome
+    return dispatch(action, args)
   except CatchableError:
     log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
-  return true
+  return JsonNode.none
 
 template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
   when enableNimscript and not defined(js):

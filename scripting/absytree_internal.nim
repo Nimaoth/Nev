@@ -326,8 +326,8 @@ proc editor_text_setFlag_void_TextDocumentEditor_string_bool_impl*(
 proc editor_text_getFlag_bool_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; name: string): bool =
   discard
-proc editor_text_runAction_bool_TextDocumentEditor_string_JsonNode_impl*(
-    self: TextDocumentEditor; action: string; args: JsonNode): bool =
+proc editor_text_runAction_Option_JsonNode_TextDocumentEditor_string_JsonNode_impl*(
+    self: TextDocumentEditor; action: string; args: JsonNode): Option[JsonNode] =
   discard
 proc editor_text_findWordBoundary_Selection_TextDocumentEditor_Cursor_impl*(
     self: TextDocumentEditor; cursor: Cursor): Selection =

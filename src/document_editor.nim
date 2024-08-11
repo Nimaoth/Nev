@@ -1,4 +1,4 @@
-import std/[json, tables]
+import std/[json, tables, options]
 import vmath, bumpy
 import misc/[event, custom_logger, id]
 import document, events, input, config_provider
@@ -69,7 +69,7 @@ method createWithDocument*(self: DocumentEditor, document: Document, configProvi
 
 method getDocument*(self: DocumentEditor): Document {.base.} = discard
 
-method handleAction*(self: DocumentEditor, action: string, arg: string, record: bool = true): EventResponse {.base.} = discard
+method handleAction*(self: DocumentEditor, action: string, arg: string, record: bool = true): Option[JsonNode] {.base.} = discard
 
 method getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.base.} =
   return @[]
