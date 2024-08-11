@@ -3660,7 +3660,7 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
 genDispatcher("editor.model")
 addActiveDispatchTable "editor.model", genDispatchTable("editor.model")
 
-method handleAction*(self: ModelDocumentEditor, action: string, arg: string, record: bool): EventResponse =
+method handleAction*(self: ModelDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
   # log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
   # defer:
   #   log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"
@@ -3674,14 +3674,14 @@ method handleAction*(self: ModelDocumentEditor, action: string, arg: string, rec
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if dispatch(action, args).isSome:
+    if dispatch(action, args).getSome(res):
       self.markDirty()
-      return Handled
+      return res.some
   except CatchableError:
     log lvlError, fmt"Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}"
     log lvlError, getCurrentException().getStackTrace()
 
-  return Ignored
+  return JsonNode.none
 
 method getStateJson*(self: ModelDocumentEditor): JsonNode =
   return %*{

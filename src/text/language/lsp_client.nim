@@ -418,8 +418,11 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
         future.complete parsedResponse
         requests.del(id)
         let index = client.requestsPerMethod[meth].find(id)
-        assert index != -1
-        client.requestsPerMethod[meth].delete index
+        if index != -1:
+          client.requestsPerMethod[meth].delete index
+        else:
+          let temp {.inject.} = meth
+          log lvlError, &"Request not found: {id}, {temp}, {client.requestsPerMethod[temp]}"
       elif client.canceledRequests.contains(id):
         # Request was canceled
         # debugf"[LSP.run] Received response for canceled request {id}"
@@ -1086,8 +1089,8 @@ proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
 genDispatcher("lsp")
 addActiveDispatchTable "lsp", genDispatchTable("lsp"), global=true
 
-proc dispatchEvent*(action: string, args: JsonNode): bool =
-  dispatch(action, args).isSome
+proc dispatchEvent*(action: string, args: JsonNode): Option[JsonNode] =
+  dispatch(action, args)
 
 proc handleGetSymbols(client: LSPClient) {.async, gcsafe.} =
   while client != nil:

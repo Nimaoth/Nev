@@ -187,7 +187,7 @@ template noSelectionHistory(self, body: untyped): untyped =
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider
   ): TextDocumentEditor
-proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
+proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
@@ -1035,7 +1035,10 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
     let config = self.getModeConfig(mode)
     assignEventHandler(self.modeEventHandler, config):
       onAction:
-        self.handleAction action, arg, record=true
+        if self.handleAction(action, arg, record=true).isSome:
+          Handled
+        else:
+          Ignored
       onInput:
         self.handleInput input, record=true
 
@@ -1907,10 +1910,10 @@ proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("edi
 proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
   return self.configProvider.getFlag("editor.text." & name, false)
 
-proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool {.
+proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.
     expose("editor.text").} =
   # echo "runAction ", action, ", ", $args
-  return self.handleActionInternal(action, args) == Handled
+  return self.handleActionInternal(action, args)
 
 proc findWordBoundary*(self: TextDocumentEditor, cursor: Cursor): Selection {.expose("editor.text").} =
   self.document.findWordBoundary(cursor)
@@ -3047,7 +3050,10 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
       self.styledTextOverrides.clear()
       self.document.notifyTextChanged()
       self.markDirty()
-      self.handleAction action, arg, record=true
+      if self.handleAction(action, arg, record=true).isSome:
+        Handled
+      else:
+        Ignored
 
     onInput:
       Ignored
@@ -3156,25 +3162,27 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
     self.document.insertText(result, inlayHint.location.column.RuneIndex, inlayHint.label,
       "comment", containCursor=true)
 
-proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
+proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
   # debugf"[textedit] handleAction {action}, '{args}'"
 
   var args = args.copy
   args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
 
-  if self.app.invokeAnyCallback(action, args).isNotNil:
-    dec self.commandCount
-    while self.commandCount > 0:
-      if self.app.invokeAnyCallback(action, args).isNil:
-        break
+  block:
+    let res = self.app.invokeAnyCallback(action, args)
+    if res.isNotNil:
       dec self.commandCount
-    self.commandCount = self.commandCountRestore
-    self.commandCountRestore = 0
-    return Handled
+      while self.commandCount > 0:
+        if self.app.invokeAnyCallback(action, args).isNil:
+          break
+        dec self.commandCount
+      self.commandCount = self.commandCountRestore
+      self.commandCountRestore = 0
+      return res.some
 
   try:
     # debugf"dispatch {action}, {args}"
-    if dispatch(action, args).isSome:
+    if dispatch(action, args).getSome(res):
       dec self.commandCount
       while self.commandCount > 0:
         if dispatch(action, args).isNone:
@@ -3182,14 +3190,15 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
         dec self.commandCount
       self.commandCount = self.commandCountRestore
       self.commandCountRestore = 0
-      return Handled
+      return res.some
   except CatchableError:
-    log(lvlError, fmt"Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}")
+    let argsText = if args.isNil: "nil" else: $args
+    log(lvlError, fmt"Failed to dispatch action '{action} {argsText}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
-  return Ignored
+  return JsonNode.none
 
-method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): EventResponse =
+method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
   # debugf "handleAction {action}, '{arg}'"
 
   let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
@@ -3222,7 +3231,7 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
     return self.handleActionInternal(action, args)
   except CatchableError:
     log(lvlError, fmt"handleAction: {action}, Failed to parse args: '{arg}'")
-    return Failed
+    return JsonNode.none
 
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse =
   if not self.isRunningSavedCommands:
@@ -3245,13 +3254,19 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   let config = app.getEventHandlerConfig("editor.text")
   assignEventHandler(self.eventHandler, config):
     onAction:
-      self.handleAction action, arg, record=true
+      if self.handleAction(action, arg, record=true).isSome:
+        Handled
+      else:
+        Ignored
     onInput:
       self.handleInput input, record=true
 
   assignEventHandler(self.completionEventHandler, app.getEventHandlerConfig("editor.text.completion")):
     onAction:
-      self.handleAction action, arg, record=true
+      if self.handleAction(action, arg, record=true).isSome:
+        Handled
+      else:
+        Ignored
     onInput:
       self.handleInput input, record=true
 

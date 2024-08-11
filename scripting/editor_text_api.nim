@@ -325,9 +325,10 @@ proc setFlag*(self: TextDocumentEditor; name: string; value: bool) =
   editor_text_setFlag_void_TextDocumentEditor_string_bool_impl(self, name, value)
 proc getFlag*(self: TextDocumentEditor; name: string): bool =
   editor_text_getFlag_bool_TextDocumentEditor_string_impl(self, name)
-proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): bool =
-  editor_text_runAction_bool_TextDocumentEditor_string_JsonNode_impl(self,
-      action, args)
+proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): Option[
+    JsonNode] =
+  editor_text_runAction_Option_JsonNode_TextDocumentEditor_string_JsonNode_impl(
+      self, action, args)
 proc findWordBoundary*(self: TextDocumentEditor; cursor: Cursor): Selection =
   editor_text_findWordBoundary_Selection_TextDocumentEditor_Cursor_impl(self,
       cursor)
