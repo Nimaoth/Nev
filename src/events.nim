@@ -5,6 +5,8 @@ import input
 
 logCategory "events"
 
+var debugEventHandlers = false
+
 type EventResponse* = enum
   Failed,
   Ignored,
@@ -229,8 +231,11 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
 
     let prevStates = handler.states
     handler.states = handler.dfa.stepAll(handler.states, input, modifiers)
-    # debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}\n  {prevStates}\n  -> {handler.states}"
-    # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
+
+    if debugEventHandlers:
+      debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}\n  {prevStates}\n  -> {handler.states}"
+      # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
+
     if not handler.inProgress:
       handler.reset()
       if not prevStates.inProgress:
@@ -248,15 +253,20 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
       handler.reset()
       # handler.state.current = handler.dfa.getDefaultState(handler.state.current) # todo
       return handler.handleAction(action, arg)
+
     else:
       if not handler.handleProgress.isNil:
         handler.handleProgress(input)
       return Progress
+
   else:
     return Failed
 
 proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers): EventResponse =
   let anyInProgress = handlers.anyInProgress
+
+  if debugEventHandlers:
+    debugf"handleEvent {inputToString(input, modifiers)}: {handlers.mapIt(it.config.context)}"
 
   var anyProgressed = false
   var anyFailed = false
@@ -306,3 +316,5 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
 
 proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[string, string]] =
   config.commands
+
+proc config*(handler: EventHandler): EventHandlerConfig = handler.config
