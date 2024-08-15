@@ -278,6 +278,7 @@ proc closeUnusedDocuments*(self: App)
 proc tryOpenExisting*(self: App, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor]
 proc setOption*(self: App, option: string, value: JsonNode, override: bool = true)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "")
+proc currentEventHandlers*(self: App): seq[EventHandler]
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -3354,6 +3355,11 @@ proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
 
 proc logOptions*(self: App) {.expose("editor").} =
   log(lvlInfo, self.options.pretty)
+
+proc dumpKeymapGraphViz*(self: App, context: string = "") {.expose("editor").} =
+  for handler in self.currentEventHandlers():
+    if context == "" or handler.config.context == context:
+      fs.saveApplicationFile(handler.config.context & ".dot", handler.dfa.dumpGraphViz)
 
 proc clearCommands*(self: App, context: string) {.expose("editor").} =
   log(lvlInfo, fmt"Clearing keybindings for {context}")
