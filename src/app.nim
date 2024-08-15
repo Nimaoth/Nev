@@ -1082,8 +1082,7 @@ proc processClient(client: AsyncSocket) {.async.} =
   except:
     log lvlError, &"Failed to read data from connection: {getCurrentExceptionMsg()}"
 
-proc serve(port: Port) {.async.} =
-  log lvlInfo, &"Listen for connections on port {port.int}"
+proc serve(port: Port, savePort: bool) {.async.} =
   var server: AsyncSocket
 
   try:
@@ -1091,6 +1090,12 @@ proc serve(port: Port) {.async.} =
     server.setSockOpt(OptReuseAddr, true)
     server.bindAddr(port)
     server.listen()
+    let actualPort = server.getLocalAddr()[1]
+    log lvlInfo, &"Listen for connections on port {actualPort.int}"
+    let fileName = getTempDir() / ("absytree_port_" & $os.getCurrentProcessId())
+    if savePort:
+      log lvlInfo, &"Write port to {fileName}"
+      fs.saveFile(fileName, $actualPort.int)
   except:
     log lvlError, &"Failed to create server on port {port.int}: {getCurrentExceptionMsg()}"
     return
@@ -1101,7 +1106,7 @@ proc serve(port: Port) {.async.} =
     asyncCheck processClient(client)
 
 proc listenForConnection*(self: App, port: Port) {.async.} =
-  await serve(port)
+  await serve(port, self.getFlag("command-server.save-file", false))
 
 proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
@@ -1241,7 +1246,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.runConfigCommands("startup-commands")
 
-  if self.getOption("command-server-port", Port.none).getSome(port):
+  if self.getOption("command-server.port", Port.none).getSome(port):
     asyncCheck self.listenForConnection(port)
 
   self.commandHistory = state.commandHistory
