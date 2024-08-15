@@ -167,8 +167,10 @@ proc chooseFile*() =
   ## Press <ENTER> to select a file
   ## Press <ESCAPE> to close the dialogue
   editor_chooseFile_void_App_impl()
-proc chooseOpen*() =
-  editor_chooseOpen_void_App_impl()
+proc chooseOpen*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
+                 previewScale: float = 0.6) =
+  editor_chooseOpen_void_App_bool_float_float_float_impl(preview, scaleX,
+      scaleY, previewScale)
 proc chooseOpenDocument*() =
   editor_chooseOpenDocument_void_App_impl()
 proc gotoNextLocation*() =
@@ -240,6 +242,8 @@ proc saveSession*(sessionFile: string = "") =
   editor_saveSession_void_App_string_impl(sessionFile)
 proc logOptions*() =
   editor_logOptions_void_App_impl()
+proc dumpKeymapGraphViz*(context: string = "") =
+  editor_dumpKeymapGraphViz_void_App_string_impl(context)
 proc clearCommands*(context: string) =
   editor_clearCommands_void_App_string_impl(context)
 proc getAllEditors*(): seq[EditorId] =
