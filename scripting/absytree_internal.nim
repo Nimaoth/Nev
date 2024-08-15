@@ -755,7 +755,9 @@ proc editor_browseKeybinds_void_App_impl*() =
   discard
 proc editor_chooseFile_void_App_impl*() =
   discard
-proc editor_chooseOpen_void_App_impl*() =
+proc editor_chooseOpen_void_App_bool_float_float_float_impl*(
+    preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
+    previewScale: float = 0.6) =
   discard
 proc editor_chooseOpenDocument_void_App_impl*() =
   discard
@@ -801,6 +803,8 @@ proc editor_reloadState_void_App_impl*() =
 proc editor_saveSession_void_App_string_impl*(sessionFile: string = "") =
   discard
 proc editor_logOptions_void_App_impl*() =
+  discard
+proc editor_dumpKeymapGraphViz_void_App_string_impl*(context: string = "") =
   discard
 proc editor_clearCommands_void_App_string_impl*(context: string) =
   discard

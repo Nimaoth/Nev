@@ -696,7 +696,7 @@ import text/language/lsp_client
 when enableAst:
   import ast/[model_document]
 import selector_popup
-import finder/[workspace_file_previewer]
+import finder/[workspace_file_previewer, open_editor_previewer]
 
 # todo: remove this function
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =
@@ -2522,14 +2522,14 @@ proc chooseFile*(self: App) {.expose("editor").} =
 
   self.pushPopup popup
 
-proc chooseOpen*(self: App) {.expose("editor").} =
+proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
   proc getItems(): seq[FinderItem] =
     var items = newSeq[FinderItem]()
     let allViews = self.views & self.hiddenViews
-    for view in allViews:
+    for i, view in allViews:
       if not (view of EditorView):
         continue
 
@@ -2537,6 +2537,12 @@ proc chooseOpen*(self: App) {.expose("editor").} =
       let path = view.EditorView.document.filename
       let isDirty = view.EditorView.document.lastSavedRevision != view.EditorView.document.revision
       let dirtyMarker = if isDirty: "*" else: " "
+      let activeMarker = if i == self.currentView:
+        "#"
+      elif i < self.views.len:
+        "👁"
+      else:
+        " "
 
       let (directory, name) = path.splitPath
       var relativeDirectory = directory
@@ -2549,9 +2555,9 @@ proc chooseOpen*(self: App) {.expose("editor").} =
         relativeDirectory = ""
 
       items.add FinderItem(
-        displayName: dirtyMarker & name,
+        displayName: activeMarker & dirtyMarker & name,
         filterText: name,
-        data: data,
+        data: $view.EditorView.editor.id,
         detail: relativeDirectory,
       )
 
@@ -2561,15 +2567,22 @@ proc chooseOpen*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some)
-  popup.scale.x = 0.35
+  let previewer = if preview:
+    newOpenEditorPreviewer(self.asConfigProvider).Previewer.toDisposableRef.some
+  else:
+    DisposableRef[Previewer].none
+
+  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    if item.data.WorkspacePath.decodePath().getSome(path):
-      discard self.openWorkspaceFile(path.path)
-    else:
-      discard self.openFile(item.data)
-      log lvlError, fmt"Failed to open location {item}"
+    let editorId = item.data.parseInt.EditorId.catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return true
+
+    discard self.tryOpenExisting(editorId)
     return true
 
   popup.addCustomCommand "close-selected", proc(popup: SelectorPopup, args: JsonNode): bool =

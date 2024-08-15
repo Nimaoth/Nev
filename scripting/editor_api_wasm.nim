@@ -903,11 +903,34 @@ proc chooseFile*() =
   let res {.used.} = editor_chooseFile_void_App_wasm(argsJsonString.cstring)
 
 
-proc editor_chooseOpen_void_App_wasm(arg: cstring): cstring {.importc.}
-proc chooseOpen*() =
+proc editor_chooseOpen_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc chooseOpen*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
+                 previewScale: float = 0.6) =
   var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      preview
+    else:
+      preview.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      scaleX
+    else:
+      scaleX.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      scaleY
+    else:
+      scaleY.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      previewScale
+    else:
+      previewScale.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_chooseOpen_void_App_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_chooseOpen_void_App_bool_float_float_float_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_chooseOpenDocument_void_App_wasm(arg: cstring): cstring {.importc.}
@@ -1124,6 +1147,20 @@ proc logOptions*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_logOptions_void_App_wasm(argsJsonString.cstring)
+
+
+proc editor_dumpKeymapGraphViz_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc dumpKeymapGraphViz*(context: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      context
+    else:
+      context.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_dumpKeymapGraphViz_void_App_string_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_clearCommands_void_App_string_wasm(arg: cstring): cstring {.importc.}
