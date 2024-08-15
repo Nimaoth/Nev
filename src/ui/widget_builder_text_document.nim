@@ -123,7 +123,10 @@ proc getCursorPos(self: TextDocumentEditor, builder: UINodeBuilder, text: string
     let posX = if self.isThickCursor(): pos.x else: pos.x + w * 0.5
 
     if posX < offset + w:
-      let byteIndex = self.document.lines[line].toOpenArray.runeOffset(startOffset + i.RuneCount)
+      let runeOffset = startOffset + i.RuneCount
+      if runeOffset.RuneCount >= self.document.lines[line].toOpenArray.runeLen.RuneCount:
+        return 0
+      let byteIndex = self.document.lines[line].toOpenArray.runeOffset(runeOffset)
       return byteIndex
 
     offset += w
@@ -520,6 +523,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let changedTextBackgroundColor = app.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
 
   proc handleClick(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
+    if self.document.isNil:
+      return
+
     self.lastPressedMouseButton = btn
 
     if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
@@ -554,6 +560,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.markDirty()
 
   proc handleDrag(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
+    if self.document.isNil:
+      return
+
     if line >= self.document.lines.len:
       return
 
@@ -586,6 +595,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.markDirty()
 
   proc handleBeginHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
+    if self.document.isNil:
+      return
+
     if line >= self.document.lines.len:
       return
 
@@ -600,6 +612,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.showHoverForDelayed (line, offset)
 
   proc handleHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
+    if self.document.isNil:
+      return
+
     if line >= self.document.lines.len:
       return
 
@@ -614,6 +629,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.showHoverForDelayed (line, offset)
 
   proc handleEndHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
+    if self.document.isNil:
+      return
+
     self.hideHoverDelayed()
 
   var options = LineRenderOptions(
