@@ -1,6 +1,10 @@
 # Package
 
-version       = "0.1.1"
+# This is required for LSP to work with this file and not show tons of errros
+when defined(nimsuggest):
+  include nimble_nimsuggest_definitions
+
+version       = "0.2.2"
 author        = "Nimaoth"
 description   = "Text Editor"
 license       = "MIT"
@@ -101,8 +105,11 @@ task buildDesktop, "Build the desktop version":
 task buildTerminal, "Build the terminal version":
   selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
 
+task buildTerminalDebug, "Build the terminal version (debug)":
+  selfExec fmt"c -o:ast{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:absytreeBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --debuginfo -g -D:debug --lineDir:off --nilChecks:on --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on {getCommandLineParams()} ./src/absytree.nim"
   # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
@@ -137,3 +144,11 @@ task buildBrowser, "Build the browser version":
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":
     selfExec fmt"c -d:release -o:wasm/{projectName()}.wasm {getCommandLineParams()}"
+
+task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
+  exec fmt"nimble buildNimConfigWasm keybindings_plugin.nim"
+  exec fmt"nimble buildNimConfigWasm harpoon.nim"
+  exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
+
+task flamegraph, "Perf/flamegraph":
+  exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph-lsp-new.svg -- astt -s:linux.absytree-session"
