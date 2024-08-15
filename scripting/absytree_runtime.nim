@@ -262,6 +262,10 @@ template addCommandBlock*(context: string, keys: string, body: untyped): untyped
   addCommand context, keys, proc() =
     body
 
+template addCommandBlockDesc*(context: string, keys: string, desc: string, body: untyped): untyped =
+  addCommandDesc context, keys, desc, proc() =
+    body
+
 func getContextWithMode*(context: string, mode: string): string =
   if mode.len == 0 or mode[0] == '#':
     return context & mode
