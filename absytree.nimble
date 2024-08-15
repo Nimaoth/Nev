@@ -2,7 +2,8 @@
 
 # This is required for LSP to work with this file and not show tons of errros
 when defined(nimsuggest):
-  include nimble_nimsuggest_definitions
+  import system/nimscript
+  var commandLineParams: seq[string]
 
 version       = "0.2.2"
 author        = "Nimaoth"
