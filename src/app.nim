@@ -1403,7 +1403,7 @@ proc splitView*(self: App) {.expose("editor").} =
     self.platform.requestRender()
 
   if self.tryGetCurrentEditorView().getSome(view):
-    discard self.createAndAddView(view.document)
+    discard self.createAndAddView(view.document, append = true)
 
 proc disableLogFrameTime*(self: App, disable: bool) {.expose("editor").} =
   self.disableLogFrameTime = disable
