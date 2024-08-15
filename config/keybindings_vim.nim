@@ -875,11 +875,31 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommandBlockDesc "", "<C-e>", "exit to normal mode":
     editor.selection = editor.selection
     editor.setMode("normal")
+
   addTextCommandBlockDesc "", "<ESCAPE>", "exit to normal mode and clear things":
     if editor.mode == "normal":
       editor.selection = editor.selection
     editor.clearTabStops()
     editor.setMode("normal")
+
+  addCommandBlockDesc "command-line-low", "<ESCAPE>", "exit to normal mode and clear things":
+    if getActiveEditor().isTextEditor(editor):
+      if editor.mode == "normal":
+        exitCommandLine()
+        return
+
+      editor.clearTabStops()
+      editor.setMode("normal")
+
+  addCommandBlock "popup.selector", "<ESCAPE>":
+    if getActiveEditor().isTextEditor(editor):
+      if editor.mode == "normal":
+        if getActivePopup().isSelectorPopup(popup):
+          popup.cancel()
+        return
+
+      editor.clearTabStops()
+      editor.setMode("normal")
 
   addTextCommandBlockDesc "", ".", "replay commands": replayCommands(".")
   addCommand "editor.text.normal", "@<CHAR>", "<CHAR>", proc(editor: TextDocumentEditor, c: string) =
