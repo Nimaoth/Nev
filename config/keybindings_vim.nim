@@ -582,10 +582,16 @@ proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool
   editor.scrollToCursor(Last)
   editor.updateTargetColumn()
 
-proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.exposeActive(editorContext, "move-selection-end").} =
+proc applyMove(editor: TextDocumentEditor, selections: seq[Selection], move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, which: Option[SelectionCursor] = SelectionCursor.none): seq[Selection] =
+  ## Applies the given move `count` times and returns the resulting selections
+  ## `allowEmpty` If true then the move can stop on empty lines
+  ## `backwards` Move backwards
+  ## `count` How often to apply the move
+  ## `which` How to assemble the final selection from the input and the move. If not set uses `editor.text.cursor.movement`
+
   # infof"moveSelectionEnd '{move}' {count} {backwards} {allowEmpty}"
-  let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
-  editor.selections = editor.selections.mapIt(block:
+  let which = which.get(getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both))
+  return selections.mapIt(block:
       var res = it.last
       for k in 0..<max(1, count):
         for i, selection in enumerateTextObjects(editor, res, move, backwards):
@@ -608,6 +614,9 @@ proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool 
       res.toSelection(it, which)
     )
 
+proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.exposeActive(editorContext, "move-selection-end").} =
+
+  editor.selections = editor.applyMove(editor.selections, move, backwards, allowEmpty, count)
   editor.scrollToCursor(Last)
   editor.updateTargetColumn()
 
@@ -967,7 +976,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "completion", "<C-n>", "select-next-completion"
   addTextCommand "completion", "<C-y>", "apply-selected-completion"
 
-  addTextCommand "normal", "<move>", "vim-select-last <move>"
+  addTextCommand "", "<move>", "vim-select-last <move>"
   addTextCommand "", "<?-count>d<move>", """vim-delete-move <move> <#count>"""
   addTextCommand "", "<?-count>c<move>", """vim-change-move <move> <#count>"""
   addTextCommand "", "<?-count>y<move>", """vim-yank-move <move> <#count>"""
@@ -1310,13 +1319,15 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "insert", "<BACKSPACE>", "delete-left"
   addTextCommand "insert", "<DELETE>", "delete-right"
   addTextCommandBlock "insert", "<C-w>":
-    editor.deleteMove("word-line", inside=false, which=SelectionCursor.First)
+    let selections = editor.applyMove(editor.selections, "vim-word", true, true, 1, which = SelectionCursor.Last.some)
+    editor.selections = editor.delete(selections)
+
   addTextCommandBlock "insert", "<C-u>":
-    editor.deleteMove("line-back", inside=false, which=SelectionCursor.First)
+    let selections = editor.applyMove(editor.selections, "vim-line", true, true, 1, which = SelectionCursor.Last.some)
+    editor.selections = editor.delete(selections)
 
   addTextCommand "insert", "<C-t>", "vim-indent"
   addTextCommand "insert", "<C-d>", "vim-unindent"
-  addTextCommand "insert", "<move>", "vim-select-last <move>"
 
   # Visual mode
   addTextCommandBlock "", "v":
