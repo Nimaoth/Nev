@@ -46,13 +46,11 @@ proc updateWordCache(self: CompletionProviderDocument) =
   for i in countdown(self.location.line - 1, 0):
     self.cacheLine(i)
     if timer.elapsed.ms > maxCacheTimeMs:
-      debugf"[updateWordCache] cancel up at line {i}"
       break
 
   for i in countup(self.location.line + 1, self.document.lines.len):
     self.cacheLine(i)
     if timer.elapsed.ms > maxCacheTimeMs:
-      debugf"[updateWordCache] cancel down at line {i}"
       break
 
   # debugf"[updateWordCache] Took {timer.elapsed.ms}ms. Word cache: {self.wordCache.len}"
