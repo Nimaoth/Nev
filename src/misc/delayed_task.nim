@@ -1,6 +1,9 @@
 import std/times
 import custom_async
 
+when defined(debugDelayedTasks):
+  import std/strutils
+
 type
   DelayedTask* = ref object
     restartCounter: int
@@ -9,6 +12,8 @@ type
     nextTick: Time
     repeat: bool
     callback: proc()
+    when defined(debugDelayedTasks):
+      creationStackTrace: string
 
 func isActive*(task: DelayedTask): bool = task.active
 proc reschedule*(task: DelayedTask)
@@ -30,6 +35,9 @@ proc tick(task: DelayedTask): Future[void] {.async.} =
 
       let timeToNextTick = task.nextTick - now
       assert timeToNextTick > initDuration()
+      when defined(debugDelayedTasks):
+        echo "====================== Tick DelayedTask"
+        echo task.creationStackTrace.indent(2)
       await sleepAsync(timeToNextTick.inMilliseconds.int)
 
     if task.restartCounter != restartCounter:
@@ -48,6 +56,8 @@ proc reschedule*(task: DelayedTask) =
 
 proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: proc()): DelayedTask =
   result = DelayedTask(interval: interval.int64, repeat: repeat, callback: callback)
+  when defined(debugDelayedTasks):
+    result.creationStackTrace = getStackTrace()
   if autoActivate:
     result.reschedule()
 
