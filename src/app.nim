@@ -1957,16 +1957,22 @@ proc getOrOpenEditor*(self: App, path: string): Option[EditorId] {.expose("edito
   let editor = self.createEditorForDocument document
   return editor.id.some
 
-proc closeEditor*(self: App, editor: DocumentEditor) =
+proc closeEditor*(self: App, editor: DocumentEditor, removeFromViews: bool = true) =
   let document = editor.getDocument()
   log lvlInfo, fmt"closeEditor: '{editor.getDocument().filename}'"
 
   editor.deinit()
 
-  for i, view in self.hiddenViews:
-    if view of EditorView and view.EditorView.editor == editor:
-      self.hiddenViews.removeShift(i)
-      break
+  if removeFromViews:
+    for i, view in self.hiddenViews:
+      if view of EditorView and view.EditorView.editor == editor:
+        self.hiddenViews.removeShift(i)
+        break
+
+    for i, view in self.views:
+      if view of EditorView and view.EditorView.editor == editor:
+        self.views.removeShift(i)
+        break
 
   if document == self.logDocument:
     return
@@ -2021,36 +2027,12 @@ proc closeOtherViews*(self: App, keepHidden: bool = true) {.expose("editor").} =
         self.hiddenViews.add view
       else:
         if view of EditorView:
-          self.closeEditor(view.EditorView.editor)
+          self.closeEditor(view.EditorView.editor, removeFromViews = false)
 
   self.views.setLen 1
   self.views[0] = view
   self.currentView = 0
   self.platform.requestRender()
-
-proc closeEditor*(self: App, path: string) {.expose("editor").} =
-  log lvlInfo, fmt"close editor with path: '{path}'"
-  let fullPath = if path.isAbsolute:
-    path.normalizePathUnix
-  else:
-    path.absolutePath.normalizePathUnix
-
-  for i, view in self.views:
-    if not (view of EditorView):
-      continue
-    let document = view.EditorView.editor.getDocument()
-    if document.isNil:
-      continue
-    if document.filename == fullPath:
-      self.closeView(i, keepHidden=false)
-      return
-
-  for editor in self.editors.values:
-    if editor.getDocument().isNil:
-      continue
-    if editor.getDocument().filename == fullPath:
-      self.closeEditor(editor)
-      break
 
 proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor] =
   for id, editor in self.editors.pairs:
@@ -2589,11 +2571,17 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     if popup.textEditor.isNil:
       return false
 
-    if popup.getSelectedItem().getSome(item):
-      if item.data.WorkspacePath.decodePath().getSome(path):
-        self.closeEditor(path.path)
-        source.retrigger()
+    let item = popup.getSelectedItem().getOr:
+      return true
 
+    let editorId = item.data.parseInt.EditorId.catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return true
+
+    if self.getEditorForId(editorId).getSome(editor):
+      self.closeEditor(editor)
+
+    source.retrigger()
     return true
 
   self.pushPopup popup

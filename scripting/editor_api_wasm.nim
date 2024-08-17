@@ -698,19 +698,6 @@ proc closeOtherViews*(keepHidden: bool = true) =
       argsJsonString.cstring)
 
 
-proc editor_closeEditor_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc closeEditor*(path: string) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      path
-    else:
-      path.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_closeEditor_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_moveCurrentViewToTop_void_App_wasm(arg: cstring): cstring {.importc.}
 proc moveCurrentViewToTop*() =
   var argsJson = newJArray()

@@ -120,8 +120,6 @@ proc closeCurrentView*(keepHidden: bool = true; restoreHidden: bool = true) =
 proc closeOtherViews*(keepHidden: bool = true) =
   ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
   editor_closeOtherViews_void_App_bool_impl(keepHidden)
-proc closeEditor*(path: string) =
-  editor_closeEditor_void_App_string_impl(path)
 proc moveCurrentViewToTop*() =
   editor_moveCurrentViewToTop_void_App_impl()
 proc nextView*() =

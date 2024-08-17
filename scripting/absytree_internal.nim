@@ -712,8 +712,6 @@ proc editor_closeCurrentView_void_App_bool_bool_impl*(keepHidden: bool = true;
   discard
 proc editor_closeOtherViews_void_App_bool_impl*(keepHidden: bool = true) =
   discard
-proc editor_closeEditor_void_App_string_impl*(path: string) =
-  discard
 proc editor_moveCurrentViewToTop_void_App_impl*() =
   discard
 proc editor_nextView_void_App_impl*() =
