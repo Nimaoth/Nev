@@ -1055,7 +1055,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
             detail[0..<(maxTypeLen - 3)] & "..."
         else:
           ""
-        let scopeText = detail
+        let scopeText = completion.source & " " & detail
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(0, 0), text = scopeText, textColor = scopeColor):
           detailColumn.add currentNode
           maxDetailWidth = max(maxDetailWidth, currentNode.w)

@@ -20,6 +20,7 @@ type
     item*: CompletionItem
     origin*: Option[tuple[line: int, column: RuneIndex]]
     filterText*: string
+    source*: string
     providerIndex: int
     score*: float
 

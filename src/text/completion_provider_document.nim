@@ -78,6 +78,7 @@ proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
         ),
         filterText: self.currentFilterText,
         score: score,
+        source: "DOC",
       )
 
     if i < self.wordCache.len - 1 and loopTimer.elapsed.ms > 3:
