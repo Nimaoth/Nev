@@ -378,7 +378,10 @@ else:
     result = ts.TSQueryMatch.none
     var match: ts.TSQueryMatch
     if cursor.tsQueryCursorNextMatch(addr match):
-      result = match.some
+      when defined(vcc):
+        {.emit: ["Result->has = NIM_TRUE; Result->val = ", match, ";"].}
+      else:
+        result = match.some
 
   proc nextCapture*(cursor: ptr ts.TSQueryCursor): Option[tuple[match: ts.TSQueryMatch, captureIndex: int]] =
     var match: ts.TSQueryMatch
