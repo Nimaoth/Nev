@@ -1,5 +1,5 @@
 import std/[strutils, sugar, sets]
-import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, delayed_task]
+import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, delayed_task, custom_async]
 import language/[lsp_types]
 import completion, text_document
 import scripting_api
@@ -13,6 +13,7 @@ type
     textDeletedHandle: Id
     wordCache: HashSet[string]
     updateTask: DelayedTask
+    revision: int
 
 proc cacheLine(self: CompletionProviderDocument, line: int) =
   let line = self.document.getLine(line)
@@ -55,28 +56,41 @@ proc updateWordCache(self: CompletionProviderDocument) =
 
   # debugf"[updateWordCache] Took {timer.elapsed.ms}ms. Word cache: {self.wordCache.len}"
 
-proc refilterCompletions(self: CompletionProviderDocument) =
+proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
   # debugf"[Doc.refilterCompletions] {self.location}: '{self.currentFilterText}'"
   let timer = startTimer()
+  let revision = self.revision
 
   self.filteredCompletions.setLen 0
+
+  var loopTimer = startTimer()
+  var i = 0
   for word in self.wordCache:
+    defer: inc i
+
     let score = matchFuzzySublime(self.currentFilterText, word, defaultCompletionMatchingConfig).score.float
-    if score < 0:
-      continue
+    if score >= 0:
+      self.filteredCompletions.add Completion(
+        item: CompletionItem(
+          label: word,
+          kind: CompletionKind.Text,
+          score: score.some,
+        ),
+        filterText: self.currentFilterText,
+        score: score,
+      )
 
-    self.filteredCompletions.add Completion(
-      item: CompletionItem(
-        label: word,
-        kind: CompletionKind.Text,
-        score: score.some,
-      ),
-      filterText: self.currentFilterText,
-      score: score,
-    )
+    if i < self.wordCache.len - 1 and loopTimer.elapsed.ms > 3:
+      self.onCompletionsUpdated.invoke (self)
+      await sleepAsync(15)
+      if self.revision != revision:
+        return
 
-  if timer.elapsed.ms > 2:
-    log lvlInfo, &"[Comp-Doc] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.wordCache.len})"
+      loopTimer = startTimer()
+
+
+  # if timer.elapsed.ms > 2:
+  #   log lvlInfo, &"[Comp-Doc] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.wordCache.len})"
   self.onCompletionsUpdated.invoke (self)
 
 proc handleTextInserted(self: CompletionProviderDocument, document: TextDocument, location: Selection, text: string) =
@@ -99,8 +113,9 @@ proc newCompletionProviderDocument*(document: TextDocument): CompletionProviderD
   self.textDeletedHandle = self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
 
   self.updateTask = startDelayed(50, repeat=false):
+    inc self.revision
     self.updateWordCache()
-    self.refilterCompletions()
+    asyncCheck self.refilterCompletions()
 
   self.updateTask.pause()
 

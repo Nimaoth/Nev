@@ -125,6 +125,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   completionMatchPositions*: Table[int, seq[int]] # Maps from completion index to char indices
                                                   # of matching chars
+  completionMatchPositionsFutures*: Table[int, Future[seq[int]]] # Maps from completion index to char indices
+                                                                 # of matching chars
   completionMatches*: seq[tuple[index: int, score: float]]
   disableCompletions*: bool
   completions*: seq[Completion]
@@ -2380,22 +2382,49 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
       else:
         discard self.app.openFile(filename)
 
+proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Future[seq[int]] {.async.} =
+  let revision = self.completionEngine.revision
+
+  await sleepAsync(0)
+  if revision != self.completionEngine.revision or self.document.isNil:
+    return
+
+  while gAsyncFrameTimer.elapsed.ms > 5:
+    await sleepAsync(0)
+    if revision != self.completionEngine.revision or self.document.isNil:
+      return
+
+  if completionIndex notin 0..self.completionMatches.high:
+    return newSeq[int]()
+
+  let index = self.completionMatches[completionIndex].index
+  let filterText = self.completions[index].filterText
+  let label = self.completions[index].item.label
+
+  var matches = newSeqOfCap[int](filterText.len)
+  discard matchFuzzySublime(filterText, label, matches, true, defaultCompletionMatchingConfig)
+
+  self.completionMatchPositions[index] = matches
+  if self.showCompletions:
+    self.markDirty()
+
+  return matches
+
 proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
   self.refilterCompletions()
 
   if completionIndex in self.completionMatchPositions:
     return self.completionMatchPositions[completionIndex]
 
+  if completionIndex in self.completionMatchPositionsFutures:
+    let f = self.completionMatchPositionsFutures[completionIndex]
+    if f.finished:
+      return f.read
+    else:
+      return @[]
+
   if completionIndex < self.completionMatches.len:
-    let completionIndex = self.completionMatches[completionIndex].index
-    let filterText = self.completions[completionIndex].filterText
-    let label = self.completions[completionIndex].item.label
-
-    var matches = newSeqOfCap[int](filterText.len)
-    discard matchFuzzySublime(filterText, label, matches, true, defaultCompletionMatchingConfig)
-
-    self.completionMatchPositions[completionIndex] = matches
-    return matches
+    self.completionMatchPositionsFutures[completionIndex] = self.updateCompletionMatches(completionIndex)
 
   return @[]
 
@@ -2408,6 +2437,7 @@ proc refilterCompletions(self: TextDocumentEditor) =
   for i in 0..<self.completionMatches.len:
     self.completionMatches[i] = (i, 0)
   self.completionMatchPositions.clear()
+  self.completionMatchPositionsFutures.clear()
 
   self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some

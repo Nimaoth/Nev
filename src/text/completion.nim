@@ -37,6 +37,7 @@ type
     combinedCompletions: seq[Completion]
     onCompletionsUpdated*: Event[void]
     combinedDirty: bool
+    revision*: int
 
 method forceUpdateCompletions*(provider: CompletionProvider) {.base.} = discard
 
@@ -82,8 +83,10 @@ proc updateCombinedCompletions(self: CompletionEngine) =
 
   self.combinedCompletions.sort(cmp, Descending)
   self.combinedDirty = false
+  self.revision += 1
 
-  # log lvlInfo, &"[Comp] Combine completions took {timer.elapsed.ms}. {self.combinedCompletions.len} completions."
+  # if timer.elapsed.ms > 5:
+  #   log lvlInfo, &"[Comp] Combine completions took {timer.elapsed.ms}. {self.combinedCompletions.len} completions."
 
 proc handleProviderCompletionsUpdated(self: CompletionEngine, provider: CompletionProvider) =
   self.combinedDirty = true
