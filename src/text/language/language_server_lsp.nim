@@ -411,8 +411,22 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
   let parsedResponse = response.result
 
   if parsedResponse.asDocumentSymbolSeq().getSome(symbols):
-    for s in symbols:
-      debug s
+    for r in symbols:
+      completions.add Symbol(
+        location: (line: r.range.start.line, column: r.range.start.character),
+        name: r.name,
+        symbolType: r.kind.toInternalSymbolKind,
+        filename: filename,
+      )
+
+      for child in r.children:
+        completions.add Symbol(
+          location: (line: child.range.start.line, column: child.range.start.character),
+          name: child.name,
+          symbolType: child.kind.toInternalSymbolKind,
+          filename: filename,
+        )
+
 
   elif parsedResponse.asSymbolInformationSeq().getSome(symbols):
     for r in symbols:
