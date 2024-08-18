@@ -15,6 +15,9 @@
         "zig": {
             "path": "zls"
         },
+        "odin": {
+            "path": "ols"
+        },
         "rust": {
             "path": "rust-analyzer",
             "section": "rust-analyzer"
@@ -52,6 +55,7 @@
         "\.(ts|tsx)$": "typescript",
         "\.(nim|nims|nimble)$": "nim",
         "\.zig$": "zig",
+        "\.odin$": "odin",
         "\.md$": "markdown",
         "\.scm$": "query",
         "\.toml$": "toml",
@@ -257,6 +261,23 @@
                 "["
             ],
             "lineComment": "//"
+        },
+        "odin": {
+            "treesitter": "ap29600/tree-sitter-odin",
+            "tabWidth": 4,
+            "indent": "tab",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ]
         },
         "json": {
             "treesitter": "maxxnino/tree-sitter-json",
