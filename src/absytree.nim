@@ -265,6 +265,9 @@ proc runApp(): Future[void] {.async.} =
     elif lastEvent.elapsed.ms > 1000 and frameSoFar < 10:
       sleep(15 - frameSoFar.int)
       outlierTime += 15
+    elif backend.get == Terminal and frameSoFar < 5:
+      sleep(5 - frameSoFar.int)
+      outlierTime += 5
 
     let totalTime = totalTimer.elapsed.ms
     if not ed.disableLogFrameTime and
