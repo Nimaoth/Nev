@@ -1,3 +1,8 @@
+import misc/timer
+
+## Timer which can be used to check how much async processing has already happened this frame.
+## Generally used `gAsyncFrameTimer.elapsed.ms` to get the time in milliseconds.
+var gAsyncFrameTimer*: Timer
 
 when defined(js):
   import std/asyncjs
