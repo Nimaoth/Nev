@@ -63,6 +63,7 @@ proc refilterCompletions(self: CompletionProviderSnippet) =
       item: item,
       filterText: self.currentFilterText,
       score: score,
+      source: "SNP",
     )
 
   if timer.elapsed.ms > 2:

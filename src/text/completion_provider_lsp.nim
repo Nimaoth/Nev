@@ -35,6 +35,7 @@ proc refilterCompletions(self: CompletionProviderLsp) =
       item: item,
       filterText: self.currentFilterText,
       score: score,
+      source: "LSP",
     )
 
   if timer.elapsed.ms > 2:
