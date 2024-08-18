@@ -12,6 +12,7 @@ type AsyncProcess* = ref object
   name: string
   args: seq[string]
   onRestarted*: proc(): Future[void] {.gcsafe.}
+  onRestartFailed*: proc(): Future[void] {.gcsafe.}
   dontRestart: bool
   process: Process
   input: AsyncChannel[char]
@@ -26,7 +27,7 @@ type AsyncProcess* = ref object
   writerFlowVar: FlowVarBase
 
 proc isAlive*(process: AsyncProcess): bool =
-  return process.process.running
+  return process.process.isNotNil and process.process.running
 
 proc newAsyncChannel*[T](): AsyncChannel[T] =
   new result
@@ -346,11 +347,14 @@ proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
     inc startCounter
 
     if not process.start():
+      if process.onRestartFailed.isNotNil:
+        process.onRestartFailed().await
       break
+
+    startCounter = 0
 
     if not process.onRestarted.isNil:
       process.onRestarted().await
-
 
 proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true): AsyncProcess {.gcsafe.} =
   let process = AsyncProcess()
