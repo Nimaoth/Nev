@@ -751,7 +751,9 @@ proc editor_createFile_void_App_string_impl*(path: string) =
   discard
 proc editor_browseKeybinds_void_App_impl*() =
   discard
-proc editor_chooseFile_void_App_impl*() =
+proc editor_chooseFile_void_App_bool_float_float_float_impl*(
+    preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
+    previewScale: float = 0.5) =
   discard
 proc editor_chooseOpen_void_App_bool_float_float_float_impl*(
     preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
