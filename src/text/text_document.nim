@@ -306,6 +306,9 @@ proc `content=`*(self: TextDocument, value: sink string) =
   self.revision.inc
   self.undoableRevision.inc
 
+  self.undoOps = @[]
+  self.redoOps = @[]
+
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
     log lvlWarn,
@@ -359,6 +362,9 @@ proc `content=`*(self: TextDocument, value: sink string) =
 proc `content=`*(self: TextDocument, value: seq[string]) =
   self.revision.inc
   self.undoableRevision.inc
+
+  self.undoOps = @[]
+  self.redoOps = @[]
 
   if self.singleLine:
     self.lines = @[value.join("")]
