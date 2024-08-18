@@ -66,7 +66,7 @@ jobs:
         id: cache-nimble
         uses: actions/cache@v3
         env:
-          cache-name: cache-nimble-modules-4
+          cache-name: cache-nimble-modules-5
         with:
           path: ~/.nimble
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}
