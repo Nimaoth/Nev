@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.x.x](https://github.com/Nimaoth/Absytree/compare/v0.2.1...main) (2024-07-20)
+## [0.x.x](https://github.com/Nimaoth/Absytree/compare/v0.2.1...main) (2024-08-18)
 
 - Customizable language detection
 - Basic harpoon plugin port
@@ -9,9 +9,10 @@
 - Support WASM treesitter parsers
 - Integrate wasmtime as new WASM engine, for now only for treesitter parsers
 - Added command for installing treesitter parsers (`install-treesitter-parser`, requires `tree-sitter-cli` and `git`)
-- Support file previewer for choose-open
+- Support file previewer for `choose-open` and `choose-file`
 - Open split view in new view instead of current
 - Added command for dumping key map as graphviz file
+- Better performance overall
 - And many small fixes and improvements
 
 ### Vim
