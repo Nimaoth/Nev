@@ -26,6 +26,8 @@ import std/[os, strutils]
 from algorithm import sorted
 # from std/editdistance import editDistanceAscii  # stdlib one yields correct distance BUT for ratio cost should be higher because yields better results (Python does that too)
 
+import misc/timer
+
 var distance: seq[int]
 proc levenshtein_ratio_and_distance*(s, t: string, ratio_calc = true, caseInsensitive: static bool = true): float =
   ## This should be very similar to python implementation
@@ -180,16 +182,18 @@ type
     ]
     ignoredChars: set[char] = {'_', ' ', '.'}
     maxRecursionLevel: int = 4
+    timeoutMs: float64 = 3
 
 const defaultPathMatchingConfig* = FuzzyMatchConfig(ignoredChars: {' '})
 const defaultCompletionMatchingConfig* = FuzzyMatchConfig(ignoredChars: {' '})
 
-proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0): tuple[score: int, matched: bool] {.gcsafe.}
-proc matchFuzzySublime*(pattern, str: string, config: FuzzyMatchConfig = FuzzyMatchConfig()): tuple[score: int, matched: bool] =
+proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0, startTime: Timer = startTimer()): tuple[score: int, matched: bool] {.gcsafe.}
+
+proc matchFuzzySublime*(pattern, str: string, config: FuzzyMatchConfig = FuzzyMatchConfig()): tuple[score: int, matched: bool] {.gcsafe.} =
   var matches: seq[int]
   matchFuzzySublime(pattern.toOpenArray(0, pattern.high), str.toOpenArray(0, str.high), matches, false, config)
 
-proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0): tuple[score: int, matched: bool] =
+proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0, startTime: Timer = startTimer()): tuple[score: int, matched: bool] {.gcsafe.} =
   var
     scoreState = StartMatch
     unmatchedLeadingCharCount = 0
@@ -197,6 +201,9 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
     strIndex = 0
     patIndex = 0
     score = 0
+
+  if config.timeoutMs >= 0 and startTime.elapsed.ms > config.timeoutMs:
+    return (0, false)
 
   if recursionLevel > config.maxRecursionLevel:
     return (score: int.low, matched: false)
@@ -218,6 +225,9 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
       patternChar = pattern[patIndex].toLowerAscii
       strChar     = str[strIndex].toLowerAscii
 
+    if config.timeoutMs >= 0 and startTime.elapsed.ms > config.timeoutMs:
+      break
+
     # Ignore certain characters
     if patternChar in config.ignoredChars:
       patIndex += 1
@@ -229,7 +239,7 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
     if strChar == patternChar:
       if recursionLevel < config.maxRecursionLevel and strIndex + 1 < str.len:
         var tempMatches: seq[int] = matches
-        let tempScore = matchFuzzySublime(pattern[patIndex..^1], str[(strIndex + 1)..^1], tempMatches, recordMatches, config, recursionLevel + 1, baseIndex + strIndex + 1).score
+        let tempScore = matchFuzzySublime(pattern[patIndex..^1], str[(strIndex + 1)..^1], tempMatches, recordMatches, config, recursionLevel + 1, baseIndex + strIndex + 1, startTime).score
         if tempScore > bestRecursionScore:
           bestRecursionScore = tempScore
           if recordMatches:
