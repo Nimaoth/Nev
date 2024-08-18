@@ -2484,7 +2484,7 @@ proc browseKeybinds*(self: App) {.expose("editor").} =
 
   self.pushPopup popup
 
-proc chooseFile*(self: App) {.expose("editor").} =
+proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
   ## Press <ESCAPE> to close the dialogue
@@ -2494,9 +2494,16 @@ proc chooseFile*(self: App) {.expose("editor").} =
 
   let workspace = self.workspace
 
+  let previewer = if preview:
+    newWorkspaceFilePreviewer(workspace, self.asConfigProvider).Previewer.toDisposableRef.some
+  else:
+    DisposableRef[Previewer].none
+
   let finder = newFinder(newWorkspaceFilesDataSource(workspace), filterAndSort=true)
-  var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some)
-  popup.scale.x = 0.35
+  var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     discard self.openWorkspaceFile(item.data)

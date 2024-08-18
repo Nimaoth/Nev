@@ -883,11 +883,34 @@ proc browseKeybinds*() =
   let res {.used.} = editor_browseKeybinds_void_App_wasm(argsJsonString.cstring)
 
 
-proc editor_chooseFile_void_App_wasm(arg: cstring): cstring {.importc.}
-proc chooseFile*() =
+proc editor_chooseFile_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
+                 previewScale: float = 0.5) =
   var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      preview
+    else:
+      preview.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      scaleX
+    else:
+      scaleX.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      scaleY
+    else:
+      scaleY.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      previewScale
+    else:
+      previewScale.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_chooseFile_void_App_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_chooseFile_void_App_bool_float_float_float_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_chooseOpen_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.

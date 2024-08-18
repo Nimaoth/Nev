@@ -160,11 +160,13 @@ proc createFile*(path: string) =
   editor_createFile_void_App_string_impl(path)
 proc browseKeybinds*() =
   editor_browseKeybinds_void_App_impl()
-proc chooseFile*() =
+proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
+                 previewScale: float = 0.5) =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
   ## Press <ESCAPE> to close the dialogue
-  editor_chooseFile_void_App_impl()
+  editor_chooseFile_void_App_bool_float_float_float_impl(preview, scaleX,
+      scaleY, previewScale)
 proc chooseOpen*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
                  previewScale: float = 0.6) =
   editor_chooseOpen_void_App_bool_float_float_float_impl(preview, scaleX,
