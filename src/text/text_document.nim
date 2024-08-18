@@ -975,6 +975,10 @@ method deinit*(self: TextDocument) =
 method `$`*(self: TextDocument): string =
   return self.filename
 
+proc saveAsync(self:  TextDocument, ws: Workspace) {.async.} =
+  await ws.saveFile(self.filename, self.contentString)
+  self.onSaved.invoke()
+
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   logScope lvlInfo, &"[save] '{self.filename}'"
@@ -987,16 +991,18 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
   self.appFile = app
 
-  self.onSaved.invoke()
-
   self.trimTrailingWhitespace()
 
   if self.workspace.getSome(ws):
-    asyncCheck ws.saveFile(self.filename, self.contentString)
+    asyncCheck self.saveAsync(ws)
+
   elif self.appFile:
     fs.saveApplicationFile(self.filename, self.contentString)
+    self.onSaved.invoke()
+
   else:
     fs.saveFile(self.filename, self.contentString)
+    self.onSaved.invoke()
 
   self.isBackedByFile = true
   self.lastSavedRevision = self.undoableRevision

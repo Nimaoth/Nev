@@ -3389,6 +3389,7 @@ proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
   if self.diffDocument.isNotNil:
     asyncCheck self.updateDiffAsync(gotoFirstDiff=false)
+  self.markDirty()
 
 proc handleCompletionsUpdated(self: TextDocumentEditor) =
   self.completionsDirty = true
