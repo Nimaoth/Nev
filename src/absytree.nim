@@ -14,7 +14,7 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, macros, strutils]
+import std/[parseopt, options, macros, strutils, os]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
 
@@ -178,6 +178,8 @@ proc runApp(): Future[void] {.async.} =
   var frameIndex = 0
   var frameTime = 0.0
 
+  var lastEvent = startTimer()
+
   let minPollPerFrameMs = 1.0
   let maxPollPerFrameMs = 5.0
   var pollBudgetMs = 0.0
@@ -189,8 +191,12 @@ proc runApp(): Future[void] {.async.} =
 
     # handle events
     let eventTimer = startTimer()
+    gAsyncFrameTimer = startTimer()
     let eventCounter = rend.processEvents()
     let eventTime = eventTimer.elapsed.ms
+
+    if eventCounter > 0:
+      lastEvent = startTimer()
 
     var updateTime, renderTime: float
     block:
@@ -235,26 +241,34 @@ proc runApp(): Future[void] {.async.} =
     logger.flush()
 
     let pollTimer = startTimer()
-    if false:
-      while pollTimer.elapsed.ms < 8:
-        poll(2)
-    else:
-      try:
-        pollBudgetMs += clamp(15 - totalTimer.elapsed.ms, minPollPerFrameMs, maxPollPerFrameMs)
-        var totalPollTime = 0.0
-        while pollBudgetMs > maxPollPerFrameMs and hasPendingOperations():
-          let start = startTimer()
-          poll(maxPollPerFrameMs.int)
-          pollBudgetMs -= start.elapsed.ms
-          totalPollTime = totalPollTime + start.elapsed.ms
-      except CatchableError:
-        # log(lvlError, fmt"Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
-        discard
+    gAsyncFrameTimer = startTimer()
+    try:
+      var totalPollTime = 0.0
+      var tries = 50
+      while tries > 0 and totalPollTime < maxPollPerFrameMs and hasPendingOperations():
+        dec tries
+        let start = startTimer()
+        poll(0)
+        totalPollTime += start.elapsed.ms
+
+    except CatchableError:
+      discard
+
     let pollTime = pollTimer.elapsed.ms
+
+    var outlierTime = 20.0
+
+    let frameSoFar = totalTimer.elapsed.ms
+    if lastEvent.elapsed.ms > 60000 and frameSoFar < 10:
+      sleep(30 - frameSoFar.int)
+      outlierTime += 30
+    elif lastEvent.elapsed.ms > 1000 and frameSoFar < 10:
+      sleep(15 - frameSoFar.int)
+      outlierTime += 15
 
     let totalTime = totalTimer.elapsed.ms
     if not ed.disableLogFrameTime and
-        ((eventCounter > 0 and totalTime > 15) or totalTime > 20 or ed.logNextFrameTime):
+        (eventCounter > 0 or totalTime > outlierTime or ed.logNextFrameTime):
       log(lvlDebug, fmt"Total: {totalTime:>5.2f}, Poll: {pollTime:>5.2f}ms, Event: {eventTime:>5.2f}ms, Frame: {frameTime:>5.2f}ms (u: {updateTime:>5.2f}ms, r: {renderTime:>5.2f}ms)")
     ed.logNextFrameTime = false
 
