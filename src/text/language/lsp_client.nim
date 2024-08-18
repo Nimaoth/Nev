@@ -412,23 +412,26 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
     let id = response.id
 
     template dispatch(requests: untyped, parsedResponse: untyped): untyped =
-      if requests.contains(id):
-        # debugf"[LSP.run] Complete request {id}"
-        let (meth, future) = requests[id]
-        future.complete parsedResponse
-        requests.del(id)
-        let index = client.requestsPerMethod[meth].find(id)
-        if index != -1:
-          client.requestsPerMethod[meth].delete index
+      try:
+        if requests.contains(id):
+          # debugf"[LSP.run] Complete request {id}"
+          let (meth, future) = requests[id]
+          defer: requests.del(id)
+          future.complete parsedResponse
+          let index = client.requestsPerMethod[meth].find(id)
+          if index != -1:
+            client.requestsPerMethod[meth].delete index
+          else:
+            let temp {.inject.} = meth
+            log lvlError, &"Request not found: {id}, {temp}, {client.requestsPerMethod[temp]}"
+        elif client.canceledRequests.contains(id):
+          # Request was canceled
+          # debugf"[LSP.run] Received response for canceled request {id}"
+          client.canceledRequests.excl id
         else:
-          let temp {.inject.} = meth
-          log lvlError, &"Request not found: {id}, {temp}, {client.requestsPerMethod[temp]}"
-      elif client.canceledRequests.contains(id):
-        # Request was canceled
-        # debugf"[LSP.run] Received response for canceled request {id}"
-        client.canceledRequests.excl id
-      else:
-        log(lvlError, fmt"[handleResponses] received response with id {id} but got no active request for that id: {response}")
+          log lvlError, &"[handleResponses] received response with id {id} but got no active request for that id: {response}"
+      except:
+        log lvlError, &"[handleResponses] Failed to dispatch response: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
     case response.kind
     of GetDefinition: dispatch(client.activeDefinitionRequests, response.getDefinition)
@@ -471,19 +474,26 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
 
   var futures: seq[(int, ResolvableFuture[Response[JsonNode]])]
   for id in client.requestsPerMethod[meth]:
+    template cancel(requests, typ: untyped): untyped =
+      defer: client.requests.del(id)
+      try:
+        client.requests[id].future.complete(canceled[typ]())
+      except:
+        log lvlError, &"[cancelAllOf] Failed to cancel '{meth}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
     case meth
-    of "textDocument/definition": client.activeDefinitionRequests[id].future.complete(canceled[DefinitionResponse]())
-    of "textDocument/declaration": client.activeDeclarationRequests[id].future.complete(canceled[DeclarationResponse]())
-    of "textDocument/typeDefinition": client.activeTypeDefinitionRequests[id].future.complete(canceled[TypeDefinitionResponse]())
-    of "textDocument/implementation": client.activeImplementationRequests[id].future.complete(canceled[ImplementationResponse]())
-    of "textDocument/references": client.activeReferencesRequests[id].future.complete(canceled[ReferenceResponse]())
-    of "textDocument/switchSourceHeader": client.activeSwitchSourceHeaderRequests[id].future.complete(canceled[string]())
-    of "textDocument/hover": client.activeHoverRequests[id].future.complete(canceled[DocumentHoverResponse]())
-    of "textDocument/inlayHint": client.activeInlayHintsRequests[id].future.complete(canceled[InlayHintResponse]())
-    of "textDocument/documentSymbol": client.activeSymbolsRequests[id].future.complete(canceled[DocumentSymbolResponse]())
-    of "workspace/symbol": client.activeWorkspaceSymbolsRequests[id].future.complete(canceled[WorkspaceSymbolResponse]())
-    of "textDocument/diagnostic": client.activeDiagnosticsRequests[id].future.complete(canceled[DocumentDiagnosticResponse]())
-    of "textDocument/completion": client.activeCompletionsRequests[id].future.complete(canceled[CompletionResponse]())
+    of "textDocument/definition": cancel(activeDefinitionRequests, DefinitionResponse)
+    of "textDocument/declaration": cancel(activeDeclarationRequests, DeclarationResponse)
+    of "textDocument/typeDefinition": cancel(activeTypeDefinitionRequests, TypeDefinitionResponse)
+    of "textDocument/implementation": cancel(activeImplementationRequests, ImplementationResponse)
+    of "textDocument/references": cancel(activeReferencesRequests, ReferenceResponse)
+    of "textDocument/switchSourceHeader": cancel(activeSwitchSourceHeaderRequests, string)
+    of "textDocument/hover": cancel(activeHoverRequests, DocumentHoverResponse)
+    of "textDocument/inlayHint": cancel(activeInlayHintsRequests, InlayHintResponse)
+    of "textDocument/documentSymbol": cancel(activeSymbolsRequests, DocumentSymbolResponse)
+    of "workspace/symbol": cancel(activeWorkspaceSymbolsRequests, WorkspaceSymbolResponse)
+    of "textDocument/diagnostic": cancel(activeDiagnosticsRequests, DocumentDiagnosticResponse)
+    of "textDocument/completion": cancel(activeCompletionsRequests, CompletionResponse)
     else: continue
 
     client.activeRequests.del id
