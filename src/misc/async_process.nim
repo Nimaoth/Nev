@@ -212,7 +212,7 @@ proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
     if ok:
       return data.some
 
-    await sleepAsync 10
+    await sleepAsync 50
 
   return T.none
 
