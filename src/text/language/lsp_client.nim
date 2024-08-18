@@ -674,6 +674,7 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
     let serverConfig = await tryGetPortFromLanguagesServer(lsConfig[0], lsConfig[1], client.serverExecutablePath, client.args)
     if serverConfig.isNone:
       log(lvlError, "Failed to connect to languages server: no port found")
+      await client.initializedChannel.send(false)
       return
 
   #   # log lvlInfo, fmt"Using websocket connection on port {serverConfig.get.port} as LSP connection"
@@ -687,9 +688,14 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
       log lvlInfo, fmt"Using process '{client.serverExecutablePath} {client.args}' as LSP connection"
       let process = startAsyncProcess(client.serverExecutablePath, client.args)
       let connection = LSPConnectionAsyncProcess(process: process)
+
       connection.process.onRestarted = proc(): Future[void] {.gcsafe.} =
         asyncCheck logProcessDebugOutput(process)
         return client.sendInitializationRequest()
+
+      connection.process.onRestartFailed = proc(): Future[void] {.gcsafe.} =
+        return client.initializedChannel.send(false)
+
       client.connection = connection
 
     else:

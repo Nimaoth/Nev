@@ -45,6 +45,9 @@ proc handleWorkspaceConfigurationRequests(lsp: LanguageServerLSP) {.async.} =
       log lvlInfo, &"handleWorkspaceConfigurationRequests: channel closed"
       return
 
+    if lsp.client.isNil:
+      break
+
     let response = await lsp.handleWorkspaceConfigurationRequest(params)
     await lsp.client.workspaceConfigurationResponseChannel.send(response)
 
@@ -55,6 +58,9 @@ proc handleMessages(lsp: LanguageServerLSP) {.async.} =
     let (messageType, message) = lsp.client.messageChannel.recv().await.getOr:
       log lvlInfo, &"handleMessages: channel closed"
       return
+
+    if lsp.client.isNil:
+      break
 
     log lvlInfo, &"{messageType}: {message}"
 
@@ -73,6 +79,9 @@ proc handleDiagnostics(lsp: LanguageServerLSP) {.async.} =
     let diagnostics = lsp.client.diagnosticChannel.recv().await.getOr:
       log lvlInfo, &"handleDiagnostics: channel closed"
       return
+
+    if lsp.client.isNil:
+      break
 
     # debugf"textDocument/publishDiagnostics: {diagnostics}"
     lsp.onDiagnostics.invoke diagnostics
@@ -132,6 +141,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
   log lvlInfo, fmt"Started language server for '{languageId}'"
   # let initialized = await client.waitInitialized()
   let initialized = client.initializedChannel.recv().await.get(false)
+
   lsp.initializedFuture.complete(initialized)
   if not initialized:
     lsp.stop()
@@ -143,6 +153,8 @@ method start*(self: LanguageServerLSP): Future[void] = discard
 method stop*(self: LanguageServerLSP) =
   log lvlInfo, fmt"Stopping language server for '{self.languageId}'"
   # self.client.deinit()
+  # todo: properly deinit client
+  self.client = nil
 
 template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
   block:
