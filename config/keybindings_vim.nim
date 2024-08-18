@@ -110,20 +110,22 @@ proc vimUndo(editor: TextDocumentEditor, enterNormalModeBefore: bool) {.exposeAc
     editor.setMode "normal"
 
   editor.undo(editor.vimState.currentUndoCheckpoint)
-  if not editor.selections.allEmpty:
-    editor.setMode "visual"
-  else:
-    editor.setMode "normal"
+  if enterNormalModeBefore:
+    if not editor.selections.allEmpty:
+      editor.setMode "visual"
+    else:
+      editor.setMode "normal"
 
 proc vimRedo(editor: TextDocumentEditor, enterNormalModeBefore: bool) {.exposeActive(editorContext, "vim-redo").} =
   if enterNormalModeBefore:
     editor.setMode "normal"
 
   editor.redo(editor.vimState.currentUndoCheckpoint)
-  if not editor.selections.allEmpty:
-    editor.setMode "visual"
-  else:
-    editor.setMode "normal"
+  if enterNormalModeBefore:
+    if not editor.selections.allEmpty:
+      editor.setMode "visual"
+    else:
+      editor.setMode "normal"
 
 proc copySelection(editor: TextDocumentEditor, register: string = ""): Selections =
   ## Copies the selected text
