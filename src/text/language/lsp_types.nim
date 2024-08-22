@@ -452,7 +452,6 @@ type
 
   TextDocumentContentChangeEvent* = object
     range*: Range
-    rangeLength*: Option[int]
     text*: string
 
   UriObject* = object
