@@ -151,15 +151,16 @@ For custom commands plugins have to be used.
 ## Plugins
 
 Absytree supports two plugin mechanisms:
-- Wasm: Works on the desktop and in the browser.
-- NimScript (optional): Only supported in the desktop version. The editor bundles part of the Nim compiler so it can run NimScript code (slow, long startup time, not tested recently).
-  Allows easy hot reloading of the config file, but right now only one nimscript file is supported. Needs to be enabled with `-d:enableNimscript`.
-  Slightly increases startup time of the editor.
+- Wasm
+- NimScript: The editor bundles part of the Nim compiler so it can run NimScript code.
+  Allows easy hot reloading of the config file, but right now only one nimscript file is supported. Needs to be enabled with `-d:enableNimscript` (enabled by default).
 
 The editor API is exposed to plugins and can be used to create new commands, change settings, etc.
 
 WASM plugins are loaded from `{app_dir}/config/wasm`. The wasm modules have to conform to a certain
 API and can only use a subset of WASI right now, so it is recommended not to rely on WASI for now.
+
+The nimscript file has to be in `~/.absytree/custom.nims`.
 
 In theory WASM plugins can be written in any language that supports compiling to wasm, but there
 are currently no C header files for the editor API, so for now the recommended way
@@ -169,7 +170,6 @@ Here is an example of a basic plugin:
 
 ```nim
 # This needs to imported to access the editor API.
-# It can be imported in any file that's part of the plugin, not just the main file like `absytree_runtime_impl`
 import absytree_runtime
 
 # You can import the Nim std lib and other libraries, as long as what you import can be compiled to wasm
@@ -197,7 +197,7 @@ infof"transparent: {transparent}"
 proc customCommand1(arg1: string, arg2: int) {.expose("custom-command-1").} =
   infof"customCommand1: {arg1}, {arg2}"
 
-proc customCommand2(editor: TextDocumentEditor, arg1: string, arg2: int) {.expose("custom-command-2").} =
+proc customCommand2(editor: TextDocumentEditor, arg1: string, arg2: int) {.exposeActive("editor.text", "custom-command-2").} =
   infof"customCommand2: {editor}, {arg1}, {arg2}"
 
 # Create keybindings
@@ -211,28 +211,32 @@ when defined(wasm):
 ```
 
 # Settings
-There are a lot of settings which can be changed using `proc setOption*[T](path: string, value: T)` or `proc setOption*(option: string; value: JsonNode)`. Settings are stored in a JSON object, which also gets saved to the file `settings.json`. This file gets loaded before the config script, so the script can override any setting.
+The settings which are loaded from the `settings.json` files can be changed at runtime using `proc setOption*[T](path: string, value: T)` or `proc setOption*(option: string; value: JsonNode)`.
 
 You can get the current value of a setting with `proc getOption*[T](path: string, default: T = T.default): T`
 
-    setOption "lsp.zig.path", "zls"
-    echo getOption[string]("lsp.zig.path") # zls
+```nim
+  setOption "lsp.zig.path", "zls"
+  echo getOption[string]("lsp.zig.path") # zls
+```
 
 # Mouse settings
 To change the behaviour of single/double/triple clicking you can specify which command should be executed after clicking:
 
-    # To make triple click select the entire line (this is the default behaviour), use e.g. the command 'extend-select-move "line" true':
-    # extend-select-move applies the given move to the beginning and end of the current selection and then combines the results
-    # into a new selection.
-    setOption "editor.text.triple-click-command", "extend-select-move"
-    setOption "editor.text.triple-click-command-args", %[%"line", %true]
+```nim
+# To make triple click select the entire line (this is the default behaviour), use e.g. the command 'extend-select-move "line" true':
+# extend-select-move applies the given move to the beginning and end of the current selection and then combines the results
+# into a new selection.
+setOption "editor.text.triple-click-command", "extend-select-move"
+setOption "editor.text.triple-click-command-args", %[%"line", %true]
 
-    # To make triple click select a paragraph (as defined by vim), use e.g. the command 'extend-select-move "vim-paragraph-inner" true':
-    setOption "editor.text.triple-click-command", "extend-select-move"
-    setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true]
+# To make triple click select a paragraph (as defined by vim), use e.g. the command 'extend-select-move "vim-paragraph-inner" true':
+setOption "editor.text.triple-click-command", "extend-select-move"
+setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true]
 
-    # Single and double click can also be overriden using "single-click-command"/"single-click-command-args"
-    # and "double-click-command"/"double-click-command-args"
+# Single and double click can also be overriden using "single-click-command"/"single-click-command-args"
+# and "double-click-command"/"double-click-command-args"
+```
 
 # Key bindings
 You can bind different key combinations to __commands__. Each function exposed by the editor (see `absytree_api.nim`) has a corresponding command,
@@ -240,7 +244,9 @@ which has two names. If the function is called `myCommand`, then the command can
 
 Key combinations are bound to a command and arguments for that command. The following binds the command `quit` to the key combination `CTRL-x + x`
 
-    addCommand "editor", "<C-x>x", "quit"
+```nim
+addCommand "editor", "<C-x>x", "quit"
+```
 
 Every key binding is specified using the config file, so just look at `absytree_config.nims` and `keybindings_*.nim` for reference.
 
@@ -271,23 +277,29 @@ If you use a upper case ascii character as key then this automatically means it 
 
 Some examples:
 
-    addCommand "editor", "a", "command-name"
-    addCommand "editor", "<C-a>", "command-name" # CTRL+a
-    addCommand "editor", "<CS-a>", "command-name" # CTRL+SHIFT+a
-    addCommand "editor", "<CS-SPACE>", "command-name" # CTRL+SHIFT+SPACE
-    addCommand "editor", "SPACE<C-g>", "command-name" # SPACE, followed by CTRL+g
+```nim
+addCommand "editor", "a", "command-name"
+addCommand "editor", "<C-a>", "command-name" # CTRL+a
+addCommand "editor", "<CS-a>", "command-name" # CTRL+SHIFT+a
+addCommand "editor", "<CS-SPACE>", "command-name" # CTRL+SHIFT+SPACE
+addCommand "editor", "SPACE<C-g>", "command-name" # SPACE, followed by CTRL+g
+```
 
 Be careful not to to this:
 
-    addCommand "editor", "a", "command-name"
-    addCommand "editor", "aa", "command-name" # Will never be used, because pressing a once will immediately execute the first binding
+```nim
+addCommand "editor", "a", "command-name"
+addCommand "editor", "aa", "command-name" # Will never be used, because pressing a once will immediately execute the first binding
+```
 
 There is one special modifier `*` which means the following keys can be repeated without having to press the first keys again:
 
-    # after pressing "<C-w>F", you can press "+" or "-" multiple times, and the input state machine resets to the <*-F> state instead of
-    # to the beginning
-    addCommand "editor", "<C-w><*-F>-", "change-font-size", -1
-    addCommand "editor", "<C-w><*-F>+", "change-font-size", 1
+```nim
+# after pressing "<C-w>F", you can press "+" or "-" multiple times, and the input state machine resets to the <*-F> state instead of
+# to the beginning
+addCommand "editor", "<C-w><*-F>-", "change-font-size", -1
+addCommand "editor", "<C-w><*-F>+", "change-font-size", 1
+```
 
 
 All key bindings in the same scope (e.g. `editor`) will be compiled into a state machine. When you press a key, the state machine will advance,
@@ -346,27 +358,29 @@ The owners of the scopes are the following:
 # Summary
 To define keybindings specific for text documents (TextEditor), use:
 
-    addCommand "editor.text", "a", "command-name"
-    addTextCommand "", "a", "command-name"                  # Same as above
+```nim
+addCommand "editor.text", "a", "command-name"
+addTextCommand "", "a", "command-name"                  # Same as above
 
-    addCommand "editor.text.insert", "a", "command-name"    # Insert mode
-    addTextCommand "insert", "a", "command-name"            # Same as above
+addCommand "editor.text.insert", "a", "command-name"    # Insert mode
+addTextCommand "insert", "a", "command-name"            # Same as above
 
-    addTextCommand "completion", "a", "command-name"        # Only active while completion window is open
+addTextCommand "completion", "a", "command-name"        # Only active while completion window is open
 
-    addTextCommandBlock "", "s":                            # First parameter is mode/"completion"
-      ## Creates an anonymous action which runs this block. `editor` (automatically defined) is the text editor handling this command
-      editor.setMode("insert")
-      editor.selections = editor.delete(editor.selections)
+addTextCommandBlock "", "s":                            # First parameter is mode/"completion"
+  ## Creates an anonymous action which runs this block. `editor` (automatically defined) is the text editor handling this command
+  editor.setMode("insert")
+  editor.selections = editor.delete(editor.selections)
 
-    addTextCommand "", "a", proc(editor: TextDocumentEditor) =
-      ## Creates an anonymous action which runs this lambda. `editor` is the text editor handling this command.
-      # ...
+addTextCommand "", "a", proc(editor: TextDocumentEditor) =
+  ## Creates an anonymous action which runs this lambda. `editor` is the text editor handling this command.
+  # ...
 
-    proc foo(editor: TextDocumentEditor) =
-      # ...
+proc foo(editor: TextDocumentEditor) =
+  # ...
 
-    addTextCommand "", "a", foo                                 # Like above, but uses existing function
+addTextCommand "", "a", foo                                 # Like above, but uses existing function
+```
 
 # Scripting API Documentation
 The documentation for the scripting API is in scripting/htmldocs. You can see the current version [here](https://raw.githack.com/Nimaoth/AbsytreeDocs/main/scripting_nim/htmldocs/theindex.html) (using raw.githack.com) or [here](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).

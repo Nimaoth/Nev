@@ -10,7 +10,13 @@ Configuration for language servers should be put in the user settings (`~/.absyt
 
 Some language servers are already configured in the [app settings](../config/settings.json), so when you add you're own language server configuration make sure to use `"+lsp"` to extend the lsp configurations, unless you want to completely override the defaults.
 
-If you want to use `clangd`, `nimlangserver`, `zls` or `rust-analyzer` and already have the binary in the PATH then you shouldn't need to configure anything (except maybe custom workspace configuration).
+Some languages are already configured so if you have the binary in the PATH then you shouldn't need to configure anything (except maybe custom workspace configuration).
+- `nim`: `nimlangserver`
+- `C`: `clangd`
+- `C++`: `clangd`
+- `Zig`: `zls`
+- `Odin`: `ols`
+- `Rust`: `rust-analizer`
 
 ```json
 // ~/.absytree/settings.json
@@ -27,7 +33,7 @@ If you want to use `clangd`, `nimlangserver`, `zls` or `rust-analyzer` and alrea
 
         "nim": { // Add/override nim settings
             "path": "nimlangserver",
-            "workspace": { // Workspace configuration. The value of this field is language server specific. This example is only valid for nimlangserver
+            "settings": { // LSP specific configuration.
                 "project": [],
                 "projectMapping": [
                     {
@@ -35,6 +41,29 @@ If you want to use `clangd`, `nimlangserver`, `zls` or `rust-analyzer` and alrea
                         "fileRegex": ".*test.nim"
                     }
                 ]
+            }
+        },
+
+        "+rust": {
+            // These properties are already set in {app_dir}/.absytree/settings.json, so you just need to set "path" if you want to specifiy the full path to the binary, and the "rust-analyzer" property to
+            // specify settings from [here](https://rust-analyzer.github.io/manual.html#configuration)
+            // "path": "rust-analyzer",
+            // "initialization-options-name": "rust-analyzer", // The name of the property to send as initialization options
+            // "workspace-configuration-name": "", // The name of the property to send as initialization options
+            // "initial-configuration": "", // Send a workspace/didChangeConfiguration request after initialization with this value. rust-analizer won't send workspace/configuration if this is not set.
+            "rust-analyzer": {
+                "linkedProjects": "path/to/Cargo.toml"
+            }
+        },
+
+        "zig": { // Add/override nim settings
+            "path": "zls",
+            "settings": { // LSP specific configuration.
+                "zls": {
+                    "enable_snippets": true,
+                    "enable_argument_placeholders": true,
+                    "enable_build_on_save": false
+                }
             }
         }
     },
