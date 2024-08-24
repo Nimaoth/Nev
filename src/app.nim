@@ -279,6 +279,8 @@ proc tryOpenExisting*(self: App, path: string, appFile: bool = false, append: bo
 proc setOption*(self: App, option: string, value: JsonNode, override: bool = true)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "")
 proc currentEventHandlers*(self: App): seq[EventHandler]
+proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor]
+proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.none)
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -1841,7 +1843,11 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.platform.requestRender(true)
 
 proc logs*(self: App) {.expose("editor").} =
-  discard self.createAndAddView(self.logDocument)
+  let editors = self.getEditorsForDocument(self.logDocument)
+  if editors.len > 0:
+    self.showEditor(editors[0].id)
+  else:
+    discard self.createAndAddView(self.logDocument)
 
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
   logger.toggleConsoleLogger()
@@ -1898,7 +1904,7 @@ proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.non
 
   if viewIndex.getSome(_):
     # todo
-    discard
+    log lvlError, &"Not implemented: showEditor({editorId}, {viewIndex})"
   else:
     let oldView = self.views[self.currentView]
     oldView.deactivate()
