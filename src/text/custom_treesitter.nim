@@ -184,6 +184,7 @@ else:
     languageId: string
     impl: ptr ts.TSLanguage
     queries: Table[string, Option[TSQuery]]
+    queryFutures: Table[string, Future[Option[TSQuery]]]
 
   type TSParser* = ref object
     impl: ptr ts.TSParser
@@ -237,7 +238,7 @@ else:
     self = nil
 
   proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, force = false):
-      Option[TSQuery] =
+      Future[Option[TSQuery]] {.async.} =
 
     if not force and self.queries.contains(id):
       return self.queries[id]
@@ -246,6 +247,7 @@ else:
 
     var errorOffset: uint32 = 0
     var queryError: ts.TSQueryError = ts.TSQueryErrorNone
+    # todo: can we call tsQueryNew in a separate thread?
     let query = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
 
     if queryError != ts.TSQueryErrorNone:
@@ -254,15 +256,25 @@ else:
         self.queries[id] = TSQuery.none
       return TSQuery.none
 
-    self.queries[id] = query.some
     query.some
 
-  proc queryFile*(self: TSLanguage, id: string, path: string, cacheOnFail = true, force = false): Future[Option[TSQuery]] {.async.} =
-    if not false and self.queries.contains(id):
-      return self.queries[id]
-
+  proc queryFileImpl(self: TSLanguage, id: string, path: string, cacheOnFail = true, force = false): Future[Option[TSQuery]] {.async.} =
     let queryString = await fs.loadFileAsync(path)
-    return self.query(id, queryString, cacheOnFail, force)
+    return await self.query(id, queryString, cacheOnFail, force)
+
+  proc queryFile*(self: TSLanguage, id: string, path: string, cacheOnFail = true, force = false): Future[Option[TSQuery]] {.async.} =
+    if not force and self.queries.contains(id):
+      return self.queries[id]
+    if not force and self.queryFutures.contains(id):
+      return await self.queryFutures[id]
+
+    let queryFuture = self.queryFileImpl(id, path, cacheOnFail, force)
+    self.queryFutures[id] = queryFuture
+
+    let query = await queryFuture
+    self.queryFutures.del(id)
+    self.queries[id] = query
+    return query
 
   proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
     let oldTreePtr: ptr ts.TSTree = if oldTree.getSome(tree):
