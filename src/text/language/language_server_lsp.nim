@@ -15,6 +15,8 @@ type LanguageServerLSP* = ref object of LanguageServer
   documentHandles: seq[tuple[document: Document, textInserted, textDeleted: Id]]
 
   thread: Thread[LSPClient]
+  serverCapabilities*: ServerCapabilities
+  fullDocumentSync: bool = false
 
 var languageServers = initTable[string, LanguageServerLSP]()
 
@@ -28,14 +30,16 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
     Future[seq[JsonNode]] {.async.} =
   var res = newSeq[JsonNode]()
 
-  log lvlInfo, &"handleWorkspaceConfigurationRequest {params}"
+  let workspaceConfigName = gAppInterface.configProvider.getValue("lsp." & self.languageId & ".workspace-configuration-name", "settings")
+
   for item in params.items:
     # todo: implement scopeUri support
     if item.section.isNone:
       continue
 
-    res.add gAppInterface.configProvider.getValue(
-      "lsp." & item.section.get & ".workspace", newJNull())
+    let key = ["lsp", self.languageId, workspaceConfigName, item.section.get].filterIt(it.len > 0).join(".")
+    debugf"handleWorkspaceConfigurationRequest key = {key}"
+    res.add gAppInterface.configProvider.getValue(key, newJNull())
 
   return res
 
@@ -117,9 +121,9 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
   else:
     @[]
 
-  let section = config.fields.getOrDefault("section", newJNull()).jsonTo(string).catch(languageId)
+  let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJNull()).jsonTo(string).catch("settings")
   let userOptions = gAppInterface.configProvider.getValue(
-    "lsp." & section & ".workspace", newJNull())
+    "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
   let workspaceInfo = if workspace.getSome(workspace):
     workspace.info.await.some
@@ -127,6 +131,8 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     ws.WorkspaceInfo.none
 
   var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, languagesServer)
+  client.languageId = languageId
+
   var lsp = LanguageServerLSP(client: client, languageId: languageId)
   lsp.initializedFuture = newResolvableFuture[bool]("lsp.initializedFuture")
   languageServers[languageId] = lsp
@@ -139,11 +145,25 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
   lsp.thread.createThread(lspClientRunner, client)
 
   log lvlInfo, fmt"Started language server for '{languageId}'"
-  # let initialized = await client.waitInitialized()
-  let initialized = client.initializedChannel.recv().await.get(false)
+  let serverCapabilities = client.initializedChannel.recv().await.get(ServerCapabilities.none)
+  if serverCapabilities.getSome(capabilities):
+    lsp.serverCapabilities = capabilities
+    lsp.initializedFuture.complete(true)
 
-  lsp.initializedFuture.complete(initialized)
-  if not initialized:
+    let initialConfig = config.fields.getOrDefault("initial-configuration", newJNull())
+    if initialConfig.kind != JNull:
+      asyncCheck client.notifyConfigurationChangedChannel.send(initialConfig)
+
+    if capabilities.textDocumentSync.asTextDocumentSyncKind().getSome(syncKind):
+      if syncKind == TextDocumentSyncKind.Full:
+        lsp.fullDocumentSync = true
+
+    elif capabilities.textDocumentSync.asTextDocumentSyncOptions().getSome(syncOptions):
+      if syncOptions.change == TextDocumentSyncKind.Full:
+        lsp.fullDocumentSync = true
+
+  else:
+    lsp.initializedFuture.complete(false)
     lsp.stop()
     return LanguageServerLSP.none
 
@@ -343,16 +363,19 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
   return string.none
 
 method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Selection):
-    Future[seq[language_server_base.InlayHint]] {.async.} =
-  # return
+    Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+
+  if self.serverCapabilities.inlayHintProvider.isNone:
+    return success[seq[language_server_base.InlayHint]](@[])
+
   let response = await self.client.getInlayHints(filename, selection)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
-    return newSeq[language_server_base.InlayHint]()
+    return response.to(seq[language_server_base.InlayHint])
 
   if response.isCanceled:
     # log(lvlInfo, &"Canceled inlay hints ({response.id}) for '{filename}':{selection} ")
-    return newSeq[language_server_base.InlayHint]()
+    return response.to(seq[language_server_base.InlayHint])
 
   let parsedResponse = response.result
 
@@ -384,9 +407,10 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
         data: hint.data
       )
 
-    return hints
+    return success[seq[language_server_base.InlayHint]](hints)
 
-  return newSeq[language_server_base.InlayHint]()
+  # todo: better error message
+  return error[seq[language_server_base.InlayHint]](-1, "Invalid response")
 
 proc toInternalSymbolKind(symbolKind: SymbolKind): SymbolType =
   try:
@@ -492,43 +516,28 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
   return completions
 
 method getDiagnostics*(self: LanguageServerLSP, filename: string):
-    Future[Response[seq[language_server_base.Diagnostic]]] {.async.} =
+    Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
   # debugf"getDiagnostics: {filename}"
+
+  if self.serverCapabilities.diagnosticProvider.isNone:
+    return success[seq[lsp_types.Diagnostic]](@[])
 
   let response = await self.client.getDiagnostics(filename)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
-    return response.to(seq[language_server_base.Diagnostic])
+    return response.to(seq[lsp_types.Diagnostic])
 
   if response.isCanceled:
     # log(lvlInfo, &"Canceled diagnostics ({response.id}) for '{filename}' ")
-    return response.to(seq[language_server_base.Diagnostic])
+    return response.to(seq[lsp_types.Diagnostic])
 
   let report = response.result
-  # debugf"getDiagnostics: {report}"
-
-  var res: seq[language_server_base.Diagnostic]
 
   if report.asRelatedFullDocumentDiagnosticReport().getSome(report):
-    # todo: selection from rune index to byte index
-    for d in report.items:
-      res.add language_server_base.Diagnostic(
-        # selection: (
-        #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
-        #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex)
-        # ),
-        severity: d.severity,
-        code: d.code,
-        codeDescription: d.codeDescription,
-        source: d.source,
-        message: d.message,
-        tags: d.tags,
-        relatedInformation: d.relatedInformation,
-        data: d.data,
-      )
-    # debugf"items: {res.len}: {res}"
+    return success[seq[lsp_types.Diagnostic]](report.items)
 
-  return res.success
+  # todo: better error message
+  return error[seq[lsp_types.Diagnostic]](-1, "Invalid response")
 
 method getCompletions*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Response[CompletionList]] {.async.} =
@@ -555,7 +564,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
   let textInsertedHandle = document.textInserted.subscribe proc(args: auto): void =
     # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
 
-    if self.client.fullDocumentSync:
+    if self.fullDocumentSync:
       asyncCheck self.client.notifyTextDocumentChangedChannel.send (args.document.fullPath, args.document.version, @[], args.document.contentString)
       discard
     else:
@@ -565,7 +574,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
 
   let textDeletedHandle = document.textDeleted.subscribe proc(args: auto): void =
     # debugf"TEXT DELETED {args.document.fullPath}: {args.location}"
-    if self.client.fullDocumentSync:
+    if self.fullDocumentSync:
       asyncCheck self.client.notifyTextDocumentChangedChannel.send (args.document.fullPath, args.document.version, @[], args.document.contentString)
       discard
     else:
