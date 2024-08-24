@@ -290,7 +290,7 @@ when enableGui:
   if backend.get == Gui:
     myDisableTrueColors()
 
-when defined(windows):
+when defined(windows) and copyWasmtimeDll:
   import std/[os, compilesettings]
   import wasmh
 

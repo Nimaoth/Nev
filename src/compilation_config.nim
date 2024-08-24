@@ -7,6 +7,7 @@ const enableTableIdCacheChecking* {.booldefine.}: bool = false
 const enableSystemClipboard* {.booldefine.}: bool = true
 const enableNimscript* {.booldefine.}: bool = false
 const enableAst* {.booldefine.}: bool = false
+const copyWasmtimeDll* {.booldefine.}: bool = true
 
 const treesitterBuiltins {.strdefine.}: string = ""
 const builtinTreesitterLanguages: seq[string] = treesitterBuiltins.split(",")
