@@ -13,14 +13,41 @@
             ]
         },
         "zig": {
-            "path": "zls"
+            "path": "zls",
+            "settings": {
+                "zls": {
+                    "enable_snippets": true,
+                    "enable_argument_placeholders": true,
+                    "enable_build_on_save": false,
+                    "build_on_save_step": "install",
+                    "enable_autofix": false,
+                    "semantic_tokens": "none",
+                    "enable_inlay_hints": true,
+                    "inlay_hints_show_variable_type_hints": true,
+                    "inlay_hints_show_struct_literal_field_type": true,
+                    "inlay_hints_show_parameter_name": true,
+                    "inlay_hints_show_builtin": true,
+                    "inlay_hints_exclude_single_argument": true,
+                    "inlay_hints_hide_redundant_param_names": true,
+                    "inlay_hints_hide_redundant_param_names_last_token": true,
+                    "warn_style": true,
+                    "highlight_global_var_declarations": true,
+                    "dangerous_comptime_experiments_do_not_enable": null,
+                    "skip_std_references": true,
+                    "prefer_ast_check_as_child_process": true,
+                    "completion_label_details": true
+                }
+            }
         },
         "odin": {
             "path": "ols"
         },
         "rust": {
             "path": "rust-analyzer",
-            "section": "rust-analyzer"
+            "initialization-options-name": "rust-analyzer",
+            "initial-configuration": "",
+            "workspace-configuration-name": "",
+            "rust-analyzer": {}
         },
         "c_sharp": {
             "path": "OmniSharp"
@@ -29,36 +56,38 @@
             "path": "nimlangserver",
             "args": [
                 "--stdio"
-            ]
+            ],
+            "settings": {}
         }
     },
 
     "language-mappings": {
-        "\.(agda|lagda)$": "agda",
-        "\.(c|cc|h|inc)$": "c",
-        "\.sh$": "bash",
-        "\.cs$": "c_sharp",
-        "\.(cpp|tcc|hpp)$": "cpp",
-        "\.css$": "css",
-        "\.go$": "go",
-        "\.hs$": "haskell",
-        "\.(html|htmx)$": "html",
-        "\.java$": "java",
-        "\.(js|jsx)$": "javascript",
-        "\.json$": "json",
-        "\.ocaml$": "ocaml",
-        "\.php$": "php",
-        "\.py$": "python",
-        "\.ruby$": "ruby",
-        "\.rs$": "rust",
-        "\.scala$": "scala",
-        "\.(ts|tsx)$": "typescript",
-        "\.(nim|nims|nimble)$": "nim",
-        "\.zig$": "zig",
-        "\.odin$": "odin",
-        "\.md$": "markdown",
-        "\.scm$": "query",
-        "\.toml$": "toml",
+        "\\.(agda|lagda)$": "agda",
+        "\\.(c|cc|h|inc)$": "c",
+        "\\.sh$": "bash",
+        "\\.cs$": "c_sharp",
+        "\\.(cpp|tcc|hpp)$": "cpp",
+        "\\.css$": "css",
+        "\\.go$": "go",
+        "\\.hs$": "haskell",
+        "\\.(html|htmx)$": "html",
+        "\\.java$": "java",
+        "\\.(js|jsx)$": "javascript",
+        "\\.json$": "json",
+        "\\.ocaml$": "ocaml",
+        "\\.php$": "php",
+        "\\.py$": "python",
+        "\\.ruby$": "ruby",
+        "\\.rs$": "rust",
+        "\\.scala$": "scala",
+        "\\.(ts|tsx)$": "typescript",
+        "\\.(nim|nims|nimble)$": "nim",
+        "\\.zig$": "zig",
+        "\\.odin$": "odin",
+        "\\.md$": "markdown",
+        "\\.scm$": "query",
+        "\\.toml$": "toml",
+        "\\.ps1$": "powershell",
         "/(vector|string|thread|iostream)$": "cpp",
         ".+/MSVC/.+/include(/.+?)*/[a-z0-9_]+$": "cpp",
         ".+/include/c\\+\\+(/.+?)+/[a-z0-9_]+$": "cpp"
@@ -310,19 +339,19 @@
         "regex": {
             "treesitter": "tree-sitter/tree-sitter-regex"
         },
-        "ocaml": {
+        "ocaml-interface": {
             "treesitter": "tree-sitter/tree-sitter-ocaml/grammars/interface"
         },
         "ocaml": {
             "treesitter": "tree-sitter/tree-sitter-ocaml/grammars/ocaml"
         },
-        "ocaml": {
+        "ocaml-type": {
             "treesitter": "tree-sitter/tree-sitter-ocaml/grammars/type"
         },
         "php": {
             "treesitter": "tree-sitter/tree-sitter-php/php"
         },
-        "php": {
+        "php-only": {
             "treesitter": "tree-sitter/tree-sitter-php/php_only"
         },
         "ruby": {
@@ -340,6 +369,12 @@
         "bash": {
             "treesitter": "tree-sitter/tree-sitter-bash"
         },
+        "powershell": {
+            "treesitter": "airbus-cert/tree-sitter-powershell",
+            "tabWidth": 4,
+            "indent": "spaces",
+            "lineComment": "#"
+        },
         "css": {
             "treesitter": "tree-sitter/tree-sitter-css"
         },
@@ -354,18 +389,6 @@
         },
         "swift": {
             "treesitter": "alex-pinkus/tree-sitter-swift"
-        }
-    },
-
-    "snippets": {
-        "nim": {
-            "procedure": {
-                "scope": "nim",
-                "prefix": "proc",
-                "body": [
-                    "proc ${1:name}($2): ${3:returnType} = ${0:discard}"
-                ]
-            }
         }
     },
 
