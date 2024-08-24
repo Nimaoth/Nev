@@ -4,26 +4,55 @@
 
 ## General stuff
 - horizontal scrolling
-- detect indentation from file content
 - improve indentation handling to auto fix incorrect indentation
 - implement marks
 - add command to restart languageserver
 - fix choose cursor mode interaction with command recording
 - add options for trimming trailing whitespace on save (e.g. only for certain file types, enable/disable, keybinding?)
-- render indentation guides
 - text folding
-- improve scrolling when mouse is pressed and extending selection
-- make double/triple click work in browser/terminal
 - command for switching first and last cursor
 - command for switching active selection
-
-- add language server/treesitter for markdown/help files
 
 - implement text decorations api for scripting (inserting virtual text, replacing text)
 
 - get [https://github.com/treeform/vmath/pull/67] merged and change vmath back to original repo
 - finish [https://github.com/tree-sitter/tree-sitter/pull/2091]
 
+## Vim Keybindings
+- Repeat f/t motions with ,/;
+- Search/Replace
+
+- in visual mode highlights are incorrect
+- pasting text replaces the current char even if not in insert mode
+
+## LSP
+- command for inserting the inlay hint under the cursor
+- rename
+- inlay hints: space left/right
+
+## text editor
+- includeAfter names should be named includeLineLen or something like that
+- don't render multi line diagnostics inline but in a popup which can be opened/closed
+- don't show completion window when no completions available
+- read file when on disk changes, e.g. after revert
+
+- terminal undercurl/underline:
+  - debug "\e[4munderline\e[0m"
+  - debug "\e[58:2::255:192:203m\e[4:3mCheck out this cool sentence with colorful curly lines!\e[m"
+  - debug "\e[58:2::255:192:203m\e[4:2mCheck out this cool sentence with colorful double lines!\e[m"
+  - debug "\e[58:2::255:0:0m\e[4:2mCheck out this cool sentence\e[4:3m with a bunch\e[58:2::135:206:235m of lines styles \e[4:5mand colors!\e[m"
+
+# Linux clipboard support
+- copy: `xclip -i -selection clipboard`
+- paste: `xclip -o -selection clipboard`
+
+# Build windows with vcc
+- `nimble --nimbleDir:D:/nd -d:debugDelayedTasks -d:debugAsyncAwaitMacro buildDebugVcc`
+- `cl.exe @absytree_linkerArgs.txt D:\nd\pkgs2\nimwasmtime-0.1.5-95eac5c2bb83073e089b1c21d35e5db76d969f2d\wasmtime\target\release\wasmtime.dll.lib /LINK Advapi32.lib`
+- `astd.exe -s:debug.absytree-session`
+
+
+# AST language framework
 - add nicer way to write:
   - StringGetPointer, StringGetLength
   - <, <=, etc
@@ -55,41 +84,3 @@
 - move git stuff to workspace to support multiple git repositories
 - global search:
   - figure out how to specify file filters and other options (case sensitive, whole word match, regex)
-
-## Vim Keybindings
-- Repeat f/t motions with ,/;
-- Search/Replace
-- toggle case
-- fix e.g. dw deleting one character to much because it's inclusive
-
-- in visual mode highlights are incorrect
-- pasting text replaces the current char even if not in insert mode
-- fix f/t not working with uppercase characters
-
-- fix:
-  - go into insert mode
-  - switch to different view
-  - keeps recording into .
-
-## LSP
-- Handle rust lsp paths with lowercase letter like d:/path/to/file
-- command for inserting the inlay hint under the cursor
-- snippets
-- workspace symbols
-- rename
-- inlay hints: space left/right
-
-## text editor
-- includeAfter names should be named includeLineLen or something like that
-- don't render multi line diagnostics inline but in a popup which can be opened/closed
-- don't show completion window when no completions available
-- read file when on disk changes, e.g. after revert
-- don't send lsp close event until document is closed, not just editor/staged diff editor
-
-- terminal undercurl/underline:
-  - debug "\e[4munderline\e[0m"
-  - debug "\e[58:2::255:192:203m\e[4:3mCheck out this cool sentence with colorful curly lines!\e[m"
-  - debug "\e[58:2::255:192:203m\e[4:2mCheck out this cool sentence with colorful double lines!\e[m"
-  - debug "\e[58:2::255:0:0m\e[4:2mCheck out this cool sentence\e[4:3m with a bunch\e[58:2::135:206:235m of lines styles \e[4:5mand colors!\e[m"
-
-- it looks like if you try to updated completions before the language server is initialized, then it might not initialize at all?
