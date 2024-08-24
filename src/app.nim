@@ -1452,6 +1452,10 @@ proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], wo
 proc disableLogFrameTime*(self: App, disable: bool) {.expose("editor").} =
   self.disableLogFrameTime = disable
 
+proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("editor").} =
+  when defined(debugAsyncAwaitMacro):
+    debugPrintAsyncAwaitStackTrace = enable
+
 proc showDebuggerView*(self: App) {.expose("editor").} =
   for view in self.views:
     if view of DebuggerView:
