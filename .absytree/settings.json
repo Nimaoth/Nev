@@ -1,4 +1,5 @@
 {
+    "$schema": "../config/settings.schema.json",
     "+lsp": {
 
         "+cpp": {
@@ -21,78 +22,9 @@
         },
 
         "+nim": {
-            "workspace": {
+            "settings": {
                 "project": [],
-                "projectMapping": [
-                    {
-                        "projectFile": "src/text/text_buffer.nim",
-                        "fileRegex": ".*text_buffer.nim"
-                    },
-                    {
-                        "projectFile": "src/misc/smallseq.nim",
-                        "fileRegex": ".*smallseq.nim"
-                    },
-                    {
-                        "projectFile": "src/text/snippet.nim",
-                        "fileRegex": ".*snippet.nim"
-                    },
-                    {
-                        "projectFile": "src/text/text_editor.nim",
-                        "fileRegex": ".*text_editor.nim"
-                    },
-                    {
-                        "projectFile": "src/text/text_document.nim",
-                        "fileRegex": ".*text_document.nim"
-                    },
-                    {
-                        "projectFile": "src/app.nim",
-                        "fileRegex": ".*app.nim"
-                    },
-                    {
-                        "projectFile": "src/text/diff_git.nim",
-                        "fileRegex": ".*diff_git.nim"
-                    },
-                    {
-                        "projectFile": "src/text/completion.nim",
-                        "fileRegex": ".*completion.nim"
-                    },
-                    {
-                        "projectFile": "src/text/completion_provider_document.nim",
-                        "fileRegex": ".*completion_provider_document.nim"
-                    },
-                    {
-                        "projectFile": "src/text/completion_provider_lsp.nim",
-                        "fileRegex": ".*completion_provider_lsp.nim"
-                    },
-                    {
-                        "projectFile": "src/text/completion_provider_snippet.nim",
-                        "fileRegex": ".*completion_provider_snippet.nim"
-                    },
-                    {
-                        "projectFile": "src/platform/gui_platform.nim",
-                        "fileRegex": ".*gui_platform.nim"
-                    },
-                    {
-                        "projectFile": "src/platform/terminal_platform.nim",
-                        "fileRegex": ".*terminal_platform.nim"
-                    },
-                    {
-                        "projectFile": "src/platform/tui.nim",
-                        "fileRegex": ".*tui.nim"
-                    },
-                    {
-                        "projectFile": "src/ui/widget_builder_text_document.nim",
-                        "fileRegex": ".*widget_builder_text_document.nim"
-                    },
-                    {
-                        "projectFile": "src/ui/node.nim",
-                        "fileRegex": ".*node.nim"
-                    },
-                    {
-                        "projectFile": "test.nim",
-                        "fileRegex": ".*test.nim"
-                    }
-                ],
+                "xprojectMapping": [],
                 "test-project": "",
                 "buildOnSave": false,
                 "buildCommand": "c",
@@ -115,6 +47,12 @@
                         "hintStringRight": ""
                     }
                 }
+            }
+        },
+
+        "+rust": {
+            "rust-analyzer": {
+                "linkedProjects": ["temp/rust_test/Cargo.toml"]
             }
         }
     },
@@ -163,8 +101,21 @@
                 "port": 5678
             },
             "lldb-dap2": {}
+        },
+        "+configuration": {
+            "absytree": {
+                "type": "lldb-dap",
+                "request": "launch",
+                "program": "astd",
+                "args": ["-s:linux.absytree-session"]
+            }
         }
     },
+
+    "x+startup-commands": [
+        ".lsp-log-server-debug true",
+        ".lsp-log-verbose true"
+    ],
 
     "+wasm-plugin-post-load-commands": [
         "load-vscode-snippets \".vscode/nim-snippets.code-snippets\" \"nim\"",
