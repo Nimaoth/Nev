@@ -116,14 +116,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommand "editor", "<LEADER>gk", "browse-keybinds"
   addCommandBlock "editor", "<LEADER>log":
-    runAction "logs"
-    # Move cursor to end to enable auto scrolling
-    if getActiveEditor().isTextEditor(ed):
-      # In vim mode this only moves the end of the selection, so the entire file is selected.
-      ed.moveLast("file")
-      # So do this to make an empty selection at the end
-      ed.selection = ed.selection.last.toSelection
-    runAction "next-view"
+    logs(scrollToBottom = true)
+    nextView()
 
   withKeys "<LEADER>s":
     addCommandBlock "editor", "l<*-n>1":
