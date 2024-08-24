@@ -5,6 +5,9 @@ import scripting_api
 
 template varargs*() {.pragma.}
 
+proc editor_text_enableAutoReload_void_TextDocumentEditor_bool_impl*(
+    self: TextDocumentEditor; enabled: bool) =
+  discard
 proc editor_text_getFileName_string_TextDocumentEditor_impl*(
     self: TextDocumentEditor): string =
   discard

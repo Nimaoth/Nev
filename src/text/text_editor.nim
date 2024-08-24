@@ -59,6 +59,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   configProvider: ConfigProvider
 
+  selectionsBeforeReload: Selections
   selectionsInternal: Selections
   targetSelectionsInternal: Option[Selections] # The selections we want to have once
                                                # the document is loaded
@@ -146,6 +147,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   textChangedHandle: Id
   onRequestRerenderHandle: Id
   loadedHandle: Id
+  preLoadedHandle: Id
   savedHandle: Id
   textInsertedHandle: Id
   textDeletedHandle: Id
@@ -217,6 +219,7 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
     languageServer: LanguageServer)
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentLoaded(self: TextDocumentEditor)
+proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
 proc handleTextDocumentSaved(self: TextDocumentEditor)
 proc handleCompletionsUpdated(self: TextDocumentEditor)
 
@@ -319,6 +322,7 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.document.textChanged.unsubscribe(self.textChangedHandle)
     self.document.onRequestRerender.unsubscribe(self.onRequestRerenderHandle)
     self.document.onLoaded.unsubscribe(self.loadedHandle)
+    self.document.onPreLoaded.unsubscribe(self.preLoadedHandle)
     self.document.onSaved.unsubscribe(self.savedHandle)
     self.document.textInserted.unsubscribe(self.textInsertedHandle)
     self.document.textDeleted.unsubscribe(self.textDeletedHandle)
@@ -366,6 +370,12 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
       if self.isNil or self.document.isNil:
         return
       self.handleTextDocumentLoaded()
+  )
+
+  self.preLoadedHandle = document.onPreLoaded.subscribe (_: TextDocument) => (block:
+      if self.isNil or self.document.isNil:
+        return
+      self.handleTextDocumentPreLoaded()
   )
 
   self.savedHandle = document.onSaved.subscribe () =>
@@ -735,6 +745,9 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
+  self.document.enableAutoReload(enabled)
 
 proc getFileName(self: TextDocumentEditor): string {.expose: "editor.text".} =
   if self.document.isNil:
@@ -3368,6 +3381,12 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
 
   self.markDirty()
 
+proc handleTextDocumentPreLoaded(self: TextDocumentEditor) =
+  if self.document.isNil:
+    return
+
+  self.selectionsBeforeReload = self.selections
+
 proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   if self.document.isNil:
     return
@@ -3375,6 +3394,12 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
     self.centerCursor()
+
+  elif self.document.autoReload:
+    if self.selection == self.selectionsBeforeReload[self.selectionsBeforeReload.high]:
+      self.selection = self.document.lastCursor.toSelection
+      self.scrollToCursor()
+
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
 
