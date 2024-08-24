@@ -126,6 +126,7 @@ var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
 proc clearStyledTextCache*(self: TextDocument)
+proc clearDiagnostics*(self: TextDocument)
 
 proc getTotalTextSize*(self: UndoOp): int =
   for c in self.checkpoints:
@@ -302,12 +303,17 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.mLanguageId = languageId
     self.reloadTreesitterLanguage()
 
+func contentString*(self: TextDocument): string =
+  return self.lines.join("\n")
+
 proc `content=`*(self: TextDocument, value: sink string) =
   self.revision.inc
   self.undoableRevision.inc
 
   self.undoOps = @[]
   self.redoOps = @[]
+
+  let previousFullSelection = ((0, 0), self.lastCursor)
 
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
@@ -356,6 +362,10 @@ proc `content=`*(self: TextDocument, value: sink string) =
 
   inc self.version
 
+  self.textDeleted.invoke((self, previousFullSelection))
+  self.textInserted.invoke((self, ((0, 0), self.lastCursor), self.contentString))
+
+  self.clearDiagnostics()
   self.clearStyledTextCache()
   self.notifyTextChanged()
 
@@ -365,6 +375,8 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 
   self.undoOps = @[]
   self.redoOps = @[]
+
+  let previousFullSelection = ((0, 0), self.lastCursor)
 
   if self.singleLine:
     self.lines = @[value.join("")]
@@ -385,14 +397,15 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 
   inc self.version
 
+  self.textDeleted.invoke((self, previousFullSelection))
+  self.textInserted.invoke((self, ((0, 0), self.lastCursor), self.contentString))
+
+  self.clearDiagnostics()
   self.clearStyledTextCache()
   self.notifyTextChanged()
 
 func content*(self: TextDocument): seq[string] =
   return self.lines
-
-func contentString*(self: TextDocument): string =
-  return self.lines.join("\n")
 
 func contentString*(self: TextDocument, selection: Selection, inclusiveEnd: bool = false): string =
   let (first, last) = selection.normalized
@@ -1027,7 +1040,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
-proc loadAsync(self: TextDocument, ws: Workspace, reloadTreesitter: bool = false): Future[void] {.async.} =
+proc loadAsync*(self: TextDocument, ws: Workspace, reloadTreesitter: bool = false): Future[void] {.async.} =
 
   logScope lvlInfo, &"loadAsync '{self.filename}'"
   # self.content = await ws.loadFile(self.filename)
@@ -1146,6 +1159,40 @@ method load*(self: TextDocument, filename: string = "") =
     self.autoDetectIndentStyle()
     self.onLoaded.invoke self
 
+proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.Diagnostic]) =
+  for line in self.diagnosticsPerLine.keys:
+    self.styledTextCache.del(line)
+
+  self.currentDiagnostics.setLen diagnostics.len
+  self.diagnosticsPerLine.clear()
+
+  for i, d in diagnostics:
+    let selection = self.runeSelectionToSelection((
+      (d.`range`.start.line, d.`range`.start.character.RuneIndex),
+      (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex)))
+
+    self.currentDiagnostics[i] = language_server_base.Diagnostic(
+      selection: selection,
+      severity: d.severity,
+      code: d.code,
+      codeDescription: d.codeDescription,
+      source: d.source,
+      message: d.message,
+      tags: d.tags,
+      relatedInformation: d.relatedInformation,
+      data: d.data,
+    )
+
+    self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
+    self.styledTextCache.del(selection.first.line)
+
+proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
+  let languageServer = await self.getLanguageServer()
+  if languageServer.getSome(ls):
+    let diagnostics = await ls.getDiagnostics(self.filename)
+    if diagnostics.isSuccess:
+      self.setCurrentDiagnostics(diagnostics.result)
+
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
   let languageId = if self.languageId != "":
     self.languageId
@@ -1195,30 +1242,7 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       let uri = diagnostics.uri.decodeUrl.parseUri
       if uri.path.normalizePathUnix == self.filename:
-
-        for line in self.diagnosticsPerLine.keys:
-          self.styledTextCache.del(line)
-
-        self.currentDiagnostics.setLen diagnostics.diagnostics.len
-        self.diagnosticsPerLine.clear()
-
-        for i, d in diagnostics.diagnostics:
-          let selection = self.runeSelectionToSelection(((d.`range`.start.line, d.`range`.start.character.RuneIndex), (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex)))
-          self.currentDiagnostics[i] = language_server_base.Diagnostic(
-            selection: selection,
-            severity: d.severity,
-            code: d.code,
-            codeDescription: d.codeDescription,
-            source: d.source,
-            message: d.message,
-            tags: d.tags,
-            relatedInformation: d.relatedInformation,
-            data: d.data,
-          )
-          self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
-          self.styledTextCache.del(selection.first.line)
-
-        self.onDiagnosticsUpdated.invoke()
+        self.setCurrentDiagnostics(diagnostics.diagnostics)
 
     self.onLanguageServerAttached.invoke (self, ls)
 
@@ -1453,16 +1477,39 @@ proc updateCursorAfterDelete*(self: TextDocument, location: Cursor, deleted: Sel
   return res.some
 
 proc updateDiagnosticPositionsAfterInsert(self: TextDocument, inserted: Selection) =
+  self.diagnosticsPerLine.clear()
+  var i = 0
   for d in self.currentDiagnostics.mitems:
+    self.styledTextCache.del(d.selection.first.line)
+    self.styledTextCache.del(d.selection.last.line)
+
     d.selection.first = self.updateCursorAfterInsert(d.selection.first, inserted)
     d.selection.last = self.updateCursorAfterInsert(d.selection.last, inserted)
 
+    self.styledTextCache.del(d.selection.first.line)
+    self.styledTextCache.del(d.selection.last.line)
+
+    self.diagnosticsPerLine.mgetOrPut(d.selection.first.line, @[]).add i
+
+    inc i
+
 proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selection) =
+  self.diagnosticsPerLine.clear()
   let selection = selection.normalized
   for i in countdown(self.currentDiagnostics.high, 0):
+    self.styledTextCache.del(self.currentDiagnostics[i].selection.first.line)
+    self.styledTextCache.del(self.currentDiagnostics[i].selection.last.line)
+
     if self.updateCursorAfterDelete(self.currentDiagnostics[i].selection.first, selection).getSome(first) and
         self.updateCursorAfterDelete(self.currentDiagnostics[i].selection.last, selection).getSome(last):
+
       self.currentDiagnostics[i].selection = (first, last)
+
+      self.styledTextCache.del(self.currentDiagnostics[i].selection.first.line)
+      self.styledTextCache.del(self.currentDiagnostics[i].selection.last.line)
+
+      self.diagnosticsPerLine.mgetOrPut(self.currentDiagnostics[i].selection.first.line, @[]).add i
+
     else:
       self.currentDiagnostics[i].removed = true
 

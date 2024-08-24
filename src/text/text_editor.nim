@@ -2836,11 +2836,11 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       return
 
     let visibleRange = self.visibleTextRange(self.screenLineCount)
-    let inlayHints = await ls.getInlayHints(self.document.fullPath, visibleRange)
+    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.fullPath, visibleRange)
     # todo: detect if canceled instead
-    if inlayHints.len > 0:
+    if inlayHints.isSuccess:
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
-      self.inlayHints = inlayHints
+      self.inlayHints = inlayHints.result
       self.markDirty()
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -2848,17 +2848,10 @@ proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.currentDiagnosticLine = -1
   self.markDirty()
 
-proc updateDiagnosticsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if languageServer.getSome(ls):
-    let diagnostics = await ls.getDiagnostics(self.document.fullPath)
-    debugf"diagnostics: {diagnostics}"
-
 proc updateInlayHints*(self: TextDocumentEditor) =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
       asyncCheck self.updateInlayHintsAsync()
-      # asyncCheck self.updateDiagnosticsAsync()
   else:
     self.inlayHintsTask.reschedule()
 

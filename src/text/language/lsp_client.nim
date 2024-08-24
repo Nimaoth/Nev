@@ -1,4 +1,4 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts, locks]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts, locks, times]
 import misc/[custom_logger, async_http_client, websocket, util, event, myjsonutils, custom_async, response]
 import scripting/expose
 import platform/filesystem
@@ -10,15 +10,13 @@ import misc/async_process
 
 export lsp_types
 
-var file = open(getAppDir() / "lsp.log", fmWrite)
-var fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
-var fileLoggerLock: Lock
-fileLoggerLock.initLock()
+var file {.threadvar.}: syncio.File
+var logFileName {.threadvar.}: string
+var fileLogger {.threadvar.}: logging.FileLogger
 
 let mainThreadId = getThreadId()
 template isMainThread(): untyped = getThreadId() == mainThreadId
 
-# logCategory "lsp"
 proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.used.} =
   var args = args
   if includeCategory:
@@ -26,12 +24,13 @@ proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.us
 
   return genAst(level, args):
     {.gcsafe.}:
-      fileLoggerLock.acquire()
-      defer:
-        fileLoggerLock.release()
+      if file == nil:
+        logFileName = getAppDir() / & "lsp.log"
+        file = open(logFileName, fmWrite)
+        fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+
       logging.log(fileLogger, level, args)
-    # logging.log(level, args)
-    # echo level, ": ", args
+      setLastModificationTime(logFileName, getTime())
 
 macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
   return logImpl(level, args, true)
@@ -40,6 +39,7 @@ macro logNoCategory(level: logging.Level, args: varargs[untyped, `$`]): untyped 
   return logImpl(level, args, false)
 
 template measureBlock(description: string, body: untyped): untyped {.used.} =
+  # todo
   # let timer = startTimer()
   body
   # block:
@@ -47,6 +47,7 @@ template measureBlock(description: string, body: untyped): untyped {.used.} =
   #   logging.log(lvlInfo, "[" & "lsp" & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
 
 template logScope(level: logging.Level, text: string): untyped {.used.} =
+  # todo
   let txt = text
   # logging.log(level, "[" & "lsp" & "] " & txt)
   # inc logger.indentLevel
@@ -72,8 +73,8 @@ macro debugf(x: static string): untyped {.used.} =
     fmt str
   return logImpl(level, nnkArgList.newTree(arg), true)
 
-var logVerbose = false
-var logServerDebug = false
+var logVerbose = true
+var logServerDebug = true
 
 type
   LSPConnection = ref object of RootObj
@@ -114,6 +115,7 @@ type
     body: JsonNode
 
   LSPClientObject* = object
+    languageId*: string
     connection: LSPConnection
     nextId: int
     activeRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[JsonNode]]]] # Worker Thread
@@ -147,7 +149,7 @@ type
     args: seq[string]
     languagesServer: Option[(string, int)] = (string, int).none
 
-    initializedChannel*: AsyncChannel[bool]
+    initializedChannel*: AsyncChannel[Option[ServerCapabilities]]
     workspaceConfigurationRequestChannel*: AsyncChannel[ConfigurationParams]
     workspaceConfigurationResponseChannel*: AsyncChannel[seq[JsonNode]]
     getCompletionsChannel*: AsyncChannel[string]
@@ -159,6 +161,7 @@ type
     responseChannel*: AsyncChannel[LSPClientResponse]
     notifyTextDocumentOpenedChannel*: AsyncChannel[tuple[languageId: string, path: string, content: string]]
     notifyTextDocumentClosedChannel*: AsyncChannel[string]
+    notifyConfigurationChangedChannel*: AsyncChannel[JsonNode]
     notifyTextDocumentChangedChannel*: AsyncChannel[tuple[path: string, version: int, changes: seq[TextDocumentContentChangeEvent], content: string]]
 
   LSPClient* = ptr LSPClientObject
@@ -172,7 +175,7 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     workspaceFolders: workspaces,
     args: args,
     languagesServer: languagesServer,
-    initializedChannel: newAsyncChannel[bool](),
+    initializedChannel: newAsyncChannel[Option[ServerCapabilities]](),
     workspaceConfigurationRequestChannel: newAsyncChannel[ConfigurationParams](),
     workspaceConfigurationResponseChannel: newAsyncChannel[seq[JsonNode]](),
     getCompletionsChannel: newAsyncChannel[string](),
@@ -184,12 +187,11 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     responseChannel: newAsyncChannel[LSPClientResponse](),
     notifyTextDocumentOpenedChannel: newAsyncChannel[tuple[languageId: string, path: string, content: string]](),
     notifyTextDocumentClosedChannel: newAsyncChannel[string](),
+    notifyConfigurationChangedChannel: newAsyncChannel[JsonNode](),
     notifyTextDocumentChangedChannel: newAsyncChannel[tuple[path: string, version: int, changes: seq[TextDocumentContentChangeEvent], content: string]](),
   )
 
   return client
-
-proc notifyConfigurationChanged*(client: LSPClient, settings: JsonNode) {.async.}
 
 # proc waitInitialized*(client: LSPCLient): Future[bool] = client.initializedFuture.future
 
@@ -318,7 +320,7 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
     debug "[recv] ", data[0..min(data.high, 500)]
   return parseJson(data)
 
-proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int]) {.async.} =
+proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int]) {.gcsafe, async.} =
   var request = %*{
     "jsonrpc": "2.0",
     "method": meth,
@@ -340,30 +342,26 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
   let header = createHeader(data.len)
   let msg = header & data
 
+  if logVerbose:
+    debugf"[send] {msg[0..min(msg.high, 500)]}"
   await client.connection.send(msg)
 
-proc sendNotification(client: LSPClient, meth: string, params: JsonNode) {.async.} =
+proc sendNotification(client: LSPClient, meth: string, params: JsonNode) {.gcsafe, async.} =
   # debugf"sendNotification {meth}, {params}"
   await client.sendRPC(meth, params, int.none)
 
-proc sendResult(client: LSPClient, meth: string, id: int, res: JsonNode) {.async, gcsafe.} =
+proc sendResult(client: LSPClient, id: int, res: JsonNode) {.async, gcsafe.} =
   var request = %*{
     "jsonrpc": "2.0",
     "id": id,
-    "method": meth,
     "result": res,
   }
 
-  if logVerbose:
-    let str = $res
-    debug "[sendResult] ", meth, ": ", str[0..min(str.high, 500)]
-
-  if not client.isInitialized and meth != "initialize":
-    log(lvlInfo, fmt"[sendResult] client not initialized, add to pending ({meth})")
-    client.pendingRequests.add $request
-    return
-
   let data = $request
+
+  if logVerbose:
+    debug "[sendResult] ", data[0..min(data.high, 500)]
+
   let header = createHeader(data.len)
   let msg = header & data
 
@@ -604,17 +602,22 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
   if res.isError:
     log lvlError, &"Failed to initialize lsp: {res.error}"
     # client.initializedFuture.complete(false)
-    await client.initializedChannel.send(false)
+    await client.initializedChannel.send(ServerCapabilities.none)
     return res
 
   assert not res.isCanceled
 
+  try:
+    client.serverCapabilities = res.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
+  except:
+    await client.initializedChannel.send(ServerCapabilities.none)
+    return error[JsonNode](0, &"Failed to parse server capabilities: {getCurrentExceptionMsg()}\n{res.result.pretty}")
+
   client.isInitialized = true
+  log lvlInfo, "Server capabilities: ", client.serverCapabilities
 
   await client.sendNotification("initialized", newJObject())
-
-  # client.initializedFuture.complete(true)
-  await client.initializedChannel.send(true)
+  await client.initializedChannel.send(client.serverCapabilities.some)
 
   for req in client.pendingRequests:
     if logVerbose:
@@ -654,7 +657,7 @@ when not defined(js):
     while process.isAlive:
       let line = await process.recvErrorLine
       if logServerDebug:
-        log(lvlDebug, fmt"[debug] {line}")
+        log(lvlDebug, fmt"[server] {line}")
 
 proc sendInitializationRequest(client: LSPClient) {.async, gcsafe.} =
   log(lvlInfo, "Initializing client...")
@@ -665,17 +668,6 @@ proc sendInitializationRequest(client: LSPClient) {.async, gcsafe.} =
 
   assert not response.isCanceled
 
-  client.serverCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
-  log(lvlInfo, "Server capabilities: ", client.serverCapabilities)
-
-  if client.serverCapabilities.textDocumentSync.asTextDocumentSyncKind().getSome(syncKind):
-    if syncKind == TextDocumentSyncKind.Full:
-      client.fullDocumentSync = true
-
-  elif client.serverCapabilities.textDocumentSync.asTextDocumentSyncOptions().getSome(syncOptions):
-    if syncOptions.change == TextDocumentSyncKind.Full:
-      client.fullDocumentSync = true
-
 proc connect*(client: LSPClient) {.async, gcsafe.} =
   # client.initializedFuture = newResolvableFuture[bool]("client.initializedFuture")
 
@@ -684,7 +676,7 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
     let serverConfig = await tryGetPortFromLanguagesServer(lsConfig[0], lsConfig[1], client.serverExecutablePath, client.args)
     if serverConfig.isNone:
       log(lvlError, "Failed to connect to languages server: no port found")
-      await client.initializedChannel.send(false)
+      await client.initializedChannel.send(ServerCapabilities.none)
       return
 
   #   # log lvlInfo, fmt"Using websocket connection on port {serverConfig.get.port} as LSP connection"
@@ -704,7 +696,7 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
         return client.sendInitializationRequest()
 
       connection.process.onRestartFailed = proc(): Future[void] {.gcsafe.} =
-        return client.initializedChannel.send(false)
+        return client.initializedChannel.send(ServerCapabilities.none)
 
       client.connection = connection
 
@@ -725,7 +717,7 @@ proc translatePath(client: LSPClient, path: string): string =
 
   return path
 
-proc notifyOpenedTextDocument*(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
+proc notifyOpenedTextDocument(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
   let path = client.translatePath(path)
   let params = %*{
     "textDocument": %*{
@@ -739,7 +731,7 @@ proc notifyOpenedTextDocument*(client: LSPClient, languageId: string, path: stri
   debugf"notifyOpenedTextDocument {languageId}, {path}"
   await client.sendNotification("textDocument/didOpen", params)
 
-proc notifyClosedTextDocument*(client: LSPClient, path: string) {.async.} =
+proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.} =
   let path = client.translatePath(path)
   let params = %*{
     "textDocument": %*{
@@ -750,7 +742,7 @@ proc notifyClosedTextDocument*(client: LSPClient, path: string) {.async.} =
   debugf"notifyClosedTextDocument {path}"
   await client.sendNotification("textDocument/didClose", params)
 
-proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int,
+proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int,
     changes: seq[TextDocumentContentChangeEvent]) {.async.} =
   let path = client.translatePath(path)
   let params = %*{
@@ -761,13 +753,13 @@ proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int,
     "contentChanges": changes.toJson
   }
 
-  debugf"notifyTextDocumentChanged {path}, {version}"
+  debugf"notifyTextDocumentChangedPartial {path}, {version}"
   await client.sendNotification("textDocument/didChange", params)
 
-proc notifyConfigurationChanged*(client: LSPClient, settings: JsonNode) {.async.} =
-  await client.sendNotification("textDocument/didChangeConfiguration", settings)
+proc notifyConfigurationChanged(client: LSPClient, settings: JsonNode) {.gcsafe, async.} =
+  await client.sendNotification("workspace/didChangeConfiguration", %{"settings": settings})
 
-proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int, content: string) {.async.} =
+proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, content: string) {.async.} =
   let path = client.translatePath(path)
   let params = %*{
     "textDocument": %*{
@@ -782,7 +774,7 @@ proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int, c
     ],
   }
 
-  debugf"notifyTextDocumentChanged {path}, {version}"
+  debugf"notifyTextDocumentChangedFull {path}, {version}"
   await client.sendNotification("textDocument/didChange", params)
 
 proc getDefinition*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DefinitionResponse]] {.async.} =
@@ -936,7 +928,7 @@ proc getWorkspaceSymbols*(client: LSPClient, query: string): Future[Response[Wor
   return await client.sendRequest(client.activeWorkspaceSymbolsRequests.addr, "workspace/symbol", params)
 
 proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[DocumentDiagnosticResponse]] {.async.} =
-  debugf"[getSymbols] {filename.absolutePath}"
+  # debugf"[getDiagnostics] {filename.absolutePath}"
   let path = client.translatePath(filename)
 
   client.cancelAllOf("textDocument/diagnostic")
@@ -980,9 +972,11 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   return error[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
 proc handleWorkspaceConfigurationRequest(client: LSPClient, id: int, params: ConfigurationParams) {.async, gcsafe.} =
+  debugf"handleWorkspaceConfigurationRequest {id}, {params}"
   await client.workspaceConfigurationRequestChannel.send(params)
   let res = await client.workspaceConfigurationResponseChannel.recv()
-  await client.sendResult("workspace/configuration", id, %res)
+
+  await client.sendResult(id, %res)
 
 proc runAsync*(client: LSPClient) {.async, gcsafe.} =
   while client.connection.isNotNil:
@@ -997,8 +991,6 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
       debugf"[run] Got response: {response}"
 
     try:
-      discard
-
       if not response.hasKey("id"):
         # Response has no id, it's a notification
         let meth = response["method"].getStr
@@ -1152,12 +1144,29 @@ proc handleNotifiesChanged(client: LSPClient) {.async, gcsafe.} =
 
   log lvlInfo, &"handleNotifiesChanged: client gone"
 
+proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
+  while client != nil:
+    let value = client.notifyConfigurationChangedChannel.recv().await.getOr:
+      log lvlInfo, &"handleNotifiesConfigurationChanged: channel closed"
+      return
+
+    await client.notifyConfigurationChanged(value)
+
+  log lvlInfo, &"handleNotifiesConfigurationChanged: client gone"
+
 proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
+  logFileName = getAppDir() / &"lsp.{client.languageId}.log"
+  file = open(logFileName, fmWrite)
+  fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+  defer:
+    file.close()
+
   asyncCheck client.connect()
   asyncCheck client.runAsync()
   asyncCheck client.handleNotifiesOpened()
   asyncCheck client.handleNotifiesClosed()
   asyncCheck client.handleNotifiesChanged()
+  asyncCheck client.handleNotifiesConfigurationChanged()
   asyncCheck client.handleRequests()
 
   # todo: cleanup

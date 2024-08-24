@@ -91,5 +91,10 @@ method getSymbols*(self: LanguageServerAbsytreeCommands, filename: string): Futu
 method getHover*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   return string.none
 
-method getInlayHints*(self: LanguageServerAbsytreeCommands, filename: string, selection: Selection): Future[seq[language_server_base.InlayHint]] {.async.} =
-  return newSeq[language_server_base.InlayHint]()
+method getInlayHints*(self: LanguageServerAbsytreeCommands, filename: string, selection: Selection):
+    Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
+  return success[seq[language_server_base.InlayHint]](@[])
+
+method getDiagnostics*(self: LanguageServerAbsytreeCommands, filename: string):
+    Future[Response[seq[lsp_types.Diagnostic]]] {.async.} =
+  return success[seq[lsp_types.Diagnostic]](@[])

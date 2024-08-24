@@ -103,8 +103,8 @@ method saveTempFile*(self: LanguageServer, filename: string, content: string): F
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard
 method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base.} = discard
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
-method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[seq[InlayHint]] {.base.} = discard
-method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[Diagnostic]]] {.base.} = discard
+method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base.} = discard
+method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base.} = discard
 
 var handleIdCounter = 1
 
