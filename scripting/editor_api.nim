@@ -94,8 +94,8 @@ proc changeLayoutProp*(prop: string; change: float32) =
   editor_changeLayoutProp_void_App_string_float32_impl(prop, change)
 proc toggleStatusBarLocation*() =
   editor_toggleStatusBarLocation_void_App_impl()
-proc logs*() =
-  editor_logs_void_App_impl()
+proc logs*(scrollToBottom: bool = false) =
+  editor_logs_void_App_bool_impl(scrollToBottom)
 proc toggleConsoleLogger*() =
   editor_toggleConsoleLogger_void_App_impl()
 proc showEditor*(editorId: EditorId; viewIndex: Option[int] = int.none) =

@@ -1886,12 +1886,18 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
   self.platform.requestRender(true)
 
-proc logs*(self: App) {.expose("editor").} =
+proc logs*(self: App, scrollToBottom: bool = false) {.expose("editor").} =
   let editors = self.getEditorsForDocument(self.logDocument)
-  if editors.len > 0:
+  let editor = if editors.len > 0:
     self.showEditor(editors[0].id)
+    editors[0]
   else:
-    discard self.createAndAddView(self.logDocument)
+    self.createAndAddView(self.logDocument)
+
+  if scrollToBottom and editor of TextDocumentEditor:
+    let editor = editor.TextDocumentEditor
+    editor.moveLast("file")
+    editor.selection = editor.selection.last.toSelection
 
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
   logger.toggleConsoleLogger()
