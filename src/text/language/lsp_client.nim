@@ -244,7 +244,10 @@ when defined(js):
   proc absolutePath(path: string): string = path
 
 proc toUri*(path: string): Uri =
-  return parseUri("file:///" & path.absolutePath.encodePathUri) # todo: use file://{} for linux
+  when defined(linux):
+    return parseUri("file://" & path.absolutePath.encodePathUri)
+  else:
+    return parseUri("file:///" & path.absolutePath.encodePathUri)
 
 proc createHeader*(contentLength: int): string =
   let header = fmt"Content-Length: {contentLength}" & "\r\n\r\n"
