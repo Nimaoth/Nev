@@ -359,10 +359,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
     id = self.nextLineId
 
   self.currentContentFailedToParse = false
-
   self.currentTree.delete()
-  self.reparseTreesitter()
-
   inc self.version
 
   self.textDeleted.invoke((self, previousFullSelection))
@@ -394,10 +391,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
     id = self.nextLineId
 
   self.currentContentFailedToParse = false
-
   self.currentTree.delete()
-  self.reparseTreesitter()
-
   inc self.version
 
   self.textDeleted.invoke((self, previousFullSelection))
@@ -899,7 +893,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     if prevLanguageId != self.languageId:
       return
     self.errorQuery = query
-  elif language.get.query("error", "(ERROR) @error").getSome(query):
+  elif language.get.query("error", "(ERROR) @error").await.getSome(query):
     self.errorQuery = query
   else:
     log(lvlError, fmt"No error queries found for '{self.languageId}'")
