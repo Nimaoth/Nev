@@ -102,7 +102,7 @@
         "\\.json$": "json",
         "\\.ocaml$": "ocaml",
         "\\.php$": "php",
-        "\\.py$": "python",
+        "\\.(py|pyi)$": "python",
         "\\.ruby$": "ruby",
         "\\.rs$": "rust",
         "\\.scala$": "scala",
