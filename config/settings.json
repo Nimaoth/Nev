@@ -1,4 +1,5 @@
 {
+    "$schema": "settings.schema.json",
     "lsp": {
         "cpp": {
             "path": "clangd",
@@ -436,6 +437,7 @@
             },
             "lldb": {
                 "connection": "tcp",
+                "port": 0,
                 "path": "lldb-dap"
             }
         }

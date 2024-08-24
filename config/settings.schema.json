@@ -1,0 +1,379 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "lsp": {
+            "type": "object",
+            "properties": {
+                "zig": {
+                    "$ref": "#/$defs/lsp-zig",
+                    "required": [
+                        "path"
+                    ]
+                }
+            },
+            "patternProperties": {
+                ".*": {
+                    "$ref": "#/$defs/lsp-config"
+                }
+            }
+        },
+        "+lsp": {
+            "type": "object",
+            "properties": {
+                "zig": {
+                    "$ref": "#/$defs/lsp-zig",
+                    "required": [
+                        "path"
+                    ]
+                },
+                "+zig": {
+                    "$ref": "#/$defs/lsp-zig"
+                }
+            },
+            "patternProperties": {
+                ".*": {
+                    "$ref": "#/$defs/lsp-config"
+                }
+            }
+        }
+    },
+
+    "patternProperties": {
+        "\\$schema": {
+            "type": "string"
+        },
+
+        "^\\+?lsp$": {
+            "type": "object",
+            "patternProperties": {
+                ".*": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Name of the executable (needs to be in PATH), or absolute path of the executable.\nE.g. `nimlangserver` or `/path/to/nimlangserver`"
+                        },
+                        "args": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "description": "Arguments passed to the language server executable"
+                            }
+                        },
+                        "section": {
+                            "type": "string",
+                            "description": "Name of the setting which gets passed to the language server as part of the initialization.\nE.g. if section is `nim`, then the setting `lsp.nim.workspace` will be sent to the LSP."
+                        }
+                    },
+                    "required": [
+                        "path"
+                    ]
+                }
+            }
+        },
+
+        "^\\+?language-mappings$": {
+            "type": "object",
+            "patternProperties": {
+                ".*": {
+                    "type": "string"
+                }
+            }
+        },
+
+        "^\\+?languages$": {
+            "type": "object",
+            "patternProperties": {
+                ".*": {
+                    "type": "object",
+                    "properties": {
+                        "treesitter": {
+                            "type": "string",
+                            "description": "Name of a github repository, e.g. `username/repo-name`, optionally with a sub directory, e.g. `username/repo-name/subdir`"
+                        },
+                        "treesitter-queries": {
+                            "type": "string",
+                            "description": "Subdirectory of the repository which contains the queries. By default the queries are found by searching for highlights.scm"
+                        },
+                        "tabWidth": {
+                            "type": "integer"
+                        },
+                        "indent": {
+                            "type": "string",
+                            "enum": ["spaces", "tab"]
+                        },
+                        "indentAfter": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Automatically increase indentation when insert a new line after a line which ends in one of these strings"
+                        },
+                        "lineComment": {
+                            "type": "string",
+                            "description": "String which start a line comment"
+                        },
+                        "blockComment": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Two element array containing the beginning and end of a block comment"
+                        },
+                        "ignoreContextLinePrefix": {
+                            "type": "string",
+                            "description": "Don't make lines sticky if they start with this prefix (whitespace at the start of the line is ignored)."
+                        }
+                    }
+                }
+            }
+        },
+
+        "^\\+?snippets$": {
+            "type": "object",
+            "description": "Configure snippets per language. Properties are language ids.",
+            "patternProperties": {
+                ".*": {
+                    "type": "object",
+                    "patternProperties": {
+                        ".*": {
+                            "type": "object",
+                            "description": "Property names are the names of snippets",
+                            "required": ["scope", "prefix", "body"],
+                            "properties": {
+                                "scope": {
+                                    "type": "string",
+                                    "description": "Language id where this snippet is active."
+                                },
+                                "prefix": {
+                                    "type": "string",
+                                    "description": "The text used for completion. Type this text to see the snippet in the completion window."
+                                },
+                                "body": {
+                                    "type": "array",
+                                    "description": "Array of lines of text which will be inserted when applying the snippet. Uses VSCode snippet syntax.",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+
+        "^\\+?debugger$": {
+            "type": "object",
+            "description": "Configure snippets per language. Properties are language ids.",
+            "patternProperties": {
+                "^\\+?type$": {
+                    "type": "object",
+                    "patternProperties": {
+                        ".*": {
+                            "type": "object",
+                            "description": "Property names are the names of snippets.",
+                            "properties": {
+                                "connection": {
+                                    "type": "string",
+                                    "enum": ["tcp", "stdio"],
+                                    "description": "How the editor should connect to the debug adapter. Default: stdio"
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Name or path to the debug adapter executable. If it is the name then it must be in PATH."
+                                },
+                                "host": {
+                                    "type": "string",
+                                    "description": "Hostname/IP where the language server is running.\nDefault: 127.0.0.1"
+                                },
+                                "port": {
+                                    "type": "integer",
+                                    "description": "Which port to connect to. `type` must be `tcp`.\nIgnored if `path` is set."
+                                },
+                                "args": {
+                                    "type": "array",
+                                    "description": "Command line arguments which are passed to the debug adapter.",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+
+        "^\\+?editor$": {
+            "type": "object",
+            "properties": {
+                "^\\+?text$": {
+                    "type": "object",
+                    "properties": {
+                        "auto-start-language-server": {
+                            "type": "boolean"
+                        },
+                        "triple-click-command": {
+                            "type": "string"
+                        },
+                        "triple-click-command-args": {
+                            "type": "array"
+                        },
+                        "^\\+?whitespace$": {
+                            "type": "object",
+                            "properties": {
+                                "char": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "highlight-treesitter-errors": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                "restore-open-workspaces": {
+                    "type": "boolean"
+                },
+                "restore-open-editors": {
+                    "type": "boolean"
+                },
+                "maxViews": {
+                    "type": "integer"
+                }
+            }
+        },
+
+        "^\\+?ui$": {
+            "type": "object",
+            "properties": {
+                "^\\+?background$": {
+                    "type": "object",
+                    "properties": {
+                        "transparent": {
+                            "type": "boolean",
+                            "description": "If true then the background is transparent. Should only be set for the terminal version if you use a transparent background in the terminal."
+                        }
+                    }
+                }
+            }
+        },
+
+        "^\\+?keybindings$": {
+            "type": "object",
+            "properties": {
+                "preset": {
+                    "type": "string",
+                    "enum": ["vscode", "vim", ""],
+                    "description": "Which keymap preset to load from the keybindings plugin.\nTo actually load the preset `load-configured-keybindings` has to be run. This is usually done by the app settings which specify `load-configured-keybindings` in the `wasm-plugin-post-load-commands` setting so that the preset is loaded after the wasm plugins are loaded."
+                },
+                "reapply-app": {
+                    "type": "boolean",
+                    "default": "false",
+                    "description": "If true then keybindings from the absytree installation directory will be reapplied after loading the preset.\nDefault: false"
+                },
+                "reapply-home": {
+                    "type": "boolean",
+                    "default": "true",
+                    "description": "If true then keybindings from the user home directory will be reapplied after loading the preset.\nDefault: true"
+                },
+                "reapply-workspace": {
+                    "type": "boolean",
+                    "default": "true",
+                    "description": "If true then keybindings from the workspace will be reapplied after loading the preset.\nDefault: true"
+                }
+            }
+        },
+
+        "^\\+?wasm-plugin-post-load-commands$": {
+            "type": "array",
+            "description": "Array of commands which are executed after loading wasm plugins",
+            "items": {
+                "type": "string"
+            }
+        },
+
+        "^\\+?nims-plugin-post-load-commands$": {
+            "type": "array",
+            "description": "Array of commands which are executed after loading nimscript plugins",
+            "items": {
+                "type": "string"
+            }
+        },
+
+        "^\\+?plugin-post-load-commands$": {
+            "type": "array",
+            "description": "Array of commands which are executed after loading all plugins",
+            "items": {
+                "type": "string"
+            }
+        },
+
+        "^\\+?startup-commands$": {
+            "type": "array",
+            "description": "Array of commands which are executed after loading settings from the user home directory.",
+            "items": {
+                "type": "string"
+            }
+        }
+
+    },
+    "required": [],
+    "additionalProperties": false,
+
+    "$defs": {
+        "lsp-config": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Name of the executable (needs to be in PATH), or absolute path of the executable.\nE.g. `nimlangserver` or `/path/to/nimlangserver`"
+                },
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "description": "Arguments passed to the language server executable"
+                    }
+                },
+                "initialization-options-name": {
+                    "type": "string",
+                    "description": "Name of the setting which gets passed to the language server as part of the initialization.\nE.g. if name is `rust-analyzer`, then the setting `lsp.rust.rust-analyzer` will be sent to the LSP.\nDefault: settings"
+                },
+                "workspace-configuration-name": {
+                    "type": "string",
+                    "description": "Name of the setting which contains the sections requested by the language server through the workspace/configuration request.\nE.g. if name is `rust-analyzer` and the requested section is `linkedProjects`, then the setting `lsp.rust.rust-analyzer.linkedProjects` will be returned. Can be empty.\nDefault: settings"
+                },
+                "initial-configuration": {
+                    "description": "Value which gets passed to the language server using the workspace/didChangeConfiguration notification after initialization.\nDefault: null"
+                }
+            },
+            "required": [
+                "path"
+            ]
+        },
+        "lsp-zig": {
+            "type": "object",
+            "allOf": [
+                { "$ref": "#/$defs/lsp-config" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "settings": {
+                            "type": "object",
+                            "description": "Specify additional settings for the language server",
+                            "properties": {
+                                "zls": {
+                                    "$ref": "https://raw.githubusercontent.com/zigtools/zls/master/schema.json"
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}
