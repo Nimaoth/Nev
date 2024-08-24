@@ -601,6 +601,9 @@ proc editor_reapplyConfigKeybindings_void_App_bool_bool_bool_impl*(
   discard
 proc editor_splitView_void_App_impl*() =
   discard
+proc editor_runExternalCommand_void_App_string_seq_string_string_impl*(
+    command: string; args: seq[string] = @[]; workingDir: string = "") =
+  discard
 proc editor_disableLogFrameTime_void_App_bool_impl*(disable: bool) =
   discard
 proc editor_showDebuggerView_void_App_impl*() =
@@ -663,6 +666,8 @@ proc editor_setOption_void_App_string_JsonNode_bool_impl*(option: string;
     value: JsonNode; override: bool = true) =
   discard
 proc editor_quit_void_App_impl*() =
+  discard
+proc editor_quitImmediately_void_App_int_impl*(exitCode: int = 0) =
   discard
 proc editor_help_void_App_string_impl*(about: string = "") =
   discard
