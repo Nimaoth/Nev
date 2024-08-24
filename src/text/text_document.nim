@@ -1,8 +1,8 @@
-import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response]
 import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
@@ -83,6 +83,7 @@ type TextDocument* = ref object of Document
   isLoadingAsync*: bool = false
 
   onRequestRerender*: Event[void]
+  onPreLoaded*: Event[TextDocument]
   onLoaded*: Event[TextDocument]
   onSaved*: Event[void]
   textChanged*: Event[TextDocument]
@@ -102,6 +103,8 @@ type TextDocument* = ref object of Document
   undoOps*: seq[UndoOp]
   redoOps*: seq[UndoOp]
   nextCheckpoints: seq[string]
+
+  autoReload*: bool
 
   currentContentFailedToParse: bool
   tsLanguage: TSLanguage
@@ -1052,6 +1055,7 @@ proc loadAsync*(self: TextDocument, ws: Workspace, reloadTreesitter: bool = fals
   catch ws.loadFile(self.filename, data.addr).await:
     log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
+  self.onPreLoaded.invoke self
   self.content = data.move
 
   if not ws.isFileReadOnly(self.filename).await:
@@ -1066,6 +1070,28 @@ proc loadAsync*(self: TextDocument, ws: Workspace, reloadTreesitter: bool = fals
 proc setReadOnly*(self: TextDocument, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
   self.readOnly = readOnly
+
+proc reloadTask(self: TextDocument) {.async.} =
+  defer:
+    self.autoReload = false
+
+  var lastModTime = getLastModificationTime(self.filename)
+  while self.autoReload and not self.workspace.isNone:
+    var modTime = getLastModificationTime(self.filename)
+    if modTime > lastModTime:
+      lastModTime = modTime
+      log lvlInfo, &"File '{self.filename}' changed on disk, reload"
+      await self.loadAsync(self.workspace.get)
+
+    await sleepAsync(1000)
+
+proc enableAutoReload*(self: TextDocument, enabled: bool) =
+  if not self.autoReload and enabled:
+    self.autoReload = true
+    asyncCheck self.reloadTask()
+    return
+
+  self.autoReload = enabled
 
 proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.async.} =
   ## Tries to set the underlying file permissions
@@ -1090,6 +1116,8 @@ proc setFileAndContent*(self: TextDocument, filename: string, content: sink stri
     self.languageId = language
   else:
     self.languageId = ""
+
+  self.onPreLoaded.invoke self
 
   self.undoOps.setLen 0
   self.redoOps.setLen 0
@@ -1120,6 +1148,7 @@ proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[W
   if self.workspace.getSome(ws):
     asyncCheck self.loadAsync(ws, true)
   elif self.appFile:
+    self.onPreLoaded.invoke self
     self.content = catch fs.loadApplicationFile(self.filename):
       log lvlError, fmt"Failed to load application file {filename}"
       ""
@@ -1127,6 +1156,7 @@ proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[W
     self.autoDetectIndentStyle()
     self.onLoaded.invoke self
   else:
+    self.onPreLoaded.invoke self
     self.content = catch fs.loadFile(self.filename):
       log lvlError, fmt"Failed to load file {filename}"
       ""
@@ -1145,6 +1175,7 @@ method load*(self: TextDocument, filename: string = "") =
   if self.workspace.getSome(ws):
     asyncCheck self.loadAsync(ws)
   elif self.appFile:
+    self.onPreLoaded.invoke self
     self.content = catch fs.loadApplicationFile(self.filename):
       log lvlError, fmt"Failed to load application file {filename}"
       ""
@@ -1152,6 +1183,7 @@ method load*(self: TextDocument, filename: string = "") =
     self.autoDetectIndentStyle()
     self.onLoaded.invoke self
   else:
+    self.onPreLoaded.invoke self
     self.content = catch fs.loadFile(self.filename):
       log lvlError, fmt"Failed to load file {filename}"
       ""

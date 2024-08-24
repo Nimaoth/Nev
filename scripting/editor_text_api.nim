@@ -4,6 +4,8 @@ import absytree_internal
 
 ## This file is auto generated, don't modify.
 
+proc enableAutoReload*(self: TextDocumentEditor; enabled: bool) =
+  editor_text_enableAutoReload_void_TextDocumentEditor_bool_impl(self, enabled)
 proc getFileName*(self: TextDocumentEditor): string =
   editor_text_getFileName_string_TextDocumentEditor_impl(self)
 proc lineCount*(self: TextDocumentEditor): int =
