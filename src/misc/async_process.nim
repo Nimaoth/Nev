@@ -461,3 +461,33 @@ proc runProcessAsyncOutput*(name: string, args: seq[string] = @[], workingDir: s
   if err != nil:
     raise err
   return (outLines.join("\n"), errLines.join("\n"))
+
+proc readProcessOutputCallback(process: AsyncProcess,
+    handleOutput: proc(line: string) {.closure, gcsafe.} = nil) {.async.} =
+  while process.isAlive:
+    let line = await process.recvLine()
+    handleOutput(line)
+
+proc readProcessErrorCallback(process: AsyncProcess,
+    handleError: proc(line: string) {.closure, gcsafe.} = nil) {.async.} =
+  while process.isAlive:
+    let line = await process.recvErrorLine()
+    handleError(line)
+
+proc runProcessAsyncCallback*(name: string, args: seq[string] = @[], workingDir: string = "",
+    handleOutput: proc(line: string) {.closure, gcsafe.} = nil,
+    handleError: proc(line: string) {.closure, gcsafe.} = nil,
+    maxLines: int = int.high) {.async.} =
+
+  var process: AsyncProcess = nil
+  try:
+    process = startAsyncProcess(name, args, autoRestart = false, autoStart = false)
+    if not process.start():
+      log lvlError, &"Failed to start process {name}, {args}"
+      return
+
+    await all(readProcessOutputCallback(process, handleOutput), readProcessErrorCallback(process, handleError))
+    log lvlInfo, &"Command {name}, {args} finished."
+
+  except:
+    log lvlError, &"Failed to start process {name}, {args}"
