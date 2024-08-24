@@ -792,7 +792,8 @@ proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
           #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
 
           else:
-            log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
+            # log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
+            discard
 
         if self.configProvider.getFlag("text.print-matches", false):
           let nodeText = self.contentString(node.getRange)
