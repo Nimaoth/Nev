@@ -243,6 +243,10 @@
                 },
                 "maxViews": {
                     "type": "integer"
+                },
+                "close-unused-documents-timer": {
+                    "type": "integer",
+                    "description": "How often to check for unused documents and close them. In seconds.\nDefault: 10"
                 }
             }
         },
