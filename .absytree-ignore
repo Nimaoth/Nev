@@ -27,3 +27,5 @@
 _temp
 fonts
 int
+release_*
+nim_std

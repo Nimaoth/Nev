@@ -36,11 +36,12 @@ nimble.develop
 nimble.paths
 testresults
 tests/**/*.js
-release_windows
-release_linux
-release_web
+release_*
+flamegraph*
+perf.data*
 scripting/nim/lib
 casts
+nim_std
 
 *.absytree-session
 
@@ -51,6 +52,7 @@ astn
 astt
 astt2
 astt3
+/astt*
 ue_clang_tool
 
 loc.csv
@@ -87,3 +89,15 @@ nimhelp.txt
 log.txt
 .clang-ignore
 tools/uht.nim
+absytree_linkerArgs.txt
+config/wasm/callback_test_plugin.wasm
+config/callback_test_plugin.nim
+
+#
+.absytree/keybindings.json
+.absytree/settings-windows.json
+.absytree/settings-windows-gui.json
+.absytree/settings-linux.json
+wasm
+languages/tree-sitter-*
+languages/**/*.scm
