@@ -695,7 +695,7 @@ proc editor_changeLayoutProp_void_App_string_float32_impl*(prop: string;
   discard
 proc editor_toggleStatusBarLocation_void_App_impl*() =
   discard
-proc editor_logs_void_App_impl*() =
+proc editor_logs_void_App_bool_impl*(scrollToBottom: bool = false) =
   discard
 proc editor_toggleConsoleLogger_void_App_impl*() =
   discard

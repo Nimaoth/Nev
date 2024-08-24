@@ -596,11 +596,16 @@ proc toggleStatusBarLocation*() =
       argsJsonString.cstring)
 
 
-proc editor_logs_void_App_wasm(arg: cstring): cstring {.importc.}
-proc logs*() =
+proc editor_logs_void_App_bool_wasm(arg: cstring): cstring {.importc.}
+proc logs*(scrollToBottom: bool = false) =
   var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      scrollToBottom
+    else:
+      scrollToBottom.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_logs_void_App_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_logs_void_App_bool_wasm(argsJsonString.cstring)
 
 
 proc editor_toggleConsoleLogger_void_App_wasm(arg: cstring): cstring {.importc.}
