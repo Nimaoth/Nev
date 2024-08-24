@@ -446,6 +446,7 @@
         "restore-open-workspaces": true,
         "restore-open-editors": true,
         "frame-time-smoothing": 0.8,
+        "close-unused-documents-timer": 10,
         "maxViews": 2
     },
 

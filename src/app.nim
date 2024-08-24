@@ -1352,7 +1352,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   asyncCheck self.initScripting(options)
 
-  self.closeUnusedDocumentsTask = startDelayed(2000, repeat=true):
+  let closeUnusedDocumentsTimerS = self.getOption("editor.close-unused-documents-timer", 10)
+  self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
 
   self.runCommandsFromAppOptions()
