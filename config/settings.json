@@ -7,12 +7,14 @@
                 "--offset-encoding=utf-8"
             ]
         },
+
         "c": {
             "path": "clangd",
             "args": [
                 "--offset-encoding=utf-8"
             ]
         },
+
         "zig": {
             "path": "zls",
             "settings": {
@@ -40,9 +42,11 @@
                 }
             }
         },
+
         "odin": {
             "path": "ols"
         },
+
         "rust": {
             "path": "rust-analyzer",
             "initialization-options-name": "rust-analyzer",
@@ -50,9 +54,30 @@
             "workspace-configuration-name": "",
             "rust-analyzer": {}
         },
+
         "c_sharp": {
             "path": "OmniSharp"
         },
+
+        "javascript": {
+            "path": "typescript-language-server",
+            "args": ["--stdio"]
+        },
+
+        "typescript": {
+            "path": "typescript-language-server",
+            "args": ["--stdio"]
+        },
+
+        "json": {
+            "path": "vscode-json-languageserver",
+            "args": ["--stdio"]
+        },
+
+        "python": {
+            "path": "pylsp"
+        },
+
         "nim": {
             "path": "nimlangserver",
             "args": [
