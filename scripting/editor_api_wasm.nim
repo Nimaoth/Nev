@@ -36,6 +36,31 @@ proc splitView*() =
   let res {.used.} = editor_splitView_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_runExternalCommand_void_App_string_seq_string_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc runExternalCommand*(command: string; args: seq[string] = @[];
+                         workingDir: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      command
+    else:
+      command.toJson()
+  argsJson.add block:
+    when seq[string] is JsonNode:
+      args
+    else:
+      args.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      workingDir
+    else:
+      workingDir.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_runExternalCommand_void_App_string_seq_string_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_disableLogFrameTime_void_App_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc disableLogFrameTime*(disable: bool) =
@@ -421,6 +446,19 @@ proc quit*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_quit_void_App_wasm(argsJsonString.cstring)
+
+
+proc editor_quitImmediately_void_App_int_wasm(arg: cstring): cstring {.importc.}
+proc quitImmediately*(exitCode: int = 0) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when int is JsonNode:
+      exitCode
+    else:
+      exitCode.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_quitImmediately_void_App_int_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_help_void_App_string_wasm(arg: cstring): cstring {.importc.}

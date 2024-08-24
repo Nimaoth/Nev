@@ -10,6 +10,10 @@ proc reapplyConfigKeybindings*(app: bool = false; home: bool = false;
       workspace)
 proc splitView*() =
   editor_splitView_void_App_impl()
+proc runExternalCommand*(command: string; args: seq[string] = @[];
+                         workingDir: string = "") =
+  editor_runExternalCommand_void_App_string_seq_string_string_impl(command,
+      args, workingDir)
 proc disableLogFrameTime*(disable: bool) =
   editor_disableLogFrameTime_void_App_bool_impl(disable)
 proc showDebuggerView*() =
@@ -68,6 +72,8 @@ proc setOption*(option: string; value: JsonNode; override: bool = true) =
   editor_setOption_void_App_string_JsonNode_bool_impl(option, value, override)
 proc quit*() =
   editor_quit_void_App_impl()
+proc quitImmediately*(exitCode: int = 0) =
+  editor_quitImmediately_void_App_int_impl(exitCode)
 proc help*(about: string = "") =
   editor_help_void_App_string_impl(about)
 proc loadWorkspaceFile*(path: string; callback: string) =

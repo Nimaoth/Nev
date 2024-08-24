@@ -13,6 +13,9 @@ import finder/[finder, previewer]
 import compilation_config
 import vcs/vcs
 
+when not defined(js):
+  import misc/async_process
+
 when enableAst:
   import ast/[model, project]
 
@@ -1407,6 +1410,15 @@ proc splitView*(self: App) {.expose("editor").} =
   if self.tryGetCurrentEditorView().getSome(view):
     discard self.createAndAddView(view.document, append = true)
 
+proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], workingDir: string = "") {.expose("editor").} =
+  proc handleOutput(line: string) {.gcsafe.} =
+    {.gcsafe.}:
+      log lvlInfo, &"[{command}] {line}"
+  proc handleError(line: string) {.gcsafe.} =
+    {.gcsafe.}:
+      log lvlError, &"[{command}] {line}"
+  asyncCheck runProcessAsyncCallback(command, args, workingDir, handleOutput, handleError)
+
 proc disableLogFrameTime*(self: App, disable: bool) {.expose("editor").} =
   self.disableLogFrameTime = disable
 
@@ -1794,6 +1806,9 @@ proc setOption*(self: App, option: string, value: JsonNode, override: bool = tru
 
 proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
+
+proc quitImmediately*(self: App, exitCode: int = 0) {.expose("editor").} =
+  quit(exitCode)
 
 proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/getting_started.md"
@@ -2986,9 +3001,6 @@ proc diffStagedFileAsync(self: App, workspace: Workspace, path: string): Future[
 
   let editor = self.createAndAddView(stagedDocument).TextDocumentEditor
   editor.updateDiff()
-
-when not defined(js):
-  import misc/async_process
 
 proc installTreesitterParserAsync*(self: App, language: string, host: string) {.async.} =
   when not defined(js):
