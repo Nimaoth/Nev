@@ -114,6 +114,7 @@
         "\\.scm$": "query",
         "\\.toml$": "toml",
         "\\.ps1$": "powershell",
+        "\\.talon$": "talon",
         "/(vector|string|thread|iostream)$": "cpp",
         ".+/MSVC/.+/include(/.+?)*/[a-z0-9_]+$": "cpp",
         ".+/include/c\\+\\+(/.+?)+/[a-z0-9_]+$": "cpp"
@@ -415,6 +416,18 @@
         },
         "swift": {
             "treesitter": "alex-pinkus/tree-sitter-swift"
+        },
+        "talon": {
+            "treesitter": "wenkokke/tree-sitter-talon",
+            "tabWidth": 4,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "#"
         }
     },
 
