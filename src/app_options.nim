@@ -7,3 +7,5 @@ type AppOptions* = object
   dontRestoreConfig*: bool
   fileToOpen*: Option[string]
   sessionOverride*: Option[string]
+  settings*: seq[string]
+  commands*: seq[string]

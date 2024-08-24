@@ -60,6 +60,12 @@ block: ## Parse command line options
           echo "[error] Terminal backend not available in this build"
           quit(1)
 
+      of "setting", "p":
+        opts.settings.add val
+
+      of "command", "r":
+        opts.commands.add val
+
       of "log-to-file", "f":
         logToFile = val.parseBool.catch(true)
 

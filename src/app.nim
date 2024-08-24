@@ -143,6 +143,7 @@ type
     frameTimer*: Timer
     lastBounds*: Rect
     closeRequested*: bool
+    appOptions: AppOptions
 
     logNextFrameTime*: bool = false
     disableLogFrameTime*: bool = true
@@ -1114,6 +1115,29 @@ proc serve(port: Port, savePort: bool) {.async.} =
 proc listenForConnection*(self: App, port: Port) {.async.} =
   await serve(port, self.getFlag("command-server.save-file", false))
 
+proc applySettingsFromAppOptions(self: App) =
+  log lvlInfo, &"Apply settings provided through command line"
+  for setting in self.appOptions.settings:
+    let i = setting.find("=")
+    if i == -1:
+      log lvlError, &"Invalid setting '{setting}', expected 'path.to.setting=value'"
+      continue
+
+    let path = setting[0..<i]
+    let value = setting[(i + 1)..^1].parseJson.catch:
+      log lvlError, &"Failed to parse value as json for '{setting}': {getCurrentExceptionMsg()}"
+      continue
+
+    log lvlInfo, &"Set {setting}"
+    self.setOption(path, value)
+
+proc runCommandsFromAppOptions(self: App) =
+  log lvlInfo, &"Run commands provided through command line"
+  for command in self.appOptions.commands:
+    let (action, args) = command.parseAction
+    let res = self.handleAction(action, args, record=false)
+    log lvlInfo, &"'{command}' -> {res}"
+
 proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
@@ -1132,6 +1156,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.platform = platform
   self.backend = backend
   self.statusBarOnTop = false
+  self.appOptions = options
 
   discard platform.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
   discard platform.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
@@ -1250,6 +1275,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   log lvlInfo, &"Finished loading app and user settings"
 
+  self.applySettingsFromAppOptions()
+
   self.runConfigCommands("startup-commands")
 
   if self.getOption("command-server.port", Port.none).getSome(port):
@@ -1327,6 +1354,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.closeUnusedDocumentsTask = startDelayed(2000, repeat=true):
     self.closeUnusedDocuments()
+
+  self.runCommandsFromAppOptions()
 
   log lvlInfo, &"Finished creating app"
 
