@@ -73,8 +73,8 @@ macro debugf(x: static string): untyped {.used.} =
     fmt str
   return logImpl(level, nnkArgList.newTree(arg), true)
 
-var logVerbose = true
-var logServerDebug = true
+var logVerbose = false
+var logServerDebug = false
 
 type
   LSPConnection = ref object of RootObj
