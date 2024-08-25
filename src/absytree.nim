@@ -312,11 +312,12 @@ proc runApp(): Future[void] {.async.} =
   log lvlInfo, "Shutting down platform"
   rend.deinit()
 
-proc writeStackTrace2*() {.exportc: "writeStackTrace2", used.} =
-  writeStackTrace()
+when defined(enableSysFatalStackTrace) and not defined(wasm):
+  proc writeStackTrace2*() {.exportc: "writeStackTrace2", used.} =
+    writeStackTrace()
 
-if false:
-  writeStackTrace2()
+  if false:
+    writeStackTrace2()
 
 waitFor runApp()
 
