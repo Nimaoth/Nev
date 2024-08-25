@@ -110,9 +110,19 @@ patchFile("stdlib", "excpt", "patches/excpt")
 # switch("d", "traceArc")
 # switch("d", "nimTypeNames")
 
+when defined(linux):
+  switch("nimcache", "nimcache/linux")
+else:
+  switch("nimcache", "nimcache/windows")
 
-switch("nimcache", "nimcache")
-
+# todo: build with clang
+# switch("cc", "clang")
+# switch("passC", "-fno-omit-frame-pointer -g -Wno-incompatible-function-pointer-types")
+# switch("passC", "-flto")
+# switch("passC", "-fno-omit-frame-pointer -ggdb3 -g -Wno-incompatible-function-pointer-types -gcodeview -fuse-ld=lld")
+# switch("d", "enableSystemClipboard=false")
+# switch("lineDir", "off")
+# switch("profiler", "on")
 
 # begin Nimble config (version 2)
 --noNimblePath
