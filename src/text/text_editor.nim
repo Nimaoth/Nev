@@ -1441,6 +1441,8 @@ proc pasteAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool 
     Future[void] {.async.} =
   log lvlInfo, fmt"paste register from '{register}', inclusiveEnd: {inclusiveEnd}"
   let text = self.app.getRegisterTextAsync(register).await
+  if self.document.isNil:
+    return
 
   let numLines = text.count('\n') + 1
 
@@ -1668,22 +1670,22 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   log lvlInfo, fmt"Diff document '{self.document.filename}'"
 
   let relPath = self.document.workspace.mapIt(
-    it.getRelativePath(self.document.filename).await
+    it.getRelativePathSync(self.document.filename)
   ).flatten.get(self.document.filename)
-  if self.diffRevision > revision:
+  if self.document.isNil or self.diffRevision > revision:
     return
 
   if self.document.staged:
     let committedFileContent = vcs.getCommittedFileContent(relPath).await
-    if self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision:
       return
 
     let stagedFileContent = vcs.getStagedFileContent(relPath).await
-    if self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision:
       return
 
     let changes = vcs.getFileChanges(relPath, staged = true).await
-    if self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision:
       return
 
     if self.diffDocument.isNil:
@@ -1698,11 +1700,11 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
   else:
     let stagedFileContent = vcs.getStagedFileContent(relPath).await
-    if self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision:
       return
 
     let changes = vcs.getFileChanges(relPath, staged = false).await
-    if self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision:
       return
 
     if self.diffDocument.isNil:
@@ -1738,6 +1740,9 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
     return
 
   let res = await vcs.checkoutFile(path)
+  if self.document.isNil:
+    return
+
   log lvlInfo, &"Checkout result: {res}"
 
   self.document.setReadOnly(ws.isFileReadOnly(path).await)
@@ -2343,7 +2348,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
-  if languageServer.isNone:
+  if self.document.isNil or languageServer.isNone:
     return
 
   if languageServer.getSome(ls):
@@ -2353,7 +2358,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
-  if languageServer.isNone:
+  if self.document.isNil or languageServer.isNone:
     return
 
   if languageServer.getSome(ls):
@@ -2362,7 +2367,7 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
-  if languageServer.isNone:
+  if self.document.isNil or languageServer.isNone:
     return
 
   if languageServer.getSome(ls):
@@ -2371,7 +2376,7 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
-  if languageServer.isNone:
+  if self.document.isNil or languageServer.isNone:
     return
 
   if languageServer.getSome(ls):
@@ -2380,7 +2385,7 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
-  if languageServer.isNone:
+  if self.document.isNil or languageServer.isNone:
     return
 
   if languageServer.getSome(ls):
@@ -2389,7 +2394,7 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
-  if languageServer.isNone:
+  if self.document.isNil or languageServer.isNone:
     return
 
   if languageServer.getSome(ls):
@@ -2492,6 +2497,8 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
 
 proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.getLanguageServer().await.getSome(ls):
+    if self.document.isNil:
+      return
     let symbols = await ls.getSymbols(self.document.fullPath)
     if symbols.len == 0:
       return
@@ -2552,6 +2559,8 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
 proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
   if self.document.workspace.getSome(workspace) and
       self.document.getLanguageServer().await.getSome(ls):
+    if self.document.isNil:
+      return
 
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
@@ -2783,6 +2792,8 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
     self.hideHoverTask.pause()
 
   let languageServer = await self.document.getLanguageServer()
+  if self.document.isNil:
+    return
 
   if languageServer.getSome(ls):
     let hoverInfo = await ls.getHover(self.document.fullPath, cursor)
