@@ -121,6 +121,9 @@
     },
 
     "languages": {
+        "absytree-commands": {
+            "completionWordChars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"]
+        },
         "html": {
             "treesitter": "tree-sitter/tree-sitter-html",
             "tabWidth": 2,
