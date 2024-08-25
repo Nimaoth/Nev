@@ -1202,16 +1202,22 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   when enableAst:
     self.editorDefaults.add ModelDocumentEditor()
 
+  self.options = newJObject()
+
+  self.setupDefaultKeybindings()
+
+  await self.loadOptionsFromAppDir()
+  await self.loadOptionsFromHomeDir()
+  log lvlInfo, &"Finished loading app and user settings"
+
+  self.applySettingsFromAppOptions()
+
   self.logDocument = newTextDocument(self.asConfigProvider, "log", load=false, createLanguageServer=false)
   self.documents.add self.logDocument
 
   self.theme = defaultTheme()
   gTheme = self.theme
   self.currentView = 0
-
-  self.options = newJObject()
-
-  self.setupDefaultKeybindings()
 
   self.gitIgnore = parseGlobs(fs.loadApplicationFile(".gitignore"))
 
@@ -1281,8 +1287,6 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.commandHistory = state.commandHistory
 
-  self.applySettingsFromAppOptions()
-
   let closeUnusedDocumentsTimerS = self.getOption("editor.close-unused-documents-timer", 10)
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
@@ -1298,12 +1302,6 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   return self
 
 proc finishInitialization*(self: App, state: EditorState) {.async.} =
-  await self.loadOptionsFromAppDir()
-  await self.loadOptionsFromHomeDir()
-
-  log lvlInfo, &"Finished loading app and user settings"
-
-  self.applySettingsFromAppOptions()
 
   self.runConfigCommands("startup-commands")
 
