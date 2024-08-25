@@ -37,6 +37,33 @@ var logToConsole = true
 var disableLogging = false
 var opts = AppOptions()
 
+
+const helpText = """
+    ast [options] [file]
+
+Options:
+  -g, --gui              Launch gui version (if available)
+  -t, --terminal         Launch terminal version (if available)
+  -p, --setting          Set value of settings (multiple can be set)
+  -r, --early-command    Run command after all basic initialization is done
+  -R, --late-command     Run command after all initialization is done
+  -f, --log-to-file      Enable file logger
+  -k, --log-to-console   Enable console logger
+  -l, --no-log           Disable logging
+  -n, --no-nimscript     Don't load nimscript file from user directory
+  -w, --no-wasm          Don't load wasm plugins
+  -c, --no-config        Don't load json config files.
+  -s, --session          Load a specific session.
+  --clean                Don't load any configs/sessions/plugins
+
+Examples:
+  ast                                              Open .absytree-session if it exists
+  ast test.txt                                     Open test.txt, don't open any session
+  ast -s:my-session.abystree-session               Open session my-session.absytree-session
+  ast -p:ui.background.transparent=true            Set setting
+  ast "-r:.lsp-log-verbose true"                   Enable debug logging for LSP immediately
+"""
+
 block: ## Parse command line options
   var optParser = initOptParser("")
   for kind, key, val in optParser.getopt():
@@ -46,6 +73,10 @@ block: ## Parse command line options
 
     of cmdLongOption, cmdShortOption:
       case key
+      of "help", "h":
+        echo helpText
+        quit(0)
+
       of "gui", "g":
         when enableGui:
           backend = Backend.Gui.some
@@ -84,19 +115,11 @@ block: ## Parse command line options
       of "no-wasm", "w":
         opts.disableWasmPlugins = true
 
-      of "no-opts", "o":
-        opts.dontRestoreOptions = true
-
       of "no-config", "c":
         opts.dontRestoreConfig = true
 
-      of "no-config-opts":
-        opts.dontRestoreConfig = true
-        opts.dontRestoreOptions = true
-
       of "clean":
         opts.dontRestoreConfig = true
-        opts.dontRestoreOptions = true
         opts.disableNimScriptPlugins = true
         opts.disableWasmPlugins = true
 
