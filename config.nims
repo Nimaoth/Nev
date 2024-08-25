@@ -14,6 +14,8 @@ switch("d", "release")
 # switch("d", "lto")
 # switch("opt", "size")
 
+switch("stacktrace", "off")
+switch("linetrace", "off")
 
 # checks
 # --objChecks:off
