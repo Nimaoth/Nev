@@ -30,6 +30,9 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
     Future[seq[JsonNode]] {.async.} =
   var res = newSeq[JsonNode]()
 
+  logScope lvlInfo, &"handleWorkspaceConfigurationRequest {params}"
+  # todo: this function is quite slow (up to 100ms)
+
   let workspaceConfigName = gAppInterface.configProvider.getValue("lsp." & self.languageId & ".workspace-configuration-name", "settings")
 
   for item in params.items:
@@ -38,7 +41,6 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
       continue
 
     let key = ["lsp", self.languageId, workspaceConfigName, item.section.get].filterIt(it.len > 0).join(".")
-    debugf"handleWorkspaceConfigurationRequest key = {key}"
     res.add gAppInterface.configProvider.getValue(key, newJNull())
 
   return res
