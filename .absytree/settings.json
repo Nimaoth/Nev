@@ -65,6 +65,103 @@
                 "body": [
                     "log lvl${1:Info}, &\"[${TM_FILENAME/(.*)\\..*$/${1:/capitalize}/}] $2\""
                 ]
+            },
+            "try": {
+                "scope": "nim",
+                "prefix": "try",
+                "body": [
+                    "try:",
+                    "  ${1:discard}",
+                    "except ${2:CatchableError}:",
+                    "  ${0:discard}"
+                ]
+            },
+            "tryef": {
+                "scope": "nim",
+                "prefix": "tryef",
+                "body": [
+                    "try:",
+                    "  ${1:discard}",
+                    "except ${2:CatchableError}:",
+                    "  ${3:discard}",
+                    "finally:",
+                    "  ${0:discard}"
+                ]
+            },
+            "tryf": {
+                "scope": "nim",
+                "prefix": "tryf",
+                "body": [
+                    "try:",
+                    "  ${1:discard}",
+                    "finally:",
+                    "  ${0:discard}"
+                ]
+            },
+            "Pragma": {
+                "scope": "nim",
+                "prefix": "pra",
+                "body": [
+                    "{{.$0.}"
+                ]
+            },
+            "Procedure": {
+                "scope": "nim",
+                "prefix": "proc",
+                "body": [
+                    "proc ${1:name}($2)$3 =",
+                    "  ${0:discard}"
+                ]
+            },
+            "Async procedure": {
+                "scope": "nim",
+                "prefix": "proca",
+                "body": [
+                    "proc ${1:name}($2)$3 {.async.} =",
+                    "  ${0:discard}"
+                ]
+            },
+            "For loop": {
+                "scope": "nim",
+                "prefix": "for",
+                "body": [
+                    "for ${1:it} in ${2:items}:",
+                    "  ${0:discard}"
+                ]
+            },
+            "While loop": {
+                "scope": "nim",
+                "prefix": "whl",
+                "body": [
+                    "while ${1:true}:",
+                    "  ${0:discard}"
+                ]
+            },
+            "If": {
+                "scope": "nim",
+                "prefix": "if",
+                "body": [
+                    "if ${1:true}:",
+                    "  ${0:discard}"
+                ]
+            },
+            "Elif": {
+                "scope": "nim",
+                "prefix": "elif",
+                "body": [
+                    "elif ${1:true}:",
+                    "  ${0:discard}"
+                ]
+            },
+            "If+Else": {
+                "scope": "nim",
+                "prefix": "ife",
+                "body": [
+                    "if ${1:true}:",
+                    "  ${2:discard}",
+                    "else:",
+                    "  ${0:discard}"
+                ]
             }
         }
     },
@@ -118,7 +215,6 @@
     ],
 
     "+wasm-plugin-post-load-commands": [
-        "load-vscode-snippets \".vscode/nim-snippets.code-snippets\" \"nim\"",
         "load-vscode-debugger-config \".vscode/launch.json\""
     ]
 }
