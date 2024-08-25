@@ -890,7 +890,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommandBlockDesc "", "<ESCAPE>", "exit to normal mode and clear things":
     if editor.mode == "normal":
       editor.selection = editor.selection
-    editor.clearTabStops()
+      editor.clearTabStops()
     editor.setMode("normal")
 
   addCommandBlockDesc "command-line-low", "<ESCAPE>", "exit to normal mode and clear things":
@@ -899,7 +899,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
         exitCommandLine()
         return
 
-      editor.clearTabStops()
+      if editor.mode == "normal":
+        editor.clearTabStops()
       editor.setMode("normal")
 
   addCommandBlock "popup.selector", "<ESCAPE>":
@@ -909,7 +910,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
           popup.cancel()
         return
 
-      editor.clearTabStops()
+      if editor.mode == "normal":
+        editor.clearTabStops()
       editor.setMode("normal")
 
   addTextCommandBlockDesc "", ".", "replay commands": replayCommands(".")
@@ -1429,10 +1431,10 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   addTextCommand "insert", "<TAB>", "insert-indent"
 
-  addTextCommandBlock "insert", "<C-l>":
+  addTextCommandBlock "", "<C-l>":
     if editor.hasTabStops():
       editor.selectNextTabStop()
-  addTextCommandBlock "insert", "<C-h>":
+  addTextCommandBlock "", "<C-v>":
     if editor.hasTabStops():
       editor.selectPrevTabStop()
 
