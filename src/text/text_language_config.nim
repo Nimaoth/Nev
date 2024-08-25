@@ -1,5 +1,7 @@
 import std/[options, json]
-import misc/[myjsonutils]
+import misc/[myjsonutils, regex, custom_logger, util]
+
+logCategory "language-config"
 
 type
   TextLanguageConfig* = ref object
@@ -8,6 +10,7 @@ type
     lineComment*: Option[string]
     blockComment*: Option[(string, string)]
     ignoreContextLinePrefix*: Option[string]
+    completionWordChars*: set[char] = {'a'..'z', 'A'..'Z', '0'..'9', '_'}
 
 proc fromJsonHook*(self: var TextLanguageConfig, node: JsonNode, opt = Joptions()) =
   if self.isNil:
@@ -40,5 +43,14 @@ proc fromJsonHook*(self: var TextLanguageConfig, node: JsonNode, opt = Joptions(
       self.ignoreContextLinePrefix = node["ignoreContextLinePrefix"].str.some
     else:
       self.ignoreContextLinePrefix = string.none
+
+    if node.hasKey("completionWordChars"):
+      self.completionWordChars = {}
+      for s in node["completionWordChars"]:
+        if s.kind == JString:
+          self.completionWordChars.incl s.str[0]
+        if s.kind == JArray:
+          self.completionWordChars.incl {s[0].str[0]..s[1].str[0]}
+
   except CatchableError:
-    discard
+    log lvlError, &"Failed to parse language config: {getCurrentExceptionMsg()}:\n{node}"

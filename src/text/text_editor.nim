@@ -1229,8 +1229,15 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.
     return false
 
   let previousRune = line.runeAt(line.runeStart(cursor.column - 1))
-  let triggerChars = IdentChars + {'.'}
-  if previousRune.int <= char.high.int and previousRune.char in triggerChars:
+  let wordChars = self.document.languageConfig.mapIt(it.completionWordChars).get(IdentChars)
+  let extraTriggerChars = if self.document.completionTriggerCharacters.len > 0:
+    self.document.completionTriggerCharacters
+  else:
+    {'.'}
+
+  let allTriggerChars = wordChars + extraTriggerChars
+
+  if previousRune.int <= char.high.int and previousRune.char in allTriggerChars:
     return true
 
   if previousRune.isAlpha:
@@ -2699,6 +2706,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         let selection = self.document.runeSelectionToSelection(runeSelection)
 
         editSelection = selection
+        editSelection.last = cursor
 
       insertText = edit.newText
 

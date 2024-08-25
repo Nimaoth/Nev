@@ -105,6 +105,7 @@ method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Sym
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
 method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base.} = discard
 method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base.} = discard
+method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base.} = {}
 
 var handleIdCounter = 1
 

@@ -178,6 +178,12 @@ method stop*(self: LanguageServerLSP) =
   # todo: properly deinit client
   self.client = nil
 
+method getCompletionTriggerChars*(self: LanguageServerLSP): set[char] =
+  if self.serverCapabilities.completionProvider.getSome(opts):
+    for s in opts.triggerCharacters:
+      if s.len == 0: continue
+      result.incl s[0]
+
 template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
   block:
     if parsedResponse.asLocation().getSome(location):
