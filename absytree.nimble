@@ -110,13 +110,13 @@ task buildTerminalDebug, "Build the terminal version (debug)":
   selfExec fmt"c -o:ast{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:absytreeBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDebug, "Build the debug version":
-  selfExec fmt"c -o:astd{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:absytreeBuildWasmtime --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:astd{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:absytreeBuildWasmtime --passC:-std=gnu11 --nimcache:nimcache/debug {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDebugVcc, "Build the debug version":
   selfExec fmt"c -o:astd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:absytreeBuildWasmtime {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/absytree.nim"
   # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
