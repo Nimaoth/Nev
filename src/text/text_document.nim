@@ -1295,6 +1295,9 @@ proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
 
 proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
+  if cursor.column == 0:
+    return cursor.toSelection
+
   let line = self.getLine cursor.line
 
   let identChars = self.languageConfig.mapIt(it.completionWordChars).get(IdentChars)
