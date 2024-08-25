@@ -50,18 +50,21 @@ elif quirkyExceptions and not defined(nimscript):
 
 else:
   ##### patch begin - Can't call writeStackTrace here directly, call a c function defined in absytree.nim
-  proc writeStackTrace2() {.importc: "writeStackTrace2".}
+  when not defined(wasm):
+    proc writeStackTrace2() {.importc: "writeStackTrace2".}
   ##### patch end
 
   func sysFatal(exceptn: typedesc[Defect], message: string) {.inline, noreturn.} =
     ##### patch begin - I want that stacktrace
-    writeStackTrace2()
+    when not defined(wasm):
+      writeStackTrace2()
     ##### patch end
     raise (ref exceptn)(msg: message)
 
   func sysFatal(exceptn: typedesc[Defect], message, arg: string) {.inline, noreturn.} =
     ##### patch begin - I want that stacktrace
-    writeStackTrace2()
+    when not defined(wasm):
+      writeStackTrace2()
     ##### patch end
     raise (ref exceptn)(msg: message & arg)
 
