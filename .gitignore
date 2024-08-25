@@ -15,7 +15,7 @@
 .git
 src/input_tests
 nimcache
-nimcache-linux
+nimcache*
 _temp
 /ast
 absytree
