@@ -8,4 +8,5 @@ type AppOptions* = object
   fileToOpen*: Option[string]
   sessionOverride*: Option[string]
   settings*: seq[string]
-  commands*: seq[string]
+  earlyCommands*: seq[string]
+  lateCommands*: seq[string]

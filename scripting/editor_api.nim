@@ -16,6 +16,8 @@ proc runExternalCommand*(command: string; args: seq[string] = @[];
       args, workingDir)
 proc disableLogFrameTime*(disable: bool) =
   editor_disableLogFrameTime_void_App_bool_impl(disable)
+proc enableDebugPrintAsyncAwaitStackTrace*(enable: bool) =
+  editor_enableDebugPrintAsyncAwaitStackTrace_void_App_bool_impl(enable)
 proc showDebuggerView*() =
   editor_showDebuggerView_void_App_impl()
 proc setLocationListFromCurrentPopup*() =

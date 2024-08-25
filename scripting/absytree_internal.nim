@@ -609,6 +609,8 @@ proc editor_runExternalCommand_void_App_string_seq_string_string_impl*(
   discard
 proc editor_disableLogFrameTime_void_App_bool_impl*(disable: bool) =
   discard
+proc editor_enableDebugPrintAsyncAwaitStackTrace_void_App_bool_impl*(enable: bool) =
+  discard
 proc editor_showDebuggerView_void_App_impl*() =
   discard
 proc editor_setLocationListFromCurrentPopup_void_App_impl*() =

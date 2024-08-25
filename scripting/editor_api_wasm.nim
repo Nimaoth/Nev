@@ -75,6 +75,20 @@ proc disableLogFrameTime*(disable: bool) =
       argsJsonString.cstring)
 
 
+proc editor_enableDebugPrintAsyncAwaitStackTrace_void_App_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc enableDebugPrintAsyncAwaitStackTrace*(enable: bool) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      enable
+    else:
+      enable.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_enableDebugPrintAsyncAwaitStackTrace_void_App_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_showDebuggerView_void_App_wasm(arg: cstring): cstring {.importc.}
 proc showDebuggerView*() =
   var argsJson = newJArray()

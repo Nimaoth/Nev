@@ -1131,12 +1131,21 @@ proc applySettingsFromAppOptions(self: App) =
     log lvlInfo, &"Set {setting}"
     self.setOption(path, value)
 
-proc runCommandsFromAppOptions(self: App) =
-  log lvlInfo, &"Run commands provided through command line"
-  for command in self.appOptions.commands:
+proc runEarlyCommandsFromAppOptions(self: App) =
+  log lvlInfo, &"Run early commands provided through command line"
+  for command in self.appOptions.earlyCommands:
     let (action, args) = command.parseAction
     let res = self.handleAction(action, args, record=false)
     log lvlInfo, &"'{command}' -> {res}"
+
+proc runLateCommandsFromAppOptions(self: App) =
+  log lvlInfo, &"Run late commands provided through command line"
+  for command in self.appOptions.lateCommands:
+    let (action, args) = command.parseAction
+    let res = self.handleAction(action, args, record=false)
+    log lvlInfo, &"'{command}' -> {res}"
+
+proc finishInitialization*(self: App, state: EditorState) {.async.}
 
 proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
@@ -1270,6 +1279,25 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   if self.sessionData.isNil:
     self.sessionData = newJObject()
 
+  self.commandHistory = state.commandHistory
+
+  self.applySettingsFromAppOptions()
+
+  let closeUnusedDocumentsTimerS = self.getOption("editor.close-unused-documents-timer", 10)
+  self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
+    self.closeUnusedDocuments()
+
+  createDebugger(self.asAppInterface, state.debuggerState.get(newJObject()))
+
+  self.runEarlyCommandsFromAppOptions()
+
+  log lvlInfo, &"Finished creating app"
+
+  asyncCheck self.finishInitialization(state)
+
+  return self
+
+proc finishInitialization*(self: App, state: EditorState) {.async.} =
   await self.loadOptionsFromAppDir()
   await self.loadOptionsFromHomeDir()
 
@@ -1281,10 +1309,6 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   if self.getOption("command-server.port", Port.none).getSome(port):
     asyncCheck self.listenForConnection(port)
-
-  self.commandHistory = state.commandHistory
-
-  createDebugger(self.asAppInterface, state.debuggerState.get(newJObject()))
 
   if self.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
@@ -1322,7 +1346,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
       setProjectWorkspace(self.workspace)
 
   # Restore open editors
-  if options.fileToOpen.getSome(filePath):
+  if self.appOptions.fileToOpen.getSome(filePath):
     discard self.openFile(filePath)
 
   elif self.getFlag("editor.restore-open-editors", true):
@@ -1350,17 +1374,11 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
     else:
       self.help()
 
-  asyncCheck self.initScripting(options)
+  asyncCheck self.initScripting(self.appOptions)
 
-  let closeUnusedDocumentsTimerS = self.getOption("editor.close-unused-documents-timer", 10)
-  self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
-    self.closeUnusedDocuments()
+  self.runLateCommandsFromAppOptions()
 
-  self.runCommandsFromAppOptions()
-
-  log lvlInfo, &"Finished creating app"
-
-  return self
+  log lvlInfo, &"Finished initializing app"
 
 proc saveAppState*(self: App)
 proc printStatistics*(self: App)
