@@ -24,7 +24,7 @@ type
     otherLoggers: seq[logging.Logger]
 
 proc indentString*(logger: CustomLogger): string =
-  "  ".repeat(logger.indentLevel)
+  "  ".repeat(max(0, logger.indentLevel))
 
 proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultFmtStr): CustomLogger =
   new result
@@ -147,6 +147,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
         let elapsedMsInt = split.intpart.int
         let elapsedUsInt = (split.floatpart * 1000).int
         dec logger.indentLevel
+        assert logger.indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
         logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
 
   when noDebug:
