@@ -93,6 +93,7 @@ when defined(musl):
 else:
   switch("d", "ssl")
 
+patchFile("stdlib", "fatal", "patches/fatal")
 patchFile("stdlib", "excpt", "patches/excpt")
 
 # switches for debugging
