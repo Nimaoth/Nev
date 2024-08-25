@@ -6,7 +6,11 @@ while ($exitCode -eq 123) {
     &cp ast.exe ast-temp.exe
     Write-Host "Launch ast-temp.exe"
     $argString = $args -join " "
-    $process = Start-Process -FilePath "ast-temp.exe" -NoNewWindow -PassThru -ArgumentList $argString
+    if ($argString -eq "") {
+        $process = Start-Process -FilePath "ast-temp.exe" -NoNewWindow -PassThru
+    } else {
+        $process = Start-Process -FilePath "ast-temp.exe" -NoNewWindow -PassThru -ArgumentList $argString
+    }
     Wait-Process -Id $process.Id
     # For some reason $process.ExitCode returns nothing, but the reflection access works, BUT only if we use $process.ExitCode first???
     $exitCode = $process.ExitCode
