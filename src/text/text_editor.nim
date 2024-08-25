@@ -2658,14 +2658,17 @@ proc selectNextTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
       break
 
   if not foundTabStop:
+    self.currentSnippetData.get.currentTabStop = 0
     self.selections = self.currentSnippetData.get.tabStops[0]
-    self.currentSnippetData = SnippetData.none
 
 proc selectPrevTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.currentSnippetData.isNone:
     return
 
   if self.currentSnippetData.get.currentTabStop == 0:
+    self.currentSnippetData.get.currentTabStop = self.currentSnippetData.get.highestTabStop
+    if self.currentSnippetData.get.currentTabStop in self.currentSnippetData.get.tabStops:
+      self.selections = self.currentSnippetData.get.tabStops[self.currentSnippetData.get.currentTabStop]
     return
 
   while self.currentSnippetData.get.currentTabStop > 1:
@@ -2680,8 +2683,9 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
 
   let insertTextFormat = completion.item.insertTextFormat.get(InsertTextFormat.PlainText)
 
+  var cursorEditSelections: seq[Selection] = @[]
+  var cursorInsertTexts: seq[string] = @[]
   var editSelection: Selection
-  var insertText = ""
 
   let cursor = self.selection.last
   let cursorColumnIndex = self.document.getLine(cursor.line).runeIndex(cursor.column, returnLen=true)
@@ -2693,10 +2697,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   if completion.item.textEdit.getSome(edit):
     if edit.asTextEdit().getSome(edit):
       if edit.`range`.start.line < 0:
-        if cursor.column == 0:
-          editSelection = cursor.toSelection
-        else:
-          editSelection = self.document.getCompletionSelectionAt(cursor)
+        editSelection = self.document.getCompletionSelectionAt(cursor)
       else:
         let r = edit.`range`
         let runeSelection = (
@@ -2708,28 +2709,32 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         editSelection = selection
         editSelection.last = cursor
 
-      insertText = edit.newText
+      for s in self.selections:
+        cursorEditSelections.add self.document.getCompletionSelectionAt(s.last)
+        cursorInsertTexts.add edit.newText
 
-    if edit.asInsertReplaceEdit().getSome(edit):
+    elif edit.asInsertReplaceEdit().getSome(edit):
       debugf"text edit: {edit.insert}, {edit.replace} -> '{edit.newText}'"
       return
 
-  else:
-    insertText = completion.item.insertText.get(completion.item.label)
-    if cursor.column == 0:
-      editSelection = cursor.toSelection
     else:
-      editSelection = self.document.getCompletionSelectionAt(cursor)
+      return
 
-  var editSelections: seq[Selection] = @[]
-  var insertTexts: seq[string] = @[]
+  else:
+    let insertText = completion.item.insertText.get(completion.item.label)
+    for i in 0..self.selections.high:
+      cursorInsertTexts.add insertText
+    cursorEditSelections = self.selections.mapIt(self.document.getCompletionSelectionAt(it.last))
+    editSelection = cursorEditSelections[^1]
+
+  editSelection = cursorEditSelections[^1]
 
   var snippetData = SnippetData.none
   if insertTextFormat == InsertTextFormat.Snippet:
+    let insertText = cursorInsertTexts[^1]
     let snippet = parseSnippet(insertText)
     if snippet.isSome:
       let filenameParts = self.document.filename.splitFile
-      debugf"parts: {filenameParts}"
       let variables = toTable {
         "TM_FILENAME": filenameParts.name & filenameParts.ext,
         "TM_FILENAME_BASE": filenameParts.name,
@@ -2741,9 +2746,16 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         "TM_CURRENT_WORD": "todo",
         "TM_SELECTED_TEXT": self.document.contentString(self.selection),
       }
-      var data = snippet.get.createSnippetData(editSelection.first, variables)
-      insertText = data.text
+
+      let indents = cursorEditSelections.mapIt(self.document.getIndentForLine(it.first.line))
+      var data = snippet.get.createSnippetData(cursorEditSelections, variables, indents)
+      let indent = self.document.indentStyle.getString()
+      for i, insertText in cursorInsertTexts.mpairs:
+        insertText = data.text.indentExtraLines(self.document.getIndentLevelForLine(cursorEditSelections[i].first.line), indent)
       snippetData = data.some
+
+  var editSelections: seq[Selection] = @[]
+  var insertTexts: seq[string] = @[]
 
   for edit in completion.item.additionalTextEdits:
     let runeSelection = (
@@ -2759,11 +2771,13 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
     if snippetData.isSome:
       snippetData.get.offset(changedSelection)
 
-  editSelections.add editSelection
-  insertTexts.add insertText
+  let numAdditionalEdits = editSelections.len
+
+  editSelections.add cursorEditSelections
+  insertTexts.add cursorInsertTexts
 
   let newSelections = self.document.edit(editSelections, self.selections, insertTexts)
-  self.selection = newSelections[newSelections.high].last.toSelection
+  self.selections = newSelections[numAdditionalEdits..^1].mapIt(it.last.toSelection)
 
   self.currentSnippetData = snippetData
   self.selectNextTabStop()
