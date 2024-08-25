@@ -309,6 +309,7 @@ proc centerCursor*(self: TextDocumentEditor;
   editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_impl(self,
       cursor)
 proc reloadTreesitter*(self: TextDocumentEditor) =
+  ## Reload the treesitter parser and queries for the language of the current document.
   editor_text_reloadTreesitter_void_TextDocumentEditor_impl(self)
 proc deleteLeft*(self: TextDocumentEditor) =
   editor_text_deleteLeft_void_TextDocumentEditor_impl(self)
