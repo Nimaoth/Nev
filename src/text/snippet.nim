@@ -39,8 +39,8 @@ type SnippetData* = object
   highestTabStop*: int = 0
   tabStops*: Table[int, Selections]
   text*: string
-  indent: int
-  location: Cursor
+  selections: seq[Selection]
+  indents: seq[int]
 
 proc offset*(data: var SnippetData, selection: Selection) =
   for tabStops in data.tabStops.mvalues:
@@ -53,14 +53,17 @@ proc updateSnippetData(data: var SnippetData, tokens: openArray[Token], variable
     case token.kind:
     of Text:
       data.text.add token.text
-      data.location.column += token.text.len
+      let textSize = token.text.getTextSize
+      for i, s in data.selections.mpairs:
+        s.last += textSize
+        s.last += (0, if textSize.lines > 0: data.indents[i] else: 0)
 
     of Nested:
       data.highestTabStop = max(data.highestTabStop, token.tabStopIndex)
-      let first = data.location
+      let first = data.selections
       data.updateSnippetData(token.tokens, variables)
-      let last = data.location
-      data.tabStops.mgetOrPut(token.tabStopIndex, @[]).add (first, last)
+      for i, s in data.selections:
+        data.tabStops.mgetOrPut(token.tabStopIndex, @[]).add (first[i].last, s.last)
 
     of Variable:
       if token.regex.isSome:
@@ -75,7 +78,10 @@ proc updateSnippetData(data: var SnippetData, tokens: openArray[Token], variable
           case format.kind
           of Text:
             data.text.add format.text
-            data.location.column += format.text.len
+            let textSize = format.text.getTextSize
+            for i, s in data.selections.mpairs:
+              s.last += textSize
+              s.last += (0, if textSize.lines > 0: data.indents[i] else: 0)
 
           of Format:
             let capturedBounds = if format.tabStopIndex == 0:
@@ -133,30 +139,53 @@ proc updateSnippetData(data: var SnippetData, tokens: openArray[Token], variable
               value
 
             data.text.add capturedValue
-            data.location.column += capturedValue.len
+            let textSize = capturedValue.getTextSize
+            for i, s in data.selections.mpairs:
+              s.last += textSize
+              s.last += (0, if textSize.lines > 0: data.indents[i] else: 0)
           else:
             assert false
 
       elif token.name in variables:
         let value = variables[token.name]
         data.text.add value
-        data.location.column += value.len
+        let textSize = value.getTextSize
+        for i, s in data.selections.mpairs:
+          s.last += textSize
+          s.last += (0, if textSize.lines > 0: data.indents[i] else: 0)
 
       else:
         data.updateSnippetData(token.tokens, variables)
 
     of Choice:
       data.text.add token.tokens[0].text
-      data.location.column += token.tokens[0].text.len
+      let textSize = token.tokens[0].text.getTextSize
+      for i, s in data.selections.mpairs:
+        s.last += textSize
+        s.last += (0, if textSize.lines > 0: data.indents[i] else: 0)
 
     of Format:
       discard
 
-proc createSnippetData*(snippet: Snippet, location: Cursor, variables: Table[string, string], indent = int.none): SnippetData =
-  result = SnippetData(location: location, indent: indent.get(0))
+proc createSnippetData*(snippet: Snippet, selections: openArray[Selection], variables: sink Table[string, string], indents: sink seq[int]): SnippetData =
+  result = SnippetData(selections: selections.mapIt(it.first.toSelection), indents: indents)
+
   result.updateSnippetData(snippet.tokens, variables)
+  for i in 0..<result.selections.high:
+    for key, tabStops in result.tabStops.mpairs:
+      let tabStopsPerSelection = tabStops.len div selections.len
+      for k in i + 1..result.selections.high:
+        let m = k * tabStopsPerSelection
+        for x in 0..<tabStopsPerSelection:
+          let n = x * selections.len + k
+          tabStops[n] = tabStops[n].add(result.selections[i])
+
+  for i in 0..<result.selections.high:
+    for k in i + 1..result.selections.high:
+      result.selections[k] = result.selections[k].add(result.selections[i])
+
   if 0 notin result.tabStops:
-    result.tabStops[0] = @[result.location.toSelection]
+    result.tabStops[0] = result.selections.mapIt(it.last.toSelection)
 
 template last[T](s: seq[T]): lent T = s[s.high]
 proc popEmptyLast(self: var Snippet) =
