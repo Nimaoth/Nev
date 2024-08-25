@@ -237,10 +237,10 @@ else:
       ts.tsTreeDelete(self.impl)
     self = nil
 
-  proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, force = false):
+  proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
       Future[Option[TSQuery]] {.async.} =
 
-    if not force and self.queries.contains(id):
+    if self.queries.contains(id):
       return self.queries[id]
 
     logScope lvlInfo, &"Create '{id}' query for {self.languageId}"
@@ -258,17 +258,17 @@ else:
 
     query.some
 
-  proc queryFileImpl(self: TSLanguage, id: string, path: string, cacheOnFail = true, force = false): Future[Option[TSQuery]] {.async.} =
+  proc queryFileImpl(self: TSLanguage, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
     let queryString = await fs.loadFileAsync(path)
-    return await self.query(id, queryString, cacheOnFail, force)
+    return await self.query(id, queryString, cacheOnFail)
 
-  proc queryFile*(self: TSLanguage, id: string, path: string, cacheOnFail = true, force = false): Future[Option[TSQuery]] {.async.} =
-    if not force and self.queries.contains(id):
+  proc queryFile*(self: TSLanguage, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
+    if self.queries.contains(id):
       return self.queries[id]
-    if not force and self.queryFutures.contains(id):
+    if self.queryFutures.contains(id):
       return await self.queryFutures[id]
 
-    let queryFuture = self.queryFileImpl(id, path, cacheOnFail, force)
+    let queryFuture = self.queryFileImpl(id, path, cacheOnFail)
     self.queryFutures[id] = queryFuture
 
     let query = await queryFuture
@@ -565,9 +565,17 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
 
           logScope lvlInfo, &"Create wasm language from module for {languageId}"
 
+          # proc loadLanguageThread(args: (ptr TSWasmStore, cstring, cstring, uint32, ptr TSWasmError)): ptr ts.TSLanguage {.thread.} =
+          #   tsWasmStoreLoadLanguage(args[0], args[1], args[2], args[3], args[4])
+
           var err: TSWasmError
-          let language = tsWasmStoreLoadLanguage(wasmStore, ctorSymbolName.cstring, wasmBytes.cstring,
-            wasmBytes.len.uint32, err.addr)
+          let language = block:
+            logScope lvlDebug, &"tsWasmStoreLoadLanguage {languageId}"
+            # todo: load in separate thread
+            # let res = await spawnAsync(loadLanguageThread, (wasmStore, ctorSymbolName.cstring, wasmBytes.cstring, wasmBytes.len.uint32, err.addr))
+            # res
+            tsWasmStoreLoadLanguage(wasmStore, ctorSymbolName.cstring, wasmBytes.cstring, wasmBytes.len.uint32, err.addr)
+
           if err.kind != TSWasmErrorKindNone:
             log lvlError, &"Failed to create wasm language: {err}"
             continue
@@ -657,6 +665,10 @@ proc loadLanguage(languageId: string, config: JsonNode): Future[Option[TSLanguag
     else:
       log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
       TSLanguage.none
+
+proc unloadTreesitterLanguage*(languageId: string) =
+  loadedLanguages.del(languageId)
+  loadingLanguages.del(languageId)
 
 proc getTreesitterLanguage*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
   log lvlInfo, &"getTreesitterLanguage {languageId}: {config}"

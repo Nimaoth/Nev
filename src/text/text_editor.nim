@@ -1877,10 +1877,15 @@ proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selection
   self.centerCursor(self.getCursor(cursor))
 
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Reload the treesitter parser and queries for the language of the current document.
   log(lvlInfo, "reloadTreesitter")
 
-  self.document.reloadTreesitterLanguage()
-  self.platform.requestRender()
+  unloadTreesitterLanguage(self.document.languageId)
+  for doc in self.app.getAllDocuments():
+    if doc of TextDocument:
+      let doc = doc.TextDocument
+      if doc.languageId == self.document.languageId:
+        doc.reloadTreesitterLanguage()
 
 proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   var selections = self.selections
