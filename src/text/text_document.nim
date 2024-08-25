@@ -99,6 +99,7 @@ type TextDocument* = ref object of Document
   languageConfig*: Option[TextLanguageConfig]
   indentStyle*: IndentStyle
   createLanguageServer*: bool = true
+  completionTriggerCharacters*: set[char] = {}
 
   undoOps*: seq[UndoOp]
   redoOps*: seq[UndoOp]
@@ -1259,6 +1260,8 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   self.languageServer = await languageServerFuture
 
   if self.languageServer.getSome(ls):
+    self.completionTriggerCharacters = ls.getCompletionTriggerChars()
+
     ls.connect(self)
     let callback = proc (targetFilename: string): Future[void] {.async.} =
       if self.languageServer.getSome(ls):
@@ -1294,11 +1297,13 @@ proc tabWidth*(self: TextDocument): int =
 proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   let line = self.getLine cursor.line
 
+  let identChars = self.languageConfig.mapIt(it.completionWordChars).get(IdentChars)
+
   var column = min(cursor.column, line.len)
   while column > 0:
     let prevColumn = line.runeStart(column - 1)
     let r = line.runeAt(prevColumn)
-    if r.char in IdentChars or r.isAlpha:
+    if r.char in identChars or r.isAlpha:
       column = prevColumn
       continue
     break
