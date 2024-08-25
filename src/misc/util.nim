@@ -219,3 +219,27 @@ else:
 
 func removeSwap*[T](s: var seq[T]; index: int) = s.del(index)
 func removeShift*[T](s: var seq[T]; index: int) = s.delete(index)
+
+func indentExtraLines*(s: string, count: Natural, padding: string = " "): string =
+  ## Indents each line except the first in `s` by `count` amount of `padding`.
+  ##
+  ## **Note:** This does not preserve the new line characters used in `s`.
+  ##
+  ## See also:
+  ## * `align func<#align,string,Natural,char>`_
+  ## * `alignLeft func<#alignLeft,string,Natural,char>`_
+  ## * `spaces func<#spaces,Natural>`_
+  ## * `unindent func<#unindent,string,Natural,string>`_
+  ## * `dedent func<#dedent,string,Natural>`_
+  runnableExamples:
+    doAssert indent("First line\c\l and second line.", 2) ==
+             "First line\l   and second line."
+  result = ""
+  var i = 0
+  for line in s.splitLines():
+    if i != 0:
+      result.add("\n")
+      for j in 1..count:
+        result.add(padding)
+    result.add(line)
+    i.inc

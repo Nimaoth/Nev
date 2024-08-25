@@ -185,6 +185,20 @@ func add*(cursor: Cursor, selection: Selection): Cursor =
 func add*(self: Selection, other: Selection): Selection =
   return (self.first.add(other), self.last.add(other))
 
+func `+=`*(self: var Cursor, other: tuple[lines: int, columns: int]) =
+  self.line += other.lines
+  if other.lines == 0:
+    self.column += other.columns
+  else:
+    self.column = other.columns
+
+func `+`*(self: Cursor, other: tuple[lines: int, columns: int]): Cursor =
+  result.line = self.line + other.lines
+  if other.lines == 0:
+    result.column = self.column + other.columns
+  else:
+    result.column = other.columns
+
 func mergeLines*(selections: Selections): Selections =
   for s in selections.sorted:
     let sn = s.normalized
@@ -192,6 +206,15 @@ func mergeLines*(selections: Selections): Selections =
       result.add sn
     else:
       result[result.high].last.line = sn.last.line
+
+proc getTextSize*(text: string): tuple[lines: int, columns: int] =
+  let lastNewLine = text.rfind('\n')
+  let lastLineLen = text.high - lastNewLine
+  let lines = text.countLines
+  if lines == 1:
+    (0, text.len)
+  else:
+    (lines - 1, lastLineLen)
 
 proc getChangedSelection*(selection: Selection, text: string): Selection =
   let lastNewLine = text.rfind('\n')
