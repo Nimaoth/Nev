@@ -63,8 +63,11 @@ block: ## Parse command line options
       of "setting", "p":
         opts.settings.add val
 
-      of "command", "r":
-        opts.commands.add val
+      of "early-command", "r":
+        opts.earlyCommands.add val
+
+      of "late-command", "R":
+        opts.lateCommands.add val
 
       of "log-to-file", "f":
         logToFile = val.parseBool.catch(true)
@@ -186,9 +189,7 @@ proc runApp(): Future[void] {.async.} =
 
   var lastEvent = startTimer()
 
-  let minPollPerFrameMs = 1.0
   let maxPollPerFrameMs = 5.0
-  var pollBudgetMs = 0.0
   while not ed.closeRequested:
     defer:
       inc frameIndex
@@ -249,13 +250,11 @@ proc runApp(): Future[void] {.async.} =
     let pollTimer = startTimer()
     gAsyncFrameTimer = startTimer()
     try:
-      var totalPollTime = 0.0
+      let start = startTimer()
       var tries = 50
-      while tries > 0 and totalPollTime < maxPollPerFrameMs and hasPendingOperations():
+      while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations():
         dec tries
-        let start = startTimer()
         poll(0)
-        totalPollTime += start.elapsed.ms
 
     except CatchableError:
       discard
@@ -289,6 +288,12 @@ proc runApp(): Future[void] {.async.} =
   ed.shutdown()
   log lvlInfo, "Shutting down platform"
   rend.deinit()
+
+proc writeStackTrace2*() {.exportc: "writeStackTrace2", used.} =
+  writeStackTrace()
+
+if false:
+  writeStackTrace2()
 
 waitFor runApp()
 
