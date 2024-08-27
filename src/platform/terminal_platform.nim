@@ -145,6 +145,8 @@ method init*(self: TerminalPlatform) =
   self.supportsThinCursor = false
   self.doubleClickTime = 0.35
 
+  self.focused = true
+
   if myEnableTrueColors():
     log(lvlInfo, "Enable true color support")
     self.trueColorSupport = true

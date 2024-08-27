@@ -63,6 +63,7 @@ method init*(self: GuiPlatform) =
   self.window = newWindow("Absytree", ivec2(2000, 1000), vsync=false)
   self.window.runeInputEnabled = true
   self.supportsThinCursor = true
+  self.focused = self.window.focused
 
   # Use virtual key codes so that we can take into account the keyboard language
   # and the behaviour is more consistent with the browser/terminal.
@@ -140,6 +141,8 @@ method init*(self: GuiPlatform) =
     inc self.eventCounter
     self.currentModifiers = {}
     self.currentMouseButtons = {}
+    self.onFocusChanged.invoke self.window.focused
+    self.focused = self.window.focused
 
   self.window.onRune = proc(rune: Rune) =
     inc self.eventCounter
