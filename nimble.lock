@@ -1,6 +1,16 @@
 {
   "version": 2,
   "packages": {
+    "asynctools": {
+      "version": "0.1.1",
+      "vcsRevision": "a1a17d06713727d97810cad291e29dd7c672738f",
+      "url": "https://github.com/cheatfate/asynctools",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "3f7096335282f45ebab49b939b20a1ed52cdec31"
+      }
+    },
     "bitty": {
       "version": "0.1.4",
       "vcsRevision": "cde1af08ab96536239cc737cbd9217ee284e4e03",
