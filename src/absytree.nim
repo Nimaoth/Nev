@@ -14,9 +14,11 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, macros, strutils, os]
+import std/[parseopt, options, macros, strutils, os, terminal]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
+
+proc tryAttach(opts: AppOptions, processId: int)
 
 when enableGui:
   static:
@@ -28,6 +30,19 @@ when enableTerminal:
 
 logCategory "main"
 
+when defined(windows):
+  import winim
+
+proc ownsConsole*(): bool =
+  when defined(windows):
+    let consoleWnd = GetConsoleWindow()
+    var dwProcessId: DWORD
+    GetWindowThreadProcessId(consoleWnd, dwProcessId.addr)
+    return GetCurrentProcessId() == dwProcessId
+  else:
+    # todo
+    return true
+
 var backend: Option[Backend] = if enableGui: Backend.Gui.some
 elif enableTerminal: Backend.Terminal.some
 else: Backend.none
@@ -36,7 +51,6 @@ var logToFile = false
 var logToConsole = true
 var disableLogging = false
 var opts = AppOptions()
-
 
 const helpText = """
     ast [options] [file]
@@ -54,6 +68,7 @@ Options:
   -w, --no-wasm          Don't load wasm plugins
   -c, --no-config        Don't load json config files.
   -s, --session          Load a specific session.
+  --attach               Open the passed files in an existing instance if it already exists.
   --clean                Don't load any configs/sessions/plugins
 
 Examples:
@@ -66,6 +81,9 @@ Examples:
 
 block: ## Parse command line options
   var optParser = initOptParser("")
+  var attach = bool.none
+  var attachProcessId = 0
+
   for kind, key, val in optParser.getopt():
     case kind
     of cmdArgument:
@@ -123,10 +141,26 @@ block: ## Parse command line options
         opts.disableNimScriptPlugins = true
         opts.disableWasmPlugins = true
 
+      of "no-attach":
+        attach = false.some
+
+      of "attach":
+        attach = true.some
+        attachProcessId = val.parseInt.catch:
+          echo "Expected integer for process id: --attach:1234"
+          quit(1)
+
       of "session", "s":
         opts.sessionOverride = val.some
 
     of cmdEnd: assert(false) # cannot happen
+
+  if attach.getSome(attach):
+    if attach:
+      tryAttach(opts, attachProcessId)
+  else:
+    if not stdout.isatty() or ownsConsole():
+      tryAttach(opts, 0)
 
 if backend.isNone:
   echo "Error: No backend selected"
@@ -148,6 +182,45 @@ import platform/platform
 import ui/widget_builders
 import text/language/language_server
 import app
+
+import asynctools/asyncipc
+
+proc tryAttach(opts: AppOptions, processId: int) =
+  if processId == 0:
+    # todo: find process by name
+    # return
+    discard
+
+  let ipcName = "absytree-" & $processId
+  let writeHandle = open(ipcName, sideWriter).catch:
+    if processId == 0:
+      echo &"No existing editor, open new"
+      return
+    else:
+      echo &"No existing editor with process id {processId}"
+      quit(0)
+
+  defer: writeHandle.close()
+
+  proc send(msg: string) =
+    echo "Send ", msg
+    waitFor writeHandle.write(cast[pointer](msg[0].addr), msg.len)
+
+  # todo: instead of sending -p:... etc, translate the settings to set-option command syntax,
+  # pass the commands through as is and traslate fileToOpen to corresponding command.
+  for setting in opts.settings:
+    send("-p:" & setting)
+
+  for command in opts.earlyCommands:
+    send("-r:" & command)
+
+  for command in opts.lateCommands:
+    send("-R:" & command)
+
+  if opts.fileToOpen.getSome(file):
+    send(file)
+
+  quit(0)
 
 when enableTerminal:
   import platform/terminal_platform

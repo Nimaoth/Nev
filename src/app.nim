@@ -1,4 +1,5 @@
 import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques]
+import asynctools/asyncipc
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, regex, disposable_ref]
 import ui/node
@@ -1115,6 +1116,56 @@ proc serve(port: Port, savePort: bool) {.async.} =
 proc listenForConnection*(self: App, port: Port) {.async.} =
   await serve(port, self.getFlag("command-server.save-file", false))
 
+proc listenForIpc(self: App, id: int) {.async.} =
+  try:
+    let ipcName = "absytree-" & $id
+    log lvlInfo, &"Listen for ipc commands through {ipcName}"
+    let  ipc = createIpc(ipcName).catch:
+      log lvlWarn, &"Ipc port 0 already occupied"
+      return
+
+    var inBuffer: array[1024, char]
+
+    defer: ipc.close()
+
+    let readHandle = open(ipcName, sideReader)
+    defer: readHandle.close()
+
+    while not self.closeRequested:
+      let c = await readHandle.readInto(cast[pointer](inBuffer[0].addr), inBuffer.len)
+      # todo: handle arbitrary message size
+      if c > 0:
+        let message = inBuffer[0..<c].join()
+        log lvlInfo, &"Run command from client: '{message}'"
+
+        try:
+          if message.startsWith("-r:") or message.startsWith("-R:"):
+            let (action, arg) = parseAction(message[3..^1])
+            let response = self.handleAction(action, arg, record=true)
+            # todo: send response
+          elif message.startsWith("-p:"):
+            let setting = message[3..^1]
+            let i = setting.find("=")
+            if i == -1:
+              log lvlError, &"Invalid setting '{setting}', expected 'path.to.setting=value'"
+              continue
+
+            let path = setting[0..<i]
+            let value = setting[(i + 1)..^1].parseJson.catch:
+              log lvlError, &"Failed to parse value as json for '{setting}': {getCurrentExceptionMsg()}"
+              continue
+
+            log lvlInfo, &"Set {setting}"
+            self.setOption(path, value)
+          else:
+            discard self.openFile(message)
+
+        except:
+          log lvlError, &"Failed to run ipc command: {getCurrentExceptionMsg()}"
+
+  except:
+    log lvlError, &"Failed to open/read ipc messages: {getCurrentExceptionMsg()}"
+
 proc applySettingsFromAppOptions(self: App) =
   log lvlInfo, &"Apply settings provided through command line"
   for setting in self.appOptions.settings:
@@ -1377,6 +1428,9 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
   self.runLateCommandsFromAppOptions()
 
   log lvlInfo, &"Finished initializing app"
+
+  asyncCheck self.listenForIpc(0)
+  asyncCheck self.listenForIpc(os.getCurrentProcessId())
 
 proc saveAppState*(self: App)
 proc printStatistics*(self: App)
