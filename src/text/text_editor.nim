@@ -154,6 +154,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   diagnosticsUpdatedHandle: Id
   languageServerAttachedHandle: Id
   onCompletionsUpdatedHandle: Id
+  onFocusChangedHandle: Id
 
   completionsDirty: bool
   searchResultsDirty: bool
@@ -306,7 +307,7 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
 
   if self.blinkCursorTask.isNil:
     self.blinkCursorTask = startDelayed(500, repeat=true):
-      if not self.active:
+      if not self.active or not self.platform.focused:
         self.cursorVisible = true
         self.markDirty()
         self.blinkCursorTask.pause()
@@ -416,6 +417,8 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 method deinit*(self: TextDocumentEditor) =
   let filename = if self.document.isNotNil: self.document.filename else: ""
   logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
+
+  self.app.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
 
   self.unregister()
 
@@ -3321,6 +3324,11 @@ proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventRe
   self.insertText(input)
   return Handled
 
+proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
+  if focused:
+    if self.active and self.blinkCursorTask.isNotNil:
+      self.blinkCursorTask.reschedule()
+
 method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   self.app = app
   self.platform = app.platform
@@ -3343,6 +3351,8 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
         Ignored
     onInput:
       self.handleInput input, record=true
+
+  self.onFocusChangedHandle = self.app.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
   self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
 

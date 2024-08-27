@@ -14,6 +14,7 @@ type
     requestedRender*: bool
     showDrawnNodes*: bool = false
     supportsThinCursor*: bool
+    focused*: bool
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
     onKeyRelease*: Event[tuple[input: int64, modifiers: Modifiers]]
     onRune*: Event[tuple[input: int64, modifiers: Modifiers]]
@@ -23,6 +24,7 @@ type
     onScroll*: Event[tuple[pos: Vec2, scroll: Vec2, modifiers: Modifiers]]
     onCloseRequested*: Event[void]
     onDropFile*: Event[tuple[path: string, content: string]]
+    onFocusChanged*: Event[bool]
     layoutOptions*: WLayoutOptions
 
 method requestRender*(self: Platform, redrawEverything = false) {.base.} = discard
