@@ -29,6 +29,7 @@ requires "glob#64f71af" # "glob >= 0.11.2" # the newest version of glob doesn't 
 requires "patty >= 0.3.5"
 requires "nimclipboard >= 0.1.2"
 requires "npeg >= 0.12.0"
+requires "asynctools#a1a17d0"
 # requires "results >= 0.4.0" # todo: use that at some point?
 # requires "chronos >= 4.0.2" # todo: switch to this at some point
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
