@@ -15,9 +15,6 @@ for the backend (at the moment only WASM).
 
 The editor is available for the terminal and as a desktop GUI app.
 
-You can also try an old browser version [here](https://nimaoth.github.io/AbsytreeBrowser/nev_browser.html?s=default.nev-session), but this is not representative of the current state and will not be updated in the near future (only works in Chrome).
-There is also a very experimental [Unreal Engine Plugin](https://github.com/Nimaoth/AbsytreeUE) which integrates Nev into the Unreal editor.
-
 ## Goals
 - For the text editor:
   - Sit somewhere inbetween Vim and VS Code
