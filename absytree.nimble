@@ -72,7 +72,7 @@ requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.6"
 import strformat, strutils
 
 task createScriptingDocs, "Build the documentation for the scripting API":
-  exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Absytree/ --git.commit:main ./scripting/plugin_runtime.nim"
+  exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Nev/ --git.commit:main ./scripting/plugin_runtime.nim"
   exec "nim buildIndex -o:./scripting/htmldocs/theindex.html ./scripting/htmldocs"
   exec "nim ./tools/postprocess_docs.nims"
 
@@ -159,4 +159,4 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
 
 task flamegraph, "Perf/flamegraph":
-  exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- asttd -s:linux.absytree-session"
+  exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- asttd -s:linux.nev-session"

@@ -3,7 +3,7 @@
 To open this document at any time run the command `help` or `explore-help`.
 
 ## Installation
-[Build the editor yourself](building_from_source.md) or [download the latest release](https://github.com/Nimaoth/Absytree/releases)
+[Build the editor yourself](building_from_source.md) or [download the latest release](https://github.com/Nimaoth/Nev/releases)
 
 ## Cheatsheet
 [Go here](cheatsheet.md) to see the most important keybindings and commands

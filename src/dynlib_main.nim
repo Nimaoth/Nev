@@ -104,7 +104,7 @@ proc app_init(onAppCreated: OnAppCreated, ueLog: UeLog) {.exportc, dynlib, cdecl
   ueLogFn = ueLog
   echo &"Initializing {appName}..."
   # todo: pass the path in?
-  fs.init("C:/Absytree")
+  fs.init("C:/Nev")
   waitFor runApp(onAppCreated)
 
 proc app_poll(timeoutMs: int32) {.exportc, dynlib, cdecl.} =

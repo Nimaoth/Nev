@@ -30,7 +30,7 @@ function doInitTreesitter() {
     }
 }
 
-function loadAbsytree() {
+function loadNev() {
     doInitTreesitter()
 }
 

@@ -56,7 +56,7 @@ proc copySharedFilesTo(dir: string) =
   cpFile2 "src/misc/custom_unicode.nim", dir / "src/misc"
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
-  cpFile2 "absytree.nimble", dir
+  cpFile2 "nev.nimble", dir
   cpFile2 "config.nims", dir
 
   let stdPath = querySetting(libPath)
@@ -119,7 +119,7 @@ if packageWeb:
   if fileExists "build/ast.js":
     copySharedFilesTo releaseWeb
     cpFile2 "build/ast.js", releaseWeb
-    cpFile2 "web/absytree_browser.html", releaseWeb
+    cpFile2 "web/nev_browser.html", releaseWeb
     cpFile2 "web/ast_glue.js", releaseWeb
     cpFile2 "web/scripting_runtime.js", releaseWeb
     withDir releaseWeb:

@@ -21,7 +21,7 @@ If an external parser exists then the editor will not use the internal one.
 
 ## External parsers
 
-Absytree supports treesitter parser compiled to dynamic libraries (`.dll`/`.so`) or `wasm` modules.
+Nev supports treesitter parser compiled to dynamic libraries (`.dll`/`.so`) or `wasm` modules.
 `.dll`/`.so` parsers are not supported in the musl version because it can't load dynamic libraries, but `wasm` parsers are still supported.
 
 The parsers have to placed in `{app_dir}/languages` to be detected.
@@ -50,7 +50,7 @@ install-treesitter-parser "tree-sitter/tree-sitter-typescript/typescript" # Pars
 There is not much to configure treesitter. By default the editor will look for the parser library in `{app_dir}/languages/{language}.{dll|so}`.
 
 ```json
-// ~/.absytree/settings.json
+// ~/.nev/settings.json
 {
     // `+` is used to add new configurations instead of overriding all of them with just these
     "+treesitter": {
