@@ -291,9 +291,9 @@ proc openGithubWorkspace*(user: string; repository: string; branchOrHash: string
       argsJsonString.cstring)
 
 
-proc editor_openAbsytreeServerWorkspace_void_App_string_wasm(arg: cstring): cstring {.
+proc editor_openRemoteServerWorkspace_void_App_string_wasm(arg: cstring): cstring {.
     importc.}
-proc openAbsytreeServerWorkspace*(url: string) =
+proc openRemoteServerWorkspace*(url: string) =
   var argsJson = newJArray()
   argsJson.add block:
     when string is JsonNode:
@@ -301,7 +301,7 @@ proc openAbsytreeServerWorkspace*(url: string) =
     else:
       url.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_openAbsytreeServerWorkspace_void_App_string_wasm(
+  let res {.used.} = editor_openRemoteServerWorkspace_void_App_string_wasm(
       argsJsonString.cstring)
 
 

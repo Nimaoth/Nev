@@ -52,8 +52,8 @@ proc clearWorkspaceCaches*() =
 proc openGithubWorkspace*(user: string; repository: string; branchOrHash: string) =
   editor_openGithubWorkspace_void_App_string_string_string_impl(user,
       repository, branchOrHash)
-proc openAbsytreeServerWorkspace*(url: string) =
-  editor_openAbsytreeServerWorkspace_void_App_string_impl(url)
+proc openRemoteServerWorkspace*(url: string) =
+  editor_openRemoteServerWorkspace_void_App_string_impl(url)
 proc callScriptAction*(context: string; args: JsonNode): JsonNode =
   editor_callScriptAction_JsonNode_App_string_JsonNode_impl(context, args)
 proc addScriptAction*(name: string; docs: string = "";

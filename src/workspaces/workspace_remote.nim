@@ -2,7 +2,7 @@ import std/[tables, json, options, strutils, os]
 import misc/[custom_async, custom_logger, async_http_client, array_buffer, myjsonutils, timer, event]
 import workspace, platform/filesystem
 
-logCategory "ws-absytree-server"
+logCategory "ws-remote"
 
 type
   DirectoryListingWrapper = object
@@ -47,7 +47,7 @@ proc getWorkspaceInfo(self: WorkspaceRemote): Future[WorkspaceInfo] {.async.} =
   let workspaceFoldersFut = httpGet(self.baseUrl & "/info/workspace-folders")
 
   let localFolder = localFolderFut.await
-  let name = fmt"AbsytreeServer:{self.baseUrl}/{localFolder}"
+  let name = fmt"Remote:{self.baseUrl}/{localFolder}"
 
   let workspaceFolders = workspaceFoldersFut.await.parseJson
   let folders = workspaceFolders.jsonTo(typeof(WorkspaceInfo().folders))
@@ -60,7 +60,7 @@ proc updateWorkspaceName(self: WorkspaceRemote): Future[void] {.async.} =
     self.info.thenIt:
       self.name = it.name
       self.cachedInfo = it.some
-      log lvlInfo, fmt"AbsytreeServer workspace updated. Name: '{it.name}', Folders: {it.folders}"
+      log lvlInfo, fmt"Remote workspace updated. Name: '{it.name}', Folders: {it.folders}"
   except:
     log lvlError, &"Failed to update workspace info: {getCurrentExceptionMsg()}:\n{getCurrentException().getStackTrace()}"
 
@@ -124,7 +124,7 @@ method getDirectoryListing*(self: WorkspaceRemote, relativePath: string): Future
     self.cachedDirectoryListings[relativePath] = DirectoryListingWrapper(done: true, listing: listing)
     return listing
   except CatchableError:
-    log(lvlError, fmt"Failed to parse absytree-server response: {response}")
+    log(lvlError, fmt"Failed to parse server response: {response}")
 
   if self.cachedDirectoryListings.contains(relativePath):
     self.cachedDirectoryListings[relativePath].done = true

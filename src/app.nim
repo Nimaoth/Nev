@@ -88,7 +88,7 @@ type OpenEditor = object
   customOptions: JsonNode
 
 type
-  OpenWorkspaceKind {.pure.} = enum Local, AbsytreeServer, Github
+  OpenWorkspaceKind {.pure.} = enum Local, Remote, Github
   OpenWorkspace = object
     kind*: OpenWorkspaceKind
     id*: string
@@ -1372,7 +1372,7 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
             log lvlError, fmt"Failed to restore local workspace, local workspaces not available in js. Workspace: {wf}"
           continue
 
-      of OpenWorkspaceKind.AbsytreeServer:
+      of OpenWorkspaceKind.Remote:
         workspace = newWorkspaceRemote(wf.settings)
       of OpenWorkspaceKind.Github:
         workspace = newWorkspaceFolderGithub(wf.settings)
@@ -1650,7 +1650,7 @@ proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind =
     if workspaceFolder of WorkspaceFolderLocal:
       return OpenWorkspaceKind.Local
   if workspaceFolder of WorkspaceRemote:
-    return OpenWorkspaceKind.AbsytreeServer
+    return OpenWorkspaceKind.Remote
   if workspaceFolder of WorkspaceFolderGithub:
     return OpenWorkspaceKind.Github
   assert false
@@ -1785,7 +1785,7 @@ proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
 proc openGithubWorkspace*(self: App, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
   asyncCheck self.setWorkspaceFolder newWorkspaceFolderGithub(user, repository, branchOrHash)
 
-proc openAbsytreeServerWorkspace*(self: App, url: string) {.expose("editor").} =
+proc openRemoteServerWorkspace*(self: App, url: string) {.expose("editor").} =
   asyncCheck self.setWorkspaceFolder newWorkspaceRemote(url)
 
 proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.expose("editor").} =

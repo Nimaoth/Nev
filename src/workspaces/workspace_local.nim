@@ -3,6 +3,7 @@ import misc/[custom_async, custom_logger, async_process, util, regex, timer, eve
 import platform/filesystem
 import workspace
 import vcs/[vcs, vcs_git, vcs_perforce]
+import compilation_config
 
 logCategory "ws-local"
 
@@ -198,9 +199,9 @@ proc loadIgnoreFile(self: WorkspaceFolderLocal, path: string): Option[Globs] =
     return Globs.none
 
 proc loadDefaultIgnoreFile(self: WorkspaceFolderLocal) =
-  if self.loadIgnoreFile(".absytree-ignore").getSome(ignore):
+  if self.loadIgnoreFile(&".{appName}-ignore").getSome(ignore):
     self.ignore = ignore
-    log lvlInfo, &"Using ignore file '.absytree-ignore' for workpace {self.name}"
+    log lvlInfo, &"Using ignore file '.{appName}-ignore' for workpace {self.name}"
   elif self.loadIgnoreFile(".gitignore").getSome(ignore):
     self.ignore = ignore
     log lvlInfo, &"Using ignore file '.gitignore' for workpace {self.name}"

@@ -648,7 +648,7 @@ proc editor_clearWorkspaceCaches_void_App_impl*() =
 proc editor_openGithubWorkspace_void_App_string_string_string_impl*(user: string;
     repository: string; branchOrHash: string) =
   discard
-proc editor_openAbsytreeServerWorkspace_void_App_string_impl*(url: string) =
+proc editor_openRemoteServerWorkspace_void_App_string_impl*(url: string) =
   discard
 proc editor_callScriptAction_JsonNode_App_string_JsonNode_impl*(context: string;
     args: JsonNode): JsonNode =

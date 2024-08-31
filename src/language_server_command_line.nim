@@ -5,7 +5,7 @@ import text/language/[language_server_base, lsp_types]
 import platform/filesystem
 import dispatch_tables, app_interface, document_editor, command_info
 
-logCategory "language_server_absytree_commands"
+logCategory "language-server-command-line"
 
 type LanguageServerCommandLine* = ref object of LanguageServer
   app: AppInterface
