@@ -17,8 +17,8 @@ src/input_tests
 nimcache
 nimcache*
 _temp
-/ast
-absytree
+/nev
+nev
 themes/**
 cpp_test
 .vs
@@ -28,7 +28,7 @@ temp
 int/*.map
 **/htmldocs/**/*.idx
 *.code-workspace
-ast.js
+nev.js
 languages/*.wasm
 node_modules/**
 GithubAccessToken
@@ -43,16 +43,9 @@ scripting/nim/lib
 casts
 nim_std
 
-*.absytree-session
+*.nev-session
 
-ast2
-ast3
-astd
-astn
-astt
-astt2
-astt3
-/astt*
+/nev*
 ue_clang_tool
 
 loc.csv
@@ -89,15 +82,15 @@ nimhelp.txt
 log.txt
 .clang-ignore
 tools/uht.nim
-absytree_linkerArgs.txt
+nev_linkerArgs.txt
 config/wasm/callback_test_plugin.wasm
 config/callback_test_plugin.nim
 
 #
-.absytree/keybindings.json
-.absytree/settings-windows.json
-.absytree/settings-windows-gui.json
-.absytree/settings-linux.json
+.nev/keybindings.json
+.nev/settings-windows.json
+.nev/settings-windows-gui.json
+.nev/settings-linux.json
 wasm
 languages/tree-sitter-*
 languages/**/*.scm

@@ -200,11 +200,11 @@
             "lldb-dap2": {}
         },
         "+configuration": {
-            "absytree": {
+            "nev": {
                 "type": "lldb-dap",
                 "request": "launch",
-                "program": "astd",
-                "args": ["-s:linux.absytree-session"]
+                "program": "nevd",
+                "args": ["-s:linux.nev-session"]
             }
         }
     },

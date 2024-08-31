@@ -1,19 +1,21 @@
-# Absytree
+# Nev
 
-![Build and tests](https://github.com/Nimaoth/Absytree/actions/workflows/main.yml/badge.svg?event=push)
+![Build and tests](https://github.com/Nimaoth/Nev/actions/workflows/main.yml/badge.svg?event=push)
 
 This is still very early in developement and very experimental. Use at your own risk!
 
+Previously named `Absytree`.
+
 ## Programming Language + Editor
 
-Absytree is a text editor + programming languange workbench where instead of writing the source code as text in text files,
+Nev is a text editor + programming languange workbench where instead of writing the source code as text in text files,
 the abstract syntac tree (AST) is edited directly (or rather through _projections_, which are still trees)
 Languages will be extendable with custom AST node types, by either translating those to nodes of other languages or by implementing code generation
 for the backend (at the moment only WASM).
 
 The editor is available for the terminal, as a desktop GUI app.
-You can an old browser version [here](https://nimaoth.github.io/AbsytreeBrowser/absytree_browser.html?s=default.absytree-session), but this is not representative of the current state and will not be updated in the near future (only works in Chrome).
-There is also a very experimental [Unreal Engine Plugin](https://github.com/Nimaoth/AbsytreeUE) which integrates Absytree into the Unreal editor.
+You can an old browser version [here](https://nimaoth.github.io/AbsytreeBrowser/nev_browser.html?s=default.nev-session), but this is not representative of the current state and will not be updated in the near future (only works in Chrome).
+There is also a very experimental [Unreal Engine Plugin](https://github.com/Nimaoth/AbsytreeUE) which integrates Nev into the Unreal editor.
 
 ## Goals
 - For the text editor:
@@ -49,7 +51,7 @@ There is also a very experimental [Unreal Engine Plugin](https://github.com/Nima
 
 ## Screenshots
 
-### Absytree running inside Windows Terminal -> WSL -> Zellij with transparent background
+### Nev running inside Windows Terminal -> WSL -> Zellij with transparent background
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/transparent_background.png)
 
 ---

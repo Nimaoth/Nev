@@ -6,7 +6,7 @@ Language servers currently have to be installed manually. If you already have a 
 
 ## Configuration
 
-Configuration for language servers should be put in the user settings (`~/.absytree/settings.json`) or the workspace settings (`{workspace_dir}/.absytree/settings.json`)
+Configuration for language servers should be put in the user settings (`~/.nev/settings.json`) or the workspace settings (`{workspace_dir}/.nev/settings.json`)
 
 Some language servers are already configured in the [app settings](../config/settings.json), so when you add you're own language server configuration make sure to use `"+lsp"` to extend the lsp configurations, unless you want to completely override the defaults.
 
@@ -19,7 +19,7 @@ Some languages are already configured so if you have the binary in the PATH then
 - `Rust`: `rust-analizer`
 
 ```json
-// ~/.absytree/settings.json
+// ~/.nev/settings.json
 {
     // `+` is used to add new lsp configurations instead of overriding all of them with just these two
     "+lsp": {
@@ -45,7 +45,7 @@ Some languages are already configured so if you have the binary in the PATH then
         },
 
         "+rust": {
-            // These properties are already set in {app_dir}/.absytree/settings.json, so you just need to set "path" if you want to specifiy the full path to the binary, and the "rust-analyzer" property to
+            // These properties are already set in {app_dir}/.nev/settings.json, so you just need to set "path" if you want to specifiy the full path to the binary, and the "rust-analyzer" property to
             // specify settings from [here](https://rust-analyzer.github.io/manual.html#configuration)
             // "path": "rust-analyzer",
             // "initialization-options-name": "rust-analyzer", // The name of the property to send as initialization options

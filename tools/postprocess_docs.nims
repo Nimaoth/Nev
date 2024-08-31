@@ -8,7 +8,7 @@ proc postProcess(filename: string, replacementFile: string) =
   let mappingsJson = readFile(fmt"int/{name}.map")
   let mappings = parseJson(mappingsJson)
 
-  let searchString = "<a href=\"https://github.com/Nimaoth/Absytree//"
+  let searchString = "<a href=\"https://github.com/Nimaoth/Nev//"
 
   let content = readFile(filename)
   var result = ""
