@@ -7,7 +7,7 @@ import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
-import text/language/language_server_base, language_server_absytree_commands
+import text/language/language_server_base, language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, command_info
 import text/[custom_treesitter]
 import finder/[finder, previewer]
