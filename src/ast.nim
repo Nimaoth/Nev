@@ -1,4 +1,4 @@
 when defined(js):
-  include absytree_js
+  include browser_main
 else:
-  include absytree
+  include desktop_main

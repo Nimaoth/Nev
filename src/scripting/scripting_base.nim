@@ -81,5 +81,5 @@ import scripting_api, misc/myjsonutils
   else:
     imports_content.add "\nconst enableAst* = false\n"
 
-  echo fmt"Writing scripting/absytree_api.nim"
-  writeFile(fmt"scripting/absytree_api.nim", imports_content)
+  echo fmt"Writing scripting/plugin_api.nim"
+  writeFile(fmt"scripting/plugin_api.nim", imports_content)

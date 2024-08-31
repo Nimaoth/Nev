@@ -1,8 +1,8 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
 import misc/[util, wrap, myjsonutils]
-import absytree_api
+import plugin_api
 
-export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api
+export plugin_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
 var scriptActions* = initTable[string, proc(args: JsonNode): JsonNode]()
 
