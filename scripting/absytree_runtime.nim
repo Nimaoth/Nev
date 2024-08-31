@@ -1,8 +1,8 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts, options]
 import misc/[event, util, myjsonutils, macro_utils]
-import absytree_api, script_expose
+import plugin_api, script_expose
 
-export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api, script_expose
+export plugin_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api, script_expose
 
 when defined(nimscript):
   proc getCurrentExceptionMsg*(): string =
