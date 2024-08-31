@@ -17,11 +17,6 @@ To enable these features pass `-D:enableNimscript=true` and `-D:enableAst=true` 
   - For the gui version: `nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false`
   - For the terminal version: `nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true`
 
-## Browser version
-- Run `nimble buildBrowser`
-- Embed the generated file `ast.js`
-- See `absytree_browser.html` for an example
-
 ## Compiling tree sitter grammars to wasm
 - Go into the tree-sitter repositories root directory
 - Make sure the cli is built
