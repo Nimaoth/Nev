@@ -485,6 +485,32 @@ proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_text_includeSelectionEnd_Selection_TextDocumentEditor_Selection_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc includeSelectionEnd*(self: TextDocumentEditor; res: Selection;
+                          includeAfter: bool = true): Selection =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selection is JsonNode:
+      res
+    else:
+      res.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_includeSelectionEnd_Selection_TextDocumentEditor_Selection_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
     arg: cstring): cstring {.importc.}
 proc findSurroundStart*(editor: TextDocumentEditor; cursor: Cursor; count: int;
@@ -747,6 +773,43 @@ proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_text_insertMulti_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc insertMulti*(self: TextDocumentEditor; selections: seq[Selection];
+                  texts: seq[string]; notify: bool = true; record: bool = true): seq[
+    Selection] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when seq[Selection] is JsonNode:
+      selections
+    else:
+      selections.toJson()
+  argsJson.add block:
+    when seq[string] is JsonNode:
+      texts
+    else:
+      texts.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      notify
+    else:
+      notify.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      record
+    else:
+      record.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_insertMulti_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc delete*(self: TextDocumentEditor; selections: seq[Selection];
@@ -945,9 +1008,10 @@ proc selectLineCurrent*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_wasm(
+proc editor_text_getParentNodeSelection_Selection_TextDocumentEditor_Selection_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc selectParentTs*(self: TextDocumentEditor; selection: Selection) =
+proc getParentNodeSelection*(self: TextDocumentEditor; selection: Selection;
+                             includeAfter: bool = true): Selection =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -959,8 +1023,120 @@ proc selectParentTs*(self: TextDocumentEditor; selection: Selection) =
       selection
     else:
       selection.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_selectParentTs_void_TextDocumentEditor_Selection_wasm(
+  let res {.used.} = editor_text_getParentNodeSelection_Selection_TextDocumentEditor_Selection_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_getNextNamedSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc getNextNamedSiblingNodeSelection*(self: TextDocumentEditor;
+                                       selection: Selection;
+                                       includeAfter: bool = true): Option[
+    Selection] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selection is JsonNode:
+      selection
+    else:
+      selection.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getNextNamedSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_getNextSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc getNextSiblingNodeSelection*(self: TextDocumentEditor;
+                                  selection: Selection;
+                                  includeAfter: bool = true): Option[Selection] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selection is JsonNode:
+      selection
+    else:
+      selection.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getNextSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_getParentNodeSelections_Selections_TextDocumentEditor_Selections_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc getParentNodeSelections*(self: TextDocumentEditor; selections: Selections;
+                              includeAfter: bool = true): Selections =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selections is JsonNode:
+      selections
+    else:
+      selections.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getParentNodeSelections_Selections_TextDocumentEditor_Selections_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc selectParentTs*(self: TextDocumentEditor; selection: Selection;
+                     includeAfter: bool = true) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selection is JsonNode:
+      selection
+    else:
+      selection.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_selectParentTs_void_TextDocumentEditor_Selection_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -992,18 +1168,71 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
-    importc.}
-proc selectParentCurrentTs*(self: TextDocumentEditor) =
+proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc selectParentCurrentTs*(self: TextDocumentEditor; includeAfter: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_selectParentCurrentTs_void_TextDocumentEditor_wasm(
+  let res {.used.} = editor_text_selectParentCurrentTs_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
+
+
+proc editor_text_getNextNodeWithSameType_Option_Selection_TextDocumentEditor_Selection_int_bool_bool_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc getNextNodeWithSameType*(self: TextDocumentEditor; selection: Selection;
+                              offset: int = 0; includeAfter: bool = true;
+                              wrap: bool = true; stepIn: bool = true;
+                              stepOut: bool = true): Option[Selection] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selection is JsonNode:
+      selection
+    else:
+      selection.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      stepIn
+    else:
+      stepIn.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      stepOut
+    else:
+      stepOut.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getNextNodeWithSameType_Option_Selection_TextDocumentEditor_Selection_int_bool_bool_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
 
 
 proc editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_wasm(
