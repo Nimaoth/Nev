@@ -288,9 +288,6 @@ proc getActiveEditor*(): EditorId =
 proc getActiveEditor2*(): EditorId =
   ## Returns the active editor instance
   editor_getActiveEditor2_EditorId_App_impl()
-proc loadCurrentConfig*() =
-  ## Opens the default config file in a new view.
-  editor_loadCurrentConfig_void_App_impl()
 proc logRootNode*() =
   editor_logRootNode_void_App_impl()
 proc sourceCurrentDocument*() =

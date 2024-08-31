@@ -1456,14 +1456,6 @@ proc getActiveEditor2*(): EditorId =
   result = parseJson($res).jsonTo(typeof(result))
 
 
-proc editor_loadCurrentConfig_void_App_wasm(arg: cstring): cstring {.importc.}
-proc loadCurrentConfig*() =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_loadCurrentConfig_void_App_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_logRootNode_void_App_wasm(arg: cstring): cstring {.importc.}
 proc logRootNode*() =
   var argsJson = newJArray()
