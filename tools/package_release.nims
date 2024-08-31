@@ -98,7 +98,7 @@ if packageWindows:
     cpFile2 "ast.exe", releaseWindows
     cpFile2 "astt.exe", releaseWindows, optional=true
     cpFile2 "wasmtime.dll", releaseWindows, optional=true
-    cpFile2 "tools/absytree-server.exe", releaseWindows
+    cpFile2 "tools/buildRemoteWorkspaceHost.exe", releaseWindows
     cpFile2 "tools/lsp-ws.exe", releaseWindows
 
 if packageLinux:
@@ -110,7 +110,7 @@ if packageLinux:
     cpFile2 "ast", releaseLinux
     cpFile2 "astt", releaseLinux, optional=true
     cpFile2 "ast-musl", releaseLinux
-    cpFile2 "tools/absytree-server", releaseLinux
+    cpFile2 "tools/buildRemoteWorkspaceHost", releaseLinux
     cpFile2 "tools/lsp-ws", releaseLinux
 
 if packageWeb:
