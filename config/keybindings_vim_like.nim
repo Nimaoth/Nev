@@ -1,4 +1,4 @@
-import absytree_runtime, keybindings_normal
+import plugin_runtime, keybindings_normal
 import misc/[timer]
 
 proc loadVimLikeKeybindings*() {.scriptActionWasmNims("load-vim-like-keybindings").} =

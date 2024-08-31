@@ -1,4 +1,4 @@
-import absytree_runtime
+import plugin_runtime
 import std/[strutils, unicode]
 
 proc postInitialize*(): bool {.wasmexport.} =
@@ -31,4 +31,4 @@ if getBackend() == Terminal:
   changeAnimationSpeed 10000
 
 when defined(wasm):
-  include absytree_runtime_impl
+  include plugin_runtime_impl

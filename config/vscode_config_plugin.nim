@@ -1,4 +1,4 @@
-import absytree_runtime
+import plugin_runtime
 import std/options
 
 ## This plugin adds commands to load certain VSCode configuration files
@@ -30,4 +30,4 @@ proc loadVSCodeDebuggerConfig*(file: string) {.expose("load-vscode-debugger-conf
     except:
       info &"Failed to load debugger config: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-include absytree_runtime_impl
+include plugin_runtime_impl

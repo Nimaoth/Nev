@@ -1,4 +1,4 @@
-import absytree_runtime
+import plugin_runtime
 
 import std/[strutils, unicode, tables, json, options, genasts, macros]
 import misc/[util, myjsonutils]
@@ -364,4 +364,4 @@ proc sync() {.expose("harpoon-sync").} =
 setup(newJObject())
 
 when defined(wasm):
-  include absytree_runtime_impl
+  include plugin_runtime_impl

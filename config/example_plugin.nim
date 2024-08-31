@@ -1,6 +1,6 @@
 # This needs to imported to access the editor API.
-# It can be imported in any file that's part of the plugin, not just the main file like `absytree_runtime_impl`
-import absytree_runtime
+# It can be imported in any file that's part of the plugin, not just the main file like `plugin_runtime_impl`
+import plugin_runtime
 
 # You can import the Nim std lib and other libraries, as long as what you import can be compiled to wasm
 # and doesn't rely on currently unsupported WASI APIs.
@@ -37,4 +37,4 @@ addTextCommand "", "<C-c>", "copy" # addTextCommand "xyz" is equivalent to addCo
 
 # This is required for the main file of the plugin. If you use NimScript this is not required.
 when defined(wasm):
-  include absytree_runtime_impl
+  include plugin_runtime_impl

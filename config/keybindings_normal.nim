@@ -1,4 +1,4 @@
-import absytree_runtime
+import plugin_runtime
 import misc/[event, id, timer]
 
 {.used.}
