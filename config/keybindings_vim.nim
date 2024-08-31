@@ -1,5 +1,5 @@
 import std/[strutils, macros, genasts, sequtils, sets]
-import absytree_runtime, keybindings_normal
+import plugin_runtime, keybindings_normal
 import misc/[timer, util, myjsonutils, custom_unicode]
 import input_api
 
@@ -771,7 +771,7 @@ proc vimToggleCase(editor: TextDocumentEditor, moveCursorRight: bool) {.exposeAc
 proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-current-view-or-quit").} =
   let openEditors = getVisibleEditors().len + getHiddenEditors().len
   if openEditors == 1:
-    absytree_runtime.quit()
+    plugin_runtime.quit()
   else:
     closeCurrentView(keepHidden=false, restoreHidden=true)
 

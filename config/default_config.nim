@@ -1,4 +1,4 @@
-import absytree_runtime
+import plugin_runtime
 import std/[json]
 import misc/[timer]
 

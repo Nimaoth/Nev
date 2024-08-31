@@ -97,7 +97,7 @@ import std/[strformat, sequtils, macros, tables, options, sugar, strutils, genas
 
 import scripting_api
 import misc/[util, myjsonutils]
-import absytree_runtime
+import plugin_runtime
     """
     intr.evalString(initCode)
 
@@ -283,12 +283,12 @@ proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
 
       script_internal_content.add implNim
 
-    echo fmt"Writing scripting/absytree_internal.nim"
-    writeFile(fmt"scripting/absytree_internal.nim", script_internal_content)
+    echo fmt"Writing scripting/plugin_api_internal.nim"
+    writeFile(fmt"scripting/plugin_api_internal.nim", script_internal_content)
 
 template createScriptContextConstructor*(addins: untyped): untyped =
   proc createScriptContextNim(filepath: string, searchPaths: seq[string], stdPath: Option[string]): Future[Option[ScriptContext]] {.async.} =
-    return await newScriptContext(filepath, "absytree_internal", addins, "include absytree_runtime_impl", searchPaths, stdPath)
+    return await newScriptContext(filepath, "plugin_api_internal", addins, "include plugin_runtime_impl", searchPaths, stdPath)
 
 macro invoke(self: ScriptContext; pName: untyped;
     args: varargs[typed]; returnType: typedesc = void): untyped =

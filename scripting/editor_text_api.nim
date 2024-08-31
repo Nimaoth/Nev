@@ -1,6 +1,6 @@
 import std/[json, options]
 import "../src/scripting_api"
-import absytree_internal
+import plugin_api_internal
 
 ## This file is auto generated, don't modify.
 
