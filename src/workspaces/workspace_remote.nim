@@ -9,14 +9,14 @@ type
     done: bool
     listing: DirectoryListing
 
-  WorkspaceFolderAbsytreeServer* = ref object of Workspace
+  WorkspaceRemote* = ref object of Workspace
     baseUrl*: string
     cachedDirectoryListings: Table[string, DirectoryListingWrapper]
     cachedRelativePaths: Table[string, Option[string]]
     isCacheUpdateInProgress: bool = false
     cachedInfo: Option[WorkspaceInfo]
 
-proc recomputeFileCacheAsync(self: WorkspaceFolderAbsytreeServer): Future[void] {.async.} =
+proc recomputeFileCacheAsync(self: WorkspaceRemote): Future[void] {.async.} =
   if self.isCacheUpdateInProgress:
     return
   self.isCacheUpdateInProgress = true
@@ -31,18 +31,18 @@ proc recomputeFileCacheAsync(self: WorkspaceFolderAbsytreeServer): Future[void] 
   self.cachedFiles = res
   self.onCachedFilesUpdated.invoke()
 
-method recomputeFileCache*(self: WorkspaceFolderAbsytreeServer) =
+method recomputeFileCache*(self: WorkspaceRemote) =
   asyncCheck self.recomputeFileCacheAsync()
 
-method isReadOnly*(self: WorkspaceFolderAbsytreeServer): bool = false
-method settings*(self: WorkspaceFolderAbsytreeServer): JsonNode =
+method isReadOnly*(self: WorkspaceRemote): bool = false
+method settings*(self: WorkspaceRemote): JsonNode =
   result = newJObject()
   result["baseUrl"] = newJString(self.baseUrl)
 
-method clearDirectoryCache*(self: WorkspaceFolderAbsytreeServer) =
+method clearDirectoryCache*(self: WorkspaceRemote) =
   self.cachedDirectoryListings.clear()
 
-proc getWorkspaceInfo(self: WorkspaceFolderAbsytreeServer): Future[WorkspaceInfo] {.async.} =
+proc getWorkspaceInfo(self: WorkspaceRemote): Future[WorkspaceInfo] {.async.} =
   let localFolderFut = httpGet(self.baseUrl & "/info/name")
   let workspaceFoldersFut = httpGet(self.baseUrl & "/info/workspace-folders")
 
@@ -54,7 +54,7 @@ proc getWorkspaceInfo(self: WorkspaceFolderAbsytreeServer): Future[WorkspaceInfo
 
   return WorkspaceInfo(name: name, folders: folders)
 
-proc updateWorkspaceName(self: WorkspaceFolderAbsytreeServer): Future[void] {.async.} =
+proc updateWorkspaceName(self: WorkspaceRemote): Future[void] {.async.} =
   try:
     self.info = self.getWorkspaceInfo()
     self.info.thenIt:
@@ -64,7 +64,7 @@ proc updateWorkspaceName(self: WorkspaceFolderAbsytreeServer): Future[void] {.as
   except:
     log lvlError, &"Failed to update workspace info: {getCurrentExceptionMsg()}:\n{getCurrentException().getStackTrace()}"
 
-method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Future[string] {.async.} =
+method loadFile*(self: WorkspaceRemote, relativePath: string): Future[string] {.async.} =
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
@@ -72,10 +72,10 @@ method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Fut
 
   return await httpGet(url)
 
-method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, data: ptr string): Future[void] {.async.} =
+method loadFile*(self: WorkspaceRemote, relativePath: string, data: ptr string): Future[void] {.async.} =
   data[] = await self.loadFile(relativePath)
 
-method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, content: string): Future[void] {.async.} =
+method saveFile*(self: WorkspaceRemote, relativePath: string, content: string): Future[void] {.async.} =
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
@@ -83,7 +83,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
 
   discard httpPost(url, content).await
 
-method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, content: ArrayBuffer): Future[void] {.async.} =
+method saveFile*(self: WorkspaceRemote, relativePath: string, content: ArrayBuffer): Future[void] {.async.} =
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
@@ -91,7 +91,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
 
   discard httpPost(url, content).await
 
-proc parseDirectoryListing(self: WorkspaceFolderAbsytreeServer, basePath: string, jsn: JsonNode): DirectoryListing =
+proc parseDirectoryListing(self: WorkspaceRemote, basePath: string, jsn: JsonNode): DirectoryListing =
   if jsn.hasKey("files") and jsn["files"].kind == JArray:
     let files = jsn["files"]
     for item in files.items:
@@ -101,7 +101,7 @@ proc parseDirectoryListing(self: WorkspaceFolderAbsytreeServer, basePath: string
     for item in folders.items:
       result.folders.add item.getStr
 
-method getDirectoryListing*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Future[DirectoryListing] {.async.} =
+method getDirectoryListing*(self: WorkspaceRemote, relativePath: string): Future[DirectoryListing] {.async.} =
   let relativePath = relativePath.normalizePathUnix
   while self.cachedDirectoryListings.contains(relativePath) and not self.cachedDirectoryListings[relativePath].done:
     await sleepAsync(2)
@@ -132,7 +132,7 @@ method getDirectoryListing*(self: WorkspaceFolderAbsytreeServer, relativePath: s
 
   return DirectoryListing()
 
-method getRelativePath*(self: WorkspaceFolderAbsytreeServer, absolutePath: string): Future[Option[string]] {.async.} =
+method getRelativePath*(self: WorkspaceRemote, absolutePath: string): Future[Option[string]] {.async.} =
   if not self.cachedRelativePaths.contains(absolutePath):
     let response = await httpGet(self.baseUrl & "/relative-path/" & absolutePath)
     if response == "":
@@ -142,7 +142,7 @@ method getRelativePath*(self: WorkspaceFolderAbsytreeServer, absolutePath: strin
 
   return self.cachedRelativePaths[absolutePath]
 
-method getRelativePathSync*(self: WorkspaceFolderAbsytreeServer, absolutePath: string): Option[string] =
+method getRelativePathSync*(self: WorkspaceRemote, absolutePath: string): Option[string] =
   if not self.cachedInfo.isSome:
     return string.none
 
@@ -152,13 +152,13 @@ method getRelativePathSync*(self: WorkspaceFolderAbsytreeServer, absolutePath: s
 
   return string.none
 
-proc newWorkspaceFolderAbsytreeServer*(url: string): WorkspaceFolderAbsytreeServer =
+proc newWorkspaceRemote*(url: string): WorkspaceRemote =
   new result
 
   result.baseUrl = url
 
   asyncCheck result.updateWorkspaceName()
 
-proc newWorkspaceFolderAbsytreeServer*(settings: JsonNode): WorkspaceFolderAbsytreeServer =
+proc newWorkspaceRemote*(settings: JsonNode): WorkspaceRemote =
   let url = settings["baseUrl"].getStr
-  return newWorkspaceFolderAbsytreeServer(url)
+  return newWorkspaceRemote(url)

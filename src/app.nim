@@ -1372,7 +1372,7 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
           continue
 
       of OpenWorkspaceKind.AbsytreeServer:
-        workspace = newWorkspaceFolderAbsytreeServer(wf.settings)
+        workspace = newWorkspaceRemote(wf.settings)
       of OpenWorkspaceKind.Github:
         workspace = newWorkspaceFolderGithub(wf.settings)
 
@@ -1648,7 +1648,7 @@ proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind =
   when not defined(js):
     if workspaceFolder of WorkspaceFolderLocal:
       return OpenWorkspaceKind.Local
-  if workspaceFolder of WorkspaceFolderAbsytreeServer:
+  if workspaceFolder of WorkspaceRemote:
     return OpenWorkspaceKind.AbsytreeServer
   if workspaceFolder of WorkspaceFolderGithub:
     return OpenWorkspaceKind.Github
@@ -1785,7 +1785,7 @@ proc openGithubWorkspace*(self: App, user: string, repository: string, branchOrH
   asyncCheck self.setWorkspaceFolder newWorkspaceFolderGithub(user, repository, branchOrHash)
 
 proc openAbsytreeServerWorkspace*(self: App, url: string) {.expose("editor").} =
-  asyncCheck self.setWorkspaceFolder newWorkspaceFolderAbsytreeServer(url)
+  asyncCheck self.setWorkspaceFolder newWorkspaceRemote(url)
 
 proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.expose("editor").} =
   if not self.scriptActions.contains(context):
