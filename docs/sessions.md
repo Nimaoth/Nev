@@ -11,11 +11,11 @@ Instead just edit it with `ast .absytree-session`.
 
 ## Using sessions
 
-If you launch Absytree without a file as an argument then it will try to load a session from the default session file (`.absytree-session`) in the current working directory.
+If you launch the editor without a file as an argument then it will try to load a session from the default session file (`.absytree-session`) in the current working directory.
 
 To use a different session you can use `-s` like this: `ast -s:foo.absytree-session`.
 
-If you launch Absytree with a file path (like `ast foo.txt`) then it will only open that file, but not load a session.
+If you launch with a file path (like `ast foo.txt`) then it will only open that file, but not load a session.
 
 ### Workspace
 
@@ -24,7 +24,7 @@ is by modifying the session file and restarting the editor.
 
 ## Saving sessions
 
-If you have a session then Absytree will automatically save the session when closing the editor, otherwise nothing will be saved automatically.
+If you have a session then it will automatically save the session when closing the editor, otherwise nothing will be saved automatically.
 
 ## Creating a session file
 
@@ -32,7 +32,7 @@ Open the command line and use the command `save-session` to save the current edi
 
 You can also specify a session name like this: `save-session ".absytree-session"`
 
-`.absytree-session` is the default session file Absytree tries to load when you run it without any arguments, so this name is recommended.
+`.absytree-session` is the default session file that will be loaded when you run it without any arguments, so this name is recommended.
 
 Here is an example of a session file
 ```json
@@ -41,7 +41,7 @@ Here is an example of a session file
     // ...
     "workspaceFolders": [ // Although this is an array only one workspace is supported.
         {
-            "kind": 0, // 0 - Local, 1 - AbsytreeServer
+            "kind": 0, // 0 - Local, 1 - Remote
             "id": "663f8b0ad15f6f2f4922322a", // Generated automatically, but currently not really used
             "name": "My workspace", // Name, can be anything
             "settings": {

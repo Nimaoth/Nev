@@ -1,4 +1,4 @@
-# Contributing to Absytree
+# Contributing
 
 In this guide you will get an overview of the contribution workflow from opening an issue, creating a PR, reviewing, and merging the PR.
 
@@ -13,7 +13,7 @@ To get an overview of the project, read the [README](README.md) and [Getting Sta
 If you find a bug or want to request a feautre, search if an issue already exists. If a related issue doesn't exist, you can open a new issue.
 
 For bugs please give as much information as possible.
-Please include the log file (`messages.log` in the root folder where you installed/cloned Absytree) if it's a bug and the commands and their outputs in case of compile errors.
+Please include the log file (`messages.log` in the root folder where you installed/cloned the editor) if it's a bug and the commands and their outputs in case of compile errors.
 
 #### Solve an issue
 

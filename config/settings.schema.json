@@ -277,7 +277,7 @@
                 "reapply-app": {
                     "type": "boolean",
                     "default": "false",
-                    "description": "If true then keybindings from the absytree installation directory will be reapplied after loading the preset.\nDefault: false"
+                    "description": "If true then keybindings from the apps installation directory will be reapplied after loading the preset.\nDefault: false"
                 },
                 "reapply-home": {
                     "type": "boolean",
