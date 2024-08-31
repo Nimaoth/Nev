@@ -49,7 +49,8 @@ proc errorHook(config: ConfigRef; info: TLineInfo; msg: string; severity: Severi
         fileName = k
 
     var line = info.line
-    if fileName == "absytree_config":
+    if fileName == "custom":
+      # todo: calculate this number
       line -= 935
     logging.log(loggerPtr[], lvlError, fmt"[vm {severity}]: {fileName}:{line}:{(info.col + 1)} {msg}.")
     raise (ref VMQuit)(info: info, msg: msg)
@@ -83,12 +84,15 @@ proc createInterpreterAsync(args: (ptr Interpreter, string, seq[string], seq[(st
 
     var intr = createInterpreter(args[1], args[2], flags = {allowInfiniteLoops}, defines = args[3])
 
+    # todo: how is this name determined?
+    const moduleName = appName
+
     for uProc in args[4].procs:
-      intr.implementRoutine("absytree", args[6], uProc.name, uProc.vmProc)
+      intr.implementRoutine(moduleName, args[6], uProc.name, uProc.vmProc)
 
     for (module, addins) in args[5]:
       for uProc in addins.procs:
-        intr.implementRoutine("absytree", module, uProc.name, uProc.vmProc)
+        intr.implementRoutine(moduleName, module, uProc.name, uProc.vmProc)
 
     setUseIc(true)
 

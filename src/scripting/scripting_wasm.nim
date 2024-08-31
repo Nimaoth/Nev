@@ -57,10 +57,10 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
         if findFunction(module, "handleScriptActionWasm", cstring, proc(name: cstring, arg: cstring): cstring).getSome(f):
           self.handleScriptActionCallbacks.add (module, f)
 
-        if findFunction(module, "absytree_main", void, proc(): void).getSome(f):
-          log lvlInfo, "Run absytree_main"
+        if findFunction(module, "plugin_main", void, proc(): void).getSome(f):
+          log lvlInfo, "Run plugin_main"
           f()
-          log lvlInfo, "Finished absytree_main"
+          log lvlInfo, "Finished plugin_main"
 
         self.modules.add module
 

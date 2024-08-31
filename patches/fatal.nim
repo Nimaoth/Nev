@@ -49,7 +49,7 @@ elif quirkyExceptions and not defined(nimscript):
     sysFatal(exceptn, message, "")
 
 else:
-  ##### patch begin - Can't call writeStackTrace here directly, call a c function defined in absytree.nim
+  ##### patch begin - Can't call writeStackTrace here directly, call a c function defined in desktop_main.nim
   when defined(enableSysFatalStackTrace) and not defined(wasm):
     proc writeStackTrace2() {.importc: "writeStackTrace2".}
   ##### patch end

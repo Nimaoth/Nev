@@ -434,7 +434,7 @@ when defined(wasm):
   proc emscripten_stack_init() {.importc.}
   # proc init_pthread_self() {.importc.} # todo
 
-  proc absytree_main*() {.wasmexport.} =
+  proc plugin_main*() {.wasmexport.} =
     emscripten_stack_init()
     # init_pthread_self()
     NimMain()

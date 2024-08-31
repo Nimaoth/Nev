@@ -1,5 +1,5 @@
 when defined(js):
-  {.error: "absytree_terminal.nim does not work in js backend. Use absytree_js.nim instead.".}
+  {.error: "dynlib_main.nim does not work in js backend.".}
 
 when defined(windows):
   static:
@@ -14,7 +14,7 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, macros, tables]
+import std/[parseopt, options, macros, tables, strutils, strformat]
 import misc/[custom_logger]
 import compilation_config, scripting_api, app_options
 
@@ -99,22 +99,22 @@ proc shutdown() =
 
 proc NimMain() {.cdecl, importc.}
 
-proc absytree_init(onAppCreated: OnAppCreated, ueLog: UeLog) {.exportc, dynlib, cdecl.} =
+proc app_init(onAppCreated: OnAppCreated, ueLog: UeLog) {.exportc, dynlib, cdecl.} =
   NimMain()
   ueLogFn = ueLog
-  echo "Initializing Absytree..."
+  echo &"Initializing {appName}..."
   # todo: pass the path in?
   fs.init("C:/Absytree")
   waitFor runApp(onAppCreated)
 
-proc absytree_poll(timeoutMs: int32) {.exportc, dynlib, cdecl.} =
+proc app_poll(timeoutMs: int32) {.exportc, dynlib, cdecl.} =
   try:
     poll(timeoutMs.int)
   except ValueError:
     discard
 
-proc absytree_shutdown() {.exportc, dynlib, cdecl.} =
-  echo "Shutting down Absytree..."
+proc app_shutdown() {.exportc, dynlib, cdecl.} =
+  echo &"Shutting down {appName}..."
   shutdown()
 
   when isFutureLoggingEnabled:
@@ -130,49 +130,49 @@ proc absytree_shutdown() {.exportc, dynlib, cdecl.} =
     drain(10000)
   GC_FullCollect()
 
-proc absytree_input_keys*(self: ptr AppObject, input: cstring) {.exportc, dynlib, cdecl.} =
+proc app_input_keys*(self: ptr AppObject, input: cstring) {.exportc, dynlib, cdecl.} =
   echo cast[int](gApp[].addr), ", ", cast[int](self.pointer)
   if gApp.isNotNil:
     gApp.inputKeys($input)
   # self[].inputKeys($input)
 
-proc absytree_key_down*(input: int64, modBits: int32): bool {.exportc, dynlib, cdecl.} =
+proc app_key_down*(input: int64, modBits: int32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
     let mods = cast[Modifiers](modBits)
     gApp.handleKeyPress(input, mods)
     return true
 
-proc absytree_key_up*(input: int64, modBits: int32): bool {.exportc, dynlib, cdecl.} =
+proc app_key_up*(input: int64, modBits: int32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
     let mods = cast[Modifiers](modBits)
     gApp.handleKeyRelease(input, mods)
     return true
 
-proc absytree_mouse_down*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
+proc app_mouse_down*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
     let mods = cast[Modifiers](modBits)
     return rend.builder.handleMousePressed(input.MouseButton, mods, vec2(x, y))
   return false
 
-proc absytree_mouse_up*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
+proc app_mouse_up*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
     let mods = cast[Modifiers](modBits)
     return rend.builder.handleMouseReleased(input.MouseButton, mods, vec2(x, y))
   return false
 
-proc absytree_mouse_moved*(input: int64, x, y: float32): bool {.exportc, dynlib, cdecl.} =
+proc app_mouse_moved*(input: int64, x, y: float32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
     let inputs: set[MouseButton] = if input < 0: {} else: {input.MouseButton}
     return rend.builder.handleMouseMoved(vec2(x, y), inputs)
   return false
 
-proc absytree_mouse_scroll*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
+proc app_mouse_scroll*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
     let mods = cast[Modifiers](modBits)
     return rend.builder.handleMouseScroll(vec2(x, y), vec2(0, input.float32), mods)
   return false
 
-proc absytree_render*(width: float32, height: float32, drawRect: DrawRectFn, drawText: DrawTextFn, pushClipRect: PushClipRectFn, popClipRect: PopClipRectFn) {.exportc, dynlib, cdecl.} =
+proc app_render*(width: float32, height: float32, drawRect: DrawRectFn, drawText: DrawTextFn, pushClipRect: PushClipRectFn, popClipRect: PopClipRectFn) {.exportc, dynlib, cdecl.} =
   if gApp.isNil:
     return
 

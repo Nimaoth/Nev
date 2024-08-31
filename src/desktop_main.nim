@@ -1,5 +1,5 @@
 when defined(js):
-  {.error: "absytree_terminal.nim does not work in js backend. Use absytree_js.nim instead.".}
+  {.error: "desktop_main.nim does not work in js backend.".}
 
 when defined(windows):
   static:
@@ -14,7 +14,7 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, macros, strutils, os, terminal]
+import std/[parseopt, options, macros, strutils, os, terminal, strformat]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
 
@@ -52,7 +52,7 @@ var logToConsole = true
 var disableLogging = false
 var opts = AppOptions()
 
-const helpText = """
+const helpText = &"""
     ast [options] [file]
 
 Options:
@@ -72,9 +72,9 @@ Options:
   --clean                Don't load any configs/sessions/plugins
 
 Examples:
-  ast                                              Open .absytree-session if it exists
+  ast                                              Open .{appName}-session if it exists
   ast test.txt                                     Open test.txt, don't open any session
-  ast -s:my-session.abystree-session               Open session my-session.absytree-session
+  ast -s:my-session.abystree-session               Open session my-session.{appName}-session
   ast -p:ui.background.transparent=true            Set setting
   ast "-r:.lsp-log-verbose true"                   Enable debug logging for LSP immediately
 """
@@ -176,7 +176,6 @@ if not disableLogging: ## Enable loggers
     if backend.get != Terminal and logToConsole:
       logger.enableConsoleLogger()
 
-import std/[strformat]
 import misc/[util, timer, custom_async]
 import platform/platform
 import ui/widget_builders
@@ -191,7 +190,7 @@ proc tryAttach(opts: AppOptions, processId: int) =
     # return
     discard
 
-  let ipcName = "absytree-" & $processId
+  let ipcName = appName & "-" & $processId
   let writeHandle = open(ipcName, sideWriter).catch:
     if processId == 0:
       echo &"No existing editor, open new"
@@ -405,5 +404,5 @@ when defined(windows) and copyWasmtimeDll:
   static:
     const dllIn = wasmDir / "target/release/wasmtime.dll"
     const dllOut = querySetting(SingleValueSetting.outDir) / "wasmtime.dll"
-    echo "[absytree.nim] run tools/copy_wasmtime_dll.nims"
+    echo "[desktop_main.nim] run tools/copy_wasmtime_dll.nims"
     echo staticExec &"nim \"-d:inDir={dllIn}\" \"-d:outDir={dllOut}\" --hints:off --skipUserCfg --skipProjCfg --skipParentCfg ../tools/copy_wasmtime_dll.nims"
