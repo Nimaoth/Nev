@@ -211,5 +211,5 @@ export workspace_null
 import workspace_github
 export workspace_github
 
-import workspace_absytree_server
-export workspace_absytree_server
+import workspace_remote
+export workspace_remote
