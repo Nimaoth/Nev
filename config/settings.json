@@ -121,7 +121,7 @@
     },
 
     "languages": {
-        "absytree-commands": {
+        "command-line": {
             "completionWordChars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"]
         },
         "html": {

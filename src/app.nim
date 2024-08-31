@@ -31,7 +31,8 @@ from scripting_api import Backend
 logCategory "app"
 createJavascriptPrototype("editor")
 
-const defaultSessionName = ".absytree-session"
+const configDirName = "." & appName
+const defaultSessionName = &".{appName}-session"
 
 let platformName = when defined(windows):
   "windows"
@@ -201,7 +202,7 @@ type
 
     commandHistory: seq[string]
     currentHistoryEntry: int = 0
-    absytreeCommandsServer: LanguageServer
+    languageServerCommandLine: LanguageServer
     commandLineTextEditor: DocumentEditor
     eventHandler*: EventHandler
     commandLineEventHandlerHigh*: EventHandler
@@ -777,7 +778,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
             path = fs.getApplicationFilePath(rest)
 
         if self.homeDir != "":
-          let scriptPath = self.homeDir / ".absytree/custom.nims"
+          let scriptPath = self.homeDir / configDirName / "custom.nims"
           if fileExists(scriptPath):
             log lvlInfo, &"Found '{scriptPath}'"
 
@@ -794,11 +795,11 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
               log lvlError, "Failed to create nim script context"
 
           else:
-            log lvlInfo, &"No custom.nims found in home ~/.absytree"
+            log lvlInfo, &"No custom.nims found in home ~/{configDirName}"
 
           withScriptContext self, self.nimsScriptContext:
             log(lvlInfo, fmt"init nim script config")
-            await self.nimsScriptContext.init(self.homeDir / ".absytree")
+            await self.nimsScriptContext.init(self.homeDir / configDirName)
             log(lvlInfo, fmt"post init nim script config")
             discard self.nimsScriptContext.postInitialize()
 
@@ -1056,14 +1057,14 @@ proc loadOptionsFromAppDir*(self: App) {.async.} =
 proc loadOptionsFromHomeDir*(self: App) {.async.} =
   when not defined(js):
     await all(
-      self.loadSettingsFrom(".absytree", loadConfigFileFromHomeDir),
-      self.loadKeybindings(".absytree", loadConfigFileFromHomeDir)
+      self.loadSettingsFrom(configDirName, loadConfigFileFromHomeDir),
+      self.loadKeybindings(configDirName, loadConfigFileFromHomeDir)
     )
 
 proc loadOptionsFromWorkspace*(self: App) {.async.} =
   await all(
-    self.loadSettingsFrom(".absytree", loadConfigFileFromWorkspaceDir),
-    self.loadKeybindings(".absytree", loadConfigFileFromWorkspaceDir)
+    self.loadSettingsFrom(configDirName, loadConfigFileFromWorkspaceDir),
+    self.loadKeybindings(configDirName, loadConfigFileFromWorkspaceDir)
   )
 
 import asynchttpserver, asyncnet
@@ -1100,8 +1101,8 @@ proc serve(port: Port, savePort: bool) {.async.} =
     server.listen()
     let actualPort = server.getLocalAddr()[1]
     log lvlInfo, &"Listen for connections on port {actualPort.int}"
-    let fileName = getTempDir() / ("absytree_port_" & $os.getCurrentProcessId())
     if savePort:
+      let fileName = getTempDir() / (appName & "_port_" & $os.getCurrentProcessId())
       log lvlInfo, &"Write port to {fileName}"
       fs.saveFile(fileName, $actualPort.int)
   except:
@@ -1118,7 +1119,7 @@ proc listenForConnection*(self: App, port: Port) {.async.} =
 
 proc listenForIpc(self: App, id: int) {.async.} =
   try:
-    let ipcName = "absytree-" & $id
+    let ipcName = appName & "-" & $id
     log lvlInfo, &"Listen for ipc commands through {ipcName}"
     let  ipc = createIpc(ipcName).catch:
       log lvlWarn, &"Ipc port 0 already occupied"
@@ -1301,8 +1302,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.commandLineMode = false
 
-  self.absytreeCommandsServer = newLanguageServerAbsytreeCommands(self.asAppInterface, self.commandInfos)
-  let commandLineTextDocument = newTextDocument(self.asConfigProvider, language="absytree-commands".some, languageServer=self.absytreeCommandsServer.some)
+  self.languageServerCommandLine = newLanguageServerCommandLine(self.asAppInterface, self.commandInfos)
+  let commandLineTextDocument = newTextDocument(self.asConfigProvider, language="command-line".some, languageServer=self.languageServerCommandLine.some)
   self.documents.add commandLineTextDocument
   self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
@@ -1458,7 +1459,7 @@ proc shutdown*(self: App) =
   if self.wasmScriptContext.isNotNil:
     self.wasmScriptContext.deinit()
 
-  self.absytreeCommandsServer.stop()
+  self.languageServerCommandLine.stop()
 
   gAppInterface = nil
   self[] = AppObject()
@@ -1495,9 +1496,9 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
   if app:
     await self.loadKeybindings("config", loadConfigFileFromAppDir)
   if home:
-    await self.loadKeybindings(".absytree", loadConfigFileFromHomeDir)
+    await self.loadKeybindings(configDirName, loadConfigFileFromHomeDir)
   if workspace:
-    await self.loadKeybindings(".absytree", loadConfigFileFromWorkspaceDir)
+    await self.loadKeybindings(configDirName, loadConfigFileFromWorkspaceDir)
 
 proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false)
     {.expose("editor").} =
@@ -3377,7 +3378,7 @@ proc exploreUserConfigDir*(self: App) {.expose("editor").} =
       log lvlInfo, &"No home directory"
       return
 
-    self.exploreFiles(self.homeDir // ".absytree")
+    self.exploreFiles(self.homeDir // configDirName)
 
 proc exploreAppConfigDir*(self: App) {.expose("editor").} =
   self.exploreFiles(fs.getApplicationFilePath("config"))
@@ -3718,12 +3719,6 @@ proc getActiveEditor*(self: App): Option[DocumentEditor] =
     return view.editor.some
 
   return DocumentEditor.none
-
-proc loadCurrentConfig*(self: App) {.expose("editor").} =
-  ## Opens the default config file in a new view.
-  let document = newTextDocument(self.asConfigProvider, "./config/absytree_config.nim", fs.loadApplicationFile("./config/absytree_config.nim"), true)
-  self.documents.add document
-  discard self.createAndAddView(document)
 
 proc logRootNode*(self: App) {.expose("editor").} =
   let str = self.platform.builder.root.dump(true)
@@ -4086,7 +4081,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
     result.add "\n\n"
 
   # todo
-    # absytreeCommandsServer: LanguageServer
+    # languageServerCommandLine: LanguageServer
     # commandLineTextEditor: DocumentEditor
 
     # logDocument: Document

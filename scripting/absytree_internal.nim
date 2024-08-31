@@ -851,8 +851,6 @@ proc editor_getActiveEditor_EditorId_impl*(): EditorId =
   discard
 proc editor_getActiveEditor2_EditorId_App_impl*(): EditorId =
   discard
-proc editor_loadCurrentConfig_void_App_impl*() =
-  discard
 proc editor_logRootNode_void_App_impl*() =
   discard
 proc editor_sourceCurrentDocument_void_App_impl*() =
