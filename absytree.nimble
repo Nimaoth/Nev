@@ -72,7 +72,7 @@ requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.6"
 import strformat, strutils
 
 task createScriptingDocs, "Build the documentation for the scripting API":
-  exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Absytree/ --git.commit:main ./scripting/absytree_runtime.nim"
+  exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Absytree/ --git.commit:main ./scripting/plugin_runtime.nim"
   exec "nim buildIndex -o:./scripting/htmldocs/theindex.html ./scripting/htmldocs"
   exec "nim ./tools/postprocess_docs.nims"
 
@@ -100,32 +100,32 @@ task setup2, "Setup":
     cpFile "nimble.paths", "nimble-linux.paths"
 
 task buildDesktop, "Build the desktop version":
-  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
-  # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
-  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
+  # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
+  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:appBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildTerminal, "Build the terminal version":
-  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildTerminalDebug, "Build the terminal version (debug)":
-  selfExec fmt"c -o:ast{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:absytreeBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:ast{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDebug, "Build the debug version":
-  selfExec fmt"c -o:astd{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:absytreeBuildWasmtime --passC:-std=gnu11 --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:astd{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDebugVcc, "Build the debug version":
-  selfExec fmt"c -o:astd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:absytreeBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:astd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
-  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:absytreeBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
+  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi -d:appBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
-  selfExec fmt"c -o:ast{exe} {crossCompileWinArgs} -d:exposeScriptingApi -d:absytreeBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:ast{exe} {crossCompileWinArgs} -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDll, "Build the dll version":
   # Disable clipboard for now because it breaks hot reloading
-  selfExec fmt"c -o:ast.dll -d:exposeScriptingApi -d:absytreeBuildWasmtime -d:enableSystemClipboard=false --noMain --app:lib {getCommandLineParams()} ./src/dynlib_main.nim"
+  selfExec fmt"c -o:ast.dll -d:exposeScriptingApi -d:appBuildWasmtime -d:enableSystemClipboard=false --noMain --app:lib {getCommandLineParams()} ./src/dynlib_main.nim"
 
 task buildWorkspaceServer, "Build the server for hosting workspaces":
   selfExec fmt"c -o:./tools/workspace-server{exe} {getCommandLineParams()} ./src/servers/workspace_server.nim"
@@ -133,11 +133,11 @@ task buildWorkspaceServer, "Build the server for hosting workspaces":
 task buildLanguagesServer, "Build the server for hosting languages servers":
   selfExec fmt"c -o:./tools/languages-server{exe} {getCommandLineParams()} ./src/servers/languages_server.nim"
 
-task buildAbsytreeServer, "Build the server for hosting workspaces and language servers":
-  selfExec fmt"c -o:./tools/absytree-server{exe} {getCommandLineParams()} ./src/servers/server_main.nim"
+task buildRemoteWorkspaceHost, "Build the server for hosting workspaces and language servers":
+  selfExec fmt"c -o:./tools/remote-workspace-host{exe} {getCommandLineParams()} ./src/servers/server_main.nim"
 
-task buildAbsytreeServerWindows, "Build the server for hosting workspaces and language servers":
-  selfExec fmt"c -o:./tools/absytree-server{exe} {crossCompileWinArgs} {getCommandLineParams()} ./src/servers/server_main.nim"
+task buildRemoteWorkspaceHostWindows, "Build the server for hosting workspaces and language servers":
+  selfExec fmt"c -o:./tools/remote-workspace-host{exe} {crossCompileWinArgs} {getCommandLineParams()} ./src/servers/server_main.nim"
 
 task buildLspWs, "Build the websocket proxy for language servers":
   selfExec fmt"c -o:./tools/lsp-ws{exe} {getCommandLineParams()} ./tools/lsp_ws.nim"
