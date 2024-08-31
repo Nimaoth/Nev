@@ -4,6 +4,8 @@
 
 This is still very early in developement and very experimental. Use at your own risk!
 
+Previously named `Absytree`.
+
 ## Programming Language + Editor
 
 Nev is a text editor + programming languange workbench where instead of writing the source code as text in text files,

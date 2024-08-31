@@ -49,7 +49,7 @@
 # Build windows with vcc
 - `nimble --nimbleDir:D:/nd -d:debugDelayedTasks -d:debugAsyncAwaitMacro buildDebugVcc`
 - `cl.exe @nev_linkerArgs.txt D:\nd\pkgs2\nimwasmtime-0.1.5-95eac5c2bb83073e089b1c21d35e5db76d969f2d\wasmtime\target\release\wasmtime.dll.lib /LINK Advapi32.lib`
-- `astd.exe -s:debug.nev-session`
+- `nevd.exe -s:debug.nev-session`
 
 
 # AST language framework

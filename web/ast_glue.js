@@ -6,7 +6,7 @@ function doLoadEditor() {
         return
     isEditorLoaded = true
 
-    jsLoadScript("ast.js")
+    jsLoadScript("nev.js")
 }
 
 var treeSitterInitialized = false
@@ -34,7 +34,7 @@ function loadNev() {
     doInitTreesitter()
 }
 
-// Glue code needed by ast.js
+// Glue code needed by nev.js
 
 function jsLoadScript(url) {
     return new Promise((resolve, reject) => {

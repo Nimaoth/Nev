@@ -7,15 +7,15 @@ You can see which session is currently used in the bottom right of the editor.
 If you don't have a session it will say `[No Session]`, otherwise it will show the name of the session:  `[Session: .nev-session]`
 
 If you have a session file and want to modify it manually (e.g. to change workspace settings) then you should not edit the session file while you have that same session open, because once you exit the session file will be overridden.
-Instead just edit it with `ast .nev-session`.
+Instead just edit it with `nev .nev-session`.
 
 ## Using sessions
 
 If you launch the editor without a file as an argument then it will try to load a session from the default session file (`.nev-session`) in the current working directory.
 
-To use a different session you can use `-s` like this: `ast -s:foo.nev-session`.
+To use a different session you can use `-s` like this: `nev -s:foo.nev-session`.
 
-If you launch with a file path (like `ast foo.txt`) then it will only open that file, but not load a session.
+If you launch with a file path (like `nev foo.txt`) then it will only open that file, but not load a session.
 
 ### Workspace
 

@@ -17,7 +17,7 @@ src/input_tests
 nimcache
 nimcache*
 _temp
-/ast
+/nev
 nev
 themes/**
 cpp_test
@@ -28,7 +28,7 @@ temp
 int/*.map
 **/htmldocs/**/*.idx
 *.code-workspace
-ast.js
+nev.js
 languages/*.wasm
 node_modules/**
 GithubAccessToken
@@ -45,14 +45,7 @@ nim_std
 
 *.nev-session
 
-ast2
-ast3
-astd
-astn
-astt
-astt2
-astt3
-/astt*
+/nev*
 ue_clang_tool
 
 loc.csv

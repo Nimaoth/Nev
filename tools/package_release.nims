@@ -93,10 +93,10 @@ if packageWindows:
   echo "Package windows..."
   mkDir releaseWindows
   copySharedFilesTo releaseWindows
-  if fileExists "ast.exe":
-    cpFile2 "astg.exe", releaseWindows
-    cpFile2 "ast.exe", releaseWindows
-    cpFile2 "astt.exe", releaseWindows, optional=true
+  if fileExists "nev.exe":
+    cpFile2 "nevg.exe", releaseWindows
+    cpFile2 "nev.exe", releaseWindows
+    cpFile2 "nevt.exe", releaseWindows, optional=true
     cpFile2 "wasmtime.dll", releaseWindows, optional=true
     cpFile2 "tools/remote-workspace-host.exe", releaseWindows
     cpFile2 "tools/lsp-ws.exe", releaseWindows
@@ -105,22 +105,22 @@ if packageLinux:
   echo "Package linux..."
   mkDir releaseLinux
   copySharedFilesTo releaseLinux
-  if fileExists "ast":
-    cpFile2 "astg", releaseLinux
-    cpFile2 "ast", releaseLinux
-    cpFile2 "astt", releaseLinux, optional=true
-    cpFile2 "ast-musl", releaseLinux
+  if fileExists "nev":
+    cpFile2 "nevg", releaseLinux
+    cpFile2 "nev", releaseLinux
+    cpFile2 "nevt", releaseLinux, optional=true
+    cpFile2 "nev-musl", releaseLinux
     cpFile2 "tools/remote-workspace-host", releaseLinux
     cpFile2 "tools/lsp-ws", releaseLinux
 
 if packageWeb:
   echo "Package web..."
   mkDir releaseWeb
-  if fileExists "build/ast.js":
+  if fileExists "build/nev.js":
     copySharedFilesTo releaseWeb
-    cpFile2 "build/ast.js", releaseWeb
+    cpFile2 "build/nev.js", releaseWeb
     cpFile2 "web/nev_browser.html", releaseWeb
-    cpFile2 "web/ast_glue.js", releaseWeb
+    cpFile2 "web/nev_glue.js", releaseWeb
     cpFile2 "web/scripting_runtime.js", releaseWeb
     withDir releaseWeb:
       catch exec("wget -Otree-sitter.js https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.js"):

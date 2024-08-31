@@ -203,7 +203,7 @@
             "nev": {
                 "type": "lldb-dap",
                 "request": "launch",
-                "program": "astd",
+                "program": "nevd",
                 "args": ["-s:linux.nev-session"]
             }
         }
