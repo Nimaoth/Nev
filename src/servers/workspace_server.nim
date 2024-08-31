@@ -3,6 +3,7 @@ import glob
 import misc/[custom_async, util, myjsonutils, custom_logger]
 import router, server_utils
 import platform/filesystem
+import compilation_config
 
 logCategory "workspace"
 
@@ -174,8 +175,8 @@ proc readGlobFile(path: string): seq[Glob] =
     log lvlInfo, fmt"no '{path}' file"
 
 proc runWorkspaceServer*(port: Port) {.async.} =
-  ignoredPatterns = readGlobFile(".absytree-ignore")
-  allowedPatterns = readGlobFile(".absytree-allow")
+  ignoredPatterns = readGlobFile(&".{appName}-ignore")
+  allowedPatterns = readGlobFile(&".{appName}-allow")
 
   for g in ignoredPatterns:
     debugf "ignoring: {g.pattern}"
@@ -183,10 +184,10 @@ proc runWorkspaceServer*(port: Port) {.async.} =
     debugf "allowing: {g.pattern}"
 
   try:
-    if fileExists(".absytree-workspace"):
+    if fileExists(&".{appName}-workspace"):
       hostedFolders.setLen 0
 
-      for line in readFile(".absytree-workspace").splitLines():
+      for line in readFile(&".{appName}-workspace").splitLines():
         if line.isEmptyOrWhitespace or line.strip().startsWith("#"):
           continue
 

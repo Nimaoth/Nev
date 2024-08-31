@@ -2,7 +2,7 @@ import std/[os, strutils]
 import misc/[custom_async, util, custom_logger]
 import languages_server, workspace_server
 
-logCategory "absytree-server"
+logCategory "server"
 
 when isMainModule:
   const workspaceServerPortArg = "--workspace-port:"

@@ -3,7 +3,7 @@ import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts
 import misc/[custom_logger, util, event, id, rect_utils]
 import ui/node
 import platform, platform/filesystem
-import input, monitors, lrucache, theme
+import input, monitors, lrucache, theme, compilation_config
 
 export platform
 
@@ -60,7 +60,7 @@ method getStatisticsString*(self: GuiPlatform): string =
 
 method init*(self: GuiPlatform) =
   self.glyphCache = newLruCache[Rune, string](5000, true)
-  self.window = newWindow("Absytree", ivec2(2000, 1000), vsync=false)
+  self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=false)
   self.window.runeInputEnabled = true
   self.supportsThinCursor = true
   self.focused = self.window.focused
