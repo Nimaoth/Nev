@@ -72,7 +72,7 @@ There is not much to configure treesitter. By default the editor will look for t
             "treesitter": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
 
             // If there are multiple parsers in the same repository then you need to specify where the queries
-            // for this parser are. If there is only one parser then absytree will find the queries by looking for the
+            // for this parser are. If there is only one parser then it will find the queries by looking for the
             // `highlights.scm` file.
             "treesitter-queries": "tree-sitter-markdown/queries",
 

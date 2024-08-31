@@ -1,4 +1,4 @@
-# This file is for compiling nim configuration files for absytree to wasm.
+# This file is for compiling nim plugins to wasm.
 
 --os:linux # Emscripten pretends to be linux.
 --cpu:wasm32 # Emscripten is 32bits.

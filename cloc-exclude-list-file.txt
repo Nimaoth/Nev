@@ -18,9 +18,8 @@
 ./test.nim
 ./test2.nim
 ./test_lib.nim
-./scripting/absytree_api.nim
-./scripting/absytree_internal.nim
-./scripting/absytree_internal_wasm.nim
+./scripting/plugin_api.nim
+./scripting/plugin_api_internal.nim
 ./scripting/editor_api.nim
 ./scripting/editor_api_wasm.nim
 ./scripting/editor_ast_api_wasm.nim

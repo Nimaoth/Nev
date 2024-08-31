@@ -5,7 +5,7 @@
     "tasks": [{
             "label": "build_and_run",
             "type": "shell",
-            "command": "nim c -d:mingw --mm:refc --tlsEmulation:off -d:release --stackTrace:on --lineTrace:on --lineDir:on -o:ast.exe src/absytree.nim && ./ast.exe",
+            "command": "nim c -d:mingw --mm:refc --tlsEmulation:off -d:release --stackTrace:on --lineTrace:on --lineDir:on -o:ast.exe src/desktop_main.nim && ./ast.exe",
             "problemMatcher": [
                 "$nim"
             ]
@@ -13,7 +13,7 @@
         {
             "label": "build_profiling",
             "type": "shell",
-            "command": "nim c -d:mingw --mm:refc --tlsEmulation:off -d:release --profiler:on --stackTrace:on -o:ast.exe src/absytree.nim",
+            "command": "nim c -d:mingw --mm:refc --tlsEmulation:off -d:release --profiler:on --stackTrace:on -o:ast.exe src/desktop_main.nim",
             "problemMatcher": [
                 "$nim"
             ]
@@ -21,7 +21,7 @@
         {
             "label": "build_debug",
             "type": "shell",
-            "command": "nim c -g --debugger:native -d:debug --stackTrace:on --lineTrace:on --lineDir:on --debuginfo -o:ast.exe src/absytree.nim",
+            "command": "nim c -g --debugger:native -d:debug --stackTrace:on --lineTrace:on --lineDir:on --debuginfo -o:ast.exe src/desktop_main.nim",
             "problemMatcher": [
                 "$nim"
             ]
@@ -37,7 +37,7 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "nim c -d:mingw --mm:refc --tlsEmulation:off -d:release --stackTrace:on --lineTrace:on --lineDir:on -o:ast.exe src/absytree.nim",
+            "command": "nim c -d:mingw --mm:refc --tlsEmulation:off -d:release --stackTrace:on --lineTrace:on --lineDir:on -o:ast.exe src/desktop_main.nim",
             "problemMatcher": [
                 "$nim"
             ]
@@ -45,7 +45,7 @@
         {
             "label": "build_release",
             "type": "shell",
-            "command": "nim c -d:mingw --mm:refc --tlsEmulation:off -d:release --app:gui -o:ast.exe src/absytree.nim",
+            "command": "nim c -d:mingw --mm:refc --tlsEmulation:off -d:release --app:gui -o:ast.exe src/desktop_main.nim",
             "problemMatcher": [
                 "$nim"
             ]

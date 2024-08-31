@@ -150,7 +150,7 @@ For custom commands plugins have to be used.
 
 ## Plugins
 
-Absytree supports two plugin mechanisms:
+Two plugin mechanisms are supported:
 - Wasm
 - NimScript: The editor bundles part of the Nim compiler so it can run NimScript code.
   Allows easy hot reloading of the config file, but right now only one nimscript file is supported. Needs to be enabled with `-d:enableNimscript` (enabled by default).
@@ -170,7 +170,7 @@ Here is an example of a basic plugin:
 
 ```nim
 # This needs to imported to access the editor API.
-import absytree_runtime
+import plugin_runtime
 
 # You can import the Nim std lib and other libraries, as long as what you import can be compiled to wasm
 # and doesn't rely on currently unsupported WASI APIs.
@@ -207,7 +207,7 @@ addTextCommand "", "<C-c>", "copy" # addTextCommand "xyz" is equivalent to addCo
 
 # This is required for the main file of the plugin. If you use NimScript this is not required.
 when defined(wasm):
-  include absytree_runtime_impl
+  include plugin_runtime_impl
 ```
 
 # Settings
@@ -239,7 +239,7 @@ setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %tr
 ```
 
 # Key bindings
-You can bind different key combinations to __commands__. Each function exposed by the editor (see `absytree_api.nim`) has a corresponding command,
+You can bind different key combinations to __commands__. Each function exposed by the editor (see `plugin_api.nim`) has a corresponding command,
 which has two names. If the function is called `myCommand`, then the command can be executed using either `myCommand` or `my-command`.
 
 Key combinations are bound to a command and arguments for that command. The following binds the command `quit` to the key combination `CTRL-x + x`
@@ -247,8 +247,6 @@ Key combinations are bound to a command and arguments for that command. The foll
 ```nim
 addCommand "editor", "<C-x>x", "quit"
 ```
-
-Every key binding is specified using the config file, so just look at `absytree_config.nims` and `keybindings_*.nim` for reference.
 
 Key combinations can be as long as you want, and contain any combination of modifiers, as long as the OS supports that combination.
 Most keys can be specified using their ASCII value, i.e. to bind to e.g. the `k` key you would use `addCommand "editor", "k", "command-name"`.
@@ -386,9 +384,9 @@ addTextCommand "", "a", foo                                 # Like above, but us
 The documentation for the scripting API is in scripting/htmldocs. You can see the current version [here](https://raw.githack.com/Nimaoth/AbsytreeDocs/main/scripting_nim/htmldocs/theindex.html) (using raw.githack.com) or [here](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
 
 Here is an overview of the modules:
-- `absytree_runtime`: Exports everything you need, so you can just include this in your script file.
+- `plugin_runtime`: Exports everything you need, so you can just include this in your script file.
 - `scripting_api`: Part of the editor source, defines types used by both the editor and the script, as well as some utility functions for those types.
-- `absytree_internal`: Ignore this. You shouldn't need to call these functions directly.
+- `plugin_api_internal`: Ignore this. You shouldn't need to call these functions directly.
 - `editor_api`: Contains general functions like changing font size, manipulating views, opening and closing files, etc.
 - `editor_text_api`: Contains functions for interacting with a text editor (e.g. modifiying the content).
 - `editor_model_api`: Contains functions for interacting with an model editor (e.g. modifying the content).
