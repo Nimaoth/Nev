@@ -2493,6 +2493,8 @@ proc chooseTheme*(self: App) {.expose("editor").} =
       gTheme = theme
       self.platform.requestRender(true)
 
+      return true
+
   popup.handleItemSelected = proc(item: FinderItem) =
     if theme.loadFromFile(item.data).getSome(theme):
       self.theme = theme
