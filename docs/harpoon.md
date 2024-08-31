@@ -9,7 +9,7 @@ Currently there are no keybindings for harpoon by default.
 
 Here is an example config you can put into your `keybindings.json`
 ```json
-// ~/.absytree/keybindings.json
+// ~/.nev/keybindings.json
 {
     "editor": {
         "<C-a>": "harpoon-list-add", // Add the current file to the default list

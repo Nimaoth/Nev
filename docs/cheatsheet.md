@@ -4,7 +4,7 @@ By default the vim keybindings are used.
 The vim keybindings are not complete yet and will never be as this editor is not exactly the same as Vim. But if anything is missing please open an issue.
 
 There are also incomplete VSCode like keybindings.
-To switch to VSCode like keybindings create/extend the config file in `<USER_HOME>/.absytree/settings.json` with the following:
+To switch to VSCode like keybindings create/extend the config file in `<USER_HOME>/.nev/settings.json` with the following:
 ```json
 {
   "keybindings": "vscode"

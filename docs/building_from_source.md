@@ -24,13 +24,6 @@ To enable these features pass `-D:enableNimscript=true` and `-D:enableAst=true` 
 - Compile the desired language to wasm. The specified directory is the one containing the `src` folder which in turn contains the `grammar.js`
   - `target/release/tree-sitter build-wasm ../dev/nimtreesitter/treesitter_nim/treesitter_nim/nim`
 
-## Compiling tree sitter wasm binding
-- Go into the tree-sitter repositories root directory
-- Build the binding:
-  - `script/build-wasm`
-- Copy the generated files to the AbsytreeBrowser directory:
-  - `cp lib/binding_web/tree-sitter.js <.../AbsytreeBrowser> && cp lib/binding_web/tree-sitter.wasm <.../AbsytreeBrowser>`
-
 ## Compiling Nim config files to wasm
 - You need to have Emscripten installed.
 - Run `nimble buildNimConfigWasm` from the root folder of the repository

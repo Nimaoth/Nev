@@ -1,7 +1,7 @@
 {
-    "nim.project": ["src/absytree.nim"],
+    "nim.project": ["src/desktop_main.nim"],
     "nim.projectMapping": [{
-            "projectFile": "src/absytree.nim",
+            "projectFile": "src/desktop_main.nim",
             "fileRegex": ".*\\.nim"
         }
     ]

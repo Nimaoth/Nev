@@ -4,18 +4,18 @@ Sessions allow you to keep your editor state, even if you close it. That way you
 
 You can see which session is currently used in the bottom right of the editor.
 
-If you don't have a session it will say `[No Session]`, otherwise it will show the name of the session:  `[Session: .absytree-session]`
+If you don't have a session it will say `[No Session]`, otherwise it will show the name of the session:  `[Session: .nev-session]`
 
 If you have a session file and want to modify it manually (e.g. to change workspace settings) then you should not edit the session file while you have that same session open, because once you exit the session file will be overridden.
-Instead just edit it with `ast .absytree-session`.
+Instead just edit it with `nev .nev-session`.
 
 ## Using sessions
 
-If you launch the editor without a file as an argument then it will try to load a session from the default session file (`.absytree-session`) in the current working directory.
+If you launch the editor without a file as an argument then it will try to load a session from the default session file (`.nev-session`) in the current working directory.
 
-To use a different session you can use `-s` like this: `ast -s:foo.absytree-session`.
+To use a different session you can use `-s` like this: `nev -s:foo.nev-session`.
 
-If you launch with a file path (like `ast foo.txt`) then it will only open that file, but not load a session.
+If you launch with a file path (like `nev foo.txt`) then it will only open that file, but not load a session.
 
 ### Workspace
 
@@ -30,13 +30,13 @@ If you have a session then it will automatically save the session when closing t
 
 Open the command line and use the command `save-session` to save the current editor state on disk.
 
-You can also specify a session name like this: `save-session ".absytree-session"`
+You can also specify a session name like this: `save-session ".nev-session"`
 
-`.absytree-session` is the default session file that will be loaded when you run it without any arguments, so this name is recommended.
+`.nev-session` is the default session file that will be loaded when you run it without any arguments, so this name is recommended.
 
 Here is an example of a session file
 ```json
-// .absytree-session
+// .nev-session
 {
     // ...
     "workspaceFolders": [ // Although this is an array only one workspace is supported.
@@ -75,7 +75,7 @@ Here is an example of a session file
     "hiddenEditors": [], // Which files you had open (but hidden)
     "commandHistory": [
         "set-search-query \\, ,",
-        "save-session \".absytree-session\""
+        "save-session \".nev-session\""
     ],
     "debuggerState": {
         "breakpoints": {

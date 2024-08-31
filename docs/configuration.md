@@ -14,8 +14,8 @@ in order:
 
 - `{app_dir}/config/settings.json` and `{app_dir}/config/keybindings.json`, where `{app_dir}` is the directory
   where the editor is installed.
-- `~/.absytree/settings.json` and `~/.absytree/keybindings.json`, where `~` is the users home directory.
-- `{workspace_dir}/.absytree/settings.json` and `{workspace_dir}/.absytree/keybindings.json`, where `{workspace_dir}`
+- `~/.nev/settings.json` and `~/.nev/keybindings.json`, where `~` is the users home directory.
+- `{workspace_dir}/.nev/settings.json` and `{workspace_dir}/.nev/keybindings.json`, where `{workspace_dir}`
   is the primary directory of the workspace.
 
 Additionally to the `settings.json` and `keybindings.json` files, the editor also tries to load the following files from each of the directories:
@@ -42,7 +42,7 @@ The following example shows how to override and extend values.
 Prefixing a property name with `+` will cause the json object/array value of that property to be
 extended, without the `+` the property will be overriden. Number, bool and string properties are always overriden.
 ```json
-// ~/.absytree/settings.json
+// ~/.nev/settings.json
 {
     "editor": {
         "text": {
@@ -60,7 +60,7 @@ extended, without the `+` the property will be overriden. Number, bool and strin
     }
 }
 
-// ~/.absytree/settings-terminal.json
+// ~/.nev/settings-terminal.json
 {
     "ui": {
         "background": {
@@ -69,7 +69,7 @@ extended, without the `+` the property will be overriden. Number, bool and strin
     }
 }
 
-// {workspace_dir}/.absytree/settings-windows.json
+// {workspace_dir}/.nev/settings-windows.json
 {
     "+editor": {
         "+text": {
@@ -131,7 +131,7 @@ Currently there is no complete list of settings yet.
 ## Keybindings
 Keybindings which just map to existing commands can be specified in a `keybindings.json` file alongside the `settings.json` files. They works the same as the settings (i.e. they also support platform/backend variants and can be placed in the app/user/workspace config directories)
 ```json
-// ~/.absytree/keybindings.json
+// ~/.nev/keybindings.json
 {
     "editor": {
         "<C-q>": "quit",
@@ -160,7 +160,7 @@ The editor API is exposed to plugins and can be used to create new commands, cha
 WASM plugins are loaded from `{app_dir}/config/wasm`. The wasm modules have to conform to a certain
 API and can only use a subset of WASI right now, so it is recommended not to rely on WASI for now.
 
-The nimscript file has to be in `~/.absytree/custom.nims`.
+The nimscript file has to be in `~/.nev/custom.nims`.
 
 In theory WASM plugins can be written in any language that supports compiling to wasm, but there
 are currently no C header files for the editor API, so for now the recommended way

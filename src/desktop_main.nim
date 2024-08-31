@@ -53,7 +53,7 @@ var disableLogging = false
 var opts = AppOptions()
 
 const helpText = &"""
-    ast [options] [file]
+    nev [options] [file]
 
 Options:
   -g, --gui              Launch gui version (if available)
@@ -72,11 +72,11 @@ Options:
   --clean                Don't load any configs/sessions/plugins
 
 Examples:
-  ast                                              Open .{appName}-session if it exists
-  ast test.txt                                     Open test.txt, don't open any session
-  ast -s:my-session.abystree-session               Open session my-session.{appName}-session
-  ast -p:ui.background.transparent=true            Set setting
-  ast "-r:.lsp-log-verbose true"                   Enable debug logging for LSP immediately
+  nev                                              Open .{appName}-session if it exists
+  nev test.txt                                     Open test.txt, don't open any session
+  nev -s:my-session.nev-session                    Open session my-session.{appName}-session
+  nev -p:ui.background.transparent=true            Set setting
+  nev "-r:.lsp-log-verbose true"                   Enable debug logging for LSP immediately
 """
 
 block: ## Parse command line options
