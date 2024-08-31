@@ -61,6 +61,10 @@ proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
                          wrap: bool = true; includeAfter: bool = true): Cursor =
   editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
       self, cursor, offset, wrap, includeAfter)
+proc includeSelectionEnd*(self: TextDocumentEditor; res: Selection;
+                          includeAfter: bool = true): Selection =
+  editor_text_includeSelectionEnd_Selection_TextDocumentEditor_Selection_bool_impl(
+      self, res, includeAfter)
 proc findSurroundStart*(editor: TextDocumentEditor; cursor: Cursor; count: int;
                         c0: char; c1: char; depth: int = 1): Option[Cursor] =
   editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl(
@@ -102,6 +106,11 @@ proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
              notify: bool = true; record: bool = true): seq[Selection] =
   editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl(
       self, selections, text, notify, record)
+proc insertMulti*(self: TextDocumentEditor; selections: seq[Selection];
+                  texts: seq[string]; notify: bool = true; record: bool = true): seq[
+    Selection] =
+  editor_text_insertMulti_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_impl(
+      self, selections, texts, notify, record)
 proc delete*(self: TextDocumentEditor; selections: seq[Selection];
              notify: bool = true; record: bool = true;
              inclusiveEnd: bool = false): seq[Selection] =
@@ -128,15 +137,42 @@ proc selectLine*(self: TextDocumentEditor; line: int) =
   editor_text_selectLine_void_TextDocumentEditor_int_impl(self, line)
 proc selectLineCurrent*(self: TextDocumentEditor) =
   editor_text_selectLineCurrent_void_TextDocumentEditor_impl(self)
-proc selectParentTs*(self: TextDocumentEditor; selection: Selection) =
-  editor_text_selectParentTs_void_TextDocumentEditor_Selection_impl(self,
-      selection)
+proc getParentNodeSelection*(self: TextDocumentEditor; selection: Selection;
+                             includeAfter: bool = true): Selection =
+  editor_text_getParentNodeSelection_Selection_TextDocumentEditor_Selection_bool_impl(
+      self, selection, includeAfter)
+proc getNextNamedSiblingNodeSelection*(self: TextDocumentEditor;
+                                       selection: Selection;
+                                       includeAfter: bool = true): Option[
+    Selection] =
+  editor_text_getNextNamedSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_impl(
+      self, selection, includeAfter)
+proc getNextSiblingNodeSelection*(self: TextDocumentEditor;
+                                  selection: Selection;
+                                  includeAfter: bool = true): Option[Selection] =
+  editor_text_getNextSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_impl(
+      self, selection, includeAfter)
+proc getParentNodeSelections*(self: TextDocumentEditor; selections: Selections;
+                              includeAfter: bool = true): Selections =
+  editor_text_getParentNodeSelections_Selections_TextDocumentEditor_Selections_bool_impl(
+      self, selections, includeAfter)
+proc selectParentTs*(self: TextDocumentEditor; selection: Selection;
+                     includeAfter: bool = true) =
+  editor_text_selectParentTs_void_TextDocumentEditor_Selection_bool_impl(self,
+      selection, includeAfter)
 proc printTreesitterTree*(self: TextDocumentEditor) =
   editor_text_printTreesitterTree_void_TextDocumentEditor_impl(self)
 proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
   editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_impl(self)
-proc selectParentCurrentTs*(self: TextDocumentEditor) =
-  editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl(self)
+proc selectParentCurrentTs*(self: TextDocumentEditor; includeAfter: bool = true) =
+  editor_text_selectParentCurrentTs_void_TextDocumentEditor_bool_impl(self,
+      includeAfter)
+proc getNextNodeWithSameType*(self: TextDocumentEditor; selection: Selection;
+                              offset: int = 0; includeAfter: bool = true;
+                              wrap: bool = true; stepIn: bool = true;
+                              stepOut: bool = true): Option[Selection] =
+  editor_text_getNextNodeWithSameType_Option_Selection_TextDocumentEditor_Selection_int_bool_bool_bool_bool_impl(
+      self, selection, offset, includeAfter, wrap, stepIn, stepOut)
 proc shouldShowCompletionsAt*(self: TextDocumentEditor; cursor: Cursor): bool =
   ## Returns true if the completion window should automatically open at the given position
   editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_impl(self,

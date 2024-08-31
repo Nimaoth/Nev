@@ -365,11 +365,25 @@ else:
   proc descendantForRange*(node: TSNode, rang: TSRange): TSNode = TSNode(impl: ts.tsNodeDescendantForPointRange(node.impl, rang.first.toTsPoint, rang.last.toTsPoint))
   proc parent*(node: TSNode): TSNode = TSNode(impl: node.impl.tsNodeParent())
   proc `==`*(a: TSNode, b: TSNode): bool = a.impl.tsNodeEq(b.impl)
-  proc current*(cursor: var ts.TSTreeCursor): ts.TSNode = tsTreeCursorCurrentNode(addr cursor)
+  proc nodeType*(node: TSNode): string = $tsNodeType(node.impl)
+  proc symbol*(node: TSNode): ts.TSSymbol = tsNodeSymbol(node.impl)
+  proc isNull*(node: TSNode): bool = tsNodeIsNull(node.impl)
+  proc isNamed*(node: TSNode): bool = tsNodeIsNamed(node.impl)
+  # proc path*(node: TSNode): seq[int] =
+  #   var n = node
+
+  proc currentNode*(cursor: var ts.TSTreeCursor): TSNode = TSNode(impl: tsTreeCursorCurrentNode(addr cursor))
+  proc reset*(cursor: var ts.TSTreeCursor, node: TSNode) = tsTreeCursorReset(addr cursor, node.impl)
   proc gotoParent*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoParent(addr cursor)
+  proc gotoPreviousSibling*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoPreviousSibling(addr cursor)
   proc gotoNextSibling*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoNextSibling(addr cursor)
   proc gotoFirstChild*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoFirstChild(addr cursor)
-  # proc gotoFirstChildForCursor*(cursor: var ts.TSTreeCursor, cursor2: Cursor): int = tsTreeCursorGotoFirstChildForPoint(addr cursor, cursor2.toTsPoint).int
+  proc gotoLastChild*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoLastChild(addr cursor)
+  proc gotoDescendant*(cursor: var ts.TSTreeCursor, index: Natural): bool = tsTreeCursorGotoDescendant(addr cursor, index.uint32)
+  proc currentDescendantIndex*(cursor: var ts.TSTreeCursor): int = tsTreeCursorCurrentDescendantIndex(addr cursor).int
+  proc currentDepth*(cursor: var ts.TSTreeCursor): int = tsTreeCursorCurrentDepth(addr cursor).int
+  proc currentFieldName*(cursor: var ts.TSTreeCursor): cstring = tsTreeCursorCurrentFieldName(addr cursor)
+  proc currentFieldId*(cursor: var ts.TSTreeCursor): ts.TSFieldId = tsTreeCursorCurrentFieldId(addr cursor)
 
   proc setPointRange*(cursor: ptr ts.TSQueryCursor, rang: TSRange) =
     cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)
@@ -419,8 +433,8 @@ else:
     bind tsTreeCursorNew
     bind tsTreeCursorDelete
     block:
-      let cursor = ts.tsTreeCursorNew(node)
-      defer: ts.tsTreeCursorDelete(cursor)
+      var cursor = ts.tsTreeCursorNew(node.impl)
+      defer: ts.tsTreeCursorDelete(cursor.addr)
       body
 
   var scratchQueryCursor: ptr ts.TSQueryCursor = nil

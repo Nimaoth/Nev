@@ -63,6 +63,9 @@ proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bo
     self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool = true;
     includeAfter: bool = true): Cursor =
   discard
+proc editor_text_includeSelectionEnd_Selection_TextDocumentEditor_Selection_bool_impl*(
+    self: TextDocumentEditor; res: Selection; includeAfter: bool = true): Selection =
+  discard
 proc editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl*(
     editor: TextDocumentEditor; cursor: Cursor; count: int; c0: char; c1: char;
     depth: int = 1): Option[Cursor] =
@@ -98,6 +101,10 @@ proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bo
     self: TextDocumentEditor; selections: seq[Selection]; text: string;
     notify: bool = true; record: bool = true): seq[Selection] =
   discard
+proc editor_text_insertMulti_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_impl*(
+    self: TextDocumentEditor; selections: seq[Selection]; texts: seq[string];
+    notify: bool = true; record: bool = true): seq[Selection] =
+  discard
 proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_impl*(
     self: TextDocumentEditor; selections: seq[Selection]; notify: bool = true;
     record: bool = true; inclusiveEnd: bool = false): seq[Selection] =
@@ -128,8 +135,22 @@ proc editor_text_selectLine_void_TextDocumentEditor_int_impl*(
 proc editor_text_selectLineCurrent_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
-proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_impl*(
-    self: TextDocumentEditor; selection: Selection) =
+proc editor_text_getParentNodeSelection_Selection_TextDocumentEditor_Selection_bool_impl*(
+    self: TextDocumentEditor; selection: Selection; includeAfter: bool = true): Selection =
+  discard
+proc editor_text_getNextNamedSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_impl*(
+    self: TextDocumentEditor; selection: Selection; includeAfter: bool = true): Option[
+    Selection] =
+  discard
+proc editor_text_getNextSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_impl*(
+    self: TextDocumentEditor; selection: Selection; includeAfter: bool = true): Option[
+    Selection] =
+  discard
+proc editor_text_getParentNodeSelections_Selections_TextDocumentEditor_Selections_bool_impl*(
+    self: TextDocumentEditor; selections: Selections; includeAfter: bool = true): Selections =
+  discard
+proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_bool_impl*(
+    self: TextDocumentEditor; selection: Selection; includeAfter: bool = true) =
   discard
 proc editor_text_printTreesitterTree_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
@@ -137,8 +158,13 @@ proc editor_text_printTreesitterTree_void_TextDocumentEditor_impl*(
 proc editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
-proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl*(
-    self: TextDocumentEditor) =
+proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_bool_impl*(
+    self: TextDocumentEditor; includeAfter: bool = true) =
+  discard
+proc editor_text_getNextNodeWithSameType_Option_Selection_TextDocumentEditor_Selection_int_bool_bool_bool_bool_impl*(
+    self: TextDocumentEditor; selection: Selection; offset: int = 0;
+    includeAfter: bool = true; wrap: bool = true; stepIn: bool = true;
+    stepOut: bool = true): Option[Selection] =
   discard
 proc editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_impl*(
     self: TextDocumentEditor; cursor: Cursor): bool =

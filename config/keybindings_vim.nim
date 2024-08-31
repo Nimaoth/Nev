@@ -1416,6 +1416,83 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
     editor.setMode("visual")
 
+  addTextCommandBlock "", "H":
+    if editor.selections.len == 1:
+      var selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b")
+      selection.last.column -= 1
+      editor.selection = selection
+    else:
+      let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
+      editor.selections = editor.selections[0..^2] & next
+      editor.scrollToCursor Last
+      editor.updateTargetColumn()
+
+    editor.setMode("visual")
+
+  addTextCommandBlock "visual", "gl":
+    if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
+      editor.selections = editor.selections & selection
+      editor.scrollToCursor Last
+      editor.updateTargetColumn()
+
+  addTextCommandBlock "visual", "gh":
+    if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
+      editor.selections = editor.selections[0..^2] & selection
+      editor.scrollToCursor Last
+      editor.updateTargetColumn()
+
+  addTextCommandBlock "visual", "gs":
+    if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
+      editor.selections = editor.selections & selection
+      editor.scrollToCursor Last
+      editor.updateTargetColumn()
+
+  addTextCommandBlock "visual", "gd":
+    if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
+      editor.selections = editor.selections[0..^2] & selection
+      editor.scrollToCursor Last
+      editor.updateTargetColumn()
+
+  addCommand "editor.text.visual", "S<CHAR>", "<CHAR>", proc(editor: TextDocumentEditor, c: string) =
+    let (left, right) = case c
+    of "(", ")": ("(", ")")
+    of "{", "}": ("{", "}")
+    of "[", "]": ("[", "]")
+    of "<", ">": ("<", ">")
+    of "\"": ("\"", "\"")
+    of "'": ("'", "'")
+    else:
+      return
+
+    var insertSelections: Selections = @[]
+    var insertTexts: seq[string] = @[]
+    for s in editor.selections:
+      insertSelections.add s.first.toSelection
+      insertSelections.add editor.doMoveCursorColumn(s.last, 1).toSelection
+      insertTexts.add left
+      insertTexts.add right
+
+    editor.addNextCheckpoint "insert"
+    let newSelections = editor.insertMulti(insertSelections, insertTexts)
+    if newSelections.len mod 2 != 0:
+      return
+
+    editor.selections = collect:
+      for i in 0..<newSelections.len div 2:
+        editor.includeSelectionEnd((newSelections[i * 2].first, newSelections[i * 2 + 1].last), false)
+
+  addTextCommandBlock "visual", "gi":
+    editor.selections = editor.selections.mapIt(block:
+      if it.first.line == it.last.line and abs(it.first.column - it.last.column) < 2:
+        it
+      else:
+        (editor.doMoveCursorColumn(it.first, 1), editor.doMoveCursorColumn(it.last, -1))
+    )
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
+
+  addTextCommand "visual", "gp", "select-parent-current-ts", false
+
   addTextCommandBlock "visual", "L":
     if editor.selections.len == 1:
       editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true))

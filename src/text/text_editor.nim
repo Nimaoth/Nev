@@ -979,6 +979,11 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
 
   return self.clampCursor(cursor, includeAfter)
 
+proc includeSelectionEnd*(self: TextDocumentEditor, res: Selection, includeAfter: bool = true): Selection {.expose: "editor.text".} =
+    result = res
+    if not includeAfter:
+      result = (res.first, self.doMoveCursorColumn(res.last, -1, wrap = false))
+
 proc findSurroundStart*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0: char, c1: char,
     depth: int = 1): Option[Cursor] {.expose: "editor.text".} =
   var depth = depth
@@ -1114,6 +1119,10 @@ proc insert*(self: TextDocumentEditor, selections: seq[Selection], text: string,
     record: bool = true): seq[Selection] {.expose("editor.text").} =
   return self.document.insert(selections, self.selections, [text], notify, record)
 
+proc insertMulti*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string], notify: bool = true,
+    record: bool = true): seq[Selection] {.expose("editor.text").} =
+  return self.document.insert(selections, self.selections, texts, notify, record)
+
 proc delete*(self: TextDocumentEditor, selections: seq[Selection], notify: bool = true,
     record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.expose("editor.text").} =
   return self.document.delete(selections, self.selections, notify, record, inclusiveEnd=inclusiveEnd)
@@ -1192,18 +1201,64 @@ proc selectLineCurrent(self: TextDocumentEditor) {.expose("editor.text").} =
   if wasBackwards:
     self.selection = self.selection.reverse
 
-proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
+proc getParentNodeSelection(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection {.expose("editor.text").} =
   if self.document.tsTree.isNil:
-    return
+    return selection
 
   let tree = self.document.tsTree
 
-  let selectionRange = selection.tsRange
-  var node = self.document.tsTree.root.descendantForRange(selectionRange)
-  while node.getRange == selectionRange and node != tree.root:
+  var node = self.document.tsTree.root.descendantForRange(selection.tsRange)
+  while node != tree.root:
+    var r = self.includeSelectionEnd(node.getRange.toSelection, includeAfter)
+    if r != selection:
+      break
+
     node = node.parent
 
-  self.selection = node.getRange.toSelection
+  result = node.getRange.toSelection
+  result = self.includeSelectionEnd(result, includeAfter)
+
+proc getNextNamedSiblingNodeSelection(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Option[Selection] {.expose("editor.text").} =
+  if self.document.tsTree.isNil:
+    return Selection.none
+
+  let tree = self.document.tsTree
+  var node = tree.root.descendantForRange(selection.tsRange)
+  while node != tree.root:
+    if node.nextNamed.getSome(nextNode):
+      return self.includeSelectionEnd(nextNode.getRange.toSelection, includeAfter).some
+
+    node = node.parent
+    let r = self.includeSelectionEnd(node.getRange.toSelection, includeAfter)
+    if r != selection:
+      break
+
+  return Selection.none
+
+proc getNextSiblingNodeSelection(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Option[Selection] {.expose("editor.text").} =
+  if self.document.tsTree.isNil:
+    return Selection.none
+
+  let tree = self.document.tsTree
+  var node = tree.root.descendantForRange(selection.tsRange)
+  while node != tree.root:
+    if node.next.getSome(nextNode):
+      return self.includeSelectionEnd(nextNode.getRange.toSelection, includeAfter).some
+
+    node = node.parent
+    let r = self.includeSelectionEnd(node.getRange.toSelection, includeAfter)
+    if r != selection:
+      break
+
+  return Selection.none
+
+proc getParentNodeSelections(self: TextDocumentEditor, selections: Selections, includeAfter: bool = true): Selections {.expose("editor.text").} =
+  return selections.mapIt(self.getParentNodeSelection(it, includeAfter))
+
+proc selectParentTs(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true) {.expose("editor.text").} =
+  if self.document.tsTree.isNil:
+    return
+  self.selection = self.getParentNodeSelection(selection, includeAfter)
 
 proc printTreesitterTree*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.tsTree.isNil:
@@ -1224,8 +1279,70 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
 
   log lvlInfo, $node
 
-proc selectParentCurrentTs*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selectParentTs(self.selection)
+proc selectParentCurrentTs*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
+  self.selections = self.getParentNodeSelections(self.selections, includeAfter)
+
+proc getNextNodeWithSameType*(self: TextDocumentEditor, selection: Selection, offset: int = 0,
+    includeAfter: bool = true, wrap: bool = true, stepIn: bool = true, stepOut: bool = true): Option[Selection] {.expose("editor.text").} =
+
+  if self.document.tsTree.isNil:
+    return Selection.none
+
+  let tree = self.document.tsTree
+
+  let selectionRange = selection.tsRange
+  let originalNode = self.document.tsTree.root.descendantForRange(selectionRange)
+  let targetType = originalNode.nodeType
+
+  var targetNode = TSNode.none
+  originalNode.withTreeCursor(cursor):
+    var indentLevel = cursor.currentDepth
+    var down = true
+    var node = originalNode
+
+    while true:
+      let indent = "  ".repeat(max(indentLevel, 0))
+      if cursor.currentNode != originalNode and cursor.currentNode.nodeType == targetType:
+        targetNode = cursor.currentNode.some
+        break
+
+      if down and stepIn and cursor.gotoFirstChild():
+        indentLevel += 1
+        continue
+
+      if cursor.gotoNextSibling():
+        down = true
+        continue
+
+      if (cursor.currentNode != node or stepOut) and cursor.gotoParent():
+        indentLevel -= 1
+        down = false
+        continue
+
+      if cursor.currentNode == node:
+        let i = cursor.currentDescendantIndex
+        let prevNode = node
+        node = node.parent
+        if node.isNull:
+          break
+
+        cursor.reset(node)
+
+        assert cursor.gotoFirstChild()
+        while cursor.currentNode != prevNode:
+          assert cursor.gotoNextSibling()
+
+        down = false
+        continue
+
+      break
+
+  if targetNode.getSome(targetNode):
+    var res = targetNode.getRange.toSelection
+    res = self.includeSelectionEnd(res, includeAfter)
+    return res.some
+
+  return Selection.none
 
 proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.expose("editor.text").} =
   ## Returns true if the completion window should automatically open at the given position
