@@ -110,7 +110,9 @@ proc runeSize*(s: openArray[char], offset: Natural): Natural =
     result = R - L
 
 proc runeStart*(s: openArray[char], offset: Natural): Natural =
-  if s[offset] <= chr(127):
+  if offset >= s.len:
+    result = s.len
+  elif s[offset] <= chr(127):
     result = offset
   else:
     var L = 0

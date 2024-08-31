@@ -202,8 +202,11 @@ proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true)
   var cursor = cursor
   if self.lines.len == 0:
     return (0, 0)
-  cursor.line = clamp(cursor.line, 0, self.lines.len - 1)
-  cursor.column = clamp(cursor.column, 0, self.lastValidIndex(cursor.line, includeAfter))
+  cursor.line = clamp(cursor.line, 0, self.lines.high)
+  if self.lines[cursor.line].len == 0:
+    cursor.column = 0
+  else:
+    cursor.column = self.lines[cursor.line].runeStart(clamp(cursor.column, 0, self.lastValidIndex(cursor.line, includeAfter)))
   return cursor
 
 proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: bool = true): Selection = (self.clampCursor(selection.first, includeAfter), self.clampCursor(selection.last, includeAfter))
@@ -1306,7 +1309,7 @@ proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   while column > 0:
     let prevColumn = line.runeStart(column - 1)
     let r = line.runeAt(prevColumn)
-    if r.char in identChars or r.isAlpha:
+    if (r.int <= char.high.int and r.char in identChars) or r.isAlpha:
       column = prevColumn
       continue
     break

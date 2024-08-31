@@ -242,6 +242,7 @@ proc selection*(self: TextDocumentEditor): Selection =
 
 proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   let selections = self.clampAndMergeSelections(selections)
+  assert selections.len > 0
   if self.selectionsInternal == selections:
     return
 
@@ -266,6 +267,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   self.markDirty()
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
+  let selection = self.clampSelection selection
   if self.selectionsInternal.len == 1 and self.selectionsInternal[0] == selection:
     return
 
@@ -274,7 +276,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
     if self.selectionHistory.len > 100:
       discard self.selectionHistory.popFirst
 
-  self.selectionsInternal = @[self.clampSelection selection]
+  self.selectionsInternal = @[selection]
   self.cursorVisible = true
 
   if self.blinkCursorTask.isNotNil and self.active:
@@ -2913,6 +2915,9 @@ proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.tex
   let line = self.selection.last.line
   if self.document.diagnosticsPerLine.contains(line):
     let diagnostics {.cursor.} = self.document.diagnosticsPerLine[line]
+    if diagnostics.len == 0:
+      return
+
     let index = diagnostics[0]
     if index >= self.document.currentDiagnostics.len:
       self.currentDiagnosticLine = -1
