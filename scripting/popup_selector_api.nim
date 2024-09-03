@@ -4,6 +4,10 @@ import plugin_api_internal
 
 ## This file is auto generated, don't modify.
 
+proc setPreviewVisible*(self: SelectorPopup; visible: bool) =
+  popup_selector_setPreviewVisible_void_SelectorPopup_bool_impl(self, visible)
+proc togglePreview*(self: SelectorPopup) =
+  popup_selector_togglePreview_void_SelectorPopup_impl(self)
 proc getSelectedItemJson*(self: SelectorPopup): JsonNode =
   popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_impl(self)
 proc accept*(self: SelectorPopup) =

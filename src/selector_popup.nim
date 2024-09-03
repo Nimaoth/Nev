@@ -29,6 +29,7 @@ type
 
     scale*: Vec2
     previewScale*: float = 0.5
+    sizeToContentY*: bool = true
 
     customCommands: Table[string, proc(popup: SelectorPopup, args: JsonNode): bool]
 
@@ -39,6 +40,7 @@ type
     completionMatchPositions: Table[int, seq[int]]
     finder*: Finder
     previewer*: Option[DisposableRef[Previewer]]
+    previewVisible*: bool = true
 
     focusPreview*: bool
 
@@ -129,6 +131,26 @@ proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
 
 proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+proc setPreviewVisible*(self: SelectorPopup, visible: bool) {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return
+
+  assert self.finder.isNotNil
+  self.previewVisible = visible
+
+  if visible and self.finder.filteredItems.getSome(list) and list.len > 0:
+    if not self.handleItemSelected.isNil:
+      self.handleItemSelected list[self.selected]
+
+    if self.previewer.isSome:
+      assert self.previewEditor.isNotNil
+      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+
+  self.markDirty()
+
+proc togglePreview*(self: SelectorPopup) {.expose("popup.selector").} =
+  self.setPreviewVisible(not self.previewVisible)
 
 proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.expose("popup.selector").} =
   if self.textEditor.isNil:

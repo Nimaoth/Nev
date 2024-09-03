@@ -32,7 +32,10 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
   # let dirty = self.dirty
   self.resetDirty()
 
-  let sizeToContentY = self.previewEditor.isNil
+  let showPreview = self.previewEditor.isNotNil and self.previewVisible
+  let previewScale = if showPreview: self.previewScale else: 0
+
+  let sizeToContentY = not showPreview and self.sizeToContentY
   var yFlag = if sizeToContentY:
     &{SizeToContentY}
   else:
@@ -55,7 +58,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
       let totalLineHeight = app.platform.totalLineHeight
 
       block:
-        builder.panel(&{FillX, LayoutVertical} + yFlag, w = bounds.w * (1 - self.previewScale)):
+        builder.panel(&{FillX, LayoutVertical} + yFlag, w = bounds.w * (1 - previewScale)):
 
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder, app)
@@ -69,12 +72,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
             var rows: seq[seq[UINode]] = @[]
 
             builder.panel(&{FillX, LayoutVertical} + yFlag):
-
-              let maxLineCount = if sizeToContentY:
-                30
-              else:
-                floor(currentNode.bounds.h / totalLineHeight).int
-
+              let maxLineCount = floor(bounds.h / totalLineHeight).int
               let targetNumRenderedItems = min(maxLineCount, items.len)
               var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
 
@@ -143,9 +141,9 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
                 node.rawX = x
                 x += maxWidths[col] + gap
 
-        if self.previewEditor.isNotNil:
-          builder.panel(0.UINodeFlags, x = bounds.w * (1 - self.previewScale),
-              w = bounds.w * self.previewScale, h = bounds.h):
+        if showPreview:
+          builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewScale),
+              w = bounds.w * previewScale, h = bounds.h):
 
             self.previewEditor.active = self.focusPreview
             result.add self.previewEditor.createUI(builder, app)
