@@ -606,6 +606,11 @@ proc lsp_lspToggleLogServerDebug_void_impl*() =
   discard
 proc lsp_lspLogServerDebug_void_bool_impl*(val: bool) =
   discard
+proc popup_selector_setPreviewVisible_void_SelectorPopup_bool_impl*(
+    self: SelectorPopup; visible: bool) =
+  discard
+proc popup_selector_togglePreview_void_SelectorPopup_impl*(self: SelectorPopup) =
+  discard
 proc popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_impl*(
     self: SelectorPopup): JsonNode =
   discard

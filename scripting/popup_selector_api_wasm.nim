@@ -4,6 +4,39 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc popup_selector_setPreviewVisible_void_SelectorPopup_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setPreviewVisible*(self: SelectorPopup; visible: bool) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when SelectorPopup is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      visible
+    else:
+      visible.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = popup_selector_setPreviewVisible_void_SelectorPopup_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc popup_selector_togglePreview_void_SelectorPopup_wasm(arg: cstring): cstring {.
+    importc.}
+proc togglePreview*(self: SelectorPopup) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when SelectorPopup is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = popup_selector_togglePreview_void_SelectorPopup_wasm(
+      argsJsonString.cstring)
+
+
 proc popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_wasm(arg: cstring): cstring {.
     importc.}
 proc getSelectedItemJson*(self: SelectorPopup): JsonNode =

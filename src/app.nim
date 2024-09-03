@@ -283,7 +283,7 @@ proc tryCloseDocument*(self: App, document: Document, force: bool): bool
 proc closeUnusedDocuments*(self: App)
 proc tryOpenExisting*(self: App, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor]
 proc setOption*(self: App, option: string, value: JsonNode, override: bool = true)
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "")
+proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
 proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor]
 proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.none)
@@ -926,7 +926,7 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
-proc loadKeybindingsFromJson*(self: App, json: JsonNode) =
+proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
   try:
     for (scope, commands) in json.fields.pairs:
       for (keys, command) in commands.fields.pairs:
@@ -939,12 +939,15 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode) =
           else:
             (commandStr[0..<spaceIndex], commandStr[spaceIndex+1..^1])
 
-          self.addCommandScript(scope, "", keys, name, args)
+          # todo: line
+          self.addCommandScript(scope, "", keys, name, args, source = (filename, 0, 0))
 
         elif command.kind == JObject:
           let name = command["command"].getStr
           let args = command["args"].elems.mapIt($it).join(" ")
-          self.addCommandScript(scope, "", keys, name, args)
+          let description = command.fields.getOrDefault("description", newJString("")).getStr
+          # todo: line
+          self.addCommandScript(scope, "", keys, name, args, description, source = (filename, 0, 0))
 
   except CatchableError:
     when not defined(js):
@@ -1001,7 +1004,7 @@ proc loadKeybindings*(self: App, directory: string,
       try:
         log lvlInfo, &"Apply keybindings from {filenames[i]}"
         let json = settings[i].get.parseJson()
-        self.loadKeybindingsFromJson(json)
+        self.loadKeybindingsFromJson(json, filenames[i])
 
       except CatchableError:
         log(lvlError, fmt"Failed to load keybindings from {filenames[i]}: {getCurrentExceptionMsg()}")
@@ -2529,6 +2532,8 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
   popup.previewScale = builder.previewScale
+  popup.sizeToContentY = builder.sizeToContentY
+  popup.previewVisible = builder.previewVisible
 
   if builder.handleItemSelected.isNotNil:
     popup.handleItemSelected = proc(item: FinderItem) =
@@ -3650,7 +3655,7 @@ proc addLeader*(self: App, leader: string) {.expose("editor").} =
   for config in self.eventHandlerConfigs.values:
     config.setLeaders self.leaders
 
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "") {.expose("editor").} =
+proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
   # log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
 
@@ -3662,7 +3667,7 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
   if description.len > 0:
     self.commandDescriptions[context & subContext & keys] = description
 
-  self.getEventHandlerConfig(context).addCommand(subContext, keys, command)
+  self.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
   self.invalidateCommandToKeysMap()
 
 proc removeCommand*(self: App, context: string, keys: string) {.expose("editor").} =
