@@ -63,6 +63,10 @@ else:
     result = newFuture[T]()
     result.complete(value)
 
+  proc doneFuture*(): Future[void] =
+    result = newFuture[void]()
+    result.complete()
+
 template thenIt*[T](f: Future[T], body: untyped): untyped =
   when defined(js):
     discard f.then(proc(a: T) =
