@@ -1,6 +1,6 @@
 import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math, options, json]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, custom_unicode, myjsonutils]
+import misc/[util, custom_logger, custom_unicode, myjsonutils, regex]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
@@ -1242,9 +1242,20 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
       self.createDiagnostics(builder, app, self.lastDiagnosticLocationBounds.get(rect(100, 100, 10, 10)), backgroundColor)
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
+  if line == 0 or self.languageConfig.isNone:
+    return false
+
   let indent = self.getIndentLevelForLine(line)
-  return line > 0 and self.languageConfig.isSome and self.languageConfig.get.ignoreContextLinePrefix.isSome and
-        self.lineStartsWith(line, self.languageConfig.get.ignoreContextLinePrefix.get, true) and self.getIndentLevelForLine(line - 1) == indent
+  if self.getIndentLevelForLine(line - 1) < indent:
+    return false
+
+  if self.languageConfig.get.ignoreContextLinePrefix.isSome:
+    return self.lineStartsWith(line, self.languageConfig.get.ignoreContextLinePrefix.get, true)
+
+  if self.languageConfig.get.ignoreContextLineRegex.isSome:
+    return self.lines[line].match(self.languageConfig.get.ignoreContextLineRegex.get)
+
+  return false
 
 proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex] =
   result.first = if selection.first.line < line.index: 0.RuneIndex elif selection.first.line == line.index: document.lines[line.index].runeIndex(selection.first.column) else: line.runeLen.RuneIndex

@@ -10,6 +10,7 @@ type
     lineComment*: Option[string]
     blockComment*: Option[(string, string)]
     ignoreContextLinePrefix*: Option[string]
+    ignoreContextLineRegex*: Option[Regex]
     completionWordChars*: set[char] = {'a'..'z', 'A'..'Z', '0'..'9', '_'}
 
 proc fromJsonHook*(self: var TextLanguageConfig, node: JsonNode, opt = Joptions()) =
@@ -43,6 +44,12 @@ proc fromJsonHook*(self: var TextLanguageConfig, node: JsonNode, opt = Joptions(
       self.ignoreContextLinePrefix = node["ignoreContextLinePrefix"].str.some
     else:
       self.ignoreContextLinePrefix = string.none
+
+    if node.hasKey("ignoreContextLineRegex"):
+      self.ignoreContextLineRegex = re(node["ignoreContextLineRegex"].str).some.catch:
+        Regex.none
+    else:
+      self.ignoreContextLineRegex = Regex.none
 
     if node.hasKey("completionWordChars"):
       self.completionWordChars = {}
