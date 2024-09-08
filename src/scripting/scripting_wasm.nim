@@ -1,7 +1,7 @@
-import std/[macros, macrocache, genasts, json, strutils]
+import std/[macros, macrocache, genasts, json, strutils, os]
 import misc/[custom_logger, custom_async, util]
 import platform/filesystem
-import scripting_base, popup, document_editor, expose
+import scripting_base, document_editor, expose, vfs
 
 import wasm
 
@@ -12,16 +12,33 @@ export scripting_base, wasm
 
 logCategory "scripting-wasm"
 
-type ScriptContextWasm* = ref object of ScriptContext
-  modules: seq[WasmModule]
+type
+  ScriptContextWasm* = ref object of ScriptContext
+    modules: seq[WasmModule]
 
-  editorModeChangedCallbacks: seq[tuple[module: WasmModule, callback: proc(editor: int32, oldMode: cstring, newMode: cstring): void]]
-  postInitializeCallbacks: seq[tuple[module: WasmModule, callback: proc(): bool]]
-  handleCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): bool]]
-  handleAnyCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): cstring]]
-  handleScriptActionCallbacks: seq[tuple[module: WasmModule, callback: proc(name: cstring, args: cstring): cstring]]
+    editorModeChangedCallbacks: seq[tuple[module: WasmModule, callback: proc(editor: int32, oldMode: cstring, newMode: cstring): void]]
+    postInitializeCallbacks: seq[tuple[module: WasmModule, callback: proc(): bool]]
+    handleCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): bool]]
+    handleAnyCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): cstring]]
+    handleScriptActionCallbacks: seq[tuple[module: WasmModule, callback: proc(name: cstring, args: cstring): cstring]]
+
+    stack: seq[WasmModule]
+
+    vfs*: VFSWasmContext
+
+  VFSWasmContext* = ref object of VFS
+
+method readImpl*(self: VFSWasmContext, path: string): Future[Option[string]] {.async.} =
+  log lvlError, &"[VFSWasmContext] read({path}): not found"
+  return string.none
 
 var createEditorWasmImports: proc(): WasmImports
+
+method getCurrentContext*(self: ScriptContextWasm): string =
+  result = "plugs://"
+  if self.stack.len > 0:
+    result.add self.stack[^1].path.splitFile.name
+    result.add "/"
 
 macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; returnType: typedesc): untyped =
   result = quote do:
@@ -39,7 +56,12 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
     try:
       log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"
       let module = await newWasmModule(file, @[editorImports])
+
       if module.getSome(module):
+        self.vfs.mount(file.splitFile.name & "/", newInMemoryVFS())
+        self.stack.add module
+        defer: discard self.stack.pop
+
         log(lvlInfo, fmt"Loaded wasm module '{file}'")
 
         if findFunction(module, "handleEditorModeChangedWasm", void, proc(editor: int32, oldMode: cstring, newMode: cstring): void).getSome(f):
@@ -57,12 +79,12 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
         if findFunction(module, "handleScriptActionWasm", cstring, proc(name: cstring, arg: cstring): cstring).getSome(f):
           self.handleScriptActionCallbacks.add (module, f)
 
+        self.modules.add module
+
         if findFunction(module, "plugin_main", void, proc(): void).getSome(f):
           log lvlInfo, "Run plugin_main"
           f()
           log lvlInfo, "Finished plugin_main"
-
-        self.modules.add module
 
       else:
         log(lvlError, fmt"Failed to create wasm module for file {file}")
@@ -94,6 +116,8 @@ method postInitialize*(self: ScriptContextWasm): bool =
   result = false
   try:
     for (m, f) in self.postInitializeCallbacks:
+      self.stack.add m
+      defer: discard self.stack.pop
       result = f() or result
   except:
     log lvlError, &"Failed to run post initialize: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
@@ -103,6 +127,8 @@ method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool =
   try:
     let argStr = $arg
     for (m, f) in self.handleCallbackCallbacks:
+      self.stack.add m
+      defer: discard self.stack.pop
       if f(id.int32, argStr.cstring):
         return true
   except:
@@ -112,6 +138,8 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
   result = nil
   let argStr = $arg
   for (m, f) in self.handleAnyCallbackCallbacks:
+    self.stack.add m
+    defer: discard self.stack.pop
     let str = $f(id.int32, argStr.cstring)
     if str.len == 0:
       continue
@@ -126,6 +154,8 @@ method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode
   result = nil
   let argStr = $args
   for (m, f) in self.handleScriptActionCallbacks:
+    self.stack.add m
+    defer: discard self.stack.pop
     let res = $f(name.cstring, argStr.cstring)
     if res.len == 0:
       continue

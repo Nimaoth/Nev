@@ -12,6 +12,8 @@
 - text folding
 - command for switching first and last cursor
 - command for switching active selection
+- command for aligning cursors
+- fuzzy matching with a single character somewhere in the string should result in a positive score
 
 - implement text decorations api for scripting (inserting virtual text, replacing text)
 

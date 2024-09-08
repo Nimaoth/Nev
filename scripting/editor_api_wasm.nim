@@ -933,11 +933,58 @@ proc createFile*(path: string) =
       argsJsonString.cstring)
 
 
-proc editor_browseKeybinds_void_App_wasm(arg: cstring): cstring {.importc.}
-proc browseKeybinds*() =
+proc editor_mountVfs_void_App_string_string_JsonNode_wasm(arg: cstring): cstring {.
+    importc.}
+proc mountVfs*(parentPath: string; prefix: string; config: JsonNode) =
   var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      parentPath
+    else:
+      parentPath.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      prefix
+    else:
+      prefix.toJson()
+  argsJson.add block:
+    when JsonNode is JsonNode:
+      config
+    else:
+      config.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_browseKeybinds_void_App_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_mountVfs_void_App_string_string_JsonNode_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_browseKeybinds_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
+                     scaleY: float = 0.8; previewScale: float = 0.4) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      preview
+    else:
+      preview.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      scaleX
+    else:
+      scaleX.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      scaleY
+    else:
+      scaleY.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      previewScale
+    else:
+      previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_browseKeybinds_void_App_bool_float_float_float_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_chooseFile_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
@@ -1371,11 +1418,31 @@ proc addLeader*(leader: string) =
       argsJsonString.cstring)
 
 
-proc editor_addCommandScript_void_App_string_string_string_string_string_string_wasm(
+proc editor_registerPluginSourceCode_void_App_string_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc registerPluginSourceCode*(path: string; content: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      content
+    else:
+      content.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_registerPluginSourceCode_void_App_string_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_addCommandScript_void_App_string_string_string_string_string_string_tuple_filename_string_line_int_column_int_wasm(
     arg: cstring): cstring {.importc.}
 proc addCommandScript*(context: string; subContext: string; keys: string;
                        action: string; arg: string = "";
-                       description: string = "") =
+                       description: string = ""; source: tuple[filename: string,
+    line: int, column: int] = ("", 0, 0)) =
   var argsJson = newJArray()
   argsJson.add block:
     when string is JsonNode:
@@ -1407,8 +1474,13 @@ proc addCommandScript*(context: string; subContext: string; keys: string;
       description
     else:
       description.toJson()
+  argsJson.add block:
+    when tuple[filename: string, line: int, column: int] is JsonNode:
+      source
+    else:
+      source.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_addCommandScript_void_App_string_string_string_string_string_string_wasm(
+  let res {.used.} = editor_addCommandScript_void_App_string_string_string_string_string_string_tuple_filename_string_line_int_column_int_wasm(
       argsJsonString.cstring)
 
 

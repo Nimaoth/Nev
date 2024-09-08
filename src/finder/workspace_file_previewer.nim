@@ -5,16 +5,18 @@ import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
 import vcs/vcs
-import app_interface, config_provider
+import app_interface, config_provider, vfs
 
 logCategory "workspace-file-previewer"
 
 type
   WorkspaceFilePreviewer* = ref object of Previewer
     workspace: Workspace
+    vfs: Option[VFS]
     configProvider: ConfigProvider
     editor: TextDocumentEditor
     tempDocument: TextDocument
+    reuseExistingDocuments: bool
     openNewDocuments: bool
     revision: int
     triggerLoadTask: DelayedTask
@@ -25,11 +27,24 @@ type
     currentDiff: bool
 
 proc newWorkspaceFilePreviewer*(workspace: Workspace, configProvider: ConfigProvider,
-    openNewDocuments: bool = false): WorkspaceFilePreviewer =
+    openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
   new result
   result.workspace = workspace
 
   result.openNewDocuments = openNewDocuments
+  result.reuseExistingDocuments = reuseExistingDocuments
+  result.tempDocument = newTextDocument(configProvider, workspaceFolder=workspace.some,
+    createLanguageServer=false)
+  result.tempDocument.readOnly = true
+
+proc newWorkspaceFilePreviewer*(workspace: Workspace, vfs: VFS, configProvider: ConfigProvider,
+    openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
+  new result
+  result.workspace = workspace
+  result.vfs = vfs.some
+
+  result.openNewDocuments = openNewDocuments
+  result.reuseExistingDocuments = reuseExistingDocuments
   result.tempDocument = newTextDocument(configProvider, workspaceFolder=workspace.some,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
@@ -90,7 +105,7 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
 
   logScope lvlDebug, &"loadAsync {path}"
 
-  let document = if self.currentStaged:
+  let document = if self.currentStaged or not self.reuseExistingDocuments:
     Document.none
   elif self.openNewDocuments:
     app.getOrOpenDocument(path, app=false)
@@ -111,7 +126,10 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
 
     if self.currentIsFile.getSome(isFile):
       if isFile:
-        await self.workspace.loadFile(path, content.addr)
+        if self.vfs.getSome(vfs):
+          content = vfs.read(path).await.get("")
+        else:
+          await self.workspace.loadFile(path, content.addr)
       else:
         let listing = await self.workspace.getDirectoryListing(path)
 
@@ -125,7 +143,10 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
 
     else:
       # Just assume it's a file, returns empty string when it's a directory which is fine
-      await self.workspace.loadFile(path, content.addr)
+      if self.vfs.getSome(vfs):
+        content = vfs.read(path).await.get("")
+      else:
+        await self.workspace.loadFile(path, content.addr)
 
     if editor.document.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
@@ -156,7 +177,7 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   editor.markDirty()
 
 method delayPreview*(self: WorkspaceFilePreviewer) =
-  if self.triggerLoadTask.isNotNil:
+  if self.triggerLoadTask.isNotNil and self.triggerLoadTask.isActive:
     self.triggerLoadTask.reschedule()
 
 method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: DocumentEditor) =
@@ -195,12 +216,17 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
     self.currentStaged = false
 
   log lvlInfo, &"[previewItem] Request preview for '{path}' at {location}"
+
+  self.currentPath = path
+  self.currentLocation = location
+  self.currentIsFile = isFile
+
   if self.editor.document.filename == path and self.editor.document.staged == self.currentStaged:
     if location.getSome(location):
-      self.editor.selection = location.toSelection
+      self.editor.targetSelection = location.toSelection
       self.editor.centerCursor()
     else:
-      self.editor.selection = (0, 0).toSelection
+      self.editor.targetSelection = (0, 0).toSelection
       self.editor.scrollToTop()
 
     if self.currentDiff:
@@ -210,11 +236,9 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
       self.editor.document.staged = false
       self.editor.closeDiff()
 
-  else:
-    self.currentPath = path
-    self.currentLocation = location
-    self.currentIsFile = isFile
+    self.triggerLoadTask.pause()
 
+  else:
     if self.triggerLoadTask.isNil:
       self.triggerLoadTask = startDelayed(100, repeat=false):
         asyncCheck self.loadAsync()

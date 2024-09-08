@@ -2,6 +2,8 @@ import plugin_runtime
 import std/[json]
 import misc/[timer]
 
+embedSource()
+
 proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default-keybindings").} =
   let t = startTimer()
   defer:
