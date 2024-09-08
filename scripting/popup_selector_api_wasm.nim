@@ -80,6 +80,49 @@ proc cancel*(self: SelectorPopup) =
       argsJsonString.cstring)
 
 
+proc popup_selector_sort_void_SelectorPopup_ToggleBool_wasm(arg: cstring): cstring {.
+    importc.}
+proc sort*(self: SelectorPopup; sort: ToggleBool) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when SelectorPopup is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when ToggleBool is JsonNode:
+      sort
+    else:
+      sort.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = popup_selector_sort_void_SelectorPopup_ToggleBool_wasm(
+      argsJsonString.cstring)
+
+
+proc popup_selector_setMinScore_void_SelectorPopup_float_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setMinScore*(self: SelectorPopup; value: float; add: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when SelectorPopup is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      value
+    else:
+      value.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      add
+    else:
+      add.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = popup_selector_setMinScore_void_SelectorPopup_float_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc popup_selector_prev_void_SelectorPopup_int_wasm(arg: cstring): cstring {.
     importc.}
 proc prev*(self: SelectorPopup; count: int = 1) =

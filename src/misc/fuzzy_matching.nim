@@ -194,6 +194,9 @@ proc matchFuzzySublime*(pattern, str: string, config: FuzzyMatchConfig = FuzzyMa
   matchFuzzySublime(pattern.toOpenArray(0, pattern.high), str.toOpenArray(0, str.high), matches, false, config)
 
 proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0, startTime: Timer = startTimer()): tuple[score: int, matched: bool] {.gcsafe.} =
+  if pattern.len == 0 or str.len == 0:
+    return (0, false)
+
   var
     scoreState = StartMatch
     unmatchedLeadingCharCount = 0

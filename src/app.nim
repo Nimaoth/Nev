@@ -2534,6 +2534,8 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
   popup.previewScale = builder.previewScale
   popup.sizeToContentY = builder.sizeToContentY
   popup.previewVisible = builder.previewVisible
+  popup.maxDisplayNameWidth = builder.maxDisplayNameWidth
+  popup.maxColumnWidth = builder.maxColumnWidth
 
   if builder.handleItemSelected.isNotNil:
     popup.handleItemSelected = proc(item: FinderItem) =

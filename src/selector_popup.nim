@@ -3,7 +3,7 @@ import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
 import app_interface, text/text_editor, popup, events, scripting/expose,
   selector_popup_builder, dispatch_tables
-from scripting_api as api import Selection
+from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 
 export popup, selector_popup_builder
@@ -30,12 +30,12 @@ type
     scale*: Vec2
     previewScale*: float = 0.5
     sizeToContentY*: bool = true
+    maxDisplayNameWidth*: int = 50
+    maxColumnWidth*: int = 60
 
     customCommands: Table[string, proc(popup: SelectorPopup, args: JsonNode): bool]
 
     maxItemsToShow: int = 50
-
-    itemList: ItemList
 
     completionMatchPositions: Table[int, seq[int]]
     finder*: Finder
@@ -139,7 +139,7 @@ proc setPreviewVisible*(self: SelectorPopup, visible: bool) {.expose("popup.sele
   assert self.finder.isNotNil
   self.previewVisible = visible
 
-  if visible and self.finder.filteredItems.getSome(list) and list.len > 0:
+  if visible and self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
@@ -165,9 +165,9 @@ proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.expose("popup.selecto
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] =
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(list) and list.len > 0:
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
     assert self.selected >= 0
-    assert self.selected < list.len
+    assert self.selected < list.filteredLen
     result = list[self.selected].some
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
@@ -179,9 +179,9 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
 
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(list) and list.len > 0:
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
     assert self.selected >= 0
-    assert self.selected < list.len
+    assert self.selected < list.filteredLen
     let handled = self.handleItemConfirmed list[self.selected]
     if handled:
       self.app.popPopup(self)
@@ -194,14 +194,40 @@ proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
     self.handleCanceled()
   self.app.popPopup(self)
 
+proc sort*(self: SelectorPopup, sort: ToggleBool) {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return
+  assert self.finder.isNotNil
+  sort.applyTo(self.finder.sort)
+
+  # Retrigger filter and sort
+  self.finder.setQuery(self.getSearchString())
+
+proc setMinScore*(self: SelectorPopup, value: float, add: bool = false) {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return
+
+  assert self.finder.isNotNil
+
+  if add:
+    self.finder.minScore += value
+  else:
+    self.finder.minScore = value
+
+  log lvlInfo, "New minScore: {self.finder.minScore}"
+
+  # Retrigger filter and sort
+  self.finder.setQuery(self.getSearchString())
+  self.markDirty()
+
 proc prev*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
 
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(list) and list.len > 0:
-    self.selected = (self.selected + max(0, list.len - count)) mod list.len
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+    self.selected = (self.selected + max(0, list.filteredLen - count)) mod list.filteredLen
 
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
@@ -218,8 +244,8 @@ proc next*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
 
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(list) and list.len > 0:
-    self.selected = (self.selected + count) mod list.len
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+    self.selected = (self.selected + count) mod list.filteredLen
 
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
@@ -254,25 +280,31 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
   if self.textEditor.isNil:
     return
 
-  if self.customCommands.contains(action):
+  try:
+    if self.customCommands.contains(action):
+      var args = newJArray()
+      for a in newStringStream(arg).parseJsonFragments():
+        args.add a
+      if self.customCommands[action](self, args):
+        return Handled
+
     var args = newJArray()
+    args.add api.SelectorPopup(id: self.id).toJson
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
-    if self.customCommands[action](self, args):
+
+    if self.app.invokeAnyCallback(action, args).isNotNil:
       return Handled
 
-  var args = newJArray()
-  args.add api.SelectorPopup(id: self.id).toJson
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
+    if dispatch(action, args).isSome:
+      return Handled
 
-  if self.app.invokeAnyCallback(action, args).isNotNil:
-    return Handled
+    return Ignored
+  except:
+    log lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}"
+    log lvlError, getCurrentException().getStackTrace()
 
-  if dispatch(action, args).isSome:
-    return Handled
-
-  return Ignored
+  return Failed
 
 proc handleTextChanged*(self: SelectorPopup) =
   if self.textEditor.isNil:
@@ -287,8 +319,7 @@ proc handleTextChanged*(self: SelectorPopup) =
   if self.previewer.isSome:
     self.previewer.get.get.delayPreview()
 
-  if self.handleItemSelected.isNotNil and
-      self.finder.filteredItems.getSome(list) and list.len > 0:
+  if self.handleItemSelected.isNotNil and self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
 
     self.handleItemSelected list[0]
 
@@ -300,8 +331,8 @@ proc handleItemsUpdated*(self: SelectorPopup) =
 
   self.completionMatchPositions.clear()
 
-  if self.finder.filteredItems.getSome(list) and list.len > 0:
-    self.selected = self.selected.clamp(0, list.len - 1)
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+    self.selected = self.selected.clamp(0, list.filteredLen - 1)
 
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]

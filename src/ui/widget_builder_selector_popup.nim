@@ -63,7 +63,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder, app)
 
-          if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.len > 0:
+          if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
 
             let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
             let highlightColor = textColor.lighten(0.15)
@@ -73,7 +73,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
 
             builder.panel(&{FillX, LayoutVertical} + yFlag):
               let maxLineCount = floor(bounds.h / totalLineHeight).int
-              let targetNumRenderedItems = min(maxLineCount, items.len)
+              let targetNumRenderedItems = min(maxLineCount, items.filteredLen)
               var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
 
               if self.selected < self.scrollOffset:
@@ -85,10 +85,10 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
                 lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
 
               assert self.scrollOffset >= 0
-              assert self.scrollOffset < items.len
+              assert self.scrollOffset < items.filteredLen
 
               assert lastRenderedIndex >= 0
-              assert lastRenderedIndex < items.len
+              assert lastRenderedIndex < items.filteredLen
 
               var widgetIndex = 0
               for completionIndex in self.scrollOffset..lastRenderedIndex:
@@ -99,8 +99,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
                 else:
                   0.UINodeFlags
 
-                const maxDisplayNameWidth = 50
-                const maxColumnWidth = 60
+                let maxDisplayNameWidth = self.maxDisplayNameWidth
+                let maxColumnWidth = self.maxColumnWidth
 
                 builder.panel(&{FillX, SizeToContentY} + fillBackgroundFlag,
                     backgroundColor = selectionColor):
@@ -114,6 +114,9 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
                   var row: seq[UINode] = @[]
 
                   builder.panel(&{FillX, SizeToContentY}):
+                    if app.getOption("ui.selector.show-score", false):
+                      row.add builder.createTextWithMaxWidth($item.score, maxColumnWidth, "...", detailColor, &{TextItalic})
+
                     row.add builder.highlightedText(name, matchIndices, textColor,
                       highlightColor, maxDisplayNameWidth)
 
