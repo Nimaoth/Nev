@@ -3322,6 +3322,7 @@ proc getItemsFromDirectory(workspace: Workspace, directory: string): Future[Item
     let icon = if isFile: fileIcon else: folderIcon
     list[i] = FinderItem(
       displayName: icon & " " & name,
+      filterText: name,
       data: $ %*{
         "path": path,
         "isFile": isFile,
