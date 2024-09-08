@@ -3178,7 +3178,7 @@ proc gotoSymbol*(self: TextDocumentEditor) =
 
 proc editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc fuzzySearchLines*(self: TextDocumentEditor; minScore: float = float.low;
+proc fuzzySearchLines*(self: TextDocumentEditor; minScore: float = 0.2;
                        sort: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:

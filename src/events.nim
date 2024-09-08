@@ -14,10 +14,16 @@ type EventResponse* = enum
   Handled,
   Progress,
 
+type CommandSource* = tuple[filename: string, line: int, column: int]
+
+type Command* = object
+  command*: string
+  source*: CommandSource
+
 type EventHandlerConfig* = ref object
   parent*: EventHandlerConfig
   context*: string
-  commands: Table[string, Table[string, string]]
+  commands: Table[string, Table[string, Command]]
   handleActions*: bool
   handleInputs*: bool
   consumeAllActions*: bool
@@ -48,13 +54,16 @@ proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Tab
 
   for (subGraphName, bindings) in config.commands.mpairs:
     if subGraphName == "":
-      commands[subGraphName] = bindings
+      var temp = initTable[string, string]()
+      for (keys, commandInfo) in bindings.mpairs:
+        temp[keys] = commandInfo.command
+      commands[subGraphName] = temp
     else:
       if not commands.contains(subGraphName):
         commands[subGraphName] = initTable[string, string]()
 
-      for (keys, command) in bindings.mpairs:
-        commands[subGraphName][keys] = command
+      for (keys, commandInfo) in bindings.mpairs:
+        commands[subGraphName][keys] = commandInfo.command
 
 proc buildDFA*(config: EventHandlerConfig): CommandDFA =
   var commands = initTable[string, Table[string, string]]()
@@ -90,10 +99,10 @@ proc setConsumeAllInput*(config: EventHandlerConfig, value: bool) =
   config.consumeAllInput = value
   config.revision += 1
 
-proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string) =
+proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source = instantiationInfo(-1, true)) =
   if not config.commands.contains(context):
-    config.commands[context] = initTable[string, string]()
-  config.commands[context][keys] = action
+    config.commands[context] = initTable[string, Command]()
+  config.commands[context][keys] = Command(command: action, source: source)
   config.revision += 1
 
 proc removeCommand*(config: EventHandlerConfig, keys: string) =
@@ -314,7 +323,7 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
   else:
     result = Ignored
 
-proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[string, string]] =
+proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[string, Command]] =
   config.commands
 
 proc config*(handler: EventHandler): EventHandlerConfig = handler.config

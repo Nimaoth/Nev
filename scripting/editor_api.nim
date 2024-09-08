@@ -166,8 +166,13 @@ proc chooseTheme*() =
   editor_chooseTheme_void_App_impl()
 proc createFile*(path: string) =
   editor_createFile_void_App_string_impl(path)
-proc browseKeybinds*() =
-  editor_browseKeybinds_void_App_impl()
+proc mountVfs*(parentPath: string; prefix: string; config: JsonNode) =
+  editor_mountVfs_void_App_string_string_JsonNode_impl(parentPath, prefix,
+      config)
+proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
+                     scaleY: float = 0.8; previewScale: float = 0.4) =
+  editor_browseKeybinds_void_App_bool_float_float_float_impl(preview, scaleX,
+      scaleY, previewScale)
 proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
                  previewScale: float = 0.5) =
   ## Opens a file dialog which shows all files in the currently open workspaces
@@ -274,11 +279,14 @@ proc setLeaders*(leaders: seq[string]) =
   editor_setLeaders_void_App_seq_string_impl(leaders)
 proc addLeader*(leader: string) =
   editor_addLeader_void_App_string_impl(leader)
+proc registerPluginSourceCode*(path: string; content: string) =
+  editor_registerPluginSourceCode_void_App_string_string_impl(path, content)
 proc addCommandScript*(context: string; subContext: string; keys: string;
                        action: string; arg: string = "";
-                       description: string = "") =
-  editor_addCommandScript_void_App_string_string_string_string_string_string_impl(
-      context, subContext, keys, action, arg, description)
+                       description: string = ""; source: tuple[filename: string,
+    line: int, column: int] = ("", 0, 0)) =
+  editor_addCommandScript_void_App_string_string_string_string_string_string_tuple_filename_string_line_int_column_int_impl(
+      context, subContext, keys, action, arg, description, source)
 proc removeCommand*(context: string; keys: string) =
   editor_removeCommand_void_App_string_string_impl(context, keys)
 proc getActivePopup*(): EditorId =

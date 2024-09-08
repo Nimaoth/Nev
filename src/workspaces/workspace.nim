@@ -2,6 +2,7 @@ import std/[json, options, os, strutils]
 import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger, event]
 import platform/filesystem
 import vcs/vcs
+import vfs
 
 logCategory "workspace"
 
@@ -27,6 +28,9 @@ type
     line*: int
     column*: int
     text*: string
+
+  VFSWorkspace* = ref object of VFS
+    workspace*: Workspace
 
 type WorkspacePath* = distinct string
 
@@ -192,6 +196,15 @@ proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: Ca
     await fut
 
   return
+
+method name*(self: VFSWorkspace): string = "VFSWorkspace"
+
+method readImpl*(self: VFSWorkspace, path: string): Future[Option[string]] {.async.} =
+  debugf"[VFSWorkspace] read({path})"
+  return self.workspace.loadFile(path).await.some
+
+method normalizeImpl*(self: VFSWorkspace, path: string): string =
+  return self.workspace.getAbsolutePath(path)
 
 var gWorkspace*: Workspace = nil
 var gWorkspaceFuture = newResolvableFuture[Workspace]("gWorkspace")

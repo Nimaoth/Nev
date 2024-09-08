@@ -1,8 +1,11 @@
-import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts, options]
-import misc/[event, util, myjsonutils, macro_utils]
+import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts, options, compilesettings]
+import misc/[event, util, myjsonutils, macro_utils, embed_source]
 import plugin_api, script_expose
 
 export plugin_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api, script_expose
+export embed_source.embedSource, embed_source.currentSourceLocation
+
+embedSource()
 
 when defined(nimscript):
   proc getCurrentExceptionMsg*(): string =
@@ -225,46 +228,50 @@ macro addCommand*(context: string, keys: string, action: string, args: varargs[u
   let (stmts, str) = bindArgs(args)
   return genAst(stmts, context, keys, action, str):
     stmts
-    addCommandScript(context, "", keysPrefix & keys, action, str)
+    addCommandScript(context, "", keysPrefix & keys, action, str, source = currentSourceLocation(-2))
 
-proc addCommand*(context: string, keys: string, action: proc(): void) =
+proc addCommand*(context: string, keys: string, action: proc(): void, source = currentSourceLocation()) =
   let key = "$" & context & keys
   scriptActions[key] = proc(args: JsonNode): JsonNode =
     action()
     return newJNull()
 
   # addCommandScript(context, "", keysPrefix & keys, "lambda-action", key.toJsonString)
-  addCommandScript(context, "", keysPrefix & keys, key, "")
+  addCommandScript(context, "", keysPrefix & keys, key, "", source = source)
 
-proc addCommandDesc*(context: string, keys: string, desc: string, action: proc(): void) =
+proc addCommandDesc(context: string, keys: string, desc: string, action: proc(): void, source = currentSourceLocation()) =
   let key = "$" & context & keys
   scriptActions[key] = proc(args: JsonNode): JsonNode =
     action()
     return newJNull()
 
-  addCommandScript(context, "", keysPrefix & keys, key, "", desc)
+  addCommandScript(context, "", keysPrefix & keys, key, "", desc, source)
 
-proc addCommand*[T: proc](context: string, keys: string, args: string, action: T) =
+proc addCommand*[T: proc](context: string, keys: string, args: string, action: T, source = currentSourceLocation()) =
   let key = "$" & context & keys
   scriptActions[key] = proc(args: JsonNode): JsonNode =
     return callJson(action, args)
 
-  addCommandScript(context, "", keysPrefix & keys, key, args)
+  addCommandScript(context, "", keysPrefix & keys, key, args, source = source)
 
-proc addCommandDesc*[T: proc](context: string, keys: string, args: string, desc: string, action: T) =
+proc addCommandDesc[T: proc](context: string, keys: string, args: string, desc: string, action: T, source = currentSourceLocation()) =
   let key = "$" & context & keys
   scriptActions[key] = proc(args: JsonNode): JsonNode =
     return callJson(action, args)
 
-  addCommandScript(context, "", keysPrefix & keys, key, args, desc)
+  addCommandScript(context, "", keysPrefix & keys, key, args, desc, source)
 
 template addCommandBlock*(context: string, keys: string, body: untyped): untyped =
-  addCommand context, keys, proc() =
-    body
+  block:
+    let p = proc() =
+      body
+    addCommand context, keys, p, currentSourceLocation(-2)
 
 template addCommandBlockDesc*(context: string, keys: string, desc: string, body: untyped): untyped =
-  addCommandDesc context, keys, desc, proc() =
-    body
+  block:
+    let p = proc() =
+      body
+    addCommandDesc context, keys, desc, p, currentSourceLocation(-2)
 
 func getContextWithMode*(context: string, mode: string): string =
   if mode.len == 0 or mode[0] == '#':
@@ -277,9 +284,11 @@ template addEditorCommandBlock*(mode: string, keys: string, body: untyped): unty
   addCommand getContextWithMode("editor", mode), keys, proc() =
     body
 
-proc addEditorCommand*(mode: string, keys: string, action: proc(): void) =
-  addCommand getContextWithMode("editor", mode), keys, proc() =
-    action()
+proc addEditorCommand*(mode: string, keys: string, action: proc(): void, source = currentSourceLocation()) =
+  block:
+    let p = proc() =
+      action()
+    addCommand getContextWithMode("editor", mode), keys, p, source = source
 
 macro addEditorCommand*(mode: string, keys: string, action: string, args: varargs[untyped]): untyped =
   var stmts = nnkStmtList.newTree()
@@ -293,44 +302,51 @@ macro addEditorCommand*(mode: string, keys: string, action: string, args: vararg
 
   return genAst(stmts, mode, keys, action, str):
     stmts
-    addCommandScript(getContextWithMode("editor", mode), "", keysPrefix & keys, action, str)
+    addCommandScript(getContextWithMode("editor", mode), "", keysPrefix & keys, action, str, source = currentSourceLocation(-2))
 
 # Text commands
 template addTextCommandBlock*(mode: string, keys: string, body: untyped): untyped =
-  addCommand getContextWithMode("editor.text", mode), keys, proc() =
-    try:
-      let editor {.inject, used.} = TextDocumentEditor(id: getActiveEditor())
-      body
-    except:
-      let m {.inject.} = mode
-      let k {.inject.} = keys
-      infof"TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+  block:
+    let p = proc() =
+      try:
+        let editor {.inject, used.} = TextDocumentEditor(id: getActiveEditor())
+        body
+      except:
+        let m {.inject.} = mode
+        let k {.inject.} = keys
+        infof"TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+    addCommand getContextWithMode("editor.text", mode), keys, p, currentSourceLocation(-2)
 
 template addTextCommandBlockDesc*(mode: string, keys: string, desc: string, body: untyped): untyped =
-  addCommandDesc getContextWithMode("editor.text", mode), keys, desc, proc() =
-    try:
-      let editor {.inject, used.} = TextDocumentEditor(id: getActiveEditor())
-      body
-    except:
-      let m {.inject.} = mode
-      let k {.inject.} = keys
-      infof"TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+  block:
+    let p = proc() =
+      try:
+        let editor {.inject, used.} = TextDocumentEditor(id: getActiveEditor())
+        body
+      except:
+        let m {.inject.} = mode
+        let k {.inject.} = keys
+        infof"TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+    addCommandDesc getContextWithMode("editor.text", mode), keys, desc, p, currentSourceLocation(-2)
 
-proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void) =
-  let context = getContextWithMode("editor.text", mode)
-  addCommand context, keys, proc() =
-    try:
-      action(TextDocumentEditor(id: getActiveEditor()))
-    except:
-      let m {.inject.} = mode
-      let k {.inject.} = keys
-      infof"TextCommand {m} {k}: {getCurrentExceptionMsg()}"
+
+proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void, source = currentSourceLocation()) =
+  block:
+    let context = getContextWithMode("editor.text", mode)
+    let p = proc() =
+      try:
+        action(TextDocumentEditor(id: getActiveEditor()))
+      except:
+        let m {.inject.} = mode
+        let k {.inject.} = keys
+        infof"TextCommand {m} {k}: {getCurrentExceptionMsg()}"
+    addCommand context, keys, p, source = source
 
 macro addTextCommand*(mode: string, keys: string, action: string, args: varargs[untyped]): untyped =
   let (stmts, str) = bindArgs(args)
   return genAst(stmts, mode, keys, action, str):
     stmts
-    addCommandScript(getContextWithMode("editor.text", mode), "", keysPrefix & keys, action, str)
+    addCommandScript(getContextWithMode("editor.text", mode), "", keysPrefix & keys, action, str, source = currentSourceLocation(-2))
 
 proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEditor, input: string): bool) =
   let id = addCallback proc(args: JsonNode): bool =
@@ -402,7 +418,7 @@ macro addModelCommand*(mode: static[string], keys: string, action: string, args:
 
   return genAst(stmts, context, keys, action, str):
     stmts
-    addCommandScript(context, "", keysPrefix & keys, action, str)
+    addCommandScript(context, "", keysPrefix & keys, action, str, source = currentSourceLocation(-2))
 
 proc setModelInputHandler*(context: string, action: proc(editor: ModelDocumentEditor, input: string): bool) =
   let id = addCallback proc(args: JsonNode): bool =

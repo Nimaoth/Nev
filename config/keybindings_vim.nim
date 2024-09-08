@@ -1,7 +1,9 @@
-import std/[strutils, macros, genasts, sequtils, sets]
+import std/[strutils, macros, genasts, sequtils, sets, algorithm]
 import plugin_runtime, keybindings_normal
 import misc/[timer, util, myjsonutils, custom_unicode]
 import input_api
+
+embedSource()
 
 infof"import vim keybindings"
 
@@ -38,16 +40,17 @@ macro addSubCommandWithCount*(mode: string, sub: string, keys: string, move: str
   let (stmts, str) = bindArgs(args)
   return genAst(stmts, mode, keys, move, str, sub):
     stmts
-    addCommandScript(getContextWithMode("editor.text", mode) & "#" & sub, "", keysPrefix & "<?-count>" & keys, move, str & " <#" & sub & ".count>")
+    addCommandScript(getContextWithMode("editor.text", mode) & "#" & sub, "", keysPrefix & "<?-count>" & keys, move, str & " <#" & sub & ".count>", source = instantiationInfo(-1, true))
 
-proc addSubCommandWithCount*(mode: string, sub: string, keys: string, action: proc(editor: TextDocumentEditor, count: int): void) =
-  addCommand getContextWithMode("editor.text", mode) & "#" & sub, "<?-count>" & keys, "<#" & sub & ".count>", action
+proc addSubCommandWithCount*(mode: string, sub: string, keys: string, action: proc(editor: TextDocumentEditor, count: int): void, source = currentSourceLocation()) =
+  addCommand getContextWithMode("editor.text", mode) & "#" & sub, "<?-count>" & keys, "<#" & sub & ".count>", action, source
 
 template addSubCommandWithCountBlock*(mode: string, sub: string, keys: string, body: untyped): untyped =
-  addSubCommandWithCount mode, sub, keys, proc(editor: TextDocumentEditor, count: int): void =
+  let p = proc(editor: TextDocumentEditor, count: int): void =
     let editor {.inject.} = editor
     let count {.inject.} = count
     body
+  addSubCommandWithCount mode, sub, keys, p, instantiationInfo(-1, true)
 
 template addSubCommand*(mode: string, sub: string, keys: string, move: string, args: varargs[untyped]) =
   addTextCommand mode & "#" & sub, keys, move, args
@@ -915,7 +918,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.setMode("normal")
 
   addTextCommandBlockDesc "", ".", "replay commands": replayCommands(".")
-  addCommand "editor.text.normal", "@<CHAR>", "<CHAR>", proc(editor: TextDocumentEditor, c: string) =
+  addCommand "editor.text.normal", "@<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
     let register = if c == "@":
       getOption("editor.current-macro-register", "")
     else:
@@ -923,7 +926,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
     replayCommands(register)
 
-  addCommand "editor.text.normal", "q<CHAR>", "<CHAR>", proc(editor: TextDocumentEditor, c: string) =
+  addCommand "editor.text.normal", "q<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
     if isReplayingCommands() or isRecordingCommands(getCurrentMacroRegister()):
       return
     setOption("editor.current-macro-register", c)
@@ -1263,9 +1266,9 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "replace", "<ESCAPE>", "set-mode", "normal"
 
   # Deleting text
-  addTextCommand "", "x", vimDeleteRight
-  addTextCommand "", "<DELETE>", vimDeleteRight
-  addTextCommand "", "X", vimDeleteLeft
+  addTextCommand "", "x", vimDeleteRight, source = currentSourceLocation()
+  addTextCommand "", "<DELETE>", vimDeleteRight, source = currentSourceLocation()
+  addTextCommand "", "X", vimDeleteLeft, source = currentSourceLocation()
 
   addTextCommand "", "u", "vim-undo", enterNormalModeBefore=true
   addTextCommand "", "<C-r>", "vim-redo", enterNormalModeBefore=true
@@ -1455,7 +1458,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.scrollToCursor Last
       editor.updateTargetColumn()
 
-  addCommand "editor.text.visual", "S<CHAR>", "<CHAR>", proc(editor: TextDocumentEditor, c: string) =
+  addCommand "editor.text.visual", "S<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
     let (left, right) = case c
     of "(", ")": ("(", ")")
     of "{", "}": ("{", "}")

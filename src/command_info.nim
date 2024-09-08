@@ -6,6 +6,7 @@ type
     keys*: string
     command*: string
     context*: string
+    source*: CommandSource
 
   CommandInfos* = ref object
     built: bool = false
@@ -24,12 +25,13 @@ proc rebuild*(self: CommandInfos, eventHandlerConfigs {.byref.}: Table[string, E
   for (context, c) in eventHandlerConfigs.pairs:
     if not c.commands.contains(""):
       continue
-    for (keys, command) in c.commands[""].pairs:
-      let (action, _) = command.parseAction
+    for (keys, commandInfo) in c.commands[""].pairs:
+      let (action, _) = commandInfo.command.parseAction
       self.commandToKeys.mgetOrPut(action, @[]).add(CommandKeyInfo(
         keys: keys,
-        command: command,
+        command: commandInfo.command,
         context: context,
+        source: commandInfo.source,
       ))
 
 proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] =

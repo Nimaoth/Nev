@@ -14,6 +14,7 @@ method postInitialize*(self: ScriptContext): bool {.base.} = discard
 method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base.} = discard
 method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode {.base.} = discard
 method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base.} = discard
+method getCurrentContext*(self: ScriptContext): string {.base.} = ""
 
 proc generateScriptingApiPerModule*() {.compileTime.} =
   var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"
