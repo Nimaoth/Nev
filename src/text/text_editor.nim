@@ -2599,6 +2599,33 @@ proc showCompletionWindow(self: TextDocumentEditor) =
   self.showCompletions = true
   self.markDirty()
 
+proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool) =
+  var builder = SelectorPopupBuilder()
+  builder.scope = "lines".some
+  builder.scaleX = 1
+  builder.scaleY = 0.8
+  builder.maxDisplayNameWidth = 90
+  builder.maxDisplayNameWidth = 100
+
+  var res = newSeq[FinderItem]()
+  for i in 0..self.document.lines.high:
+    if not self.document.lines[i].isEmptyOrWhitespace:
+      res.add FinderItem(
+        displayName: self.document.getLine(i),
+        data: encodeFileLocationForFinderItem(self.document.filename, (i, 0).some),
+      )
+
+  if self.document.workspace.getSome(workspace):
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.configProvider).Previewer.some
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true, minScore=minScore, sort=sort)
+  builder.finder = finder.some
+
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    self.openLocationFromFinderItem(item)
+    true
+
+  discard self.app.pushSelectorPopup(builder)
+
 proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool) =
   var builder = SelectorPopupBuilder()
   builder.scope = "text-lsp-locations".some
@@ -2732,6 +2759,9 @@ proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoSymbolAsync()
+
+proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = float.low, sort: bool = true) {.expose("editor.text").} =
+  self.openLineSelectorPopup(minScore, sort)
 
 proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose("editor.text").} =
   asyncCheck self.gotoWorkspaceSymbolAsync(query)

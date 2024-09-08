@@ -441,6 +441,9 @@ proc editor_text_getCompletions_void_TextDocumentEditor_impl*(
 proc editor_text_gotoSymbol_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_impl*(
+    self: TextDocumentEditor; minScore: float = float.low; sort: bool = true) =
+  discard
 proc editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; query: string = "") =
   discard
@@ -617,6 +620,12 @@ proc popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_impl*(
 proc popup_selector_accept_void_SelectorPopup_impl*(self: SelectorPopup) =
   discard
 proc popup_selector_cancel_void_SelectorPopup_impl*(self: SelectorPopup) =
+  discard
+proc popup_selector_sort_void_SelectorPopup_ToggleBool_impl*(self: SelectorPopup;
+    sort: ToggleBool) =
+  discard
+proc popup_selector_setMinScore_void_SelectorPopup_float_bool_impl*(
+    self: SelectorPopup; value: float; add: bool = false) =
   discard
 proc popup_selector_prev_void_SelectorPopup_int_impl*(self: SelectorPopup;
     count: int = 1) =
