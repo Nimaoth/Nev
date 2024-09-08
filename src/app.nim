@@ -742,6 +742,11 @@ proc runConfigCommands(self: App, key: string) =
       let (action, arg) = command.getStr.parseAction
       log lvlInfo, &"[runConfigCommands: {key}] {action} {arg}"
       discard self.handleAction(action, arg, record=false)
+    if command.kind == JArray:
+      let action = command[0].getStr
+      let arg = command.elems[1..^1].mapIt($it).join(" ")
+      log lvlInfo, &"[runConfigCommands: {key}] {action} {arg}"
+      discard self.handleAction(action, arg, record=false)
 
 proc initScripting(self: App, options: AppOptions) {.async.} =
   if not options.disableWasmPlugins:
