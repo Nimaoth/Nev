@@ -27,10 +27,14 @@ macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; ret
   result = quote do:
     default(`returnType`)
 
+var wasmCallback: WasmPtr
 proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} =
   let (files, _) = await fs.getApplicationDirectoryListing(path)
 
   var editorImports = createEditorWasmImports()
+  editorImports.addFunction "testAddCallback", proc(f: WasmPtr) =
+    debugf"testAddCallback: {f}"
+    wasmCallback = f
 
   for file in files:
     if not file.endsWith(".wasm"):
@@ -62,7 +66,12 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
           f()
           log lvlInfo, "Finished plugin_main"
 
-        self.modules.add module
+        if findFunction(module, "callTestCallback", void, proc(f: WasmPtr, b: int64): void).getSome(f):
+          log lvlInfo, "call test callback"
+          f(wasmCallback, 123)
+          log lvlInfo, "Finished test callback"
+        else:
+          log lvlInfo, "no callback test found"
 
       else:
         log(lvlError, fmt"Failed to create wasm module for file {file}")
