@@ -1559,3 +1559,5 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.centerCursor()
   addTextCommand "", "<LEADER>gx", "close-diff"
   addTextCommand "", "<LEADER>gc", "update-diff"
+  addTextCommand "", "<LEADER>gl", "fuzzy-search-lines"
+  addTextCommand "", "<LEADER>gL", "fuzzy-search-lines", minScore = 0.4, sort = false
