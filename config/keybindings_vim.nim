@@ -40,7 +40,7 @@ macro addSubCommandWithCount*(mode: string, sub: string, keys: string, move: str
   let (stmts, str) = bindArgs(args)
   return genAst(stmts, mode, keys, move, str, sub):
     stmts
-    addCommandScript(getContextWithMode("editor.text", mode) & "#" & sub, "", keysPrefix & "<?-count>" & keys, move, str & " <#" & sub & ".count>", source = instantiationInfo(-1, true))
+    addCommandScript(getContextWithMode("editor.text", mode) & "#" & sub, "", keysPrefix & "<?-count>" & keys, move, str & " <#" & sub & ".count>", source = currentSourceLocation(-2))
 
 proc addSubCommandWithCount*(mode: string, sub: string, keys: string, action: proc(editor: TextDocumentEditor, count: int): void, source = currentSourceLocation()) =
   addCommand getContextWithMode("editor.text", mode) & "#" & sub, "<?-count>" & keys, "<#" & sub & ".count>", action, source
@@ -50,7 +50,7 @@ template addSubCommandWithCountBlock*(mode: string, sub: string, keys: string, b
     let editor {.inject.} = editor
     let count {.inject.} = count
     body
-  addSubCommandWithCount mode, sub, keys, p, instantiationInfo(-1, true)
+  addSubCommandWithCount mode, sub, keys, p, currentSourceLocation(-2)
 
 template addSubCommand*(mode: string, sub: string, keys: string, move: string, args: varargs[untyped]) =
   addTextCommand mode & "#" & sub, keys, move, args

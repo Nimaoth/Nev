@@ -1,4 +1,4 @@
-import std/[macros, macrocache, genasts, json, strutils]
+import std/[macros, macrocache, genasts, json, strutils, os]
 import misc/[custom_logger, custom_async, util]
 import platform/filesystem
 import scripting_base, document_editor, expose, vfs
@@ -37,9 +37,7 @@ var createEditorWasmImports: proc(): WasmImports
 method getCurrentContext*(self: ScriptContextWasm): string =
   result = "plugs://"
   if self.stack.len > 0:
-    # todo: don't use entire file path but unique name/id per plugin
-    let path = self.stack[^1].path
-    result.add path
+    result.add self.stack[^1].path.splitFile.name
     result.add "/"
 
 macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; returnType: typedesc): untyped =
@@ -60,7 +58,7 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
       let module = await newWasmModule(file, @[editorImports])
 
       if module.getSome(module):
-        self.vfs.mount(file & "/", newInMemoryVFS())
+        self.vfs.mount(file.splitFile.name & "/", newInMemoryVFS())
         self.stack.add module
         defer: discard self.stack.pop
 

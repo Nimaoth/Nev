@@ -4,6 +4,8 @@ import platform/filesystem
 
 logCategory "VFS"
 
+var debugLogVfs* = false
+
 type
   VFS* = ref object of RootObj
     mounts: seq[tuple[prefix: string, vfs: VFS]]  ## Seq because I assume the amount of entries will be very small.
@@ -27,7 +29,6 @@ type
 proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string]
 proc read*(self: VFS, path: string): Future[Option[string]]
 proc write*(self: VFS, path: string, content: string): Future[void]
-# proc prefix*(self: VFS): string
 proc normalize*(self: VFS, path: string): string
 
 proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, string]())
@@ -74,26 +75,30 @@ method normalizeImpl*(self: VFSLink, path: string): string =
   return self.target.normalize(self.targetPrefix & path)
 
 method getVFSImpl*(self: VFSLink, path: string): tuple[vfs: VFS, relativePath: string] =
-  debugf"[{self.name}] '{self.prefix}' getVFSImpl({path}) -> ({self.target.name}, {self.target.prefix}), '{self.targetPrefix & path}'"
+  if debugLogVfs:
+    debugf"[{self.name}] '{self.prefix}' getVFSImpl({path}) -> ({self.target.name}, {self.target.prefix}), '{self.targetPrefix & path}'"
   return self.target.getVFS(self.targetPrefix & path)
 
 method name*(self: VFSInMemory): string = "VFSInMemory"
 
 method readImpl*(self: VFSInMemory, path: string): Future[Option[string]] =
-  debugf"VFSInMemory.read({path})"
+  if debugLogVfs:
+    debugf"VFSInMemory.read({path})"
   if self.files.contains(path):
     return self.files[path].some.toFuture
   return string.none.toFuture
 
 method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void] =
-  debugf"VFSInMemory.write({path})"
+  if debugLogVfs:
+    debugf"VFSInMemory.write({path})"
   self.files[path] = content
   doneFuture()
 
 proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] =
   for i in countdown(self.mounts.high, 0):
     if path.startsWith(self.mounts[i].prefix):
-      debugf"[{self.name}] '{self.prefix}' foward({path}) to ({self.mounts[i].vfs.name}, {self.mounts[i].vfs.prefix})"
+      if debugLogVfs:
+        debugf"[{self.name}] '{self.prefix}' foward({path}) to ({self.mounts[i].vfs.name}, {self.mounts[i].vfs.prefix})"
       return self.mounts[i].vfs.getVFS(path[self.mounts[i].prefix.len..^1])
 
   result = self.getVFSImpl(path)
@@ -101,7 +106,8 @@ proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] =
     result = (self, path)
 
 proc read*(self: VFS, path: string): Future[Option[string]] =
-  debugf"[{self.name}] '{self.prefix}' read({path})"
+  if debugLogVfs:
+    debugf"[{self.name}] '{self.prefix}' read({path})"
   let (vfs, path) = self.getVFS(path)
   if vfs == self:
     result = self.readImpl(path)
@@ -111,7 +117,8 @@ proc read*(self: VFS, path: string): Future[Option[string]] =
     result = string.none.toFuture
 
 proc write*(self: VFS, path: string, content: string): Future[void] =
-  debugf"[{self.name}] '{self.prefix}' write({path})"
+  if debugLogVfs:
+    debugf"[{self.name}] '{self.prefix}' write({path})"
   let (vfs, path) = self.getVFS(path)
   if vfs == self:
     result = self.writeImpl(path, content)
@@ -121,12 +128,10 @@ proc write*(self: VFS, path: string, content: string): Future[void] =
     result = doneFuture()
 
 proc normalize*(self: VFS, path: string): string =
-  debugf"[{self.name}] '{self.prefix}' normalize({path})"
   var (vfs, path) = self.getVFS(path)
   while vfs.parent.getSome(parent):
     path = vfs.prefix & path
     vfs = parent
-  debugf"  -> {path}"
 
   return path
 

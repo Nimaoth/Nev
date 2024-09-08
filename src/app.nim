@@ -2630,25 +2630,28 @@ proc createVfs*(self: App, config: JsonNode): Option[VFS] =
       log lvlError, "Invalid config, expected " & msg & ", got " & got
       return
 
-  debugf"typ: {typ}"
-
   case typ
   of "link":
     let targetName = config.fields.getOrDefault("target", newJNull()).getStr.expect("string 'target'", $config)
     let (target, sub) = self.vfs.getVFS(targetName)
     if sub != "":
-      log lvlError, &"Unknown target '{targetName}', unmatch: '{sub}'"
+      log lvlError, &"Unknown target '{targetName}', unmatched: '{sub}'"
+      return VFS.none
+
     let targetPrefix = config.fields.getOrDefault("targetPrefix", newJString("")).getStr.expect("string 'targetPrefix'", $config)
-    debugf"create VFSLink {target.name}, {target.prefix}, {targetPrefix}"
+
+    log lvlInfo, &"create VFSLink {target.name}, {target.prefix}, {targetPrefix}"
     result = VFSLink(
       target: target,
       targetPrefix: targetPrefix,
     ).VFS.some
+
   else:
     log lvlError, &"Invalid VFS config, unknown type '{typ}'"
+    return VFS.none
 
 proc mountVfs*(self: App, parentPath: string, prefix: string, config: JsonNode) {.expose("editor").} =
-  debugf"mountVfs '{parentPath}', '{prefix}', {config}"
+  log lvlInfo, &"Mount VFS '{parentPath}', '{prefix}', {config}"
   let (vfs, _) = self.vfs.getVFS(parentPath)
   if self.createVfs(config).getSome(newVFS):
     vfs.mount(prefix, newVFS)

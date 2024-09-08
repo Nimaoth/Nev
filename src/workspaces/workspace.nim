@@ -200,7 +200,6 @@ proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: Ca
 method name*(self: VFSWorkspace): string = "VFSWorkspace"
 
 method readImpl*(self: VFSWorkspace, path: string): Future[Option[string]] {.async.} =
-  debugf"[VFSWorkspace] read({path})"
   return self.workspace.loadFile(path).await.some
 
 method normalizeImpl*(self: VFSWorkspace, path: string): string =
