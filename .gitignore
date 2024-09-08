@@ -87,6 +87,7 @@ config/wasm/callback_test_plugin.wasm
 config/callback_test_plugin.nim
 
 #
+/ast*
 .nev/keybindings.json
 .nev/settings-windows.json
 .nev/settings-windows-gui.json

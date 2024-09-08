@@ -127,8 +127,19 @@ else:
 # switch("lineDir", "off")
 # switch("profiler", "on")
 
+when defined(linux):
+  when withDir(thisDir(), system.fileExists("nimble-linux.paths")):
+    include "nimble-linux.paths"
+else:
+  when withDir(thisDir(), system.fileExists("nimble-win.paths")):
+    include "nimble-win.paths"
+
 # begin Nimble config (version 2)
 --noNimblePath
 when withDir(thisDir(), system.fileExists("nimble.paths")):
   include "nimble.paths"
 # end Nimble config
+
+when defined(useMimalloc):
+  switch("define", "useMalloc")
+  patchFile("stdlib", "malloc", "$lib/patchedstd/mimalloc")
