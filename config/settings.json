@@ -234,6 +234,7 @@
                 "{",
                 "["
             ],
+            "ignoreContextLineRegex": "\\W*(where|\\{|\\)).*",
             "lineComment": "//",
             "blockComment": [
                 "/*",
