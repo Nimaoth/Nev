@@ -1,4 +1,4 @@
-import std/[strutils, macros, genasts, sequtils, sets]
+import std/[strutils, macros, genasts, sequtils, sets, algorithm]
 import plugin_runtime, keybindings_normal
 import misc/[timer, util, myjsonutils, custom_unicode]
 import input_api
