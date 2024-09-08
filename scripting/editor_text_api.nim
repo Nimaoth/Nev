@@ -455,7 +455,7 @@ proc getCompletions*(self: TextDocumentEditor) =
   editor_text_getCompletions_void_TextDocumentEditor_impl(self)
 proc gotoSymbol*(self: TextDocumentEditor) =
   editor_text_gotoSymbol_void_TextDocumentEditor_impl(self)
-proc fuzzySearchLines*(self: TextDocumentEditor; minScore: float = float.low;
+proc fuzzySearchLines*(self: TextDocumentEditor; minScore: float = 0.2;
                        sort: bool = true) =
   editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_impl(self,
       minScore, sort)

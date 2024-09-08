@@ -442,7 +442,7 @@ proc editor_text_gotoSymbol_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
 proc editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_impl*(
-    self: TextDocumentEditor; minScore: float = float.low; sort: bool = true) =
+    self: TextDocumentEditor; minScore: float = 0.2; sort: bool = true) =
   discard
 proc editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; query: string = "") =
