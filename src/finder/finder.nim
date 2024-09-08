@@ -11,7 +11,8 @@ type
     filterText*: string
     data*: string
     score*: float
-    originalScore: float
+    originalIndex: Option[int]
+    filtered*: bool
 
 when defined(js):
   type
@@ -23,6 +24,7 @@ else:
     ItemList* = object
       len: int = 0
       cap: int = 0
+      filtered*: int = 0
       data: ptr UncheckedArray[FinderItem] = nil
 
 type
@@ -35,6 +37,8 @@ type
     filteredItems*: Option[ItemList]
 
     filterAndSort: bool
+    minScore*: float = 0
+    sort*: bool
     filterThreshold*: float = 0
 
     queryVersion: int
@@ -83,6 +87,7 @@ proc newItemList*(len: int): ItemList =
 
 func high*(list: ItemList): int = list.len - 1
 func len*(list: ItemList): int = list.len
+func filteredLen*(list: ItemList): int = list.len - list.filtered
 
 proc free*(list: ItemList) =
   when defined(js):
@@ -110,6 +115,7 @@ proc pool*(list: ItemList) =
           list.data[i] = FinderItem()
 
     list.len = 0
+    list.filtered = 0
     itemListPool.add list
 
 proc setLen*(list: var ItemList, newLen: int) =
@@ -208,11 +214,13 @@ when not defined(js):
 
 proc handleItemsChanged(self: Finder, list: ItemList)
 
-proc newFinder*(source: DataSource, filterAndSort: bool = true): Finder =
+proc newFinder*(source: DataSource, filterAndSort: bool = true, sort: bool = true, minScore: float = 0): Finder =
   new result
   var self = result
   result.source = source
   result.filterAndSort = filterAndSort
+  result.sort = sort
+  result.minScore = minScore
   result.onItemsChangedHandle = source.onItemsChanged.subscribe proc(items: ItemList) =
     self.handleItemsChanged(items)
 
@@ -220,25 +228,51 @@ type FilterAndSortResult = object
   scoreTime: float
   sortTime: float
   totalTime: float
+  filtered: int
 
-proc filterAndSortItemsThread(args: (string, ItemList)): FilterAndSortResult {.gcsafe.} =
+proc filterAndSortItemsThread(args: tuple[query: string, list: ItemList, sort: bool, minScore: float]): FilterAndSortResult {.gcsafe.} =
   try:
-    let query = args[0]
-    var list = args[1]
-
+    var list = args.list
     let scoreTimer = startTimer()
     if list.len > 0:
-      for item in list.items.mitems:
+      var minScore = float.high
+      var maxScore = float.low
+      for i, item in list.items.mpairs:
         let filterText = if item.filterText.len > 0:
           item.filterText
         else:
           item.displayName
-        item.score = matchFuzzySublime(query, filterText, defaultCompletionMatchingConfig).score.float
+        if item.originalIndex.isNone:
+          item.originalIndex = i.some
+        item.score = matchFuzzySublime(args.query, filterText, defaultCompletionMatchingConfig).score.float
+        maxScore = max(maxScore, item.score)
+        minScore = min(minScore, item.score)
+
+      result.filtered = 0
+      for item in list.items.mitems:
+        if item.score > 0:
+          item.score /= maxScore
+        elif item.score < 0:
+          item.score /= -minScore
+        item.filtered = item.score < args.minScore
+        if item.filtered:
+          inc result.filtered
 
     result.scoreTime = scoreTimer.elapsed.ms
 
+    proc customCmp(a, b: FinderItem): int =
+      if a.filtered and not b.filtered:
+        return -1
+      if not a.filtered and b.filtered:
+        return 1
+      if args.sort:
+        return cmp(a.score, b.score)
+      elif a.originalIndex.isSome and b.originalIndex.isSome:
+        return cmp(b.originalIndex.get, a.originalIndex.get)
+      return 0
+
     let sortTimer = startTimer()
-    list.sort(Descending)
+    list.sort(customCmp, Descending)
     result.sortTime = sortTimer.elapsed.ms
 
     result.totalTime = result.scoreTime + result.sortTime
@@ -259,9 +293,9 @@ proc filterAndSortItems(self: Finder, list: ItemList): Future[void] {.async.} =
 
   # todo: filter and sort on main thread if amount < threshold
   when defined(js):
-    var filterResult = filterAndSortItemsThread (self.query, list)
+    var filterResult = filterAndSortItemsThread (self.query, list, self.sort, self.minScore)
   else:
-    var filterResult = spawnAsync(filterAndSortItemsThread, (self.query, list)).await
+    var filterResult = spawnAsync(filterAndSortItemsThread, (self.query, list, self.sort, self.minScore)).await
 
   debugf"[filterAndSortItems] -> {versions}, {filterResult.scoreTime}ms, {filterResult.sortTime}ms, {filterResult.totalTime}ms"
 
@@ -273,6 +307,8 @@ proc filterAndSortItems(self: Finder, list: ItemList): Future[void] {.async.} =
   if self.filteredItems.getSome(list):
     list.pool()
 
+  var list = list
+  list.filtered = filterResult.filtered
   self.filteredItems = list.some
   self.onItemsChanged.invoke()
 
@@ -286,7 +322,6 @@ proc handleItemsChanged(self: Finder, list: ItemList) =
   if self.filterAndSort and self.query.len > 0:
     asyncCheck self.filterAndSortItems(list)
   else:
-    list.reverse()
     if self.filteredItems.getSome(list):
       list.pool()
     self.filteredItems = list.some
@@ -302,8 +337,9 @@ proc setQuery*(self: Finder, query: string) =
     var mlist = list
     if self.query.len == 0:
       for i in 0..<mlist.len:
-        mlist[i].score = mlist[i].originalScore
-      mlist.sort((a, b) => cmp(a.originalScore, b.originalScore), Descending)
+        mlist[i].filtered = false
+      mlist.sort((a, b) => -cmp(a.originalIndex.get(0), b.originalIndex.get(0)), Descending)
+      self.filteredItems.get.filtered = 0
       self.onItemsChanged.invoke()
 
     else:

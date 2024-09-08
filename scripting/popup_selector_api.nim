@@ -14,6 +14,10 @@ proc accept*(self: SelectorPopup) =
   popup_selector_accept_void_SelectorPopup_impl(self)
 proc cancel*(self: SelectorPopup) =
   popup_selector_cancel_void_SelectorPopup_impl(self)
+proc sort*(self: SelectorPopup; sort: ToggleBool) =
+  popup_selector_sort_void_SelectorPopup_ToggleBool_impl(self, sort)
+proc setMinScore*(self: SelectorPopup; value: float; add: bool = false) =
+  popup_selector_setMinScore_void_SelectorPopup_float_bool_impl(self, value, add)
 proc prev*(self: SelectorPopup; count: int = 1) =
   popup_selector_prev_void_SelectorPopup_int_impl(self, count)
 proc next*(self: SelectorPopup; count: int = 1) =

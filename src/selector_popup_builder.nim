@@ -13,6 +13,8 @@ type
     scaleX*: float = 0.5
     scaleY*: float = 0.5
     previewScale*: float = 0.5
+    maxDisplayNameWidth*: int = 50
+    maxColumnWidth*: int = 60
     previewVisible*: bool = true
     sizeToContentY*: bool = false
     handleItemSelected*: proc(popup: ISelectorPopup, item: FinderItem)
