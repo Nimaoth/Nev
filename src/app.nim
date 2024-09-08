@@ -11,7 +11,7 @@ import text/language/language_server_base, language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, command_info
 import text/[custom_treesitter]
 import finder/[finder, previewer]
-import compilation_config
+import compilation_config, vfs
 import vcs/vcs
 
 when not defined(js):
@@ -146,6 +146,8 @@ type
     lastBounds*: Rect
     closeRequested*: bool
     appOptions: AppOptions
+
+    vfs*: VFS
 
     logNextFrameTime*: bool = false
     disableLogFrameTime*: bool = true
@@ -283,7 +285,7 @@ proc tryCloseDocument*(self: App, document: Document, force: bool): bool
 proc closeUnusedDocuments*(self: App)
 proc tryOpenExisting*(self: App, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor]
 proc setOption*(self: App, option: string, value: JsonNode, override: bool = true)
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "")
+proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
 proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor]
 proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.none)
@@ -336,7 +338,7 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
 proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind
-proc setWorkspaceFolder(self: App, workspaceFolder: Workspace): Future[bool]
+proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool]
 proc setLayout*(self: App, layout: string)
 
 template withScriptContext(self: App, scriptContext: untyped, body: untyped): untyped =
@@ -753,6 +755,8 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
     try:
       log(lvlInfo, fmt"load wasm configs")
       self.wasmScriptContext = new ScriptContextWasm
+      self.wasmScriptContext.vfs = VFSWasmContext()
+      self.vfs.mount("plugs://", self.wasmScriptContext.vfs)
 
       withScriptContext self, self.wasmScriptContext:
         let t1 = startTimer()
@@ -763,7 +767,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
         discard self.wasmScriptContext.postInitialize()
         log(lvlInfo, fmt"post init wasm configs ({t2.elapsed.ms}ms)")
     except CatchableError:
-      log(lvlError, fmt"Failed to load wasm configs: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
+      log lvlError, &"Failed to load wasm configs: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
   self.runConfigCommands("wasm-plugin-post-load-commands")
 
@@ -933,6 +937,11 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
 
 proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
   try:
+    let oldScriptContext = self.currentScriptContext
+    self.currentScriptContext = ScriptContext.none
+    defer:
+      self.currentScriptContext = oldScriptContext
+
     for (scope, commands) in json.fields.pairs:
       for (keys, command) in commands.fields.pairs:
         if command.kind == JString:
@@ -945,14 +954,14 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
             (commandStr[0..<spaceIndex], commandStr[spaceIndex+1..^1])
 
           # todo: line
-          self.addCommandScript(scope, "", keys, name, args)
+          self.addCommandScript(scope, "", keys, name, args, source = (filename, 0, 0))
 
         elif command.kind == JObject:
           let name = command["command"].getStr
           let args = command["args"].elems.mapIt($it).join(" ")
           let description = command.fields.getOrDefault("description", newJString("")).getStr
           # todo: line
-          self.addCommandScript(scope, "", keys, name, args, description)
+          self.addCommandScript(scope, "", keys, name, args, description, source = (filename, 0, 0))
 
   except CatchableError:
     when not defined(js):
@@ -1226,6 +1235,10 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.backend = backend
   self.statusBarOnTop = false
   self.appOptions = options
+
+  self.vfs = VFS()
+  self.vfs.mount("", VFSNull())
+  self.vfs.mount("plugs://", VFSNull())
 
   discard platform.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
   discard platform.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
@@ -1772,16 +1785,17 @@ proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("ed
 proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setConsumeAllInput(value)
 
-proc setWorkspaceFolder(self: App, workspaceFolder: Workspace): Future[bool] {.async.} =
-  log(lvlInfo, fmt"Opening workspace {workspaceFolder.name}")
+proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool] {.async.} =
+  log(lvlInfo, fmt"Opening workspace {workspace.name}")
 
-  if workspaceFolder.id == idNone():
-    workspaceFolder.id = newId()
+  if workspace.id == idNone():
+    workspace.id = newId()
 
-  self.workspace = workspaceFolder
+  self.workspace = workspace
+  self.vfs.mount "", VFSWorkspace(workspace: workspace)
 
   if gWorkspace.isNil:
-    setGlobalWorkspace(workspaceFolder)
+    setGlobalWorkspace(workspace)
 
   await self.loadOptionsFromWorkspace()
 
@@ -2599,7 +2613,50 @@ method setQuery*(self: WorkspaceFilesDataSource, query: string) =
 
   self.onWorkspaceFileCacheUpdatedHandle = some(self.workspace.onCachedFilesUpdated.subscribe () => self.handleCachedFilesUpdated())
 
-proc browseKeybinds*(self: App) {.expose("editor").} =
+proc createVfs*(self: App, config: JsonNode): Option[VFS] =
+  result = VFS.none
+  if config.kind != JObject:
+    log lvlError, &"Invalid config, expected object, got {config}"
+    return
+
+  let typ = config.fields.getOrDefault("type", newJNull()).getStr.catch:
+    log lvlError, &"Invalid config, expected string property 'type', got {config}"
+    return
+
+  template expect(value: untyped, msg: untyped, got: untyped): untyped =
+    try:
+      value
+    except:
+      log lvlError, "Invalid config, expected " & msg & ", got " & got
+      return
+
+  case typ
+  of "link":
+    let targetName = config.fields.getOrDefault("target", newJNull()).getStr.expect("string 'target'", $config)
+    let (target, sub) = self.vfs.getVFS(targetName)
+    if sub != "":
+      log lvlError, &"Unknown target '{targetName}', unmatched: '{sub}'"
+      return VFS.none
+
+    let targetPrefix = config.fields.getOrDefault("targetPrefix", newJString("")).getStr.expect("string 'targetPrefix'", $config)
+
+    log lvlInfo, &"create VFSLink {target.name}, {target.prefix}, {targetPrefix}"
+    result = VFSLink(
+      target: target,
+      targetPrefix: targetPrefix,
+    ).VFS.some
+
+  else:
+    log lvlError, &"Invalid VFS config, unknown type '{typ}'"
+    return VFS.none
+
+proc mountVfs*(self: App, parentPath: string, prefix: string, config: JsonNode) {.expose("editor").} =
+  log lvlInfo, &"Mount VFS '{parentPath}', '{prefix}', {config}"
+  let (vfs, _) = self.vfs.getVFS(parentPath)
+  if self.createVfs(config).getSome(newVFS):
+    vfs.mount(prefix, newVFS)
+
+proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
@@ -2608,8 +2665,8 @@ proc browseKeybinds*(self: App) {.expose("editor").} =
     for (context, c) in self.eventHandlerConfigs.pairs:
       if not c.commands.contains(""):
         continue
-      for (keys, command) in c.commands[""].pairs:
-        var name = command
+      for (keys, commandInfo) in c.commands[""].pairs:
+        var name = commandInfo.command
 
         let key = context & keys
         if key in self.commandDescriptions:
@@ -2617,16 +2674,47 @@ proc browseKeybinds*(self: App) {.expose("editor").} =
 
         items.add(FinderItem(
           displayName: name,
-          filterText: command & " |" & keys,
-          detail: keys & "\t" & context & "\t" & command,
+          filterText: commandInfo.command & " |" & keys,
+          detail: keys & "\t" & context & "\t" & commandInfo.command & "\t" & commandInfo.source.filename,
+          data: $ %*{
+            "path": commandInfo.source.filename,
+            "line": commandInfo.source.line - 1,
+            "column": commandInfo.source.column - 1,
+          },
         ))
 
     return items
 
+  let previewer = if preview:
+    newWorkspaceFilePreviewer(self.workspace, self.vfs, self.asConfigProvider, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+  else:
+    DisposableRef[Previewer].none
+
   let source = newSyncDataSource(getItems)
   let finder = newFinder(source, filterAndSort=true)
-  var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some)
-  popup.scale.x = 0.6
+  var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
+      log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
+        fmt"Expected path or json object with path property {item}"
+      return
+
+    var targetSelection = location.mapIt(it.toSelection)
+    if popup.getPreviewSelection().getSome(selection):
+      targetSelection = selection.some
+
+    let (vfs, relPath) = self.vfs.getVFS(path)
+    let pathNorm = self.vfs.normalize(path)
+
+    let editor = self.openWorkspaceFile(pathNorm)
+    if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
+      editor.TextDocumentEditor.targetSelection = targetSelection.get
+      editor.TextDocumentEditor.centerCursor()
+    return true
 
   self.pushPopup popup
 
@@ -3663,7 +3751,11 @@ proc addLeader*(self: App, leader: string) {.expose("editor").} =
   for config in self.eventHandlerConfigs.values:
     config.setLeaders self.leaders
 
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "") {.expose("editor").} =
+proc registerPluginSourceCode*(self: App, path: string, content: string) {.expose("editor").} =
+  if self.currentScriptContext.getSome(scriptContext):
+    asyncCheck self.vfs.write(scriptContext.getCurrentContext() & path, content)
+
+proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
   # log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
 
@@ -3675,7 +3767,11 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
   if description.len > 0:
     self.commandDescriptions[context & subContext & keys] = description
 
-  self.getEventHandlerConfig(context).addCommand(subContext, keys, command)
+  var source = source
+  if self.currentScriptContext.getSome(scriptContext):
+    source.filename = scriptContext.getCurrentContext() & source.filename
+
+  self.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
   self.invalidateCommandToKeysMap()
 
 proc removeCommand*(self: App, context: string, keys: string) {.expose("editor").} =

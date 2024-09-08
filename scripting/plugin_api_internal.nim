@@ -799,7 +799,12 @@ proc editor_chooseTheme_void_App_impl*() =
   discard
 proc editor_createFile_void_App_string_impl*(path: string) =
   discard
-proc editor_browseKeybinds_void_App_impl*() =
+proc editor_mountVfs_void_App_string_string_JsonNode_impl*(parentPath: string;
+    prefix: string; config: JsonNode) =
+  discard
+proc editor_browseKeybinds_void_App_bool_float_float_float_impl*(
+    preview: bool = true; scaleX: float = 0.9; scaleY: float = 0.8;
+    previewScale: float = 0.4) =
   discard
 proc editor_chooseFile_void_App_bool_float_float_float_impl*(
     preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
@@ -878,9 +883,13 @@ proc editor_setLeaders_void_App_seq_string_impl*(leaders: seq[string]) =
   discard
 proc editor_addLeader_void_App_string_impl*(leader: string) =
   discard
-proc editor_addCommandScript_void_App_string_string_string_string_string_string_impl*(
+proc editor_registerPluginSourceCode_void_App_string_string_impl*(path: string;
+    content: string) =
+  discard
+proc editor_addCommandScript_void_App_string_string_string_string_string_string_tuple_filename_string_line_int_column_int_impl*(
     context: string; subContext: string; keys: string; action: string;
-    arg: string = ""; description: string = "") =
+    arg: string = ""; description: string = "";
+    source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
   discard
 proc editor_removeCommand_void_App_string_string_impl*(context: string;
     keys: string) =

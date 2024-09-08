@@ -54,6 +54,7 @@ proc copySharedFilesTo(dir: string) =
   cpFile2 "src/misc/macro_utils.nim", dir / "src/misc"
   cpFile2 "src/misc/wrap.nim", dir / "src/misc"
   cpFile2 "src/misc/custom_unicode.nim", dir / "src/misc"
+  cpFile2 "src/misc/embed_source.nim", dir / "src/misc"
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
   cpFile2 "nev.nimble", dir

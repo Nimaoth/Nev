@@ -42,6 +42,7 @@ else:
 
   type WasmModule* = ref object
     env: WasmEnv
+    path*: string
 
   type WasmImports* = object
     namespace*: string
@@ -524,7 +525,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
       for imp in importsOld:
         allFunctions.add imp.functions
 
-      let res = WasmModule()
+      let res = WasmModule(path: path)
 
       let appPath = fs.getApplicationFilePath(path)
       var content: string
