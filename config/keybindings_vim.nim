@@ -1504,6 +1504,12 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.scrollToCursor Last
     editor.updateTargetColumn()
 
+  addTextCommandBlock "visual", "o":
+    editor.selections = editor.selections.mapIt((it.last, it.first))
+
+  addTextCommandBlock "", "<C-g>o":
+    editor.selections = editor.selections.reversed()
+
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-UP>", "scroll-lines", -1
   addTextCommand "", "<C-DOWN>", "scroll-lines", 1
