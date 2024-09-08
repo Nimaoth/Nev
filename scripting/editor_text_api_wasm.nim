@@ -3176,6 +3176,31 @@ proc gotoSymbol*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc fuzzySearchLines*(self: TextDocumentEditor; minScore: float = float.low;
+                       sort: bool = true) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      minScore
+    else:
+      minScore.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      sort
+    else:
+      sort.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_wasm(
     arg: cstring): cstring {.importc.}
 proc gotoWorkspaceSymbol*(self: TextDocumentEditor; query: string = "") =

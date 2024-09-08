@@ -455,6 +455,10 @@ proc getCompletions*(self: TextDocumentEditor) =
   editor_text_getCompletions_void_TextDocumentEditor_impl(self)
 proc gotoSymbol*(self: TextDocumentEditor) =
   editor_text_gotoSymbol_void_TextDocumentEditor_impl(self)
+proc fuzzySearchLines*(self: TextDocumentEditor; minScore: float = float.low;
+                       sort: bool = true) =
+  editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_impl(self,
+      minScore, sort)
 proc gotoWorkspaceSymbol*(self: TextDocumentEditor; query: string = "") =
   editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_impl(self,
       query)
