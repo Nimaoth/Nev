@@ -38,16 +38,16 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>ffm", "toggle-flag", "text.print-matches"
   addCommand "editor", "<LEADER>ffh", "toggle-flag", "text.show-node-highlight"
   addCommand "editor", "<LEADER>iii", "toggleShowDrawnNodes"
-  addCommand "editor", "<C-5>", proc() =
+  addCommandBlockDesc "editor", "<C-5>", "":
     setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") - 1, 0, 100000))
     echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
-  addCommand "editor", "<C-6>", proc() =
+  addCommandBlockDesc "editor", "<C-6>", "":
     setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") + 1, 0, 100000))
     echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
-  addCommand "editor", "<C-2>", proc() =
+  addCommandBlockDesc "editor", "<C-2>", "":
     setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") - 1, -100000, 100000))
     echo "text.node-highlight-sibling-index: ", getOption[int]("text.node-highlight-sibling-index")
-  addCommand "editor", "<C-3>", proc() =
+  addCommandBlockDesc "editor", "<C-3>", "":
     setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") + 1, -100000, 100000))
 
   # addCommand "editor", "<S-SPACE><*-l>", ""
@@ -158,7 +158,14 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "popup.selector", "<C-n>", "next"
   addCommand "popup.selector", "<C-u>", "prev", 5
   addCommand "popup.selector", "<C-d>", "next", 5
+  addCommand "popup.selector", "<C-b>", "toggle-preview"
   addCommand "popup.selector", "<TAB>", "toggle-focus-preview"
+  addCommand "popup.selector", "<C-k>s", "sort", "Toggle"
+  addCommand "popup.selector", "<C-k>n", "normalize-scores", "Toggle"
+  addCommand "popup.selector", "<C-k>f", "set-min-score", 0.0
+  addCommand "popup.selector", "<C-k>F", "set-min-score", -1.0
+  addCommand "popup.selector", "<C-k>+", "set-min-score", 0.2, add = true
+  addCommand "popup.selector", "<C-k>-", "set-min-score", -0.2, add = true
   addCommand "popup.selector.preview", "<TAB>", "toggle-focus-preview"
   addCommandBlock "popup.selector", "<C-l>":
     setLocationListFromCurrentPopup()
