@@ -2760,7 +2760,7 @@ proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
 proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoSymbolAsync()
 
-proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = float.low, sort: bool = true) {.expose("editor.text").} =
+proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = 0.2, sort: bool = true) {.expose("editor.text").} =
   self.openLineSelectorPopup(minScore, sort)
 
 proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose("editor.text").} =
