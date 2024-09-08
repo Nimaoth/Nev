@@ -74,15 +74,15 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
             builder.panel(&{FillX, LayoutVertical} + yFlag):
               let maxLineCount = floor(bounds.h / totalLineHeight).int
               let targetNumRenderedItems = min(maxLineCount, items.filteredLen)
-              var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
+              var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
 
               if self.selected < self.scrollOffset:
                 self.scrollOffset = self.selected
-                lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
+                lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
 
               if self.selected > lastRenderedIndex:
                 self.scrollOffset = max(self.selected - targetNumRenderedItems + 1, 0)
-                lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
+                lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
 
               assert self.scrollOffset >= 0
               assert self.scrollOffset < items.filteredLen
