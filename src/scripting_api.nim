@@ -1,4 +1,4 @@
-import std/[algorithm, sequtils, sugar, strutils]
+import std/[algorithm, sequtils, sugar, strutils, options]
 import misc/custom_unicode
 
 when defined(nimscript):
@@ -36,6 +36,26 @@ type ScrollBehaviour* = enum
   CenterOffscreen = "CenterOffscreen"
   ScrollToMargin = "ScrollToMargin"
   TopOfScreen = "TopOfScreen"
+
+type ToggleBool* = enum False, True, Toggle
+
+converter toToggleBool*(b: bool): ToggleBool =
+  if b:
+    True
+  else:
+    False
+
+func getBool*(b: ToggleBool): Option[bool] =
+  case b
+  of False: false.some
+  of True: true.some
+  of Toggle: bool.none
+
+func applyTo*(b: ToggleBool, to: var bool) =
+  case b
+  of False: to = false
+  of True: to = true
+  of Toggle: to = not to
 
 type Selections* = seq[Selection]
 
