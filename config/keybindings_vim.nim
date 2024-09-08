@@ -1276,7 +1276,9 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "visual", "P", "vim-paste", pasteRight=false, inclusiveEnd=true
   addTextCommand "visual-line", "P", "vim-paste", pasteRight=false, inclusiveEnd=true
 
-  addTextCommand "", "<ENTER>", "insert-text", "\n"
+  addTextCommandBlock "", "<ENTER>":
+    editor.addNextCheckpoint "insert"
+    editor.insertText "\n"
 
   addTextCommand "", r"\>\>", "vim-indent"
   addTextCommand "", r"\<\<", "vim-unindent"
