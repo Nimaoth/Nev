@@ -271,6 +271,16 @@
         "sha1": "dfe09fbcf8040027630301c43b4dbe9d9f0fab4d"
       }
     },
+    "nimsumtree": {
+      "version": "0.2.0",
+      "vcsRevision": "26d9b54d0c876c90a8a1b371419cce66d0be72fd",
+      "url": "https://github.com/Nimaoth/nimsumtree",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "216f9fc6aa5a3f29618b4225a5a65b8bd16a8531"
+      }
+    },
     "nimtreesitter": {
       "version": "0.1.6",
       "vcsRevision": "8e0af3c1efecfd624a169790d29a8b5e0b11edd6",

@@ -806,9 +806,15 @@ proc editor_browseKeybinds_void_App_bool_float_float_float_impl*(
     preview: bool = true; scaleX: float = 0.9; scaleY: float = 0.8;
     previewScale: float = 0.4) =
   discard
+proc editor_connectCollaborator_void_App_impl*() =
+  discard
+proc editor_hostCollaborator_void_App_int_impl*(port: int = 6969) =
+  discard
 proc editor_chooseFile_void_App_bool_float_float_float_impl*(
     preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
     previewScale: float = 0.5) =
+  discard
+proc editor_openLastEditor_void_App_impl*() =
   discard
 proc editor_chooseOpen_void_App_bool_float_float_float_impl*(
     preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;

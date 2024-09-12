@@ -9,6 +9,9 @@ import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme
 import pkg/chroma
 
+import nimsumtree/[buffer, clock, static_array]
+from nimsumtree/sumtree as st import nil
+
 from language/lsp_types as lsp_types import nil
 
 export document, document_editor, id
@@ -73,6 +76,8 @@ variantp TextDocumentChange:
   Delete(deleteStartByte: int, deleteEndByte: int, deleteStartColumn: int, deleteEndColumn: int, deleteStartLine: int, deleteEndLine: int)
 
 type TextDocument* = ref object of Document
+  # todo: remove lines, use buffer only
+  buffer*: Buffer
   lines*: seq[string]
   lineIds*: seq[int32]
   mLanguageId: string
@@ -89,6 +94,7 @@ type TextDocument* = ref object of Document
   textChanged*: Event[TextDocument]
   textInserted*: Event[tuple[document: TextDocument, location: Selection, text: string]]
   textDeleted*: Event[tuple[document: TextDocument, location: Selection]]
+  onOperation*: Event[tuple[document: TextDocument, op: Operation]]
   singleLine*: bool = false
   readOnly*: bool = false
   staged*: bool = false
@@ -313,7 +319,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
 func contentString*(self: TextDocument): string =
   return self.lines.join("\n")
 
-proc `content=`*(self: TextDocument, value: sink string) =
+proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = true) =
   self.revision.inc
   self.undoableRevision.inc
 
@@ -334,6 +340,9 @@ proc `content=`*(self: TextDocument, value: sink string) =
     if value.len >= 3 and value.startsWith(utf8_bom):
       log lvlInfo, &"[content=] Skipping utf8 bom"
       index = 3
+
+    if buildBuffer:
+      self.buffer = initBuffer(content = value[index..^1])
 
     var newLine = value.find('\n', start=index)
     self.lines = @[""]
@@ -373,6 +382,16 @@ proc `content=`*(self: TextDocument, value: sink string) =
   self.clearStyledTextCache()
   self.notifyTextChanged()
 
+proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, content: string) =
+  self.content = content
+  self.buffer = initBuffer(replicaId, content)
+  self.notifyRequestRerender()
+
+proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
+  self.buffer.applyRemote(ops)
+  # remove once lines is gone
+  `content=`(self, self.buffer.contentString, buildBuffer = false)
+
 proc `content=`*(self: TextDocument, value: seq[string]) =
   self.revision.inc
   self.undoableRevision.inc
@@ -393,6 +412,8 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   self.lineIds.setLen self.lines.len
   for id in self.lineIds.mitems:
     id = self.nextLineId
+
+  self.buffer = initBuffer(content = self.contentString)
 
   self.currentContentFailedToParse = false
   self.currentTree.delete()
@@ -934,6 +955,7 @@ proc newTextDocument*(
   self.workspace = workspaceFolder
   self.configProvider = configProvider
   self.createLanguageServer = createLanguageServer
+  self.buffer = initBuffer(content = "")
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
@@ -1551,12 +1573,32 @@ proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selecti
     else:
       self.currentDiagnostics[i].removed = true
 
-proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
+proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, applyToBuffer: bool = true): seq[Selection] =
   # be careful with logging inside this function, because the logs are written to another document using this function to insert, which can cause infinite recursion
   # when inserting a log line logs something.
   # Use echo for debugging instead
 
   result = self.clampAndMergeSelections selections
+
+  if applyToBuffer:
+    var ranges = newSeq[(Slice[int], string)]()
+    for i, selection in result:
+      let text = if texts.len == 1:
+        texts[0]
+      elif texts.len == result.len:
+        texts[i]
+      else:
+        texts[min(i, texts.high)]
+      let selection = selection.normalized
+      let startByte = self.byteOffset(selection.first)
+      let endByte = self.byteOffset(selection.last)
+      if startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength:
+        ranges.add (startByte..<endByte, text)
+      elif self.filename != "log":
+        log lvlError, &"============== out of bounds: {startByte}..<{endByte} not in {self.buffer.contentLength}"
+
+    let ops = self.buffer.edit(ranges)
+    self.onOperation.invoke (self, ops)
 
   if self.readOnly:
     return
@@ -1678,11 +1720,31 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     self.nextCheckpoints = @[]
 
-proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
+proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, applyToBuffer: bool = true): seq[Selection] =
   result = self.clampAndMergeSelections selections
 
   if self.readOnly:
     return
+
+  if applyToBuffer:
+    var ranges = newSeq[(Slice[int], string)]()
+    for i, selection in result:
+      let normalizedSelection = selection.normalized
+      let selection: Selection = if inclusiveEnd and self.lines[normalizedSelection.last.line].len > 0:
+        let nextColumn = self.lines[normalizedSelection.last.line].nextRuneStart(min(normalizedSelection.last.column, self.lines[normalizedSelection.last.line].high)).int
+        (normalizedSelection.first, (normalizedSelection.last.line, nextColumn))
+      else:
+        normalizedSelection
+
+      let startByte = self.byteOffset(selection.first)
+      let endByte = self.byteOffset(selection.last)
+      if startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength:
+        ranges.add (startByte..<endByte, "")
+      elif self.filename != "log":
+        log lvlError, &"============== out of bounds: {startByte}..<{endByte} not in {self.buffer.contentLength}"
+
+    let ops = self.buffer.edit(ranges)
+    self.onOperation.invoke (self, ops)
 
   self.revision.inc
   self.undoableRevision.inc
@@ -1755,9 +1817,36 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.nextCheckpoints = @[]
 
 proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
-  let selections = selections.map (s) => s.normalized
-  result = self.delete(selections, oldSelection, record=record, inclusiveEnd=inclusiveEnd)
-  result = self.insert(result, oldSelection, texts, record=record)
+  let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
+
+  block:
+    var ranges = newSeq[(Slice[int], string)]()
+    for i, selection in selections:
+      let text = if texts.len == 1:
+        texts[0]
+      elif texts.len == selections.len:
+        texts[i]
+      else:
+        texts[min(i, texts.high)]
+
+      let selection: Selection = if inclusiveEnd and self.lines[selection.last.line].len > 0:
+        let nextColumn = self.lines[selection.last.line].nextRuneStart(min(selection.last.column, self.lines[selection.last.line].high)).int
+        (selection.first, (selection.last.line, nextColumn))
+      else:
+        selection
+
+      let startByte = self.byteOffset(selection.first)
+      let endByte = self.byteOffset(selection.last)
+      if startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength:
+        ranges.add (startByte..<endByte, text)
+      elif self.filename != "log":
+        log lvlError, &"============== out of bounds: {startByte}..<{endByte} not in {self.buffer.contentLength}"
+
+    let ops = self.buffer.edit(ranges)
+    self.onOperation.invoke (self, ops)
+
+  result = self.delete(selections, oldSelection, record=record, inclusiveEnd=inclusiveEnd, applyToBuffer = false)
+  result = self.insert(result, oldSelection, texts, record=record, applyToBuffer = false)
 
 proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp]): seq[Selection] =
   case op.kind:
