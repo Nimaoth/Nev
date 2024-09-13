@@ -224,8 +224,6 @@ proc numLines*(self: TextDocument): int {.noSideEffect.} =
     debugEcho &"numLines() mismatch: new {self.buffer.visibleText.lines} != {self.lines.len} old"
     debugEcho "'", self.buffer.visibleText, "'"
     debugEcho "'", self.lines.join("\n"), "'"
-    {.noSideEffect.}:
-      writeStackTrace()
 
   return self.lines.len
 
