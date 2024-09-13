@@ -2745,6 +2745,11 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
 
   self.pushPopup popup
 
+proc openLastEditor*(self: App) {.expose("editor").} =
+  if self.hiddenViews.len > 0:
+    let view = self.hiddenViews.pop()
+    self.addView(view, addToHistory=false, append=false)
+
 proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("editor").} =
   defer:
     self.platform.requestRender()
@@ -2752,7 +2757,8 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   proc getItems(): seq[FinderItem] =
     var items = newSeq[FinderItem]()
     let allViews = self.views & self.hiddenViews
-    for i, view in allViews:
+    for i in countdown(allViews.high, 0):
+      let view = allViews[i]
       if not (view of EditorView):
         continue
 

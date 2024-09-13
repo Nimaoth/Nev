@@ -180,6 +180,8 @@ proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
   ## Press <ESCAPE> to close the dialogue
   editor_chooseFile_void_App_bool_float_float_float_impl(preview, scaleX,
       scaleY, previewScale)
+proc openLastEditor*() =
+  editor_openLastEditor_void_App_impl()
 proc chooseOpen*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
                  previewScale: float = 0.6) =
   editor_chooseOpen_void_App_bool_float_float_float_impl(preview, scaleX,
