@@ -987,11 +987,17 @@ proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
       argsJsonString.cstring)
 
 
-proc editor_connectCollaborator_void_App_wasm(arg: cstring): cstring {.importc.}
-proc connectCollaborator*() =
+proc editor_connectCollaborator_void_App_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc connectCollaborator*(port: int = 6969) =
   var argsJson = newJArray()
+  argsJson.add block:
+    when int is JsonNode:
+      port
+    else:
+      port.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_connectCollaborator_void_App_wasm(
+  let res {.used.} = editor_connectCollaborator_void_App_int_wasm(
       argsJsonString.cstring)
 
 

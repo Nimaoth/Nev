@@ -1,4 +1,4 @@
-import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times, enumerate]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
@@ -9,8 +9,8 @@ import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme
 import pkg/chroma
 
-import nimsumtree/[buffer, clock, static_array]
-from nimsumtree/sumtree as st import nil
+import nimsumtree/[buffer, clock, static_array, rope]
+from nimsumtree/sumtree as st import summaryType, itemSummary
 
 from language/lsp_types as lsp_types import nil
 
@@ -100,6 +100,7 @@ type TextDocument* = ref object of Document
   staged*: bool = false
 
   changes: seq[TextDocumentChange]
+  insertOrDelete: int = 0
 
   configProvider: ConfigProvider
   languageConfig*: Option[TextLanguageConfig]
@@ -137,6 +138,10 @@ var allTextDocuments*: seq[TextDocument] = @[]
 proc reloadTreesitterLanguage*(self: TextDocument)
 proc clearStyledTextCache*(self: TextDocument)
 proc clearDiagnostics*(self: TextDocument)
+proc numLines*(self: TextDocument): int {.noSideEffect.}
+
+func toPoint*(cursor: Cursor): Point = Point.init(cursor.line, cursor.column)
+func toCursor*(point: Point): Cursor = (point.row.int, point.column.int)
 
 proc getTotalTextSize*(self: UndoOp): int =
   for c in self.checkpoints:
@@ -156,7 +161,7 @@ method getStatisticsString*(self: TextDocument): string =
     textSizeBytes += l.len
 
   result.add &"Filename: {self.filename}\n"
-  result.add &"Lines: {self.lines.len}\n"
+  result.add &"Lines: {self.numLines}\n"
   result.add &"Line Ids: {self.lineIds.len}\n"
   result.add &"Text: {textSizeBytes} bytes\n"
   result.add &"Changes: {self.changes.len}\n"
@@ -181,18 +186,65 @@ proc nextLineId*(self: TextDocument): int32 =
   result = self.nextLineIdCounter
   self.nextLineIdCounter.inc
 
-proc getLine*(self: TextDocument, line: int): string =
-  if line < self.lines.len:
+func getLine*(self: TextDocument, line: int): string =
+  let visibleText = self.buffer.visibleText.clone()
+  let first = visibleText.pointToOffset(Point.init(line, 0))
+  var last = visibleText.pointToOffset(Point.init(line + 1, 0))
+  if line < visibleText.lines - 1:
+    # byte offset includes the \n, so -1
+    last -= 1
+
+  let slice = visibleText.slice(first, max(first, last))
+  let sliceStr = $slice
+  defer:
+    if sliceStr != result and self.insertOrDelete == 0:
+      debugEcho &"getLine({line}) mismatch:\n  New: {sliceStr}\n  Old: {result}"
+
+  if line < self.numLines:
     return self.lines[line]
   return ""
 
 proc lineLength*(self: TextDocument, line: int): int =
-  if line >= 0 and line < self.lines.len:
+  if line >= 0 and line < self.numLines:
+    let visibleText = self.buffer.visibleText.clone()
+    let lineBounds = visibleText.lineBounds(line)
+    let len = lineBounds[1] - lineBounds[0]
+    defer:
+      if len != result and self.insertOrDelete == 0:
+        echo cast[seq[char]](self.lines[line])
+        echo cast[seq[char]]($visibleText.slice(lineBounds))
+        log lvlError, &"lineLength({line}) mismatch:\n  New: {lineBounds}, {lineBounds[1] - lineBounds[0]}\n  Old: {result}"
+
     return self.lines[line].len
+
   return 0
 
+proc numLines*(self: TextDocument): int {.noSideEffect.} =
+  if self.buffer.visibleText.lines != self.lines.len and self.insertOrDelete == 0:
+    debugEcho &"numLines() mismatch: new {self.buffer.visibleText.lines} != {self.lines.len} old"
+    debugEcho "'", self.buffer.visibleText, "'"
+    debugEcho "'", self.lines.join("\n"), "'"
+    {.noSideEffect.}:
+      writeStackTrace()
+
+  return self.lines.len
+
 proc lastValidIndex*(self: TextDocument, line: int, includeAfter: bool = true): int =
-  if line < self.lines.len:
+  if line < self.numLines:
+    let visibleText = self.buffer.visibleText.clone()
+    let lineBounds = visibleText.lineBounds(line)
+    var res = lineBounds[1] - lineBounds[0]
+    if not includeAfter and res > 0:
+      res = visibleText.validateOffset(lineBounds[1] - 1, st.Bias.Left) - lineBounds[0]
+
+    assert res >= 0
+
+    defer:
+      if res != result and self.filename != "log" and self.insertOrDelete == 0:
+        echo cast[seq[char]](self.lines[line])
+        echo cast[seq[char]]($visibleText.slice(lineBounds))
+        log lvlError, &"lastValidIndex({line}, {includeAfter}) mismatch:\n  New: {res}\n  Old: {result}"
+
     if includeAfter or self.lines[line].len == 0:
       return self.lines[line].len
     else:
@@ -200,19 +252,24 @@ proc lastValidIndex*(self: TextDocument, line: int, includeAfter: bool = true): 
   return 0
 
 proc lastCursor*(self: TextDocument): Cursor =
-  if self.lines.len > 0:
-    return (self.lines.high, self.lastValidIndex(self.lines.high))
+  if self.numLines > 0:
+    return (self.numLines - 1, self.lastValidIndex(self.numLines - 1))
   return (0, 0)
 
 proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true): Cursor =
+  let res = self.buffer.visibleText.clipPoint(cursor.toPoint, st.Bias.Left).toCursor
+
   var cursor = cursor
-  if self.lines.len == 0:
+  if self.numLines == 0:
     return (0, 0)
-  cursor.line = clamp(cursor.line, 0, self.lines.high)
-  if self.lines[cursor.line].len == 0:
+  cursor.line = clamp(cursor.line, 0, self.numLines - 1)
+  if self.lineLength(cursor.line) == 0:
     cursor.column = 0
   else:
     cursor.column = self.lines[cursor.line].runeStart(clamp(cursor.column, 0, self.lastValidIndex(cursor.line, includeAfter)))
+
+  if res != cursor and self.insertOrDelete == 0:
+    debugEcho &"clampCursor {cursor}, {includeAfter}, new: {res}, old: {cursor}"
   return cursor
 
 proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: bool = true): Selection = (self.clampCursor(selection.first, includeAfter), self.clampCursor(selection.last, includeAfter))
@@ -221,9 +278,14 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
 proc trimTrailingWhitespace*(self: TextDocument)
 
 proc runeIndexInLine*(self: TextDocument, cursor: Cursor): RuneIndex =
-  if cursor.line notin 0..self.lines.high:
+  if cursor.line notin 0..self.numLines - 1:
     return 0.RuneIndex
 
+  defer:
+    var c = self.buffer.visibleText.cursorT(Point.init(cursor.line, 0))
+    let runeIndex = c.summary(Count, cursor.toPoint)
+    if self.insertOrDelete == 0 and runeIndex.int.RuneIndex != result:
+      debugEcho &"runeIndexInLine {cursor}: new {runeIndex} != {result} old"
   return self.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
 
 proc notifyTextChanged*(self: TextDocument) =
@@ -263,7 +325,7 @@ proc applyTreesitterChanges(self: TextDocument) =
 
 let nl = "\n"
 proc getTextRangeTreesitter(self: TextDocument; byteIndex: int, cursor: Cursor): (ptr char, int) =
-  if cursor.line notin 0..self.lines.high:
+  if cursor.line notin 0..self.numLines - 1:
     return (nil, 0)
 
   if cursor.column == self.lines[cursor.line].len:
@@ -317,6 +379,9 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.reloadTreesitterLanguage()
 
 func contentString*(self: TextDocument): string =
+  defer:
+    if result != $self.buffer.visibleText and self.insertOrDelete == 0:
+      debugEcho &"contentString(): mismatch: old {result.len} != {self.buffer.visibleText.bytes} new"
   return self.lines.join("\n")
 
 proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = true) =
@@ -343,6 +408,9 @@ proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = tru
 
     if buildBuffer:
       self.buffer = initBuffer(content = value[index..^1])
+    defer:
+      if buildBuffer:
+        assert $self.buffer.visibleText == self.contentString
 
     var newLine = value.find('\n', start=index)
     self.lines = @[""]
@@ -355,7 +423,7 @@ proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = tru
       if self.singleLine:
         self.lines[0].add value[index..<newLineStart]
       else:
-        self.lines[self.lines.high] = value[index..<newLineStart]
+        self.lines[^1] = value[index..<newLineStart]
         self.lines.add ""
 
       index = newLine + 1
@@ -365,9 +433,9 @@ proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = tru
       if self.singleLine:
         self.lines[0].add value[index..^1]
       else:
-        self.lines[self.lines.high] = value[index..^1]
+        self.lines[^1] = value[index..^1]
 
-  self.lineIds.setLen self.lines.len
+  self.lineIds.setLen self.numLines
   for id in self.lineIds.mitems:
     id = self.nextLineId
 
@@ -406,10 +474,10 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   else:
     self.lines = value.toSeq
 
-  if self.lines.len == 0:
+  if self.numLines == 0:
     self.lines = @[""]
 
-  self.lineIds.setLen self.lines.len
+  self.lineIds.setLen self.numLines
   for id in self.lineIds.mitems:
     id = self.nextLineId
 
@@ -432,56 +500,56 @@ func content*(self: TextDocument): seq[string] =
 func contentString*(self: TextDocument, selection: Selection, inclusiveEnd: bool = false): string =
   let (first, last) = selection.normalized
 
-  let lastLineLen = self.lines[last.line].len
-  let lastColumn = if inclusiveEnd and self.lines[last.line].len > 0:
-    self.lines[last.line].nextRuneStart(min(last.column, lastLineLen - 1))
+  let lastLineLen = self.getLine(last.line).len
+  let lastColumn = if inclusiveEnd and self.getLine(last.line).len > 0:
+    self.getLine(last.line).nextRuneStart(min(last.column, lastLineLen - 1))
   else:
     last.column
 
-  let firstColumn = first.column.clamp(0, self.lines[first.line].len)
+  let firstColumn = first.column.clamp(0, self.getLine(first.line).len)
 
   if first.line == last.line:
-    return self.lines[first.line][firstColumn..<lastColumn]
+    return self.getLine(first.line)[firstColumn..<lastColumn]
 
-  result = self.lines[first.line][firstColumn..^1]
+  result = self.getLine(first.line)[firstColumn..^1]
   for i in (first.line + 1)..<last.line:
     result.add "\n"
-    result.add self.lines[i]
+    result.add self.getLine(i)
 
   result.add "\n"
 
-  result.add self.lines[last.line][0..<lastColumn]
+  result.add self.getLine(last.line)[0..<lastColumn]
 
 func contentString*(self: TextDocument, selection: TSRange): string =
   return self.contentString selection.toSelection
 
 func charAt*(self: TextDocument, cursor: Cursor): char =
-  if cursor.line < 0 or cursor.line > self.lines.high:
+  if cursor.line < 0 or cursor.line > self.numLines - 1:
     return 0.char
-  if cursor.column < 0 or cursor.column > self.lines[cursor.line].high:
+  if cursor.column < 0 or cursor.column > self.getLine(cursor.line).high:
     return 0.char
-  return self.lines[cursor.line][cursor.column]
+  return self.getLine(cursor.line)[cursor.column]
 
 func runeAt*(self: TextDocument, cursor: Cursor): Rune =
-  if cursor.line < 0 or cursor.line > self.lines.high:
+  if cursor.line < 0 or cursor.line > self.numLines - 1:
     return 0.Rune
-  if cursor.column < 0 or cursor.column > self.lines[cursor.line].high:
+  if cursor.column < 0 or cursor.column > self.getLine(cursor.line).high:
     return 0.Rune
-  return self.lines[cursor.line].runeAt(cursor.column)
+  return self.getLine(cursor.line).runeAt(cursor.column)
 
 proc lspRangeToSelection*(self: TextDocument, `range`: lsp_types.Range): Selection =
-  if `range`.start.line > self.lines.high or `range`.end.line > self.lines.high:
+  if `range`.start.line > self.numLines - 1 or `range`.end.line > self.numLines - 1:
     return (0, 0).toSelection
 
-  let firstColumn = self.lines[`range`.start.line].runeOffset(`range`.start.character.RuneIndex)
-  let lastColumn = self.lines[`range`.`end`.line].runeOffset(`range`.`end`.character.RuneIndex)
+  let firstColumn = self.getLine(`range`.start.line).runeOffset(`range`.start.character.RuneIndex)
+  let lastColumn = self.getLine(`range`.`end`.line).runeOffset(`range`.`end`.character.RuneIndex)
   return ((`range`.start.line, firstColumn), (`range`.`end`.line, lastColumn))
 
 proc runeCursorToCursor*(self: TextDocument, cursor: RuneCursor): Cursor =
-  if cursor.line < 0 or cursor.line > self.lines.high:
+  if cursor.line < 0 or cursor.line > self.numLines - 1:
     return (0, 0)
 
-  return (cursor.line, self.lines[cursor.line].runeOffset(min(self.lines[cursor.line].runeLen.RuneIndex, max(0.RuneIndex, cursor.column))))
+  return (cursor.line, self.getLine(cursor.line).runeOffset(min(self.getLine(cursor.line).runeLen.RuneIndex, max(0.RuneIndex, cursor.column))))
 
 proc runeSelectionToSelection*(self: TextDocument, cursor: RuneSelection): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
@@ -555,7 +623,7 @@ proc splitAt*(line: var StyledLine, index: RuneIndex) =
       break
 
 proc splitAt*(self: TextDocument, line: var StyledLine, index: int) =
-  line.splitAt(self.lines[line.index].toOpenArray.runeIndex(index, returnLen=true))
+  line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(index, returnLen=true))
 
 proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
   var start = 0
@@ -604,13 +672,13 @@ proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string,
         line.parts[i].joinNext = joinNext or line.parts[i].joinNext
 
 proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) =
-  line.overrideStyle(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), self.lines[line.index].toOpenArray.runeIndex(last, returnLen=true), scope, priority)
+  line.overrideStyle(self.getLine(line.index).toOpenArray.runeIndex(first, returnLen=true), self.getLine(line.index).toOpenArray.runeIndex(last, returnLen=true), scope, priority)
 
 proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, last: int, underline: bool, color: Color) =
-  line.overrideUnderline(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), self.lines[line.index].toOpenArray.runeIndex(last, returnLen=true), underline, color)
+  line.overrideUnderline(self.getLine(line.index).toOpenArray.runeIndex(first, returnLen=true), self.getLine(line.index).toOpenArray.runeIndex(last, returnLen=true), underline, color)
 
 proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
-  line.overrideStyleAndText(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity, joinNext)
+  line.overrideStyleAndText(self.getLine(line.index).toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity, joinNext)
 
 proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool, modifyCursorAtEndOfLine: bool = false) =
   line.splitAt(offset)
@@ -646,30 +714,30 @@ proc replaceSpaces(self: TextDocument, line: var StyledLine) =
   if opacity <= 0:
     return
 
-  let bounds = self.lines[line.index].findAllBounds(line.index, spacePattern)
+  let bounds = self.getLine(line.index).findAllBounds(line.index, spacePattern)
   if bounds.len == 0:
     return
 
   for s in bounds:
-    line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true))
-    line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.last.column, returnLen=true))
+    line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(s.first.column, returnLen=true))
+    line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(s.last.column, returnLen=true))
 
   let ch = self.configProvider.getValue("editor.text.whitespace.char", "·")
   for s in bounds:
-    let start = self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true)
+    let start = self.getLine(line.index).toOpenArray.runeIndex(s.first.column, returnLen=true)
     let text = ch.repeat(s.last.column - s.first.column)
     line.overrideStyleAndText(start, text, "comment", 0, opacity=opacity.some)
 
 proc replaceTabs(self: TextDocument, line: var StyledLine) =
-  let bounds = self.lines[line.index].findAllBounds(line.index, tabPattern)
+  let bounds = self.getLine(line.index).findAllBounds(line.index, tabPattern)
   if bounds.len == 0:
     return
 
   let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
 
   for s in bounds:
-    line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true))
-    line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.last.column, returnLen=true))
+    line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(s.first.column, returnLen=true))
+    line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(s.last.column, returnLen=true))
 
   let tabWidth = self.tabWidth
   var currentOffset = 0
@@ -681,7 +749,7 @@ proc replaceTabs(self: TextDocument, line: var StyledLine) =
     let alignCorrection = currentOffset mod tabWidth
     let currentTabWidth = tabWidth - alignCorrection
     let t = "|"
-    let runeIndex = self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true)
+    let runeIndex = self.getLine(line.index).toOpenArray.runeIndex(s.first.column, returnLen=true)
     line.overrideStyleAndText(runeIndex, t, "comment", 0, opacity=opacity.some)
     if currentTabWidth > 1:
       self.insertText(line, runeIndex + 1.RuneCount, " ".repeat(currentTabWidth - 1), "comment", containCursor=false, modifyCursorAtEndOfLine=true)
@@ -735,8 +803,8 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       else:
         color(0.7, 0.7, 0.7)
 
-      line.splitAt(self.lines[line.index].toOpenArray.runeIndex(diagnostic.selection.first.column, returnLen=true))
-      line.splitAt(self.lines[line.index].toOpenArray.runeIndex(diagnostic.selection.last.column, returnLen=true))
+      line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(diagnostic.selection.first.column, returnLen=true))
+      line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(diagnostic.selection.last.column, returnLen=true))
       self.overrideUnderline(line, diagnostic.selection.first.column, diagnostic.selection.last.column, true, color)
 
       let newLineIndex = diagnostic.message.find("\n")
@@ -756,7 +824,7 @@ proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
     return
 
 
-  let lineLen = self.lines[line.index].len
+  let lineLen = self.lineLength(line.index)
 
   for match in self.highlightQuery.matches(self.tsTree.root, tsRange(tsPoint(line.index, 0), tsPoint(line.index, lineLen))):
     let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
@@ -854,8 +922,8 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
     result = self.styledTextCache[i]
   else:
-    if i >= self.lines.len:
-      log lvlError, fmt"getStyledText({i}) out of range {self.lines.len}"
+    if i >= self.numLines:
+      log lvlError, fmt"getStyledText({i}) out of range {self.numLines}"
       return StyledLine()
 
     if self.changes.len > 0 or self.currentTree.isNil:
@@ -863,7 +931,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
     # logScope lvlInfo, &"getStyledText({i}, {self.filename})"
 
-    var line = self.lines[i]
+    var line = self.getLine(i)
     var parts = newSeqOfCap[StyledText](50)
     parts.add StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)
     result = StyledLine(index: i, parts: parts.move)
@@ -1056,6 +1124,19 @@ proc autoDetectIndentStyle(self: TextDocument) =
     if line.find('\t') != -1:
       containsTab = true
       break
+
+  var containsTab2 = false
+  var linePos = Point.init(0, 0)
+  var c = self.buffer.visibleText.cursorT(linePos)
+  while not c.atEnd:
+    if c.currentRune == '\t'.Rune:
+      containsTab2 = true
+      break
+    linePos.row += 1
+    c.seekForward(linePos)
+
+  if containsTab != containsTab2:
+    log lvlError, &"autoDetectIndentStyle mismatch: {containsTab2} != {containsTab}"
 
   if containsTab:
     self.indentStyle = IndentStyle(kind: Tabs)
@@ -1314,7 +1395,7 @@ proc clearStyledTextCache*(self: TextDocument) =
 proc byteOffset*(self: TextDocument, cursor: Cursor): int =
   result = cursor.column
   for i in 0..<cursor.line:
-    result += self.lines[i].len + 1
+    result += self.lineLength(i) + 1
 
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
@@ -1370,14 +1451,14 @@ proc moveCursorColumn(self: TextDocument, cursor: Cursor, offset: int, wrap: boo
   var cursor = cursor
   var column = cursor.column
 
-  template currentLine: openArray[char] = self.lines[cursor.line].toOpenArray
+  template currentLine: openArray[char] = self.getLine(cursor.line).toOpenArray
 
   if offset > 0:
     for i in 0..<offset:
       if column == currentLine.len:
         if not wrap:
           break
-        if cursor.line < self.lines.high:
+        if cursor.line < self.numLines - 1:
           cursor.line = cursor.line + 1
           cursor.column = 0
           continue
@@ -1413,10 +1494,10 @@ proc firstNonWhitespace*(str: string): int =
 
 proc lineStartsWith*(self: TextDocument, line: int, text: string, ignoreWhitespace: bool): bool =
   if ignoreWhitespace:
-    let index = self.lines[line].firstNonWhitespace
-    return self.lines[line][index..^1].startsWith(text)
+    let index = self.getLine(line).firstNonWhitespace
+    return self.getLine(line)[index..^1].startsWith(text)
   else:
-    return self.lines[line].startsWith(text)
+    return self.getLine(line).startsWith(text)
 
 proc lastNonWhitespace*(str: string): int =
   result = str.high
@@ -1426,24 +1507,24 @@ proc lastNonWhitespace*(str: string): int =
     result -= 1
 
 proc getIndentForLine*(self: TextDocument, line: int): int =
-  if line < 0 or line >= self.lines.len:
+  if line < 0 or line >= self.numLines:
     return 0
-  return self.lines[line].firstNonWhitespace
+  return self.getLine(line).firstNonWhitespace
 
 proc getIndentLevelForLine*(self: TextDocument, line: int): int =
-  if line < 0 or line >= self.lines.len:
+  if line < 0 or line >= self.numLines:
     return 0
   let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
-  return indentLevelForLine(self.lines[line], self.tabWidth, indentWidth)
+  return indentLevelForLine(self.getLine(line), self.tabWidth, indentWidth)
 
 proc getIndentLevelForLineInSpaces*(self: TextDocument, line: int, offset: int = 0): int =
-  if line < 0 or line >= self.lines.len:
+  if line < 0 or line >= self.numLines:
     return 0
   let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
-  return max(0, indentLevelForLine(self.lines[line], self.tabWidth, indentWidth) + offset) * indentWidth
+  return max(0, indentLevelForLine(self.getLine(line), self.tabWidth, indentWidth) + offset) * indentWidth
 
 proc getIndentLevelForClosestLine*(self: TextDocument, line: int): int =
-  for i in line..self.lines.high:
+  for i in line..self.numLines - 1:
     if self.lineLength(i) > 0:
         return self.getIndentLevelForLine(i)
   for i in countdown(line, 0):
@@ -1578,6 +1659,10 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
   # when inserting a log line logs something.
   # Use echo for debugging instead
 
+  self.insertOrDelete.inc
+  defer:
+    self.insertOrDelete.dec
+
   result = self.clampAndMergeSelections selections
 
   if applyToBuffer:
@@ -1599,6 +1684,19 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     let ops = self.buffer.edit(ranges)
     self.onOperation.invoke (self, ops)
+
+  defer:
+    if self.filename != "log" and applyToBuffer and self.configProvider.getValue("debug.log-crdt-edits", false):
+      debugf"insert: {selections}, texts: {texts}"
+      let a = self.contentString
+      let b = $self.buffer.visibleText
+      if self.filename != "log" and a != b:
+        log lvlError: &"Buffer content mismatch"
+        echo "======================================== contentString"
+        echo a
+        echo "======================================== buffer"
+        echo b
+        echo "======================================== end"
 
   if self.readOnly:
     return
@@ -1656,7 +1754,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
           assert self.lines.len == self.lineIds.len
 
           if cursor.column < self.lastValidIndex cursor.line:
-            self.lines[cursor.line].delete(cursor.column..<(self.lineLength cursor.line))
+            self.lines[cursor.line].delete(cursor.column..<(self.lines[cursor.line].len))
           cursor = (cursor.line + 1, 0)
 
         if line.len > 0:
@@ -1721,6 +1819,11 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.nextCheckpoints = @[]
 
 proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, applyToBuffer: bool = true): seq[Selection] =
+
+  self.insertOrDelete.inc
+  defer:
+    self.insertOrDelete.dec
+
   result = self.clampAndMergeSelections selections
 
   if self.readOnly:
@@ -1745,6 +1848,19 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     let ops = self.buffer.edit(ranges)
     self.onOperation.invoke (self, ops)
+
+  defer:
+    if self.filename != "log" and applyToBuffer and self.configProvider.getValue("debug.log-crdt-edits", false):
+      debugf"delete: {selections}"
+      let a = self.contentString
+      let b = $self.buffer.visibleText
+      if self.filename != "log" and a != b:
+        log lvlError: &"Buffer content mismatch"
+        echo "======================================== contentString"
+        echo a
+        echo "======================================== buffer"
+        echo b
+        echo "======================================== end"
 
   self.revision.inc
   self.undoableRevision.inc
@@ -1776,7 +1892,7 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
       # Multi line selection
       # Delete from first cursor to end of first line and add last line
       if first.column < self.lastValidIndex first.line:
-        self.lines[first.line].delete(first.column..<(self.lineLength first.line))
+        self.lines[first.line].delete(first.column..<self.lines[first.line].len)
       self.lines[first.line].add self.lines[last.line][last.column..^1]
       # Delete all lines in between
       assert self.lines.len == self.lineIds.len
@@ -1817,7 +1933,12 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.nextCheckpoints = @[]
 
 proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
+
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
+
+  self.insertOrDelete.inc
+  defer:
+    self.insertOrDelete.dec
 
   block:
     var ranges = newSeq[(Slice[int], string)]()
@@ -1829,8 +1950,8 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
       else:
         texts[min(i, texts.high)]
 
-      let selection: Selection = if inclusiveEnd and self.lines[selection.last.line].len > 0:
-        let nextColumn = self.lines[selection.last.line].nextRuneStart(min(selection.last.column, self.lines[selection.last.line].high)).int
+      let selection: Selection = if inclusiveEnd and self.lineLength(selection.last.line) > 0:
+        let nextColumn = self.getLine(selection.last.line).nextRuneStart(min(selection.last.column, self.lineLength(selection.last.line) - 1)).int
         (selection.first, (selection.last.line, nextColumn))
       else:
         selection
@@ -1844,6 +1965,18 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
 
     let ops = self.buffer.edit(ranges)
     self.onOperation.invoke (self, ops)
+
+  defer:
+    if self.filename != "log" and self.configProvider.getValue("debug.log-crdt-edits", false):
+      let a = self.contentString
+      let b = $self.buffer.visibleText
+      if self.filename != "log" and a != b:
+        log lvlError: &"Buffer content mismatch"
+        echo "======================================== contentString"
+        echo a
+        echo "======================================== buffer"
+        echo b
+        echo "======================================== end"
 
   result = self.delete(selections, oldSelection, record=record, inclusiveEnd=inclusiveEnd, applyToBuffer = false)
   result = self.insert(result, oldSelection, texts, record=record, applyToBuffer = false)
@@ -1931,21 +2064,21 @@ proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
   self.nextCheckpoints.incl checkpoint
 
 proc isLineEmptyOrWhitespace*(self: TextDocument, line: int): bool =
-  if line > self.lines.high:
+  if line > self.numLines - 1:
     return false
-  return self.lines[line].isEmptyOrWhitespace
+  return self.getLine(line).isEmptyOrWhitespace
 
 proc isLineCommented*(self: TextDocument, line: int): bool =
-  if line > self.lines.high or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
+  if line > self.numLines - 1 or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
     return false
-  return custom_unicode.strip(self.lines[line], trailing=false).startsWith(self.languageConfig.get.lineComment.get)
+  return custom_unicode.strip(self.getLine(line), trailing=false).startsWith(self.languageConfig.get.lineComment.get)
 
 proc getLineCommentRange*(self: TextDocument, line: int): Selection =
-  if line > self.lines.high or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
+  if line > self.numLines - 1 or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
     return (line, 0).toSelection
 
   let prefix = self.languageConfig.get.lineComment.get
-  let index = self.lines[line].find(prefix)
+  let index = self.getLine(line).find(prefix)
   if index == -1:
     return (line, 0).toSelection
 
@@ -1990,17 +2123,17 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
 
   if comment:
     let prefix = self.languageConfig.get.lineComment.get & " "
-    discard self.insert(insertSelections, selections, [prefix])
+    discard self.edit(insertSelections, selections, [prefix])
   else:
-    discard self.delete(insertSelections, selections)
+    discard self.edit(insertSelections, selections, [""])
 
 proc trimTrailingWhitespace*(self: TextDocument) =
   var selections: seq[Selection]
-  for i in 0..self.lines.high:
+  for i in 0..self.numLines - 1:
     let index = self.lines[i].lastNonWhitespace
-    if index == self.lines[i].high:
+    if index == self.lineLength(i) - 1:
       continue
-    selections.add ((i, index + 1), (i, self.lines[i].len))
+    selections.add ((i, index + 1), (i, self.lineLength(i)))
 
   if selections.len > 0:
     discard self.delete(selections, selections)

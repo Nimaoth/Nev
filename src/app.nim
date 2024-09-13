@@ -14,7 +14,7 @@ import finder/[finder, previewer]
 import compilation_config, vfs
 import vcs/vcs
 
-import nimsumtree/[buffer, clock]
+import nimsumtree/[buffer, clock, rope]
 
 when not defined(js):
   import misc/async_process
@@ -2722,6 +2722,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
 var sendOpsTask: DelayedTask
 var opsToSend = newSeq[(string, Operation)]()
+var currentServer: AsyncSocket = nil
 
 proc sendOps(self: App, server: AsyncSocket) {.async.} =
   for op in opsToSend:
@@ -2733,8 +2734,15 @@ proc connectCollaboratorAsync(self: App, port: int) {.async.} =
   ############### CLIENT
   var server: AsyncSocket
 
+  if currentServer != nil:
+    opsToSend.setLen(0)
+    sendOpsTask.pause()
+    currentServer.close()
+    currentServer = nil
+
   try:
     server = newAsyncSocket()
+    currentServer = server
     await server.connect("localhost", port.Port)
     log lvlInfo, &"[collab-client] Connected to port {port.int}"
 
@@ -2811,7 +2819,8 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
       if doc of TextDocument:
         let doc = doc.TextDocument
         if doc.filename != "" and doc.filename != "log":
-          let content = doc.contentString
+          doc.rebuildBuffer(0.ReplicaId, doc.contentString)
+          let content = $doc.buffer.visibleText
           await client.send(&"open {content.len} {doc.TextDocument.filename}\n")
           await client.send(content)
 
@@ -2837,6 +2846,7 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
       else:
         log lvlError,  &"[collab-server] Unknown command '{line}'"
 
+    log lvlInfo, &"[collab-server] Client disconnected"
   except:
     log lvlError, &"[collab-server] Failed to read data from connection: {getCurrentExceptionMsg()}"
 
