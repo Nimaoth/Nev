@@ -16,6 +16,7 @@ type
     revision: int
 
 proc cacheLine(self: CompletionProviderDocument, line: int) =
+  # todo: don't use getLine
   let line = self.document.getLine(line)
 
   var i = 0.RuneIndex
@@ -49,7 +50,7 @@ proc updateWordCache(self: CompletionProviderDocument) =
     if timer.elapsed.ms > maxCacheTimeMs:
       break
 
-  for i in countup(self.location.line + 1, self.document.lines.len):
+  for i in countup(self.location.line + 1, self.document.numLines):
     self.cacheLine(i)
     if timer.elapsed.ms > maxCacheTimeMs:
       break

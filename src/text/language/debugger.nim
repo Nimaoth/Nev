@@ -850,7 +850,7 @@ proc handleOutput(self: Debugger, data: OnOutputData) =
     let document = self.outputEditor.document
 
     let selection = document.lastCursor.toSelection
-    discard document.insert([selection], [selection], [data.output.replace("\r\n", "\n")])
+    discard document.edit([selection], [selection], [data.output.replace("\r\n", "\n")])
 
     if self.outputEditor.selection == selection:
       self.outputEditor.selection = document.lastCursor.toSelection

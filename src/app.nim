@@ -1494,7 +1494,7 @@ proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
   if self.logDocument.isNotNil:
     let selection = self.logDocument.TextDocument.lastCursor.toSelection
-    discard self.logDocument.TextDocument.insert([selection], [selection], [logBuffer & str])
+    discard self.logDocument.TextDocument.edit([selection], [selection], [logBuffer & str])
     logBuffer = ""
 
     for view in self.views:
@@ -2284,7 +2284,7 @@ proc setLayout*(self: App, layout: string) {.expose("editor").} =
   self.platform.requestRender()
 
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
-  self.getCommandLineTextEditor.document.content = @[initialValue]
+  self.getCommandLineTextEditor.document.content = initialValue
   if self.commandHistory.len == 0:
     self.commandHistory.add ""
   self.commandHistory[0] = ""
@@ -2295,7 +2295,7 @@ proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.platform.requestRender()
 
 proc exitCommandLine*(self: App) {.expose("editor").} =
-  self.getCommandLineTextEditor.document.content = @[""]
+  self.getCommandLineTextEditor.document.content = ""
   self.getCommandLineTextEditor.hideCompletions()
   self.commandLineMode = false
   self.platform.requestRender()
@@ -2338,7 +2338,7 @@ proc executeCommandLine*(self: App): bool {.expose("editor").} =
   defer:
     self.platform.requestRender()
   self.commandLineMode = false
-  let command = self.getCommandLineTextEditor.document.content.join("")
+  let command = self.getCommandLineTextEditor.document.contentString.replace("\n", "")
 
   if (let i = self.commandHistory.find(command); i >= 0):
     self.commandHistory.delete i
@@ -2353,7 +2353,7 @@ proc executeCommandLine*(self: App): bool {.expose("editor").} =
     self.commandHistory.setLen maxHistorySize
 
   var (action, arg) = command.parseAction
-  self.getCommandLineTextEditor.document.content = @[""]
+  self.getCommandLineTextEditor.document.content = ""
 
   if arg.startsWith("\\"):
     arg = $newJString(arg[1..^1])
@@ -4106,8 +4106,8 @@ proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string {.expose("e
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
-      if line >= 0 and line < editor.document.content.len:
-        return editor.document.content[line]
+      if line >= 0 and line < editor.document.numLines:
+        return editor.document.getLine(line)
   return ""
 
 proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").} =
@@ -4116,7 +4116,7 @@ proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").}
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
-      return editor.document.content.len
+      return editor.document.numLines
   return 0
 
 template createScriptGetOption(path, default, accessor: untyped): untyped =

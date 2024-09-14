@@ -51,7 +51,6 @@ type LineRenderOptions = object
 
   theme: Theme
 
-  lineId: int32
   parentId: Id
   cursorLine: int
 
@@ -124,15 +123,17 @@ proc getCursorPos(self: TextDocumentEditor, builder: UINodeBuilder, text: string
 
     if posX < offset + w:
       let runeOffset = startOffset + i.RuneCount
-      if runeOffset.RuneCount >= self.document.lines[line].toOpenArray.runeLen.RuneCount:
+      if runeOffset.RuneCount >= self.document.lineRuneLen(line):
         return 0
-      let byteIndex = self.document.lines[line].toOpenArray.runeOffset(runeOffset)
+      # todo: don't use getLine, add function for conversion
+      let byteIndex = self.document.getLine(line).toOpenArray.runeOffset(runeOffset)
       return byteIndex
 
     offset += w
     inc i
 
-  let byteIndex = self.document.lines[line].toOpenArray.runeOffset(startOffset + text.runeLen)
+  # todo: don't use getLine, add function for conversion
+  let byteIndex = self.document.getLine(line).toOpenArray.runeOffset(startOffset + text.runeLen)
   return byteIndex
 
 proc renderLinePart(
@@ -228,6 +229,7 @@ proc renderLinePart(
       # Add text on top of background colors
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY} + textFlags, text = part[].text, textColor = textColor, underlineColor = part[].underlineColor)
 
+# todo: replace lineOriginal with RopeSlice
 proc renderLine*(
   builder: UINodeBuilder, line: StyledLine, lineOriginal: openArray[char],
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
@@ -250,7 +252,8 @@ proc renderLine*(
     lineNumberText = $abs((options.lineNumber + 1) - options.cursorLine)
     lineNumberX = max(0.0, options.lineNumberWidth - lineNumberText.len.float * builder.charWidth)
 
-  builder.panel(flagsInner + LayoutVertical + FillBackground, y = options.y, pivot = options.pivot, backgroundColor = options.backgroundColor, userId = newSecondaryId(options.parentId, options.lineId)):
+  # todo: do we still need the id?
+  builder.panel(flagsInner + LayoutVertical + FillBackground, y = options.y, pivot = options.pivot, backgroundColor = options.backgroundColor, userId = newSecondaryId(options.parentId, line.index.int32)):
     let lineWidth = currentNode.bounds.w
 
     var cursorBaseNode: UINode = nil
@@ -530,7 +533,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
       return
-    if line >= self.document.lines.len:
+    if line >= self.document.numLines:
       return
 
     if partIndex.getSome(partIndex):
@@ -563,7 +566,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if self.document.isNil:
       return
 
-    if line >= self.document.lines.len:
+    if line >= self.document.numLines:
       return
 
     if not self.active:
@@ -598,7 +601,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if self.document.isNil:
       return
 
-    if line >= self.document.lines.len:
+    if line >= self.document.numLines:
       return
 
     let styledLine = self.getStyledText(line)
@@ -615,7 +618,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if self.document.isNil:
       return
 
-    if line >= self.document.lines.len:
+    if line >= self.document.numLines:
       return
 
     let styledLine = self.getStyledText(line)
@@ -662,7 +665,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     # line numbers
     let maxLineNumber = case lineNumbers
-      of LineNumbers.Absolute: self.document.lines.len
+      of LineNumbers.Absolute: self.document.numLines
       of LineNumbers.Relative: 99
       else: 0
     let maxLineNumberLen = ($maxLineNumber).len + 1
@@ -697,7 +700,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       self.scrollText(delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0))
 
     proc handleLine(i: int, y: float, down: bool) =
-      assert i in 0..self.document.lines.high
+      assert i in 0..<self.document.numLines
 
       let styledLine = self.getStyledText i
       let totalLineHeight = builder.textHeight
@@ -720,7 +723,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       let nextLineDiff = self.diffChanges.mapIt(mapLineTargetToSource(it, i + 1)).flatten
 
-      let lineRuneLen = self.document.lines[i].runeLen.RuneIndex
+      let lineRuneLen = self.document.lineRuneLen(i).RuneIndex
       let otherLine = self.diffChanges.mapIt(mapLineTargetToSource(it, i)).flatten
       if renderDiff:
         if otherLine.getSome(otherLine) and otherLine.changed:
@@ -752,7 +755,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           cursorsPerLine.add s.last.column
 
       options.lineEndColor = Color.none
-      if self.document.lines[i].len == 0 and selectionsClampedOnLine.len > 0 and (cursorsPerLine.len == 0 or inclusive):
+      if self.document.lineLength(i) == 0 and selectionsClampedOnLine.len > 0 and (cursorsPerLine.len == 0 or inclusive):
         options.lineEndColor = selectionColor.some
 
       let pivot = if down:
@@ -763,7 +766,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       options.lineNumber = i
       options.y = y
       options.pivot = pivot
-      options.lineId = self.document.lineIds[i]
       options.parentId = self.userId
       options.cursorLine = cursorLine
 
@@ -775,7 +777,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
         builder.panel(&{FillX, SizeToContentY}, y = y, pivot = pivot):
           let width = currentNode.bounds.w
           var leftOffsetY = 0'f32
-          if otherLine.getSome(otherLine) and otherLine.line < self.diffDocument.lines.len:
+          if otherLine.getSome(otherLine) and otherLine.line < self.diffDocument.numLines:
 
             options.handleClick = nil
             options.handleDrag = nil
@@ -791,42 +793,38 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
                   options.backgroundColor = backgroundColor.withAlpha(1).blendNormal(deletedTextBackgroundColor)
                   let colors = [(
                     0.RuneIndex,
-                    self.diffDocument.lines[k].runeLen.RuneIndex,
+                    self.diffDocument.lineRuneLen(k).RuneIndex,
                     options.backgroundColor
                   )]
 
                   options.lineNumber = k
-                  options.lineId = self.diffDocument.lineIds[k]
                   options.cursorLine = -1
                   options.indentInSpaces = self.diffDocument.getIndentLevelForLineInSpaces(k, 2)
-                  discard renderLine(builder, styledLine, self.diffDocument.lines[k], colors, [], options)
+                  discard renderLine(builder, styledLine, self.diffDocument.getLine(k), colors, [], options)
                   let lastLine = builder.currentChild
                   leftOffsetY = lastLine.bounds.yh
 
               let styledLine = self.diffDocument.getStyledText otherLine.line
               options.backgroundColor = backgroundColor
               options.lineNumber = otherLine.line
-              options.lineId = self.diffDocument.lineIds[otherLine.line]
               options.cursorLine = otherCursorLine.flatten.get((-1, false)).line
               options.indentInSpaces = self.diffDocument.getIndentLevelForLineInSpaces(otherLine.line, 2)
-              let colors = [(0.RuneIndex, self.diffDocument.lines[otherLine.line].runeLen.RuneIndex, backgroundColor)]
-              discard renderLine(builder, styledLine, self.diffDocument.lines[otherLine.line], colors, [], options)
+              let colors = [(0.RuneIndex, self.diffDocument.lineRuneLen(otherLine.line).RuneIndex, backgroundColor)]
+              discard renderLine(builder, styledLine, self.diffDocument.getLine(otherLine.line), colors, [], options)
 
               if nextLineDiff.getSome(nextLineDiff) and nextLineDiff.line > otherLine.line + 1:
                 for k in (otherLine.line + 1)..<nextLineDiff.line:
                   let styledLine = self.diffDocument.getStyledText k
                   options.backgroundColor = backgroundColor.withAlpha(1).blendNormal(deletedTextBackgroundColor)
-                  let colors = [(0.RuneIndex, self.diffDocument.lines[k].runeLen.RuneIndex, options.backgroundColor)]
+                  let colors = [(0.RuneIndex, self.diffDocument.lineRuneLen(k).RuneIndex, options.backgroundColor)]
                   options.lineNumber = k
-                  options.lineId = self.diffDocument.lineIds[k]
                   options.indentInSpaces = self.diffDocument.getIndentLevelForLineInSpaces(k, 2)
-                  discard renderLine(builder, styledLine, self.diffDocument.lines[k], colors, [], options)
+                  discard renderLine(builder, styledLine, self.diffDocument.getLine(k), colors, [], options)
 
           else:
             builder.panel(&{FillY, FillBackground}, w = width / 2, backgroundColor = diffEmptyBackgroundColor)
 
           builder.panel(&{SizeToContentY, FillY, FillBackground}, y = leftOffsetY, x = width / 2, w = width / 2, backgroundColor = diffEmptyBackgroundColor):
-            options.lineId = self.document.lineIds[i]
             options.lineNumber = i
             options.indentInSpaces = self.document.getIndentLevelForLineInSpaces(i, 2)
             options.cursorLine = cursorLine
@@ -838,7 +836,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
             options.handleHover = handleHover
             options.handleEndHover = handleEndHover
 
-            let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
+            let infos = renderLine(builder, styledLine, self.document.getLine(i), colors, cursorsPerLine, options)
             cursors.add infos.cursors
             if infos.hover.isSome:
               hoverInfo = infos.hover
@@ -854,7 +852,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
             options.signs.add sign.text
 
         options.indentInSpaces = self.document.getIndentLevelForLineInSpaces(i, 2)
-        let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
+        let infos = renderLine(builder, styledLine, self.document.getLine(i), colors, cursorsPerLine, options)
         cursors.add infos.cursors
         if infos.hover.isSome:
           hoverInfo = infos.hover
@@ -864,9 +862,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.lastRenderedLines.setLen 0
 
     if renderDiff:
-      builder.createDoubleLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
+      builder.createDoubleLines(self.previousBaseIndex, self.scrollOffset, self.document.numLines - 1, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
     else:
-      builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
+      builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.numLines - 1, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
 
     # context lines
     if contextLineTarget >= 0:
@@ -889,16 +887,15 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
         for indexFromTop, contextLine in contextLines:
           let styledLine = self.getStyledText contextLine
           let y = indexFromTop.float * builder.textHeight
-          let colors = [(first: 0.RuneIndex, last: self.document.lines[contextLine].runeLen.RuneIndex, color: contextBackgroundColor)]
+          let colors = [(first: 0.RuneIndex, last: self.document.lineRuneLen(contextLine).RuneIndex, color: contextBackgroundColor)]
 
           options.lineNumber = contextLine
           options.y = y
-          options.lineId = self.document.lineIds[contextLine]
           options.parentId = self.userId
           options.cursorLine = cursorLine
           options.indentInSpaces = self.document.getIndentLevelForLineInSpaces(contextLine, 2)
 
-          let infos = renderLine(builder, styledLine, self.document.lines[contextLine], colors, [], options)
+          let infos = renderLine(builder, styledLine, self.document.getLine(contextLine), colors, [], options)
           cursors.add infos.cursors
           if infos.hover.isSome:
             result.hover = infos.hover
@@ -1213,10 +1210,10 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
                     clamp(configMargin, 0.0, 1.0) * 0.5 * bounds.h
                   else:
                     clamp(configMargin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
-                  updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, targetLine=targetLine.some, margin=margin)
+                  updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.numLines, builder.textHeight, targetLine=targetLine.some, margin=margin)
 
             else:
-              updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, targetLine=int.none)
+              updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.numLines, builder.textHeight, targetLine=int.none)
 
             self.targetLine = int.none
             self.nextScrollBehaviour = ScrollBehaviour.none
@@ -1253,10 +1250,21 @@ proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
     return self.lineStartsWith(line, self.languageConfig.get.ignoreContextLinePrefix.get, true)
 
   if self.languageConfig.get.ignoreContextLineRegex.isSome:
-    return self.lines[line].match(self.languageConfig.get.ignoreContextLineRegex.get)
+    # todo: don't use getLine
+    return self.getLine(line).match(self.languageConfig.get.ignoreContextLineRegex.get)
 
   return false
 
 proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex] =
-  result.first = if selection.first.line < line.index: 0.RuneIndex elif selection.first.line == line.index: document.lines[line.index].runeIndex(selection.first.column) else: line.runeLen.RuneIndex
-  result.last = if selection.last.line < line.index: 0.RuneIndex elif selection.last.line == line.index: document.lines[line.index].runeIndex(selection.last.column) else: line.runeLen.RuneIndex
+  result.first = if selection.first.line < line.index:
+    0.RuneIndex
+  elif selection.first.line == line.index:
+    document.runeIndexInLine(selection.first)
+  else: line.runeLen.RuneIndex
+
+  result.last = if selection.last.line < line.index:
+    0.RuneIndex
+  elif selection.last.line == line.index:
+    document.runeIndexInLine(selection.last)
+  else:
+    line.runeLen.RuneIndex

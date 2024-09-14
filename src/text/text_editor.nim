@@ -360,9 +360,6 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.clearDocument()
   self.document = document
 
-  if self.document.lines.len == 0:
-    self.document.lines = @[""]
-
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
 
@@ -564,8 +561,9 @@ proc updateSearchResults(self: TextDocumentEditor) =
     self.markDirty()
     return
 
-  for i, line in self.document.lines:
-    let selections = self.document.lines[i].findAllBounds(i, self.searchRegex.get)
+  for i in 0..<self.document.numLines:
+    # todo: don't use getLine. Figure out how to run regex on Rope
+    let selections = self.document.getLine(i).findAllBounds(i, self.searchRegex.get)
     for s in selections:
       self.addCustomHighlight(searchResultsId, s, "editor.findMatchBackground")
 
@@ -760,7 +758,7 @@ proc getFileName(self: TextDocumentEditor): string {.expose: "editor.text".} =
   return self.document.filename
 
 proc lineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
-  return self.document.lines.len
+  return self.document.numLines
 
 proc lineLength*(self: TextDocumentEditor, line: int): int {.expose: "editor.text".} =
   return self.document.lineLength(line)
@@ -784,8 +782,8 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
   let line = cursor.line + offset
   if line < 0:
     cursor = (0, cursor.column)
-  elif line >= self.document.lines.len:
-    cursor = (self.document.lines.len - 1, cursor.column)
+  elif line >= self.document.numLines:
+    cursor = (self.document.numLines - 1, cursor.column)
   else:
     cursor.line = line
     cursor.column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
@@ -870,8 +868,8 @@ proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: in
 
   if cursor.line < 0:
     cursor = (0, cursor.column)
-  elif cursor.line >= self.document.lines.len:
-    cursor = (self.document.lines.len - 1, cursor.column)
+  elif cursor.line >= self.document.numLines:
+    cursor = (self.document.numLines - 1, cursor.column)
 
   return self.clampCursor(cursor, includeAfter)
 
@@ -930,7 +928,7 @@ proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, w
     return cursor
 
   let r = self.visibleTextRange()
-  let line = clamp((r.first.line + r.last.line) div 2, 0, self.document.lines.len - 1)
+  let line = clamp((r.first.line + r.last.line) div 2, 0, self.document.numLines - 1)
   let column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
   return (line, column)
 
@@ -938,10 +936,11 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool = true, includeAfter: bool = true): Cursor {.expose: "editor.text".} =
   var cursor = cursor
 
-  if cursor.line notin 0..self.document.lines.high:
+  if cursor.line notin 0..<self.document.numLines:
     return cursor
 
-  template currentLine: openArray[char] = self.document.lines[cursor.line].toOpenArray
+  # todo: use rope cursor
+  var currentLine = self.document.getLine(cursor.line)
 
   var lastIndex = self.document.lastValidIndex(cursor.line, includeAfter)
 
@@ -950,10 +949,11 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
       if cursor.column >= lastIndex:
         if not wrap:
           break
-        if cursor.line < self.document.lines.high:
+        if cursor.line < self.document.numLines - 1:
           cursor.line = cursor.line + 1
           cursor.column = 0
           lastIndex = self.document.lastValidIndex(cursor.line, includeAfter)
+          currentLine = self.document.getLine(cursor.line)
           continue
         else:
           cursor.column = lastIndex
@@ -969,6 +969,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
         if cursor.line > 0:
           cursor.line = cursor.line - 1
           lastIndex = self.document.lastValidIndex(cursor.line, includeAfter)
+          currentLine = self.document.getLine(cursor.line)
           cursor.column = lastIndex
           continue
         else:
@@ -1117,15 +1118,15 @@ proc getText*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool
 
 proc insert*(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true,
     record: bool = true): seq[Selection] {.expose("editor.text").} =
-  return self.document.insert(selections, self.selections, [text], notify, record)
+  return self.document.edit(selections, self.selections, [text], notify, record)
 
 proc insertMulti*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string], notify: bool = true,
     record: bool = true): seq[Selection] {.expose("editor.text").} =
-  return self.document.insert(selections, self.selections, texts, notify, record)
+  return self.document.edit(selections, self.selections, texts, notify, record)
 
 proc delete*(self: TextDocumentEditor, selections: seq[Selection], notify: bool = true,
     record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.expose("editor.text").} =
-  return self.document.delete(selections, self.selections, notify, record, inclusiveEnd=inclusiveEnd)
+  return self.document.edit(selections, self.selections, [""], notify, record, inclusiveEnd=inclusiveEnd)
 
 proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string],
     notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.
@@ -1140,11 +1141,11 @@ proc deleteLines(self: TextDocumentEditor, slice: Slice[int], oldSelections: Sel
     (slice.b.clamp(0, self.lineCount - 1), 0)
   ).normalized
   selection.last.column = self.document.lastValidIndex(selection.last.line)
-  if selection.last.line < self.document.lines.high:
+  if selection.last.line < self.document.numLines - 1:
     selection.last = (selection.last.line + 1, 0)
   elif selection.first.line > 0:
     selection.first = (selection.first.line - 1, self.document.lastValidIndex(selection.first.line - 1))
-  discard self.document.delete([selection], oldSelections)
+  discard self.document.edit([selection], oldSelections, [""])
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
@@ -1171,13 +1172,13 @@ proc selectInside*(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.te
   # todo
   # let regex = re("[a-zA-Z0-9_]")
   # var first = cursor.column
-  # # echo self.document.lines[cursor.line], ", ", first, ", ",
-  #   self.document.lines[cursor.line].matchLen(regex, start = first - 1)
-  # while first > 0 and self.document.lines[cursor.line].matchLen(regex, start = first - 1) == 1:
+  # # echo self.document.getLine(cursor.line), ", ", first, ", ",
+  #   self.document.getLine(cursor.line).matchLen(regex, start = first - 1)
+  # while first > 0 and self.document.getLine(cursor.line).matchLen(regex, start = first - 1) == 1:
   #   first -= 1
   # var last = cursor.column
-  # while last < self.document.lines[cursor.line].len and
-  #   self.document.lines[cursor.line].matchLen(regex, start = last) == 1:
+  # while last < self.document.lineLength(cursor.line) and
+  #   self.document.getLine(cursor.line).matchLen(regex, start = last) == 1:
   #   last += 1
   # self.selection = ((cursor.line, first), (cursor.line, last))
 
@@ -1390,7 +1391,8 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       if selection.first != selection.last:
         allWhitespace = false
         break
-      for c in self.document.lines[selection.first.line]:
+      # todo: don't use getLine
+      for c in self.document.getLine(selection.first.line):
         if c != ' ' and c != '\t':
           allWhitespace = false
           break
@@ -1405,7 +1407,8 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
     elif autoIndent:
       texts.setLen(selections.len)
       for i, selection in selections:
-        let line = self.document.lines[selection.last.line]
+        # todo: don't use getLine
+        let line = self.document.getLine(selection.last.line)
         let indent = indentForNewLine(self.document.languageConfig, line, self.document.indentStyle,
           self.document.tabWidth, selection.last.column)
         texts[i] = "\n" & indent
@@ -1432,20 +1435,23 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
         texts.add text
         continue
 
-      let closeIndent = self.document.lines[s.first.line].firstNonWhitespace
+      # todo: don't use getLine
+      let closeIndent = self.document.getLine(s.first.line).firstNonWhitespace
       if closeIndent != s.first.column:
         # Closing paren is not at beginning of line, don't apply auto indent
         texts.add text
         continue
 
-      let openIndent = self.document.lines[openLocation.line].firstNonWhitespace
+      # todo: don't use getLine
+      let openIndent = self.document.getLine(openLocation.line).firstNonWhitespace
       if openIndent == closeIndent:
         # Indent is already correct, just insert the paren
         texts.add text
         continue
 
       # Copy indent of opening parens line
-      let indent = self.document.lines[openLocation.line][0..<openIndent]
+      # todo: don't use getLine
+      let indent = self.document.getLine(openLocation.line)[0..<openIndent]
       texts.add indent & text
       s.first.column = 0
 
@@ -1469,7 +1475,7 @@ proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
     let selection = selection.normalized
     for l in selection.first.line..selection.last.line:
       if selection.first.line != selection.last.line:
-        if l == selection.first.line and selection.first.column == self.document.lines[l].len:
+        if l == selection.first.line and selection.first.column == self.document.lineLength(l):
           continue
         if l == selection.last.line and selection.last.column == 0:
           continue
@@ -1480,7 +1486,7 @@ proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   for l in linesToIndent:
     indentSelections.add (l, 0).toSelection
 
-  discard self.document.insert(indentSelections.normalized, self.selections, [indent])
+  discard self.document.edit(indentSelections.normalized, self.selections, [indent])
 
   var selections = self.selections
   for s in selections.mitems:
@@ -1496,7 +1502,7 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
     let selection = selection.normalized
     for l in selection.first.line..selection.last.line:
       if selection.first.line != selection.last.line:
-        if l == selection.first.line and selection.first.column == self.document.lines[l].len:
+        if l == selection.first.line and selection.first.column == self.document.lineLength(l):
           continue
         if l == selection.last.line and selection.last.column == 0:
           continue
@@ -1506,13 +1512,13 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
   for l in linesToIndent:
     case self.document.indentStyle.kind
     of Spaces:
-      let firstNonWhitespace = self.document.lines[l].firstNonWhitespace
+      let firstNonWhitespace = self.document.getIndentInBytes(l)
       indentSelections.add ((l, 0), (l, min(self.document.indentStyle.indentColumns, firstNonWhitespace)))
     of Tabs:
       indentSelections.add ((l, 0), (l, 1))
 
   var selections = self.selections
-  discard self.document.delete(indentSelections.normalized, self.selections)
+  discard self.document.edit(indentSelections.normalized, self.selections, [""])
 
   for s in selections.mitems:
     if s.first.line in linesToIndent:
@@ -1617,7 +1623,7 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
     self.previousBaseIndex.inc
     self.scrollOffset += self.platform.totalLineHeight
 
-  while self.previousBaseIndex >= self.document.lines.len - 1:
+  while self.previousBaseIndex >= self.document.numLines - 1:
     self.previousBaseIndex.dec
     self.scrollOffset -= self.platform.totalLineHeight
 
@@ -1668,7 +1674,7 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
   self.updateSearchResults()
 
   var i = 0
-  for line in cursor.line..self.document.lines.high:
+  for line in cursor.line..<self.document.numLines:
     if self.searchResults.contains(line):
       for selection in self.searchResults[line]:
         if cursor < selection.first:
@@ -1724,7 +1730,7 @@ proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0,
     offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   var i = 0
-  for line in cursor.line..self.document.lines.high:
+  for line in cursor.line..<self.document.numLines:
     if self.document.diagnosticsPerLine.contains(line):
       for diagnosticIndex in self.document.diagnosticsPerLine[line]:
         if diagnosticIndex > self.document.currentDiagnostics.high:
@@ -2027,7 +2033,7 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
     if selection.isEmpty:
       selections[i] = (self.doMoveCursorColumn(selection.first, -1), selection.first)
 
-  self.selections = self.document.delete(selections, self.selections,
+  self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
 
   if not self.disableCompletions:
@@ -2039,7 +2045,7 @@ proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose(
     if selection.isEmpty:
       selections[i] = (selection.first, self.doMoveCursorColumn(selection.first, 1))
 
-  self.selections = self.document.delete(selections, self.selections,
+  self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections).mapIt(self.clampSelection(it, includeAfter))
 
   if not self.disableCompletions:
@@ -2102,7 +2108,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result = self.findWordBoundary(cursor)
     if cursor.column == 0 and cursor.line > 0:
       result.first = (cursor.line - 1, self.document.lineLength(cursor.line - 1))
-    if cursor.column == line.len and cursor.line < self.document.lines.len - 1:
+    if cursor.column == line.len and cursor.line < self.document.numLines - 1:
       result.last = (cursor.line + 1, 0)
 
     for _ in 1..<count:
@@ -2110,7 +2116,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
       let line = self.document.getLine result.last.line
       if result.first.column == 0 and result.first.line > 0:
         result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
-      if result.last.column == line.len and result.last.line < self.document.lines.len - 1:
+      if result.last.column == line.len and result.last.line < self.document.numLines - 1:
         result.last = (result.last.line + 1, 0)
 
   of "word-back":
@@ -2140,14 +2146,14 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
 
   of "line-next":
     result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
-    if result.last.line + 1 < self.document.lines.len:
+    if result.last.line + 1 < self.document.numLines:
       result.last = (result.last.line + 1, 0)
     for _ in 1..<count:
       result = result or (
         (result.last.line, 0),
         (result.last.line, self.document.lineLength(result.last.line))
       )
-      if result.last.line + 1 < self.document.lines.len:
+      if result.last.line + 1 < self.document.numLines:
         result.last = (result.last.line + 1, 0)
 
   of "line-prev":
@@ -2160,12 +2166,12 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
         result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
 
   of "line-no-indent":
-    let indent = self.document.getIndentForLine(cursor.line)
+    let indent = self.document.getIndentInBytes(cursor.line)
     result = ((cursor.line, indent), (cursor.line, self.document.lineLength(cursor.line)))
 
   of "file":
     result.first = (0, 0)
-    let line = self.document.lines.len - 1
+    let line = self.document.numLines - 1
     result.last = (line, self.document.lineLength(line))
 
   of "prev-find-result":
@@ -2275,7 +2281,7 @@ proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false,
       self.getCursor(self.getSelectionForMove(s.last, move, count), which)
     ))
 
-  self.selections = self.document.delete(selections, self.selections,
+  self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
@@ -2328,7 +2334,7 @@ proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false,
       self.getCursor(self.getSelectionForMove(s.last, move, count), which)
     ))
 
-  self.selections = self.document.delete(selections, self.selections,
+  self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
@@ -2608,10 +2614,11 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
   builder.maxDisplayNameWidth = 100
 
   var res = newSeq[FinderItem]()
-  for i in 0..self.document.lines.high:
-    if not self.document.lines[i].isEmptyOrWhitespace:
+  for i in 0..<self.document.numLines:
+    let line = self.document.getLine(i)
+    if not line.isEmptyOrWhitespace:
       res.add FinderItem(
-        displayName: self.document.getLine(i),
+        displayName: line,
         data: encodeFileLocationForFinderItem(self.document.filename, (i, 0).some),
       )
 
@@ -2894,12 +2901,12 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         "TM_DIRECTORY": filenameParts.dir,
         "TM_LINE_INDEX": $editSelection.last.line,
         "TM_LINE_NUMBER": $(editSelection.last.line + 1),
-        "TM_CURRENT_LINE": self.document.lines[editSelection.last.line],
+        "TM_CURRENT_LINE": self.document.getLine(editSelection.last.line),
         "TM_CURRENT_WORD": "todo",
         "TM_SELECTED_TEXT": self.document.contentString(self.selection),
       }
 
-      let indents = cursorEditSelections.mapIt(self.document.getIndentForLine(it.first.line))
+      let indents = cursorEditSelections.mapIt(self.document.getIndentInBytes(it.first.line))
       var data = snippet.get.createSnippetData(cursorEditSelections, variables, indents)
       let indent = self.document.indentStyle.getString()
       for i, insertText in cursorInsertTexts.mpairs:
@@ -3343,7 +3350,7 @@ genDispatcher("editor.text")
 addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
-  assert i in 0..self.document.lines.high
+  assert i in 0..<self.document.numLines
   result = self.document.getStyledText(i)
 
   # Since the original StyledLine is cached, if we modify it here we need to create a copy
@@ -3363,12 +3370,12 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
       inc i
 
   # Highlight the indentation of the cursor line
-  let cursorIndentLevel = self.document.getIndentForLine(self.selection.last.line)
-  let currentIndentLevel = self.document.getIndentForLine(i)
+  let cursorIndentLevel = self.document.getIndentInBytes(self.selection.last.line)
+  let currentIndentLevel = self.document.getIndentInBytes(i)
   if currentIndentLevel > cursorIndentLevel:
     copyLine()
     let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
-    let start = self.document.lines[i].toOpenArray.runeIndex(cursorIndentLevel, returnLen=true)
+    let start = self.document.runeIndexInLine((i, cursorIndentLevel))
     result.splitAt(start)
     result.splitAt(start + 1.RuneCount)
     result.overrideStyleAndText(start, "|", "comment", -1, opacity=opacity.some)
@@ -3639,9 +3646,6 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   self.startBlinkCursorTask()
   self.injectDependencies(app)
 
-  if self.document.lines.len == 0:
-    self.document.lines = @[""]
-
   return self
 
 method getDocument*(self: TextDocumentEditor): Document = self.document
@@ -3655,9 +3659,6 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
   self.setDocument(document.TextDocument)
   self.init()
   self.startBlinkCursorTask()
-
-  if self.document.lines.len == 0:
-    self.document.lines = @[""]
 
   return self
 

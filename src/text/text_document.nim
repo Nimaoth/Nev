@@ -10,7 +10,7 @@ import document, document_editor, custom_treesitter, indent, text_language_confi
 import pkg/chroma
 
 import nimsumtree/[buffer, clock, static_array, rope]
-from nimsumtree/sumtree as st import summaryType, itemSummary
+from nimsumtree/sumtree as st import summaryType, itemSummary, Bias
 
 from language/lsp_types as lsp_types import nil
 
@@ -72,13 +72,10 @@ proc getSizeBytes(line: StyledLine): int =
     result += part.scope.len
 
 variantp TextDocumentChange:
-  Insert(insertStartByte: int, insertEndByte: int, insertStartColumn: int, insertEndColumn: int, insertStartLine: int, insertEndLine: int)
-  Delete(deleteStartByte: int, deleteEndByte: int, deleteStartColumn: int, deleteEndColumn: int, deleteStartLine: int, deleteEndLine: int)
+  Replace(startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 
 type TextDocument* = ref object of Document
-  # todo: remove lines, use buffer only
   buffer*: Buffer
-  lines*: seq[string]
   lineIds*: seq[int32]
   mLanguageId: string
   version*: int
@@ -92,8 +89,9 @@ type TextDocument* = ref object of Document
   onLoaded*: Event[TextDocument]
   onSaved*: Event[void]
   textChanged*: Event[TextDocument]
-  textInserted*: Event[tuple[document: TextDocument, location: Selection, text: string]]
-  textDeleted*: Event[tuple[document: TextDocument, location: Selection]]
+  textInserted*: Event[tuple[document: TextDocument, location: Selection, text: string]] # todo: remove
+  textDeleted*: Event[tuple[document: TextDocument, location: Selection]] # todo: remove
+  onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
   onOperation*: Event[tuple[document: TextDocument, op: Operation]]
   singleLine*: bool = false
   readOnly*: bool = false
@@ -133,6 +131,8 @@ type TextDocument* = ref object of Document
 
   onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
 
+  treesitterParserCursor: RopeCursor ## Used during treesitter parsing to avoid constant seeking
+
 var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
@@ -141,7 +141,9 @@ proc clearDiagnostics*(self: TextDocument)
 proc numLines*(self: TextDocument): int {.noSideEffect.}
 
 func toPoint*(cursor: Cursor): Point = Point.init(cursor.line, cursor.column)
+func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
 func toCursor*(point: Point): Cursor = (point.row.int, point.column.int)
+func toSelection*(self: (Point, Point)): Selection = (self[0].toCursor, self[1].toCursor)
 
 proc getTotalTextSize*(self: UndoOp): int =
   for c in self.checkpoints:
@@ -156,14 +158,12 @@ proc getTotalTextSize*(self: UndoOp): int =
       result += c.getTotalTextSize()
 
 method getStatisticsString*(self: TextDocument): string =
-  var textSizeBytes = 0
-  for l in self.lines:
-    textSizeBytes += l.len
+  let stats = st.stats(self.buffer.visibleText.tree)
 
   result.add &"Filename: {self.filename}\n"
   result.add &"Lines: {self.numLines}\n"
   result.add &"Line Ids: {self.lineIds.len}\n"
-  result.add &"Text: {textSizeBytes} bytes\n"
+  result.add &"Text: {($stats).indent(2)}\n"
   result.add &"Changes: {self.changes.len}\n"
   result.add &"Redo Ops: {self.redoOps.len}\n"
 
@@ -187,66 +187,33 @@ proc nextLineId*(self: TextDocument): int32 =
   self.nextLineIdCounter.inc
 
 func getLine*(self: TextDocument, line: int): string =
+  if line notin 0..<self.numLines:
+    return ""
+
   let visibleText = self.buffer.visibleText.clone()
-  let first = visibleText.pointToOffset(Point.init(line, 0))
-  var last = visibleText.pointToOffset(Point.init(line + 1, 0))
-  if line < visibleText.lines - 1:
-    # byte offset includes the \n, so -1
-    last -= 1
+  let lineBounds = visibleText.lineBounds(line)
 
-  let slice = visibleText.slice(first, max(first, last))
-  let sliceStr = $slice
-  defer:
-    if sliceStr != result and self.insertOrDelete == 0:
-      debugEcho &"getLine({line}) mismatch:\n  New: {sliceStr}\n  Old: {result}"
+  return $visibleText.slice(lineBounds)
 
-  if line < self.numLines:
-    return self.lines[line]
-  return ""
+func lineLength*(self: TextDocument, line: int): int =
+  return self.buffer.visibleText.lineLen(line)
 
-proc lineLength*(self: TextDocument, line: int): int =
-  if line >= 0 and line < self.numLines:
-    let visibleText = self.buffer.visibleText.clone()
-    let lineBounds = visibleText.lineBounds(line)
-    let len = lineBounds[1] - lineBounds[0]
-    defer:
-      if len != result and self.insertOrDelete == 0:
-        echo cast[seq[char]](self.lines[line])
-        echo cast[seq[char]]($visibleText.slice(lineBounds))
-        log lvlError, &"lineLength({line}) mismatch:\n  New: {lineBounds}, {lineBounds[1] - lineBounds[0]}\n  Old: {result}"
-
-    return self.lines[line].len
-
-  return 0
+func lineRuneLen*(self: TextDocument, line: int): RuneCount =
+  return self.buffer.visibleText.lineRuneLen(line).RuneCount
 
 proc numLines*(self: TextDocument): int {.noSideEffect.} =
-  if self.buffer.visibleText.lines != self.lines.len and self.insertOrDelete == 0:
-    debugEcho &"numLines() mismatch: new {self.buffer.visibleText.lines} != {self.lines.len} old"
-    debugEcho "'", self.buffer.visibleText, "'"
-    debugEcho "'", self.lines.join("\n"), "'"
-
-  return self.lines.len
+  return self.buffer.visibleText.lines
 
 proc lastValidIndex*(self: TextDocument, line: int, includeAfter: bool = true): int =
   if line < self.numLines:
     let visibleText = self.buffer.visibleText.clone()
     let lineBounds = visibleText.lineBounds(line)
-    var res = lineBounds[1] - lineBounds[0]
+    var res = lineBounds.len
     if not includeAfter and res > 0:
-      res = visibleText.validateOffset(lineBounds[1] - 1, st.Bias.Left) - lineBounds[0]
+      res = visibleText.validateOffset(lineBounds.b, Bias.Left) - lineBounds.a
 
-    assert res >= 0
+    return res
 
-    defer:
-      if res != result and self.filename != "log" and self.insertOrDelete == 0:
-        echo cast[seq[char]](self.lines[line])
-        echo cast[seq[char]]($visibleText.slice(lineBounds))
-        log lvlError, &"lastValidIndex({line}, {includeAfter}) mismatch:\n  New: {res}\n  Old: {result}"
-
-    if includeAfter or self.lines[line].len == 0:
-      return self.lines[line].len
-    else:
-      return self.lines[line].runeStart(self.lines[line].len - 1)
   return 0
 
 proc lastCursor*(self: TextDocument): Cursor =
@@ -255,20 +222,15 @@ proc lastCursor*(self: TextDocument): Cursor =
   return (0, 0)
 
 proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true): Cursor =
-  let res = self.buffer.visibleText.clipPoint(cursor.toPoint, st.Bias.Left).toCursor
-
   var cursor = cursor
-  if self.numLines == 0:
-    return (0, 0)
   cursor.line = clamp(cursor.line, 0, self.numLines - 1)
-  if self.lineLength(cursor.line) == 0:
-    cursor.column = 0
-  else:
-    cursor.column = self.lines[cursor.line].runeStart(clamp(cursor.column, 0, self.lastValidIndex(cursor.line, includeAfter)))
 
-  if res != cursor and self.insertOrDelete == 0:
-    debugEcho &"clampCursor {cursor}, {includeAfter}, new: {res}, old: {cursor}"
-  return cursor
+  var res = self.buffer.visibleText.clipPoint(cursor.toPoint, Bias.Left).toCursor
+  var c = self.buffer.visibleText.cursorT(res.toPoint)
+  if not includeAfter and c.currentRune == '\n'.Rune and res.column > 0:
+    c.seekPrevRune()
+    res = c.position.toCursor
+  return res
 
 proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: bool = true): Selection = (self.clampCursor(selection.first, includeAfter), self.clampCursor(selection.last, includeAfter))
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
@@ -279,12 +241,9 @@ proc runeIndexInLine*(self: TextDocument, cursor: Cursor): RuneIndex =
   if cursor.line notin 0..self.numLines - 1:
     return 0.RuneIndex
 
-  defer:
-    var c = self.buffer.visibleText.cursorT(Point.init(cursor.line, 0))
-    let runeIndex = c.summary(Count, cursor.toPoint)
-    if self.insertOrDelete == 0 and runeIndex.int.RuneIndex != result:
-      debugEcho &"runeIndexInLine {cursor}: new {runeIndex} != {result} old"
-  return self.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
+  var c = self.buffer.visibleText.cursorT(Point.init(cursor.line, 0))
+  let runeIndex = c.summary(Count, cursor.toPoint)
+  return runeIndex.int.RuneIndex
 
 proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
@@ -297,23 +256,14 @@ proc applyTreesitterChanges(self: TextDocument) =
     for change in self.changes:
       let edit = (block:
         match change:
-          Insert(startByte, endByte, startColumn, endColumn, startLine, endLine):
+          Replace(startByte, oldEndByte, newEndByte, startPoint, oldEndPoint, newEndPoint):
             TSInputEdit(
               startIndex: startByte,
-              oldEndIndex: startByte,
-              newEndIndex: endByte,
-              startPosition: TSPoint(row: startLine, column: startColumn),
-              oldEndPosition: TSPoint(row: startLine, column: startColumn),
-              newEndPosition: TSPoint(row: endLine, column: endColumn),
-            )
-          Delete(startByte, endByte, startColumn, endColumn, startLine, endLine):
-            TSInputEdit(
-              startIndex: startByte,
-              oldEndIndex: endByte,
-              newEndIndex: startByte,
-              startPosition: TSPoint(row: startLine, column: startColumn),
-              oldEndPosition: TSPoint(row: endLine, column: endColumn),
-              newEndPosition: TSPoint(row: startLine, column: startColumn),
+              oldEndIndex: oldEndByte,
+              newEndIndex: newEndByte,
+              startPosition: TSPoint(row: startPoint.row.int, column: startPoint.column.int),
+              oldEndPosition: TSPoint(row: oldEndPoint.row.int, column: oldEndPoint.column.int),
+              newEndPosition: TSPoint(row: newEndPoint.row.int, column: newEndPoint.column.int),
             )
       )
 
@@ -326,17 +276,14 @@ proc getTextRangeTreesitter(self: TextDocument; byteIndex: int, cursor: Cursor):
   if cursor.line notin 0..self.numLines - 1:
     return (nil, 0)
 
-  if cursor.column == self.lines[cursor.line].len:
-    return (nl[0].addr, 1)
+  if byteIndex < self.treesitterParserCursor.offset:
+    self.treesitterParserCursor.reset()
 
-  if cursor.column notin 0..self.lines[cursor.line].high:
-    return (nil, 0)
-
-  let lineLen = self.lines[cursor.line].len
-  return (
-    self.lines[cursor.line][cursor.column].addr,
-    lineLen - cursor.column
-  )
+  self.treesitterParserCursor.seekForward(byteIndex)
+  if self.treesitterParserCursor.chunk.getSome(chunk):
+    let byteIndexRel = byteIndex - self.treesitterParserCursor.chunkStartPos
+    return (chunk.chars[byteIndexRel].addr, chunk.chars.len - byteIndexRel)
+  return (nil, 0)
 
 proc reparseTreesitter*(self: TextDocument) =
   # logScope lvlInfo, &"reparseTreesitter({self.filename})"
@@ -354,6 +301,7 @@ proc reparseTreesitter*(self: TextDocument) =
         if self.currentTree.isNil:
           self.clearStyledTextCache()
 
+        self.treesitterParserCursor = self.buffer.visibleText.cursor()
         self.currentTree = parser.parseCallback(self.currentTree):
           proc(index: int, cursor: Cursor): (ptr char, int) =
             return self.getTextRangeTreesitter(index, cursor)
@@ -377,10 +325,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.reloadTreesitterLanguage()
 
 func contentString*(self: TextDocument): string =
-  defer:
-    if result != $self.buffer.visibleText and self.insertOrDelete == 0:
-      debugEcho &"contentString(): mismatch: old {result.len} != {self.buffer.visibleText.bytes} new"
-  return self.lines.join("\n")
+  return $self.buffer.visibleText
 
 proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = true) =
   self.revision.inc
@@ -395,7 +340,8 @@ proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = tru
   if invalidUtf8Index >= 0:
     log lvlWarn,
       &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
-    self.lines = @[&"Invalid utf-8 byte at {invalidUtf8Index}"]
+    if buildBuffer:
+      self.buffer = initBuffer(content = "Invalid utf-8 byte at {invalidUtf8Index}")
 
   else:
     var index = 0
@@ -406,32 +352,6 @@ proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = tru
 
     if buildBuffer:
       self.buffer = initBuffer(content = value[index..^1])
-    defer:
-      if buildBuffer:
-        assert $self.buffer.visibleText == self.contentString
-
-    var newLine = value.find('\n', start=index)
-    self.lines = @[""]
-    while newLine != -1:
-      let newLineStart = if newLine > 0 and value[newLine - 1] == '\r':
-        newLine - 1
-      else:
-        newLine
-
-      if self.singleLine:
-        self.lines[0].add value[index..<newLineStart]
-      else:
-        self.lines[^1] = value[index..<newLineStart]
-        self.lines.add ""
-
-      index = newLine + 1
-      newLine = value.find('\n', start=index)
-
-    if index < value.len:
-      if self.singleLine:
-        self.lines[0].add value[index..^1]
-      else:
-        self.lines[^1] = value[index..^1]
 
   self.lineIds.setLen self.numLines
   for id in self.lineIds.mitems:
@@ -455,68 +375,22 @@ proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, content: string) =
 
 proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
   self.buffer.applyRemote(ops)
-  # remove once lines is gone
+  # todo: remove once lines is gone
   `content=`(self, self.buffer.contentString, buildBuffer = false)
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
-  self.revision.inc
-  self.undoableRevision.inc
-
-  self.undoOps = @[]
-  self.redoOps = @[]
-
-  let previousFullSelection = ((0, 0), self.lastCursor)
-
-  if self.singleLine:
-    self.lines = @[value.join("")]
-  else:
-    self.lines = value.toSeq
-
-  if self.numLines == 0:
-    self.lines = @[""]
-
-  self.lineIds.setLen self.numLines
-  for id in self.lineIds.mitems:
-    id = self.nextLineId
-
-  self.buffer = initBuffer(content = self.contentString)
-
-  self.currentContentFailedToParse = false
-  self.currentTree.delete()
-  inc self.version
-
-  self.textDeleted.invoke((self, previousFullSelection))
-  self.textInserted.invoke((self, ((0, 0), self.lastCursor), self.contentString))
-
-  self.clearDiagnostics()
-  self.clearStyledTextCache()
-  self.notifyTextChanged()
-
-func content*(self: TextDocument): seq[string] =
-  return self.lines
+  self.content = value.join("\n")
 
 func contentString*(self: TextDocument, selection: Selection, inclusiveEnd: bool = false): string =
-  let (first, last) = selection.normalized
+  let selection = selection.normalized
 
-  let lastLineLen = self.getLine(last.line).len
-  let lastColumn = if inclusiveEnd and self.getLine(last.line).len > 0:
-    self.getLine(last.line).nextRuneStart(min(last.column, lastLineLen - 1))
-  else:
-    last.column
+  var c = self.buffer.visibleText.cursorT(selection.first.toPoint)
+  var target = selection.last
+  if inclusiveEnd and target.column < self.lineLength(target.line):
+    target.column += 1
 
-  let firstColumn = first.column.clamp(0, self.getLine(first.line).len)
-
-  if first.line == last.line:
-    return self.getLine(first.line)[firstColumn..<lastColumn]
-
-  result = self.getLine(first.line)[firstColumn..^1]
-  for i in (first.line + 1)..<last.line:
-    result.add "\n"
-    result.add self.getLine(i)
-
-  result.add "\n"
-
-  result.add self.getLine(last.line)[0..<lastColumn]
+  let res = c.slice(target.toPoint, Bias.Right)
+  return $res
 
 func contentString*(self: TextDocument, selection: TSRange): string =
   return self.contentString selection.toSelection
@@ -571,22 +445,23 @@ proc runeLen*(line: StyledLine): RuneCount =
     result += part.text.toOpenArray.runeLen
 
 proc visualColumnToCursorColumn*(self: TextDocument, line: int, visualColumn: int): int =
-  let line {.cursor.} = self.getLine(line)
   var column = 0
   let tabWidth = self.tabWidth
 
-  for i, c in line:
-    result = line.runeStart(i)
+  var c = self.buffer.visibleText.cursorT(Point.init(line, 0))
+  while not c.atEnd:
+    let r = c.currentRune
 
-    if c == '\t':
+    if r == '\t'.Rune:
       column = align(column + 1, tabWidth)
     else:
       column += 1
 
-    if column > visualColumn:
-      return
+    result += r.size
+    if column >= visualColumn:
+      break
 
-  return line.len
+    c.seekNextRune()
 
 proc cursorToVisualColumn*(self: TextDocument, cursor: Cursor): int =
   let line {.cursor.} = self.getLine(cursor.line)
@@ -621,7 +496,7 @@ proc splitAt*(line: var StyledLine, index: RuneIndex) =
       break
 
 proc splitAt*(self: TextDocument, line: var StyledLine, index: int) =
-  line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(index, returnLen=true))
+  line.splitAt(self.runeIndexInLine((line.index, index)))
 
 proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
   var start = 0
@@ -670,13 +545,13 @@ proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string,
         line.parts[i].joinNext = joinNext or line.parts[i].joinNext
 
 proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) =
-  line.overrideStyle(self.getLine(line.index).toOpenArray.runeIndex(first, returnLen=true), self.getLine(line.index).toOpenArray.runeIndex(last, returnLen=true), scope, priority)
+  line.overrideStyle(self.runeIndexInLine((line.index, first)), self.runeIndexInLine((line.index, last)), scope, priority)
 
 proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, last: int, underline: bool, color: Color) =
-  line.overrideUnderline(self.getLine(line.index).toOpenArray.runeIndex(first, returnLen=true), self.getLine(line.index).toOpenArray.runeIndex(last, returnLen=true), underline, color)
+  line.overrideUnderline(self.runeIndexInLine((line.index, first)), self.runeIndexInLine((line.index, last)), underline, color)
 
 proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
-  line.overrideStyleAndText(self.getLine(line.index).toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity, joinNext)
+  line.overrideStyleAndText(self.runeIndexInLine((line.index, first)), text, scope, priority, opacity, joinNext)
 
 proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool, modifyCursorAtEndOfLine: bool = false) =
   line.splitAt(offset)
@@ -712,48 +587,74 @@ proc replaceSpaces(self: TextDocument, line: var StyledLine) =
   if opacity <= 0:
     return
 
-  let bounds = self.getLine(line.index).findAllBounds(line.index, spacePattern)
+  var bounds: seq[Range[int]] # Rune indices
+  var c = self.buffer.visibleText.cursorT(Point.init(line.index, 0))
+  var index = 0
+  while not c.atEnd:
+    let r = c.currentRune
+    if r == ' '.Rune:
+      if bounds.len > 0 and index == bounds[^1].b:
+        bounds[^1].b += 1
+      else:
+        bounds.add index...(index + 1)
+    elif r == '\n'.Rune:
+      break
+
+    index += r.size
+    c.seekNextRune()
+
   if bounds.len == 0:
     return
 
   for s in bounds:
-    line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(s.first.column, returnLen=true))
-    line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(s.last.column, returnLen=true))
+    line.splitAt(s.a.RuneIndex)
+    line.splitAt(s.b.RuneIndex)
 
   let ch = self.configProvider.getValue("editor.text.whitespace.char", "·")
   for s in bounds:
-    let start = self.getLine(line.index).toOpenArray.runeIndex(s.first.column, returnLen=true)
-    let text = ch.repeat(s.last.column - s.first.column)
-    line.overrideStyleAndText(start, text, "comment", 0, opacity=opacity.some)
+    let text = ch.repeat(s.len)
+    line.overrideStyleAndText(s.a.RuneIndex, text, "comment", 0, opacity=opacity.some)
 
 proc replaceTabs(self: TextDocument, line: var StyledLine) =
-  let bounds = self.getLine(line.index).findAllBounds(line.index, tabPattern)
+  var bounds: seq[Range[int]] # Rune indices
+  var c = self.buffer.visibleText.cursorT(Point.init(line.index, 0))
+  var index = 0
+  while not c.atEnd:
+    let r = c.currentRune
+    if r == '\t'.Rune:
+      bounds.add index...(index + 1)
+    elif r == '\n'.Rune:
+      break
+
+    index += r.size
+    c.seekNextRune()
+
   if bounds.len == 0:
     return
 
   let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
 
   for s in bounds:
-    line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(s.first.column, returnLen=true))
-    line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(s.last.column, returnLen=true))
+    line.splitAt(s.a.RuneIndex)
+    line.splitAt(s.b.RuneIndex)
 
   let tabWidth = self.tabWidth
   var currentOffset = 0
   var previousEnd = 0
 
   for s in bounds:
-    currentOffset += s.first.column - previousEnd
+    currentOffset += s.a - previousEnd
 
     let alignCorrection = currentOffset mod tabWidth
     let currentTabWidth = tabWidth - alignCorrection
     let t = "|"
-    let runeIndex = self.getLine(line.index).toOpenArray.runeIndex(s.first.column, returnLen=true)
+    let runeIndex = s.a.RuneIndex
     line.overrideStyleAndText(runeIndex, t, "comment", 0, opacity=opacity.some)
     if currentTabWidth > 1:
       self.insertText(line, runeIndex + 1.RuneCount, " ".repeat(currentTabWidth - 1), "comment", containCursor=false, modifyCursorAtEndOfLine=true)
 
     currentOffset += currentTabWidth
-    previousEnd = s.last.column
+    previousEnd = s.b
 
 proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
   # diagnostics
@@ -1100,6 +1001,7 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
   self.appFile = app
 
+  # Todo: make optional
   self.trimTrailingWhitespace()
 
   if self.workspace.getSome(ws):
@@ -1118,23 +1020,14 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
 proc autoDetectIndentStyle(self: TextDocument) =
   var containsTab = false
-  for line in self.lines:
-    if line.find('\t') != -1:
-      containsTab = true
-      break
-
-  var containsTab2 = false
   var linePos = Point.init(0, 0)
   var c = self.buffer.visibleText.cursorT(linePos)
   while not c.atEnd:
     if c.currentRune == '\t'.Rune:
-      containsTab2 = true
+      containsTab = true
       break
     linePos.row += 1
     c.seekForward(linePos)
-
-  if containsTab != containsTab2:
-    log lvlError, &"autoDetectIndentStyle mismatch: {containsTab2} != {containsTab}"
 
   if containsTab:
     self.indentStyle = IndentStyle(kind: Tabs)
@@ -1491,6 +1384,7 @@ proc firstNonWhitespace*(str: string): int =
     result += 1
 
 proc lineStartsWith*(self: TextDocument, line: int, text: string, ignoreWhitespace: bool): bool =
+  # todo: user RopeCursor
   if ignoreWhitespace:
     let index = self.getLine(line).firstNonWhitespace
     return self.getLine(line)[index..^1].startsWith(text)
@@ -1504,22 +1398,44 @@ proc lastNonWhitespace*(str: string): int =
       break
     result -= 1
 
-proc getIndentForLine*(self: TextDocument, line: int): int =
+proc getIndentInBytes*(self: TextDocument, line: int): int =
   if line < 0 or line >= self.numLines:
     return 0
-  return self.getLine(line).firstNonWhitespace
+
+  var c = self.buffer.visibleText.cursorT(Point.init(line, 0))
+  while not c.atEnd:
+    let r = c.currentRune
+    if not r.isWhitespace or r == '\n'.Rune:
+      break
+    result += r.size
+    c.seekNextRune()
 
 proc getIndentLevelForLine*(self: TextDocument, line: int): int =
   if line < 0 or line >= self.numLines:
     return 0
+
   let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
-  return indentLevelForLine(self.getLine(line), self.tabWidth, indentWidth)
+
+  var c = self.buffer.visibleText.cursorT(Point.init(line, 0))
+  var indent = 0
+  while not c.atEnd:
+    case c.currentRune
+    of '\t'.Rune:
+      indent += tabWidthAt(indent, self.tabWidth)
+    of ' '.Rune:
+      indent += 1
+    else:
+      break
+    c.seekNextRune()
+
+  indent = indent div indentWidth
+  return indent
 
 proc getIndentLevelForLineInSpaces*(self: TextDocument, line: int, offset: int = 0): int =
+  let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
   if line < 0 or line >= self.numLines:
     return 0
-  let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
-  return max(0, indentLevelForLine(self.getLine(line), self.tabWidth, indentWidth) + offset) * indentWidth
+  return max((self.getIndentLevelForLine(line) + offset) * indentWidth, 0)
 
 proc getIndentLevelForClosestLine*(self: TextDocument, line: int): int =
   for i in line..self.numLines - 1:
@@ -1652,353 +1568,86 @@ proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selecti
     else:
       self.currentDiagnostics[i].removed = true
 
-proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, applyToBuffer: bool = true): seq[Selection] =
-  # be careful with logging inside this function, because the logs are written to another document using this function to insert, which can cause infinite recursion
-  # when inserting a log line logs something.
-  # Use echo for debugging instead
-
-  self.insertOrDelete.inc
-  defer:
-    self.insertOrDelete.dec
-
-  result = self.clampAndMergeSelections selections
-
-  if applyToBuffer:
-    var ranges = newSeq[(Slice[int], string)]()
-    for i, selection in result:
-      let text = if texts.len == 1:
-        texts[0]
-      elif texts.len == result.len:
-        texts[i]
-      else:
-        texts[min(i, texts.high)]
-      let selection = selection.normalized
-      let startByte = self.byteOffset(selection.first)
-      let endByte = self.byteOffset(selection.last)
-      if startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength:
-        ranges.add (startByte..<endByte, text)
-      elif self.filename != "log":
-        log lvlError, &"============== out of bounds: {startByte}..<{endByte} not in {self.buffer.contentLength}"
-
-    let ops = self.buffer.edit(ranges)
-    self.onOperation.invoke (self, ops)
-
-  defer:
-    if self.filename != "log" and applyToBuffer and self.configProvider.getValue("debug.log-crdt-edits", false):
-      debugf"insert: {selections}, texts: {texts}"
-      let a = self.contentString
-      let b = $self.buffer.visibleText
-      if self.filename != "log" and a != b:
-        log lvlError: &"Buffer content mismatch"
-        echo "======================================== contentString"
-        echo a
-        echo "======================================== buffer"
-        echo b
-        echo "======================================== end"
-
-  if self.readOnly:
-    return
-
-  self.revision.inc
-  self.undoableRevision.inc
-
-  var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
-
-  var startNewCheckpoint = false
-  var checkInsertedTextForCheckpoint = false
-
-  if self.undoOps.len == 0:
-    startNewCheckpoint = true
-  elif self.undoOps.last.kind == Insert:
-    startNewCheckpoint = true
-  elif self.undoOps.last.kind == Nested and self.undoOps.last.children.len != result.len:
-    startNewCheckpoint = true
-  elif self.undoOps.last.kind in {Nested, Delete}:
-    checkInsertedTextForCheckpoint = true
-
-  for i, selection in result:
-    let text = if texts.len == 1:
-      texts[0]
-    elif texts.len == result.len:
-      texts[i]
-    else:
-      texts[min(i, texts.high)]
-
-    let oldCursor = selection.last
-    var cursor = selection.last
-    let startByte = self.byteOffset(cursor)
-
-    var cursorColumnRune = self.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
-
-    var lineCounter: int = 0
-    if self.singleLine:
-      let text = text.replace("\n", " ")
-      if self.lines.len == 0:
-        self.lines.add text
-        self.lineIds.add self.nextLineId
-        assert self.lines.len == self.lineIds.len
-      else:
-        self.lines[0].insert(text, cursor.column)
-      cursor.column += text.len
-      cursorColumnRune += text.runeLen
-
-    else:
-      for line in text.splitLines(false):
-        defer: inc lineCounter
-        if lineCounter > 0:
-          # Split line
-          self.lines.insert(self.lines[cursor.line][cursor.column..^1], cursor.line + 1)
-          self.lineIds.insert(self.nextLineId, cursor.line + 1)
-          assert self.lines.len == self.lineIds.len
-
-          if cursor.column < self.lastValidIndex cursor.line:
-            self.lines[cursor.line].delete(cursor.column..<(self.lines[cursor.line].len))
-          cursor = (cursor.line + 1, 0)
-
-        if line.len > 0:
-          self.lines[cursor.line].insert(line, cursor.column)
-          cursor.column += line.len
-          cursorColumnRune += line.runeLen
-
-    result[i] = (oldCursor, cursor)
-    for k in (i+1)..result.high:
-      result[k] = result[k].add((oldCursor, cursor))
-
-    if not self.tsLanguage.isNil:
-      let (_, end_column) = traverse(oldCursor.line, oldCursor.column, text)
-      self.changes.add(Insert(startByte, startByte + text.len, oldCursor.column, end_column, oldCursor.line, cursor.line))
-
-    inc self.version
-
-    if record:
-      if checkInsertedTextForCheckpoint:
-        # echo fmt"'{text}', undo ops: {self.undoOps.len}, i: {i}"
-        # if self.undoOps.len > 0:
-        #   echo fmt"result.len: {result.len}, oldCursor: {oldCursor}, {self.undoOps.last}"
-
-        if text.len > 1:
-          startNewCheckpoint = true
-        elif text.len > 0 and self.undoOps.len > 0 and self.undoOps.last.kind == Nested and self.undoOps.last.children.len == result.len and result.len > i and self.undoOps.last.children[i].kind == Delete:
-          if self.undoOps.last.children[i].selection.last != oldCursor:
-            startNewCheckpoint = true
-          else:
-            let lastInsertedChar = if oldCursor.column == 0: '\n' else: self.charAt(self.moveCursorColumn(oldCursor, -1))
-            let newInsertedChar = text[0]
-            # echo fmt"last: '{lastInsertedChar}', new: '{newInsertedChar}'"
-
-            if lastInsertedChar notin Whitespace and newInsertedChar in Whitespace or lastInsertedChar == '\n':
-              startNewCheckpoint = true
-
-      undoOp.children.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
-
-    let inserted: Selection = (oldCursor, cursor)
-    if inserted.first.line == inserted.last.line:
-      self.styledTextCache.del(inserted.first.line)
-    else:
-      self.clearStyledTextCache()
-
-    self.updateDiagnosticPositionsAfterInsert inserted
-    if notify:
-      self.textInserted.invoke((self, inserted, text))
-
-  self.currentContentFailedToParse = false
-
-  if notify:
-    self.notifyTextChanged()
-
-  if record and undoOp.children.len > 0:
-    if startNewCheckpoint:
-      undoOp.checkpoints.add "word"
-    undoOp.checkpoints.add self.nextCheckpoints
-
-    self.undoOps.add undoOp
-    self.redoOps = @[]
-
-    self.nextCheckpoints = @[]
-
-proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false, applyToBuffer: bool = true): seq[Selection] =
-
-  self.insertOrDelete.inc
-  defer:
-    self.insertOrDelete.dec
-
-  result = self.clampAndMergeSelections selections
-
-  if self.readOnly:
-    return
-
-  if applyToBuffer:
-    var ranges = newSeq[(Slice[int], string)]()
-    for i, selection in result:
-      let normalizedSelection = selection.normalized
-      let selection: Selection = if inclusiveEnd and self.lines[normalizedSelection.last.line].len > 0:
-        let nextColumn = self.lines[normalizedSelection.last.line].nextRuneStart(min(normalizedSelection.last.column, self.lines[normalizedSelection.last.line].high)).int
-        (normalizedSelection.first, (normalizedSelection.last.line, nextColumn))
-      else:
-        normalizedSelection
-
-      let startByte = self.byteOffset(selection.first)
-      let endByte = self.byteOffset(selection.last)
-      if startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength:
-        ranges.add (startByte..<endByte, "")
-      elif self.filename != "log":
-        log lvlError, &"============== out of bounds: {startByte}..<{endByte} not in {self.buffer.contentLength}"
-
-    let ops = self.buffer.edit(ranges)
-    self.onOperation.invoke (self, ops)
-
-  defer:
-    if self.filename != "log" and applyToBuffer and self.configProvider.getValue("debug.log-crdt-edits", false):
-      debugf"delete: {selections}"
-      let a = self.contentString
-      let b = $self.buffer.visibleText
-      if self.filename != "log" and a != b:
-        log lvlError: &"Buffer content mismatch"
-        echo "======================================== contentString"
-        echo a
-        echo "======================================== buffer"
-        echo b
-        echo "======================================== end"
-
-  self.revision.inc
-  self.undoableRevision.inc
-
-  var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
-
-  for i, selectionRaw in result:
-    let normalizedSelection = selectionRaw.normalized
-    let selection: Selection = if inclusiveEnd and self.lines[normalizedSelection.last.line].len > 0:
-      let nextColumn = self.lines[normalizedSelection.last.line].nextRuneStart(min(normalizedSelection.last.column, self.lines[normalizedSelection.last.line].high)).int
-      (normalizedSelection.first, (normalizedSelection.last.line, nextColumn))
-    else:
-      normalizedSelection
-
-    if selection.isEmpty:
-      continue
-
-    let (first, last) = selection
-
-    let startByte = self.byteOffset(first)
-    let endByte = self.byteOffset(last)
-
-    let deletedText = self.contentString(selection)
-
-    if first.line == last.line:
-      # Single line selection
-      self.lines[last.line].delete first.column..<last.column
-    else:
-      # Multi line selection
-      # Delete from first cursor to end of first line and add last line
-      if first.column < self.lastValidIndex first.line:
-        self.lines[first.line].delete(first.column..<self.lines[first.line].len)
-      self.lines[first.line].add self.lines[last.line][last.column..^1]
-      # Delete all lines in between
-      assert self.lines.len == self.lineIds.len
-      self.lines.delete (first.line + 1)..last.line
-      self.lineIds.delete (first.line + 1)..last.line
-
-    result[i] = selection.first.toSelection
-    for k in (i+1)..result.high:
-      result[k] = result[k].subtract(selection)
-
-    if not self.tsLanguage.isNil:
-      self.changes.add(Delete(startByte, endByte, first.column, last.column, selection.first.line, selection.last.line))
-
-    inc self.version
-
-    if record:
-      undoOp.children.add UndoOp(kind: Insert, cursor: selection.first, text: deletedText)
-
-    if selection.first.line == selection.last.line:
-      self.styledTextCache.del(selection.first.line)
-    else:
-      self.clearStyledTextCache()
-
-    self.updateDiagnosticPositionsAfterDelete selection
-    if notify:
-      self.textDeleted.invoke((self, selection))
-
-  self.currentContentFailedToParse = false
-
-  if notify:
-    self.notifyTextChanged()
-
-  if record and undoOp.children.len > 0:
-    undoOp.checkpoints.add self.nextCheckpoints
-    self.undoOps.add undoOp
-    self.redoOps = @[]
-
-    self.nextCheckpoints = @[]
-
 proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
-
+  # todo: finish this function
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
 
   self.insertOrDelete.inc
   defer:
     self.insertOrDelete.dec
 
-  block:
-    var ranges = newSeq[(Slice[int], string)]()
-    for i, selection in selections:
-      let text = if texts.len == 1:
-        texts[0]
-      elif texts.len == selections.len:
-        texts[i]
-      else:
-        texts[min(i, texts.high)]
+  var pointDiff = PointDiff.default
+  var byteDiff = 0
 
-      let selection: Selection = if inclusiveEnd and self.lineLength(selection.last.line) > 0:
-        let nextColumn = self.getLine(selection.last.line).nextRuneStart(min(selection.last.column, self.lineLength(selection.last.line) - 1)).int
-        (selection.first, (selection.last.line, nextColumn))
-      else:
-        selection
+  var edits: seq[tuple[old, new: Selection]]
 
-      let startByte = self.byteOffset(selection.first)
-      let endByte = self.byteOffset(selection.last)
-      if startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength:
-        ranges.add (startByte..<endByte, text)
-      elif self.filename != "log":
-        log lvlError, &"============== out of bounds: {startByte}..<{endByte} not in {self.buffer.contentLength}"
 
-    let ops = self.buffer.edit(ranges)
-    self.onOperation.invoke (self, ops)
+  var ranges = newSeq[(Slice[int], string)]()
+  for i, selection in selections:
+    let text = if texts.len == 1:
+      texts[0]
+    elif texts.len == selections.len:
+      texts[i]
+    else:
+      texts[min(i, texts.high)]
 
-  defer:
-    if self.filename != "log" and self.configProvider.getValue("debug.log-crdt-edits", false):
-      let a = self.contentString
-      let b = $self.buffer.visibleText
-      if self.filename != "log" and a != b:
-        log lvlError: &"Buffer content mismatch"
-        echo "======================================== contentString"
-        echo a
-        echo "======================================== buffer"
-        echo b
-        echo "======================================== end"
+    let selection: Selection = if inclusiveEnd and self.lineLength(selection.last.line) > 0:
+      let nextColumn = self.getLine(selection.last.line).nextRuneStart(min(selection.last.column, self.lineLength(selection.last.line) - 1)).int
+      (selection.first, (selection.last.line, nextColumn))
+    else:
+      selection
 
-  result = self.delete(selections, oldSelection, record=record, inclusiveEnd=inclusiveEnd, applyToBuffer = false)
-  result = self.insert(result, oldSelection, texts, record=record, applyToBuffer = false)
+    # todo: use cursor to calculate byte offset
+    let startByte = self.byteOffset(selection.first)
+    let endByte = self.byteOffset(selection.last)
+    assert startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength
+    ranges.add (startByte..<endByte, text)
+
+    let summary = TextSummary.init(text)
+    let oldByteRange = (startByte + byteDiff, endByte + byteDiff)
+    let newByteRangeEnd = oldByteRange[0] + summary.bytes
+    let oldPointRange = (selection.first.toPoint + pointDiff, selection.last.toPoint + pointDiff)
+    let newPointRangeEnd = oldPointRange[0] + summary.lines
+
+    pointDiff = newPointRangeEnd - selection.last.toPoint
+    byteDiff = newByteRangeEnd - endByte
+
+    let newSelection = (oldPointRange[0], newPointRangeEnd).toSelection
+    result.add newSelection
+    edits.add (selection, newSelection)
+
+    if not self.tsLanguage.isNil:
+      self.changes.add(Replace(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd))
+
+  let ops = self.buffer.edit(ranges)
+  self.onOperation.invoke (self, ops)
+  self.onEdit.invoke (self, edits)
+
+  if notify:
+    self.notifyTextChanged()
+  self.clearStyledTextCache()
 
 proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp]): seq[Selection] =
-  case op.kind:
-  of Delete:
-    let text = self.contentString(op.selection)
-    result = self.delete([op.selection], op.oldSelection, record=false)
-    redoOps.add UndoOp(kind: Insert, revision: self.undoableRevision, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+  # todo
+  # case op.kind:
+  # of Delete:
+  #   let text = self.contentString(op.selection)
+  #   result = self.delete([op.selection], op.oldSelection, record=false)
+  #   redoOps.add UndoOp(kind: Insert, revision: self.undoableRevision, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
-  of Insert:
-    let selections = self.insert([op.cursor.toSelection], op.oldSelection, [op.text], record=false)
-    result = selections
-    redoOps.add UndoOp(kind: Delete, revision: self.undoableRevision, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
+  # of Insert:
+  #   let selections = self.insert([op.cursor.toSelection], op.oldSelection, [op.text], record=false)
+  #   result = selections
+  #   redoOps.add UndoOp(kind: Delete, revision: self.undoableRevision, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
-  of Nested:
-    result = op.oldSelection
+  # of Nested:
+  #   result = op.oldSelection
 
-    var redoOp = UndoOp(kind: Nested, revision: self.undoableRevision, oldSelection: @oldSelection, checkpoints: op.checkpoints)
-    for i in countdown(op.children.high, 0):
-      discard self.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children)
+  #   var redoOp = UndoOp(kind: Nested, revision: self.undoableRevision, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+  #   for i in countdown(op.children.high, 0):
+  #     discard self.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children)
 
-    redoOps.add redoOp
+  #   redoOps.add redoOp
 
   if useOldSelection:
     result = op.oldSelection
@@ -2020,24 +1669,25 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
       break
 
 proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, undoOps: var seq[UndoOp]): seq[Selection] =
-  case op.kind:
-  of Delete:
-    let text = self.contentString(op.selection)
-    result = self.delete([op.selection], op.oldSelection, record=false)
-    undoOps.add UndoOp(kind: Insert, revision: self.undoableRevision, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+  # todo
+  # case op.kind:
+  # of Delete:
+  #   let text = self.contentString(op.selection)
+  #   result = self.delete([op.selection], op.oldSelection, record=false)
+  #   undoOps.add UndoOp(kind: Insert, revision: self.undoableRevision, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
-  of Insert:
-    result = self.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record=false)
-    undoOps.add UndoOp(kind: Delete, revision: self.undoableRevision, selection: (op.cursor, result[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
+  # of Insert:
+  #   result = self.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record=false)
+  #   undoOps.add UndoOp(kind: Delete, revision: self.undoableRevision, selection: (op.cursor, result[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
-  of Nested:
-    result = op.oldSelection
+  # of Nested:
+  #   result = op.oldSelection
 
-    var undoOp = UndoOp(kind: Nested, revision: self.undoableRevision, oldSelection: @oldSelection, checkpoints: op.checkpoints)
-    for i in countdown(op.children.high, 0):
-      discard self.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children)
+  #   var undoOp = UndoOp(kind: Nested, revision: self.undoableRevision, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+  #   for i in countdown(op.children.high, 0):
+  #     discard self.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children)
 
-    undoOps.add undoOp
+  #   undoOps.add undoOp
 
   if useOldSelection:
     result = op.oldSelection
@@ -2081,7 +1731,8 @@ proc getLineCommentRange*(self: TextDocument, line: int): Selection =
     return (line, 0).toSelection
 
   var endIndex = index + prefix.len
-  if endIndex < self.lineLength(line) and self.lines[line][endIndex] in Whitespace:
+  # todo: don't use getLine
+  if endIndex < self.lineLength(line) and self.getLine(line)[endIndex] in Whitespace:
     endIndex += 1
 
   return ((line, index), (line, endIndex))
@@ -2110,7 +1761,7 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
     var minIndent = int.high
     for l in s.first.line..s.last.line:
       if not self.isLineEmptyOrWhitespace(l):
-        minIndent = min(minIndent, self.getIndentForLine(l))
+        minIndent = min(minIndent, self.getIndentInBytes(l))
 
     for l in s.first.line..s.last.line:
       if not self.isLineEmptyOrWhitespace(l):
@@ -2128,10 +1779,11 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
 proc trimTrailingWhitespace*(self: TextDocument) =
   var selections: seq[Selection]
   for i in 0..self.numLines - 1:
-    let index = self.lines[i].lastNonWhitespace
+    # todo: don't use getLine
+    let index = self.getLine(i).lastNonWhitespace
     if index == self.lineLength(i) - 1:
       continue
     selections.add ((i, index + 1), (i, self.lineLength(i)))
 
   if selections.len > 0:
-    discard self.delete(selections, selections)
+    discard self.edit(selections, selections, [""])

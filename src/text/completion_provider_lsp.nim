@@ -11,8 +11,7 @@ type
     document: TextDocument
     lastResponseLocation: Cursor
     languageServer: LanguageServer
-    textInsertedHandle: Id
-    textDeletedHandle: Id
+    onEditHandle: Id
     unfilteredCompletions: seq[CompletionItem]
 
 proc updateFilterText(self: CompletionProviderLsp) =
@@ -27,6 +26,9 @@ proc refilterCompletions(self: CompletionProviderLsp) =
   for item in self.unfilteredCompletions:
     let text = item.filterText.get(item.label)
     let score = matchFuzzySublime(self.currentFilterText, text, defaultCompletionMatchingConfig).score.float
+
+    if timer.elapsed.ms > 2:
+      break
 
     if score < 0:
       continue
@@ -63,15 +65,8 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
     self.unfilteredCompletions = @[]
     self.refilterCompletions()
 
-proc handleTextInserted(self: CompletionProviderLsp, document: TextDocument, location: Selection, text: string) =
-  self.location = location.getChangedSelection(text).last
-  # debugf"[Lsp.handleTextInserted] {self.location}"
-  self.updateFilterText()
-  self.refilterCompletions()
-  asyncCheck self.getLspCompletionsAsync()
-
-proc handleTextDeleted(self: CompletionProviderLsp, document: TextDocument, selection: Selection) =
-  self.location = selection.first
+proc handleTextEdits(self: CompletionProviderLsp, document: TextDocument, edits: seq[tuple[old, new: Selection]]) =
+  self.location = edits[^1].new.last
   self.updateFilterText()
   self.refilterCompletions()
   asyncCheck self.getLspCompletionsAsync()
@@ -83,6 +78,5 @@ method forceUpdateCompletions*(provider: CompletionProviderLsp) =
 
 proc newCompletionProviderLsp*(document: TextDocument, languageServer: LanguageServer): CompletionProviderLsp =
   let self = CompletionProviderLsp(document: document, languageServer: languageServer)
-  self.textInsertedHandle = self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
-  self.textDeletedHandle = self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
+  self.onEditHandle = self.document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) => self.handleTextEdits(arg.document, arg.edits)
   self
