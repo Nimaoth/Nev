@@ -145,6 +145,9 @@ func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection
 func toCursor*(point: Point): Cursor = (point.row.int, point.column.int)
 func toSelection*(self: (Point, Point)): Selection = (self[0].toCursor, self[1].toCursor)
 
+proc getIndentInBytes*(self: TextDocument, line: int): int
+proc getIndentInRunes*(self: TextDocument, line: int): RuneIndex
+
 proc getTotalTextSize*(self: UndoOp): int =
   for c in self.checkpoints:
     result += c.len
@@ -271,7 +274,6 @@ proc applyTreesitterChanges(self: TextDocument) =
 
   self.changes.setLen 0
 
-let nl = "\n"
 proc getTextRangeTreesitter(self: TextDocument; byteIndex: int, cursor: Cursor): (ptr char, int) =
   if cursor.line notin 0..self.numLines - 1:
     return (nil, 0)
@@ -302,9 +304,17 @@ proc reparseTreesitter*(self: TextDocument) =
           self.clearStyledTextCache()
 
         self.treesitterParserCursor = self.buffer.visibleText.cursor()
+
+        let t = startTimer()
+        let hadTree = self.currentTree.isNotNil
+
         self.currentTree = parser.parseCallback(self.currentTree):
           proc(index: int, cursor: Cursor): (ptr char, int) =
             return self.getTextRangeTreesitter(index, cursor)
+
+        let d = t.elapsed.ms
+        if d > 2:
+          log lvlWarn, &"reparseTreesitter: took {d} ms, incremental = {hadTree}"
 
         self.currentContentFailedToParse = false
       except:
@@ -702,9 +712,19 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       else:
         color(0.7, 0.7, 0.7)
 
-      line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(diagnostic.selection.first.column, returnLen=true))
-      line.splitAt(self.getLine(line.index).toOpenArray.runeIndex(diagnostic.selection.last.column, returnLen=true))
-      self.overrideUnderline(line, diagnostic.selection.first.column, diagnostic.selection.last.column, true, color)
+      var lastIndex = if diagnostic.selection.last.line == line.index:
+        self.runeIndexInLine((line.index, diagnostic.selection.last.column))
+      else:
+        self.lineRuneLen(line.index).RuneIndex
+
+      var firstIndex = if diagnostic.selection.first.line == line.index:
+        self.runeIndexInLine((line.index, diagnostic.selection.first.column))
+      else:
+        self.getIndentInRunes(line.index)
+
+      line.splitAt(firstIndex)
+      line.splitAt(lastIndex)
+      line.overrideUnderline(firstIndex, lastIndex, true, color)
 
       let newLineIndex = diagnostic.message.find("\n")
       let maxIndex = if newLineIndex != -1:
@@ -1208,8 +1228,9 @@ proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.
       data: d.data,
     )
 
-    self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
-    self.styledTextCache.del(selection.first.line)
+    for line in selection.first.line..selection.last.line:
+      self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
+      self.styledTextCache.del(line)
 
 proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
   let languageServer = await self.getLanguageServer()
@@ -1282,11 +1303,6 @@ proc clearDiagnostics*(self: TextDocument) =
 
 proc clearStyledTextCache*(self: TextDocument) =
   self.styledTextCache.clear()
-
-proc byteOffset*(self: TextDocument, cursor: Cursor): int =
-  result = cursor.column
-  for i in 0..<cursor.line:
-    result += self.lineLength(i) + 1
 
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
@@ -1408,6 +1424,18 @@ proc getIndentInBytes*(self: TextDocument, line: int): int =
     if not r.isWhitespace or r == '\n'.Rune:
       break
     result += r.size
+    c.seekNextRune()
+
+proc getIndentInRunes*(self: TextDocument, line: int): RuneIndex =
+  if line < 0 or line >= self.numLines:
+    return 0.RuneIndex
+
+  var c = self.buffer.visibleText.cursorT(Point.init(line, 0))
+  while not c.atEnd:
+    let r = c.currentRune
+    if not r.isWhitespace or r == '\n'.Rune:
+      break
+    inc result
     c.seekNextRune()
 
 proc getIndentLevelForLine*(self: TextDocument, line: int): int =
@@ -1544,7 +1572,9 @@ proc updateDiagnosticPositionsAfterInsert(self: TextDocument, inserted: Selectio
     self.styledTextCache.del(d.selection.first.line)
     self.styledTextCache.del(d.selection.last.line)
 
-    self.diagnosticsPerLine.mgetOrPut(d.selection.first.line, @[]).add i
+    for line in d.selection.first.line..d.selection.last.line:
+      self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
+      self.styledTextCache.del(line)
 
     inc i
 
@@ -1563,7 +1593,9 @@ proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selecti
       self.styledTextCache.del(self.currentDiagnostics[i].selection.first.line)
       self.styledTextCache.del(self.currentDiagnostics[i].selection.last.line)
 
-      self.diagnosticsPerLine.mgetOrPut(self.currentDiagnostics[i].selection.first.line, @[]).add i
+      for line in self.currentDiagnostics[i].selection.first.line..self.currentDiagnostics[i].selection.last.line:
+        self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
+        self.styledTextCache.del(line)
 
     else:
       self.currentDiagnostics[i].removed = true
@@ -1579,10 +1611,11 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
   var pointDiff = PointDiff.default
   var byteDiff = 0
 
-  var edits: seq[tuple[old, new: Selection]]
+  var edits = newSeqOfCap[tuple[old, new: Selection]](selections.len)
+  var c = self.buffer.visibleText.cursorT(Point)
+  var clearCache = false
 
-
-  var ranges = newSeq[(Slice[int], string)]()
+  var ranges = newSeqOfCap[(Slice[int], string)](selections.len)
   for i, selection in selections:
     let text = if texts.len == 1:
       texts[0]
@@ -1591,15 +1624,18 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
     else:
       texts[min(i, texts.high)]
 
-    let selection: Selection = if inclusiveEnd and self.lineLength(selection.last.line) > 0:
-      let nextColumn = self.getLine(selection.last.line).nextRuneStart(min(selection.last.column, self.lineLength(selection.last.line) - 1)).int
-      (selection.first, (selection.last.line, nextColumn))
-    else:
-      selection
+    c.seekForward(selection.first.toPoint)
 
-    # todo: use cursor to calculate byte offset
-    let startByte = self.byteOffset(selection.first)
-    let endByte = self.byteOffset(selection.last)
+    let startByte = c.offset()
+    if selection.last > selection.first:
+      c.seekForward(selection.last.toPoint)
+
+    var selection = selection
+    if inclusiveEnd and selection.last.column < self.lineLength(selection.last.line):
+      c.seekNextRune()
+      selection.last = c.position.toCursor
+    let endByte = c.offset()
+
     assert startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength
     ranges.add (startByte..<endByte, text)
 
@@ -1609,9 +1645,6 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
     let oldPointRange = (selection.first.toPoint + pointDiff, selection.last.toPoint + pointDiff)
     let newPointRangeEnd = oldPointRange[0] + summary.lines
 
-    pointDiff = newPointRangeEnd - selection.last.toPoint
-    byteDiff = newByteRangeEnd - endByte
-
     let newSelection = (oldPointRange[0], newPointRangeEnd).toSelection
     result.add newSelection
     edits.add (selection, newSelection)
@@ -1619,13 +1652,30 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
     if not self.tsLanguage.isNil:
       self.changes.add(Replace(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd))
 
+    if not clearCache:
+      if selection.first.line == selection.last.line and summary.lines.row == 0:
+        self.styledTextCache.del selection.first.line
+      else:
+        clearCache = true
+
+    pointDiff = newPointRangeEnd - selection.last.toPoint
+    byteDiff = newByteRangeEnd - endByte
+
   let ops = self.buffer.edit(ranges)
   self.onOperation.invoke (self, ops)
   self.onEdit.invoke (self, edits)
 
   if notify:
     self.notifyTextChanged()
-  self.clearStyledTextCache()
+
+  if clearCache:
+    self.clearStyledTextCache()
+
+  for s in result.items:
+    assert s.first.line in 0..int32.high
+    assert s.first.column in 0..int32.high
+    assert s.last.line in 0..int32.high
+    assert s.last.column in 0..int32.high
 
 proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp]): seq[Selection] =
   # todo
