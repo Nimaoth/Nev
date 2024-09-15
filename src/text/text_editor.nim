@@ -21,6 +21,9 @@ import vcs/vcs
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Range, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
 
+import nimsumtree/[buffer, clock, static_array, rope]
+from nimsumtree/sumtree as st import summaryType, itemSummary, Bias
+
 export text_document, document_editor, id
 
 logCategory "texted"
@@ -41,6 +44,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   app*: AppInterface
   platform*: Platform
   document*: TextDocument
+  snapshot*: BufferSnapshot
+  selectionAnchors: seq[(Anchor, Anchor)]
 
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
@@ -144,6 +149,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   currentSnippetData*: Option[SnippetData]
 
+  onBufferChangedHandle: Id
   textChangedHandle: Id
   onRequestRerenderHandle: Id
   loadedHandle: Id
@@ -219,6 +225,7 @@ proc handleDiagnosticsUpdated(self: TextDocumentEditor)
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
     languageServer: LanguageServer)
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
+proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
 proc handleTextDocumentLoaded(self: TextDocumentEditor)
 proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
 proc handleTextDocumentSaved(self: TextDocumentEditor)
@@ -253,6 +260,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
 
   self.selectionsInternal = selections
   self.cursorVisible = true
+  self.selectionAnchors = self.selectionsInternal.mapIt (self.snapshot.anchorAfter(it.first.toPoint), self.snapshot.anchorBefore(it.last.toPoint))
 
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
@@ -278,6 +286,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
 
   self.selectionsInternal = @[selection]
   self.cursorVisible = true
+  self.selectionAnchors = self.selectionsInternal.mapIt (self.snapshot.anchorAfter(it.first.toPoint), self.snapshot.anchorBefore(it.last.toPoint))
 
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
@@ -322,6 +331,7 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
 proc clearDocument*(self: TextDocumentEditor) =
   if self.document.isNotNil:
     log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
+    self.document.onBufferChanged.unsubscribe(self.onBufferChangedHandle)
     self.document.textChanged.unsubscribe(self.textChangedHandle)
     self.document.onRequestRerender.unsubscribe(self.onRequestRerenderHandle)
     self.document.onLoaded.unsubscribe(self.loadedHandle)
@@ -359,9 +369,13 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
   self.clearDocument()
   self.document = document
+  self.snapshot = document.buffer.snapshot()
 
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
+
+  self.onBufferChangedHandle = document.onBufferChanged.subscribe (arg: tuple[document: TextDocument]) =>
+    self.handleTextDocumentBufferChanged(arg.document)
 
   self.onRequestRerenderHandle = document.onRequestRerender.subscribe () =>
     self.markDirty()
@@ -3339,11 +3353,11 @@ proc runTripleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} 
   discard self.runAction(commandName, args)
 
 proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.lastPressedMouseButton == Left:
+  if self.lastPressedMouseButton == MouseButton.Left:
     self.runSingleClickCommand()
-  elif self.lastPressedMouseButton == DoubleClick:
+  elif self.lastPressedMouseButton == MouseButton.DoubleClick:
     self.runDoubleClickCommand()
-  elif self.lastPressedMouseButton == TripleClick:
+  elif self.lastPressedMouseButton == MouseButton.TripleClick:
     self.runTripleClickCommand()
 
 genDispatcher("editor.text")
@@ -3575,7 +3589,30 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
     .withPriority(2)
   self.completionsDirty = true
 
+proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
+  if document != self.document:
+    return
+
+  self.snapshot = self.document.buffer.snapshot()
+  self.selection = (0, 0).toSelection
+  self.searchResultsDirty = true
+  self.completionsDirty = true
+  self.inlayHints.setLen(0)
+  self.hideCompletions()
+  self.updateInlayHints()
+  self.markDirty()
+
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
+  let oldSnapshot = self.snapshot.move
+  self.snapshot = self.document.buffer.snapshot()
+
+  if self.snapshot.replicaId == oldSnapshot.replicaId and self.snapshot.ownVersion >= oldSnapshot.ownVersion:
+    if self.selectionAnchors.allIt(self.snapshot.canResolve(it[0]) and self.snapshot.canResolve(it[1])):
+      let newSelections = self.selectionAnchors.mapIt (it[0].summary(Point, self.snapshot), it[1].summary(Point, self.snapshot)).toSelection
+
+      if newSelections.len > 0:
+        self.selections = newSelections
+
   self.clampSelection()
   self.searchResultsDirty = true
   self.completionsDirty = true

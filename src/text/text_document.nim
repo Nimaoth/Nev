@@ -2,7 +2,7 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, bench]
 import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
@@ -76,7 +76,6 @@ variantp TextDocumentChange:
 
 type TextDocument* = ref object of Document
   buffer*: Buffer
-  lineIds*: seq[int32]
   mLanguageId: string
   version*: int
 
@@ -93,6 +92,7 @@ type TextDocument* = ref object of Document
   textDeleted*: Event[tuple[document: TextDocument, location: Selection]] # todo: remove
   onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
   onOperation*: Event[tuple[document: TextDocument, op: Operation]]
+  onBufferChanged*: Event[tuple[document: TextDocument]]
   singleLine*: bool = false
   readOnly*: bool = false
   staged*: bool = false
@@ -139,6 +139,7 @@ proc reloadTreesitterLanguage*(self: TextDocument)
 proc clearStyledTextCache*(self: TextDocument)
 proc clearDiagnostics*(self: TextDocument)
 proc numLines*(self: TextDocument): int {.noSideEffect.}
+proc applyPatchToTreesitter(self: TextDocument, oldText: Rope, patch: Patch[uint32])
 
 func toPoint*(cursor: Cursor): Point = Point.init(cursor.line, cursor.column)
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
@@ -165,7 +166,6 @@ method getStatisticsString*(self: TextDocument): string =
 
   result.add &"Filename: {self.filename}\n"
   result.add &"Lines: {self.numLines}\n"
-  result.add &"Line Ids: {self.lineIds.len}\n"
   result.add &"Text: {($stats).indent(2)}\n"
   result.add &"Changes: {self.changes.len}\n"
   result.add &"Redo Ops: {self.redoOps.len}\n"
@@ -308,6 +308,7 @@ proc reparseTreesitter*(self: TextDocument) =
         let t = startTimer()
         let hadTree = self.currentTree.isNotNil
 
+        # todo: move parsing to separate thread
         self.currentTree = parser.parseCallback(self.currentTree):
           proc(index: int, cursor: Cursor): (ptr char, int) =
             return self.getTextRangeTreesitter(index, cursor)
@@ -337,7 +338,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
 func contentString*(self: TextDocument): string =
   return $self.buffer.visibleText
 
-proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = true) =
+proc `content=`*(self: TextDocument, value: sink string) =
   self.revision.inc
   self.undoableRevision.inc
 
@@ -350,8 +351,7 @@ proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = tru
   if invalidUtf8Index >= 0:
     log lvlWarn,
       &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
-    if buildBuffer:
-      self.buffer = initBuffer(content = "Invalid utf-8 byte at {invalidUtf8Index}")
+    self.buffer = initBuffer(content = "Invalid utf-8 byte at {invalidUtf8Index}")
 
   else:
     var index = 0
@@ -360,33 +360,39 @@ proc `content=`*(self: TextDocument, value: sink string, buildBuffer: bool = tru
       log lvlInfo, &"[content=] Skipping utf8 bom"
       index = 3
 
-    if buildBuffer:
-      self.buffer = initBuffer(content = value[index..^1])
-
-  self.lineIds.setLen self.numLines
-  for id in self.lineIds.mitems:
-    id = self.nextLineId
+    self.buffer = initBuffer(content = value[index..^1])
 
   self.currentContentFailedToParse = false
   self.currentTree.delete()
   inc self.version
 
-  self.textDeleted.invoke((self, previousFullSelection))
-  self.textInserted.invoke((self, ((0, 0), self.lastCursor), self.contentString))
+  self.onBufferChanged.invoke (self,)
 
   self.clearDiagnostics()
   self.clearStyledTextCache()
-  self.notifyTextChanged()
+
+  # todo: this causes issues with current selection anchor setup
+  # self.notifyTextChanged()
 
 proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, content: string) =
   self.content = content
   self.buffer = initBuffer(replicaId, content)
+
   self.notifyRequestRerender()
 
 proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
-  self.buffer.applyRemote(ops)
-  # todo: remove once lines is gone
-  `content=`(self, self.buffer.contentString, buildBuffer = false)
+  var oldText = self.buffer.snapshot().visibleText.clone()
+  let numPatchesBefore = self.buffer.patches.len
+
+  # todo: checkpoints
+  discard self.buffer.applyRemote(ops)
+
+  for i in numPatchesBefore..self.buffer.patches.high:
+    let patch {.cursor.} = self.buffer.patches[i]
+    self.applyPatchToTreesitter(oldText, patch.patch)
+    oldText = self.buffer.snapshot().visibleText.clone()
+
+  self.notifyTextChanged()
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
   self.content = value.join("\n")
@@ -1677,86 +1683,72 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
     assert s.last.line in 0..int32.high
     assert s.last.column in 0..int32.high
 
-proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp]): seq[Selection] =
-  # todo
-  # case op.kind:
-  # of Delete:
-  #   let text = self.contentString(op.selection)
-  #   result = self.delete([op.selection], op.oldSelection, record=false)
-  #   redoOps.add UndoOp(kind: Insert, revision: self.undoableRevision, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+proc applyPatchToTreesitter(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
+  var co = oldText.cursorT(Point)
+  var cn = self.buffer.visibleText.cursorT(Point)
+  var clearCache = false
 
-  # of Insert:
-  #   let selections = self.insert([op.cursor.toSelection], op.oldSelection, [op.text], record=false)
-  #   result = selections
-  #   redoOps.add UndoOp(kind: Delete, revision: self.undoableRevision, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
+  for edit in patch.edits:
+    co.seekForward(edit.old.a.int)
+    cn.seekForward(edit.new.a.int)
 
-  # of Nested:
-  #   result = op.oldSelection
+    let startByte = edit.old.a
+    let startPos = co.position
 
-  #   var redoOp = UndoOp(kind: Nested, revision: self.undoableRevision, oldSelection: @oldSelection, checkpoints: op.checkpoints)
-  #   for i in countdown(op.children.high, 0):
-  #     discard self.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children)
+    if edit.old.len > 0:
+      co.seekForward(edit.old.b.int)
 
-  #   redoOps.add redoOp
+    if edit.new.len > 0:
+      cn.seekForward(edit.new.b.int)
 
-  if useOldSelection:
-    result = op.oldSelection
+    let endPosOld = co.position
+    let endPosNew = cn.position
+
+    if not self.tsLanguage.isNil:
+      self.changes.add(Replace(edit.old.a.int, edit.old.b.int, edit.new.b.int, startPos, endPosOld, endPosNew))
+
+    if not clearCache:
+      if startPos.row == endPosOld.row and startPos.row == endPosNew.row:
+        self.styledTextCache.del startPos.row.int
+      else:
+        clearCache = true
+
+  if clearCache:
+    self.clearStyledTextCache()
 
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   # debugf"undo {untilCheckpoint}"
   result = seq[Selection].none
 
-  if self.undoOps.len == 0:
-    return
+  var oldText = self.buffer.snapshot().visibleText.clone()
+  let numPatchesBefore = self.buffer.patches.len
 
-  result = some @oldSelection
+  # todo: checkpoints
+  if self.buffer.undo().getSome(undo):
+    self.onOperation.invoke (self, undo.op)
+    for i in numPatchesBefore..self.buffer.patches.high:
+      let patch {.cursor.} = self.buffer.patches[i]
+      self.applyPatchToTreesitter(oldText, patch.patch)
+      oldText = self.buffer.snapshot().visibleText.clone()
 
-  while self.undoOps.len > 0:
-    let op = self.undoOps.pop
-    result = self.doUndo(op, result.get, useOldSelection, self.redoOps).some
-    # self.undoableRevision = op.revision # todo
-    if untilCheckpoint.len == 0 or untilCheckpoint in op.checkpoints:
-      break
-
-proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, undoOps: var seq[UndoOp]): seq[Selection] =
-  # todo
-  # case op.kind:
-  # of Delete:
-  #   let text = self.contentString(op.selection)
-  #   result = self.delete([op.selection], op.oldSelection, record=false)
-  #   undoOps.add UndoOp(kind: Insert, revision: self.undoableRevision, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
-
-  # of Insert:
-  #   result = self.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record=false)
-  #   undoOps.add UndoOp(kind: Delete, revision: self.undoableRevision, selection: (op.cursor, result[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
-
-  # of Nested:
-  #   result = op.oldSelection
-
-  #   var undoOp = UndoOp(kind: Nested, revision: self.undoableRevision, oldSelection: @oldSelection, checkpoints: op.checkpoints)
-  #   for i in countdown(op.children.high, 0):
-  #     discard self.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children)
-
-  #   undoOps.add undoOp
-
-  if useOldSelection:
-    result = op.oldSelection
+  self.notifyTextChanged()
 
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   # debugf"redo {untilCheckpoint}"
   result = seq[Selection].none
 
-  if self.redoOps.len == 0:
-    return
+  var oldText = self.buffer.snapshot().visibleText.clone()
+  let numPatchesBefore = self.buffer.patches.len
 
-  result = some @oldSelection
+  # todo: checkpoints
+  if self.buffer.redo().getSome(redo):
+    self.onOperation.invoke (self, redo.op)
+    for i in numPatchesBefore..self.buffer.patches.high:
+      let patch {.cursor.} = self.buffer.patches[i]
+      self.applyPatchToTreesitter(oldText, patch.patch)
+      oldText = self.buffer.snapshot().visibleText.clone()
 
-  while self.redoOps.len > 0:
-    let op = self.redoOps.pop
-    result = self.doRedo(op, result.get, useOldSelection, self.undoOps).some
-    # self.undoableRevision = op.revision # todo
-    if untilCheckpoint.len == 0 or (self.redoOps.len > 0 and untilCheckpoint in self.redoOps.last.checkpoints):
-      break
+  self.notifyTextChanged()
 
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
   self.nextCheckpoints.incl checkpoint

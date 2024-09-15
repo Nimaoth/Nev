@@ -1,4 +1,4 @@
-import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques]
+import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques, algorithm]
 import asynctools/asyncipc
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, regex, disposable_ref]
@@ -1494,7 +1494,8 @@ proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
   if self.logDocument.isNotNil:
     let selection = self.logDocument.TextDocument.lastCursor.toSelection
-    discard self.logDocument.TextDocument.edit([selection], [selection], [logBuffer & str])
+    # todo: reenable and make sure performance is good
+    # discard self.logDocument.TextDocument.edit([selection], [selection], [logBuffer & str])
     logBuffer = ""
 
     for view in self.views:
@@ -1627,10 +1628,9 @@ proc openDocument*(self: App, path: string, appFile = false, load = true): Optio
     return Document.none
 
 proc getDocument*(self: App, path: string, appFile = false): Option[Document] =
-
   for document in self.documents:
     if document.workspace == self.workspace.some and document.appFile == appFile and document.filename == path:
-      log lvlInfo, &"Get existing document '{path}'"
+      # log lvlInfo, &"Get existing document '{path}'"
       return document.some
 
   return Document.none
@@ -2760,25 +2760,36 @@ proc connectCollaboratorAsync(self: App, port: int) {.async.} =
         break
 
       if line.startsWith("open "):
-        let fileAndLength = line[5..^1]
-        let i = fileAndLength.find(" ")
-        let length = fileAndLength[0..<i].parseInt.catch:
+        # line format: open <len>\t<filename>\t<operations>\n
+        # next line <len> bytes
+
+        let parts = line[5..^1]
+        let i = parts.find("\t")
+        let length = parts[0..<i].parseInt.catch:
           log lvlError, &"[collab-client] Invalid length: '{line}'"
           return
 
-        let file = fileAndLength[i + 1..^1]
+        let i2 = parts.find("\t", i + 1)
+        let file = parts[i + 1..<i2]
+
+        let opsJson = parts[i2 + 1..^1]
 
         let content = await server.recv(length)
+
+        let ops = opsJson.parseJson.jsonTo(seq[Operation]).catch:
+          log lvlError, &"[collab][open {file}] Failed to parse operations: {getCurrentExceptionMsg()}\nops: {opsJson}\n{getCurrentException().getStackTrace()}"
+          continue
 
         if self.getOrOpenDocument(file).getSome(doc):
           if doc of TextDocument:
             let doc = doc.TextDocument
             docs[file] = doc
             doc.rebuildBuffer(1.ReplicaId, content)
+            doc.applyRemoteChanges(ops)
 
             discard doc.onOperation.subscribe proc(arg: tuple[document: TextDocument, op: Operation]) =
               opsToSend.add (arg.document.filename, arg.op)
-              sendOpsTask.reschedule()
+              sendOpsTask.schedule()
         else:
           log lvlError, &"[collab-client] Document not found: '{file}', message: '{line}'"
 
@@ -2791,6 +2802,7 @@ proc connectCollaboratorAsync(self: App, port: int) {.async.} =
 
         if self.getOrOpenDocument(file).getSome(doc) and doc of TextDocument:
           doc.TextDocument.applyRemoteChanges(@[op])
+          self.logNextFrameTime = true
 
       else:
         log lvlError,  &"[collab-client] Unknown command '{line}'"
@@ -2819,14 +2831,21 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
       if doc of TextDocument:
         let doc = doc.TextDocument
         if doc.filename != "" and doc.filename != "log":
-          doc.rebuildBuffer(0.ReplicaId, doc.contentString)
-          let content = $doc.buffer.visibleText
-          await client.send(&"open {content.len} {doc.TextDocument.filename}\n")
+          let snapshot = doc.buffer.snapshot()
+          let content = $doc.buffer.history.baseText
+          var allOps = collect:
+            for op in doc.buffer.history.operations.values:
+              op
+
+          allOps.sort((a, b) => cmp(a.timestamp, b.timestamp))
+
+          let opsJson = allOps.toJson
+          await client.send(&"open {content.len}\t{doc.TextDocument.filename}\t{opsJson}\n")
           await client.send(content)
 
           discard doc.onOperation.subscribe proc(arg: tuple[document: TextDocument, op: Operation]) =
             opsToSend.add (arg.document.filename, arg.op)
-            sendOpsTask.reschedule()
+            sendOpsTask.schedule()
 
     while not client.isClosed:
       let line = await client.recvLine()
@@ -2842,6 +2861,7 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
 
         if self.getOrOpenDocument(file).getSome(doc) and doc of TextDocument:
           doc.TextDocument.applyRemoteChanges(@[op])
+          self.logNextFrameTime = true
 
       else:
         log lvlError,  &"[collab-server] Unknown command '{line}'"

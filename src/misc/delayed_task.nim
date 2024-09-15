@@ -54,6 +54,11 @@ proc reschedule*(task: DelayedTask) =
   if not task.isActive:
     asyncCheck task.tick()
 
+proc schedule*(task: DelayedTask) =
+  if not task.isActive:
+    task.nextTick = getTime() + initDuration(milliseconds=task.interval)
+    asyncCheck task.tick()
+
 proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: proc()): DelayedTask =
   result = DelayedTask(interval: interval.int64, repeat: repeat, callback: callback)
   when defined(debugDelayedTasks):
