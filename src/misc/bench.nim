@@ -9,8 +9,10 @@ type
 func initBench*(): Bench = Bench(start: startTimer())
 
 template scope*(self: Bench, name: string, body: untyped): untyped =
-  var t = startTimer()
+  when defined(nevBench):
+    var t = startTimer()
   body
-  self.scopes.add (name, t.elapsed.ms)
+  when defined(nevBench):
+    self.scopes.add (name, t.elapsed.ms)
 
-func `$`*(self: Bench): string = self.scopes.mapIt(&"{it.name}: {it.elapsed} ms").join(", ") & ", total: {self.start.elapsed.ms} ms"
+func `$`*(self: Bench): string = self.scopes.mapIt(&"{it.name}: {it.elapsed} ms").join(", ") & &", total: {self.start.elapsed.ms} ms"

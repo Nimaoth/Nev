@@ -97,6 +97,9 @@ type TextDocument* = ref object of Document
   readOnly*: bool = false
   staged*: bool = false
 
+  undoSelections*: Table[Lamport, Selections]
+  redoSelections*: Table[Lamport, Selections]
+
   changes: seq[TextDocumentChange]
   insertOrDelete: int = 0
 
@@ -1606,7 +1609,7 @@ proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selecti
     else:
       self.currentDiagnostics[i].removed = true
 
-proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
+proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
   # todo: finish this function
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
 
@@ -1667,9 +1670,12 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
     pointDiff = newPointRangeEnd - selection.last.toPoint
     byteDiff = newByteRangeEnd - endByte
 
-  let ops = self.buffer.edit(ranges)
-  self.onOperation.invoke (self, ops)
+  let op = self.buffer.edit(ranges)
+  self.onOperation.invoke (self, op)
   self.onEdit.invoke (self, edits)
+
+  self.undoSelections[op.timestamp] = @oldSelections
+  self.redoSelections[op.timestamp] = result.mapIt(it.last.toSelection)
 
   if notify:
     self.notifyTextChanged()
@@ -1731,6 +1737,11 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
       self.applyPatchToTreesitter(oldText, patch.patch)
       oldText = self.buffer.snapshot().visibleText.clone()
 
+    for editId in undo.op.undo.counts.keys:
+      if self.undoSelections.contains(editId):
+        result = self.undoSelections[editId].some
+        break
+
   self.notifyTextChanged()
 
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
@@ -1747,6 +1758,11 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
       let patch {.cursor.} = self.buffer.patches[i]
       self.applyPatchToTreesitter(oldText, patch.patch)
       oldText = self.buffer.snapshot().visibleText.clone()
+
+    for editId in redo.op.undo.counts.keys:
+      if self.redoSelections.contains(editId):
+        result = self.redoSelections[editId].some
+        break
 
   self.notifyTextChanged()
 

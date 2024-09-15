@@ -254,9 +254,10 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
     return
 
   if not self.dontRecordSelectionHistory:
-    self.selectionHistory.addLast self.selectionsInternal
-    if self.selectionHistory.len > 100:
-      discard self.selectionHistory.popFirst
+    if self.selectionHistory.len == 0 or abs(selections[^1].last.line - self.selectionsInternal[^1].last.line) > 1:
+      self.selectionHistory.addLast self.selectionsInternal
+      if self.selectionHistory.len > 100:
+        discard self.selectionHistory.popFirst
 
   self.selectionsInternal = selections
   self.cursorVisible = true
@@ -280,9 +281,10 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
     return
 
   if not self.dontRecordSelectionHistory:
-    self.selectionHistory.addLast self.selectionsInternal
-    if self.selectionHistory.len > 100:
-      discard self.selectionHistory.popFirst
+    if self.selectionHistory.len == 0 or abs(selection.last.line - self.selectionsInternal[^1].last.line) > 1:
+      self.selectionHistory.addLast self.selectionsInternal
+      if self.selectionHistory.len > 100:
+        discard self.selectionHistory.popFirst
 
   self.selectionsInternal = @[selection]
   self.cursorVisible = true
@@ -3608,10 +3610,15 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
 
   if self.snapshot.replicaId == oldSnapshot.replicaId and self.snapshot.ownVersion >= oldSnapshot.ownVersion:
     if self.selectionAnchors.allIt(self.snapshot.canResolve(it[0]) and self.snapshot.canResolve(it[1])):
-      let newSelections = self.selectionAnchors.mapIt (it[0].summary(Point, self.snapshot), it[1].summary(Point, self.snapshot)).toSelection
+      let temp = self.selectionAnchors.mapIt (it[0].summaryOpt(Point, self.snapshot), it[1].summaryOpt(Point, self.snapshot))
+      if temp.allIt(it[0].isSome and it[1].isSome):
+        let newSelections = temp.mapIt (it[0].get, it[1].get).toSelection
 
-      if newSelections.len > 0:
-        self.selections = newSelections
+        if newSelections.len > 0:
+          self.selections = newSelections
+      else:
+        debugf"invalid anchors: {self.selectionAnchors} -> {temp}"
+        self.selectionAnchors = @[]
 
   self.clampSelection()
   self.searchResultsDirty = true
