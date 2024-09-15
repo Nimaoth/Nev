@@ -359,12 +359,14 @@ proc runApp(): Future[void] {.async.} =
     var outlierTime = 20.0
 
     let frameSoFar = totalTimer.elapsed.ms
-    if lastEvent.elapsed.ms > 60000 and frameSoFar < 10:
-      sleep(30 - frameSoFar.int)
-      outlierTime += 30
-    elif lastEvent.elapsed.ms > 1000 and frameSoFar < 10:
-      sleep(15 - frameSoFar.int)
-      outlierTime += 15
+    if lastEvent.elapsed.ms > ed.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
+      let time = ed.getOption("platform.reduced-fps-2.ms", 30)
+      sleep(time - frameSoFar.int)
+      outlierTime += time.float
+    elif lastEvent.elapsed.ms > ed.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
+      let time = ed.getOption("platform.reduced-fps-2.ms", 15)
+      sleep(time - frameSoFar.int)
+      outlierTime += time.float
     elif backend.get == Terminal and frameSoFar < 5:
       sleep(5 - frameSoFar.int)
       outlierTime += 5
