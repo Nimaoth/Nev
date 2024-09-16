@@ -1,4 +1,4 @@
-import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times, enumerate]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times, enumerate, threadpool]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
@@ -82,6 +82,7 @@ type TextDocument* = ref object of Document
   nextLineIdCounter: int32 = 0
 
   isLoadingAsync*: bool = false
+  isParsingAsync*: bool = false
 
   onRequestRerender*: Event[void]
   onPreLoaded*: Event[TextDocument]
@@ -101,6 +102,7 @@ type TextDocument* = ref object of Document
   redoSelections*: Table[Lamport, Selections]
 
   changes: seq[TextDocumentChange]
+  changesAsync: seq[TextDocumentChange]
   insertOrDelete: int = 0
 
   configProvider: ConfigProvider
@@ -257,9 +259,9 @@ proc notifyTextChanged*(self: TextDocument) =
 proc notifyRequestRerender*(self: TextDocument) =
   self.onRequestRerender.invoke()
 
-proc applyTreesitterChanges(self: TextDocument) =
-  if self.currentTree.isNotNil:
-    for change in self.changes:
+proc applyTreesitterChanges(self: TextDocument, tree: TSTree, changes: var seq[TextDocumentChange]) =
+  if tree.isNotNil:
+    for change in changes:
       let edit = (block:
         match change:
           Replace(startByte, oldEndByte, newEndByte, startPoint, oldEndPoint, newEndPoint):
@@ -273,9 +275,9 @@ proc applyTreesitterChanges(self: TextDocument) =
             )
       )
 
-      discard self.currentTree.edit(edit)
+      discard tree.edit(edit)
 
-  self.changes.setLen 0
+  changes.setLen 0
 
 proc getTextRangeTreesitter(self: TextDocument; byteIndex: int, cursor: Cursor): (ptr char, int) =
   if cursor.line notin 0..self.numLines - 1:
@@ -290,43 +292,76 @@ proc getTextRangeTreesitter(self: TextDocument; byteIndex: int, cursor: Cursor):
     return (chunk.chars[byteIndexRel].addr, chunk.chars.len - byteIndexRel)
   return (nil, 0)
 
-proc reparseTreesitter*(self: TextDocument) =
-  # logScope lvlInfo, &"reparseTreesitter({self.filename})"
-  self.applyTreesitterChanges()
+proc parseTreesitterThread(parser: ptr TSParser, oldTree: TSTree, text: sink Rope): TSTree =
+  var ropeCursor = text.cursor()
+  let numLines = text.lines
+  let newTree = parser[].parseCallback(oldTree):
+    proc(byteIndex: int, cursor: Cursor): (ptr char, int) =
+      if byteIndex < ropeCursor.offset:
+        ropeCursor.reset()
 
-  if self.currentContentFailedToParse:
-    # We already tried to parse the current content and it failed, don't try again
-    return
+      ropeCursor.seekForward(byteIndex)
+      if ropeCursor.chunk.getSome(chunk):
+        let byteIndexRel = byteIndex - ropeCursor.chunkStartPos
+        return (chunk.chars[byteIndexRel].addr, chunk.chars.len - byteIndexRel)
+
+      return (nil, 0)
+
+  return newTree
+
+proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
+  self.isParsingAsync = true
+  defer:
+    self.isParsingAsync = false
 
   if self.tsLanguage.isNotNil:
     withParser parser:
       parser.setLanguage(self.tsLanguage)
 
-      try:
-        if self.currentTree.isNil:
-          self.clearStyledTextCache()
+      self.applyTreesitterChanges(self.currentTree, self.changes)
+      self.changesAsync.setLen(0)
 
-        self.treesitterParserCursor = self.buffer.visibleText.cursor()
+      while true:
+        if self.currentContentFailedToParse:
+          # We already tried to parse the current content and it failed, don't try again
+          return
 
-        let t = startTimer()
-        let hadTree = self.currentTree.isNotNil
+        let version = self.buffer.version
+        let oldTree: TSTree = if self.currentTree.isNotNil:
+          self.currentTree.clone()
+        else:
+          TSTree()
 
-        # todo: move parsing to separate thread
-        self.currentTree = parser.parseCallback(self.currentTree):
-          proc(index: int, cursor: Cursor): (ptr char, int) =
-            return self.getTextRangeTreesitter(index, cursor)
+        let flowVar: FlowVar[TSTree] = spawn parseTreesitterThread(parser.addr, oldTree, self.buffer.snapshot.visibleText.clone())
 
-        let d = t.elapsed.ms
-        if d > 2:
-          log lvlWarn, &"reparseTreesitter: took {d} ms, incremental = {hadTree}"
+        while not flowVar.isReady:
+          await sleepAsync(1)
+
+        let newTree = ^flowVar
+
+        oldTree.delete()
+        self.currentTree.delete()
+        self.currentTree = newTree
+        self.currentContentFailedToParse = self.currentTree.isNil
+        self.clearStyledTextCache()
+        self.notifyRequestRerender()
+
+        if version == self.buffer.version:
+          return
 
         self.currentContentFailedToParse = false
-      except:
-        log lvlError, &"Failed to parse treesitter tree for '{self.filename}': {getCurrentExceptionMsg()}"
-        self.currentContentFailedToParse = true
+        self.applyTreesitterChanges(self.currentTree, self.changesAsync)
+        self.changes.setLen(0)
+
+proc reparseTreesitter*(self: TextDocument) =
+  if self.isParsingAsync:
+    return
+
+  asyncCheck self.reparseTreesitterAsync()
 
 proc tsTree*(self: TextDocument): TsTree =
   if self.changes.len > 0 or self.currentTree.isNil:
+    self.applyTreesitterChanges(self.currentTree, self.changes)
     self.reparseTreesitter()
   return self.currentTree
 
@@ -946,7 +981,7 @@ proc newTextDocument*(
 
   var self = result
   self.filename = filename.normalizePathUnix
-  self.currentTree = nil
+  self.currentTree = TSTree()
   self.appFile = app
   self.workspace = workspaceFolder
   self.configProvider = configProvider
@@ -1609,6 +1644,11 @@ proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selecti
     else:
       self.currentDiagnostics[i].removed = true
 
+proc addTreesitterChange(self: TextDocument, change: TextDocumentChange) =
+  # debugf"addTreesitterChange {change}"
+  self.changes.add(change)
+  self.changesAsync.add(change)
+
 proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
   # todo: finish this function
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
@@ -1659,7 +1699,7 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
     edits.add (selection, newSelection)
 
     if not self.tsLanguage.isNil:
-      self.changes.add(Replace(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd))
+      self.addTreesitterChange(Replace(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd))
 
     if not clearCache:
       if selection.first.line == selection.last.line and summary.lines.row == 0:
@@ -1676,6 +1716,7 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
 
   self.undoSelections[op.timestamp] = @oldSelections
   self.redoSelections[op.timestamp] = result.mapIt(it.last.toSelection)
+  self.currentContentFailedToParse = false
 
   if notify:
     self.notifyTextChanged()
@@ -1711,7 +1752,7 @@ proc applyPatchToTreesitter(self: TextDocument, oldText: Rope, patch: Patch[uint
     let endPosNew = cn.position
 
     if not self.tsLanguage.isNil:
-      self.changes.add(Replace(edit.old.a.int, edit.old.b.int, edit.new.b.int, startPos, endPosOld, endPosNew))
+      self.addTreesitterChange(Replace(edit.new.a.int, edit.new.a.int + edit.old.len.int, edit.new.b.int, startPos, endPosOld, endPosNew))
 
     if not clearCache:
       if startPos.row == endPosOld.row and startPos.row == endPosNew.row:

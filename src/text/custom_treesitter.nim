@@ -186,10 +186,10 @@ else:
     queries: Table[string, Option[TSQuery]]
     queryFutures: Table[string, Future[Option[TSQuery]]]
 
-  type TSParser* = ref object
+  type TSParser* = object
     impl: ptr ts.TSParser
 
-  type TsTree* = ref object
+  type TsTree* = object
     impl: ptr ts.TSTree
 
   type TSNode* = object
@@ -232,10 +232,21 @@ else:
   func setLanguage*(self: TSParser, language: TSLanguage) =
     assert ts.tsParserSetLanguage(self.impl, language.impl)
 
+  func isNil*(self: TSParser): bool = self.impl.isNil
+  func isNil*(self: TSTree): bool = self.impl.isNil
+
+  proc clone*(self: TSTree): TSTree =
+    assert not self.isNil
+    return TSTree(impl: ts.tsTreeCopy(self.impl))
+
   proc delete*(self: var TSTree) =
-    if self.isNotNil:
+    if self.impl != nil:
       ts.tsTreeDelete(self.impl)
-    self = nil
+    self.impl = nil
+
+  proc delete*(self: sink TSTree) =
+    if self.impl != nil:
+      ts.tsTreeDelete(self.impl)
 
   proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
       Future[Option[TSQuery]] {.async.} =
@@ -282,8 +293,6 @@ else:
     else:
       nil
     let tree = self.impl.tsParserParseString(oldTreePtr, text.cstring, text.len.uint32)
-    if tree.isNil:
-      return nil
     return TSTree(impl: tree)
 
   type GetTextCallback* = proc(index: int, position: Cursor): (ptr char, int)
@@ -307,8 +316,6 @@ else:
       nil
 
     let tree = self.impl.tsParserParse(oldTreeImpl, input)
-    if tree.isNil:
-      return nil
     return TSTree(impl: tree)
 
   when not declared(c_malloc):

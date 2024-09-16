@@ -2831,7 +2831,6 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
       if doc of TextDocument:
         let doc = doc.TextDocument
         if doc.filename != "" and doc.filename != "log":
-          let snapshot = doc.buffer.snapshot()
           let content = $doc.buffer.history.baseText
           var allOps = collect:
             for op in doc.buffer.history.operations.values:

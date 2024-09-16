@@ -371,7 +371,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
   self.clearDocument()
   self.document = document
-  self.snapshot = document.buffer.snapshot()
+  self.snapshot = document.buffer.snapshot.clone()
 
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
@@ -3595,7 +3595,7 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   if document != self.document:
     return
 
-  self.snapshot = self.document.buffer.snapshot()
+  self.snapshot = self.document.buffer.snapshot.clone()
   self.selection = (0, 0).toSelection
   self.searchResultsDirty = true
   self.completionsDirty = true
@@ -3606,7 +3606,7 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
-  self.snapshot = self.document.buffer.snapshot()
+  self.snapshot = self.document.buffer.snapshot.clone()
 
   if self.snapshot.replicaId == oldSnapshot.replicaId and self.snapshot.ownVersion >= oldSnapshot.ownVersion:
     if self.selectionAnchors.allIt(self.snapshot.canResolve(it[0]) and self.snapshot.canResolve(it[1])):
