@@ -13,7 +13,6 @@ logCategory "Comp-Doc"
 type
   CompletionProviderDocument* = ref object of CompletionProvider
     document: TextDocument
-    onEditHandle: Id
     wordCache: HashSet[string]
     updateTask: DelayedTask
     revision: int
@@ -113,17 +112,12 @@ proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
   #   log lvlInfo, &"[Comp-Doc] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.wordCache.len})"
   self.onCompletionsUpdated.invoke (self)
 
-proc handleTextEdits(self: CompletionProviderDocument, document: TextDocument, edits: seq[tuple[old, new: Selection]]) =
-  self.updateFilterText()
-  self.updateTask.reschedule()
-
 method forceUpdateCompletions*(provider: CompletionProviderDocument) =
   provider.updateFilterText()
   provider.updateTask.reschedule()
 
 proc newCompletionProviderDocument*(document: TextDocument): CompletionProviderDocument =
   let self = CompletionProviderDocument(document: document)
-  self.onEditHandle = self.document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) => self.handleTextEdits(arg.document, arg.edits)
 
   self.updateTask = startDelayed(50, repeat=false):
     inc self.revision

@@ -100,7 +100,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   hoverScrollOffset*: float     # the scroll offset inside the hover window
 
   # inline hints
-  inlayHints: seq[InlayHint]
+  inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
   inlayHintsTask: DelayedTask
 
   # line index to sequence of indices into document.currentDiagnostics
@@ -476,6 +476,16 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
   if inject.contains("above-completion"):
     result.add inject["above-completion"]
 
+proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
+  if self.inlayHints.len > 0 and self.inlayHints[0].anchor.timestamp != self.document.buffer.timestamp:
+    let snapshot = self.document.buffer.snapshot.clone()
+    for inlay in self.inlayHints.mitems:
+      if inlay.anchor.summaryOpt(Point, snapshot, resolveDeleted = false).getSome(point):
+        inlay.hint.location = point.toCursor
+        inlay.anchor = snapshot.anchorAt(inlay.hint.location.toPoint, Left)
+      else:
+        inlay.hint.location = (-1, 0)
+
 proc preRender*(self: TextDocumentEditor) =
   if self.configProvider.isNil or self.document.isNil:
     return
@@ -489,6 +499,8 @@ proc preRender*(self: TextDocumentEditor) =
 
   if self.searchResultsDirty:
     self.updateSearchResults()
+
+  self.updateInlayHintsAfterChange()
 
   let newVersion = (self.document.buffer.version, self.selections[^1].last)
   if self.showCompletions and newVersion != self.lastCompletionTrigger:
@@ -3056,11 +3068,12 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       return
 
     let visibleRange = self.visibleTextRange(self.screenLineCount)
+    let snapshot = self.document.buffer.snapshot.clone()
     let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.fullPath, visibleRange)
     # todo: detect if canceled instead
     if inlayHints.isSuccess:
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
-      self.inlayHints = inlayHints.result
+      self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, Left), it)
       self.markDirty()
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -3400,12 +3413,12 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
       self.document.overrideStyleAndText(result, override.cursor.column, override.text,
         override.scope, -2, joinNext = true)
 
-  for inlayHint in self.inlayHints:
-    if inlayHint.location.line != i:
+  for inlay in self.inlayHints:
+    if inlay.hint.location.line != i:
       continue
 
     copyLine()
-    self.document.insertText(result, inlayHint.location.column.RuneIndex, inlayHint.label,
+    self.document.insertText(result, inlay.hint.location.column.RuneIndex, inlay.hint.label,
       "comment", containCursor=true)
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
@@ -3524,45 +3537,6 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   self.onFocusChangedHandle = self.app.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
   self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
-
-proc updateInlayHintPositionsAfterInsert(self: TextDocumentEditor, inserted: Selection) =
-  for i in countdown(self.inlayHints.high, 0):
-    # todo: correctly handle unicode (inlay hint location comes from lsp, so probably a RuneIndex)
-    template inlayHint: InlayHint = self.inlayHints[i]
-    if inlayHint.location == inserted.first:
-      self.inlayHints.removeSwap(i)
-    else:
-      inlayHint.location = self.document.updateCursorAfterInsert(inlayHint.location, inserted)
-
-  if self.currentSnippetData.isSome:
-    for (key, tabStops) in self.currentSnippetData.get.tabStops.mpairs:
-      for selection in tabStops.mitems:
-        selection.first = self.document.updateCursorAfterInsert(selection.first, inserted)
-        selection.last = self.document.updateCursorAfterInsert(selection.last, inserted)
-
-proc updateInlayHintPositionsAfterDelete(self: TextDocumentEditor, selection: Selection) =
-  let selection = selection.normalized
-  for i in countdown(self.inlayHints.high, 0):
-    # todo: correctly handle unicode (inlay hint location comes from lsp, so probably a RuneIndex)
-    template inlayHint: InlayHint = self.inlayHints[i]
-    if self.document.updateCursorAfterDelete(inlayHint.location, selection).getSome(location):
-      self.inlayHints[i].location = location
-    else:
-      self.inlayHints.removeSwap(i)
-
-  if self.currentSnippetData.isSome:
-    for (key, tabStops) in self.currentSnippetData.get.tabStops.mpairs:
-      for tabStopSelection in tabStops.mitems:
-
-        if self.document.updateCursorAfterDelete(tabStopSelection.first, selection).getSome(first):
-          tabStopSelection.first = first
-        else:
-          tabStopSelection.first = selection.first
-
-        if self.document.updateCursorAfterDelete(tabStopSelection.last, selection).getSome(last):
-          tabStopSelection.last = last
-        else:
-          tabStopSelection.last = selection.first
 
 proc handleTextEdits(self: TextDocumentEditor, document: TextDocument, edits: seq[tuple[old, new: Selection]]) =
   # todo

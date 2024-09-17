@@ -428,6 +428,7 @@ proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
     self.handlePatch(oldText, patch.patch)
     oldText = self.buffer.snapshot().visibleText.clone()
 
+  self.revision.inc
   self.notifyTextChanged()
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
@@ -1602,6 +1603,7 @@ proc updateCursorAfterDelete*(self: TextDocument, location: Cursor, deleted: Sel
   return res.some
 
 proc updateDiagnosticPositionsAfterInsert(self: TextDocument, inserted: Selection) =
+  # todo
   self.diagnosticsPerLine.clear()
   var i = 0
   for d in self.currentDiagnostics.mitems:
@@ -1621,6 +1623,7 @@ proc updateDiagnosticPositionsAfterInsert(self: TextDocument, inserted: Selectio
     inc i
 
 proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selection) =
+  # todo
   self.diagnosticsPerLine.clear()
   let selection = selection.normalized
   for i in countdown(self.currentDiagnostics.high, 0):
@@ -1708,6 +1711,8 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
     pointDiff = newPointRangeEnd - selection.last.toPoint
     byteDiff = newByteRangeEnd - endByte
 
+  self.revision.inc
+
   let op = self.buffer.edit(ranges)
   self.onOperation.invoke (self, op)
   self.onEdit.invoke (self, edits)
@@ -1787,6 +1792,7 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
         result = self.undoSelections[editId].some
         break
 
+  self.revision.inc
   self.notifyTextChanged()
 
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
@@ -1809,6 +1815,7 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
         result = self.redoSelections[editId].some
         break
 
+  self.revision.inc
   self.notifyTextChanged()
 
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =

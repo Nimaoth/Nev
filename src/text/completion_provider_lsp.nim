@@ -11,7 +11,6 @@ type
     document: TextDocument
     lastResponseLocation: Cursor
     languageServer: LanguageServer
-    onEditHandle: Id
     unfilteredCompletions: seq[CompletionItem]
 
 proc updateFilterText(self: CompletionProviderLsp) =
@@ -65,11 +64,6 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
     self.unfilteredCompletions = @[]
     self.refilterCompletions()
 
-proc handleTextEdits(self: CompletionProviderLsp, document: TextDocument, edits: seq[tuple[old, new: Selection]]) =
-  self.updateFilterText()
-  self.refilterCompletions()
-  asyncCheck self.getLspCompletionsAsync()
-
 method forceUpdateCompletions*(provider: CompletionProviderLsp) =
   provider.updateFilterText()
   provider.refilterCompletions()
@@ -77,5 +71,4 @@ method forceUpdateCompletions*(provider: CompletionProviderLsp) =
 
 proc newCompletionProviderLsp*(document: TextDocument, languageServer: LanguageServer): CompletionProviderLsp =
   let self = CompletionProviderLsp(document: document, languageServer: languageServer)
-  self.onEditHandle = self.document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) => self.handleTextEdits(arg.document, arg.edits)
   self
