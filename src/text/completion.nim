@@ -1,4 +1,4 @@
-import std/[sugar, algorithm]
+import std/[sugar, algorithm, sequtils]
 import misc/[custom_unicode, util, id, event, timer, custom_logger]
 import language/[lsp_types]
 import scripting_api
@@ -27,6 +27,7 @@ type
   CompletionProvider* = ref object of RootObj
     onCompletionsUpdated*: Event[CompletionProvider]
     location*: Cursor
+    cursors*: seq[Cursor]
     filteredCompletions*: seq[Completion]
     currentFilterText*: string
     priority*: Option[int]
@@ -50,9 +51,8 @@ proc withPriority*(provider: CompletionProvider, priority: int): CompletionProvi
   provider.priority = priority.some
   provider
 
-proc updateCompletionsAt*(self: CompletionEngine, location: Cursor) =
+proc updateCompletions*(self: CompletionEngine) =
   for provider in self.providersByPriority:
-    provider.location = location
     provider.forceUpdateCompletions()
 
 proc cmp(a, b: Completion): int =
@@ -93,9 +93,10 @@ proc handleProviderCompletionsUpdated(self: CompletionEngine, provider: Completi
   self.combinedDirty = true
   self.onCompletionsUpdated.invoke()
 
-proc setCurrentLocation*(self: CompletionEngine, location: Cursor) =
+proc setCurrentLocations*(self: CompletionEngine, locations: openArray[Selection]) =
   for provider in self.providers:
-    provider.provider.location = location
+    provider.provider.location = locations[^1].last
+    provider.provider.cursors = locations.mapIt(it.last).sorted()
 
 proc getCompletions*(self: CompletionEngine): lent seq[Completion] =
   if self.combinedDirty:

@@ -89,8 +89,6 @@ type TextDocument* = ref object of Document
   onLoaded*: Event[TextDocument]
   onSaved*: Event[void]
   textChanged*: Event[TextDocument]
-  textInserted*: Event[tuple[document: TextDocument, location: Selection, text: string]] # todo: remove
-  textDeleted*: Event[tuple[document: TextDocument, location: Selection]] # todo: remove
   onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
   onOperation*: Event[tuple[document: TextDocument, op: Operation]]
   onBufferChanged*: Event[tuple[document: TextDocument]]
@@ -144,7 +142,7 @@ proc reloadTreesitterLanguage*(self: TextDocument)
 proc clearStyledTextCache*(self: TextDocument)
 proc clearDiagnostics*(self: TextDocument)
 proc numLines*(self: TextDocument): int {.noSideEffect.}
-proc applyPatchToTreesitter(self: TextDocument, oldText: Rope, patch: Patch[uint32])
+proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
 
 func toPoint*(cursor: Cursor): Point = Point.init(cursor.line, cursor.column)
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
@@ -427,7 +425,7 @@ proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
 
   for i in numPatchesBefore..self.buffer.patches.high:
     let patch {.cursor.} = self.buffer.patches[i]
-    self.applyPatchToTreesitter(oldText, patch.patch)
+    self.handlePatch(oldText, patch.patch)
     oldText = self.buffer.snapshot().visibleText.clone()
 
   self.notifyTextChanged()
@@ -1730,17 +1728,20 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
     assert s.last.line in 0..int32.high
     assert s.last.column in 0..int32.high
 
-proc applyPatchToTreesitter(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
+proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
   var co = oldText.cursorT(Point)
   var cn = self.buffer.visibleText.cursorT(Point)
   var clearCache = false
+
+  var edits = newSeqOfCap[tuple[old, new: Selection]](patch.edits.len)
 
   for edit in patch.edits:
     co.seekForward(edit.old.a.int)
     cn.seekForward(edit.new.a.int)
 
     let startByte = edit.old.a
-    let startPos = co.position
+    let startPosOld = co.position
+    let startPosNew = cn.position
 
     if edit.old.len > 0:
       co.seekForward(edit.old.b.int)
@@ -1750,15 +1751,18 @@ proc applyPatchToTreesitter(self: TextDocument, oldText: Rope, patch: Patch[uint
 
     let endPosOld = co.position
     let endPosNew = cn.position
+    edits.add ((startPosOld, endPosOld).toSelection, (startPosNew, endPosNew).toSelection)
 
     if not self.tsLanguage.isNil:
-      self.addTreesitterChange(Replace(edit.new.a.int, edit.new.a.int + edit.old.len.int, edit.new.b.int, startPos, endPosOld, endPosNew))
+      self.addTreesitterChange(Replace(edit.new.a.int, edit.new.a.int + edit.old.len.int, edit.new.b.int, startPosOld, endPosOld, endPosNew))
 
     if not clearCache:
-      if startPos.row == endPosOld.row and startPos.row == endPosNew.row:
-        self.styledTextCache.del startPos.row.int
+      if startPosOld.row == endPosOld.row and startPosOld.row == endPosNew.row:
+        self.styledTextCache.del startPosOld.row.int
       else:
         clearCache = true
+
+  self.onEdit.invoke (self, edits)
 
   if clearCache:
     self.clearStyledTextCache()
@@ -1775,7 +1779,7 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
     self.onOperation.invoke (self, undo.op)
     for i in numPatchesBefore..self.buffer.patches.high:
       let patch {.cursor.} = self.buffer.patches[i]
-      self.applyPatchToTreesitter(oldText, patch.patch)
+      self.handlePatch(oldText, patch.patch)
       oldText = self.buffer.snapshot().visibleText.clone()
 
     for editId in undo.op.undo.counts.keys:
@@ -1797,7 +1801,7 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
     self.onOperation.invoke (self, redo.op)
     for i in numPatchesBefore..self.buffer.patches.high:
       let patch {.cursor.} = self.buffer.patches[i]
-      self.applyPatchToTreesitter(oldText, patch.patch)
+      self.handlePatch(oldText, patch.patch)
       oldText = self.buffer.snapshot().visibleText.clone()
 
     for editId in redo.op.undo.counts.keys:

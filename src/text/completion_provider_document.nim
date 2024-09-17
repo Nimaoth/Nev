@@ -1,40 +1,59 @@
-import std/[strutils, sugar, sets]
+import std/[strutils, sugar, sets, algorithm]
 import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, delayed_task, custom_async]
 import language/[lsp_types]
 import completion, text_document
 import scripting_api
+
+import nimsumtree/buffer
+import nimsumtree/sumtree except Cursor
+import nimsumtree/rope except Cursor
 
 logCategory "Comp-Doc"
 
 type
   CompletionProviderDocument* = ref object of CompletionProvider
     document: TextDocument
-    textInsertedHandle: Id
-    textDeletedHandle: Id
+    onEditHandle: Id
     wordCache: HashSet[string]
     updateTask: DelayedTask
     revision: int
+    buffer: string
 
 proc cacheLine(self: CompletionProviderDocument, line: int) =
-  # todo: don't use getLine
-  let line = self.document.getLine(line)
+  var c = self.document.buffer.visibleText.cursorT(Point.init(line, 0))
+
+  # Compiler complains about intantiation of SumTree[Cursor], even though we don't explicitly instantiate it,
+  # but binarySearch uses cmp[Cursor] which somehow instantiates SumTree[Cursor]
+  func cmpFn(a, b: Cursor): int = cmp(a, b)
+
+  self.buffer.setLen(0)
 
   var i = 0.RuneIndex
   var wordStart = 0.RuneIndex
-  var runeLen = 0.RuneCount
-  for r in line.runes:
-    inc runeLen
-    let isWord = r.char in IdentChars or r.isAlpha
-    if not isWord:
-      let len = i - wordStart
-      if len > 1.RuneCount and not line[wordStart].isDigit:
-        self.wordCache.incl line[wordStart..<i]
+  var cursor: Cursor = (line, 0)
+  while not c.atEnd:
+    let r = c.currentRune()
+    if r == '\n'.Rune:
+      break
+    c.seekNextRune()
+
+    defer:
+      inc i
+      cursor.column += r.size
+
+    let isWord = r.char in IdentChars or r.isAlpha or (i > wordStart and r.isDigit)
+    if isWord:
+      self.buffer.add r
+    else:
+      if self.buffer.len > 0 and self.cursors.binarySearch(cursor, cmpFn) == -1:
+        self.wordCache.incl self.buffer
+      self.buffer.setLen(0)
       wordStart = i + 1.RuneCount
+      continue
 
-    inc i
-
-  if wordStart < runeLen:
-    self.wordCache.incl line[wordStart..<runeLen.RuneIndex]
+  if self.buffer.len > 0 and self.cursors.binarySearch(cursor, cmpFn) == -1:
+    self.wordCache.incl self.buffer
+    self.buffer.setLen(0)
 
 proc updateFilterText(self: CompletionProviderDocument) =
   let selection = self.document.getCompletionSelectionAt(self.location)
@@ -45,7 +64,7 @@ proc updateWordCache(self: CompletionProviderDocument) =
 
   # debugf"[updateWordCache] update cache around line {self.location.line}"
   const maxCacheTimeMs = 4
-  for i in countdown(self.location.line - 1, 0):
+  for i in countdown(self.location.line, 0):
     self.cacheLine(i)
     if timer.elapsed.ms > maxCacheTimeMs:
       break
@@ -90,18 +109,11 @@ proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
 
       loopTimer = startTimer()
 
-
   # if timer.elapsed.ms > 2:
   #   log lvlInfo, &"[Comp-Doc] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.wordCache.len})"
   self.onCompletionsUpdated.invoke (self)
 
-proc handleTextInserted(self: CompletionProviderDocument, document: TextDocument, location: Selection, text: string) =
-  self.location = location.getChangedSelection(text).last
-  self.updateFilterText()
-  self.updateTask.reschedule()
-
-proc handleTextDeleted(self: CompletionProviderDocument, document: TextDocument, selection: Selection) =
-  self.location = selection.first
+proc handleTextEdits(self: CompletionProviderDocument, document: TextDocument, edits: seq[tuple[old, new: Selection]]) =
   self.updateFilterText()
   self.updateTask.reschedule()
 
@@ -111,8 +123,7 @@ method forceUpdateCompletions*(provider: CompletionProviderDocument) =
 
 proc newCompletionProviderDocument*(document: TextDocument): CompletionProviderDocument =
   let self = CompletionProviderDocument(document: document)
-  self.textInsertedHandle = self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
-  self.textDeletedHandle = self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
+  self.onEditHandle = self.document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) => self.handleTextEdits(arg.document, arg.edits)
 
   self.updateTask = startDelayed(50, repeat=false):
     inc self.revision

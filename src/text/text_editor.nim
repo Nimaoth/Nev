@@ -145,10 +145,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   completionEngine: CompletionEngine
 
-  updateCompletionsTask: DelayedTask
-
   currentSnippetData*: Option[SnippetData]
 
+  onEditHandle: Id
   onBufferChangedHandle: Id
   textChangedHandle: Id
   onRequestRerenderHandle: Id
@@ -162,6 +161,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   onCompletionsUpdatedHandle: Id
   onFocusChangedHandle: Id
 
+  lastCompletionTrigger: (Global, Cursor)
   completionsDirty: bool
   searchResultsDirty: bool
 
@@ -201,7 +201,7 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
-proc refilterCompletions(self: TextDocumentEditor)
+proc updateCompletionsFromEngine(self: TextDocumentEditor)
 proc hideCompletions*(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
   count: int = 0): Selection
@@ -218,9 +218,7 @@ proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
 
-proc handleTextInserted(self: TextDocumentEditor, document: TextDocument, location: Selection,
-    text: string)
-proc handleTextDeleted(self: TextDocumentEditor, document: TextDocument, selection: Selection)
+proc handleTextEdits(self: TextDocumentEditor, document: TextDocument, edits: seq[tuple[old, new: Selection]])
 proc handleDiagnosticsUpdated(self: TextDocumentEditor)
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
     languageServer: LanguageServer)
@@ -266,8 +264,10 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
+  if self.completionEngine.isNotNil:
+    self.completionEngine.setCurrentLocations(self.selectionsInternal)
+
   self.showHover = false
-  self.completionsDirty = true
   self.hideCompletions()
   # self.document.addNextCheckpoint("move")
 
@@ -293,8 +293,10 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
+  if self.completionEngine.isNotNil:
+    self.completionEngine.setCurrentLocations(self.selectionsInternal)
+
   self.showHover = false
-  self.completionsDirty = true
   self.hideCompletions()
   # self.document.addNextCheckpoint("move")
 
@@ -339,8 +341,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.document.onLoaded.unsubscribe(self.loadedHandle)
     self.document.onPreLoaded.unsubscribe(self.preLoadedHandle)
     self.document.onSaved.unsubscribe(self.savedHandle)
-    self.document.textInserted.unsubscribe(self.textInsertedHandle)
-    self.document.textDeleted.unsubscribe(self.textDeletedHandle)
     self.document.onDiagnosticsUpdated.unsubscribe(self.diagnosticsUpdatedHandle)
     self.document.onLanguageServerAttached.unsubscribe(self.languageServerAttachedHandle)
 
@@ -397,13 +397,9 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.savedHandle = document.onSaved.subscribe () =>
     self.handleTextDocumentSaved()
 
-  self.textInsertedHandle = document.textInserted.subscribe (
-      arg: tuple[document: TextDocument, location: Selection, text: string]) =>
-    self.handleTextInserted(arg.document, arg.location, arg.text)
-
-  self.textDeletedHandle = document.textDeleted.subscribe (
-      arg: tuple[document: TextDocument, location: Selection]) =>
-    self.handleTextDeleted(arg.document, arg.location)
+  self.onEditHandle = document.onEdit.subscribe (
+      arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =>
+    self.handleTextEdits(arg.document, arg.edits)
 
   self.diagnosticsUpdatedHandle = document.onDiagnosticsUpdated.subscribe () =>
     self.handleDiagnosticsUpdated()
@@ -444,7 +440,6 @@ method deinit*(self: TextDocumentEditor) =
   self.clearDocument()
 
   if self.blinkCursorTask.isNotNil: self.blinkCursorTask.pause()
-  if self.updateCompletionsTask.isNotNil: self.updateCompletionsTask.pause()
   if self.inlayHintsTask.isNotNil: self.inlayHintsTask.pause()
   if self.showHoverTask.isNotNil: self.showHoverTask.pause()
   if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
@@ -495,9 +490,14 @@ proc preRender*(self: TextDocumentEditor) =
   if self.searchResultsDirty:
     self.updateSearchResults()
 
-  if self.showCompletions and self.completionsDirty:
-    # measureBlock "refilter completions":
-    self.refilterCompletions()
+  let newVersion = (self.document.buffer.version, self.selections[^1].last)
+  if self.showCompletions and newVersion != self.lastCompletionTrigger:
+    if self.completionEngine.isNotNil:
+      self.completionEngine.updateCompletions()
+    self.lastCompletionTrigger = newVersion
+
+  if self.showCompletions:
+    self.updateCompletionsFromEngine()
 
 iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection,
     includeAfter: bool = true): Selection =
@@ -2585,7 +2585,7 @@ proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Fu
   return matches
 
 proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
-  self.refilterCompletions()
+  self.updateCompletionsFromEngine()
 
   if completionIndex in self.completionMatchPositions:
     return self.completionMatchPositions[completionIndex]
@@ -2602,7 +2602,7 @@ proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[
 
   return @[]
 
-proc refilterCompletions(self: TextDocumentEditor) =
+proc updateCompletionsFromEngine(self: TextDocumentEditor) =
   if not self.completionsDirty:
     return
 
@@ -2775,9 +2775,6 @@ proc switchSourceHeader*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.switchSourceHeaderAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.completionsDirty = true
-  if self.completionEngine.isNotNil:
-    self.completionEngine.updateCompletionsAt(self.selection.last)
   self.showCompletionWindow()
 
 proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -2792,9 +2789,6 @@ proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   # log lvlInfo, fmt"hideCompletions {self.document.filename}"
   self.showCompletions = false
-  if self.updateCompletionsTask.isNotNil:
-    self.updateCompletionsTask.pause()
-
   self.markDirty()
 
 proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -2854,7 +2848,7 @@ proc selectPrevTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   let completion = completion
-  log(lvlInfo, fmt"Applying completion {completion}")
+  log(lvlInfo, fmt"Applying completion {completion.item.label}")
 
   let insertTextFormat = completion.item.insertTextFormat.get(InsertTextFormat.PlainText)
 
@@ -3570,14 +3564,12 @@ proc updateInlayHintPositionsAfterDelete(self: TextDocumentEditor, selection: Se
         else:
           tabStopSelection.last = selection.first
 
-proc handleTextInserted(self: TextDocumentEditor, document: TextDocument, location: Selection,
-    text: string) =
-  self.updateInlayHintPositionsAfterInsert(location)
-  self.completionsDirty = true
-
-proc handleTextDeleted(self: TextDocumentEditor, document: TextDocument, selection: Selection) =
-  self.updateInlayHintPositionsAfterDelete(selection)
-  self.completionsDirty = true
+proc handleTextEdits(self: TextDocumentEditor, document: TextDocument, edits: seq[tuple[old, new: Selection]]) =
+  # todo
+  # self.updateInlayHintPositionsAfterInsert(location)
+  # self.updateInlayHintPositionsAfterDelete(selection)
+  # self.completionsDirty = true
+  discard
 
 proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
   # log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics.len}"
@@ -3589,7 +3581,6 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
   self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
     .withMergeStrategy(MergeStrategy(kind: TakeAll))
     .withPriority(2)
-  self.completionsDirty = true
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
   if document != self.document:
@@ -3598,7 +3589,6 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   self.snapshot = self.document.buffer.snapshot.clone()
   self.selection = (0, 0).toSelection
   self.searchResultsDirty = true
-  self.completionsDirty = true
   self.inlayHints.setLen(0)
   self.hideCompletions()
   self.updateInlayHints()
@@ -3622,10 +3612,6 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
 
   self.clampSelection()
   self.searchResultsDirty = true
-  self.completionsDirty = true
-
-  if self.showCompletions and self.updateCompletionsTask.isNotNil:
-    self.updateCompletionsTask.reschedule()
 
   self.updateInlayHints()
   self.updateDiagnosticsForCurrent()

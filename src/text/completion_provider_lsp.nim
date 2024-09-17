@@ -66,7 +66,6 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
     self.refilterCompletions()
 
 proc handleTextEdits(self: CompletionProviderLsp, document: TextDocument, edits: seq[tuple[old, new: Selection]]) =
-  self.location = edits[^1].new.last
   self.updateFilterText()
   self.refilterCompletions()
   asyncCheck self.getLspCompletionsAsync()
