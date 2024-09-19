@@ -3544,6 +3544,8 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   if self.document.isNil:
     return
 
+  log lvlInfo, &"handleTextDocumentLoaded {self.document.filename}: targetSelectionsInternal: {self.targetSelectionsInternal}, selectionsBeforeReload: {self.selectionsBeforeReload}"
+
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
     self.centerCursor()
@@ -3552,6 +3554,10 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
     if self.selection == self.selectionsBeforeReload[self.selectionsBeforeReload.high]:
       self.selection = self.document.lastCursor.toSelection
       self.scrollToCursor()
+
+  else:
+    self.selections = self.selectionsBeforeReload
+    self.scrollToCursor()
 
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)

@@ -138,6 +138,8 @@ type TextDocument* = ref object of Document
 
   treesitterParserCursor: RopeCursor ## Used during treesitter parsing to avoid constant seeking
 
+  checkpoints: Table[TransactionId, seq[string]]
+
 var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
@@ -440,6 +442,7 @@ proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
     oldText = self.buffer.snapshot().visibleText.clone()
 
   self.revision.inc
+  self.undoableRevision.inc
   self.notifyTextChanged()
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
@@ -1762,9 +1765,14 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
     byteDiff = newByteRangeEnd - endByte
 
   self.revision.inc
+  self.undoableRevision.inc
 
   let op = self.buffer.edit(ranges)
   self.recordSnapshotForDiagnostics()
+
+  let last {.cursor.} = self.buffer.history.undoStack[^1]
+  self.checkpoints[last.transaction.id] = self.nextCheckpoints
+  self.nextCheckpoints.setLen 0
 
   self.onOperation.invoke (self, op)
   self.onEdit.invoke (self, edits)
@@ -1830,21 +1838,26 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   var oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
-  # todo: checkpoints
-  if self.buffer.undo().getSome(undo):
-    self.recordSnapshotForDiagnostics()
+  var lastUndo: UndoOperation
+  while self.buffer.undo().getSome(undo):
     self.onOperation.invoke (self, undo.op)
-    for i in numPatchesBefore..self.buffer.patches.high:
-      let patch {.cursor.} = self.buffer.patches[i]
-      self.handlePatch(oldText, patch.patch)
-      oldText = self.buffer.snapshot().visibleText.clone()
+    lastUndo = undo.op.undo
+    if untilCheckpoint.len == 0 or undo.transactionId notin self.checkpoints or untilCheckpoint in self.checkpoints[undo.transactionId]:
+      break
 
-    for editId in undo.op.undo.counts.keys:
-      if self.undoSelections.contains(editId):
-        result = self.undoSelections[editId].some
-        break
+  for editId in lastUndo.counts.keys:
+    if self.undoSelections.contains(editId):
+      result = self.undoSelections[editId].some
+      break
+
+  self.recordSnapshotForDiagnostics()
+  for i in numPatchesBefore..self.buffer.patches.high:
+    let patch {.cursor.} = self.buffer.patches[i]
+    self.handlePatch(oldText, patch.patch)
+    oldText = self.buffer.snapshot().visibleText.clone()
 
   self.revision.inc
+  self.undoableRevision.inc
   self.notifyTextChanged()
 
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
@@ -1853,21 +1866,30 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   var oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
-  # todo: checkpoints
-  if self.buffer.redo().getSome(redo):
-    self.recordSnapshotForDiagnostics()
+  var lastRedo: UndoOperation
+  while self.buffer.redo().getSome(redo):
     self.onOperation.invoke (self, redo.op)
-    for i in numPatchesBefore..self.buffer.patches.high:
-      let patch {.cursor.} = self.buffer.patches[i]
-      self.handlePatch(oldText, patch.patch)
-      oldText = self.buffer.snapshot().visibleText.clone()
+    lastRedo = redo.op.undo
+    if untilCheckpoint.len == 0 or self.buffer.history.redoStack.len == 0:
+      break
 
-    for editId in redo.op.undo.counts.keys:
-      if self.redoSelections.contains(editId):
-        result = self.redoSelections[editId].some
-        break
+    let nextRedo {.cursor.} = self.buffer.history.redoStack[^1]
+    if nextRedo.transaction.id notin self.checkpoints or untilCheckpoint in self.checkpoints[nextRedo.transaction.id]:
+      break
+
+  for editId in lastRedo.counts.keys:
+    if self.redoSelections.contains(editId):
+      result = self.redoSelections[editId].some
+      break
+
+  self.recordSnapshotForDiagnostics()
+  for i in numPatchesBefore..self.buffer.patches.high:
+    let patch {.cursor.} = self.buffer.patches[i]
+    self.handlePatch(oldText, patch.patch)
+    oldText = self.buffer.snapshot().visibleText.clone()
 
   self.revision.inc
+  self.undoableRevision.inc
   self.notifyTextChanged()
 
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
