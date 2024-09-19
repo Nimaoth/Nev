@@ -125,15 +125,13 @@ proc getCursorPos(self: TextDocumentEditor, builder: UINodeBuilder, text: string
       let runeOffset = startOffset + i.RuneCount
       if runeOffset.RuneCount >= self.document.lineRuneLen(line):
         return 0
-      # todo: don't use getLine, add function for conversion
-      let byteIndex = self.document.getLine(line).toOpenArray.runeOffset(runeOffset)
+      let byteIndex = self.document.byteOffsetInLine(line, runeOffset)
       return byteIndex
 
     offset += w
     inc i
 
-  # todo: don't use getLine, add function for conversion
-  let byteIndex = self.document.getLine(line).toOpenArray.runeOffset(startOffset + text.runeLen)
+  let byteIndex = self.document.byteOffsetInLine(line, startOffset + text.runeLen)
   return byteIndex
 
 proc renderLinePart(

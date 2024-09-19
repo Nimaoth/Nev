@@ -23,6 +23,7 @@ proc cacheLine(self: CompletionProviderDocument, line: int) =
 
   # Compiler complains about intantiation of SumTree[Cursor], even though we don't explicitly instantiate it,
   # but binarySearch uses cmp[Cursor] which somehow instantiates SumTree[Cursor]
+  # so use this wrapper to avoid instantiating cmp[Cursor] in the other binarySearch overload
   func cmpFn(a, b: Cursor): int = cmp(a, b)
 
   self.buffer.setLen(0)

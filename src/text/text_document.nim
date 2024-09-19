@@ -10,7 +10,7 @@ import document, document_editor, custom_treesitter, indent, text_language_confi
 import pkg/chroma
 
 import nimsumtree/[buffer, clock, static_array, rope]
-from nimsumtree/sumtree as st import summaryType, itemSummary, Bias
+from nimsumtree/sumtree as st import Bias, summaryType, itemSummary
 
 from language/lsp_types as lsp_types import nil
 
@@ -250,6 +250,15 @@ proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selectio
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.}
 proc trimTrailingWhitespace*(self: TextDocument)
 
+proc byteOffsetInLine*(self: TextDocument, line: int, index: RuneIndex): int =
+  if line notin 0..self.numLines - 1:
+    return 0
+
+  var c = self.buffer.visibleText.cursorT(Point.init(0, 0))
+  let count = c.summary(Count, Point.init(line, 0))
+  let byteOffset = self.buffer.visibleText.countToOffset(count + index.Count)
+  return byteOffset - c.offset
+
 proc runeIndexInLine*(self: TextDocument, cursor: Cursor): RuneIndex =
   if cursor.line notin 0..self.numLines - 1:
     return 0.RuneIndex
@@ -338,6 +347,8 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
         self.notifyRequestRerender()
 
         if version == self.buffer.version:
+          assert self.changes.len == 0
+          assert self.changesAsync.len == 0
           return
 
         self.currentContentFailedToParse = false

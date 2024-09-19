@@ -44,7 +44,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   app*: AppInterface
   platform*: Platform
   document*: TextDocument
-  snapshot*: BufferSnapshot
+  snapshot: BufferSnapshot
   selectionAnchors: seq[(Anchor, Anchor)]
 
   diffDocument*: TextDocument
@@ -141,7 +141,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   currentSnippetData*: Option[SnippetData]
 
-  onEditHandle: Id
   onBufferChangedHandle: Id
   textChangedHandle: Id
   onRequestRerenderHandle: Id
@@ -202,7 +201,6 @@ proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
 
-proc handleTextEdits(self: TextDocumentEditor, document: TextDocument, edits: seq[tuple[old, new: Selection]])
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
     languageServer: LanguageServer)
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
@@ -242,7 +240,9 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
 
   self.selectionsInternal = selections
   self.cursorVisible = true
-  self.selectionAnchors = self.selectionsInternal.mapIt (self.snapshot.anchorAfter(it.first.toPoint), self.snapshot.anchorBefore(it.last.toPoint))
+
+  let snapshot {.cursor.} = self.document.buffer.snapshot
+  self.selectionAnchors = self.selectionsInternal.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
 
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
@@ -269,7 +269,9 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
 
   self.selectionsInternal = @[selection]
   self.cursorVisible = true
-  self.selectionAnchors = self.selectionsInternal.mapIt (self.snapshot.anchorAfter(it.first.toPoint), self.snapshot.anchorBefore(it.last.toPoint))
+
+  let snapshot {.cursor.} = self.document.buffer.snapshot
+  self.selectionAnchors = self.selectionsInternal.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
 
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
@@ -373,10 +375,6 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
   self.savedHandle = document.onSaved.subscribe () =>
     self.handleTextDocumentSaved()
-
-  self.onEditHandle = document.onEdit.subscribe (
-      arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =>
-    self.handleTextEdits(arg.document, arg.edits)
 
   self.languageServerAttachedHandle = document.onLanguageServerAttached.subscribe (
       arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
@@ -3463,13 +3461,6 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   self.onFocusChangedHandle = self.app.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
   self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
-
-proc handleTextEdits(self: TextDocumentEditor, document: TextDocument, edits: seq[tuple[old, new: Selection]]) =
-  # todo
-  # self.updateInlayHintPositionsAfterInsert(location)
-  # self.updateInlayHintPositionsAfterDelete(selection)
-  # self.completionsDirty = true
-  discard
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
     languageServer: LanguageServer) =
