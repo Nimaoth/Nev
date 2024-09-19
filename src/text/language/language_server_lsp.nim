@@ -72,13 +72,6 @@ proc handleMessages(lsp: LanguageServerLSP) {.async.} =
       break
 
     log lvlInfo, &"{messageType}: {message}"
-
-    let level = case messageType
-    of Error: lvlError
-    of Warning: lvlWarn
-    of Info: lvlInfo
-    of Log: lvlDebug
-
     lsp.onMessage.invoke (messageType, message)
 
   log lvlInfo, &"handleMessages: client gone"

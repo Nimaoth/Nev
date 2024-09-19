@@ -1,5 +1,5 @@
-import std/[strutils, sugar, sets, algorithm]
-import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, delayed_task, custom_async]
+import std/[strutils, sets, algorithm]
+import misc/[custom_unicode, util, event, timer, custom_logger, fuzzy_matching, delayed_task, custom_async]
 import language/[lsp_types]
 import completion, text_document
 import scripting_api
@@ -77,7 +77,6 @@ proc updateWordCache(self: CompletionProviderDocument) =
 
 proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
   # debugf"[Doc.refilterCompletions] {self.location}: '{self.currentFilterText}'"
-  let timer = startTimer()
   let revision = self.revision
 
   self.filteredCompletions.setLen 0
@@ -108,8 +107,6 @@ proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
 
       loopTimer = startTimer()
 
-  # if timer.elapsed.ms > 2:
-  #   log lvlInfo, &"[Comp-Doc] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.wordCache.len})"
   self.onCompletionsUpdated.invoke (self)
 
 method forceUpdateCompletions*(provider: CompletionProviderDocument) =

@@ -181,14 +181,6 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Completions: {self.completions.len}\n"
   result.add &"LastItems: {self.lastItems.len}"
 
-template noSelectionHistory(self, body: untyped): untyped =
-  block:
-    let temp = self.dontRecordSelectionHistory
-    self.dontRecordSelectionHistory = true
-    defer:
-      self.dontRecordSelectionHistory = temp
-    body
-
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider
   ): TextDocumentEditor
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
@@ -808,15 +800,14 @@ proc getLastRenderedVisualLine(self: TextDocumentEditor, line: int): Option[Styl
 proc getPartContaining(line: StyledLine, column: int): Option[ptr StyledText] =
   for i in countdown(line.parts.high, 0):
     template part: untyped = line.parts[i]
-    if part.visualRange.getSome(r):
+    if part.visualRange.isSome:
       if column in part.textRange.get.startOffset..part.textRange.get.endOffset:
         return part.addr.some
 
 proc getPartContainingVisual(line: StyledLine, subLine: int, visualColumn: int): Option[ptr StyledText] =
   var closest = int.high
   for part in line.parts.mitems:
-    if part.visualRange.getSome(r) and
-        part.visualRange.get.subLine == subLine:
+    if part.visualRange.getSome(r) and r.subLine == subLine:
 
       if visualColumn in part.visualRange.get.startColumn..<part.visualRange.get.endColumn:
         closest = 0
@@ -834,13 +825,6 @@ proc numSubLines(line: StyledLine): int =
   for i in countdown(line.parts.high, 0):
     if line.parts[i].visualRange.getSome(r):
       return r.subLine + 1
-
-proc getVisualColumn(self: TextDocumentEditor, cursor: Cursor): int =
-  result = cursor.column
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line):
-    if line.getPartContaining(cursor.column).getSome(part):
-      let r = part[].visualRange.get
-      result = r.startColumn + (cursor.column - part[].textRange.get.startOffset)
 
 proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
   var cursor = cursor
@@ -1300,8 +1284,6 @@ proc getNextNodeWithSameType*(self: TextDocumentEditor, selection: Selection, of
   if self.document.tsTree.isNil:
     return Selection.none
 
-  let tree = self.document.tsTree
-
   let selectionRange = selection.tsRange
   let originalNode = self.document.tsTree.root.descendantForRange(selectionRange)
   let targetType = originalNode.nodeType
@@ -1313,7 +1295,6 @@ proc getNextNodeWithSameType*(self: TextDocumentEditor, selection: Selection, of
     var node = originalNode
 
     while true:
-      let indent = "  ".repeat(max(indentLevel, 0))
       if cursor.currentNode != originalNode and cursor.currentNode.nodeType == targetType:
         targetNode = cursor.currentNode.some
         break
@@ -1332,7 +1313,6 @@ proc getNextNodeWithSameType*(self: TextDocumentEditor, selection: Selection, of
         continue
 
       if cursor.currentNode == node:
-        let i = cursor.currentDescendantIndex
         let prevNode = node
         node = node.parent
         if node.isNull:

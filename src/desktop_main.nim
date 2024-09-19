@@ -176,7 +176,7 @@ if not disableLogging: ## Enable loggers
     if backend.get != Terminal and logToConsole:
       logger.enableConsoleLogger()
 
-import misc/[util, timer, custom_async]
+import misc/[timer, custom_async]
 import platform/platform
 import ui/widget_builders
 import text/language/language_server
@@ -400,7 +400,7 @@ when enableGui:
     myDisableTrueColors()
 
 when defined(windows) and copyWasmtimeDll:
-  import std/[os, compilesettings]
+  import std/[compilesettings]
   import wasmh
 
   static:

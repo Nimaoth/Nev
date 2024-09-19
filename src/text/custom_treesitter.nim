@@ -229,6 +229,8 @@ else:
 
   type TSLanguageCtor = proc(): ptr ts.TSLanguage {.stdcall.}
 
+  func `=destroy`(t: TsTree) {.raises: [].} = discard
+
   func setLanguage*(self: TSParser, language: TSLanguage) =
     assert ts.tsParserSetLanguage(self.impl, language.impl)
 
@@ -510,7 +512,7 @@ else:
 # Available on all targets
 
 when not defined(js):
-  import std/[tables, os, strutils]
+  import std/[os, strutils]
   var treesitterDllCache = initTable[string, LibHandle]()
 
   var wasmEngine = WasmEngine.new(WasmConfig.new())
@@ -788,7 +790,6 @@ proc toSelection*(rang: TSRange): scripting_api.Selection = (rang.first.toCursor
 
 proc freeDynamicLibraries*() =
   for p in parsers:
-    let store = p.impl.tsParserTakeWasmStore()
     p.deinit()
   parsers.setLen 0
 

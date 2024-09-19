@@ -1,4 +1,4 @@
-import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times, enumerate, threadpool]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times, threadpool]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
@@ -284,22 +284,8 @@ proc applyTreesitterChanges(self: TextDocument, tree: TSTree, changes: var seq[T
 
   changes.setLen 0
 
-proc getTextRangeTreesitter(self: TextDocument; byteIndex: int, cursor: Cursor): (ptr char, int) =
-  if cursor.line notin 0..self.numLines - 1:
-    return (nil, 0)
-
-  if byteIndex < self.treesitterParserCursor.offset:
-    self.treesitterParserCursor.reset()
-
-  self.treesitterParserCursor.seekForward(byteIndex)
-  if self.treesitterParserCursor.chunk.getSome(chunk):
-    let byteIndexRel = byteIndex - self.treesitterParserCursor.chunkStartPos
-    return (chunk.chars[byteIndexRel].addr, chunk.chars.len - byteIndexRel)
-  return (nil, 0)
-
 proc parseTreesitterThread(parser: ptr TSParser, oldTree: TSTree, text: sink Rope): TSTree =
   var ropeCursor = text.cursor()
-  let numLines = text.lines
   let newTree = parser[].parseCallback(oldTree):
     proc(byteIndex: int, cursor: Cursor): (ptr char, int) =
       if byteIndex < ropeCursor.offset:
@@ -387,8 +373,6 @@ proc `content=`*(self: TextDocument, value: sink string) =
 
   self.undoOps = @[]
   self.redoOps = @[]
-
-  let previousFullSelection = ((0, 0), self.lastCursor)
 
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
@@ -644,9 +628,6 @@ proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Select
   for match in self.errorQuery.matches(self.tsTree.root, tsRange(tsPoint(selection.first.line, 0), tsPoint(selection.last.line, 0))):
     for capture in match.captures:
       result.add capture.node.getRange.toSelection
-
-let spacePattern = re"[ ]+"
-let tabPattern = re"\t"
 
 proc replaceSpaces(self: TextDocument, line: var StyledLine) =
   # override whitespace
@@ -1494,44 +1475,6 @@ proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 
 
   result = node.getRange.toSelection.some
 
-proc moveCursorColumn(self: TextDocument, cursor: Cursor, offset: int, wrap: bool = true): Cursor =
-  var cursor = cursor
-  var column = cursor.column
-
-  template currentLine: openArray[char] = self.getLine(cursor.line).toOpenArray
-
-  if offset > 0:
-    for i in 0..<offset:
-      if column == currentLine.len:
-        if not wrap:
-          break
-        if cursor.line < self.numLines - 1:
-          cursor.line = cursor.line + 1
-          cursor.column = 0
-          continue
-        else:
-          cursor.column = currentLine.len
-          break
-
-      cursor.column = currentLine.nextRuneStart(cursor.column)
-
-  elif offset < 0:
-    for i in 0..<(-offset):
-      if column == 0:
-        if not wrap:
-          break
-        if cursor.line > 0:
-          cursor.line = cursor.line - 1
-          cursor.column = currentLine.len
-          continue
-        else:
-          cursor.column = 0
-          break
-
-      cursor.column = currentLine.runeStart(cursor.column - 1)
-
-  return self.clampCursor cursor
-
 proc firstNonWhitespace*(str: string): int =
   result = 0
   for c in str:
@@ -1804,7 +1747,6 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
     co.seekForward(edit.old.a.int)
     cn.seekForward(edit.new.a.int)
 
-    let startByte = edit.old.a
     let startPosOld = co.position
     let startPosNew = cn.position
 

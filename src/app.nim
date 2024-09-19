@@ -1161,8 +1161,8 @@ proc listenForIpc(self: App, id: int) {.async.} =
         try:
           if message.startsWith("-r:") or message.startsWith("-R:"):
             let (action, arg) = parseAction(message[3..^1])
-            let response = self.handleAction(action, arg, record=true)
             # todo: send response
+            discard self.handleAction(action, arg, record=true)
           elif message.startsWith("-p:"):
             let setting = message[3..^1]
             let i = setting.find("=")
@@ -1630,7 +1630,6 @@ proc openDocument*(self: App, path: string, appFile = false, load = true): Optio
 proc getDocument*(self: App, path: string, appFile = false): Option[Document] =
   for document in self.documents:
     if document.workspace == self.workspace.some and document.appFile == appFile and document.filename == path:
-      # log lvlInfo, &"Get existing document '{path}'"
       return document.some
 
   return Document.none
@@ -2709,7 +2708,6 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let (vfs, relPath) = self.vfs.getVFS(path)
     let pathNorm = self.vfs.normalize(path)
 
     let editor = self.openWorkspaceFile(pathNorm)

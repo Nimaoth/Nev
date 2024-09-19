@@ -1,5 +1,5 @@
 import std/[sugar, algorithm, sequtils]
-import misc/[custom_unicode, util, id, event, timer, custom_logger]
+import misc/[custom_unicode, util, id, event, custom_logger]
 import language/[lsp_types]
 import scripting_api
 
@@ -66,7 +66,6 @@ proc cmp(a, b: Completion): int =
   cmp(a.score, b.score)
 
 proc updateCombinedCompletions(self: CompletionEngine) =
-  let timer = startTimer()
   self.combinedCompletions.setLen 0
 
   for i, provider in self.providersByPriority:
@@ -85,9 +84,6 @@ proc updateCombinedCompletions(self: CompletionEngine) =
   self.combinedCompletions.sort(cmp, Descending)
   self.combinedDirty = false
   self.revision += 1
-
-  # if timer.elapsed.ms > 5:
-  #   log lvlInfo, &"[Comp] Combine completions took {timer.elapsed.ms}. {self.combinedCompletions.len} completions."
 
 proc handleProviderCompletionsUpdated(self: CompletionEngine, provider: CompletionProvider) =
   self.combinedDirty = true

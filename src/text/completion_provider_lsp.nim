@@ -1,5 +1,5 @@
-import std/[strutils, sugar]
-import misc/[custom_unicode, util, id, custom_async, event, timer, custom_logger, fuzzy_matching, response]
+import std/[strutils]
+import misc/[custom_unicode, util, custom_async, event, timer, custom_logger, fuzzy_matching, response]
 import language/[lsp_types, language_server_base]
 import completion, text_document
 import scripting_api

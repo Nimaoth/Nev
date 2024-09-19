@@ -1,8 +1,8 @@
-import std/[sugar, json, tables]
+import std/[json, tables]
 import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching]
 import language/[lsp_types]
 import completion, text_document
-import config_provider, scripting_api
+import config_provider
 
 logCategory "Comp-Snip"
 

@@ -527,7 +527,6 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
 
       let res = WasmModule(path: path)
 
-      let appPath = fs.getApplicationFilePath(path)
       var content: string
       try:
         content = await fs.loadFileAsync(path)
