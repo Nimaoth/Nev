@@ -60,7 +60,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   diagnosticsId*: Id
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
-  lastDiagnosticLocationBounds*: Option[Rect]
 
   configProvider: ConfigProvider
 
@@ -102,11 +101,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   # inline hints
   inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
   inlayHintsTask: DelayedTask
-
-  # line index to sequence of indices into document.currentDiagnostics
-  showDiagnostic*: bool = false
-  currentDiagnosticLine*: int
-  currentDiagnostic*: Diagnostic
 
   completionEventHandler: EventHandler
   modeEventHandler: EventHandler
@@ -156,7 +150,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   savedHandle: Id
   textInsertedHandle: Id
   textDeletedHandle: Id
-  diagnosticsUpdatedHandle: Id
   languageServerAttachedHandle: Id
   onCompletionsUpdatedHandle: Id
   onFocusChangedHandle: Id
@@ -209,7 +202,6 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
   count: int = 0): Selection
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
 proc updateInlayHints*(self: TextDocumentEditor)
-proc updateDiagnosticsForCurrent*(self: TextDocumentEditor)
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
 proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
   tint: Color = color(1, 1, 1))
@@ -219,7 +211,6 @@ proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selection
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
 
 proc handleTextEdits(self: TextDocumentEditor, document: TextDocument, edits: seq[tuple[old, new: Selection]])
-proc handleDiagnosticsUpdated(self: TextDocumentEditor)
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
     languageServer: LanguageServer)
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
@@ -271,8 +262,6 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   self.hideCompletions()
   # self.document.addNextCheckpoint("move")
 
-  self.updateDiagnosticsForCurrent()
-
   self.markDirty()
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -299,8 +288,6 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   self.showHover = false
   self.hideCompletions()
   # self.document.addNextCheckpoint("move")
-
-  self.updateDiagnosticsForCurrent()
 
   self.markDirty()
 
@@ -341,7 +328,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.document.onLoaded.unsubscribe(self.loadedHandle)
     self.document.onPreLoaded.unsubscribe(self.preLoadedHandle)
     self.document.onSaved.unsubscribe(self.savedHandle)
-    self.document.onDiagnosticsUpdated.unsubscribe(self.diagnosticsUpdatedHandle)
     self.document.onLanguageServerAttached.unsubscribe(self.languageServerAttachedHandle)
 
     self.selectionHistory.clear()
@@ -350,7 +336,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.signs.clear()
     self.showHover = false
     self.inlayHints.setLen 0
-    self.showDiagnostic = false
     self.scrollOffset = 0
     self.previousBaseIndex = 0
     self.lastRenderedLines.setLen 0
@@ -400,9 +385,6 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.onEditHandle = document.onEdit.subscribe (
       arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =>
     self.handleTextEdits(arg.document, arg.edits)
-
-  self.diagnosticsUpdatedHandle = document.onDiagnosticsUpdated.subscribe () =>
-    self.handleDiagnosticsUpdated()
 
   self.languageServerAttachedHandle = document.onLanguageServerAttached.subscribe (
       arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
@@ -479,12 +461,13 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
 proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
   if self.inlayHints.len > 0 and self.inlayHints[0].anchor.timestamp != self.document.buffer.timestamp:
     let snapshot = self.document.buffer.snapshot.clone()
-    for inlay in self.inlayHints.mitems:
-      if inlay.anchor.summaryOpt(Point, snapshot, resolveDeleted = false).getSome(point):
-        inlay.hint.location = point.toCursor
-        inlay.anchor = snapshot.anchorAt(inlay.hint.location.toPoint, Left)
+
+    for i in countdown(self.inlayHints.high, 0):
+      if self.inlayHints[i].anchor.summaryOpt(Point, snapshot, resolveDeleted = false).getSome(point):
+        self.inlayHints[i].hint.location = point.toCursor
+        self.inlayHints[i].anchor = snapshot.anchorAt(self.inlayHints[i].hint.location.toPoint, Left)
       else:
-        inlay.hint.location = (-1, 0)
+        self.inlayHints.removeSwap(i)
 
 proc preRender*(self: TextDocumentEditor) =
   if self.configProvider.isNil or self.document.isNil:
@@ -1721,6 +1704,9 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
 
 proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0,
     offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
+
+  self.document.resolveDiagnosticAnchors()
+
   var i = 0
   for line in countdown(cursor.line, 0):
     if self.document.diagnosticsPerLine.contains(line):
@@ -1757,6 +1743,9 @@ proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 
 proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0,
     offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
+
+  self.document.resolveDiagnosticAnchors()
+
   var i = 0
   for line in cursor.line..<self.document.numLines:
     if self.document.diagnosticsPerLine.contains(line):
@@ -3078,7 +3067,6 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.clearDiagnostics()
-  self.currentDiagnosticLine = -1
   self.markDirty()
 
 proc updateInlayHints*(self: TextDocumentEditor) =
@@ -3087,48 +3075,6 @@ proc updateInlayHints*(self: TextDocumentEditor) =
       asyncCheck self.updateInlayHintsAsync()
   else:
     self.inlayHintsTask.reschedule()
-
-proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let line = self.selection.last.line
-  if self.document.diagnosticsPerLine.contains(line):
-    let diagnostics {.cursor.} = self.document.diagnosticsPerLine[line]
-    if diagnostics.len == 0:
-      return
-
-    let index = diagnostics[0]
-    if index >= self.document.currentDiagnostics.len:
-      self.currentDiagnosticLine = -1
-    else:
-      self.currentDiagnosticLine = line
-      self.currentDiagnostic = self.document.currentDiagnostics[index]
-      self.showDiagnostic = true
-  else:
-    self.currentDiagnosticLine = -1
-
-  self.markDirty()
-
-proc showDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let line = self.selection.last.line
-  if self.showDiagnostic and self.currentDiagnostic.selection.first.line == line:
-    self.showDiagnostic = false
-    self.markDirty()
-    return
-
-  if self.document.diagnosticsPerLine.contains(line):
-    let diagnostics {.cursor.} = self.document.diagnosticsPerLine[line]
-    self.currentDiagnosticLine = line
-    let index = diagnostics[0]
-    if index >= self.document.currentDiagnostics.len:
-      self.showDiagnostic = false
-      self.markDirty()
-      return
-
-    self.currentDiagnostic = self.document.currentDiagnostics[index]
-    self.showDiagnostic = true
-  else:
-    self.showDiagnostic = false
-
-  self.markDirty()
 
 proc setReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
   ## Sets the interal readOnly flag, but doesn't not change permissions of the underlying file
@@ -3545,16 +3491,13 @@ proc handleTextEdits(self: TextDocumentEditor, document: TextDocument, edits: se
   # self.completionsDirty = true
   discard
 
-proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
-  # log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics.len}"
-  self.updateDiagnosticsForCurrent()
-
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
     languageServer: LanguageServer) =
   # log lvlInfo, fmt"[handleLanguageServerAttached] {self.document.filename}"
   self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
     .withMergeStrategy(MergeStrategy(kind: TakeAll))
     .withPriority(2)
+  self.updateInlayHints()
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
   if document != self.document:
@@ -3588,7 +3531,6 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.searchResultsDirty = true
 
   self.updateInlayHints()
-  self.updateDiagnosticsForCurrent()
 
   self.markDirty()
 

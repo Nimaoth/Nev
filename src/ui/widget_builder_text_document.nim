@@ -270,7 +270,6 @@ proc renderLine*(
     var subLineIndex = 0
     var subLinePartIndex = 0
     var previousInlayNode: UINode = nil
-    var insertDiagnosticLater: bool = false
 
     var textStartX = 0.0
     if options.signWidth > 0:
@@ -279,7 +278,7 @@ proc renderLine*(
     if lineNumberText.len > 0:
       textStartX += options.lineNumberTotalWidth
 
-    while partIndex < line.parts.len or insertDiagnosticLater: # outer loop for wrapped lines within this line
+    while partIndex < line.parts.len: # outer loop for wrapped lines within this line
 
       builder.panel(flagsInner + LayoutHorizontal):
         subLine = currentNode
@@ -972,10 +971,6 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   hoverPanel.rawY = cursorBounds.y
   hoverPanel.pivot = vec2(0, 1)
 
-proc createDiagnostics(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect, backgroundColor: Color) =
-  # todo
-  discard
-
 proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
@@ -1223,8 +1218,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
           if infos.hover.getSome(info):
             self.lastHoverLocationBounds = info.bounds.transformRect(info.node, builder.root).some
-          if infos.diagnostic.getSome(info):
-            self.lastDiagnosticLocationBounds = info.bounds.transformRect(info.node, builder.root).some
 
   if self.showCompletions and self.active:
     result.add proc() =
@@ -1233,10 +1226,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   if self.showHover:
     result.add proc() =
       self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
-
-  if self.showDiagnostic and self.currentDiagnosticLine != -1:
-    result.add proc() =
-      self.createDiagnostics(builder, app, self.lastDiagnosticLocationBounds.get(rect(100, 100, 10, 10)), backgroundColor)
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
   if line == 0 or self.languageConfig.isNone:

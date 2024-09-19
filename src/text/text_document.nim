@@ -77,12 +77,15 @@ variantp TextDocumentChange:
 type TextDocument* = ref object of Document
   buffer*: Buffer
   mLanguageId: string
-  version*: int
 
   nextLineIdCounter: int32 = 0
 
   isLoadingAsync*: bool = false
   isParsingAsync*: bool = false
+
+  singleLine*: bool = false
+  readOnly*: bool = false
+  staged*: bool = false
 
   onRequestRerender*: Event[void]
   onPreLoaded*: Event[TextDocument]
@@ -92,9 +95,7 @@ type TextDocument* = ref object of Document
   onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
   onOperation*: Event[tuple[document: TextDocument, op: Operation]]
   onBufferChanged*: Event[tuple[document: TextDocument]]
-  singleLine*: bool = false
-  readOnly*: bool = false
-  staged*: bool = false
+  onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
 
   undoSelections*: Table[Lamport, Selections]
   redoSelections*: Table[Lamport, Selections]
@@ -129,25 +130,29 @@ type TextDocument* = ref object of Document
 
   diagnosticsPerLine*: Table[int, seq[int]]
   currentDiagnostics*: seq[Diagnostic]
-  onDiagnosticsUpdated*: Event[void]
+  currentDiagnosticsAnchors: seq[Range[Anchor]]
   onDiagnosticsHandle: Id
-
-  onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
+  lastDiagnosticVersion: Global # todo: reset at appropriate times
+  lastDiagnosticAnchorResolve: Global # todo: reset at appropriate times
+  diagnosticSnapshots: seq[BufferSnapshot] # todo: reset at appropriate times
 
   treesitterParserCursor: RopeCursor ## Used during treesitter parsing to avoid constant seeking
 
 var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
-proc clearStyledTextCache*(self: TextDocument)
+proc clearStyledTextCache*(self: TextDocument, line: Option[int] = int.none)
 proc clearDiagnostics*(self: TextDocument)
 proc numLines*(self: TextDocument): int {.noSideEffect.}
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
+proc resolveDiagnosticAnchors*(self: TextDocument)
 
 func toPoint*(cursor: Cursor): Point = Point.init(cursor.line, cursor.column)
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
+func toRange*(selection: Selection): Range[Point] = selection.first.toPoint...selection.last.toPoint
 func toCursor*(point: Point): Cursor = (point.row.int, point.column.int)
 func toSelection*(self: (Point, Point)): Selection = (self[0].toCursor, self[1].toCursor)
+func toSelection*(self: Range[Point]): Selection = (self.a.toCursor, self.b.toCursor)
 
 proc getIndentInBytes*(self: TextDocument, line: int): int
 proc getIndentInRunes*(self: TextDocument, line: int): RuneIndex
@@ -400,7 +405,6 @@ proc `content=`*(self: TextDocument, value: sink string) =
 
   self.currentContentFailedToParse = false
   self.currentTree.delete()
-  inc self.version
 
   self.onBufferChanged.invoke (self,)
 
@@ -416,12 +420,19 @@ proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, content: string) =
 
   self.notifyRequestRerender()
 
+proc recordSnapshotForDiagnostics(self: TextDocument) =
+  let diagnosticHistoryMaxLength = self.configProvider.getValue("text.diagnostic-snapshot-history", 5)
+  self.diagnosticSnapshots.add(self.buffer.snapshot.clone())
+  while self.diagnosticSnapshots.len > diagnosticHistoryMaxLength:
+    self.diagnosticSnapshots.removeShift(0)
+
 proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
   var oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
   # todo: checkpoints
   discard self.buffer.applyRemote(ops)
+  self.recordSnapshotForDiagnostics()
 
   for i in numPatchesBefore..self.buffer.patches.high:
     let patch {.cursor.} = self.buffer.patches[i]
@@ -711,6 +722,8 @@ proc replaceTabs(self: TextDocument, line: var StyledLine) =
 
 proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
   # diagnostics
+  self.resolveDiagnosticAnchors()
+
   if self.diagnosticsPerLine.contains(line.index):
     let indices {.cursor.} = self.diagnosticsPerLine[line.index]
 
@@ -721,6 +734,9 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
     var errorDiagnostics = 0
 
     for diagnosticIndex in indices:
+      if diagnosticIndex notin 0..self.currentDiagnostics.high:
+        continue
+
       let diagnostic {.cursor.} = self.currentDiagnostics[diagnosticIndex]
       if diagnostic.removed:
         continue
@@ -1247,17 +1263,56 @@ method load*(self: TextDocument, filename: string = "") =
     self.autoDetectIndentStyle()
     self.onLoaded.invoke self
 
-proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.Diagnostic]) =
+proc resolveDiagnosticAnchors*(self: TextDocument) =
+  if self.currentDiagnostics.len == 0:
+    return
+
+  if self.lastDiagnosticAnchorResolve == self.buffer.version:
+    return
+
+  let snapshot = self.buffer.snapshot.clone()
+  self.lastDiagnosticAnchorResolve = self.buffer.version
+  self.diagnosticsPerLine.clear()
+
+  for i in countdown(self.currentDiagnostics.high, 0):
+    for line in self.currentDiagnostics[i].selection.first.line..self.currentDiagnostics[i].selection.last.line:
+      self.styledTextCache.del(line)
+
+    if self.currentDiagnosticsAnchors[i].summaryOpt(Point, snapshot, resolveDeleted = false).getSome(range):
+      self.currentDiagnostics[i].selection = range.toSelection
+      self.currentDiagnosticsAnchors[i] = snapshot.anchorAt(self.currentDiagnostics[i].selection.toRange, Right, Left)
+    else:
+      self.currentDiagnostics.removeSwap(i)
+      self.currentDiagnosticsAnchors.removeSwap(i)
+      continue
+
+  for i, d in self.currentDiagnostics:
+    for line in d.selection.first.line..d.selection.last.line:
+      self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
+      self.styledTextCache.del(line)
+
+proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
   for line in self.diagnosticsPerLine.keys:
     self.styledTextCache.del(line)
 
+  let snapshot = snapshot.take(self.buffer.snapshot.clone())
+
   self.currentDiagnostics.setLen diagnostics.len
+  self.currentDiagnosticsAnchors.setLen diagnostics.len
   self.diagnosticsPerLine.clear()
 
   for i, d in diagnostics:
-    let selection = self.runeSelectionToSelection((
-      (d.`range`.start.line, d.`range`.start.character.RuneIndex),
-      (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex)))
+    # let runeSelection = (
+    #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
+    #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
+    # todo: convert rune index (character) to byte index
+    # let selection = self.runeSelectionToSelection(runeSelection)
+
+    let runeSelection: Selection = (
+      (d.`range`.start.line, d.`range`.start.character),
+      (d.`range`.`end`.line, d.`range`.`end`.character))
+
+    let selection = runeSelection
 
     self.currentDiagnostics[i] = language_server_base.Diagnostic(
       selection: selection,
@@ -1271,16 +1326,33 @@ proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.
       data: d.data,
     )
 
+    self.currentDiagnosticsAnchors[i] = snapshot.anchorAt(selection.toRange, Right, Left)
+
     for line in selection.first.line..selection.last.line:
       self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
       self.styledTextCache.del(line)
 
+  if snapshot.version != self.buffer.version:
+    self.lastDiagnosticAnchorResolve = snapshot.version
+    self.resolveDiagnosticAnchors()
+
+  self.notifyRequestRerender()
+
 proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
   let languageServer = await self.getLanguageServer()
   if languageServer.getSome(ls):
+    let snapshot = self.buffer.snapshot.clone()
     let diagnostics = await ls.getDiagnostics(self.filename)
-    if diagnostics.isSuccess:
-      self.setCurrentDiagnostics(diagnostics.result)
+
+    if not diagnostics.isSuccess:
+      return
+
+    if not snapshot.version.observedAll(self.lastDiagnosticVersion):
+      log lvlWarn, &"Got diagnostics older that the current. Current {self.lastDiagnosticVersion}, received {snapshot.version}"
+      return
+
+    self.lastDiagnosticVersion = snapshot.version
+    self.setCurrentDiagnostics(diagnostics.result, snapshot.some)
 
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
   let languageId = if self.languageId != "":
@@ -1333,7 +1405,25 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       let uri = diagnostics.uri.decodeUrl.parseUri
       if uri.path.normalizePathUnix == self.filename:
-        self.setCurrentDiagnostics(diagnostics.diagnostics)
+        let version = diagnostics.version.mapIt(self.buffer.history.versions.get(it)).flatten
+        if version.getSome(version) and not version.observedAll(self.lastDiagnosticVersion):
+          log lvlWarn, &"Got diagnostics older that the current. Current {self.lastDiagnosticVersion}, received {version}"
+          return
+
+        if version.getSome(version):
+          self.lastDiagnosticVersion = version
+
+        var snapshot: Option[BufferSnapshot] = BufferSnapshot.none
+        for i in 0..self.diagnosticSnapshots.high:
+          if self.diagnosticSnapshots[i].version.some == version:
+            snapshot = self.diagnosticSnapshots[i].clone().some
+            break
+
+        if snapshot.isNone and version.isSome:
+          log lvlWarn, &"Got diagnostics for old version {version.get}, currently on {self.buffer.version}, ignore"
+          return
+
+        self.setCurrentDiagnostics(diagnostics.diagnostics, snapshot)
 
     self.onLanguageServerAttached.invoke (self, ls)
 
@@ -1342,10 +1432,14 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
 proc clearDiagnostics*(self: TextDocument) =
   self.diagnosticsPerLine.clear()
   self.currentDiagnostics.setLen 0
+  self.currentDiagnosticsAnchors.setLen 0
   self.clearStyledTextCache()
 
-proc clearStyledTextCache*(self: TextDocument) =
-  self.styledTextCache.clear()
+proc clearStyledTextCache*(self: TextDocument, line: Option[int] = int.none) =
+  if line.getSome(line):
+    self.styledTextCache.del(line)
+  else:
+    self.styledTextCache.clear()
 
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
@@ -1602,51 +1696,7 @@ proc updateCursorAfterDelete*(self: TextDocument, location: Cursor, deleted: Sel
 
   return res.some
 
-proc updateDiagnosticPositionsAfterInsert(self: TextDocument, inserted: Selection) =
-  # todo
-  self.diagnosticsPerLine.clear()
-  var i = 0
-  for d in self.currentDiagnostics.mitems:
-    self.styledTextCache.del(d.selection.first.line)
-    self.styledTextCache.del(d.selection.last.line)
-
-    d.selection.first = self.updateCursorAfterInsert(d.selection.first, inserted)
-    d.selection.last = self.updateCursorAfterInsert(d.selection.last, inserted)
-
-    self.styledTextCache.del(d.selection.first.line)
-    self.styledTextCache.del(d.selection.last.line)
-
-    for line in d.selection.first.line..d.selection.last.line:
-      self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
-      self.styledTextCache.del(line)
-
-    inc i
-
-proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selection) =
-  # todo
-  self.diagnosticsPerLine.clear()
-  let selection = selection.normalized
-  for i in countdown(self.currentDiagnostics.high, 0):
-    self.styledTextCache.del(self.currentDiagnostics[i].selection.first.line)
-    self.styledTextCache.del(self.currentDiagnostics[i].selection.last.line)
-
-    if self.updateCursorAfterDelete(self.currentDiagnostics[i].selection.first, selection).getSome(first) and
-        self.updateCursorAfterDelete(self.currentDiagnostics[i].selection.last, selection).getSome(last):
-
-      self.currentDiagnostics[i].selection = (first, last)
-
-      self.styledTextCache.del(self.currentDiagnostics[i].selection.first.line)
-      self.styledTextCache.del(self.currentDiagnostics[i].selection.last.line)
-
-      for line in self.currentDiagnostics[i].selection.first.line..self.currentDiagnostics[i].selection.last.line:
-        self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
-        self.styledTextCache.del(line)
-
-    else:
-      self.currentDiagnostics[i].removed = true
-
 proc addTreesitterChange(self: TextDocument, change: TextDocumentChange) =
-  # debugf"addTreesitterChange {change}"
   self.changes.add(change)
   self.changesAsync.add(change)
 
@@ -1714,6 +1764,8 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
   self.revision.inc
 
   let op = self.buffer.edit(ranges)
+  self.recordSnapshotForDiagnostics()
+
   self.onOperation.invoke (self, op)
   self.onEdit.invoke (self, edits)
 
@@ -1773,7 +1825,6 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
     self.clearStyledTextCache()
 
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
-  # debugf"undo {untilCheckpoint}"
   result = seq[Selection].none
 
   var oldText = self.buffer.snapshot().visibleText.clone()
@@ -1781,6 +1832,7 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
 
   # todo: checkpoints
   if self.buffer.undo().getSome(undo):
+    self.recordSnapshotForDiagnostics()
     self.onOperation.invoke (self, undo.op)
     for i in numPatchesBefore..self.buffer.patches.high:
       let patch {.cursor.} = self.buffer.patches[i]
@@ -1796,7 +1848,6 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   self.notifyTextChanged()
 
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
-  # debugf"redo {untilCheckpoint}"
   result = seq[Selection].none
 
   var oldText = self.buffer.snapshot().visibleText.clone()
@@ -1804,6 +1855,7 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
 
   # todo: checkpoints
   if self.buffer.redo().getSome(redo):
+    self.recordSnapshotForDiagnostics()
     self.onOperation.invoke (self, redo.op)
     for i in numPatchesBefore..self.buffer.patches.high:
       let patch {.cursor.} = self.buffer.patches[i]

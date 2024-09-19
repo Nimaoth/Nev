@@ -20,6 +20,24 @@ template getOr*[T](opt: Option[T], body: untyped): T =
   else:
     body
 
+template get*[T](opt: Option[T], otherwise: Option[T]): Option[T] =
+  if opt.isSome:
+    opt
+  else:
+    otherwise
+
+template take*[T](opt: sink Option[T], otherwise: sink T): T =
+  if opt.isSome:
+    opt.get.move
+  else:
+    otherwise
+
+func get*[T](opt: openArray[T], index: int): Option[T] =
+  if index in 0..opt.high:
+    opt[index].some
+  else:
+    T.none
+
 proc `??`*[T: ref object](self: T, els: T): T =
   return if not self.isNil: self else: els
 
