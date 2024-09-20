@@ -4,6 +4,12 @@ export scripting_api
 ## This file is auto generated, don't modify.
 
 when defined(wasm):
+  import collab_api_wasm
+  export collab_api_wasm
+else:
+  import collab_api
+  export collab_api
+when defined(wasm):
   import debugger_api_wasm
   export debugger_api_wasm
 else:

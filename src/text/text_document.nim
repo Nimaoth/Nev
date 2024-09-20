@@ -1,4 +1,4 @@
-import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times, threadpool]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times, threadpool, algorithm]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
@@ -1661,6 +1661,12 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
   # todo: finish this function
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
 
+  var sortedSelections = collect:
+    for i, s in selections:
+      (i, s)
+
+  sortedSelections.sort((a, b) => cmp(a[1].first, b[1].first))
+
   self.insertOrDelete.inc
   defer:
     self.insertOrDelete.dec
@@ -1673,7 +1679,10 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
   var clearCache = false
 
   var ranges = newSeqOfCap[(Slice[int], string)](selections.len)
-  for i, selection in selections:
+  var newSelections = newSeqOfCap[(int, Selection)](selections.len)
+  for i, sortedSelection in sortedSelections:
+    var selection = sortedSelection[1]
+
     let text = if texts.len == 1:
       texts[0]
     elif texts.len == selections.len:
@@ -1687,7 +1696,6 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
     if selection.last > selection.first:
       c.seekForward(selection.last.toPoint)
 
-    var selection = selection
     if inclusiveEnd and selection.last.column < self.lineLength(selection.last.line):
       c.seekNextRune()
       selection.last = c.position.toCursor
@@ -1703,7 +1711,7 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
     let newPointRangeEnd = oldPointRange[0] + summary.lines
 
     let newSelection = (oldPointRange[0], newPointRangeEnd).toSelection
-    result.add newSelection
+    newSelections.add (sortedSelection[0], newSelection)
     edits.add (selection, newSelection)
 
     if not self.tsLanguage.isNil:
@@ -1717,6 +1725,9 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
 
     pointDiff = newPointRangeEnd - selection.last.toPoint
     byteDiff = newByteRangeEnd - endByte
+
+  newSelections.sort((a, b) => cmp(a[0], b[0]))
+  result = newSelections.mapIt(it[1])
 
   self.revision.inc
   self.undoableRevision.inc

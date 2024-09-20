@@ -60,6 +60,7 @@ import text/text_editor
 import text/language/lsp_client
 import text/language/debugger
 import selector_popup
+import collab
 import wasm3, wasm3/[wasm3c, wasmconversions]
 import ui/node
 import clipboard

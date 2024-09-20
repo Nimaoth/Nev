@@ -987,33 +987,6 @@ proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
       argsJsonString.cstring)
 
 
-proc editor_connectCollaborator_void_App_int_wasm(arg: cstring): cstring {.
-    importc.}
-proc connectCollaborator*(port: int = 6969) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when int is JsonNode:
-      port
-    else:
-      port.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_connectCollaborator_void_App_int_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_hostCollaborator_void_App_int_wasm(arg: cstring): cstring {.importc.}
-proc hostCollaborator*(port: int = 6969) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when int is JsonNode:
-      port
-    else:
-      port.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_hostCollaborator_void_App_int_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_chooseFile_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
     importc.}
 proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;

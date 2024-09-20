@@ -576,6 +576,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
       asyncCheck self.client.notifyTextDocumentChangedChannel.send (fullPath, version, @[], args.document.contentString)
     else:
       var c = args.document.buffer.visibleText.cursorT(Point)
+      # todo: currently relies on edits being sorted
       let changes = args.edits.mapIt(block:
         c.seekForward(Point.init(it.new.first.line, it.new.first.column))
         let text = c.slice(Point.init(it.new.last.line, it.new.last.column))
