@@ -10,37 +10,13 @@ import document, document_editor, custom_treesitter, indent, text_language_confi
 import pkg/chroma
 
 import nimsumtree/[buffer, clock, static_array, rope]
-from nimsumtree/sumtree as st import Bias, summaryType, itemSummary
+from nimsumtree/sumtree as st import Bias, summaryType, itemSummary, toSeq
 
 from language/lsp_types as lsp_types import nil
 
 export document, document_editor, id
 
 logCategory "text-document"
-
-type
-  UndoOpKind = enum
-    Delete
-    Insert
-    Nested
-  UndoOp = ref object
-    oldSelection: seq[Selection]
-    checkpoints: seq[string]
-    revision: int
-    case kind: UndoOpKind
-    of Delete:
-      selection: Selection
-    of Insert:
-      cursor: Cursor
-      text: string
-    of Nested:
-      children: seq[UndoOp]
-
-proc `$`*(op: UndoOp): string =
-  result = fmt"{{{op.kind} (old: {op.oldSelection}, checkpoints: {op.checkpoints})"
-  if op.kind == Delete: result.add fmt", selections = {op.selection}}}"
-  if op.kind == Insert: result.add fmt", selections = {op.cursor}, text: '{op.text}'}}"
-  if op.kind == Nested: result.add fmt", {op.children}}}"
 
 type StyledText* = object
   text*: string
@@ -110,8 +86,6 @@ type TextDocument* = ref object of Document
   createLanguageServer*: bool = true
   completionTriggerCharacters*: set[char] = {}
 
-  undoOps*: seq[UndoOp]
-  redoOps*: seq[UndoOp]
   nextCheckpoints: seq[string]
 
   autoReload*: bool
@@ -148,6 +122,7 @@ proc clearDiagnostics*(self: TextDocument)
 proc numLines*(self: TextDocument): int {.noSideEffect.}
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
 proc resolveDiagnosticAnchors*(self: TextDocument)
+proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection]
 
 func toPoint*(cursor: Cursor): Point = Point.init(cursor.line, cursor.column)
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
@@ -159,18 +134,6 @@ func toSelection*(self: Range[Point]): Selection = (self.a.toCursor, self.b.toCu
 proc getIndentInBytes*(self: TextDocument, line: int): int
 proc getIndentInRunes*(self: TextDocument, line: int): RuneIndex
 
-proc getTotalTextSize*(self: UndoOp): int =
-  for c in self.checkpoints:
-    result += c.len
-  case self.kind:
-  of Delete:
-    discard
-  of Insert:
-    result += self.text.len
-  of Nested:
-    for c in self.children:
-      result += c.getTotalTextSize()
-
 method getStatisticsString*(self: TextDocument): string =
   let stats = st.stats(self.buffer.visibleText.tree)
 
@@ -178,12 +141,6 @@ method getStatisticsString*(self: TextDocument): string =
   result.add &"Lines: {self.numLines}\n"
   result.add &"Text: {($stats).indent(2)}\n"
   result.add &"Changes: {self.changes.len}\n"
-  result.add &"Redo Ops: {self.redoOps.len}\n"
-
-  var undoOpsSize = 0
-  for c in self.undoOps:
-    undoOpsSize += c.getTotalTextSize()
-  result.add &"Undo Ops: {self.undoOps.len}, {undoOpsSize} bytes\n"
 
   var styledTextCacheBytes = 0
   for c in self.styledTextCache.values:
@@ -316,8 +273,6 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
 
   if self.tsLanguage.isNotNil:
     withParser parser:
-      parser.setLanguage(self.tsLanguage)
-
       self.applyTreesitterChanges(self.currentTree, self.changes)
       self.changesAsync.setLen(0)
 
@@ -326,7 +281,11 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
           # We already tried to parse the current content and it failed, don't try again
           return
 
-        let version = self.buffer.version
+        parser.setLanguage(self.tsLanguage)
+
+        var oldLanguage = self.tsLanguage
+        let oldBufferId = self.buffer.remoteId
+        let oldVersion = self.buffer.version
         let oldTree: TSTree = if self.currentTree.isNotNil:
           self.currentTree.clone()
         else:
@@ -341,12 +300,19 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
 
         oldTree.delete()
         self.currentTree.delete()
+
+        if self.buffer.remoteId != oldBufferId or self.tsLanguage != oldLanguage:
+          newTree.delete()
+          self.changes.setLen(0)
+          self.changesAsync.setLen(0)
+          continue
+
         self.currentTree = newTree
         self.currentContentFailedToParse = self.currentTree.isNil
         self.clearStyledTextCache()
         self.notifyRequestRerender()
 
-        if version == self.buffer.version:
+        if self.buffer.version == oldVersion:
           assert self.changes.len == 0
           assert self.changesAsync.len == 0
           return
@@ -378,18 +344,20 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
 func contentString*(self: TextDocument): string =
   return $self.buffer.visibleText
 
+var nextBufferId = 1.BufferId
+proc getNextBufferId(): BufferId =
+  result = nextBufferId
+  inc nextBufferId
+
 proc `content=`*(self: TextDocument, value: sink string) =
   self.revision.inc
   self.undoableRevision.inc
-
-  self.undoOps = @[]
-  self.redoOps = @[]
 
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
     log lvlWarn,
       &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
-    self.buffer = initBuffer(content = "Invalid utf-8 byte at {invalidUtf8Index}")
+    self.buffer = initBuffer(content = "Invalid utf-8 byte at {invalidUtf8Index}", remoteId = getNextBufferId())
 
   else:
     var index = 0
@@ -398,10 +366,12 @@ proc `content=`*(self: TextDocument, value: sink string) =
       log lvlInfo, &"[content=] Skipping utf8 bom"
       index = 3
 
-    self.buffer = initBuffer(content = value[index..^1])
+    self.buffer = initBuffer(content = value[index..^1], remoteId = getNextBufferId())
 
   self.currentContentFailedToParse = false
   self.currentTree.delete()
+  self.changes.setLen(0)
+  self.changesAsync.setLen(0)
 
   self.onBufferChanged.invoke (self,)
 
@@ -411,9 +381,27 @@ proc `content=`*(self: TextDocument, value: sink string) =
   # todo: this causes issues with current selection anchor setup
   # self.notifyTextChanged()
 
-proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, content: string) =
+proc replaceAll*(self: TextDocument, value: sink string) =
+  let invalidUtf8Index = value.validateUtf8
+  if invalidUtf8Index >= 0:
+    log lvlError,
+      &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
+    return
+
+  var index = 0
+  const utf8_bom = "\xEF\xBB\xBF"
+  if value.len >= 3 and value.startsWith(utf8_bom):
+    log lvlInfo, &"[content=] Skipping utf8 bom"
+    index = 3
+
+  let fullRange = ((0, 0), self.buffer.snapshot.visibleText.summary().lines.toCursor)
+  log lvlWarn, &"replaceAll: {fullRange}"
+  self.nextCheckpoints.incl ""
+  discard self.edit([fullRange], [], [value[index..^1]])
+
+proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, bufferId: BufferId, content: string) =
   self.content = content
-  self.buffer = initBuffer(replicaId, content)
+  self.buffer = initBuffer(replicaId, content, bufferId)
 
   self.notifyRequestRerender()
 
@@ -424,17 +412,18 @@ proc recordSnapshotForDiagnostics(self: TextDocument) =
     self.diagnosticSnapshots.removeShift(0)
 
 proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
-  var oldText = self.buffer.snapshot().visibleText.clone()
+  let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
   # todo: checkpoints
   discard self.buffer.applyRemote(ops)
   self.recordSnapshotForDiagnostics()
 
+  var patch = Patch[uint32]()
   for i in numPatchesBefore..self.buffer.patches.high:
-    let patch {.cursor.} = self.buffer.patches[i]
-    self.handlePatch(oldText, patch.patch)
-    oldText = self.buffer.snapshot().visibleText.clone()
+    patch = patch.compose(self.buffer.patches[i].patch.edits)
+
+  self.handlePatch(oldText, patch)
 
   self.revision.inc
   self.undoableRevision.inc
@@ -996,7 +985,7 @@ proc newTextDocument*(
   self.workspace = workspaceFolder
   self.configProvider = configProvider
   self.createLanguageServer = createLanguageServer
-  self.buffer = initBuffer(content = "")
+  self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
@@ -1110,10 +1099,9 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
-proc loadAsync*(self: TextDocument, ws: Workspace, reloadTreesitter: bool = false): Future[void] {.async.} =
-
+proc loadAsync*(self: TextDocument, ws: Workspace, isReload: bool): Future[void] {.async.} =
   logScope lvlInfo, &"loadAsync '{self.filename}'"
-  # self.content = await ws.loadFile(self.filename)
+
   self.isBackedByFile = true
   self.isLoadingAsync = true
   self.readOnly = true
@@ -1123,7 +1111,11 @@ proc loadAsync*(self: TextDocument, ws: Workspace, reloadTreesitter: bool = fals
     log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
   self.onPreLoaded.invoke self
-  self.content = data.move
+
+  if isReload:
+    self.replaceAll(data.move)
+  else:
+    self.content = data.move
 
   if not ws.isFileReadOnly(self.filename).await:
     self.readOnly = false
@@ -1148,7 +1140,7 @@ proc reloadTask(self: TextDocument) {.async.} =
     if modTime > lastModTime:
       lastModTime = modTime
       log lvlInfo, &"File '{self.filename}' changed on disk, reload"
-      await self.loadAsync(self.workspace.get)
+      await self.loadAsync(self.workspace.get, false)
 
     await sleepAsync(1000)
 
@@ -1186,74 +1178,46 @@ proc setFileAndContent*(self: TextDocument, filename: string, content: sink stri
 
   self.onPreLoaded.invoke self
 
-  self.undoOps.setLen 0
-  self.redoOps.setLen 0
   self.content = content.move
 
   self.clearStyledTextCache()
   self.autoDetectIndentStyle()
   self.onLoaded.invoke self
 
-proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[Workspace]) =
-  let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
-  if filename.len == 0:
-    raise newException(IOError, "Missing filename")
-
-  self.workspace = workspace
-  self.filename = filename
-  self.isBackedByFile = true
-  if getLanguageForFile(self.configProvider, filename).getSome(language):
-    self.languageId = language
-  else:
-    self.languageId = ""
-
-  self.highlightQuery = nil
-  self.errorQuery = nil
-
-  self.clearStyledTextCache()
-
-  if self.workspace.getSome(ws):
-    asyncCheck self.loadAsync(ws, true)
-  elif self.appFile:
-    self.onPreLoaded.invoke self
-    self.content = catch fs.loadApplicationFile(self.filename):
-      log lvlError, fmt"Failed to load application file {filename}"
-      ""
-    self.lastSavedRevision = self.undoableRevision
-    self.autoDetectIndentStyle()
-    self.onLoaded.invoke self
-  else:
-    self.onPreLoaded.invoke self
-    self.content = catch fs.loadFile(self.filename):
-      log lvlError, fmt"Failed to load file {filename}"
-      ""
-    self.lastSavedRevision = self.undoableRevision
-    self.autoDetectIndentStyle()
-    self.onLoaded.invoke self
-
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   if filename.len == 0:
     raise newException(IOError, "Missing filename")
 
+  let isReload = self.isBackedByFile and filename == self.filename
   self.filename = filename
   self.isBackedByFile = true
 
   if self.workspace.getSome(ws):
-    asyncCheck self.loadAsync(ws)
+    asyncCheck self.loadAsync(ws, isReload)
   elif self.appFile:
     self.onPreLoaded.invoke self
-    self.content = catch fs.loadApplicationFile(self.filename):
+    var content = catch fs.loadApplicationFile(self.filename):
       log lvlError, fmt"Failed to load application file {filename}"
       ""
+    if isReload:
+      self.replaceAll(content.move)
+    else:
+      self.content = content.move
+
     self.lastSavedRevision = self.undoableRevision
     self.autoDetectIndentStyle()
     self.onLoaded.invoke self
   else:
     self.onPreLoaded.invoke self
-    self.content = catch fs.loadFile(self.filename):
+    var content = catch fs.loadFile(self.filename):
       log lvlError, fmt"Failed to load file {filename}"
       ""
+    if isReload:
+      self.replaceAll(content.move)
+    else:
+      self.content = content.move
+
     self.lastSavedRevision = self.undoableRevision
     self.autoDetectIndentStyle()
     self.onLoaded.invoke self
@@ -1728,6 +1692,7 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
 
   newSelections.sort((a, b) => cmp(a[0], b[0]))
   result = newSelections.mapIt(it[1])
+  assert result.len > 0
 
   self.revision.inc
   self.undoableRevision.inc
@@ -1736,13 +1701,15 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
   self.recordSnapshotForDiagnostics()
 
   let last {.cursor.} = self.buffer.history.undoStack[^1]
-  self.checkpoints[last.transaction.id] = self.nextCheckpoints
+  if self.nextCheckpoints.len > 0:
+    self.checkpoints[last.transaction.id] = self.nextCheckpoints
   self.nextCheckpoints.setLen 0
 
   self.onOperation.invoke (self, op)
   self.onEdit.invoke (self, edits)
 
-  self.undoSelections[op.timestamp] = @oldSelections
+  if oldSelections.len > 0:
+    self.undoSelections[op.timestamp] = @oldSelections
   self.redoSelections[op.timestamp] = result.mapIt(it.last.toSelection)
   self.currentContentFailedToParse = false
 
@@ -1799,14 +1766,16 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
 
-  var oldText = self.buffer.snapshot().visibleText.clone()
+  let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
   var lastUndo: UndoOperation
   while self.buffer.undo().getSome(undo):
     self.onOperation.invoke (self, undo.op)
     lastUndo = undo.op.undo
-    if untilCheckpoint.len == 0 or undo.transactionId notin self.checkpoints or untilCheckpoint in self.checkpoints[undo.transactionId]:
+    if untilCheckpoint.len == 0 or (undo.transactionId in self.checkpoints and
+        (untilCheckpoint in self.checkpoints[undo.transactionId] or
+        "" in self.checkpoints[undo.transactionId])):
       break
 
   for editId in lastUndo.counts.keys:
@@ -1815,10 +1784,12 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
       break
 
   self.recordSnapshotForDiagnostics()
+
+  var patch = Patch[uint32]()
   for i in numPatchesBefore..self.buffer.patches.high:
-    let patch {.cursor.} = self.buffer.patches[i]
-    self.handlePatch(oldText, patch.patch)
-    oldText = self.buffer.snapshot().visibleText.clone()
+    patch = patch.compose(self.buffer.patches[i].patch.edits)
+
+  self.handlePatch(oldText, patch)
 
   self.revision.inc
   self.undoableRevision.inc
@@ -1827,7 +1798,7 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
 
-  var oldText = self.buffer.snapshot().visibleText.clone()
+  let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
   var lastRedo: UndoOperation
@@ -1838,7 +1809,9 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
       break
 
     let nextRedo {.cursor.} = self.buffer.history.redoStack[^1]
-    if nextRedo.transaction.id notin self.checkpoints or untilCheckpoint in self.checkpoints[nextRedo.transaction.id]:
+    if nextRedo.transaction.id in self.checkpoints and
+        (untilCheckpoint in self.checkpoints[nextRedo.transaction.id] or
+        "" in self.checkpoints[nextRedo.transaction.id]):
       break
 
   for editId in lastRedo.counts.keys:
@@ -1847,10 +1820,12 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
       break
 
   self.recordSnapshotForDiagnostics()
+
+  var patch = Patch[uint32]()
   for i in numPatchesBefore..self.buffer.patches.high:
-    let patch {.cursor.} = self.buffer.patches[i]
-    self.handlePatch(oldText, patch.patch)
-    oldText = self.buffer.snapshot().visibleText.clone()
+    patch = patch.compose(self.buffer.patches[i].patch.edits)
+
+  self.handlePatch(oldText, patch)
 
   self.revision.inc
   self.undoableRevision.inc

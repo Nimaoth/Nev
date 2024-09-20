@@ -55,18 +55,25 @@ proc connectCollaboratorAsync(port: int) {.async.} =
       if line.startsWith("open "):
         # line format: open <len>\t<filename>\t<operations>\n
         # next line <len> bytes
-
         let parts = line[5..^1]
-        let i = parts.find("\t")
-        let length = parts[0..<i].parseInt.catch:
+        var i = 0
+        template getNextPart(): string =
+          block:
+            let temp = parts.find("\t", i)
+            let part = parts[i..<temp]
+            i = temp + 1
+            part
+
+        let length = getNextPart().parseInt.catch:
           log lvlError, &"[collab-client] Invalid length: '{line}'"
           return
 
-        let i2 = parts.find("\t", i + 1)
-        let file = parts[i + 1..<i2]
+        let bufferId = getNextPart().parseInt.BufferId.catch:
+          log lvlError, &"[collab-client] Invalid bufferId: '{line}'"
+          return
 
-        let opsJson = parts[i2 + 1..^1]
-
+        let file = getNextPart()
+        let opsJson = parts[i..^1]
         let content = await server.recv(length)
 
         let ops = opsJson.parseJson.jsonTo(seq[Operation]).catch:
@@ -77,7 +84,7 @@ proc connectCollaboratorAsync(port: int) {.async.} =
           if doc of TextDocument:
             let doc = doc.TextDocument
             docs[file] = doc
-            doc.rebuildBuffer(1.ReplicaId, content)
+            doc.rebuildBuffer(1.ReplicaId, bufferId, content)
             doc.applyRemoteChanges(ops)
 
             discard doc.onOperation.subscribe proc(arg: tuple[document: TextDocument, op: Operation]) =
@@ -131,7 +138,7 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
           allOps.sort((a, b) => cmp(a.timestamp, b.timestamp))
 
           let opsJson = allOps.toJson
-          await client.send(&"open {content.len}\t{doc.TextDocument.filename}\t{opsJson}\n")
+          await client.send(&"open {content.len}\t{doc.buffer.remoteId}\t{doc.filename}\t{opsJson}\n")
           await client.send(content)
 
           discard doc.onOperation.subscribe proc(arg: tuple[document: TextDocument, op: Operation]) =

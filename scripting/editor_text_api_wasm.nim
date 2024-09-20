@@ -1392,25 +1392,6 @@ proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) =
       argsJsonString.cstring)
 
 
-proc editor_text_printUndoHistory_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
-    importc.}
-proc printUndoHistory*(self: TextDocumentEditor; max: int = 50) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      max
-    else:
-      max.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_printUndoHistory_void_TextDocumentEditor_int_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_text_copy_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc copy*(self: TextDocumentEditor; register: string = "";

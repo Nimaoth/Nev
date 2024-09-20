@@ -229,8 +229,6 @@ proc selection*(self: TextDocumentEditor): Selection =
 proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   let selections = self.clampAndMergeSelections(selections)
   assert selections.len > 0
-  if self.selectionsInternal == selections:
-    return
 
   if not self.dontRecordSelectionHistory:
     if self.selectionHistory.len == 0 or abs(selections[^1].last.line - self.selectionsInternal[^1].last.line) > 1:
@@ -257,33 +255,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   self.markDirty()
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
-  let selection = self.clampSelection selection
-  if self.selectionsInternal.len == 1 and self.selectionsInternal[0] == selection:
-    return
-
-  if not self.dontRecordSelectionHistory:
-    if self.selectionHistory.len == 0 or abs(selection.last.line - self.selectionsInternal[^1].last.line) > 1:
-      self.selectionHistory.addLast self.selectionsInternal
-      if self.selectionHistory.len > 100:
-        discard self.selectionHistory.popFirst
-
-  self.selectionsInternal = @[selection]
-  self.cursorVisible = true
-
-  let snapshot {.cursor.} = self.document.buffer.snapshot
-  self.selectionAnchors = self.selectionsInternal.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
-
-  if self.blinkCursorTask.isNotNil and self.active:
-    self.blinkCursorTask.reschedule()
-
-  if self.completionEngine.isNotNil:
-    self.completionEngine.setCurrentLocations(self.selectionsInternal)
-
-  self.showHover = false
-  self.hideCompletions()
-  # self.document.addNextCheckpoint("move")
-
-  self.markDirty()
+  self.selections = @[selection]
 
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
   self.targetSelectionsInternal = @[selection].some
@@ -1539,13 +1511,6 @@ proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("edit
 
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("editor.text").} =
   self.document.addNextCheckpoint checkpoint
-
-proc printUndoHistory*(self: TextDocumentEditor, max: int = 50) {.expose("editor.text").} =
-  for i in countup(0, self.document.redoOps.high):
-    debugf"redo: {self.document.redoOps[i]}"
-  debugf"-----"
-  for i in countdown(self.document.undoOps.high, 0):
-    debugf"undo: {self.document.undoOps[i]}"
 
 proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool): Future[void] {.async.} =
   log lvlInfo, fmt"copy register into '{register}', inclusiveEnd: {inclusiveEnd}"
@@ -3475,7 +3440,7 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
     return
 
   self.snapshot = self.document.buffer.snapshot.clone()
-  self.selection = (0, 0).toSelection
+  self.selections = self.selections
   self.searchResultsDirty = true
   self.inlayHints.setLen(0)
   self.hideCompletions()
@@ -3487,16 +3452,15 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.snapshot = self.document.buffer.snapshot.clone()
 
   if self.snapshot.replicaId == oldSnapshot.replicaId and self.snapshot.ownVersion >= oldSnapshot.ownVersion:
-    if self.selectionAnchors.allIt(self.snapshot.canResolve(it[0]) and self.snapshot.canResolve(it[1])):
-      let temp = self.selectionAnchors.mapIt (it[0].summaryOpt(Point, self.snapshot), it[1].summaryOpt(Point, self.snapshot))
-      if temp.allIt(it[0].isSome and it[1].isSome):
-        let newSelections = temp.mapIt (it[0].get, it[1].get).toSelection
+    let temp = self.selectionAnchors.mapIt (it[0].summaryOpt(Point, self.snapshot), it[1].summaryOpt(Point, self.snapshot))
+    if temp.allIt(it[0].isSome and it[1].isSome):
+      let newSelections = temp.mapIt (it[0].get, it[1].get).toSelection
 
-        if newSelections.len > 0:
-          self.selections = newSelections
-      else:
-        debugf"invalid anchors: {self.selectionAnchors} -> {temp}"
-        self.selectionAnchors = @[]
+      if newSelections.len > 0:
+        self.selections = newSelections
+    else:
+      log lvlWarn, &"Invalid anchors: {self.selectionAnchors} -> {temp}"
+      self.selectionAnchors = @[]
 
   self.clampSelection()
   self.searchResultsDirty = true
@@ -3526,7 +3490,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
       self.selection = self.document.lastCursor.toSelection
       self.scrollToCursor()
 
-  else:
+  elif self.selectionsBeforeReload.len > 0:
     self.selections = self.selectionsBeforeReload
     self.scrollToCursor()
 
