@@ -1494,17 +1494,15 @@ var logBuffer = ""
 proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
   if self.logDocument.isNotNil:
-    let selection = self.logDocument.TextDocument.lastCursor.toSelection
-    # todo: reenable and make sure performance is good
-    # discard self.logDocument.TextDocument.edit([selection], [selection], [logBuffer & str])
-    logBuffer = ""
-
     for view in self.views:
       if view of EditorView and view.EditorView.document == self.logDocument:
         let editor = view.EditorView.editor.TextDocumentEditor
-        if editor.selection == selection:
-          editor.selection = editor.document.lastCursor.toSelection
-          editor.scrollToCursor()
+        editor.bScrollToEndOnInsert = true
+
+    let selection = self.logDocument.TextDocument.lastCursor.toSelection
+    discard self.logDocument.TextDocument.edit([selection], [selection], [logBuffer & str])
+    logBuffer = ""
+
   else:
     logBuffer.add str
 

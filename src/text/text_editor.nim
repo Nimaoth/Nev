@@ -112,6 +112,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   bIsRunningSavedCommands: bool
   bRecordCurrentCommand: bool = false
   bIsRecordingCurrentCommand: bool = false
+  bScrollToEndOnInsert*: bool = false
 
   disableScrolling*: bool
   scrollOffset*: float
@@ -3451,7 +3452,11 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
   self.snapshot = self.document.buffer.snapshot.clone()
 
-  if self.snapshot.replicaId == oldSnapshot.replicaId and self.snapshot.ownVersion >= oldSnapshot.ownVersion:
+  if self.bScrollToEndOnInsert and self.selections.len == 1 and self.selection == oldSnapshot.visibleText.summary.lines.toCursor.toSelection:
+    self.selection = self.document.lastCursor.toSelection
+    self.scrollToCursor()
+
+  elif self.snapshot.replicaId == oldSnapshot.replicaId and self.snapshot.ownVersion >= oldSnapshot.ownVersion:
     let temp = self.selectionAnchors.mapIt (it[0].summaryOpt(Point, self.snapshot), it[1].summaryOpt(Point, self.snapshot))
     if temp.allIt(it[0].isSome and it[1].isSome):
       let newSelections = temp.mapIt (it[0].get, it[1].get).toSelection
