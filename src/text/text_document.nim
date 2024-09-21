@@ -78,7 +78,6 @@ type TextDocument* = ref object of Document
 
   changes: seq[TextDocumentChange]
   changesAsync: seq[TextDocumentChange]
-  insertOrDelete: int = 0
 
   configProvider: ConfigProvider
   languageConfig*: Option[TextLanguageConfig]
@@ -135,12 +134,20 @@ proc getIndentInBytes*(self: TextDocument, line: int): int
 proc getIndentInRunes*(self: TextDocument, line: int): RuneIndex
 
 method getStatisticsString*(self: TextDocument): string =
-  let stats = st.stats(self.buffer.visibleText.tree)
+  let visibleTextStats = st.stats(self.buffer.snapshot.visibleText.tree)
+  let deletedTextStats = st.stats(self.buffer.snapshot.deletedText.tree)
+  let fragmentStats = st.stats(self.buffer.snapshot.fragments)
+  let insertionStats = st.stats(self.buffer.snapshot.insertions)
+  let undoStats = st.stats(self.buffer.snapshot.undoMap.tree)
 
   result.add &"Filename: {self.filename}\n"
   result.add &"Lines: {self.numLines}\n"
-  result.add &"Text: {($stats).indent(2)}\n"
   result.add &"Changes: {self.changes.len}\n"
+  result.add &"VisibleText: {visibleTextStats}\n"
+  result.add &"DeletedText: {deletedTextStats}\n"
+  result.add &"Fragment: {fragmentStats}\n"
+  result.add &"Insertion: {insertionStats}\n"
+  result.add &"Undo: {undoStats}\n"
 
   var styledTextCacheBytes = 0
   for c in self.styledTextCache.values:
@@ -1524,12 +1531,24 @@ proc getIndentLevelForLineInSpaces*(self: TextDocument, line: int, offset: int =
   return max((self.getIndentLevelForLine(line) + offset) * indentWidth, 0)
 
 proc getIndentLevelForClosestLine*(self: TextDocument, line: int): int =
+  const maxTries = 50
+
+  var tries = 0
   for i in line..self.numLines - 1:
     if self.lineLength(i) > 0:
-        return self.getIndentLevelForLine(i)
-  for i in countdown(line, 0):
+      return self.getIndentLevelForLine(i)
+    inc tries
+    if tries == maxTries:
+      break
+
+  tries = 0
+  for i in countdown(line - 1, 0):
     if self.lineLength(i) > 0:
-        return self.getIndentLevelForLine(i)
+      return self.getIndentLevelForLine(i)
+    inc tries
+    if tries == maxTries:
+      break
+
   return 0
 
 proc traverse*(line, column: int, text: openArray[char]): (int, int) =
@@ -1630,10 +1649,6 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
       (i, s)
 
   sortedSelections.sort((a, b) => cmp(a[1].first, b[1].first))
-
-  self.insertOrDelete.inc
-  defer:
-    self.insertOrDelete.dec
 
   var pointDiff = PointDiff.default
   var byteDiff = 0

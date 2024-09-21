@@ -865,13 +865,19 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     # context lines
     if contextLineTarget >= 0:
+      const maxTries = 150
       var indentLevel = self.document.getIndentLevelForClosestLine(contextLineTarget)
+      var tries = 0
       while indentLevel > 0 and contextLineTarget > 0:
         contextLineTarget -= 1
         let newIndentLevel = self.document.getIndentLevelForClosestLine(contextLineTarget)
         if newIndentLevel < indentLevel and not self.document.shouldIgnoreAsContextLine(contextLineTarget):
           contextLines.add contextLineTarget
           indentLevel = newIndentLevel
+
+        inc tries
+        if tries == maxTries:
+          break
 
       contextLines.sort(Ascending)
 
