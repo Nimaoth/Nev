@@ -18,100 +18,100 @@ export document, document_editor, id
 
 logCategory "text-document"
 
-type StyledText* = object
-  text*: string
-  scope*: string
-  scopeC*: cstring
-  priority*: int
-  bounds*: Rect
-  opacity*: Option[float]
-  joinNext*: bool
-  textRange*: Option[tuple[startOffset: int, endOffset: int, startIndex: RuneIndex, endIndex: RuneIndex]]
-  visualRange*: Option[tuple[startColumn: int, endColumn: int, subLine: int]]
-  underline*: bool
-  underlineColor*: Color
-  inlayContainCursor*: bool
-  scopeIsToken*: bool = true
-  canWrap*: bool = true
-  modifyCursorAtEndOfLine*: bool = false ## If true and the cursor is at the end of the line
-                                         ## then the cursor will be behind the part.
+type
 
-type StyledLine* = ref object
-  index*: int
-  parts*: seq[StyledText]
+  StyledText* = object
+    text*: string
+    scope*: string
+    scopeC*: cstring
+    priority*: int
+    bounds*: Rect
+    opacity*: Option[float]
+    joinNext*: bool
+    textRange*: Option[tuple[startOffset: int, endOffset: int, startIndex: RuneIndex, endIndex: RuneIndex]]
+    visualRange*: Option[tuple[startColumn: int, endColumn: int, subLine: int]]
+    underline*: bool
+    underlineColor*: Color
+    inlayContainCursor*: bool
+    scopeIsToken*: bool = true
+    canWrap*: bool = true
+    modifyCursorAtEndOfLine*: bool = false ## If true and the cursor is at the end of the line
+                                           ## then the cursor will be behind the part.
 
-proc getSizeBytes(line: StyledLine): int =
-  result = sizeof(StyledLine)
-  for part in line.parts:
-    result += sizeof(StyledText)
-    result += part.text.len
-    result += part.scope.len
+  StyledLine* = ref object
+    index*: int
+    parts*: seq[StyledText]
 
-variantp TextDocumentChange:
-  Replace(startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
+  TextDocumentChange = object
+    startByte: int
+    oldEndByte: int
+    newEndByte: int
+    startPoint: Point
+    oldEndPoint: Point
+    newEndPoint: Point
 
-type TextDocument* = ref object of Document
-  buffer*: Buffer
-  mLanguageId: string
+  TextDocument* = ref object of Document
+    buffer*: Buffer
+    mLanguageId: string
 
-  nextLineIdCounter: int32 = 0
+    nextLineIdCounter: int32 = 0
 
-  isLoadingAsync*: bool = false
-  isParsingAsync*: bool = false
+    isLoadingAsync*: bool = false
+    isParsingAsync*: bool = false
 
-  singleLine*: bool = false
-  readOnly*: bool = false
-  staged*: bool = false
+    singleLine*: bool = false
+    readOnly*: bool = false
+    staged*: bool = false
 
-  onRequestRerender*: Event[void]
-  onPreLoaded*: Event[TextDocument]
-  onLoaded*: Event[TextDocument]
-  onSaved*: Event[void]
-  textChanged*: Event[TextDocument]
-  onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
-  onOperation*: Event[tuple[document: TextDocument, op: Operation]]
-  onBufferChanged*: Event[tuple[document: TextDocument]]
-  onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
+    onRequestRerender*: Event[void]
+    onPreLoaded*: Event[TextDocument]
+    onLoaded*: Event[TextDocument]
+    onSaved*: Event[void]
+    textChanged*: Event[TextDocument]
+    onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
+    onOperation*: Event[tuple[document: TextDocument, op: Operation]]
+    onBufferChanged*: Event[tuple[document: TextDocument]]
+    onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
 
-  undoSelections*: Table[Lamport, Selections]
-  redoSelections*: Table[Lamport, Selections]
+    undoSelections*: Table[Lamport, Selections]
+    redoSelections*: Table[Lamport, Selections]
 
-  changes: seq[TextDocumentChange]
-  changesAsync: seq[TextDocumentChange]
+    changes: seq[TextDocumentChange]
+    changesAsync: seq[TextDocumentChange]
 
-  configProvider: ConfigProvider
-  languageConfig*: Option[TextLanguageConfig]
-  indentStyle*: IndentStyle
-  createLanguageServer*: bool = true
-  completionTriggerCharacters*: set[char] = {}
+    configProvider: ConfigProvider
+    languageConfig*: Option[TextLanguageConfig]
+    indentStyle*: IndentStyle
+    createLanguageServer*: bool = true
+    completionTriggerCharacters*: set[char] = {}
 
-  nextCheckpoints: seq[string]
+    nextCheckpoints: seq[string]
 
-  autoReload*: bool
+    autoReload*: bool
 
-  currentContentFailedToParse: bool
-  tsLanguage: TSLanguage
-  currentTree: TSTree
-  highlightQuery: TSQuery
-  errorQuery: TSQuery
+    currentContentFailedToParse: bool
+    tsLanguage: TSLanguage
+    currentTree: TSTree
+    highlightQuery: TSQuery
+    errorQuery: TSQuery
 
-  languageServer*: Option[LanguageServer]
-  languageServerFuture*: Option[Future[Option[LanguageServer]]]
-  onRequestSaveHandle*: OnRequestSaveHandle
+    languageServer*: Option[LanguageServer]
+    languageServerFuture*: Option[Future[Option[LanguageServer]]]
+    onRequestSaveHandle*: OnRequestSaveHandle
 
-  styledTextCache: Table[int, StyledLine]
+    styledTextCache: Table[int, StyledLine]
 
-  diagnosticsPerLine*: Table[int, seq[int]]
-  currentDiagnostics*: seq[Diagnostic]
-  currentDiagnosticsAnchors: seq[Range[Anchor]]
-  onDiagnosticsHandle: Id
-  lastDiagnosticVersion: Global # todo: reset at appropriate times
-  lastDiagnosticAnchorResolve: Global # todo: reset at appropriate times
-  diagnosticSnapshots: seq[BufferSnapshot] # todo: reset at appropriate times
+    diagnosticsPerLine*: Table[int, seq[int]]
+    currentDiagnostics*: seq[Diagnostic]
+    currentDiagnosticsAnchors: seq[Range[Anchor]]
+    onDiagnosticsHandle: Id
+    lastDiagnosticVersion: Global # todo: reset at appropriate times
+    lastDiagnosticAnchorResolve: Global # todo: reset at appropriate times
+    diagnosticSnapshots: seq[BufferSnapshot] # todo: reset at appropriate times
 
-  treesitterParserCursor: RopeCursor ## Used during treesitter parsing to avoid constant seeking
+    treesitterParserCursor: RopeCursor ## Used during treesitter parsing to avoid constant seeking
 
-  checkpoints: Table[TransactionId, seq[string]]
+    checkpoints: Table[TransactionId, seq[string]]
 
 var allTextDocuments*: seq[TextDocument] = @[]
 
@@ -132,6 +132,13 @@ func toSelection*(self: Range[Point]): Selection = (self.a.toCursor, self.b.toCu
 
 proc getIndentInBytes*(self: TextDocument, line: int): int
 proc getIndentInRunes*(self: TextDocument, line: int): RuneIndex
+
+proc getSizeBytes(line: StyledLine): int =
+  result = sizeof(StyledLine)
+  for part in line.parts:
+    result += sizeof(StyledText)
+    result += part.text.len
+    result += part.scope.len
 
 method getStatisticsString*(self: TextDocument): string =
   let visibleTextStats = st.stats(self.buffer.snapshot.visibleText.tree)
@@ -1636,9 +1643,9 @@ proc updateCursorAfterDelete*(self: TextDocument, location: Cursor, deleted: Sel
 
   return res.some
 
-proc addTreesitterChange(self: TextDocument, change: TextDocumentChange) =
-  self.changes.add(change)
-  self.changesAsync.add(change)
+proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point) =
+  self.changes.add(TextDocumentChange(startByte: startByte, oldEndByte: oldEndByte, newEndByte: newEndByte, startPoint: startPoint, oldEndPoint: oldEndPoint, newEndPoint: newEndPoint))
+  self.changesAsync.add(TextDocumentChange(startByte: startByte, oldEndByte: oldEndByte, newEndByte: newEndByte, startPoint: startPoint, oldEndPoint: oldEndPoint, newEndPoint: newEndPoint))
 
 proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
   # todo: finish this function
@@ -1694,7 +1701,7 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: 
     edits.add (selection, newSelection)
 
     if not self.tsLanguage.isNil:
-      self.addTreesitterChange(Replace(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd))
+      self.addTreesitterChange(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd)
 
     if not clearCache:
       if selection.first.line == selection.last.line and summary.lines.row == 0:
@@ -1765,7 +1772,7 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
     edits.add ((startPosOld, endPosOld).toSelection, (startPosNew, endPosNew).toSelection)
 
     if not self.tsLanguage.isNil:
-      self.addTreesitterChange(Replace(edit.new.a.int, edit.new.a.int + edit.old.len.int, edit.new.b.int, startPosOld, endPosOld, endPosNew))
+      self.addTreesitterChange(edit.new.a.int, edit.new.a.int + edit.old.len.int, edit.new.b.int, startPosOld, endPosOld, endPosNew)
 
     if not clearCache:
       if startPosOld.row == endPosOld.row and startPosOld.row == endPosNew.row:

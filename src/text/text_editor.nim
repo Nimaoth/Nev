@@ -1227,6 +1227,11 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection, includeAfter
     return
   self.selection = self.getParentNodeSelection(selection, includeAfter)
 
+proc printTreesitterMemoryUsage*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let allocated = custom_treesitter.tsAllocated
+  let freed = custom_treesitter.tsFreed
+  log lvlInfo, &"Treesitter allocated: {allocated.float / 1000000.0} MB, freed: {freed.float / 1000000.0} MB, total: {(allocated - freed).float / 1000000.0} MB"
+
 proc printTreesitterTree*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.tsTree.isNil:
     log lvlError, "No tree available."

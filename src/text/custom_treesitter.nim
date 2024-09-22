@@ -797,3 +797,55 @@ proc freeDynamicLibraries*() =
     for (path, lib) in treesitterDllCache.pairs:
       lib.unloadLib()
     treesitterDllCache.clear()
+
+var tsAllocated*: uint64 = 0
+var tsFreed*: uint64 = 0
+
+when defined(tsMeasureAllocs):
+  proc tsMalloc(a1: csize_t): pointer {.stdcall.} =
+    tsAllocated += a1.uint64
+    let p = allocShared0(a1 + 8)
+    if p == nil:
+      return nil
+
+    cast[ptr uint64](p)[] = a1.uint64
+    return cast[pointer](cast[uint64](p) + 8)
+
+  proc tsCalloc(a1: csize_t; a2: csize_t): pointer {.stdcall.} =
+    let size = a1.uint64 * a2.uint64
+    tsAllocated += size
+    let p = allocShared0(size + 8)
+    if p == nil:
+      return nil
+
+    cast[ptr uint64](p)[] = size
+    return cast[pointer](cast[uint64](p) + 8)
+
+  proc tsRealloc(a1: pointer; a2: csize_t): pointer {.stdcall.} =
+    if a1 == nil:
+      return tsMalloc(a2)
+
+    let original = cast[ptr uint64](cast[uint64](a1) - 8)
+    let size = original[]
+    if size > a2:
+      tsFreed += size - a2.uint64
+    else:
+      tsAllocated += a2.uint64 - size
+
+    let p = reallocShared(original, a2 + 8)
+    if p == nil:
+      return nil
+
+    cast[ptr uint64](p)[] = a2.uint64
+    return cast[pointer](cast[uint64](p) + 8)
+
+  proc tsFree(a1: pointer) {.stdcall.} =
+    if a1 == nil:
+      return
+
+    let original = cast[ptr uint64](cast[uint64](a1) - 8)
+    let size = original[]
+    tsFreed += size.uint64
+    deallocShared(original)
+
+  tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)

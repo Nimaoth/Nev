@@ -1140,6 +1140,20 @@ proc selectParentTs*(self: TextDocumentEditor; selection: Selection;
       argsJsonString.cstring)
 
 
+proc editor_text_printTreesitterMemoryUsage_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc printTreesitterMemoryUsage*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_printTreesitterMemoryUsage_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_printTreesitterTree_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc printTreesitterTree*(self: TextDocumentEditor) =
