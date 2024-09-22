@@ -17,6 +17,7 @@ else:
 import std/[parseopt, options, macros, strutils, os, terminal, strformat]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
+import text/custom_treesitter
 
 proc tryAttach(opts: AppOptions, processId: int)
 
@@ -70,6 +71,7 @@ Options:
   -s, --session          Load a specific session.
   --attach               Open the passed files in an existing instance if it already exists.
   --clean                Don't load any configs/sessions/plugins
+  --ts-mem-tracking      Enable treesitter memory tracking (for debugging)
 
 Examples:
   nev                                              Open .{appName}-session if it exists
@@ -152,6 +154,9 @@ block: ## Parse command line options
 
       of "session", "s":
         opts.sessionOverride = val.some
+
+      of "ts-mem-tracking":
+        enableTreesitterMemoryTracking()
 
     of cmdEnd: assert(false) # cannot happen
 
