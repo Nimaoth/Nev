@@ -1433,7 +1433,7 @@ proc copy*(self: TextDocumentEditor; register: string = "";
 
 proc editor_text_paste_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc paste*(self: TextDocumentEditor; register: string = "";
+proc paste*(self: TextDocumentEditor; registerName: string = "";
             inclusiveEnd: bool = false) =
   var argsJson = newJArray()
   argsJson.add block:
@@ -1443,9 +1443,9 @@ proc paste*(self: TextDocumentEditor; register: string = "";
       self.toJson()
   argsJson.add block:
     when string is JsonNode:
-      register
+      registerName
     else:
-      register.toJson()
+      registerName.toJson()
   argsJson.add block:
     when bool is JsonNode:
       inclusiveEnd

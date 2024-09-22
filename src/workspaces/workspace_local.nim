@@ -5,6 +5,8 @@ import workspace
 import vcs/[vcs, vcs_git, vcs_perforce]
 import compilation_config
 
+import nimsumtree/[rope]
+
 logCategory "ws-local"
 
 type
@@ -180,13 +182,23 @@ method loadFile*(self: WorkspaceFolderLocal, relativePath: string, data: ptr str
   except:
     log lvlError, &"Failed to load file '{path}'"
 
-method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: string):
-    Future[void] {.async.} =
+method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: string): Future[void] {.async.} =
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[saveFile] '{path}'"
   try:
     var file = openAsync(path, fmWrite)
     await file.write(content)
+    file.close()
+  except:
+    log lvlError, &"Failed to write file '{path}'"
+
+method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: sink Rope): Future[void] {.async.} =
+  let path = self.getAbsolutePath(relativePath)
+  logScope lvlInfo, &"[saveFile] '{path}'"
+  try:
+    var file = openAsync(path, fmWrite)
+    for chunk in content.iterateChunks:
+      await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
     file.close()
   except:
     log lvlError, &"Failed to write file '{path}'"

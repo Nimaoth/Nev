@@ -121,7 +121,8 @@ proc clearDiagnostics*(self: TextDocument)
 proc numLines*(self: TextDocument): int {.noSideEffect.}
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
 proc resolveDiagnosticAnchors*(self: TextDocument)
-proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection]
+proc recordSnapshotForDiagnostics(self: TextDocument)
+proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 
 func toPoint*(cursor: Cursor): Point = Point.init(cursor.line, cursor.column)
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
@@ -363,15 +364,31 @@ proc getNextBufferId(): BufferId =
   result = nextBufferId
   inc nextBufferId
 
+proc `content=`*(self: TextDocument, value: sink Rope) =
+  self.revision.inc
+  self.undoableRevision.inc
+
+  self.buffer = initBuffer(self.buffer.timestamp.replicaId, content = value, remoteId = getNextBufferId())
+
+  self.currentContentFailedToParse = false
+  self.currentTree.delete()
+  self.changes.setLen(0)
+  self.changesAsync.setLen(0)
+
+  self.onBufferChanged.invoke (self,)
+
+  self.clearDiagnostics()
+  self.clearStyledTextCache()
+  self.notifyTextChanged()
+
 proc `content=`*(self: TextDocument, value: sink string) =
   self.revision.inc
   self.undoableRevision.inc
 
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
-    log lvlWarn,
-      &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
-    self.buffer = initBuffer(content = "Invalid utf-8 byte at {invalidUtf8Index}", remoteId = getNextBufferId())
+    log lvlWarn, &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
+    self.buffer = initBuffer(content = &"Invalid utf-8 byte at {invalidUtf8Index}", remoteId = getNextBufferId())
 
   else:
     var index = 0
@@ -391,15 +408,120 @@ proc `content=`*(self: TextDocument, value: sink string) =
 
   self.clearDiagnostics()
   self.clearStyledTextCache()
+  self.notifyTextChanged()
 
-  # todo: this causes issues with current selection anchor setup
-  # self.notifyTextChanged()
+func clone(s: string): string = s
+
+proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
+
+  let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
+
+  var sortedSelections = collect:
+    for i, s in selections:
+      (i, s)
+
+  sortedSelections.sort((a, b) => cmp(a[1].first, b[1].first))
+
+  var pointDiff = PointDiff.default
+  var byteDiff = 0
+
+  var edits = newSeqOfCap[tuple[old, new: Selection]](selections.len)
+  var c = self.buffer.visibleText.cursorT(Point)
+  var clearCache = false
+
+  var ranges = newSeqOfCap[(Range[int], S)](selections.len)
+  var newSelections = newSeqOfCap[(int, Selection)](selections.len)
+  for i, sortedSelection in sortedSelections:
+    var selection = sortedSelection[1]
+
+    var text = if texts.len == 1:
+      texts[0].clone()
+    elif texts.len == selections.len:
+      texts[i].clone()
+    else:
+      texts[min(i, texts.high)].clone()
+
+    let summary = TextSummary.init(text)
+
+    c.seekForward(selection.first.toPoint)
+
+    let startByte = c.offset()
+    if selection.last > selection.first:
+      c.seekForward(selection.last.toPoint)
+
+    if inclusiveEnd and selection.last.column < self.lineLength(selection.last.line):
+      c.seekNextRune()
+      selection.last = c.position.toCursor
+    let endByte = c.offset()
+
+    assert startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength
+    ranges.add (startByte...endByte, text.move)
+
+    let oldByteRange = (startByte + byteDiff, endByte + byteDiff)
+    let newByteRangeEnd = oldByteRange[0] + summary.bytes
+    let oldPointRange = (selection.first.toPoint + pointDiff, selection.last.toPoint + pointDiff)
+    let newPointRangeEnd = oldPointRange[0] + summary.lines
+
+    let newSelection = (oldPointRange[0], newPointRangeEnd).toSelection
+    newSelections.add (sortedSelection[0], newSelection)
+    edits.add (selection, newSelection)
+
+    if not self.tsLanguage.isNil:
+      self.addTreesitterChange(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd)
+
+    if not clearCache:
+      if selection.first.line == selection.last.line and summary.lines.row == 0:
+        self.styledTextCache.del selection.first.line
+      else:
+        clearCache = true
+
+    pointDiff = newPointRangeEnd - selection.last.toPoint
+    byteDiff = newByteRangeEnd - endByte
+
+  newSelections.sort((a, b) => cmp(a[0], b[0]))
+  result = newSelections.mapIt(it[1])
+  assert result.len > 0
+
+  self.revision.inc
+  self.undoableRevision.inc
+
+  let op = self.buffer.edit(ranges)
+  self.recordSnapshotForDiagnostics()
+
+  let last {.cursor.} = self.buffer.history.undoStack[^1]
+  if self.nextCheckpoints.len > 0:
+    self.checkpoints[last.transaction.id] = self.nextCheckpoints
+  self.nextCheckpoints.setLen 0
+
+  self.onOperation.invoke (self, op)
+  self.onEdit.invoke (self, edits)
+
+  if oldSelections.len > 0:
+    self.undoSelections[op.timestamp] = @oldSelections
+  self.redoSelections[op.timestamp] = result.mapIt(it.last.toSelection)
+  self.currentContentFailedToParse = false
+
+  if notify:
+    self.notifyTextChanged()
+
+  if clearCache:
+    self.clearStyledTextCache()
+
+  for s in result.items:
+    assert s.first.line in 0..int32.high
+    assert s.first.column in 0..int32.high
+    assert s.last.line in 0..int32.high
+    assert s.last.column in 0..int32.high
+
+proc replaceAll*(self: TextDocument, value: sink Rope) =
+  let fullRange = ((0, 0), self.buffer.snapshot.visibleText.summary().lines.toCursor)
+  self.nextCheckpoints.incl ""
+  discard self.edit([fullRange], [], [value])
 
 proc replaceAll*(self: TextDocument, value: sink string) =
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
-    log lvlError,
-      &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
+    log lvlError, &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
     return
 
   var index = 0
@@ -409,7 +531,6 @@ proc replaceAll*(self: TextDocument, value: sink string) =
     index = 3
 
   let fullRange = ((0, 0), self.buffer.snapshot.visibleText.summary().lines.toCursor)
-  log lvlWarn, &"replaceAll: {fullRange}"
   self.nextCheckpoints.incl ""
   discard self.edit([fullRange], [], [value[index..^1]])
 
@@ -425,7 +546,7 @@ proc recordSnapshotForDiagnostics(self: TextDocument) =
   while self.diagnosticSnapshots.len > diagnosticHistoryMaxLength:
     self.diagnosticSnapshots.removeShift(0)
 
-proc applyRemoteChanges*(self: TextDocument, ops: seq[Operation]) =
+proc applyRemoteChanges*(self: TextDocument, ops: sink seq[Operation]) =
   let oldText = self.buffer.snapshot().visibleText.clone()
   let numPatchesBefore = self.buffer.patches.len
 
@@ -662,7 +783,7 @@ proc replaceSpaces(self: TextDocument, line: var StyledLine) =
     elif r == '\n'.Rune:
       break
 
-    index += r.size
+    index += 1
     c.seekNextRune()
 
   if bounds.len == 0:
@@ -902,21 +1023,34 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
       log lvlError, fmt"getStyledText({i}) out of range {self.numLines}"
       return StyledLine()
 
-    if self.changes.len > 0 or self.currentTree.isNil:
-      self.reparseTreesitter()
+    var b = initBench()
 
-    # logScope lvlInfo, &"getStyledText({i}, {self.filename})"
+    b.scope "reparse treesitter":
+      if self.changes.len > 0 or self.currentTree.isNil:
+        self.reparseTreesitter()
 
-    var line = self.getLine(i)
+    b.scope "getLine":
+      var line = self.getLine(i)
+
     var parts = newSeqOfCap[StyledText](50)
     parts.add StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)
     result = StyledLine(index: i, parts: parts.move)
     self.styledTextCache[i] = result
 
-    self.applyTreesitterHighlighting(result)
-    self.replaceSpaces(result)
-    self.replaceTabs(result)
-    self.addDiagnosticsUnderline(result)
+    b.scope "highlight":
+      self.applyTreesitterHighlighting(result)
+
+    b.scope "spaces":
+      self.replaceSpaces(result)
+
+    b.scope "tabs":
+      self.replaceTabs(result)
+
+    b.scope "underline":
+      self.addDiagnosticsUnderline(result)
+
+    when defined(nevBench):
+      echo &"getStyledText({i}): {b}"
 
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   logScope lvlInfo, &"loadTreesitterLanguage {self.filename}"
@@ -1063,7 +1197,7 @@ method `$`*(self: TextDocument): string =
   return self.filename
 
 proc saveAsync(self:  TextDocument, ws: Workspace) {.async.} =
-  await ws.saveFile(self.filename, self.contentString)
+  await ws.saveFile(self.filename, self.buffer.snapshot.visibleText.clone())
   self.onSaved.invoke()
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
@@ -1096,25 +1230,72 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.lastSavedRevision = self.undoableRevision
 
 proc autoDetectIndentStyle(self: TextDocument) =
+  let maxSamples = self.configProvider.getValue("text.auto-detect-indent.samples", 50)
+  let maxTime = self.configProvider.getValue("text.auto-detect-indent.timeout", 20.0)
+
   var containsTab = false
   var linePos = Point.init(0, 0)
   var c = self.buffer.visibleText.cursorT(linePos)
+
+  var minIndent = int.high
+  var samples = 0
+
+  var t = startTimer()
   while not c.atEnd:
     if c.currentRune == '\t'.Rune:
       containsTab = true
       break
+    if c.currentRune == ' '.Rune:
+      minIndent = min(minIndent, self.getIndentInBytes(linePos.row.int))
+      containsTab = false
+      inc samples
+      if samples == maxSamples:
+        break
+
+    if t.elapsed.ms >= maxTime:
+      break
+
     linePos.row += 1
     c.seekForward(linePos)
 
   if containsTab:
     self.indentStyle = IndentStyle(kind: Tabs)
   else:
-    self.indentStyle = IndentStyle(kind: Spaces, spaces: self.tabWidth)
+    if self.languageConfig.isNone:
+      self.languageConfig = TextLanguageConfig().some
+
+    if minIndent == int.high:
+      minIndent = self.tabWidth
+
+    self.languageConfig.get.tabWidth = minIndent
+    self.indentStyle = IndentStyle(kind: Spaces, spaces: minIndent)
 
   log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
+proc createRopeThread(args: tuple[str: ptr string, rope: ptr Rope]): int {.gcsafe.} =
+  template content: openArray[char] = args.str[].toOpenArray(0, args.str[].high)
+  let invalidUtf8Index = content.validateUtf8
+  if invalidUtf8Index >= 0:
+    return invalidUtf8Index
+
+  var index = 0
+  const utf8_bom = "\xEF\xBB\xBF"
+  if args.str[].len >= 3 and content[0..<3] == utf8_bom.toOpenArray(0, utf8_bom.high):
+    index = 3
+
+  let t = startTimer()
+  args.rope[] = Rope.new(content[index..^1])
+  return -1
+
+proc createRopeAsync*(str: sink string, rope: ptr Rope): Future[Option[int]] {.async.} =
+  ## Returns `some(index)` if the string contains invalid utf8 at `index`
+  var errorIndex = await spawnAsync(createRopeThread, (str.addr, rope))
+  if errorIndex != -1:
+    return errorIndex.some
+  return int.none
+
 proc loadAsync*(self: TextDocument, ws: Workspace, isReload: bool): Future[void] {.async.} =
-  logScope lvlInfo, &"loadAsync '{self.filename}'"
+  logScope lvlInfo, &"loadAsync '{self.filename}', reload = {isReload}"
 
   self.isBackedByFile = true
   self.isLoadingAsync = true
@@ -1129,7 +1310,11 @@ proc loadAsync*(self: TextDocument, ws: Workspace, isReload: bool): Future[void]
   if isReload:
     self.replaceAll(data.move)
   else:
-    self.content = data.move
+    var rope: Rope
+    if createRopeAsync(data.move, rope.addr).await.getSome(errorIndex):
+      rope = Rope.new(&"Invalid utf-8 byte at {errorIndex}")
+    let t = startTimer()
+    self.content = rope.move
 
   if not ws.isFileReadOnly(self.filename).await:
     self.readOnly = false
@@ -1175,7 +1360,7 @@ proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.a
 
   return false
 
-proc setFileAndContent*(self: TextDocument, filename: string, content: sink string) =
+proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S) =
   let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   if filename.len == 0:
     raise newException(IOError, "Missing filename")
@@ -1185,8 +1370,8 @@ proc setFileAndContent*(self: TextDocument, filename: string, content: sink stri
   self.filename = filename
   self.isBackedByFile = false
 
-  if getLanguageForFile(self.configProvider, filename).getSome(language):
-    self.languageId = language
+  if (let language = getLanguageForFile(self.configProvider, filename); language.isSome):
+    self.languageId = language.get
   else:
     self.languageId = ""
 
@@ -1646,106 +1831,6 @@ proc updateCursorAfterDelete*(self: TextDocument, location: Cursor, deleted: Sel
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point) =
   self.changes.add(TextDocumentChange(startByte: startByte, oldEndByte: oldEndByte, newEndByte: newEndByte, startPoint: startPoint, oldEndPoint: oldEndPoint, newEndPoint: newEndPoint))
   self.changesAsync.add(TextDocumentChange(startByte: startByte, oldEndByte: oldEndByte, newEndByte: newEndByte, startPoint: startPoint, oldEndPoint: oldEndPoint, newEndPoint: newEndPoint))
-
-proc edit*(self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
-  # todo: finish this function
-  let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
-
-  var sortedSelections = collect:
-    for i, s in selections:
-      (i, s)
-
-  sortedSelections.sort((a, b) => cmp(a[1].first, b[1].first))
-
-  var pointDiff = PointDiff.default
-  var byteDiff = 0
-
-  var edits = newSeqOfCap[tuple[old, new: Selection]](selections.len)
-  var c = self.buffer.visibleText.cursorT(Point)
-  var clearCache = false
-
-  var ranges = newSeqOfCap[(Slice[int], string)](selections.len)
-  var newSelections = newSeqOfCap[(int, Selection)](selections.len)
-  for i, sortedSelection in sortedSelections:
-    var selection = sortedSelection[1]
-
-    let text = if texts.len == 1:
-      texts[0]
-    elif texts.len == selections.len:
-      texts[i]
-    else:
-      texts[min(i, texts.high)]
-
-    c.seekForward(selection.first.toPoint)
-
-    let startByte = c.offset()
-    if selection.last > selection.first:
-      c.seekForward(selection.last.toPoint)
-
-    if inclusiveEnd and selection.last.column < self.lineLength(selection.last.line):
-      c.seekNextRune()
-      selection.last = c.position.toCursor
-    let endByte = c.offset()
-
-    assert startByte <= self.buffer.contentLength and endByte <= self.buffer.contentLength
-    ranges.add (startByte..<endByte, text)
-
-    let summary = TextSummary.init(text)
-    let oldByteRange = (startByte + byteDiff, endByte + byteDiff)
-    let newByteRangeEnd = oldByteRange[0] + summary.bytes
-    let oldPointRange = (selection.first.toPoint + pointDiff, selection.last.toPoint + pointDiff)
-    let newPointRangeEnd = oldPointRange[0] + summary.lines
-
-    let newSelection = (oldPointRange[0], newPointRangeEnd).toSelection
-    newSelections.add (sortedSelection[0], newSelection)
-    edits.add (selection, newSelection)
-
-    if not self.tsLanguage.isNil:
-      self.addTreesitterChange(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd)
-
-    if not clearCache:
-      if selection.first.line == selection.last.line and summary.lines.row == 0:
-        self.styledTextCache.del selection.first.line
-      else:
-        clearCache = true
-
-    pointDiff = newPointRangeEnd - selection.last.toPoint
-    byteDiff = newByteRangeEnd - endByte
-
-  newSelections.sort((a, b) => cmp(a[0], b[0]))
-  result = newSelections.mapIt(it[1])
-  assert result.len > 0
-
-  self.revision.inc
-  self.undoableRevision.inc
-
-  let op = self.buffer.edit(ranges)
-  self.recordSnapshotForDiagnostics()
-
-  let last {.cursor.} = self.buffer.history.undoStack[^1]
-  if self.nextCheckpoints.len > 0:
-    self.checkpoints[last.transaction.id] = self.nextCheckpoints
-  self.nextCheckpoints.setLen 0
-
-  self.onOperation.invoke (self, op)
-  self.onEdit.invoke (self, edits)
-
-  if oldSelections.len > 0:
-    self.undoSelections[op.timestamp] = @oldSelections
-  self.redoSelections[op.timestamp] = result.mapIt(it.last.toSelection)
-  self.currentContentFailedToParse = false
-
-  if notify:
-    self.notifyTextChanged()
-
-  if clearCache:
-    self.clearStyledTextCache()
-
-  for s in result.items:
-    assert s.first.line in 0..int32.high
-    assert s.first.column in 0..int32.high
-    assert s.last.line in 0..int32.high
-    assert s.last.column in 0..int32.high
 
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
   var co = oldText.cursorT(Point)

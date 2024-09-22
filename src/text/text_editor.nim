@@ -11,7 +11,7 @@ import language/[language_server_base]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent,
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
-  completion_provider_snippet, selector_popup_builder, dispatch_tables
+  completion_provider_snippet, selector_popup_builder, dispatch_tables, register
 import config_provider, app_interface
 import diff
 import workspaces/workspace
@@ -232,7 +232,10 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   assert selections.len > 0
 
   if not self.dontRecordSelectionHistory:
-    if self.selectionHistory.len == 0 or abs(selections[^1].last.line - self.selectionsInternal[^1].last.line) > 1:
+    if self.selectionHistory.len == 0 or
+        abs(selections[^1].last.line - self.selectionsInternal[^1].last.line) > 1 or
+        self.selectionsInternal.len != selections.len:
+
       self.selectionHistory.addLast self.selectionsInternal
       if self.selectionHistory.len > 100:
         discard self.selectionHistory.popFirst
@@ -1520,34 +1523,61 @@ proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("
 
 proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool): Future[void] {.async.} =
   log lvlInfo, fmt"copy register into '{register}', inclusiveEnd: {inclusiveEnd}"
-  var text = ""
+  var text = Rope.new()
+  var c = self.document.buffer.visibleText.cursorT(Point)
+
   for i, selection in self.selections:
+    let selection = selection.normalized
+
     if i > 0:
       text.add "\n"
-    text.add self.document.contentString(selection, inclusiveEnd)
 
-  self.app.setRegisterTextAsync(text, register).await
+    if c.position.toCursor > selection.first:
+      c.reset()
+    c.seekForward(selection.first.toPoint)
+
+    var target = selection.last
+    if inclusiveEnd and target.column < self.document.lineLength(target.line):
+      target.column += 1
+
+    text.add(c.slice(target.toPoint, Bias.Right))
+
+  self.app.setRegisterAsync(register, Register(kind: Rope, rope: text.move)).await
+  # self.app.setRegisterTextAsync(text, register).await
 
 proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.
     expose("editor.text").} =
   asyncCheck self.copyAsync(register, inclusiveEnd)
 
-proc pasteAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool = false):
+proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: bool = false):
     Future[void] {.async.} =
-  log lvlInfo, fmt"paste register from '{register}', inclusiveEnd: {inclusiveEnd}"
-  let text = self.app.getRegisterTextAsync(register).await
+  log lvlInfo, fmt"paste register from '{registerName}', inclusiveEnd: {inclusiveEnd}"
+
+  var register: Register
+  if not self.app.getRegisterAsync(registerName, register.addr).await:
+    return
+
   if self.document.isNil:
     return
 
-  let numLines = text.count('\n') + 1
+  let numLines = register.numLines()
+  debugf"paste {numLines} lines"
 
-  let newSelections = if numLines == self.selections.len:
-    let lines = text.splitLines()
-    self.document.edit(self.selections, self.selections, lines, notify=true, record=true,
-      inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+  let newSelections = if numLines == self.selections.len and numLines > 1:
+    case register.kind
+    of RegisterKind.Text:
+      let lines = register.text.splitLines()
+      self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+    of RegisterKind.Rope:
+      let lines = register.rope.splitLines()
+      echo lines
+      self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
   else:
-    self.document.edit(self.selections, self.selections, [text], notify=true, record=true,
-      inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+    case register.kind
+    of RegisterKind.Text:
+      self.document.edit(self.selections, self.selections, [register.text.move], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+    of RegisterKind.Rope:
+      self.document.edit(self.selections, self.selections, [register.rope.move], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
 
   # add list of selections for what was just pasted to history
   if newSelections.len == self.selections.len:
@@ -1560,9 +1590,9 @@ proc pasteAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool 
   self.scrollToCursor(Last)
   self.markDirty()
 
-proc paste*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.
+proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: bool = false) {.
     expose("editor.text").} =
-  asyncCheck self.pasteAsync(register, inclusiveEnd)
+  asyncCheck self.pasteAsync(registerName, inclusiveEnd)
 
 proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:

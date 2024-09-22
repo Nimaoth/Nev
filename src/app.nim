@@ -8,7 +8,7 @@ import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_command_line
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, command_info
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, command_info, register
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config, vfs
@@ -117,16 +117,6 @@ type EditorState = object
 
   debuggerState: Option[JsonNode]
   sessionData: JsonNode
-
-type
-  RegisterKind* {.pure.} = enum Text, AstNode
-  Register* = object
-    case kind*: RegisterKind
-    of RegisterKind.Text:
-      text*: string
-    of RegisterKind.AstNode:
-      when enableAst:
-        node*: AstNode
 
 type ScriptAction = object
   name: string
@@ -261,6 +251,8 @@ proc handleLog(self: App, level: Level, args: openArray[string])
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
 proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.}
 proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.}
+proc setRegisterAsync*(self: App, register: string, value: sink Register): Future[void]
+proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[bool]
 proc recordCommand*(self: App, command: string, args: string)
 proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[DocumentEditor]
 proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentEditor]
@@ -299,6 +291,8 @@ implTrait AppInterface, App:
 
   setRegisterTextAsync(Future[void], App, string, string)
   getRegisterTextAsync(Future[string], App, string)
+  setRegisterAsync(Future[void], App, string, sink Register)
+  getRegisterAsync(Future[bool], App, string, ptr Register)
   recordCommand(void, App, string, string)
 
   proc configProvider*(self: App): ConfigProvider = self.asConfigProvider
@@ -418,14 +412,6 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
       log(lvlError, fmt"Failed to run script handleScriptAction {context}: {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
       return nil
-
-proc getText(register: var Register): string =
-  case register.kind
-  of RegisterKind.Text:
-    return register.text
-  of RegisterKind.AstNode:
-    assert false
-    return ""
 
 method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] {.base.} =
   return @[bounds]
@@ -4077,6 +4063,27 @@ proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.a
 
   return ""
 
+proc setRegisterAsync*(self: App, register: string, value: sink Register): Future[void] {.async.} =
+  if register.len == 0:
+    setSystemClipboardText(value.getText())
+  self.registers[register] = value.move
+
+proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[bool] {.async.} =
+  if register.len == 0:
+    var text = getSystemClipboardText().await
+    if text.isSome:
+      if text.get.len > 1024:
+        res[] = Register(kind: Rope, rope: Rope.new(text.get.move))
+      else:
+        res[] = Register(kind: Text, text: text.get.move)
+      return true
+
+  if self.registers.contains(register):
+    res[] = self.registers[register].clone()
+    return true
+
+  return false
+
 proc setRegisterText*(self: App, text: string, register: string = "") {.expose("editor").} =
   self.registers[register] = Register(kind: RegisterKind.Text, text: text)
 
@@ -4159,7 +4166,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
   result.add &"Backend: {self.backend}\n"
 
   result.add &"Registers:\n"
-  for (key, value) in self.registers.pairs:
+  for (key, value) in self.registers.mpairs:
     result.add &"    {key}: {value}\n"
 
   result.add &"RecordingKeys:\n"

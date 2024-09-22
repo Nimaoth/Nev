@@ -2,7 +2,7 @@ import std/[json, options]
 import misc/[traits, custom_async]
 import platform/platform
 import finder/[finder, previewer]
-import events, popup, document_editor, document, config_provider, selector_popup_builder
+import events, popup, document_editor, document, config_provider, selector_popup_builder, register
 from scripting_api import EditorId
 
 traitRef AppInterface:
@@ -11,6 +11,8 @@ traitRef AppInterface:
   method getEventHandlerConfig*(self: AppInterface, context: string): EventHandlerConfig
   method setRegisterTextAsync*(self: AppInterface, text: string, register: string): Future[void]
   method getRegisterTextAsync*(self: AppInterface, register: string): Future[string]
+  method setRegisterAsync*(self: AppInterface, register: string, value: sink Register): Future[void]
+  method getRegisterAsync*(self: AppInterface, register: string, res: ptr Register): Future[bool]
   method recordCommand*(self: AppInterface, command: string, args: string)
   method openWorkspaceFile*(self: AppInterface, path: string, append: bool = false): Option[DocumentEditor]
   method openFile*(self: AppInterface, path: string): Option[DocumentEditor]

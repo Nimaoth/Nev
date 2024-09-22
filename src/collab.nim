@@ -76,7 +76,7 @@ proc connectCollaboratorAsync(port: int) {.async.} =
         let opsJson = parts[i..^1]
         let content = await server.recv(length)
 
-        let ops = opsJson.parseJson.jsonTo(seq[Operation]).catch:
+        var ops = opsJson.parseJson.jsonTo(seq[Operation]).catch:
           log lvlError, &"[collab][open {file}] Failed to parse operations: {getCurrentExceptionMsg()}\nops: {opsJson}\n{getCurrentException().getStackTrace()}"
           continue
 
@@ -85,10 +85,10 @@ proc connectCollaboratorAsync(port: int) {.async.} =
             let doc = doc.TextDocument
             docs[file] = doc
             doc.rebuildBuffer(1.ReplicaId, bufferId, content)
-            doc.applyRemoteChanges(ops)
+            doc.applyRemoteChanges(ops.move)
 
             discard doc.onOperation.subscribe proc(arg: tuple[document: TextDocument, op: Operation]) =
-              opsToSend.add (arg.document.filename, arg.op)
+              opsToSend.add (arg.document.filename, arg.op.clone())
               sendOpsTask.schedule()
         else:
           log lvlError, &"[collab-client] Document not found: '{file}', message: '{line}'"
@@ -96,12 +96,12 @@ proc connectCollaboratorAsync(port: int) {.async.} =
       elif line.startsWith("op "):
         let file = line[3..^1]
         let encoded = await server.recvLine()
-        let op = encoded.parseJson().jsonTo(Operation).catch:
+        var op = encoded.parseJson().jsonTo(Operation).catch:
           log lvlError, &"Failed to parse operation: '{line}'"
           continue
 
         if app.getOrOpenDocument(file).getSome(doc) and doc of TextDocument:
-          doc.TextDocument.applyRemoteChanges(@[op])
+          doc.TextDocument.applyRemoteChanges(@[op.move])
 
       else:
         log lvlError,  &"[collab-client] Unknown command '{line}'"
@@ -131,9 +131,9 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
         let doc = doc.TextDocument
         if doc.filename != "" and doc.filename != "log":
           let content = $doc.buffer.history.baseText
-          var allOps = collect:
-            for op in doc.buffer.history.operations.values:
-              op
+          var allOps = newSeqOfCap[Operation](doc.buffer.history.operations.len)
+          for op in doc.buffer.history.operations.mvalues:
+            allOps.add(op.clone())
 
           allOps.sort((a, b) => cmp(a.timestamp, b.timestamp))
 
@@ -142,7 +142,7 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
           await client.send(content)
 
           discard doc.onOperation.subscribe proc(arg: tuple[document: TextDocument, op: Operation]) =
-            opsToSend.add (arg.document.filename, arg.op)
+            opsToSend.add (arg.document.filename, arg.op.clone())
             sendOpsTask.schedule()
 
     while not client.isClosed:
@@ -153,12 +153,12 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
       if line.startsWith("op "):
         let file = line[3..^1]
         let encoded = await client.recvLine()
-        let op = encoded.parseJson().jsonTo(Operation).catch:
+        var op = encoded.parseJson().jsonTo(Operation).catch:
           log lvlError, &"[collab-server] Failed to parse operation: '{line}'"
           continue
 
         if app.getOrOpenDocument(file).getSome(doc) and doc of TextDocument:
-          doc.TextDocument.applyRemoteChanges(@[op])
+          doc.TextDocument.applyRemoteChanges(@[op.move])
 
       else:
         log lvlError,  &"[collab-server] Unknown command '{line}'"
