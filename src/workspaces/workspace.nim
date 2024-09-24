@@ -4,6 +4,8 @@ import platform/filesystem
 import vcs/vcs
 import vfs
 
+import nimsumtree/rope
+
 logCategory "workspace"
 
 type
@@ -83,9 +85,11 @@ method loadFile*(self: Workspace, relativePath: string, data: ptr string): Futur
 method saveFile*(self: Workspace, relativePath: string, content: string): Future[void] {.base.} =
   discard
 
-method saveFile*(self: Workspace, relativePath: string, content: ArrayBuffer):
-    Future[void] {.base.} =
+method saveFile*(self: Workspace, relativePath: string, content: ArrayBuffer): Future[void] {.base.} =
   discard
+
+method saveFile*(self: Workspace, relativePath: string, content: sink Rope): Future[void] {.base.} =
+  doneFuture()
 
 method getWorkspacePath*(self: Workspace): string {.base.} = discard
 

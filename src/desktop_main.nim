@@ -17,6 +17,7 @@ else:
 import std/[parseopt, options, macros, strutils, os, terminal, strformat]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
+import text/custom_treesitter
 
 proc tryAttach(opts: AppOptions, processId: int)
 
@@ -70,6 +71,7 @@ Options:
   -s, --session          Load a specific session.
   --attach               Open the passed files in an existing instance if it already exists.
   --clean                Don't load any configs/sessions/plugins
+  --ts-mem-tracking      Enable treesitter memory tracking (for debugging)
 
 Examples:
   nev                                              Open .{appName}-session if it exists
@@ -153,6 +155,9 @@ block: ## Parse command line options
       of "session", "s":
         opts.sessionOverride = val.some
 
+      of "ts-mem-tracking":
+        enableTreesitterMemoryTracking()
+
     of cmdEnd: assert(false) # cannot happen
 
   if attach.getSome(attach):
@@ -176,7 +181,7 @@ if not disableLogging: ## Enable loggers
     if backend.get != Terminal and logToConsole:
       logger.enableConsoleLogger()
 
-import misc/[util, timer, custom_async]
+import misc/[timer, custom_async]
 import platform/platform
 import ui/widget_builders
 import text/language/language_server
@@ -240,6 +245,7 @@ import text/text_editor
 import text/language/lsp_client
 import text/language/debugger
 import selector_popup
+import collab
 import scripting/scripting_base
 import wasm3, wasm3/[wasm3c, wasmconversions]
 
@@ -359,12 +365,14 @@ proc runApp(): Future[void] {.async.} =
     var outlierTime = 20.0
 
     let frameSoFar = totalTimer.elapsed.ms
-    if lastEvent.elapsed.ms > 60000 and frameSoFar < 10:
-      sleep(30 - frameSoFar.int)
-      outlierTime += 30
-    elif lastEvent.elapsed.ms > 1000 and frameSoFar < 10:
-      sleep(15 - frameSoFar.int)
-      outlierTime += 15
+    if lastEvent.elapsed.ms > ed.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
+      let time = ed.getOption("platform.reduced-fps-2.ms", 30)
+      sleep(time - frameSoFar.int)
+      outlierTime += time.float
+    elif lastEvent.elapsed.ms > ed.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
+      let time = ed.getOption("platform.reduced-fps-2.ms", 15)
+      sleep(time - frameSoFar.int)
+      outlierTime += time.float
     elif backend.get == Terminal and frameSoFar < 5:
       sleep(5 - frameSoFar.int)
       outlierTime += 5
@@ -398,7 +406,7 @@ when enableGui:
     myDisableTrueColors()
 
 when defined(windows) and copyWasmtimeDll:
-  import std/[os, compilesettings]
+  import std/[compilesettings]
   import wasmh
 
   static:

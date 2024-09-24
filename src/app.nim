@@ -1,18 +1,20 @@
-import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques]
+import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques, algorithm]
 import asynctools/asyncipc
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, regex, disposable_ref]
+  array_set, delayed_task, regex, disposable_ref, rope_utils]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_command_line
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, command_info
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, command_info, register
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config, vfs
 import vcs/vcs
+
+import nimsumtree/[buffer, clock, rope]
 
 when not defined(js):
   import misc/async_process
@@ -115,16 +117,6 @@ type EditorState = object
 
   debuggerState: Option[JsonNode]
   sessionData: JsonNode
-
-type
-  RegisterKind* {.pure.} = enum Text, AstNode
-  Register* = object
-    case kind*: RegisterKind
-    of RegisterKind.Text:
-      text*: string
-    of RegisterKind.AstNode:
-      when enableAst:
-        node*: AstNode
 
 type ScriptAction = object
   name: string
@@ -259,6 +251,8 @@ proc handleLog(self: App, level: Level, args: openArray[string])
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
 proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.}
 proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.}
+proc setRegisterAsync*(self: App, register: string, value: sink Register): Future[void]
+proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[bool]
 proc recordCommand*(self: App, command: string, args: string)
 proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[DocumentEditor]
 proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentEditor]
@@ -297,6 +291,8 @@ implTrait AppInterface, App:
 
   setRegisterTextAsync(Future[void], App, string, string)
   getRegisterTextAsync(Future[string], App, string)
+  setRegisterAsync(Future[void], App, string, sink Register)
+  getRegisterAsync(Future[bool], App, string, ptr Register)
   recordCommand(void, App, string, string)
 
   proc configProvider*(self: App): ConfigProvider = self.asConfigProvider
@@ -416,14 +412,6 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
       log(lvlError, fmt"Failed to run script handleScriptAction {context}: {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
       return nil
-
-proc getText(register: var Register): string =
-  case register.kind
-  of RegisterKind.Text:
-    return register.text
-  of RegisterKind.AstNode:
-    assert false
-    return ""
 
 method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] {.base.} =
   return @[bounds]
@@ -707,6 +695,7 @@ when enableAst:
   import ast/[model_document]
 import selector_popup
 import finder/[workspace_file_previewer, open_editor_previewer]
+import collab
 
 # todo: remove this function
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =
@@ -1159,8 +1148,8 @@ proc listenForIpc(self: App, id: int) {.async.} =
         try:
           if message.startsWith("-r:") or message.startsWith("-R:"):
             let (action, arg) = parseAction(message[3..^1])
-            let response = self.handleAction(action, arg, record=true)
             # todo: send response
+            discard self.handleAction(action, arg, record=true)
           elif message.startsWith("-p:"):
             let setting = message[3..^1]
             let i = setting.find("=")
@@ -1491,16 +1480,15 @@ var logBuffer = ""
 proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
   if self.logDocument.isNotNil:
-    let selection = self.logDocument.TextDocument.lastCursor.toSelection
-    discard self.logDocument.TextDocument.insert([selection], [selection], [logBuffer & str])
-    logBuffer = ""
-
     for view in self.views:
       if view of EditorView and view.EditorView.document == self.logDocument:
         let editor = view.EditorView.editor.TextDocumentEditor
-        if editor.selection == selection:
-          editor.selection = editor.document.lastCursor.toSelection
-          editor.scrollToCursor()
+        editor.bScrollToEndOnInsert = true
+
+    let selection = self.logDocument.TextDocument.lastCursor.toSelection
+    discard self.logDocument.TextDocument.edit([selection], [selection], [logBuffer & str])
+    logBuffer = ""
+
   else:
     logBuffer.add str
 
@@ -1625,10 +1613,8 @@ proc openDocument*(self: App, path: string, appFile = false, load = true): Optio
     return Document.none
 
 proc getDocument*(self: App, path: string, appFile = false): Option[Document] =
-
   for document in self.documents:
     if document.workspace == self.workspace.some and document.appFile == appFile and document.filename == path:
-      log lvlInfo, &"Get existing document '{path}'"
       return document.some
 
   return Document.none
@@ -2282,7 +2268,7 @@ proc setLayout*(self: App, layout: string) {.expose("editor").} =
   self.platform.requestRender()
 
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
-  self.getCommandLineTextEditor.document.content = @[initialValue]
+  self.getCommandLineTextEditor.document.content = initialValue
   if self.commandHistory.len == 0:
     self.commandHistory.add ""
   self.commandHistory[0] = ""
@@ -2293,7 +2279,7 @@ proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.platform.requestRender()
 
 proc exitCommandLine*(self: App) {.expose("editor").} =
-  self.getCommandLineTextEditor.document.content = @[""]
+  self.getCommandLineTextEditor.document.content = ""
   self.getCommandLineTextEditor.hideCompletions()
   self.commandLineMode = false
   self.platform.requestRender()
@@ -2336,7 +2322,7 @@ proc executeCommandLine*(self: App): bool {.expose("editor").} =
   defer:
     self.platform.requestRender()
   self.commandLineMode = false
-  let command = self.getCommandLineTextEditor.document.content.join("")
+  let command = self.getCommandLineTextEditor.document.contentString.replace("\n", "")
 
   if (let i = self.commandHistory.find(command); i >= 0):
     self.commandHistory.delete i
@@ -2351,7 +2337,7 @@ proc executeCommandLine*(self: App): bool {.expose("editor").} =
     self.commandHistory.setLen maxHistorySize
 
   var (action, arg) = command.parseAction
-  self.getCommandLineTextEditor.document.content = @[""]
+  self.getCommandLineTextEditor.document.content = ""
 
   if arg.startsWith("\\"):
     arg = $newJString(arg[1..^1])
@@ -2707,7 +2693,6 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let (vfs, relPath) = self.vfs.getVFS(path)
     let pathNorm = self.vfs.normalize(path)
 
     let editor = self.openWorkspaceFile(pathNorm)
@@ -3952,8 +3937,8 @@ proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string {.expose("e
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
-      if line >= 0 and line < editor.document.content.len:
-        return editor.document.content[line]
+      if line >= 0 and line < editor.document.numLines:
+        return $editor.document.getLine(line)
   return ""
 
 proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").} =
@@ -3962,7 +3947,7 @@ proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").}
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
-      return editor.document.content.len
+      return editor.document.numLines
   return 0
 
 template createScriptGetOption(path, default, accessor: untyped): untyped =
@@ -4078,6 +4063,33 @@ proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.a
 
   return ""
 
+proc setRegisterAsync*(self: App, register: string, value: sink Register): Future[void] {.async.} =
+  if register.len == 0:
+    setSystemClipboardText(value.getText())
+  self.registers[register] = value.move
+
+proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[bool] {.async.} =
+  if register.len == 0:
+    var text = getSystemClipboardText().await
+    if text.isSome:
+      if text.get.len > 1024:
+        var rope: Rope
+        if createRopeAsync(text.get.addr, rope.addr).await.getSome(errorIndex):
+          log lvlWarn, &"Large clipboard contains invalid utf8 at index {errorIndex}, can't use rope"
+          res[] = Register(kind: Text, text: text.get.move)
+        else:
+          res[] = Register(kind: Rope, rope: rope.move)
+
+      else:
+        res[] = Register(kind: Text, text: text.get.move)
+      return true
+
+  if self.registers.contains(register):
+    res[] = self.registers[register].clone()
+    return true
+
+  return false
+
 proc setRegisterText*(self: App, text: string, register: string = "") {.expose("editor").} =
   self.registers[register] = Register(kind: RegisterKind.Text, text: text)
 
@@ -4160,7 +4172,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
   result.add &"Backend: {self.backend}\n"
 
   result.add &"Registers:\n"
-  for (key, value) in self.registers.pairs:
+  for (key, value) in self.registers.mpairs:
     result.add &"    {key}: {value}\n"
 
   result.add &"RecordingKeys:\n"
@@ -4248,6 +4260,10 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
 
     log lvlError, fmt"No current view"
     return JsonNode.none
+
+  # todo: there's got to be better way than putting all these here manually
+  if collab.dispatchEvent(action, args).getSome(r):
+    return r.some
 
   if debugger.dispatchEvent(action, args).getSome(r):
     return r.some

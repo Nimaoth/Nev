@@ -1,5 +1,5 @@
-import std/[json, options, os, strutils, tables]
-import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger, event]
+import std/[options, strutils, tables]
+import misc/[custom_async, util, custom_logger]
 import platform/filesystem
 
 logCategory "VFS"

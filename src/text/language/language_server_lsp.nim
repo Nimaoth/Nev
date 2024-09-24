@@ -5,6 +5,9 @@ import platform/filesystem
 import language_server_base, app_interface, config_provider, lsp_client, document
 import workspaces/workspace as ws
 
+import nimsumtree/buffer
+import nimsumtree/rope except Cursor
+
 logCategory "lsp"
 
 type LanguageServerLSP* = ref object of LanguageServer
@@ -12,7 +15,7 @@ type LanguageServerLSP* = ref object of LanguageServer
   languageId: string
   initializedFuture: ResolvableFuture[bool]
 
-  documentHandles: seq[tuple[document: Document, textInserted, textDeleted: Id]]
+  documentHandles: seq[tuple[document: Document, onEditHandle: Id]]
 
   thread: Thread[LSPClient]
   serverCapabilities*: ServerCapabilities
@@ -69,13 +72,6 @@ proc handleMessages(lsp: LanguageServerLSP) {.async.} =
       break
 
     log lvlInfo, &"{messageType}: {message}"
-
-    let level = case messageType
-    of Error: lvlError
-    of Warning: lvlWarn
-    of Info: lvlInfo
-    of Log: lvlDebug
-
     lsp.onMessage.invoke (messageType, message)
 
   log lvlInfo, &"handleMessages: client gone"
@@ -569,27 +565,26 @@ method connect*(self: LanguageServerLSP, document: Document) =
   else:
     asyncCheck self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
 
-  let textInsertedHandle = document.textInserted.subscribe proc(args: auto): void =
+  let onEditHandle = document.onEdit.subscribe proc(args: auto): void =
     # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
+    # todo: we should batch these, as onEdit can be called multiple times per frame
+    # especially for full document sync
+    let version = args.document.buffer.history.versions.high
+    let fullPath = args.document.fullPath
 
     if self.fullDocumentSync:
-      asyncCheck self.client.notifyTextDocumentChangedChannel.send (args.document.fullPath, args.document.version, @[], args.document.contentString)
-      discard
+      asyncCheck self.client.notifyTextDocumentChangedChannel.send (fullPath, version, @[], args.document.contentString)
     else:
-      let changes = @[TextDocumentContentChangeEvent(
-        `range`: args.location.first.toSelection.toRange, text: args.text)]
-      asyncCheck self.client.notifyTextDocumentChangedChannel.send (args.document.fullPath, args.document.version, changes, "")
+      var c = args.document.buffer.visibleText.cursorT(Point)
+      # todo: currently relies on edits being sorted
+      let changes = args.edits.mapIt(block:
+        c.seekForward(Point.init(it.new.first.line, it.new.first.column))
+        let text = c.slice(Point.init(it.new.last.line, it.new.last.column))
+        TextDocumentContentChangeEvent(range: language_server_base.toLspRange(it.old), text: $text)
+      )
+      asyncCheck self.client.notifyTextDocumentChangedChannel.send (fullPath, version, changes, "")
 
-  let textDeletedHandle = document.textDeleted.subscribe proc(args: auto): void =
-    # debugf"TEXT DELETED {args.document.fullPath}: {args.location}"
-    if self.fullDocumentSync:
-      asyncCheck self.client.notifyTextDocumentChangedChannel.send (args.document.fullPath, args.document.version, @[], args.document.contentString)
-      discard
-    else:
-      let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toRange)]
-      asyncCheck self.client.notifyTextDocumentChangedChannel.send (args.document.fullPath, args.document.version, changes, "")
-
-  self.documentHandles.add (document.Document, textInsertedHandle, textDeletedHandle)
+  self.documentHandles.add (document.Document, onEditHandle)
 
 method disconnect*(self: LanguageServerLSP, document: Document) =
   if not (document of TextDocument):
@@ -603,8 +598,7 @@ method disconnect*(self: LanguageServerLSP, document: Document) =
     if d.document != document:
       continue
 
-    document.textInserted.unsubscribe d.textInserted
-    document.textDeleted.unsubscribe d.textDeleted
+    document.onEdit.unsubscribe d.onEditHandle
     self.documentHandles.removeSwap i
     break
 

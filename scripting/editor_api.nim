@@ -173,6 +173,10 @@ proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
                      scaleY: float = 0.8; previewScale: float = 0.4) =
   editor_browseKeybinds_void_App_bool_float_float_float_impl(preview, scaleX,
       scaleY, previewScale)
+proc connectCollaborator*(port: int = 6969) =
+  editor_connectCollaborator_void_App_int_impl(port)
+proc hostCollaborator*(port: int = 6969) =
+  editor_hostCollaborator_void_App_int_impl(port)
 proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
                  previewScale: float = 0.5) =
   ## Opens a file dialog which shows all files in the currently open workspaces

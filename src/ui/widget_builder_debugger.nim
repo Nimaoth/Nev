@@ -1,4 +1,4 @@
-import std/[strformat, math, options, tables]
+import std/[strformat, options, tables]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor

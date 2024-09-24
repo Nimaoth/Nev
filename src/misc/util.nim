@@ -4,7 +4,7 @@ export options
 {.used.}
 
 template getSome*[T](opt: Option[T], injected: untyped): bool =
-  ((let o = opt; o.isSome())) and ((let injected {.inject.} = o.get(); true))
+  ((let o = opt; o.isSome())) and ((let injected {.inject, cursor.} = o.get(); true))
 
 template isNotNil*(v: untyped): untyped = not v.isNil
 
@@ -19,6 +19,30 @@ template getOr*[T](opt: Option[T], body: untyped): T =
     temp.get
   else:
     body
+
+template get*[T](opt: Option[T], otherwise: Option[T]): Option[T] =
+  if opt.isSome:
+    opt
+  else:
+    otherwise
+
+template take*[T](opt: sink Option[T], otherwise: sink T): T =
+  if opt.isSome:
+    opt.get.move
+  else:
+    otherwise
+
+template take*[T](opt: sink Option[T]): T =
+  if opt.isSome:
+    opt.get.move
+  else:
+    raise newException(UnpackDefect, "Can't obtain a value from a `none`")
+
+func get*[T](opt: openArray[T], index: int): Option[T] =
+  if index in 0..opt.high:
+    opt[index].some
+  else:
+    T.none
 
 proc `??`*[T: ref object](self: T, els: T): T =
   return if not self.isNil: self else: els

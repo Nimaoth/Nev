@@ -186,10 +186,10 @@ else:
     queries: Table[string, Option[TSQuery]]
     queryFutures: Table[string, Future[Option[TSQuery]]]
 
-  type TSParser* = ref object
+  type TSParser* = object
     impl: ptr ts.TSParser
 
-  type TsTree* = ref object
+  type TsTree* = object
     impl: ptr ts.TSTree
 
   type TSNode* = object
@@ -229,13 +229,26 @@ else:
 
   type TSLanguageCtor = proc(): ptr ts.TSLanguage {.stdcall.}
 
+  func `=destroy`(t: TsTree) {.raises: [].} = discard
+
   func setLanguage*(self: TSParser, language: TSLanguage) =
     assert ts.tsParserSetLanguage(self.impl, language.impl)
 
+  func isNil*(self: TSParser): bool = self.impl.isNil
+  func isNil*(self: TSTree): bool = self.impl.isNil
+
+  proc clone*(self: TSTree): TSTree =
+    assert not self.isNil
+    return TSTree(impl: ts.tsTreeCopy(self.impl))
+
   proc delete*(self: var TSTree) =
-    if self.isNotNil:
+    if self.impl != nil:
       ts.tsTreeDelete(self.impl)
-    self = nil
+    self.impl = nil
+
+  proc delete*(self: sink TSTree) =
+    if self.impl != nil:
+      ts.tsTreeDelete(self.impl)
 
   proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
       Future[Option[TSQuery]] {.async.} =
@@ -282,8 +295,6 @@ else:
     else:
       nil
     let tree = self.impl.tsParserParseString(oldTreePtr, text.cstring, text.len.uint32)
-    if tree.isNil:
-      return nil
     return TSTree(impl: tree)
 
   type GetTextCallback* = proc(index: int, position: Cursor): (ptr char, int)
@@ -307,8 +318,6 @@ else:
       nil
 
     let tree = self.impl.tsParserParse(oldTreeImpl, input)
-    if tree.isNil:
-      return nil
     return TSTree(impl: tree)
 
   when not declared(c_malloc):
@@ -503,7 +512,7 @@ else:
 # Available on all targets
 
 when not defined(js):
-  import std/[tables, os, strutils]
+  import std/[os, strutils]
   var treesitterDllCache = initTable[string, LibHandle]()
 
   var wasmEngine = WasmEngine.new(WasmConfig.new())
@@ -781,7 +790,6 @@ proc toSelection*(rang: TSRange): scripting_api.Selection = (rang.first.toCursor
 
 proc freeDynamicLibraries*() =
   for p in parsers:
-    let store = p.impl.tsParserTakeWasmStore()
     p.deinit()
   parsers.setLen 0
 
@@ -789,3 +797,55 @@ proc freeDynamicLibraries*() =
     for (path, lib) in treesitterDllCache.pairs:
       lib.unloadLib()
     treesitterDllCache.clear()
+
+var tsAllocated*: uint64 = 0
+var tsFreed*: uint64 = 0
+
+proc tsMalloc(a1: csize_t): pointer {.stdcall.} =
+  tsAllocated += a1.uint64
+  let p = allocShared0(a1 + 8)
+  if p == nil:
+    return nil
+
+  cast[ptr uint64](p)[] = a1.uint64
+  return cast[pointer](cast[uint64](p) + 8)
+
+proc tsCalloc(a1: csize_t; a2: csize_t): pointer {.stdcall.} =
+  let size = a1.uint64 * a2.uint64
+  tsAllocated += size
+  let p = allocShared0(size + 8)
+  if p == nil:
+    return nil
+
+  cast[ptr uint64](p)[] = size
+  return cast[pointer](cast[uint64](p) + 8)
+
+proc tsRealloc(a1: pointer; a2: csize_t): pointer {.stdcall.} =
+  if a1 == nil:
+    return tsMalloc(a2)
+
+  let original = cast[ptr uint64](cast[uint64](a1) - 8)
+  let size = original[]
+  if size > a2:
+    tsFreed += size - a2.uint64
+  else:
+    tsAllocated += a2.uint64 - size
+
+  let p = reallocShared(original, a2 + 8)
+  if p == nil:
+    return nil
+
+  cast[ptr uint64](p)[] = a2.uint64
+  return cast[pointer](cast[uint64](p) + 8)
+
+proc tsFree(a1: pointer) {.stdcall.} =
+  if a1 == nil:
+    return
+
+  let original = cast[ptr uint64](cast[uint64](a1) - 8)
+  let size = original[]
+  tsFreed += size.uint64
+  deallocShared(original)
+
+proc enableTreesitterMemoryTracking*() =
+  tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)
