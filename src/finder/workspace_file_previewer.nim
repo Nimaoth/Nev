@@ -1,5 +1,5 @@
 import std/[tables, json, options, strformat, strutils, os]
-import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils]
+import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, rope_utils]
 import workspaces/workspace
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -159,7 +159,7 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
       return
 
     var rope: Rope
-    if createRopeAsync(content.move, rope.addr).await.getSome(errorIndex):
+    if createRopeAsync(content.addr, rope.addr).await.getSome(errorIndex):
       rope = Rope.new(&"Invalid utf-8 byte at {errorIndex}")
       return
 

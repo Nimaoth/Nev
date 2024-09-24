@@ -1,6 +1,6 @@
 import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math, options, json]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, custom_unicode, myjsonutils, regex]
+import misc/[util, custom_logger, custom_unicode, myjsonutils, regex, rope_utils]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
@@ -10,6 +10,8 @@ import text/language/[lsp_types]
 import text/diff
 
 import ui/node
+
+import nimsumtree/[buffer, rope]
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
@@ -125,13 +127,13 @@ proc getCursorPos(self: TextDocumentEditor, builder: UINodeBuilder, text: string
       let runeOffset = startOffset + i.RuneCount
       if runeOffset.RuneCount >= self.document.lineRuneLen(line):
         return 0
-      let byteIndex = self.document.byteOffsetInLine(line, runeOffset)
+      let byteIndex = self.document.buffer.visibleText.byteOffsetInLine(line, runeOffset)
       return byteIndex
 
     offset += w
     inc i
 
-  let byteIndex = self.document.byteOffsetInLine(line, startOffset + text.runeLen)
+  let byteIndex = self.document.buffer.visibleText.byteOffsetInLine(line, startOffset + text.runeLen)
   return byteIndex
 
 proc renderLinePart(
@@ -229,7 +231,7 @@ proc renderLinePart(
 
 # todo: replace lineOriginal with RopeSlice
 proc renderLine*(
-  builder: UINodeBuilder, line: StyledLine, lineOriginal: openArray[char],
+  builder: UINodeBuilder, line: StyledLine, lineOriginal: RopeSlice[int],
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
   options: LineRenderOptions, useUserId: bool = true):
     tuple[cursors: seq[CursorLocationInfo], hover: Option[CursorLocationInfo], diagnostic: Option[CursorLocationInfo]] =
@@ -1158,7 +1160,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
       builder.panel(&{LayoutVertical} + sizeFlags):
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
           onRight:
-            proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.runeIndexInLine(cursor)
+            proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
             let readOnlyText = if self.document.readOnly: "-readonly- " else: ""
             let stagedText = if self.document.staged: "-staged- " else: ""
             let diffText = if renderDiff: "-diff- " else: ""
@@ -1168,6 +1170,8 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
               "\\0"
             elif currentRune == '\t'.Rune:
               "\\t"
+            elif currentRune == '\n'.Rune:
+              "\\n"
             else:
               $currentRune
 
@@ -1240,11 +1244,11 @@ proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
     return false
 
   if self.languageConfig.get.ignoreContextLinePrefix.isSome:
-    return self.lineStartsWith(line, self.languageConfig.get.ignoreContextLinePrefix.get, true)
+    return self.rope.lineStartsWith(line, self.languageConfig.get.ignoreContextLinePrefix.get, true)
 
   if self.languageConfig.get.ignoreContextLineRegex.isSome:
     # todo: don't use getLine
-    return self.getLine(line).match(self.languageConfig.get.ignoreContextLineRegex.get)
+    return ($self.getLine(line)).match(self.languageConfig.get.ignoreContextLineRegex.get)
 
   return false
 
@@ -1252,12 +1256,12 @@ proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine)
   result.first = if selection.first.line < line.index:
     0.RuneIndex
   elif selection.first.line == line.index:
-    document.runeIndexInLine(selection.first)
+    document.buffer.visibleText.runeIndexInLine(selection.first)
   else: line.runeLen.RuneIndex
 
   result.last = if selection.last.line < line.index:
     0.RuneIndex
   elif selection.last.line == line.index:
-    document.runeIndexInLine(selection.last)
+    document.buffer.visibleText.runeIndexInLine(selection.last)
   else:
     line.runeLen.RuneIndex

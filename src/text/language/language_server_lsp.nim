@@ -580,7 +580,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
       let changes = args.edits.mapIt(block:
         c.seekForward(Point.init(it.new.first.line, it.new.first.column))
         let text = c.slice(Point.init(it.new.last.line, it.new.last.column))
-        TextDocumentContentChangeEvent(range: language_server_base.toRange(it.old), text: $text)
+        TextDocumentContentChangeEvent(range: language_server_base.toLspRange(it.old), text: $text)
       )
       asyncCheck self.client.notifyTextDocumentChangedChannel.send (fullPath, version, changes, "")
 

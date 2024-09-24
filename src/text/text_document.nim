@@ -2,15 +2,15 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, bench]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, bench, rope_utils]
 import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme
 import pkg/chroma
 
-import nimsumtree/[buffer, clock, static_array, rope]
-from nimsumtree/sumtree as st import Bias, summaryType, itemSummary, toSeq
+import nimsumtree/[buffer, clock, static_array, rope, clone]
+import nimsumtree/sumtree except Cursor, mapIt
 
 from language/lsp_types as lsp_types import nil
 
@@ -124,15 +124,7 @@ proc resolveDiagnosticAnchors*(self: TextDocument)
 proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 
-func toPoint*(cursor: Cursor): Point = Point.init(cursor.line, cursor.column)
-func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
-func toRange*(selection: Selection): Range[Point] = selection.first.toPoint...selection.last.toPoint
-func toCursor*(point: Point): Cursor = (point.row.int, point.column.int)
-func toSelection*(self: (Point, Point)): Selection = (self[0].toCursor, self[1].toCursor)
-func toSelection*(self: Range[Point]): Selection = (self.a.toCursor, self.b.toCursor)
-
-proc getIndentInBytes*(self: TextDocument, line: int): int
-proc getIndentInRunes*(self: TextDocument, line: int): RuneIndex
+func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
 proc getSizeBytes(line: StyledLine): int =
   result = sizeof(StyledLine)
@@ -142,11 +134,11 @@ proc getSizeBytes(line: StyledLine): int =
     result += part.scope.len
 
 method getStatisticsString*(self: TextDocument): string =
-  let visibleTextStats = st.stats(self.buffer.snapshot.visibleText.tree)
-  let deletedTextStats = st.stats(self.buffer.snapshot.deletedText.tree)
-  let fragmentStats = st.stats(self.buffer.snapshot.fragments)
-  let insertionStats = st.stats(self.buffer.snapshot.insertions)
-  let undoStats = st.stats(self.buffer.snapshot.undoMap.tree)
+  let visibleTextStats = stats(self.buffer.snapshot.visibleText.tree)
+  let deletedTextStats = stats(self.buffer.snapshot.deletedText.tree)
+  let fragmentStats = stats(self.buffer.snapshot.fragments)
+  let insertionStats = stats(self.buffer.snapshot.insertions)
+  let undoStats = stats(self.buffer.snapshot.undoMap.tree)
 
   result.add &"Filename: {self.filename}\n"
   result.add &"Lines: {self.numLines}\n"
@@ -171,47 +163,33 @@ proc nextLineId*(self: TextDocument): int32 =
   result = self.nextLineIdCounter
   self.nextLineIdCounter.inc
 
-func getLine*(self: TextDocument, line: int): string =
+func getLine*(self: TextDocument, line: int, D: typedesc = int): RopeSlice[D] =
   if line notin 0..<self.numLines:
-    return ""
+    return Rope.new("").slice(D)
 
-  let visibleText = self.buffer.visibleText.clone()
-  let lineBounds = visibleText.lineBounds(line)
-
-  return $visibleText.slice(lineBounds)
+  let lineRange = self.rope.lineRange(line, int)
+  return self.rope.slice(lineRange)
 
 func lineLength*(self: TextDocument, line: int): int =
-  return self.buffer.visibleText.lineLen(line)
+  return self.rope.lineLen(line)
 
 func lineRuneLen*(self: TextDocument, line: int): RuneCount =
-  return self.buffer.visibleText.lineRuneLen(line).RuneCount
+  return self.rope.lineRuneLen(line).RuneCount
 
 proc numLines*(self: TextDocument): int {.noSideEffect.} =
-  return self.buffer.visibleText.lines
-
-proc lastValidIndex*(self: TextDocument, line: int, includeAfter: bool = true): int =
-  if line < self.numLines:
-    let visibleText = self.buffer.visibleText.clone()
-    let lineBounds = visibleText.lineBounds(line)
-    var res = lineBounds.len
-    if not includeAfter and res > 0:
-      res = visibleText.validateOffset(lineBounds.b, Bias.Left) - lineBounds.a
-
-    return res
-
-  return 0
+  return self.rope.lines
 
 proc lastCursor*(self: TextDocument): Cursor =
   if self.numLines > 0:
-    return (self.numLines - 1, self.lastValidIndex(self.numLines - 1))
+    return (self.numLines - 1, self.rope.lastValidIndex(self.numLines - 1))
   return (0, 0)
 
 proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true): Cursor =
   var cursor = cursor
   cursor.line = clamp(cursor.line, 0, self.numLines - 1)
 
-  var res = self.buffer.visibleText.clipPoint(cursor.toPoint, Bias.Left).toCursor
-  var c = self.buffer.visibleText.cursorT(res.toPoint)
+  var res = self.rope.clipPoint(cursor.toPoint, Bias.Left).toCursor
+  var c = self.rope.cursorT(res.toPoint)
   if not includeAfter and c.currentRune == '\n'.Rune and res.column > 0:
     c.seekPrevRune()
     res = c.position.toCursor
@@ -221,23 +199,6 @@ proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: boo
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.}
 proc trimTrailingWhitespace*(self: TextDocument)
-
-proc byteOffsetInLine*(self: TextDocument, line: int, index: RuneIndex): int =
-  if line notin 0..self.numLines - 1:
-    return 0
-
-  var c = self.buffer.visibleText.cursorT(Point.init(0, 0))
-  let count = c.summary(Count, Point.init(line, 0))
-  let byteOffset = self.buffer.visibleText.countToOffset(count + index.Count)
-  return byteOffset - c.offset
-
-proc runeIndexInLine*(self: TextDocument, cursor: Cursor): RuneIndex =
-  if cursor.line notin 0..self.numLines - 1:
-    return 0.RuneIndex
-
-  var c = self.buffer.visibleText.cursorT(Point.init(cursor.line, 0))
-  let runeIndex = c.summary(Count, cursor.toPoint)
-  return runeIndex.int.RuneIndex
 
 proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
@@ -306,7 +267,7 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
         else:
           TSTree()
 
-        let flowVar: FlowVar[TSTree] = spawn parseTreesitterThread(parser.addr, oldTree, self.buffer.snapshot.visibleText.clone())
+        let flowVar: FlowVar[TSTree] = spawn parseTreesitterThread(parser.addr, oldTree, self.rope.clone())
 
         while not flowVar.isReady:
           await sleepAsync(1)
@@ -357,7 +318,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.reloadTreesitterLanguage()
 
 func contentString*(self: TextDocument): string =
-  return $self.buffer.visibleText
+  return $self.rope
 
 var nextBufferId = 1.BufferId
 proc getNextBufferId(): BufferId =
@@ -410,8 +371,6 @@ proc `content=`*(self: TextDocument, value: sink string) =
   self.clearStyledTextCache()
   self.notifyTextChanged()
 
-func clone(s: string): string = s
-
 proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
 
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
@@ -426,7 +385,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
   var byteDiff = 0
 
   var edits = newSeqOfCap[tuple[old, new: Selection]](selections.len)
-  var c = self.buffer.visibleText.cursorT(Point)
+  var c = self.rope.cursorT(Point)
   var clearCache = false
 
   var ranges = newSeqOfCap[(Range[int], S)](selections.len)
@@ -514,7 +473,7 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
     assert s.last.column in 0..int32.high
 
 proc replaceAll*(self: TextDocument, value: sink Rope) =
-  let fullRange = ((0, 0), self.buffer.snapshot.visibleText.summary().lines.toCursor)
+  let fullRange = ((0, 0), self.rope.summary().lines.toCursor)
   self.nextCheckpoints.incl ""
   discard self.edit([fullRange], [], [value])
 
@@ -530,7 +489,7 @@ proc replaceAll*(self: TextDocument, value: sink string) =
     log lvlInfo, &"[content=] Skipping utf8 bom"
     index = 3
 
-  let fullRange = ((0, 0), self.buffer.snapshot.visibleText.summary().lines.toCursor)
+  let fullRange = ((0, 0), self.rope.summary().lines.toCursor)
   self.nextCheckpoints.incl ""
   discard self.edit([fullRange], [], [value[index..^1]])
 
@@ -570,7 +529,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 func contentString*(self: TextDocument, selection: Selection, inclusiveEnd: bool = false): string =
   let selection = selection.normalized
 
-  var c = self.buffer.visibleText.cursorT(selection.first.toPoint)
+  var c = self.rope.cursorT(selection.first.toPoint)
   var target = selection.last
   if inclusiveEnd and target.column < self.lineLength(target.line):
     target.column += 1
@@ -584,30 +543,26 @@ func contentString*(self: TextDocument, selection: TSRange): string =
 func charAt*(self: TextDocument, cursor: Cursor): char =
   if cursor.line < 0 or cursor.line > self.numLines - 1:
     return 0.char
-  if cursor.column < 0 or cursor.column > self.getLine(cursor.line).high:
+  if cursor.column < 0 or cursor.column > self.lineLength(cursor.line):
     return 0.char
-  return self.getLine(cursor.line)[cursor.column]
+
+  var c = self.rope.cursorT(cursor.toPoint)
+  return c.currentChar
 
 func runeAt*(self: TextDocument, cursor: Cursor): Rune =
   if cursor.line < 0 or cursor.line > self.numLines - 1:
     return 0.Rune
-  if cursor.column < 0 or cursor.column > self.getLine(cursor.line).high:
+  if cursor.column < 0 or cursor.column > self.lineLength(cursor.line):
     return 0.Rune
-  return self.getLine(cursor.line).runeAt(cursor.column)
 
-proc lspRangeToSelection*(self: TextDocument, `range`: lsp_types.Range): Selection =
-  if `range`.start.line > self.numLines - 1 or `range`.end.line > self.numLines - 1:
-    return (0, 0).toSelection
-
-  let firstColumn = self.getLine(`range`.start.line).runeOffset(`range`.start.character.RuneIndex)
-  let lastColumn = self.getLine(`range`.`end`.line).runeOffset(`range`.`end`.character.RuneIndex)
-  return ((`range`.start.line, firstColumn), (`range`.`end`.line, lastColumn))
+  var c = self.rope.cursorT(cursor.toPoint)
+  return c.currentRune
 
 proc runeCursorToCursor*(self: TextDocument, cursor: RuneCursor): Cursor =
   if cursor.line < 0 or cursor.line > self.numLines - 1:
     return (0, 0)
 
-  return (cursor.line, self.getLine(cursor.line).runeOffset(min(self.getLine(cursor.line).runeLen.RuneIndex, max(0.RuneIndex, cursor.column))))
+  return (cursor.line, self.rope.byteOffsetInLine(cursor.line, cursor.column))
 
 proc runeSelectionToSelection*(self: TextDocument, cursor: RuneSelection): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
@@ -634,7 +589,7 @@ proc visualColumnToCursorColumn*(self: TextDocument, line: int, visualColumn: in
   var column = 0
   let tabWidth = self.tabWidth
 
-  var c = self.buffer.visibleText.cursorT(Point.init(line, 0))
+  var c = self.rope.cursorT(Point.init(line, 0))
   while not c.atEnd:
     let r = c.currentRune
 
@@ -650,14 +605,15 @@ proc visualColumnToCursorColumn*(self: TextDocument, line: int, visualColumn: in
     c.seekNextRune()
 
 proc cursorToVisualColumn*(self: TextDocument, cursor: Cursor): int =
-  let line {.cursor.} = self.getLine(cursor.line)
   let tabWidth = self.tabWidth
 
-  for i in 0..<min(cursor.column, line.len):
-    if line[i] == '\t':
+  var c = self.rope.cursorT(Point.init(cursor.line, 0))
+  while c.position < cursor.toPoint and not c.atEnd:
+    if c.currentRune == '\t'.Rune:
       result = align(result + 1, tabWidth)
     else:
       result += 1
+    c.seekNextRune()
 
 proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) =
   if partIndex < line.parts.len and index != 0.RuneIndex and index != line.parts[partIndex].text.runeLen.RuneIndex:
@@ -682,7 +638,7 @@ proc splitAt*(line: var StyledLine, index: RuneIndex) =
       break
 
 proc splitAt*(self: TextDocument, line: var StyledLine, index: int) =
-  line.splitAt(self.runeIndexInLine((line.index, index)))
+  line.splitAt(self.rope.runeIndexInLine((line.index, index)))
 
 proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
   var start = 0
@@ -731,13 +687,13 @@ proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string,
         line.parts[i].joinNext = joinNext or line.parts[i].joinNext
 
 proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) =
-  line.overrideStyle(self.runeIndexInLine((line.index, first)), self.runeIndexInLine((line.index, last)), scope, priority)
+  line.overrideStyle(self.rope.runeIndexInLine((line.index, first)), self.rope.runeIndexInLine((line.index, last)), scope, priority)
 
 proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, last: int, underline: bool, color: Color) =
-  line.overrideUnderline(self.runeIndexInLine((line.index, first)), self.runeIndexInLine((line.index, last)), underline, color)
+  line.overrideUnderline(self.rope.runeIndexInLine((line.index, first)), self.rope.runeIndexInLine((line.index, last)), underline, color)
 
 proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
-  line.overrideStyleAndText(self.runeIndexInLine((line.index, first)), text, scope, priority, opacity, joinNext)
+  line.overrideStyleAndText(self.rope.runeIndexInLine((line.index, first)), text, scope, priority, opacity, joinNext)
 
 proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool, modifyCursorAtEndOfLine: bool = false) =
   line.splitAt(offset)
@@ -771,7 +727,7 @@ proc replaceSpaces(self: TextDocument, line: var StyledLine) =
     return
 
   var bounds: seq[Range[int]] # Rune indices
-  var c = self.buffer.visibleText.cursorT(Point.init(line.index, 0))
+  var c = self.rope.cursorT(Point.init(line.index, 0))
   var index = 0
   while not c.atEnd:
     let r = c.currentRune
@@ -800,7 +756,7 @@ proc replaceSpaces(self: TextDocument, line: var StyledLine) =
 
 proc replaceTabs(self: TextDocument, line: var StyledLine) =
   var bounds: seq[Range[int]] # Rune indices
-  var c = self.buffer.visibleText.cursorT(Point.init(line.index, 0))
+  var c = self.rope.cursorT(Point.init(line.index, 0))
   var index = 0
   while not c.atEnd:
     let r = c.currentRune
@@ -891,14 +847,14 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
         color(0.7, 0.7, 0.7)
 
       var lastIndex = if diagnostic.selection.last.line == line.index:
-        self.runeIndexInLine((line.index, diagnostic.selection.last.column))
+        self.rope.runeIndexInLine((line.index, diagnostic.selection.last.column))
       else:
         self.lineRuneLen(line.index).RuneIndex
 
       var firstIndex = if diagnostic.selection.first.line == line.index:
-        self.runeIndexInLine((line.index, diagnostic.selection.first.column))
+        self.rope.runeIndexInLine((line.index, diagnostic.selection.first.column))
       else:
-        self.getIndentInRunes(line.index)
+        self.rope.indentRunes(line.index)
 
       line.splitAt(firstIndex)
       line.splitAt(lastIndex)
@@ -1033,7 +989,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
       var line = self.getLine(i)
 
     var parts = newSeqOfCap[StyledText](50)
-    parts.add StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)
+    parts.add StyledText(text: $line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)
     result = StyledLine(index: i, parts: parts.move)
     self.styledTextCache[i] = result
 
@@ -1197,7 +1153,7 @@ method `$`*(self: TextDocument): string =
   return self.filename
 
 proc saveAsync(self:  TextDocument, ws: Workspace) {.async.} =
-  await ws.saveFile(self.filename, self.buffer.snapshot.visibleText.clone())
+  await ws.saveFile(self.filename, self.rope.clone())
   self.onSaved.invoke()
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
@@ -1235,7 +1191,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   var containsTab = false
   var linePos = Point.init(0, 0)
-  var c = self.buffer.visibleText.cursorT(linePos)
+  var c = self.rope.cursorT(linePos)
 
   var minIndent = int.high
   var samples = 0
@@ -1246,7 +1202,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
       containsTab = true
       break
     if c.currentRune == ' '.Rune:
-      minIndent = min(minIndent, self.getIndentInBytes(linePos.row.int))
+      minIndent = min(minIndent, self.rope.indentBytes(linePos.row.int))
       containsTab = false
       inc samples
       if samples == maxSamples:
@@ -1272,28 +1228,6 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
-proc createRopeThread(args: tuple[str: ptr string, rope: ptr Rope]): int {.gcsafe.} =
-  template content: openArray[char] = args.str[].toOpenArray(0, args.str[].high)
-  let invalidUtf8Index = content.validateUtf8
-  if invalidUtf8Index >= 0:
-    return invalidUtf8Index
-
-  var index = 0
-  const utf8_bom = "\xEF\xBB\xBF"
-  if args.str[].len >= 3 and content[0..<3] == utf8_bom.toOpenArray(0, utf8_bom.high):
-    index = 3
-
-  let t = startTimer()
-  args.rope[] = Rope.new(content[index..^1])
-  return -1
-
-proc createRopeAsync*(str: sink string, rope: ptr Rope): Future[Option[int]] {.async.} =
-  ## Returns `some(index)` if the string contains invalid utf8 at `index`
-  var errorIndex = await spawnAsync(createRopeThread, (str.addr, rope))
-  if errorIndex != -1:
-    return errorIndex.some
-  return int.none
-
 proc loadAsync*(self: TextDocument, ws: Workspace, isReload: bool): Future[void] {.async.} =
   logScope lvlInfo, &"loadAsync '{self.filename}', reload = {isReload}"
 
@@ -1311,9 +1245,8 @@ proc loadAsync*(self: TextDocument, ws: Workspace, isReload: bool): Future[void]
     self.replaceAll(data.move)
   else:
     var rope: Rope
-    if createRopeAsync(data.move, rope.addr).await.getSome(errorIndex):
+    if createRopeAsync(data.addr, rope.addr).await.getSome(errorIndex):
       rope = Rope.new(&"Invalid utf-8 byte at {errorIndex}")
-    let t = startTimer()
     self.content = rope.move
 
   if not ws.isFileReadOnly(self.filename).await:
@@ -1460,17 +1393,10 @@ proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.
   self.diagnosticsPerLine.clear()
 
   for i, d in diagnostics:
-    # let runeSelection = (
-    #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
-    #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
-    # todo: convert rune index (character) to byte index
-    # let selection = self.runeSelectionToSelection(runeSelection)
-
-    let runeSelection: Selection = (
-      (d.`range`.start.line, d.`range`.start.character),
-      (d.`range`.`end`.line, d.`range`.`end`.character))
-
-    let selection = runeSelection
+    let runeSelection = (
+      (d.`range`.start.line, d.`range`.start.character.RuneIndex),
+      (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
+    let selection = self.runeSelectionToSelection(runeSelection)
 
     self.currentDiagnostics[i] = language_server_base.Diagnostic(
       selection: selection,
@@ -1606,7 +1532,8 @@ proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   if cursor.column == 0:
     return cursor.toSelection
 
-  let line = self.getLine cursor.line
+  # todo: don't use get line
+  let line = $self.getLine(cursor.line)
 
   let identChars = self.languageConfig.mapIt(it.completionWordChars).get(IdentChars)
 
@@ -1649,21 +1576,6 @@ proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 
 
   result = node.getRange.toSelection.some
 
-proc firstNonWhitespace*(str: string): int =
-  result = 0
-  for c in str:
-    if c != ' ' and c != '\t':
-      break
-    result += 1
-
-proc lineStartsWith*(self: TextDocument, line: int, text: string, ignoreWhitespace: bool): bool =
-  # todo: user RopeCursor
-  if ignoreWhitespace:
-    let index = self.getLine(line).firstNonWhitespace
-    return self.getLine(line)[index..^1].startsWith(text)
-  else:
-    return self.getLine(line).startsWith(text)
-
 proc lastNonWhitespace*(str: string): int =
   result = str.high
   while result >= 0:
@@ -1671,37 +1583,13 @@ proc lastNonWhitespace*(str: string): int =
       break
     result -= 1
 
-proc getIndentInBytes*(self: TextDocument, line: int): int =
-  if line < 0 or line >= self.numLines:
-    return 0
-
-  var c = self.buffer.visibleText.cursorT(Point.init(line, 0))
-  while not c.atEnd:
-    let r = c.currentRune
-    if not r.isWhitespace or r == '\n'.Rune:
-      break
-    result += r.size
-    c.seekNextRune()
-
-proc getIndentInRunes*(self: TextDocument, line: int): RuneIndex =
-  if line < 0 or line >= self.numLines:
-    return 0.RuneIndex
-
-  var c = self.buffer.visibleText.cursorT(Point.init(line, 0))
-  while not c.atEnd:
-    let r = c.currentRune
-    if not r.isWhitespace or r == '\n'.Rune:
-      break
-    inc result
-    c.seekNextRune()
-
 proc getIndentLevelForLine*(self: TextDocument, line: int): int =
   if line < 0 or line >= self.numLines:
     return 0
 
   let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
 
-  var c = self.buffer.visibleText.cursorT(Point.init(line, 0))
+  var c = self.rope.cursorT(Point.init(line, 0))
   var indent = 0
   while not c.atEnd:
     case c.currentRune
@@ -1761,7 +1649,8 @@ func charCategory(c: char): int =
   return 2
 
 proc findWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
-  let line = self.getLine cursor.line
+  # todo: use RopeCursor
+  let line = $self.getLine(cursor.line)
   result = cursor.toSelection
   if result.first.column == line.len:
     dec result.first.column
@@ -1834,7 +1723,7 @@ proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, ne
 
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
   var co = oldText.cursorT(Point)
-  var cn = self.buffer.visibleText.cursorT(Point)
+  var cn = self.rope.cursorT(Point)
   var clearCache = false
 
   var edits = newSeqOfCap[tuple[old, new: Selection]](patch.edits.len)
@@ -1941,20 +1830,14 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
   self.nextCheckpoints.incl checkpoint
 
-proc isLineEmptyOrWhitespace*(self: TextDocument, line: int): bool =
-  if line > self.numLines - 1:
-    return false
-  return self.getLine(line).isEmptyOrWhitespace
-
 proc isLineCommented*(self: TextDocument, line: int): bool =
-  if line > self.numLines - 1 or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
-    return false
-  return custom_unicode.strip(self.getLine(line), trailing=false).startsWith(self.languageConfig.get.lineComment.get)
+  return self.rope.lineStartsWith(line, self.languageConfig.get.lineComment.get, ignoreWhitespace = true)
 
 proc getLineCommentRange*(self: TextDocument, line: int): Selection =
   if line > self.numLines - 1 or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
     return (line, 0).toSelection
 
+  # todo: use RopeCursor
   let prefix = self.languageConfig.get.lineComment.get
   let index = self.getLine(line).find(prefix)
   if index == -1:
@@ -1962,7 +1845,7 @@ proc getLineCommentRange*(self: TextDocument, line: int): Selection =
 
   var endIndex = index + prefix.len
   # todo: don't use getLine
-  if endIndex < self.lineLength(line) and self.getLine(line)[endIndex] in Whitespace:
+  if endIndex < self.lineLength(line) and self.rope.charAt(Point.init(line, endIndex)) in Whitespace:
     endIndex += 1
 
   return ((line, index), (line, endIndex))
@@ -1981,7 +1864,7 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
   var allCommented = true
   for s in mergedSelections:
     for l in s.first.line..s.last.line:
-      if not self.isLineEmptyOrWhitespace(l):
+      if not self.getLine(l).isEmptyOrWhitespace:
         allCommented = allCommented and self.isLineCommented(l)
 
   let comment = not allCommented
@@ -1990,11 +1873,11 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
   for s in mergedSelections:
     var minIndent = int.high
     for l in s.first.line..s.last.line:
-      if not self.isLineEmptyOrWhitespace(l):
-        minIndent = min(minIndent, self.getIndentInBytes(l))
+      if not self.getLine(l).isEmptyOrWhitespace:
+        minIndent = min(minIndent, self.rope.indentBytes(l))
 
     for l in s.first.line..s.last.line:
-      if not self.isLineEmptyOrWhitespace(l):
+      if not self.getLine(l).isEmptyOrWhitespace:
         if comment:
           insertSelections.add (l, minIndent).toSelection
         else:
@@ -2010,7 +1893,7 @@ proc trimTrailingWhitespace*(self: TextDocument) =
   var selections: seq[Selection]
   for i in 0..self.numLines - 1:
     # todo: don't use getLine
-    let index = self.getLine(i).lastNonWhitespace
+    let index = ($self.getLine(i)).lastNonWhitespace
     if index == self.lineLength(i) - 1:
       continue
     selections.add ((i, index + 1), (i, self.lineLength(i)))

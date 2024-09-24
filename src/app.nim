@@ -1,7 +1,7 @@
 import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques, algorithm]
 import asynctools/asyncipc
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, regex, disposable_ref]
+  array_set, delayed_task, regex, disposable_ref, rope_utils]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
@@ -3938,7 +3938,7 @@ proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string {.expose("e
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
       if line >= 0 and line < editor.document.numLines:
-        return editor.document.getLine(line)
+        return $editor.document.getLine(line)
   return ""
 
 proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").} =
@@ -4073,7 +4073,13 @@ proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[b
     var text = getSystemClipboardText().await
     if text.isSome:
       if text.get.len > 1024:
-        res[] = Register(kind: Rope, rope: Rope.new(text.get.move))
+        var rope: Rope
+        if createRopeAsync(text.get.addr, rope.addr).await.getSome(errorIndex):
+          log lvlWarn, &"Large clipboard contains invalid utf8 at index {errorIndex}, can't use rope"
+          res[] = Register(kind: Text, text: text.get.move)
+        else:
+          res[] = Register(kind: Rope, rope: rope.move)
+
       else:
         res[] = Register(kind: Text, text: text.get.move)
       return true
