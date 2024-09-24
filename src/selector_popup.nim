@@ -368,12 +368,7 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none, finder = Find
   popup.textEditor.disableCompletions = true
   popup.textEditor.active = true
 
-  discard popup.textEditor.document.textInserted.subscribe (
-      arg: tuple[document: TextDocument, location: Selection, text: string]) =>
-    popup.handleTextChanged()
-
-  discard popup.textEditor.document.textDeleted.subscribe (
-      arg: tuple[document: TextDocument, location: Selection]) =>
+  discard popup.textEditor.document.textChanged.subscribe (arg: TextDocument) =>
     popup.handleTextChanged()
 
   discard popup.textEditor.onMarkedDirty.subscribe () =>

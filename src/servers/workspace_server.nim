@@ -81,53 +81,56 @@ proc callback(req: Request): Future[void] {.async.} =
 
     get "/relative-path/":
       ##
-      var relativePath = ""
+      block:
+        var relativePath = ""
 
-      let (name, actualPath) = path.splitWorkspacePath
-      let absolutePath = actualPath.normalizedPath
-      for i, folder in hostedFolders:
-        if absolutePath.startsWith(folder.path):
-          # todo
-          let name = folder.name.get($i)
-          relativePath = "@" & name & "/" & absolutePath[folder.path.len..^1].strip(chars={'/', '\\'}).replace('\\', '/')
+        let (name, actualPath) = path.splitWorkspacePath
+        let absolutePath = actualPath.normalizedPath
+        for i, folder in hostedFolders:
+          if absolutePath.startsWith(folder.path):
+            # todo
+            let name = folder.name.get($i)
+            relativePath = "@" & name & "/" & absolutePath[folder.path.len..^1].strip(chars={'/', '\\'}).replace('\\', '/')
 
-      debug "get relative path ", absolutePath, " -> ", relativePath
+        debug "get relative path ", absolutePath, " -> ", relativePath
 
-      await req.respond(Http200, relativePath.normalizePathUnix, headers)
+        await req.respond(Http200, relativePath.normalizePathUnix, headers)
 
     get "/list/":
-      let absolutePath = translatePath(path).getOr:
-        log lvlError, fmt"list '{path}' -> illegal"
-        await req.respond(Http403, "illegal path", headers)
-        break
+      block:
+        let absolutePath = translatePath(path).getOr:
+          log lvlError, fmt"list '{path}' -> illegal"
+          await req.respond(Http403, "illegal path", headers)
+          return
 
-      debug "list files in ", absolutePath
+        debug "list files in ", absolutePath
 
-      let result = await readDir(absolutePath)
-      let response = result.toJson
+        let result = await readDir(absolutePath)
+        let response = result.toJson
 
-      await req.respond(Http200, $response, headers)
+        await req.respond(Http200, $response, headers)
 
     get "/list":
-      debug "list files in ."
-      let result = if hostedFolders.len == 0:
-        await readDir(".")
-      else:
-        var folders: seq[string]
-        for i, f in hostedFolders:
-          # todo
-          # folders.add "@" & f.name.get($i)
-          folders.add f.path
-        DirInfo(folders: folders)
+      block:
+        debug "list files in ."
+        let result = if hostedFolders.len == 0:
+          await readDir(".")
+        else:
+          var folders: seq[string]
+          for i, f in hostedFolders:
+            # todo
+            # folders.add "@" & f.name.get($i)
+            folders.add f.path
+          DirInfo(folders: folders)
 
-      let response = result.toJson
-      await req.respond(Http200, $response, headers)
+        let response = result.toJson
+        await req.respond(Http200, $response, headers)
 
     get "/contents/":
       let absolutePath = translatePath(path).getOr:
         log lvlError, fmt"get content of '{path}' -> illegal"
         await req.respond(Http403, "illegal path", headers)
-        break
+        return
 
       log lvlInfo, fmt"get content of '{path}' -> '{absolutePath}'"
 
@@ -145,7 +148,7 @@ proc callback(req: Request): Future[void] {.async.} =
       let absolutePath = translatePath(path).getOr:
         log lvlError, fmt"set content of '{path}' -> illegal"
         await req.respond(Http403, "illegal path", headers)
-        break
+        return
 
       log lvlInfo, fmt"set content of '{path}' -> {absolutePath}"
 

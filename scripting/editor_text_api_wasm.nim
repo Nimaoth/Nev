@@ -1140,6 +1140,20 @@ proc selectParentTs*(self: TextDocumentEditor; selection: Selection;
       argsJsonString.cstring)
 
 
+proc editor_text_printTreesitterMemoryUsage_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc printTreesitterMemoryUsage*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_printTreesitterMemoryUsage_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_printTreesitterTree_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc printTreesitterTree*(self: TextDocumentEditor) =
@@ -1392,25 +1406,6 @@ proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) =
       argsJsonString.cstring)
 
 
-proc editor_text_printUndoHistory_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
-    importc.}
-proc printUndoHistory*(self: TextDocumentEditor; max: int = 50) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      max
-    else:
-      max.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_printUndoHistory_void_TextDocumentEditor_int_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_text_copy_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc copy*(self: TextDocumentEditor; register: string = "";
@@ -1438,7 +1433,7 @@ proc copy*(self: TextDocumentEditor; register: string = "";
 
 proc editor_text_paste_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc paste*(self: TextDocumentEditor; register: string = "";
+proc paste*(self: TextDocumentEditor; registerName: string = "";
             inclusiveEnd: bool = false) =
   var argsJson = newJArray()
   argsJson.add block:
@@ -1448,9 +1443,9 @@ proc paste*(self: TextDocumentEditor; register: string = "";
       self.toJson()
   argsJson.add block:
     when string is JsonNode:
-      register
+      registerName
     else:
-      register.toJson()
+      registerName.toJson()
   argsJson.add block:
     when bool is JsonNode:
       inclusiveEnd
@@ -3438,34 +3433,6 @@ proc clearDiagnostics*(self: TextDocumentEditor) =
       self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_clearDiagnostics_void_TextDocumentEditor_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_updateDiagnosticsForCurrent_void_TextDocumentEditor_wasm(
-    arg: cstring): cstring {.importc.}
-proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_updateDiagnosticsForCurrent_void_TextDocumentEditor_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_wasm(
-    arg: cstring): cstring {.importc.}
-proc showDiagnosticsForCurrent*(self: TextDocumentEditor) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
 

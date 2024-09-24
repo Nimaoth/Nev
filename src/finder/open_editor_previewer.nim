@@ -1,5 +1,5 @@
-import std/[tables, json, options, strformat, strutils, os]
-import misc/[util, custom_logger, custom_async, myjsonutils]
+import std/[options, strformat, strutils]
+import misc/[util, custom_logger]
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
@@ -42,11 +42,6 @@ method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: Documen
     return
 
   let textEditorToPreview = editorToPreview.TextDocumentEditor
-  let document = textEditorToPreview.document
-  if not (document of TextDocument):
-    log lvlError, &"No support for non text documents yet."
-    return
-
-  editor.setDocument(document.TextDocument)
+  editor.setDocument(textEditorToPreview.document)
   editor.selection = textEditorToPreview.selection
   editor.centerCursor()

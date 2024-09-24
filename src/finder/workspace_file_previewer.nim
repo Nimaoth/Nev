@@ -1,11 +1,13 @@
 import std/[tables, json, options, strformat, strutils, os]
-import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils]
+import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, rope_utils]
 import workspaces/workspace
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
 import vcs/vcs
 import app_interface, config_provider, vfs
+
+import nimsumtree/[rope]
 
 logCategory "workspace-file-previewer"
 
@@ -156,8 +158,21 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
       log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
       return
 
+    var rope: Rope
+    if createRopeAsync(content.addr, rope.addr).await.getSome(errorIndex):
+      rope = Rope.new(&"Invalid utf-8 byte at {errorIndex}")
+      return
+
+    if editor.document.isNil:
+      log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
+      return
+
+    if self.revision > revision or editor.document.isNil:
+      log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
+      return
+
     self.tempDocument.workspace = self.workspace.some
-    self.tempDocument.setFileAndContent(path, content.move)
+    self.tempDocument.setFileAndContent(path, rope.move)
     editor.setDocument(self.tempDocument)
 
   if location.getSome(location):

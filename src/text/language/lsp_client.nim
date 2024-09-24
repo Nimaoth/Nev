@@ -1,5 +1,5 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts, locks, times]
-import misc/[custom_logger, async_http_client, websocket, util, event, myjsonutils, custom_async, response]
+import misc/[custom_logger, websocket, util, myjsonutils, custom_async, response]
 import scripting/expose
 import platform/filesystem
 from workspaces/workspace as ws import nil
@@ -201,7 +201,6 @@ method recv(connection: LSPConnection, length: int): Future[string] {.base, gcsa
 method send(connection: LSPConnection, data: string): Future[void] {.base, gcsafe.} = discard
 
 when not defined(js):
-  import misc/[async_process]
   type LSPConnectionAsyncProcess = ref object of LSPConnection
     process: AsyncProcess
 
@@ -1102,17 +1101,6 @@ addActiveDispatchTable "lsp", genDispatchTable("lsp"), global=true
 
 proc dispatchEvent*(action: string, args: JsonNode): Option[JsonNode] =
   dispatch(action, args)
-
-proc handleGetSymbols(client: LSPClient) {.async, gcsafe.} =
-  while client != nil:
-    let filename = client.symbolsRequestChannel.recv().await.getOr:
-      log lvlInfo, &"handleGetSymbols: channel closed"
-      return
-
-    let response = await client.getSymbols(filename)
-    await client.symbolsResponseChannel.send(response)
-
-  log lvlInfo, &"handleGetSymbols: client gone"
 
 proc handleNotifiesOpened(client: LSPClient) {.async, gcsafe.} =
   while client != nil:

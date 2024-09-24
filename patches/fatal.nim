@@ -59,6 +59,8 @@ else:
     when defined(enableSysFatalStackTrace) and not defined(wasm):
       writeStackTrace2()
     ##### patch end
+    when defined(sysFatalInt3):
+      asm "int3"
     raise (ref exceptn)(msg: message)
 
   func sysFatal(exceptn: typedesc[Defect], message, arg: string) {.inline, noreturn.} =
@@ -66,6 +68,8 @@ else:
     when defined(enableSysFatalStackTrace) and not defined(wasm):
       writeStackTrace2()
     ##### patch end
+    when defined(sysFatalInt3):
+      asm "int3"
     raise (ref exceptn)(msg: message & arg)
 
 {.pop.}

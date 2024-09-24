@@ -1,6 +1,6 @@
 import std/[macros, macrocache, json, strutils]
 import misc/[custom_logger, custom_async]
-import expose, popup, document_editor, compilation_config
+import expose, document_editor, compilation_config
 
 type ScriptContext* = ref object of RootObj
   discard

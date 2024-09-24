@@ -465,7 +465,6 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
   self.clampCurrentCursor()
 
   if self.variablesCursor.path.len == 0:
-    let scope {.cursor.} = scopes[].scopes[self.variablesCursor.scope]
     if self.variablesCursor.scope > 0:
       self.variablesCursor = self.lastChild(VariableCursor(scope: self.variablesCursor.scope - 1))
       if self.variablesScrollOffset > 0:
@@ -485,8 +484,6 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
     let (index, currentRef) = self.variablesCursor.path[self.variablesCursor.path.high]
     if not self.variables.contains(ids & currentRef):
       return
-
-    let variables {.cursor.} = self.variables[ids & currentRef]
 
     if index > 0:
       dec self.variablesCursor.path[self.variablesCursor.path.high].index
@@ -850,7 +847,7 @@ proc handleOutput(self: Debugger, data: OnOutputData) =
     let document = self.outputEditor.document
 
     let selection = document.lastCursor.toSelection
-    discard document.insert([selection], [selection], [data.output.replace("\r\n", "\n")])
+    discard document.edit([selection], [selection], [data.output.replace("\r\n", "\n")])
 
     if self.outputEditor.selection == selection:
       self.outputEditor.selection = document.lastCursor.toSelection
@@ -1022,7 +1019,7 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
       "🛑"
     else:
       "B "
-    discard editor.TextDocumentEditor.addSign(idNone(), breakpoint.breakpoint.line - 1, sign,
+    discard editor.addSign(idNone(), breakpoint.breakpoint.line - 1, sign,
       group = "breakpoints")
 
 proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =

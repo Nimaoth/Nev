@@ -175,7 +175,6 @@ proc createSnippetData*(snippet: Snippet, selections: openArray[Selection], vari
     for key, tabStops in result.tabStops.mpairs:
       let tabStopsPerSelection = tabStops.len div selections.len
       for k in i + 1..result.selections.high:
-        let m = k * tabStopsPerSelection
         for x in 0..<tabStopsPerSelection:
           let n = x * selections.len + k
           tabStops[n] = tabStops[n].add(result.selections[i])

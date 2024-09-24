@@ -117,6 +117,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gp", "explore-current-file-directory"
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommand "editor", "<LEADER>gk", "browse-keybinds"
+  addCommand "editor", "<LEADER>gn", "open-last-editor"
   addCommandBlock "editor", "<LEADER>log":
     logs(scrollToBottom = true)
     nextView()

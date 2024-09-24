@@ -1,5 +1,5 @@
 import std/[options, os, tables, json]
-import misc/[custom_logger, regex, custom_logger]
+import misc/[custom_logger, regex]
 import config_provider
 
 logCategory "language-detection"
