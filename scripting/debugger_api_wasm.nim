@@ -199,7 +199,7 @@ proc addBreakpoint*(editorId: EditorId; line: int) =
 
 proc debugger_removeBreakpoint_void_Debugger_string_int_wasm(arg: cstring): cstring {.
     importc.}
-proc removeBreakpoint*(path: string; line: int) =
+proc removeBreakpoint*(path: string; line: int) {.raises: [].} =
   var argsJson = newJArray()
   argsJson.add block:
     when string is JsonNode:

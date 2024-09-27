@@ -6,14 +6,14 @@ logCategory "language-detection"
 
 var regexes = initTable[string, Regex]()
 proc getRegex*(str: string): Regex =
-  if regexes.contains(str):
-    return regexes[str]
+  regexes.withValue(str, r):
+    return r[]
 
   let r = re(str)
   regexes[str] = r
   r
 
-proc getLanguageForFile*(config: ConfigProvider, filename: string): Option[string] =
+proc getLanguageForFile*(config: ConfigProvider, filename: string): Option[string] {.gcsafe, raises: [].} =
   if filename == "":
     return string.none
 
@@ -30,9 +30,13 @@ proc getLanguageForFile*(config: ConfigProvider, filename: string): Option[strin
       log lvlError, &"Expected string for value in 'language-mappings' but got {language.kind}:\n{language.pretty}"
       continue
 
-    let r = getRegex(regex)
-    if filename.contains(r):
-      return language.str.some
+    try:
+      {.gcsafe.}:
+        let r = getRegex(regex)
+        if filename.contains(r):
+          return language.str.some
+    except:
+      log lvlError, &"Invalid regex: {regex}"
 
   let languageId = case extension
   of "agda", "lagda": "agda"

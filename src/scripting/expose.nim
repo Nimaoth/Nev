@@ -96,6 +96,7 @@ proc removePragmas(node: var NimNode) =
   for param in node[3]:
     case param
     of IdentDefs[PragmaExpr[@name, .._], .._]:
+      # echo "=================== removePragmas ", name.repr, "\n", param.treeRepr, "\n", node.repr
       param[0] = name
 
 macro expose*(moduleName: static string, def: untyped): untyped =
@@ -307,6 +308,10 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   removePragmas(scriptFunctionWrapper)
   removePragmas(jsonStringWrapperFunctionWasm)
 
+  jsonWrapperFunction.addPragma(ident"gcsafe")
+  scriptFunction.addPragma(ident"gcsafe")
+  def.addPragma(ident"gcsafe")
+
   result = quote do:
     `def`
 
@@ -330,18 +335,22 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
     result.add quote do:
       var `jsonStringWrapperFunctionReturnValue`: string = ""
-      proc `jsonStringWrapperFunctionName`*(arg: cstring): cstring {.exportc, used.} =
+      proc `jsonStringWrapperFunctionName`*(arg: cstring): cstring {.exportc, used, gcsafe, raises: [].} =
         try:
           let argJson = parseJson($arg)
           let res = `jsonWrapperFunctionName`(argJson)
-          if res.isNil:
-            `jsonStringWrapperFunctionReturnValue` = ""
-          else:
-            `jsonStringWrapperFunctionReturnValue` = $res
-          return `jsonStringWrapperFunctionReturnValue`.cstring
+          {.gcsafe.}:
+            if res.isNil:
+              `jsonStringWrapperFunctionReturnValue` = ""
+            else:
+              `jsonStringWrapperFunctionReturnValue` = $res
+            return `jsonStringWrapperFunctionReturnValue`.cstring
         except:
           let name = `pureFunctionNameStr`
-          logging.log lvlError, "Failed to run function " & name & &": Invalid arguments: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+          try:
+            logging.log lvlError, "Failed to run function " & name & &": Invalid arguments: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+          except:
+            discard
           return "null"
 
       static:
@@ -436,5 +445,5 @@ macro genDispatcher*(moduleName: static string): untyped =
   switch.add nnkElse.newTree(quote do: JsonNode.none)
 
   return quote do:
-    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] =
+    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] {.gcsafe.} =
       result = `switch`

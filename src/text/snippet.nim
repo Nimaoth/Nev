@@ -305,11 +305,14 @@ const snippetParser = peg("snippet", state: Snippet):
     state.tokens = state.stack.pop
     state.tokens.add token
 
-proc parseSnippet*(input: string): Option[Snippet] =
+proc parseSnippet*(input: string): Option[Snippet] {.gcsafe, raises: [].} =
   var snippet = Snippet()
-  let res = snippetParser.match(input, snippet)
-  if res.ok:
-    return snippet.some
+  try:
+    let res = snippetParser.match(input, snippet)
+    if res.ok:
+      return snippet.some
+  except:
+    discard
   return Snippet.none
 
 when isMainModule:

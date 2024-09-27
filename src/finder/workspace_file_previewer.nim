@@ -1,6 +1,7 @@
 import std/[tables, json, options, strformat, strutils, os]
 import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, rope_utils]
 import workspaces/workspace
+import platform/filesystem
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
@@ -14,6 +15,7 @@ logCategory "workspace-file-previewer"
 type
   WorkspaceFilePreviewer* = ref object of Previewer
     workspace: Workspace
+    fs: Filesystem
     vfs: Option[VFS]
     configProvider: ConfigProvider
     editor: TextDocumentEditor
@@ -28,26 +30,28 @@ type
     currentStaged: bool
     currentDiff: bool
 
-proc newWorkspaceFilePreviewer*(workspace: Workspace, configProvider: ConfigProvider,
+proc newWorkspaceFilePreviewer*(workspace: Workspace, fs: Filesystem, configProvider: ConfigProvider,
     openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
   new result
   result.workspace = workspace
+  result.fs = fs
 
   result.openNewDocuments = openNewDocuments
   result.reuseExistingDocuments = reuseExistingDocuments
-  result.tempDocument = newTextDocument(configProvider, workspaceFolder=workspace.some,
+  result.tempDocument = newTextDocument(configProvider, fs, workspaceFolder=workspace.some,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
 
-proc newWorkspaceFilePreviewer*(workspace: Workspace, vfs: VFS, configProvider: ConfigProvider,
+proc newWorkspaceFilePreviewer*(workspace: Workspace, vfs: VFS, fs: Filesystem, configProvider: ConfigProvider,
     openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
   new result
   result.workspace = workspace
+  result.fs = fs
   result.vfs = vfs.some
 
   result.openNewDocuments = openNewDocuments
   result.reuseExistingDocuments = reuseExistingDocuments
-  result.tempDocument = newTextDocument(configProvider, workspaceFolder=workspace.some,
+  result.tempDocument = newTextDocument(configProvider, fs, workspaceFolder=workspace.some,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
 
@@ -61,41 +65,45 @@ method deinit*(self: WorkspaceFilePreviewer) =
   self[] = default(typeof(self[]))
 
 proc parsePathAndLocationFromItemData*(item: FinderItem):
-    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool]]] =
-  if item.data.WorkspacePath.decodePath().getSome(ws):
-    return (ws.path, Cursor.none, bool.none).some
+    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool]]] {.gcsafe, raises: [].} =
+  try:
+    if item.data.WorkspacePath.decodePath().getSome(ws):
+      return (ws.path, Cursor.none, bool.none).some
 
-  if not item.data.startsWith("{"):
-    return (item.data, Cursor.none, bool.none).some
+    if not item.data.startsWith("{"):
+      return (item.data, Cursor.none, bool.none).some
 
-  let jsonData = item.data.parseJson.catch:
-    return
+    let jsonData = item.data.parseJson.catch:
+      return
 
-  if jsonData.kind != JObject:
-    return
+    if jsonData.kind != JObject:
+      return
 
-  if not jsonData.hasKey "path":
-    return
+    if not jsonData.hasKey "path":
+      return
 
-  let path = jsonData["path"]
-  if path.kind != JString:
-    return
+    let path = jsonData.fields.getAssert("path")
+    if path.kind != JString:
+      return
 
-  let isFile = if jsonData.hasKey("isFile") and jsonData["isFile"].kind == JBool:
-    jsonData["isFile"].getBool.some
-  else:
-    bool.none
+    let isFile = if jsonData.hasKey("isFile") and jsonData.fields.getAssert("isFile").kind == JBool:
+      jsonData.fields.getAssert("isFile").getBool.some
+    else:
+      bool.none
 
-  var cursor: Option[Cursor] = if jsonData.hasKey "line":
-    (
-      jsonData["line"].getInt,
-      jsonData.fields.getOrDefault("column", % 0).getInt,
-    ).some.catch:
+    var cursor: Option[Cursor] = if jsonData.hasKey "line":
+      (
+        jsonData.fields.getAssert("line").getInt,
+        jsonData.fields.getOrDefault("column", % 0).getInt,
+      ).some.catch:
+        Cursor.none
+    else:
       Cursor.none
-  else:
-    Cursor.none
 
-  return (path.getStr, cursor, isFile).some
+    return (path.getStr, cursor, isFile).some
+
+  except:
+    return
 
 proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   let revision = self.revision

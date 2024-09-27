@@ -11,7 +11,7 @@ when enableAst:
 
 logCategory "widget_builder"
 
-proc updateWidgetTree*(self: App, frameIndex: int) =
+proc updateWidgetTree*(self: App, frameIndex: int) {.gcsafe.} =
   # self.platform.builder.buildUINodes()
 
   var headerColor = if self.commandLineMode: self.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
@@ -21,7 +21,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   let builder = self.platform.builder
   builder.panel(rootFlags): # fullscreen overlay
 
-    var overlays: seq[proc() {.closure.}]
+    var overlays: seq[proc() {.closure, gcsafe.}]
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar

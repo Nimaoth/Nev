@@ -14,7 +14,7 @@ logCategory "selector-popup-ui"
 {.used.}
 
 proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBuilder, app: App):
-    seq[proc() {.closure.}] =
+    seq[proc() {.closure, gcsafe.}] =
 
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let name = item.displayName
@@ -28,7 +28,7 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = item.detail,
         textColor = textColor.darken(0.2))
 
-method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe.}] =
   # let dirty = self.dirty
   self.resetDirty()
 

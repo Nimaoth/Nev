@@ -15,24 +15,24 @@ type
 
 func isUntracked*(fileInfo: VCSFileInfo): bool = fileInfo.unstagedStatus == Untracked
 
-method getChangedFiles*(self: VersionControlSystem): Future[seq[VCSFileInfo]] {.base.} =
+method getChangedFiles*(self: VersionControlSystem): Future[seq[VCSFileInfo]] {.base, gcsafe, raises: [].} =
   newSeq[VCSFileInfo]().toFuture
 
-method stageFile*(self: VersionControlSystem, path: string): Future[string] {.base.} = "".toFuture
-method unstageFile*(self: VersionControlSystem, path: string): Future[string] {.base.} = "".toFuture
-method revertFile*(self: VersionControlSystem, path: string): Future[string] {.base.} = "".toFuture
+method stageFile*(self: VersionControlSystem, path: string): Future[string] {.base, gcsafe, raises: [].} = "".toFuture
+method unstageFile*(self: VersionControlSystem, path: string): Future[string] {.base, gcsafe, raises: [].} = "".toFuture
+method revertFile*(self: VersionControlSystem, path: string): Future[string] {.base, gcsafe, raises: [].} = "".toFuture
 
-method getCommittedFileContent*(self: VersionControlSystem, path: string): Future[seq[string]] {.base.} =
+method getCommittedFileContent*(self: VersionControlSystem, path: string): Future[seq[string]] {.base, gcsafe, raises: [].} =
   newSeq[string]().toFuture
 
-method getStagedFileContent*(self: VersionControlSystem, path: string): Future[seq[string]] {.base.} =
+method getStagedFileContent*(self: VersionControlSystem, path: string): Future[seq[string]] {.base, gcsafe, raises: [].} =
   newSeq[string]().toFuture
 
-method getWorkingFileContent*(self: VersionControlSystem, path: string): Future[seq[string]] {.base.} =
+method getWorkingFileContent*(self: VersionControlSystem, path: string): Future[seq[string]] {.base, gcsafe, raises: [].} =
   newSeq[string]().toFuture
 
 method getFileChanges*(self: VersionControlSystem, path: string, staged: bool = false):
-    Future[Option[seq[LineMapping]]] {.base.} =
+    Future[Option[seq[LineMapping]]] {.base, gcsafe, raises: [].} =
   seq[LineMapping].none.toFuture
 
-method checkoutFile*(self: VersionControlSystem, path: string): Future[string] {.base.} = "".toFuture
+method checkoutFile*(self: VersionControlSystem, path: string): Future[string] {.base, gcsafe, raises: [].} = "".toFuture

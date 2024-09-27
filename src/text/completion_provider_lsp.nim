@@ -43,13 +43,13 @@ proc refilterCompletions(self: CompletionProviderLsp) =
     log lvlInfo, &"[Comp-Lsp] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.unfilteredCompletions.len})"
   self.onCompletionsUpdated.invoke (self)
 
-proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
+proc getLspCompletionsAsync(self: CompletionProviderLsp) {.gcsafe, async.} =
   let location = self.location
 
   # Right now we need to sleep a bit here because this function is triggered by textInserted and
   # the update to the LSP is also sent in textInserted, but it's bound after this and so it would be called
   # to late. The sleep makes sure we run the getCompletions call below after the server got the file change.
-  await sleepAsync(2)
+  await sleepAsync(2.milliseconds)
 
   # debugf"[getLspCompletionsAsync] start"
   let completions = await self.languageServer.getCompletions(self.document.fullPath, location)
@@ -67,7 +67,7 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
 method forceUpdateCompletions*(provider: CompletionProviderLsp) =
   provider.updateFilterText()
   provider.refilterCompletions()
-  asyncCheck provider.getLspCompletionsAsync()
+  asyncSpawn provider.getLspCompletionsAsync()
 
 proc newCompletionProviderLsp*(document: TextDocument, languageServer: LanguageServer): CompletionProviderLsp =
   let self = CompletionProviderLsp(document: document, languageServer: languageServer)

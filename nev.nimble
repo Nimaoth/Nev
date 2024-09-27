@@ -30,8 +30,9 @@ requires "patty >= 0.3.5"
 requires "nimclipboard >= 0.1.2"
 requires "npeg >= 0.12.0"
 requires "asynctools#a1a17d0"
-# requires "results >= 0.4.0" # todo: use that at some point?
-# requires "chronos >= 4.0.2" # todo: switch to this at some point
+requires "stew >= 0.1.0"
+requires "results >= 0.5.0"
+requires "chronos >= 4.0.3"
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
 requires "https://github.com/Nimaoth/windy >= 0.0.2"
 requires "https://github.com/Nimaoth/wasm3 >= 0.1.13"

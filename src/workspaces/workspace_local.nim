@@ -1,4 +1,4 @@
-import std/[os, json, options, sequtils, strutils, asyncfile, unicode]
+import std/[os, json, options, sequtils, strutils, unicode]
 import misc/[custom_async, custom_logger, async_process, util, regex, timer, event]
 import platform/filesystem
 import workspace
@@ -16,10 +16,14 @@ type
     versionControlSystems*: seq[VersionControlSystem]
     isCacheUpdateInProgress: bool = false
 
-method settings*(self: WorkspaceFolderLocal): JsonNode =
-  result = newJObject()
-  result["path"] = newJString(self.path.absolutePath)
-  result["additionalPaths"] = %self.additionalPaths
+# method settings*(self: Workspace): JsonNode {.base, gcsafe, raises: [].} = discard
+method settings*(self: WorkspaceFolderLocal): JsonNode {.gcsafe, raises: [].} =
+  try:
+    result = newJObject()
+    result["path"] = newJString(self.path.absolutePath)
+    result["additionalPaths"] = %self.additionalPaths
+  except ValueError, OSError:
+    discard
 
 proc ignorePath*(ignore: Globs, path: string): bool =
   if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
@@ -58,7 +62,7 @@ proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
   except:
     discard
 
-proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.async.} =
+proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.gcsafe, async: (raises: []).} =
   if self.isCacheUpdateInProgress:
     return
   self.isCacheUpdateInProgress = true
@@ -67,30 +71,39 @@ proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.async.}
 
   log lvlInfo, "[recomputeFileCacheAsync] Start"
   let args = (@[self.path] & self.additionalPaths, self.ignore)
-  let res = spawnAsync(collectFilesThread, args).await
-  log lvlInfo, fmt"[recomputeFileCacheAsync] Finished in {res.time}ms"
+  try:
+    let res = spawnAsync(collectFilesThread, args).await
+    log lvlInfo, fmt"[recomputeFileCacheAsync] Finished in {res.time}ms"
 
-  self.cachedFiles = res.files
-  self.onCachedFilesUpdated.invoke()
+    self.cachedFiles = res.files
+    self.onCachedFilesUpdated.invoke()
+  except CancelledError:
+    discard
 
-method recomputeFileCache*(self: WorkspaceFolderLocal) =
-  asyncCheck self.recomputeFileCacheAsync()
+method recomputeFileCache*(self: WorkspaceFolderLocal) {.gcsafe, raises: [].} =
+  asyncSpawn self.recomputeFileCacheAsync()
 
 proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
-  if relativePath.isAbsolute:
+  try:
+    if relativePath.isAbsolute:
+      relativePath
+    else:
+      self.path.absolutePath // relativePath
+  except ValueError, OSError:
     relativePath
-  else:
-    self.path.absolutePath // relativePath
 
-method getRelativePathSync*(self: WorkspaceFolderLocal, absolutePath: string): Option[string] =
-  if absolutePath.startsWith(self.path):
-    return absolutePath.relativePath(self.path, '/').normalizePathUnix.some
+method getRelativePathSync*(self: WorkspaceFolderLocal, absolutePath: string): Option[string] {.raises: [].} =
+  try:
+    if absolutePath.startsWith(self.path):
+      return absolutePath.relativePath(self.path, '/').normalizePathUnix.some
 
-  for path in self.additionalPaths:
-    if absolutePath.startsWith(path):
-      return absolutePath.relativePath(path, '/').normalizePathUnix.some
+    for path in self.additionalPaths:
+      if absolutePath.startsWith(path):
+        return absolutePath.relativePath(path, '/').normalizePathUnix.some
 
-  return string.none
+    return string.none
+  except:
+    return string.none
 
 method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string):
     Future[Option[string]] {.async.} =
@@ -98,7 +111,11 @@ method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string):
 
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
-method getWorkspacePath*(self: WorkspaceFolderLocal): string = self.path.absolutePath
+method getWorkspacePath*(self: WorkspaceFolderLocal): string {.raises: [].} =
+  try:
+    self.path.absolutePath
+  except ValueError, OSError:
+    return ""
 
 method setFileReadOnly*(self: WorkspaceFolderLocal, relativePath: string, readOnly: bool): Future[bool] {.
     async.} =
@@ -136,33 +153,27 @@ method fileExists*(self: WorkspaceFolderLocal, path: string): Future[bool] {.asy
   let path = self.getAbsolutePath(path)
   return path.fileExists
 
-proc loadFileThread(args: tuple[path: string, data: ptr string]):
-    tuple[ok: bool, time: float] {.gcsafe.} =
-
-  let t = startTimer()
-  defer:
-    result.time = t.elapsed.ms
-
+proc loadFileThread(args: tuple[path: string, data: ptr string]): bool {.gcsafe.} =
   try:
     args.data[] = readFile(args.path)
 
     let invalidUtf8Index = args.data[].validateUtf8
     if invalidUtf8Index >= 0:
       args.data[] = &"Invalid utf-8 byte at {invalidUtf8Index}"
-      result.ok = false
+      return false
     else:
-      result.ok = true
+      return true
 
   except:
-    result.ok = false
+    return false
 
 method loadFile*(self: WorkspaceFolderLocal, relativePath: string): Future[string] {.async.} =
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[loadFile] '{path}'"
   try:
     var data = ""
-    let res = await spawnAsync(loadFileThread, (path, data.addr))
-    if not res.ok:
+    let ok = await spawnAsync(loadFileThread, (path, data.addr))
+    if not ok:
       log lvlError, &"Failed to load file '{path}'"
 
     return data.move
@@ -174,8 +185,8 @@ method loadFile*(self: WorkspaceFolderLocal, relativePath: string, data: ptr str
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[loadFile] '{path}'"
   try:
-    let res = await spawnAsync(loadFileThread, (path, data))
-    if not res.ok:
+    let ok = await spawnAsync(loadFileThread, (path, data))
+    if not ok:
       log lvlError, &"Failed to load file '{path}'"
       return
 
@@ -186,9 +197,10 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: stri
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[saveFile] '{path}'"
   try:
-    var file = openAsync(path, fmWrite)
-    await file.write(content)
-    file.close()
+    writeFile(path, content)
+    # var file = openAsync(path, fmWrite)
+    # await file.write(content)
+    # file.close()
   except:
     log lvlError, &"Failed to write file '{path}'"
 
@@ -196,10 +208,11 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: sink
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[saveFile] '{path}'"
   try:
-    var file = openAsync(path, fmWrite)
-    for chunk in content.iterateChunks:
-      await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
-    file.close()
+    writeFile(path, $content)
+    # var file = openAsync(path, fmWrite)
+    # for chunk in content.iterateChunks:
+    #   await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
+    # file.close()
   except:
     log lvlError, &"Failed to write file '{path}'"
 
@@ -323,11 +336,11 @@ proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
     let vcs = newVersionControlSystemPerforce(path)
     return vcs.VersionControlSystem.some
 
-proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal =
+proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal {.gcsafe, raises: [].} =
   new result
-  result.path = path.absolutePath.normalizePathUnix
+  result.path = path.absolutePath.catch(path).normalizePathUnix
   result.name = fmt"Local:{result.path}"
-  result.additionalPaths = additionalPaths.mapIt(it.absolutePath.normalizePathUnix)
+  result.additionalPaths = additionalPaths.mapIt(it.absolutePath.catch(path).normalizePathUnix)
   result.info = createInfo(path, result.additionalPaths)
 
   result.loadDefaultIgnoreFile()
@@ -341,7 +354,10 @@ proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]):
 
   result.recomputeFileCache()
 
-proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal =
-  let path = settings["path"].getStr
-  let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
-  return newWorkspaceFolderLocal(path, additionalPaths)
+proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal {.gcsafe, raises: [].} =
+  try:
+    let path = settings["path"].getStr
+    let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
+    return newWorkspaceFolderLocal(path, additionalPaths)
+  except:
+    return nil

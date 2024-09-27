@@ -49,9 +49,9 @@ type
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
 proc centerWindowOnMonitor*(window: Window, monitor: int)
-proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
-proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
-proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
+proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font {.gcsafe, raises: [].}
+proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font {.gcsafe, raises: [].}
+proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font {.gcsafe, raises: [].}
 
 method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Typefaces: {self.typefaces.len}\n"
@@ -59,173 +59,177 @@ method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Drawn Nodes: {self.drawnNodes.len}\n"
 
 method init*(self: GuiPlatform) =
-  self.glyphCache = newLruCache[Rune, string](5000, true)
-  self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=false)
-  self.window.runeInputEnabled = true
-  self.supportsThinCursor = true
-  self.focused = self.window.focused
-
-  # Use virtual key codes so that we can take into account the keyboard language
-  # and the behaviour is more consistent with the browser/terminal.
-  # todo: is this necessary on linux?
-  when defined(windows):
-    log lvlInfo, "Using virtual key codes instead of scan codes"
-    self.window.useVirtualKeyCodes = true
-
-  self.builder = newNodeBuilder()
-  self.builder.useInvalidation = true
-
-  # self.window.centerWindowOnMonitor(1)
-  self.window.maximized = true
-  makeContextCurrent(self.window)
-  loadExtensions()
-
-  # @todo
-  enableAutoGLerrorCheck(false)
-
-  self.framebuffer = Texture()
-  self.framebuffer.width = self.size.x.int32
-  self.framebuffer.height = self.size.y.int32
-  self.framebuffer.componentType = GL_UNSIGNED_BYTE
-  self.framebuffer.format = GL_RGBA
-  self.framebuffer.internalFormat = GL_RGBA8
-  self.framebuffer.minFilter = minLinear
-  self.framebuffer.magFilter = magLinear
-  bindTextureData(self.framebuffer, nil)
-
-  glGenFramebuffers(1, self.framebufferId.addr)
-  glBindFramebuffer(GL_FRAMEBUFFER, self.framebufferId)
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self.framebuffer.textureId, 0)
-  glBindFramebuffer(GL_FRAMEBUFFER, 0)
-
-  self.boxy = newBoxy()
-  self.ctx = newContext(1, 1)
-  self.ctx.fillStyle = rgb(255, 255, 255)
-  self.ctx.strokeStyle = rgb(255, 255, 255)
-  self.ctx.font = "fonts/DejaVuSansMono.ttf"
-  self.ctx.textBaseline = TopBaseline
-
-  self.fontRegular = "fonts/DejaVuSansMono.ttf"
-  self.fontBold = "fonts/DejaVuSansMono-Bold.ttf"
-  self.fontItalic = "fonts/DejaVuSansMono-Oblique.ttf"
-  self.fontBoldItalic = "fonts/DejaVuSansMono-BoldOblique.ttf"
-
-  self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
-  self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
-
-  self.boxy.setTargetFramebuffer self.framebufferId
-
-  # This sets the font size of self.ctx and recalculates the char width
-  self.fontSize = 16
-
-  self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
-    let font = self.getFont(self.ctx.font, self.ctx.fontSize * (1 + fontSizeIncreasePercent))
-    if text.len == 0:
-      let arrangement = font.typeset(" ")
-      result = vec2(0, arrangement.layoutBounds().y)
-    else:
-      let arrangement = font.typeset(text)
-      result = arrangement.layoutBounds()
-
-  self.builder.textWidthImpl = proc(node: UINode): float32 =
-    let font = self.getFont(self.ctx.fontSize, node.flags)
-    let arrangement = font.typeset(node.text)
-    result = arrangement.layoutBounds().x
-
-  self.builder.textWidthStringImpl = proc(text: string): float32 =
-    let font = self.getFont(self.ctx.fontSize, 0.UINodeFlags)
-    let arrangement = font.typeset(text)
-    result = arrangement.layoutBounds().x
-
-  self.window.onFocusChange = proc() =
-    inc self.eventCounter
-    self.currentModifiers = {}
-    self.currentMouseButtons = {}
-    self.onFocusChanged.invoke self.window.focused
+  try:
+    self.glyphCache = newLruCache[Rune, string](5000, true)
+    self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=false)
+    self.window.runeInputEnabled = true
+    self.supportsThinCursor = true
     self.focused = self.window.focused
 
-  self.window.onRune = proc(rune: Rune) =
-    inc self.eventCounter
-    if rune.int32 in char.low.ord .. char.high.ord:
-      case rune.char
-      of ' ': return
-      of 8.char: return # backspace
-      of 9.char: return # tab
-      of 13.char: return # enter
-      of 127.char: return # delete
-      else: discard
+    # Use virtual key codes so that we can take into account the keyboard language
+    # and the behaviour is more consistent with the browser/terminal.
+    # todo: is this necessary on linux?
+    when defined(windows):
+      log lvlInfo, "Using virtual key codes instead of scan codes"
+      self.window.useVirtualKeyCodes = true
 
-    # debugf"rune {rune.int} '{rune}' {inputToString(rune.toInput, self.currentModifiers)}"
-    if self.lastEvent.isSome:
-      self.lastEvent = (int64, Modifiers, Button).none
+    self.builder = newNodeBuilder()
+    self.builder.useInvalidation = true
 
-    self.onRune.invoke (rune.toInput, self.currentModifiers)
+    # self.window.centerWindowOnMonitor(1)
+    self.window.maximized = true
+    makeContextCurrent(self.window)
+    loadExtensions()
 
-  self.window.onScroll = proc() =
-    inc self.eventCounter
-    if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, {}):
-      self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, {})
+    # @todo
+    enableAutoGLerrorCheck(false)
 
-  self.window.onMouseMove = proc() =
-    # inc self.eventCounter
-    if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons):
-      self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, {}, self.currentMouseButtons)
+    self.framebuffer = Texture()
+    self.framebuffer.width = self.size.x.int32
+    self.framebuffer.height = self.size.y.int32
+    self.framebuffer.componentType = GL_UNSIGNED_BYTE
+    self.framebuffer.format = GL_RGBA
+    self.framebuffer.internalFormat = GL_RGBA8
+    self.framebuffer.minFilter = minLinear
+    self.framebuffer.magFilter = magLinear
+    bindTextureData(self.framebuffer, nil)
 
-  proc toMouseButton(button: Button): MouseButton =
-    inc self.eventCounter
-    result = case button:
-      of MouseLeft: MouseButton.Left
-      of MouseMiddle: MouseButton.Middle
-      of MouseRight: MouseButton.Right
-      of DoubleClick: MouseButton.DoubleClick
-      of TripleClick: MouseButton.TripleClick
-      else: MouseButton.Unknown
+    glGenFramebuffers(1, self.framebufferId.addr)
+    glBindFramebuffer(GL_FRAMEBUFFER, self.framebufferId)
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self.framebuffer.textureId, 0)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
-  self.window.onButtonPress = proc(button: Button) =
-    inc self.eventCounter
+    self.boxy = newBoxy()
+    self.ctx = newContext(1, 1)
+    self.ctx.fillStyle = rgb(255, 255, 255)
+    self.ctx.strokeStyle = rgb(255, 255, 255)
+    self.ctx.font = "fonts/DejaVuSansMono.ttf"
+    self.ctx.textBaseline = TopBaseline
 
-    if self.lastEvent.getSome(event):
-      # debugf"button last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
-      if not self.builder.handleKeyPressed(event[0], event[1]):
-        self.onKeyPress.invoke (event[0], event[1])
-      self.lastEvent = (int64, Modifiers, Button).none
+    self.fontRegular = "fonts/DejaVuSansMono.ttf"
+    self.fontBold = "fonts/DejaVuSansMono-Bold.ttf"
+    self.fontItalic = "fonts/DejaVuSansMono-Oblique.ttf"
+    self.fontBoldItalic = "fonts/DejaVuSansMono-BoldOblique.ttf"
 
-    # debugf"button k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
+    self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
+    self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
 
-    case button
-    of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
-      self.currentMouseButtons.incl button.toMouseButton
-      if not self.builder.handleMousePressed(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
-        self.onMousePress.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
-    of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers + {Shift}
-    of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers + {Control}
-    of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers + {Alt}
-    # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
-    else:
-      # debugf"last event k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
-      self.lastEvent = (button.toInput, self.currentModifiers, button).some
+    self.boxy.setTargetFramebuffer self.framebufferId
 
-  self.window.onButtonRelease = proc(button: Button) =
-    inc self.eventCounter
+    # This sets the font size of self.ctx and recalculates the char width
+    self.fontSize = 16
 
-    if self.lastEvent.getSome(event):
-      # debugf"button release last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
-      if not self.builder.handleKeyPressed(event[0], event[1]):
-        self.onKeyPress.invoke (event[0], event[1])
-      self.lastEvent = (int64, Modifiers, Button).none
+    self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
+      let font = self.getFont(self.ctx.font, self.ctx.fontSize * (1 + fontSizeIncreasePercent))
+      if text.len == 0:
+        let arrangement = font.typeset(" ")
+        result = vec2(0, arrangement.layoutBounds().y)
+      else:
+        let arrangement = font.typeset(text)
+        result = arrangement.layoutBounds()
 
-    case button
-    of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
-      self.currentMouseButtons.excl button.toMouseButton
-      if not self.builder.handleMouseReleased(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
-        self.onMouseRelease.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
-    of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers - {Shift}
-    of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers - {Control}
-    of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers - {Alt}
-    # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
-    else:
-      if not self.builder.handleKeyPressed(button.toInput, self.currentModifiers):
-        self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
+    self.builder.textWidthImpl = proc(node: UINode): float32 =
+      let font = self.getFont(self.ctx.fontSize, node.flags)
+      let arrangement = font.typeset(node.text)
+      result = arrangement.layoutBounds().x
+
+    self.builder.textWidthStringImpl = proc(text: string): float32 =
+      let font = self.getFont(self.ctx.fontSize, 0.UINodeFlags)
+      let arrangement = font.typeset(text)
+      result = arrangement.layoutBounds().x
+
+    self.window.onFocusChange = proc() =
+      inc self.eventCounter
+      self.currentModifiers = {}
+      self.currentMouseButtons = {}
+      self.onFocusChanged.invoke self.window.focused
+      self.focused = self.window.focused
+
+    self.window.onRune = proc(rune: Rune) =
+      inc self.eventCounter
+      if rune.int32 in char.low.ord .. char.high.ord:
+        case rune.char
+        of ' ': return
+        of 8.char: return # backspace
+        of 9.char: return # tab
+        of 13.char: return # enter
+        of 127.char: return # delete
+        else: discard
+
+      # debugf"rune {rune.int} '{rune}' {inputToString(rune.toInput, self.currentModifiers)}"
+      if self.lastEvent.isSome:
+        self.lastEvent = (int64, Modifiers, Button).none
+
+      self.onRune.invoke (rune.toInput, self.currentModifiers)
+
+    self.window.onScroll = proc() =
+      inc self.eventCounter
+      if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, {}):
+        self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, {})
+
+    self.window.onMouseMove = proc() =
+      # inc self.eventCounter
+      if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons):
+        self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, {}, self.currentMouseButtons)
+
+    proc toMouseButton(button: Button): MouseButton =
+      inc self.eventCounter
+      result = case button:
+        of MouseLeft: MouseButton.Left
+        of MouseMiddle: MouseButton.Middle
+        of MouseRight: MouseButton.Right
+        of DoubleClick: MouseButton.DoubleClick
+        of TripleClick: MouseButton.TripleClick
+        else: MouseButton.Unknown
+
+    self.window.onButtonPress = proc(button: Button) =
+      inc self.eventCounter
+
+      if self.lastEvent.getSome(event):
+        # debugf"button last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
+        if not self.builder.handleKeyPressed(event[0], event[1]):
+          self.onKeyPress.invoke (event[0], event[1])
+        self.lastEvent = (int64, Modifiers, Button).none
+
+      # debugf"button k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
+
+      case button
+      of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
+        self.currentMouseButtons.incl button.toMouseButton
+        if not self.builder.handleMousePressed(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
+          self.onMousePress.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
+      of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers + {Shift}
+      of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers + {Control}
+      of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers + {Alt}
+      # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
+      else:
+        # debugf"last event k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
+        self.lastEvent = (button.toInput, self.currentModifiers, button).some
+
+    self.window.onButtonRelease = proc(button: Button) =
+      inc self.eventCounter
+
+      if self.lastEvent.getSome(event):
+        # debugf"button release last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
+        if not self.builder.handleKeyPressed(event[0], event[1]):
+          self.onKeyPress.invoke (event[0], event[1])
+        self.lastEvent = (int64, Modifiers, Button).none
+
+      case button
+      of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
+        self.currentMouseButtons.excl button.toMouseButton
+        if not self.builder.handleMouseReleased(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
+          self.onMouseRelease.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
+      of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers - {Shift}
+      of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers - {Control}
+      of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers - {Alt}
+      # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
+      else:
+        if not self.builder.handleKeyPressed(button.toInput, self.currentModifiers):
+          self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
+  except:
+    log lvlError, &"Failed to create gui platform: {getCurrentExceptionMsg()}"
+    quit(0)
 
 method deinit*(self: GuiPlatform) =
   self.window.close()
@@ -234,7 +238,8 @@ method requestRender*(self: GuiPlatform, redrawEverything = false) =
   self.requestedRender = true
   self.redrawEverything = self.redrawEverything or redrawEverything
 
-proc getTypeface*(self: GuiPlatform, font: string): Typeface =
+proc getTypeface*(self: GuiPlatform, font: string): Typeface {.gcsafe, raises: [].} =
+  let fs = ({.gcsafe.}: fs)
   if font notin self.typefaces:
     var typeface: Typeface = nil
     try:
@@ -255,11 +260,10 @@ proc getTypeface*(self: GuiPlatform, font: string): Typeface =
       log lvlError, &"Failed to load font '{font}'"
       return nil
 
-  result = self.typefaces[font]
+  result = self.typefaces.getAssert(font)
 
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
-  if font == "":
-    raise newException(PixieError, "No font has been set on this Context")
+  assert font != ""
 
   let typeface = self.getTypeface(font)
   result = newFont(typeface)
@@ -284,15 +288,18 @@ proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
     return self.getFont(self.fontBold, fontSize)
   return self.getFont(self.fontRegular, fontSize)
 
-method size*(self: GuiPlatform): Vec2 =
-  let size = self.window.size
-  return vec2(size.x.float, size.y.float)
+method size*(self: GuiPlatform): Vec2 {.gcsafe, raises: [].} =
+  try:
+    let size = self.window.size
+    return vec2(size.x.float, size.y.float)
+  except:
+    return vec2(1, 1)
 
-method sizeChanged*(self: GuiPlatform): bool =
+method sizeChanged*(self: GuiPlatform): bool {.gcsafe, raises: [].} =
   let s = self.size
   return s.x != self.lastSize.x or s.y != self.lastSize.y
 
-proc updateCharWidth*(self: GuiPlatform) =
+proc updateCharWidth*(self: GuiPlatform) {.gcsafe, raises: [].} =
   let font = self.getFont(self.ctx.font, self.ctx.fontSize)
   let bounds = font.typeset(repeat("#_", 50)).layoutBounds()
   let boundsSingle = font.typeset("#_").layoutBounds()
@@ -304,7 +311,7 @@ proc updateCharWidth*(self: GuiPlatform) =
   self.builder.lineHeight = self.mLineHeight
   self.builder.lineGap = self.mLineDistance
 
-method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) =
+method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) {.gcsafe, raises: [].} =
   log lvlInfo, fmt"Update font: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}, fallbacks: {fallbackFonts}"
   self.ctx.font = fontRegular
   self.fontRegular = fontRegular
@@ -315,34 +322,41 @@ method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontIt
   self.typefaces.clear()
   self.updateCharWidth()
 
-  for image in self.glyphCache.removedKeys:
-    self.boxy.removeImage($image)
+  try:
+    for image in self.glyphCache.removedKeys:
+      self.boxy.removeImage($image)
 
-  for (_, image) in self.glyphCache.pairs:
-    self.boxy.removeImage(image)
+    for (_, image) in self.glyphCache.pairs:
+      self.boxy.removeImage(image)
+  except:
+    discard
 
   self.glyphCache.clearRemovedKeys()
   self.glyphCache.clear()
 
-method `fontSize=`*(self: GuiPlatform, fontSize: float) =
+method `fontSize=`*(self: GuiPlatform, fontSize: float) {.gcsafe, raises: [].} =
   self.ctx.fontSize = fontSize
   self.updateCharWidth()
 
-method `lineDistance=`*(self: GuiPlatform, lineDistance: float) =
+method `lineDistance=`*(self: GuiPlatform, lineDistance: float) {.gcsafe, raises: [].} =
   self.mLineDistance = lineDistance
   self.updateCharWidth()
 
-method fontSize*(self: GuiPlatform): float = self.ctx.fontSize
-method lineDistance*(self: GuiPlatform): float = self.mLineDistance
-method lineHeight*(self: GuiPlatform): float = self.mLineHeight
-method charWidth*(self: GuiPlatform): float = self.mCharWidth
-method charGap*(self: GuiPlatform): float = self.mCharGap
+method fontSize*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.ctx.fontSize
+method lineDistance*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.mLineDistance
+method lineHeight*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.mLineHeight
+method charWidth*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.mCharWidth
+method charGap*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.mCharGap
 
-method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
+method measureText*(self: GuiPlatform, text: string): Vec2 {.gcsafe, raises: [].} = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
 
-method processEvents*(self: GuiPlatform): int =
+method processEvents*(self: GuiPlatform): int {.gcsafe.} =
   self.eventCounter = 0
-  pollEvents()
+  try:
+    {.gcsafe.}:
+      pollEvents()
+  except:
+    discard
 
   if self.lastEvent.getSome(event):
     # debugf"process last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
@@ -400,7 +414,7 @@ proc centerWindowOnMonitor*(window: Window, monitor: int) =
   window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
                      int32(top + (monitorHeight - windowHeight) / 2))
 
-proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
+proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) {.gcsafe.}
 
 proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, offset: float = 0) =
   let rect = rect.grow(vec2(thickness * offset, thickness * offset))
@@ -416,77 +430,80 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
-method render*(self: GuiPlatform) =
-  if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
-    self.framebuffer.width = self.size.x.int32
-    self.framebuffer.height = self.size.y.int32
-    bindTextureData(self.framebuffer, nil)
-    self.redrawEverything = true
+method render*(self: GuiPlatform) {.gcsafe.} =
+  try:
+    if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
+      self.framebuffer.width = self.size.x.int32
+      self.framebuffer.height = self.size.y.int32
+      bindTextureData(self.framebuffer, nil)
+      self.redrawEverything = true
 
-  # Clear the screen and begin a new frame.
-  self.boxy.beginFrame(self.window.size, clearFrame=false)
+    # Clear the screen and begin a new frame.
+    self.boxy.beginFrame(self.window.size, clearFrame=false)
 
-  var count = 0
-  for image in self.glyphCache.removedKeys:
-    self.boxy.removeImage($image)
-    inc count
+    var count = 0
+    for image in self.glyphCache.removedKeys:
+      self.boxy.removeImage($image)
+      inc count
 
-  if logDeletedImageCount and count > 0:
-    log lvlInfo, fmt"Cleared {count} images from cache"
+    if logDeletedImageCount and count > 0:
+      log lvlInfo, fmt"Cleared {count} images from cache"
 
-  self.glyphCache.clearRemovedKeys()
+    self.glyphCache.clearRemovedKeys()
 
-  if self.ctx.fontSize != self.lastFontSize:
-    self.lastFontSize = self.ctx.fontSize
-    for (_, image) in self.glyphCache.pairs:
-      self.boxy.removeImage(image)
-    self.glyphCache.clear()
+    if self.ctx.fontSize != self.lastFontSize:
+      self.lastFontSize = self.ctx.fontSize
+      for (_, image) in self.glyphCache.pairs:
+        self.boxy.removeImage(image)
+      self.glyphCache.clear()
 
-  if self.builder.root.lastSizeChange == self.builder.frameIndex:
-    self.redrawEverything = true
+    if self.builder.root.lastSizeChange == self.builder.frameIndex:
+      self.redrawEverything = true
 
-  self.drawnNodes.setLen 0
-  defer:
     self.drawnNodes.setLen 0
-
-  var renderedSomething = true
-  self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
-
-  if self.showDrawnNodes and renderedSomething:
-    let size = if self.showDrawnNodes: self.size * vec2(0.5, 1) else: self.size
-
-    self.boxy.pushLayer()
     defer:
+      self.drawnNodes.setLen 0
+
+    var renderedSomething = true
+    self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+
+    if self.showDrawnNodes and renderedSomething:
+      let size = if self.showDrawnNodes: self.size * vec2(0.5, 1) else: self.size
+
       self.boxy.pushLayer()
-      self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(1, 0, 0, 1))
-      self.boxy.popLayer(blendMode = MaskBlend)
-      self.boxy.popLayer()
+      defer:
+        self.boxy.pushLayer()
+        self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(1, 0, 0, 1))
+        self.boxy.popLayer(blendMode = MaskBlend)
+        self.boxy.popLayer()
 
-    self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(0, 0, 0))
+      self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(0, 0, 0))
 
-    for node in self.drawnNodes:
-      let c = node.randomColor(0.3)
-      self.boxy.drawRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), c)
+      for node in self.drawnNodes:
+        let c = node.randomColor(0.3)
+        self.boxy.drawRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), c)
 
-      if DrawBorder in node.flags:
-        self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
+        if DrawBorder in node.flags:
+          self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
 
-  # End this frame, flushing the draw commands. Draw to framebuffer.
-  self.boxy.endFrame()
+    # End this frame, flushing the draw commands. Draw to framebuffer.
+    self.boxy.endFrame()
 
-  if renderedSomething:
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, self.framebufferId)
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
-    glBlitFramebuffer(
-      0, 0, self.framebuffer.width.GLint, self.framebuffer.height.GLint,
-      0, 0, self.window.size.x.GLint, self.window.size.y.GLint,
-      GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
+    if renderedSomething:
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, self.framebufferId)
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+      glBlitFramebuffer(
+        0, 0, self.framebuffer.width.GLint, self.framebuffer.height.GLint,
+        0, 0, self.window.size.x.GLint, self.window.size.y.GLint,
+        GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
 
-    self.window.swapBuffers()
+      self.window.swapBuffers()
 
-  self.renderedSomethingLastFrame = renderedSomething;
-  self.redrawEverything = false
-  self.lastSize = self.size
+    self.renderedSomethingLastFrame = renderedSomething;
+    self.redrawEverything = false
+    self.lastSize = self.size
+  except:
+    discard
 
 proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
   var nodePos = offset

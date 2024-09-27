@@ -1,10 +1,14 @@
-import std/[options, strutils, macros, genasts]
-export options
+import std/[options, strutils, macros, genasts, tables]
+import results
+export options, results
 
 {.used.}
 
 template getSome*[T](opt: Option[T], injected: untyped): bool =
   ((let o = opt; o.isSome())) and ((let injected {.inject, cursor.} = o.get(); true))
+
+template getSome*[T](opt: Option[T], injected: untyped): bool =
+  ((let o = opt; o.isOk())) and ((let injected {.inject, cursor.} = o.get(); true))
 
 template isNotNil*(v: untyped): untyped = not v.isNil
 
@@ -65,6 +69,12 @@ template with*(exp, val, body: untyped): untyped =
       exp = oldValue
     body
 
+template assertNoEx*(exp: untyped): untyped =
+  try:
+    exp
+  except:
+    assert false, $instantiationInfo(-1) & "Unexpected exception " & getCurrentExceptionMsg()
+
 template catch*(exp: untyped, then: untyped): untyped =
   try:
     exp
@@ -86,6 +96,30 @@ template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
     temp
 
   matches
+
+func getAssert*[K, V](t: var Table[K, V], key: K): var V {.raises: [].} =
+  try:
+    return t[key]
+  except ValueError:
+    assert false
+
+func getAssert*[K, V](t: Table[K, V], key: K): lent V {.raises: [].} =
+  try:
+    return t[key]
+  except ValueError:
+    assert false
+
+func getAssert*[K, V](t: var OrderedTable[K, V], key: K): var V {.raises: [].} =
+  try:
+    return t[key]
+  except ValueError:
+    assert false
+
+func getAssert*[K, V](t: OrderedTable[K, V], key: K): lent V {.raises: [].} =
+  try:
+    return t[key]
+  except ValueError:
+    assert false
 
 # type ArrayLike*[T] {.explain.} = concept x, var v
 #   x.low is int

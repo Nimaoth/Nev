@@ -7,11 +7,7 @@ import language_server_lsp
 
 {.used.}
 
-proc getOrCreateLanguageServerImpl*(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = Workspace.none): Future[Option[LanguageServer]] {.async.} =
-  let lsp = await getOrCreateLanguageServerLSP(languageId, workspaces, languagesServer, workspace)
-  if lsp.getSome(server):
-    return server.LanguageServer.some
-
-  return LanguageServer.none
+proc getOrCreateLanguageServerImpl*(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = Workspace.none): Future[Option[LanguageServer]] {.gcsafe, raises: [].} =
+  return getOrCreateLanguageServerLSP(languageId, workspaces, languagesServer, workspace)
 
 getOrCreateLanguageServer = getOrCreateLanguageServerImpl

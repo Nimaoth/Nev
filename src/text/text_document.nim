@@ -1,4 +1,5 @@
-import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, times, threadpool, algorithm]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, threadpool, algorithm]
+from std/times import nil
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
@@ -17,6 +18,9 @@ from language/lsp_types as lsp_types import nil
 export document, document_editor, id
 
 logCategory "text-document"
+
+{.push gcsafe.}
+{.push raises: [].}
 
 type
 
@@ -116,15 +120,15 @@ type
 var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
-proc clearStyledTextCache*(self: TextDocument, line: Option[int] = int.none)
-proc clearDiagnostics*(self: TextDocument)
-proc numLines*(self: TextDocument): int {.noSideEffect.}
-proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
-proc resolveDiagnosticAnchors*(self: TextDocument)
-proc recordSnapshotForDiagnostics(self: TextDocument)
-proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
+proc clearStyledTextCache*(self: TextDocument, line: Option[int] = int.none) {.gcsafe, raises: [].}
+proc clearDiagnostics*(self: TextDocument) {.gcsafe, raises: [].}
+proc numLines*(self: TextDocument): int {.noSideEffect, raises: [].}
+proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) {.gcsafe, raises: [].}
+proc resolveDiagnosticAnchors*(self: TextDocument) {.gcsafe, raises: [].}
+proc recordSnapshotForDiagnostics(self: TextDocument) {.gcsafe, raises: [].}
+proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point) {.gcsafe, raises: [].}
 
-func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
+func rope*(self: TextDocument): lent Rope {.raises: [].} = self.buffer.snapshot.visibleText
 
 proc getSizeBytes(line: StyledLine): int =
   result = sizeof(StyledLine)
@@ -134,30 +138,33 @@ proc getSizeBytes(line: StyledLine): int =
     result += part.scope.len
 
 method getStatisticsString*(self: TextDocument): string =
-  let visibleTextStats = stats(self.buffer.snapshot.visibleText.tree)
-  let deletedTextStats = stats(self.buffer.snapshot.deletedText.tree)
-  let fragmentStats = stats(self.buffer.snapshot.fragments)
-  let insertionStats = stats(self.buffer.snapshot.insertions)
-  let undoStats = stats(self.buffer.snapshot.undoMap.tree)
+  try:
+    let visibleTextStats = stats(self.buffer.snapshot.visibleText.tree)
+    let deletedTextStats = stats(self.buffer.snapshot.deletedText.tree)
+    let fragmentStats = stats(self.buffer.snapshot.fragments)
+    let insertionStats = stats(self.buffer.snapshot.insertions)
+    let undoStats = stats(self.buffer.snapshot.undoMap.tree)
 
-  result.add &"Filename: {self.filename}\n"
-  result.add &"Lines: {self.numLines}\n"
-  result.add &"Changes: {self.changes.len}\n"
-  result.add &"VisibleText: {visibleTextStats}\n"
-  result.add &"DeletedText: {deletedTextStats}\n"
-  result.add &"Fragment: {fragmentStats}\n"
-  result.add &"Insertion: {insertionStats}\n"
-  result.add &"Undo: {undoStats}\n"
+    result.add &"Filename: {self.filename}\n"
+    result.add &"Lines: {self.numLines}\n"
+    result.add &"Changes: {self.changes.len}\n"
+    result.add &"VisibleText: {visibleTextStats}\n"
+    result.add &"DeletedText: {deletedTextStats}\n"
+    result.add &"Fragment: {fragmentStats}\n"
+    result.add &"Insertion: {insertionStats}\n"
+    result.add &"Undo: {undoStats}\n"
 
-  var styledTextCacheBytes = 0
-  for c in self.styledTextCache.values:
-    styledTextCacheBytes += c.getSizeBytes()
-  result.add &"Styled line cache: {self.styledTextCache.len}, {styledTextCacheBytes} bytes\n"
+    var styledTextCacheBytes = 0
+    for c in self.styledTextCache.values:
+      styledTextCacheBytes += c.getSizeBytes()
+    result.add &"Styled line cache: {self.styledTextCache.len}, {styledTextCacheBytes} bytes\n"
 
-  result.add &"Diagnostics per line: {self.diagnosticsPerLine.len}\n"
-  result.add &"Diagnostics: {self.currentDiagnostics.len}"
+    result.add &"Diagnostics per line: {self.diagnosticsPerLine.len}\n"
+    result.add &"Diagnostics: {self.currentDiagnostics.len}"
+  except:
+    discard
 
-proc tabWidth*(self: TextDocument): int
+proc tabWidth*(self: TextDocument): int {.gcsafe, raises: [].}
 
 proc nextLineId*(self: TextDocument): int32 =
   result = self.nextLineIdCounter
@@ -197,8 +204,9 @@ proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true)
 
 proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: bool = true): Selection = (self.clampCursor(selection.first, includeAfter), self.clampCursor(selection.last, includeAfter))
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.}
-proc trimTrailingWhitespace*(self: TextDocument)
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gcsafe, async: (raises: []).}
+proc connectLanguageServer*(self: TextDocument) {.gcsafe, async: (raises: []).}
+proc trimTrailingWhitespace*(self: TextDocument) {.gcsafe, raises: [].}
 
 proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
@@ -242,7 +250,7 @@ proc parseTreesitterThread(parser: ptr TSParser, oldTree: TSTree, text: sink Rop
 
   return newTree
 
-proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
+proc reparseTreesitterAsync*(self: TextDocument) {.gcsafe, async.} =
   self.isParsingAsync = true
   defer:
     self.isParsingAsync = false
@@ -270,7 +278,7 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
         let flowVar: FlowVar[TSTree] = spawn parseTreesitterThread(parser.addr, oldTree, self.rope.clone())
 
         while not flowVar.isReady:
-          await sleepAsync(1)
+          await sleepAsync(1.milliseconds)
 
         let newTree = ^flowVar
 
@@ -301,7 +309,7 @@ proc reparseTreesitter*(self: TextDocument) =
   if self.isParsingAsync:
     return
 
-  asyncCheck self.reparseTreesitterAsync()
+  asyncSpawn self.reparseTreesitterAsync()
 
 proc tsTree*(self: TextDocument): TsTree =
   if self.changes.len > 0 or self.currentTree.isNil:
@@ -317,7 +325,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.mLanguageId = languageId
     self.reloadTreesitterLanguage()
 
-func contentString*(self: TextDocument): string =
+func contentString*(self: TextDocument): string {.gcsafe, raises: [].} =
   return $self.rope
 
 var nextBufferId = 1.BufferId
@@ -371,7 +379,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
   self.clearStyledTextCache()
   self.notifyTextChanged()
 
-proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
+proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].} =
 
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
 
@@ -472,12 +480,12 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
     assert s.last.line in 0..int32.high
     assert s.last.column in 0..int32.high
 
-proc replaceAll*(self: TextDocument, value: sink Rope) =
+proc replaceAll*(self: TextDocument, value: sink Rope) {.gcsafe, raises: [].} =
   let fullRange = ((0, 0), self.rope.summary().lines.toCursor)
   self.nextCheckpoints.incl ""
   discard self.edit([fullRange], [], [value])
 
-proc replaceAll*(self: TextDocument, value: sink string) =
+proc replaceAll*(self: TextDocument, value: sink string) {.gcsafe, raises: [].} =
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
     log lvlError, &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
@@ -798,17 +806,16 @@ proc replaceTabs(self: TextDocument, line: var StyledLine) =
 proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
   # diagnostics
   self.resolveDiagnosticAnchors()
+  let theme = ({.gcsafe.}: gTheme)
 
-  if self.diagnosticsPerLine.contains(line.index):
-    let indices {.cursor.} = self.diagnosticsPerLine[line.index]
-
+  self.diagnosticsPerLine.withValue(line.index, indices):
     const maxNonErrors = 2
     const maxErrors = 4
 
     var nonErrorDiagnostics = 0
     var errorDiagnostics = 0
 
-    for diagnosticIndex in indices:
+    for diagnosticIndex in indices[]:
       if diagnosticIndex notin 0..self.currentDiagnostics.high:
         continue
 
@@ -835,8 +842,8 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       else:
         "editorHint.foreground"
 
-      let color = if gTheme.isNotNil:
-        gTheme.color(colorName, color(1, 1, 1))
+      let color = if theme.isNotNil:
+        theme.color(colorName, color(1, 1, 1))
       elif diagnostic.severity.getSome(severity):
         case severity
         of lsp_types.DiagnosticSeverity.Error: color(1, 0, 0)
@@ -872,141 +879,145 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
 var regexes = initTable[string, Regex]()
 proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
   # logScope lvlInfo, &"applyTreesitterHighlighting({line.index}, {self.filename})"
+  try:
+    var regexes = ({.gcsafe.}: regexes.addr)
 
-  if self.highlightQuery.isNil or self.tsTree.isNil:
-    return
+    if self.highlightQuery.isNil or self.tsTree.isNil:
+      return
 
+    let lineLen = self.lineLength(line.index)
 
-  let lineLen = self.lineLength(line.index)
+    for match in self.highlightQuery.matches(self.tsTree.root, tsRange(tsPoint(line.index, 0), tsPoint(line.index, lineLen))):
+      let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
 
-  for match in self.highlightQuery.matches(self.tsTree.root, tsRange(tsPoint(line.index, 0), tsPoint(line.index, lineLen))):
-    let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
+      for capture in match.captures:
+        let scope = capture.name
+        let node = capture.node
 
-    for capture in match.captures:
-      let scope = capture.name
-      let node = capture.node
+        var matches = true
+        for predicate in predicates:
 
-      var matches = true
-      for predicate in predicates:
-
-        if not matches:
-          break
-
-        for operand in predicate.operands:
-          let value = $operand.`type`
-
-          if operand.name != scope:
-            matches = false
+          if not matches:
             break
 
-          case $predicate.operator
-          of "match?":
-            if not regexes.contains(value):
-              regexes[value] = re(value)
-            let regex {.cursor.} = regexes[value]
+          for operand in predicate.operands:
+            let value = $operand.`type`
 
-            let nodeText = self.contentString(node.getRange)
-            if nodeText.matchLen(regex, 0) != nodeText.len:
+            if operand.name != scope:
               matches = false
               break
 
-          of "not-match?":
-            if not regexes.contains(value):
-              regexes[value] = re(value)
-            let regex {.cursor.} = regexes[value]
+            case $predicate.operator
+            of "match?":
+              if not regexes[].contains(value):
+                regexes[][value] = re(value)
+              let regex {.cursor.} = regexes[][value]
 
+              let nodeText = self.contentString(node.getRange)
+              if nodeText.matchLen(regex, 0) != nodeText.len:
+                matches = false
+                break
+
+            of "not-match?":
+              if not regexes[].contains(value):
+                regexes[][value] = re(value)
+              let regex {.cursor.} = regexes[][value]
+
+              let nodeText = self.contentString(node.getRange)
+              if nodeText.matchLen(regex, 0) == nodeText.len:
+                matches = false
+                break
+
+            of "eq?":
+              # @todo: second arg can be capture aswell
+              let nodeText = self.contentString(node.getRange)
+              if nodeText != value:
+                matches = false
+                break
+
+            of "not-eq?":
+              # @todo: second arg can be capture aswell
+              let nodeText = self.contentString(node.getRange)
+              if nodeText == value:
+                matches = false
+                break
+
+            # of "any-of?":
+            #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+
+            else:
+              # log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
+              discard
+
+          if self.configProvider.getFlag("text.print-matches", false):
             let nodeText = self.contentString(node.getRange)
-            if nodeText.matchLen(regex, 0) == nodeText.len:
-              matches = false
-              break
+            log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
 
-          of "eq?":
-            # @todo: second arg can be capture aswell
-            let nodeText = self.contentString(node.getRange)
-            if nodeText != value:
-              matches = false
-              break
+        if not matches:
+          continue
 
-          of "not-eq?":
-            # @todo: second arg can be capture aswell
-            let nodeText = self.contentString(node.getRange)
-            if nodeText == value:
-              matches = false
-              break
+        let nodeRange = node.getRange
 
-          # of "any-of?":
-          #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+        if nodeRange.first.row == line.index:
+          splitAt(self, line, nodeRange.first.column)
+        if nodeRange.last.row == line.index:
+          splitAt(self, line, nodeRange.last.column)
 
-          else:
-            # log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
-            discard
+        let first = if nodeRange.first.row < line.index:
+          0
+        elif nodeRange.first.row == line.index:
+          nodeRange.first.column
+        else:
+          lineLen
 
-        if self.configProvider.getFlag("text.print-matches", false):
-          let nodeText = self.contentString(node.getRange)
-          log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
+        let last = if nodeRange.last.row < line.index:
+          0
+        elif nodeRange.last.row == line.index:
+          nodeRange.last.column
+        else:
+          lineLen
 
-      if not matches:
-        continue
+        overrideStyle(self, line, first, last, $scope, match.pattern)
 
-      let nodeRange = node.getRange
-
-      if nodeRange.first.row == line.index:
-        splitAt(self, line, nodeRange.first.column)
-      if nodeRange.last.row == line.index:
-        splitAt(self, line, nodeRange.last.column)
-
-      let first = if nodeRange.first.row < line.index:
-        0
-      elif nodeRange.first.row == line.index:
-        nodeRange.first.column
-      else:
-        lineLen
-
-      let last = if nodeRange.last.row < line.index:
-        0
-      elif nodeRange.last.row == line.index:
-        nodeRange.last.column
-      else:
-        lineLen
-
-      overrideStyle(self, line, first, last, $scope, match.pattern)
+  except CatchableError:
+    discard
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
-  if self.styledTextCache.contains(i):
-    result = self.styledTextCache[i]
-  else:
-    if i >= self.numLines:
-      log lvlError, fmt"getStyledText({i}) out of range {self.numLines}"
-      return StyledLine()
+  self.styledTextCache.withValue(i, line):
+    return line[]
 
-    var b = initBench()
+  if i >= self.numLines:
+    log lvlError, fmt"getStyledText({i}) out of range {self.numLines}"
+    return StyledLine()
 
-    b.scope "reparse treesitter":
-      if self.changes.len > 0 or self.currentTree.isNil:
-        self.reparseTreesitter()
+  var b = initBench()
 
-    b.scope "getLine":
-      var line = self.getLine(i)
+  b.scope "reparse treesitter":
+    if self.changes.len > 0 or self.currentTree.isNil:
+      self.reparseTreesitter()
 
-    var parts = newSeqOfCap[StyledText](50)
-    parts.add StyledText(text: $line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)
-    result = StyledLine(index: i, parts: parts.move)
-    self.styledTextCache[i] = result
+  b.scope "getLine":
+    var line = self.getLine(i)
 
-    b.scope "highlight":
-      self.applyTreesitterHighlighting(result)
+  var parts = newSeqOfCap[StyledText](50)
+  parts.add StyledText(text: $line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)
+  result = StyledLine(index: i, parts: parts.move)
+  self.styledTextCache[i] = result
 
-    b.scope "spaces":
-      self.replaceSpaces(result)
+  b.scope "highlight":
+    self.applyTreesitterHighlighting(result)
 
-    b.scope "tabs":
-      self.replaceTabs(result)
+  b.scope "spaces":
+    self.replaceSpaces(result)
 
-    b.scope "underline":
-      self.addDiagnosticsUnderline(result)
+  b.scope "tabs":
+    self.replaceTabs(result)
 
-    when defined(nevBench):
-      echo &"getStyledText({i}): {b}"
+  b.scope "underline":
+    self.addDiagnosticsUnderline(result)
+
+  when defined(nevBench):
+    echo &"getStyledText({i}): {b}"
 
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   logScope lvlInfo, &"loadTreesitterLanguage {self.filename}"
@@ -1039,7 +1050,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.currentTree.delete()
 
   # todo: this awaits, check if still current request afterwards
-  let highlightQueryPath = fs.getApplicationFilePath(&"languages/{self.languageId}/queries/highlights.scm")
+  let highlightQueryPath = self.fs.getApplicationFilePath(&"languages/{self.languageId}/queries/highlights.scm")
   if language.get.queryFile("highlight", highlightQueryPath).await.getSome(query):
     if prevLanguageId != self.languageId:
       return
@@ -1048,7 +1059,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   else:
     log(lvlError, fmt"No highlight queries found for '{self.languageId}'")
 
-  let errorQueryPath = fs.getApplicationFilePath(&"languages/{self.languageId}/queries/errors.scm")
+  let errorQueryPath = self.fs.getApplicationFilePath(&"languages/{self.languageId}/queries/errors.scm")
   if language.get.queryFile("error", errorQueryPath, cacheOnFail = false).await.getSome(query):
     if prevLanguageId != self.languageId:
       return
@@ -1065,10 +1076,11 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.notifyRequestRerender()
 
 proc reloadTreesitterLanguage*(self: TextDocument) =
-  asyncCheck self.loadTreesitterLanguage()
+  asyncSpawn self.loadTreesitterLanguage()
 
 proc newTextDocument*(
     configProvider: ConfigProvider,
+    fs: Filesystem,
     filename: string = "",
     content: string = "",
     app: bool = false,
@@ -1080,9 +1092,12 @@ proc newTextDocument*(
 
   log lvlInfo, &"Creating new text document '{filename}', (lang: {language}, app: {app}, ls: {createLanguageServer})"
   new(result)
-  allTextDocuments.add result
+
+  {.gcsafe.}:
+    allTextDocuments.add result
 
   var self = result
+  self.fs = fs
   self.filename = filename.normalizePathUnix
   self.currentTree = TSTree()
   self.appFile = app
@@ -1100,16 +1115,19 @@ proc newTextDocument*(
 
   if self.languageId != "":
     if (let value = self.configProvider.getValue("languages." & self.languageId, newJNull()); value.kind == JObject):
-      self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
-      if value.hasKey("indent"):
-        case value["indent"].str:
-        of "spaces":
-          self.indentStyle = IndentStyle(
-            kind: Spaces,
-            spaces: self.languageConfig.map((c) => c.tabWidth).get(4)
-          )
-        of "tabs":
-          self.indentStyle = IndentStyle(kind: Tabs)
+      try:
+        self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
+        if value.hasKey("indent"):
+          case value["indent"].str:
+          of "spaces":
+            self.indentStyle = IndentStyle(
+              kind: Spaces,
+              spaces: self.languageConfig.map((c) => c.tabWidth).get(4)
+            )
+          of "tabs":
+            self.indentStyle = IndentStyle(kind: Tabs)
+      except CatchableError:
+        discard
 
   let autoStartServer = self.configProvider.getValue("editor.text.auto-start-language-server", false)
 
@@ -1128,7 +1146,7 @@ proc newTextDocument*(
     self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
 
   elif createLanguageServer and autoStartServer:
-    asyncCheck self.getLanguageServer()
+    asyncSpawn self.connectLanguageServer()
 
 method deinit*(self: TextDocument) =
   logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
@@ -1143,9 +1161,10 @@ method deinit*(self: TextDocument) =
     ls.disconnect(self)
     self.languageServer = LanguageServer.none
 
-  let i = allTextDocuments.find(self)
-  if i >= 0:
-    allTextDocuments.removeSwap(i)
+  {.gcsafe.}:
+    let i = allTextDocuments.find(self)
+    if i >= 0:
+      allTextDocuments.removeSwap(i)
 
   self[] = default(typeof(self[]))
 
@@ -1156,12 +1175,13 @@ proc saveAsync(self:  TextDocument, ws: Workspace) {.async.} =
   await ws.saveFile(self.filename, self.rope.clone())
   self.onSaved.invoke()
 
-method save*(self: TextDocument, filename: string = "", app: bool = false) =
+method save*(self: TextDocument, filename: string = "", app: bool = false) {.gcsafe.} =
   self.filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   logScope lvlInfo, &"[save] '{self.filename}'"
 
   if self.filename.len == 0:
-    raise newException(IOError, "Missing filename")
+    log lvlError, &"save: Missing filename"
+    return
 
   if self.staged:
     return
@@ -1172,20 +1192,20 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.trimTrailingWhitespace()
 
   if self.workspace.getSome(ws):
-    asyncCheck self.saveAsync(ws)
+    asyncSpawn self.saveAsync(ws)
 
   elif self.appFile:
-    fs.saveApplicationFile(self.filename, self.contentString)
+    self.fs.saveApplicationFile(self.filename, self.contentString)
     self.onSaved.invoke()
 
   else:
-    fs.saveFile(self.filename, self.contentString)
+    self.fs.saveFile(self.filename, self.contentString)
     self.onSaved.invoke()
 
   self.isBackedByFile = true
   self.lastSavedRevision = self.undoableRevision
 
-proc autoDetectIndentStyle(self: TextDocument) =
+proc autoDetectIndentStyle(self: TextDocument) {.gcsafe, raises: [].} =
   let maxSamples = self.configProvider.getValue("text.auto-detect-indent.samples", 50)
   let maxTime = self.configProvider.getValue("text.auto-detect-indent.timeout", 20.0)
 
@@ -1269,17 +1289,17 @@ proc reloadTask(self: TextDocument) {.async.} =
   var lastModTime = getLastModificationTime(self.filename)
   while self.autoReload and not self.workspace.isNone:
     var modTime = getLastModificationTime(self.filename)
-    if modTime > lastModTime:
-      lastModTime = modTime
-      log lvlInfo, &"File '{self.filename}' changed on disk, reload"
-      await self.loadAsync(self.workspace.get, false)
+    # if times.`>`(modTime, lastModTime):
+      # lastModTime = modTime
+      # log lvlInfo, &"File '{self.filename}' changed on disk, reload"
+      # await self.loadAsync(self.workspace.get, false)
 
-    await sleepAsync(1000)
+    await sleepAsync(1000.milliseconds)
 
 proc enableAutoReload*(self: TextDocument, enabled: bool) =
   if not self.autoReload and enabled:
     self.autoReload = true
-    asyncCheck self.reloadTask()
+    asyncSpawn self.reloadTask()
     return
 
   self.autoReload = enabled
@@ -1296,7 +1316,8 @@ proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.a
 proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S) =
   let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   if filename.len == 0:
-    raise newException(IOError, "Missing filename")
+    log lvlError, &"save: Missing filename"
+    return
 
   logScope lvlInfo, &"[setFileAndContent] '{filename}'"
 
@@ -1319,17 +1340,18 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   if filename.len == 0:
-    raise newException(IOError, "Missing filename")
+    log lvlError, &"save: Missing filename"
+    return
 
   let isReload = self.isBackedByFile and filename == self.filename
   self.filename = filename
   self.isBackedByFile = true
 
   if self.workspace.getSome(ws):
-    asyncCheck self.loadAsync(ws, isReload)
+    asyncSpawn self.loadAsync(ws, isReload)
   elif self.appFile:
     self.onPreLoaded.invoke self
-    var content = catch fs.loadApplicationFile(self.filename):
+    var content = catch self.fs.loadApplicationFile(self.filename):
       log lvlError, fmt"Failed to load application file {filename}"
       ""
     if isReload:
@@ -1342,7 +1364,7 @@ method load*(self: TextDocument, filename: string = "") =
     self.onLoaded.invoke self
   else:
     self.onPreLoaded.invoke self
-    var content = catch fs.loadFile(self.filename):
+    var content = catch self.fs.loadFile(self.filename):
       log lvlError, fmt"Failed to load file {filename}"
       ""
     if isReload:
@@ -1438,7 +1460,10 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
     self.lastDiagnosticVersion = snapshot.version
     self.setCurrentDiagnostics(diagnostics.result, snapshot.some)
 
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
+proc connectLanguageServer*(self: TextDocument) {.gcsafe, async: (raises: []).} =
+  discard await self.getLanguageServer()
+
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gcsafe, async: (raises: []).} =
   let languageId = if self.languageId != "":
     self.languageId
   elif getLanguageForFile(self.configProvider, self.filename).getSome(languageId):
@@ -1450,7 +1475,10 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     return self.languageServer
 
   if self.languageServerFuture.getSome(fut):
-    return fut.await
+    try:
+      return fut.await
+    except:
+      return LanguageServer.none
 
   if not self.createLanguageServer:
     return LanguageServer.none
@@ -1466,15 +1494,21 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     @[ws.getWorkspacePath()]
   else:
     when declared(getCurrentDir):
-      @[getCurrentDir()]
+      try:
+        @[getCurrentDir()]
+      except:
+        @[]
     else:
       @[]
 
-  let languageServerFuture = getOrCreateLanguageServer(languageId, self.filename, workspaces,
-    config, self.workspace)
+  {.gcsafe.}:
+    let languageServerFuture = getOrCreateLanguageServer(languageId, self.filename, workspaces, config, self.workspace)
 
   self.languageServerFuture = languageServerFuture.some
-  self.languageServer = await languageServerFuture
+  try:
+    self.languageServer = await languageServerFuture
+  except CatchableError:
+    self.languageServer = LanguageServer.none
 
   if self.languageServer.getSome(ls):
     self.completionTriggerCharacters = ls.getCompletionTriggerChars()
@@ -1770,13 +1804,13 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
     self.onOperation.invoke (self, undo.op)
     lastUndo = undo.op.undo
     if untilCheckpoint.len == 0 or (undo.transactionId in self.checkpoints and
-        (untilCheckpoint in self.checkpoints[undo.transactionId] or
-        "" in self.checkpoints[undo.transactionId])):
+        (untilCheckpoint in self.checkpoints.getAssert(undo.transactionId) or
+        "" in self.checkpoints.getAssert(undo.transactionId))):
       break
 
   for editId in lastUndo.counts.keys:
-    if self.undoSelections.contains(editId):
-      result = self.undoSelections[editId].some
+    self.undoSelections.withValue(editId, selections):
+      result = selections[].some
       break
 
   self.recordSnapshotForDiagnostics()
@@ -1806,13 +1840,13 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
 
     let nextRedo {.cursor.} = self.buffer.history.redoStack[^1]
     if nextRedo.transaction.id in self.checkpoints and
-        (untilCheckpoint in self.checkpoints[nextRedo.transaction.id] or
-        "" in self.checkpoints[nextRedo.transaction.id]):
+        (untilCheckpoint in self.checkpoints.getAssert(nextRedo.transaction.id) or
+        "" in self.checkpoints.getAssert(nextRedo.transaction.id)):
       break
 
   for editId in lastRedo.counts.keys:
-    if self.redoSelections.contains(editId):
-      result = self.redoSelections[editId].some
+    self.redoSelections.withValue(editId, selections):
+      result = selections[].some
       break
 
   self.recordSnapshotForDiagnostics()

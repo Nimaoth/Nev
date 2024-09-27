@@ -2,17 +2,20 @@ import std/[sugar]
 import id, util
 
 type Event*[T] = object
-  handlers: seq[tuple[id: Id, callback: (T) -> void]]
+  when T is void:
+    handlers: seq[tuple[id: Id, callback: proc(): void {.gcsafe, raises: [].}]]
+  else:
+    handlers: seq[tuple[id: Id, callback: proc(arg: T): void {.gcsafe, raises: [].}]]
 
 proc initEvent*[T](): Event[T] =
   result = Event[T](handlers: @[])
 
-proc subscribe*[T: void](event: var Event[T], callback: () -> void): Id =
+proc subscribe*[T: void](event: var Event[T], callback: proc(): void {.gcsafe, raises: [].}): Id =
   assert callback != nil
   result = newId()
   event.handlers.add (result, callback)
 
-proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
+proc subscribe*[T](event: var Event[T], callback: proc(arg: T): void {.gcsafe, raises: [].}): Id =
   assert callback != nil
   result = newId()
   event.handlers.add (result, callback)
@@ -28,7 +31,7 @@ proc unsubscribe*[T](event: var Event[T], id: Id) =
     if event.handlers[i].id == id:
       event.handlers.removeShift(i)
 
-proc invoke*[T: void](event: Event[T]) =
+proc invoke*[T: void](event: Event[T]) {.gcsafe, raises: [].} =
   # Copy handlers so that the callback can unregister itself (which would modify event.handlers
   # while iterating)
   # To guarantee a copy we use =dup, because otherwise nim thinks it can avoid the actual copy
@@ -38,7 +41,7 @@ proc invoke*[T: void](event: Event[T]) =
     assert h.callback != nil
     h.callback()
 
-proc invoke*[T](event: Event[T], arg: T) =
+proc invoke*[T](event: Event[T], arg: T) {.gcsafe, raises: [].} =
   # Copy handlers so that the callback can unregister itself (which would modify event.handlers
   # while iterating)
   # To guarantee a copy we use =dup, because otherwise nim thinks it can avoid the actual copy

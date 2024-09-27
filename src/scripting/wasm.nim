@@ -378,7 +378,7 @@ when defined(js):
       if not memory.isUndefined:
         return js_fd_write(context, fd, iovs, len, ret)
 
-proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
+proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async: (raises: []).} =
   try:
     when defined(js):
       proc jsLoadWasmModuleSync(wasmData: ArrayBuffer, importObject: JsObject): Future[JsObject] {.importc.}
@@ -447,7 +447,7 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
 
       try:
         res.env = loadWasmEnv(wasmData.buffer, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
-      except CatchableError:
+      except:
         log lvlError, &"Failed to create wasm env: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         return WasmModule.none
 
@@ -460,7 +460,7 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
     log lvlError, &"Failed to load wasm binary from array buffer: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return WasmModule.none
 
-proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
+proc newWasmModule*(path: string, importsOld: seq[WasmImports], fs: Filesystem): Future[Option[WasmModule]] {.async.} =
   try:
     when defined(js):
       proc jsLoadWasmModuleAsync(path: cstring, importObject: JsObject): Future[JsObject] {.importc.}
@@ -540,7 +540,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
 
       try:
         res.env = loadWasmEnv(content, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
-      except CatchableError:
+      except:
         log lvlError, &"Failed to create wasm env for {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         return WasmModule.none
 

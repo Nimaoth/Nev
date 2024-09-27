@@ -16,8 +16,8 @@ type
     discard
 
   VFSDynamic* = ref object of VFS
-    readFunc: proc(self: VFS, path: string): Future[Option[string]]
-    writeFunc: proc(self: VFS, path: string, content: string): Future[void]
+    readFunc: proc(self: VFS, path: string): Future[Option[string]] {.gcsafe, raises: [].}
+    writeFunc: proc(self: VFS, path: string, content: string): Future[void] {.gcsafe, raises: [].}
 
   VFSInMemory* = ref object of VFS
     files: Table[string, string]
@@ -26,25 +26,25 @@ type
     target*: VFS
     targetPrefix*: string
 
-proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string]
-proc read*(self: VFS, path: string): Future[Option[string]]
-proc write*(self: VFS, path: string, content: string): Future[void]
-proc normalize*(self: VFS, path: string): string
+proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.gcsafe, raises: [].}
+proc read*(self: VFS, path: string): Future[Option[string]] {.gcsafe, raises: [].}
+proc write*(self: VFS, path: string, content: string): Future[void] {.gcsafe, raises: [].}
+proc normalize*(self: VFS, path: string): string {.gcsafe, raises: [].}
 
 proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, string]())
 
-method name*(self: VFS): string {.base.} = "VFS"
+method name*(self: VFS): string {.base, gcsafe, raises: [].} = "VFS"
 
-method readImpl*(self: VFS, path: string): Future[Option[string]] {.base.} =
+method readImpl*(self: VFS, path: string): Future[Option[string]] {.base, gcsafe, raises: [].} =
   discard
 
-method writeImpl*(self: VFS, path: string, content: string): Future[void] {.base.} =
+method writeImpl*(self: VFS, path: string, content: string): Future[void] {.base, gcsafe, raises: [].} =
   doneFuture()
 
-method getVFSImpl*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.base.} =
+method getVFSImpl*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.base, gcsafe, raises: [].} =
   (nil, "")
 
-method normalizeImpl*(self: VFS, path: string): string {.base.} =
+method normalizeImpl*(self: VFS, path: string): string {.base, gcsafe, raises: [].} =
   path
 
 method name*(self: VFSNull): string = "VFSNull"
@@ -84,8 +84,8 @@ method name*(self: VFSInMemory): string = "VFSInMemory"
 method readImpl*(self: VFSInMemory, path: string): Future[Option[string]] =
   if debugLogVfs:
     debugf"VFSInMemory.read({path})"
-  if self.files.contains(path):
-    return self.files[path].some.toFuture
+  self.files.withValue(path, file):
+    return file[].some.toFuture
   return string.none.toFuture
 
 method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void] =
@@ -94,7 +94,7 @@ method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void
   self.files[path] = content
   doneFuture()
 
-proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] =
+proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.gcsafe, raises: [].} =
   for i in countdown(self.mounts.high, 0):
     if path.startsWith(self.mounts[i].prefix):
       if debugLogVfs:
@@ -105,7 +105,7 @@ proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] =
   if result.vfs.isNil:
     result = (self, path)
 
-proc read*(self: VFS, path: string): Future[Option[string]] =
+proc read*(self: VFS, path: string): Future[Option[string]] {.gcsafe, raises: [].} =
   if debugLogVfs:
     debugf"[{self.name}] '{self.prefix}' read({path})"
   let (vfs, path) = self.getVFS(path)
@@ -116,7 +116,7 @@ proc read*(self: VFS, path: string): Future[Option[string]] =
   if result.isNil:
     result = string.none.toFuture
 
-proc write*(self: VFS, path: string, content: string): Future[void] =
+proc write*(self: VFS, path: string, content: string): Future[void] {.gcsafe, raises: [].} =
   if debugLogVfs:
     debugf"[{self.name}] '{self.prefix}' write({path})"
   let (vfs, path) = self.getVFS(path)
@@ -127,7 +127,7 @@ proc write*(self: VFS, path: string, content: string): Future[void] =
   if result.isNil:
     result = doneFuture()
 
-proc normalize*(self: VFS, path: string): string =
+proc normalize*(self: VFS, path: string): string {.gcsafe, raises: [].} =
   var (vfs, path) = self.getVFS(path)
   while vfs.parent.getSome(parent):
     path = vfs.prefix & path

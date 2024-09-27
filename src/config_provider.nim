@@ -2,9 +2,9 @@ import std/[json, options]
 import misc/[traits, util, event]
 
 traitRef ConfigProvider:
-  method getConfigValue(self: ConfigProvider, path: string): Option[JsonNode]
-  method setConfigValue(self: ConfigProvider, path: string, value: JsonNode)
-  method onConfigChanged*(self: ConfigProvider): var Event[void]
+  method getConfigValue(self: ConfigProvider, path: string): Option[JsonNode] {.gcsafe, raises: [].}
+  method setConfigValue(self: ConfigProvider, path: string, value: JsonNode) {.gcsafe, raises: [].}
+  method onConfigChanged*(self: ConfigProvider): var Event[void] {.gcsafe, raises: [].}
 
 proc getValue*[T](self: ConfigProvider, path: string, default: T = T.default): T =
   template createScriptGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =
@@ -15,36 +15,42 @@ proc getValue*[T](self: ConfigProvider, path: string, default: T = T.default): T
       else:
         defaultValue
 
-  when T is bool:
-    return createScriptGetOption(self, path, default, getBool)
-  elif T is enum:
-    return parseEnum[T](createScriptGetOption(self, path, "", getStr), default)
-  elif T is Ordinal:
-    return createScriptGetOption(self, path, default, getInt)
-  elif T is float32 | float64:
-    return createScriptGetOption(self, path, default, getFloat)
-  elif T is string:
-    return createScriptGetOption(self, path, default, getStr)
-  elif T is JsonNode:
-    return self.getConfigValue(path).get(default)
-  else:
-    {.fatal: ("Can't get option with type " & $T).}
+  try:
+    when T is bool:
+      return createScriptGetOption(self, path, default, getBool)
+    elif T is enum:
+      return parseEnum[T](createScriptGetOption(self, path, "", getStr), default)
+    elif T is Ordinal:
+      return createScriptGetOption(self, path, default, getInt)
+    elif T is float32 | float64:
+      return createScriptGetOption(self, path, default, getFloat)
+    elif T is string:
+      return createScriptGetOption(self, path, default, getStr)
+    elif T is JsonNode:
+      return self.getConfigValue(path).get(default)
+    else:
+      {.fatal: ("Can't get option with type " & $T).}
+  except KeyError:
+    return default
 
 proc setValue*[T](self: ConfigProvider, path: string, value: T) =
   template createScriptSetOption(self, path, value, constructor: untyped): untyped =
     block:
       self.setConfigValue(path, constructor(value))
 
-  when T is bool:
-    self.createScriptSetOption(path, value, newJBool)
-  elif T is Ordinal:
-    self.createScriptSetOption(path, value, newJInt)
-  elif T is float32 | float64:
-    self.createScriptSetOption(path, value, newJFloat)
-  elif T is string:
-    self.createScriptSetOption(path, value, newJString)
-  else:
-    {.fatal: ("Can't set option with type " & $T).}
+  try:
+    when T is bool:
+      self.createScriptSetOption(path, value, newJBool)
+    elif T is Ordinal:
+      self.createScriptSetOption(path, value, newJInt)
+    elif T is float32 | float64:
+      self.createScriptSetOption(path, value, newJFloat)
+    elif T is string:
+      self.createScriptSetOption(path, value, newJString)
+    else:
+      {.fatal: ("Can't set option with type " & $T).}
+  except KeyError:
+    discard
 
 proc getFlag*(self: ConfigProvider, flag: string, default: bool): bool =
   return self.getValue(flag, default)

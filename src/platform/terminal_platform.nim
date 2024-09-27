@@ -120,63 +120,70 @@ var wideNarrowSet = initHashSet[Rune]()
 for r in wideNarrow.runes:
   wideNarrowSet.incl r
 
-proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int] =
+proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int] {.gcsafe.} =
   if r.int <= 127:
     return (1, 1)
 
-  if r in narrowWideSet:
-    return (2, 2)
-  if r in wideNarrowSet:
-    return (1, 2)
+  {.gcsafe.}:
+    if r in narrowWideSet:
+      return (2, 2)
+    if r in wideNarrowSet:
+      return (1, 2)
 
   return (1, 1)
 
 method init*(self: TerminalPlatform) =
-  illwillInit(fullscreen=true, mouse=true)
-  setControlCHook(exitProc)
-  hideCursor()
+  try:
+    illwillInit(fullscreen=true, mouse=true)
+    setControlCHook(exitProc)
+    hideCursor()
 
-  self.builder = newNodeBuilder()
-  self.builder.useInvalidation = true
-  self.builder.charWidth = 1
-  self.builder.lineHeight = 1
-  self.builder.lineGap = 0
+    self.builder = newNodeBuilder()
+    self.builder.useInvalidation = true
+    self.builder.charWidth = 1
+    self.builder.lineHeight = 1
+    self.builder.lineGap = 0
 
-  self.supportsThinCursor = false
-  self.doubleClickTime = 0.35
+    self.supportsThinCursor = false
+    self.doubleClickTime = 0.35
 
-  self.focused = true
+    self.focused = true
 
-  if myEnableTrueColors():
-    log(lvlInfo, "Enable true color support")
-    self.trueColorSupport = true
-  else:
-    when not defined(posix):
-      log(lvlError, "Failed to enable true color support")
-    else:
+    if myEnableTrueColors():
       log(lvlInfo, "Enable true color support")
       self.trueColorSupport = true
+    else:
+      when not defined(posix):
+        log(lvlError, "Failed to enable true color support")
+      else:
+        log(lvlInfo, "Enable true color support")
+        self.trueColorSupport = true
 
-  self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
-    result.x = text.len.float
-    result.y = 1
+    self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
+      result.x = text.len.float
+      result.y = 1
 
-  self.buffer = newTerminalBuffer(terminalWidth(), terminalHeight())
-  self.redrawEverything = true
+    self.buffer = newTerminalBuffer(terminalWidth(), terminalHeight())
+    self.redrawEverything = true
 
-  self.builder.textWidthImpl = proc(node: UINode): float32 =
-    for r in node.text.runes:
-      result += r.runeProps.displayWidth.float32
+    self.builder.textWidthImpl = proc(node: UINode): float32 {.gcsafe, raises: [].} =
+      for r in node.text.runes:
+        result += r.runeProps.displayWidth.float32
 
-  self.builder.textWidthStringImpl = proc(text: string): float32 =
-    for r in text.runes:
-      result += r.runeProps.displayWidth.float32
+    self.builder.textWidthStringImpl = proc(text: string): float32 {.gcsafe, raises: [].} =
+      for r in text.runes:
+        result += r.runeProps.displayWidth.float32
+  except:
+    discard
 
 method deinit*(self: TerminalPlatform) =
-  resetAttributes()
-  myDisableTrueColors()
-  illwillDeinit()
-  showCursor()
+  try:
+    resetAttributes()
+    myDisableTrueColors()
+    illwillDeinit()
+    showCursor()
+  except:
+    discard
 
 method requestRender*(self: TerminalPlatform, redrawEverything = false) =
   self.requestedRender = true
@@ -278,109 +285,116 @@ proc toInput(key: Key, modifiers: var Modifiers): int64 =
     log lvlError, fmt"Unknown input {key}"
     0
 
-method processEvents*(self: TerminalPlatform): int =
-  var eventCounter = 0
-  while true:
-    let key = getKey()
-    if key == Key.None:
-      break
+method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
+  try:
+    var eventCounter = 0
+    while true:
+      let key = getKey()
+      if key == Key.None:
+        break
 
-    inc eventCounter
+      inc eventCounter
 
-    if key == Mouse:
-      let mouseInfo = getMouse()
-      let pos = vec2(mouseInfo.x.float, mouseInfo.y.float)
-      let button: input.MouseButton = case mouseInfo.button
-      of mbLeft: input.MouseButton.Left
-      of mbMiddle: input.MouseButton.Middle
-      of mbRight: input.MouseButton.Right
-      else: input.MouseButton.Unknown
+      if key == Mouse:
+        let mouseInfo = getMouse()
+        let pos = vec2(mouseInfo.x.float, mouseInfo.y.float)
+        let button: input.MouseButton = case mouseInfo.button
+        of mbLeft: input.MouseButton.Left
+        of mbMiddle: input.MouseButton.Middle
+        of mbRight: input.MouseButton.Right
+        else: input.MouseButton.Unknown
 
-      var modifiers: Modifiers = {}
-      if mouseInfo.ctrl:
-        modifiers.incl Modifier.Control
-      if mouseInfo.shift:
-        modifiers.incl Modifier.Shift
+        var modifiers: Modifiers = {}
+        if mouseInfo.ctrl:
+          modifiers.incl Modifier.Control
+        if mouseInfo.shift:
+          modifiers.incl Modifier.Shift
 
-      if mouseInfo.scroll:
-        let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
+        if mouseInfo.scroll:
+          let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
 
-        if not self.builder.handleMouseScroll(pos, vec2(0, scroll), {}):
-          self.onScroll.invoke (pos, vec2(0, scroll), {})
-      elif mouseInfo.move:
-        # log(lvlInfo, fmt"move to {pos}")
-        if not self.builder.handleMouseMoved(pos, self.mouseButtons):
-          self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
-      else:
-        # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
-        case mouseInfo.action
-        of mbaPressed:
-          self.mouseButtons.incl button
+          if not self.builder.handleMouseScroll(pos, vec2(0, scroll), {}):
+            self.onScroll.invoke (pos, vec2(0, scroll), {})
+        elif mouseInfo.move:
+          # log(lvlInfo, fmt"move to {pos}")
+          if not self.builder.handleMouseMoved(pos, self.mouseButtons):
+            self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
+        else:
+          # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
+          case mouseInfo.action
+          of mbaPressed:
+            self.mouseButtons.incl button
 
-          var events = @[button]
+            var events = @[button]
 
-          if button == input.MouseButton.Left:
-            if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
-              inc self.doubleClickCounter
-              case self.doubleClickCounter
-              of 1:
-                events.add input.MouseButton.DoubleClick
-              of 2:
-                events.add input.MouseButton.TripleClick
+            if button == input.MouseButton.Left:
+              if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
+                inc self.doubleClickCounter
+                case self.doubleClickCounter
+                of 1:
+                  events.add input.MouseButton.DoubleClick
+                of 2:
+                  events.add input.MouseButton.TripleClick
+                else:
+                  self.doubleClickCounter = 0
               else:
                 self.doubleClickCounter = 0
+
+              self.doubleClickTimer = startTimer()
             else:
               self.doubleClickCounter = 0
 
-            self.doubleClickTimer = startTimer()
+            for event in events:
+              if not self.builder.handleMousePressed(event, modifiers, pos):
+                self.onMousePress.invoke (event, modifiers, pos)
+
+          of mbaReleased:
+            self.mouseButtons = {}
+            if not self.builder.handleMouseReleased(button, modifiers, pos):
+              self.onMouseRelease.invoke (button, modifiers, pos)
           else:
-            self.doubleClickCounter = 0
+            discard
 
-          for event in events:
-            if not self.builder.handleMousePressed(event, modifiers, pos):
-              self.onMousePress.invoke (event, modifiers, pos)
+      else:
+        var modifiers: Modifiers = {}
+        let button = key.toInput(modifiers)
+        # debugf"key press k: {key}, input: {inputToString(button, modifiers)}"
+        if not self.builder.handleKeyPressed(button, modifiers):
+          self.onKeyPress.invoke (button, modifiers)
 
-        of mbaReleased:
-          self.mouseButtons = {}
-          if not self.builder.handleMouseReleased(button, modifiers, pos):
-            self.onMouseRelease.invoke (button, modifiers, pos)
-        else:
-          discard
-
-    else:
-      var modifiers: Modifiers = {}
-      let button = key.toInput(modifiers)
-      # debugf"key press k: {key}, input: {inputToString(button, modifiers)}"
-      if not self.builder.handleKeyPressed(button, modifiers):
-        self.onKeyPress.invoke (button, modifiers)
-
-  return eventCounter
+    return eventCounter
+  except:
+    discard
 
 proc toStdColor(color: chroma.Color): stdcolors.Color =
   let rgb = color.asRgb
   return stdcolors.rgb(rgb.r, rgb.g, rgb.b)
 
-proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
+proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) {.gcsafe.}
 
-method render*(self: TerminalPlatform) =
-  if self.sizeChanged:
-    let (w, h) = (terminalWidth(), terminalHeight())
-    log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
-    self.buffer = newTerminalBuffer(w, h)
-    self.redrawEverything = true
-
-  if self.builder.root.lastSizeChange == self.builder.frameIndex:
-    self.redrawEverything = true
-
-  self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
-
-  # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
+method render*(self: TerminalPlatform) {.gcsafe.} =
   try:
-    self.buffer.display()
-    self.redrawEverything = false
-  except CatchableError:
-    log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
-    self.redrawEverything = true
+    if self.sizeChanged:
+      let (w, h) = (terminalWidth(), terminalHeight())
+      log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
+      self.buffer = newTerminalBuffer(w, h)
+      self.redrawEverything = true
+
+    if self.builder.root.lastSizeChange == self.builder.frameIndex:
+      self.redrawEverything = true
+
+    self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+
+    # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
+    try:
+      {.gcsafe.}:
+        self.buffer.display()
+      self.redrawEverything = false
+    except CatchableError:
+      log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
+      self.redrawEverything = true
+  except:
+    discard
 
 proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
   if self.trueColorSupport:
@@ -495,43 +509,44 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, line
       yOffset += 1
 
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
-  var nodePos = offset
-  nodePos.x += node.boundsActual.x
-  nodePos.y += node.boundsActual.y
+  {.gcsafe.}:
+    var nodePos = offset
+    nodePos.x += node.boundsActual.x
+    nodePos.y += node.boundsActual.y
 
-  var force = force
+    var force = force
 
-  if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
-    return
+    if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
+      return
 
-  node.lastRenderTime = builder.frameIndex
+    node.lastRenderTime = builder.frameIndex
 
-  if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
-    force = true
+    if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
+      force = true
 
-  node.lx = nodePos.x
-  node.ly = nodePos.y
-  node.lw = node.boundsActual.w
-  node.lh = node.boundsActual.h
-  let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
+    node.lx = nodePos.x
+    node.ly = nodePos.y
+    node.lw = node.boundsActual.w
+    node.lh = node.boundsActual.h
+    let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
 
-  if FillBackground in node.flags:
-    platform.fillRect(bounds, node.backgroundColor)
+    if FillBackground in node.flags:
+      platform.fillRect(bounds, node.backgroundColor)
 
-  # Mask the rest of the rendering is this function to the contentBounds
-  if MaskContent in node.flags:
-    platform.pushMask(bounds)
-  defer:
+    # Mask the rest of the rendering is this function to the contentBounds
     if MaskContent in node.flags:
-      platform.popMask()
+      platform.pushMask(bounds)
+    defer:
+      if MaskContent in node.flags:
+        platform.popMask()
 
-  if DrawText in node.flags:
-    platform.buffer.setBackgroundColor(bgNone)
-    platform.setForegroundColor(node.textColor)
-    platform.writeText(bounds.xy, node.text, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags)
+    if DrawText in node.flags:
+      platform.buffer.setBackgroundColor(bgNone)
+      platform.setForegroundColor(node.textColor)
+      platform.writeText(bounds.xy, node.text, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags)
 
-  for _, c in node.children:
-    builder.drawNode(platform, c, nodePos, force)
+    for _, c in node.children:
+      builder.drawNode(platform, c, nodePos, force)
 
-  # if DrawBorder in node.flags:
-  #   platform.drawRect(bounds, node.borderColor)
+    # if DrawBorder in node.flags:
+    #   platform.drawRect(bounds, node.borderColor)

@@ -11,14 +11,14 @@ type
   DataPreviewer* = ref object of Previewer
     editor: TextDocumentEditor
     tempDocument: TextDocument
-    getPreviewTextImpl: proc(item: FinderItem): string
+    getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].}
 
 proc newDataPreviewer*(configProvider: ConfigProvider, language = string.none,
-    getPreviewTextImpl: proc(item: FinderItem): string = nil): DataPreviewer =
+    getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].} = nil): DataPreviewer =
 
   new result
 
-  result.tempDocument = newTextDocument(configProvider, language=language,
+  result.tempDocument = newTextDocument(configProvider, fs=nil, language=language,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
   result.getPreviewTextImpl = getPreviewTextImpl

@@ -11,14 +11,14 @@ type
     interval*: int64
     nextTick: Time
     repeat: bool
-    callback: proc()
+    callback: proc() {.gcsafe, raises: [].}
     when defined(debugDelayedTasks):
       creationStackTrace: string
 
-func isActive*(task: DelayedTask): bool = task.active
-proc reschedule*(task: DelayedTask)
+func isActive*(task: DelayedTask): bool {.gcsafe, raises: [].} = task.active
+proc reschedule*(task: DelayedTask) {.gcsafe, raises: [].}
 
-proc tick(task: DelayedTask): Future[void] {.async.} =
+proc tick(task: DelayedTask): Future[void] {.gcsafe, async: (raises: []).} =
   let restartCounter = task.restartCounter
 
   defer:
@@ -38,7 +38,11 @@ proc tick(task: DelayedTask): Future[void] {.async.} =
       when defined(debugDelayedTasks):
         echo "====================== Tick DelayedTask"
         echo task.creationStackTrace.indent(2)
-      await sleepAsync(timeToNextTick.inMilliseconds.int)
+
+      try:
+        await sleepAsync(chronos.milliseconds(timeToNextTick.inMilliseconds.int))
+      except CancelledError:
+        break
 
     if task.restartCounter != restartCounter:
       return
@@ -49,28 +53,28 @@ proc tick(task: DelayedTask): Future[void] {.async.} =
     if not task.repeat:
       break
 
-proc reschedule*(task: DelayedTask) =
+proc reschedule*(task: DelayedTask) {.gcsafe, raises: [].} =
   task.nextTick = getTime() + initDuration(milliseconds=task.interval)
   if not task.isActive:
-    asyncCheck task.tick()
+    asyncSpawn task.tick()
 
-proc schedule*(task: DelayedTask) =
+proc schedule*(task: DelayedTask) {.gcsafe, raises: [].} =
   if not task.isActive:
     task.nextTick = getTime() + initDuration(milliseconds=task.interval)
-    asyncCheck task.tick()
+    asyncSpawn task.tick()
 
-proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: proc()): DelayedTask =
+proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: proc() {.gcsafe, raises: [].}): DelayedTask {.gcsafe, raises: [].} =
   result = DelayedTask(interval: interval.int64, repeat: repeat, callback: callback)
   when defined(debugDelayedTasks):
     result.creationStackTrace = getStackTrace()
   if autoActivate:
     result.reschedule()
 
-proc pause*(task: DelayedTask) =
+proc pause*(task: DelayedTask) {.gcsafe, raises: [].} =
   task.restartCounter.inc
   task.active = false
 
-proc deinit*(task: DelayedTask) =
+proc deinit*(task: DelayedTask) {.gcsafe, raises: [].} =
   task.pause()
   task.callback = nil
 

@@ -181,35 +181,37 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Completions: {self.completions.len}\n"
   result.add &"LastItems: {self.lastItems.len}"
 
-proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider
-  ): TextDocumentEditor
-proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
-proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
-proc showCompletionWindow(self: TextDocumentEditor)
-proc updateCompletionsFromEngine(self: TextDocumentEditor)
-proc hideCompletions*(self: TextDocumentEditor)
-proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
-  count: int = 0): Selection
-proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string,
-  count: int = 0): Selection
-proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
-proc updateInlayHints*(self: TextDocumentEditor)
-proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
-proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
-  tint: Color = color(1, 1, 1))
-proc clearCustomHighlights*(self: TextDocumentEditor, id: Id)
-proc updateSearchResults(self: TextDocumentEditor)
-proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
+proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, configProvider: ConfigProvider): TextDocumentEditor {.gcsafe, raises: [].}
+proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.gcsafe, raises: [].}
+proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse {.gcsafe, raises: [].}
+proc showCompletionWindow(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc updateCompletionsFromEngine(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc hideCompletions*(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection {.gcsafe, raises: [].}
+proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection {.gcsafe, raises: [].}
+proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.gcsafe, raises: [].}
+proc updateInlayHints*(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection {.gcsafe, raises: [].}
+proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1)) {.gcsafe, raises: [].}
+proc clearCustomHighlights*(self: TextDocumentEditor, id: Id) {.gcsafe, raises: [].}
+proc updateSearchResults(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.gcsafe, raises: [].}
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) {.gcsafe, raises: [].}
+proc getContextWithMode*(self: TextDocumentEditor, context: string): string {.gcsafe, raises: [].}
+proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.gcsafe, raises: [].}
 
-proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
-    languageServer: LanguageServer)
-proc handleTextDocumentTextChanged(self: TextDocumentEditor)
-proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
-proc handleTextDocumentLoaded(self: TextDocumentEditor)
-proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
-proc handleTextDocumentSaved(self: TextDocumentEditor)
-proc handleCompletionsUpdated(self: TextDocumentEditor)
+proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer) {.gcsafe, raises: [].}
+proc handleTextDocumentTextChanged(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) {.gcsafe, raises: [].}
+proc handleTextDocumentLoaded(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc handleTextDocumentPreLoaded(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc handleTextDocumentSaved(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc handleCompletionsUpdated(self: TextDocumentEditor) {.gcsafe, raises: [].}
+
+proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
+  includeAfter: bool = true, wrap: bool = true): Selection {.gcsafe, raises: [].}
+proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
+  includeAfter: bool = true, wrap: bool = true): Selection {.gcsafe, raises: [].}
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor =
   self.document.clampCursor(cursor, includeAfter)
@@ -373,7 +375,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
   self.handleDocumentChanged()
 
-method deinit*(self: TextDocumentEditor) =
+method deinit*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   let filename = if self.document.isNotNil: self.document.filename else: ""
   logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
 
@@ -395,8 +397,9 @@ method deinit*(self: TextDocumentEditor) =
   if self.completionEngine.isNotNil:
     self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
 
-  let i = allTextEditors.find(self)
-  allTextEditors.removeSwap(i)
+  {.gcsafe.}:
+    let i = allTextEditors.find(self)
+    allTextEditors.removeSwap(i)
 
   self[] = default(typeof(self[]))
 
@@ -410,19 +413,19 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
   else: return false
 
 method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]
-    ): seq[EventHandler] =
+    ): seq[EventHandler] {.gcsafe, raises: [].} =
   result = @[self.eventHandler]
   if not self.modeEventHandler.isNil:
     result.add self.modeEventHandler
 
   if inject.contains("above-mode"):
-    result.add inject["above-mode"]
+    result.add inject.getAssert("above-mode")
 
   if self.showCompletions:
     result.add self.completionEventHandler
 
   if inject.contains("above-completion"):
-    result.add inject["above-completion"]
+    result.add inject.getAssert("above-completion")
 
 proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
   if self.inlayHints.len > 0 and self.inlayHints[0].anchor.timestamp != self.document.buffer.timestamp:
@@ -497,9 +500,9 @@ proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection,
   # customHighlights*: Table[int, seq[(Id, Selection, Color)]]
   for lineSelection in self.splitSelectionIntoLines(selection):
     assert lineSelection.first.line == lineSelection.last.line
-    if self.customHighlights.contains(selection.first.line):
-      self.customHighlights[selection.first.line].add (id, selection, color, tint)
-    else:
+    self.customHighlights.withValue(selection.first.line, val):
+      val[].add (id, selection, color, tint)
+    do:
       self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
   self.markDirty()
 
@@ -519,9 +522,9 @@ proc clearSigns*(self: TextDocumentEditor, group: string = "") =
 
 proc addSign*(self: TextDocumentEditor, id: Id, line: int, text: string, group: string = "",
     tint: Color = color(1, 1, 1)): Id =
-  if self.signs.contains(line):
-    self.signs[line].add (id, group, text, tint)
-  else:
+  self.signs.withValue(line, val):
+    val[].add (id, group, text, tint)
+  do:
     self.signs[line] = @[(id, group, text, tint)]
   self.markDirty()
 
@@ -591,7 +594,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   self.markDirty()
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
-    scrollBehaviour = ScrollBehaviour.none) =
+    scrollBehaviour = ScrollBehaviour.none) {.raises: [].} =
   if self.disableScrolling:
     return
 
@@ -602,14 +605,12 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   self.updateInlayHints()
   self.markDirty()
 
-proc getContextWithMode*(self: TextDocumentEditor, context: string): string
-
 proc isThickCursor*(self: TextDocumentEditor): bool =
   if not self.platform.supportsThinCursor:
     return true
   return self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.wide"), false)
 
-proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor =
+proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor {.gcsafe, raises: [].} =
   case which
   of Config:
     let key = self.getContextWithMode("editor.text.cursor.movement")
@@ -620,11 +621,11 @@ proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionC
   of First:
     return selection.first
 
-proc getCursor(self: TextDocumentEditor, which: SelectionCursor): Cursor =
+proc getCursor(self: TextDocumentEditor, which: SelectionCursor): Cursor {.gcsafe, raises: [].} =
   return self.getCursor(self.selection, which)
 
 proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor,
-    movement: proc(doc: TextDocumentEditor, c: Cursor, off: int, wrap: bool, includeAfter: bool): Cursor,
+    movement: proc(doc: TextDocumentEditor, c: Cursor, off: int, wrap: bool, includeAfter: bool): Cursor {.gcsafe, raises: [].},
     offset: int, all: bool, wrap: bool = false, includeAfter: bool = false) =
   case cursor
   of Config:
@@ -704,10 +705,11 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   self.markDirty()
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
-  if gAppInterface.isNil: return TextDocumentEditor.none
-  if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
-    if editor of TextDocumentEditor:
-      return editor.TextDocumentEditor.some
+  {.gcsafe.}:
+    if gAppInterface.isNil: return TextDocumentEditor.none
+    if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
+      if editor of TextDocumentEditor:
+        return editor.TextDocumentEditor.some
   return TextDocumentEditor.none
 
 proc getModeConfig(self: TextDocumentEditor, mode: string): EventHandlerConfig =
@@ -715,8 +717,6 @@ proc getModeConfig(self: TextDocumentEditor, mode: string): EventHandlerConfig =
 
 static:
   addTypeMap(TextDocumentEditor, api.TextDocumentEditor, getTextDocumentEditor)
-
-proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 
 proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
@@ -874,17 +874,12 @@ proc doMoveCursorVisualEnd(self: TextDocumentEditor, cursor: Cursor, offset: int
 
   return (cursor.line, self.document.rope.lastValidIndex cursor.line)
 
-proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
-  includeAfter: bool = true, wrap: bool = true): Selection
-proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
-  includeAfter: bool = true, wrap: bool = true): Selection
-
 proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool, includeAfter: bool): Cursor {.expose: "editor.text".} =
   return self.getPrevFindResult(cursor, offset, includeAfter=includeAfter).first
 
 proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
-    wrap: bool, includeAfter: bool): Cursor {.expose: "editor.text".} =
+    wrap: bool, includeAfter: bool): Cursor {.gcsafe, raises: [], expose: "editor.text".} =
   return self.getNextFindResult(cursor, offset, includeAfter=includeAfter).first
 
 proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
@@ -1550,7 +1545,7 @@ proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool):
 
 proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.
     expose("editor.text").} =
-  asyncCheck self.copyAsync(register, inclusiveEnd)
+  asyncSpawn self.copyAsync(register, inclusiveEnd)
 
 proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: bool = false):
     Future[void] {.async.} =
@@ -1595,7 +1590,7 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
 
 proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: bool = false) {.
     expose("editor.text").} =
-  asyncCheck self.pasteAsync(registerName, inclusiveEnd)
+  asyncSpawn self.pasteAsync(registerName, inclusiveEnd)
 
 proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
@@ -1643,8 +1638,8 @@ proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
 
   var i = 0
   for line in countdown(cursor.line, 0):
-    if self.searchResults.contains(line):
-      let selections = self.searchResults[line]
+    self.searchResults.withValue(line, val):
+      let selections = val[]
       for k in countdown(selections.high, 0):
         if selections[k].last < cursor:
           if i == offset:
@@ -1668,8 +1663,8 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
 
   var i = 0
   for line in cursor.line..<self.document.numLines:
-    if self.searchResults.contains(line):
-      for selection in self.searchResults[line]:
+    self.searchResults.withValue(line, val):
+      for selection in val[]:
         if cursor < selection.first:
           if i == offset:
             if includeAfter:
@@ -1691,8 +1686,8 @@ proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 
   var i = 0
   for line in countdown(cursor.line, 0):
-    if self.document.diagnosticsPerLine.contains(line):
-      let diagnosticsOnCurrentLine {.cursor.} = self.document.diagnosticsPerLine[line]
+    self.document.diagnosticsPerLine.withValue(line, val):
+      let diagnosticsOnCurrentLine {.cursor.} = val[]
       for k in countdown(diagnosticsOnCurrentLine.high, 0):
         let diagnosticIndex = diagnosticsOnCurrentLine[k]
         if diagnosticIndex > self.document.currentDiagnostics.high:
@@ -1730,8 +1725,8 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 
   var i = 0
   for line in cursor.line..<self.document.numLines:
-    if self.document.diagnosticsPerLine.contains(line):
-      for diagnosticIndex in self.document.diagnosticsPerLine[line]:
+    self.document.diagnosticsPerLine.withValue(line, val):
+      for diagnosticIndex in val[]:
         if diagnosticIndex > self.document.currentDiagnostics.high:
           continue
 
@@ -1823,7 +1818,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
       return
 
     if self.diffDocument.isNil:
-      self.diffDocument = newTextDocument(self.configProvider,
+      self.diffDocument = newTextDocument(self.configProvider, self.fs,
         language=self.document.languageId.some, createLanguageServer = false)
 
     self.diffDocument.languageId = self.document.languageId
@@ -1842,7 +1837,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
       return
 
     if self.diffDocument.isNil:
-      self.diffDocument = newTextDocument(self.configProvider,
+      self.diffDocument = newTextDocument(self.configProvider, self.fs,
         language=self.document.languageId.some, createLanguageServer = false)
 
     self.diffDocument.languageId = self.document.languageId
@@ -1858,7 +1853,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   self.markDirty()
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
-  asyncCheck self.updateDiffAsync(gotoFirstDiff)
+  asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
 proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
   if self.document.isNil:
@@ -1883,7 +1878,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
   self.markDirty()
 
 proc checkoutFile*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.checkoutFileAsync()
+  asyncSpawn self.checkoutFileAsync()
 
 proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true,
     wrap: bool = true) {.expose("editor.text").} =
@@ -2239,11 +2234,11 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
 
       return result
 
-proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
+proc mapAllOrLast[T](self: openArray[T], all: bool, p: proc(v: T): T {.gcsafe, raises: [].}): seq[T] {.gcsafe, raises: [].} =
   if all:
-    result = self.map (s) => p(s)
+    result = self.map p
   else:
-    result = self
+    result = @self
     if result.len > 0:
       result[result.high] = p(result[result.high])
 
@@ -2278,9 +2273,9 @@ proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false,
   # echo fmt"delete-move {move}, {which}, {count}, {inside}"
 
   let selections = if inside:
-    self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
+    self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.getSelectionForMove(s.last, move, count))
   else:
-    self.selections.mapAllOrLast(all, (s) => (
+    self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => (
       self.getCursor(s, which),
       self.getCursor(self.getSelectionForMove(s.last, move, count), which)
     ))
@@ -2295,9 +2290,9 @@ proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
   let count = self.configProvider.getValue("text.move-count", 0)
 
   self.selections = if inside:
-    self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
+    self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.getSelectionForMove(s.last, move, count))
   else:
-    self.selections.mapAllOrLast(all, (s) => (
+    self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => (
       self.getCursor(s, which),
       self.getCursor(self.getSelectionForMove(s.last, move, count), which)
     ))
@@ -2310,9 +2305,9 @@ proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = fa
   let count = self.configProvider.getValue("text.move-count", 0)
 
   self.selections = if inside:
-    self.selections.mapAllOrLast(all, (s) => self.extendSelectionWithMove(s, move, count))
+    self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.extendSelectionWithMove(s, move, count))
   else:
-    self.selections.mapAllOrLast(all, (s) => (
+    self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => (
       self.getCursor(s, which),
       self.getCursor(self.extendSelectionWithMove(s, move, count), which)
     ))
@@ -2331,9 +2326,9 @@ proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false,
   let count = self.configProvider.getValue("text.move-count", 0)
 
   let selections = if inside:
-    self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
+    self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.getSelectionForMove(s.last, move, count))
   else:
-    self.selections.mapAllOrLast(all, (s) => (
+    self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => (
       self.getCursor(s, which),
       self.getCursor(self.getSelectionForMove(s.last, move, count), which)
     ))
@@ -2351,11 +2346,11 @@ proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = 
       self.getContextWithMode("editor.text.cursor.movement"),
       SelectionCursor.Both
     )
-    self.selections = self.selections.mapAllOrLast(all, (s) =>
+    self.selections = self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} =>
       self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, cursorSelector)
     )
   else:
-    self.selections = self.selections.mapAllOrLast(all, (s) =>
+    self.selections = self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} =>
       self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, which))
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
@@ -2368,11 +2363,11 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
       self.getContextWithMode("editor.text.cursor.movement"),
       SelectionCursor.Both
     )
-    self.selections = self.selections.mapAllOrLast(all, (s) =>
+    self.selections = self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} =>
       self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, cursorSelector)
     )
   else:
-    self.selections = self.selections.mapAllOrLast(all, (s) =>
+    self.selections = self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} =>
       self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, which))
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
@@ -2474,7 +2469,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.configProvider).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.configProvider).Previewer.some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
@@ -2547,12 +2542,12 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
 proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Future[seq[int]] {.async.} =
   let revision = self.completionEngine.revision
 
-  await sleepAsync(0)
+  await sleepAsync(0.milliseconds)
   if revision != self.completionEngine.revision or self.document.isNil:
     return
 
   while gAsyncFrameTimer.elapsed.ms > 5:
-    await sleepAsync(0)
+    await sleepAsync(0.milliseconds)
     if revision != self.completionEngine.revision or self.document.isNil:
       return
 
@@ -2628,7 +2623,7 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
       )
 
   if self.document.workspace.getSome(workspace):
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.configProvider).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.configProvider).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true, minScore=minScore, sort=sort)
   builder.finder = finder.some
 
@@ -2653,7 +2648,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
     )
 
   if self.document.workspace.getSome(workspace):
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.configProvider).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.configProvider).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
@@ -2720,7 +2715,7 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
 
   if self.delayedTask.isNil:
     self.delayedTask = startDelayed(200, repeat=false):
-      asyncCheck self.getWorkspaceSymbols()
+      asyncSpawn self.getWorkspaceSymbols()
   else:
     self.delayedTask.reschedule()
 
@@ -2735,7 +2730,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scaleX = 0.85
     builder.scaleY = 0.8
 
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.configProvider).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.configProvider).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)
     builder.finder = finder.some
 
@@ -2746,34 +2741,34 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     discard self.app.pushSelectorPopup(builder)
 
 proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.gotoDefinitionAsync()
+  asyncSpawn self.gotoDefinitionAsync()
 
 proc gotoDeclaration*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.gotoDeclarationAsync()
+  asyncSpawn self.gotoDeclarationAsync()
 
 proc gotoTypeDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.gotoTypeDefinitionAsync()
+  asyncSpawn self.gotoTypeDefinitionAsync()
 
 proc gotoImplementation*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.gotoImplementationAsync()
+  asyncSpawn self.gotoImplementationAsync()
 
 proc gotoReferences*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.gotoReferencesAsync()
+  asyncSpawn self.gotoReferencesAsync()
 
 proc switchSourceHeader*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.switchSourceHeaderAsync()
+  asyncSpawn self.switchSourceHeaderAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.showCompletionWindow()
 
 proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.gotoSymbolAsync()
+  asyncSpawn self.gotoSymbolAsync()
 
 proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = 0.2, sort: bool = true) {.expose("editor.text").} =
   self.openLineSelectorPopup(minScore, sort)
 
 proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose("editor.text").} =
-  asyncCheck self.gotoWorkspaceSymbolAsync(query)
+  asyncSpawn self.gotoWorkspaceSymbolAsync(query)
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   # log lvlInfo, fmt"hideCompletions {self.document.filename}"
@@ -2810,14 +2805,14 @@ proc selectNextTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
   var foundTabStop = false
   while self.currentSnippetData.get.currentTabStop < self.currentSnippetData.get.highestTabStop:
     self.currentSnippetData.get.currentTabStop.inc
-    if self.currentSnippetData.get.currentTabStop in self.currentSnippetData.get.tabStops:
-      self.selections = self.currentSnippetData.get.tabStops[self.currentSnippetData.get.currentTabStop]
+    self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
+      self.selections = val[]
       foundTabStop = true
       break
 
   if not foundTabStop:
     self.currentSnippetData.get.currentTabStop = 0
-    self.selections = self.currentSnippetData.get.tabStops[0]
+    self.selections = self.currentSnippetData.get.tabStops.getAssert(0)
 
 proc selectPrevTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.currentSnippetData.isNone:
@@ -2825,17 +2820,17 @@ proc selectPrevTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   if self.currentSnippetData.get.currentTabStop == 0:
     self.currentSnippetData.get.currentTabStop = self.currentSnippetData.get.highestTabStop
-    if self.currentSnippetData.get.currentTabStop in self.currentSnippetData.get.tabStops:
-      self.selections = self.currentSnippetData.get.tabStops[self.currentSnippetData.get.currentTabStop]
+    self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
+      self.selections = val[]
     return
 
   while self.currentSnippetData.get.currentTabStop > 1:
     self.currentSnippetData.get.currentTabStop.dec
-    if self.currentSnippetData.get.currentTabStop in self.currentSnippetData.get.tabStops:
-      self.selections = self.currentSnippetData.get.tabStops[self.currentSnippetData.get.currentTabStop]
+    self.currentSnippetData.get.tabStops.withValue(self.currentSnippetData.get.currentTabStop, val):
+      self.selections = val[]
       break
 
-proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
+proc applyCompletion*(self: TextDocumentEditor, completion: Completion) {.gcsafe, raises: [].} =
   let completion = completion
   log(lvlInfo, fmt"Applying completion {completion.item.label}")
 
@@ -2906,11 +2901,14 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
       }
 
       let indents = cursorEditSelections.mapIt(self.document.rope.indentBytes(it.first.line))
-      var data = snippet.get.createSnippetData(cursorEditSelections, variables, indents)
-      let indent = self.document.indentStyle.getString()
-      for i, insertText in cursorInsertTexts.mpairs:
-        insertText = data.text.indentExtraLines(self.document.getIndentLevelForLine(cursorEditSelections[i].first.line), indent)
-      snippetData = data.some
+      try:
+        var data = snippet.get.createSnippetData(cursorEditSelections, variables, indents)
+        let indent = self.document.indentStyle.getString()
+        for i, insertText in cursorInsertTexts.mpairs:
+          insertText = data.text.indentExtraLines(self.document.getIndentLevelForLine(cursorEditSelections[i].first.line), indent)
+        snippetData = data.some
+      except CatchableError:
+        discard
 
   var editSelections: seq[Selection] = @[]
   var insertTexts: seq[string] = @[]
@@ -2990,12 +2988,12 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
 proc showHoverFor*(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
   ## Shows lsp hover information for the given cursor.
   ## Does nothing if no language server is available or the language server doesn't return any info.
-  asyncCheck self.showHoverForAsync(cursor)
+  asyncSpawn self.showHoverForAsync(cursor)
 
 proc showHoverForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Shows lsp hover information for the current selection.
   ## Does nothing if no language server is available or the language server doesn't return any info.
-  asyncCheck self.showHoverForAsync(self.selection.last)
+  asyncSpawn self.showHoverForAsync(self.selection.last)
 
 proc hideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Hides the hover information.
@@ -3060,7 +3058,7 @@ proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
 proc updateInlayHints*(self: TextDocumentEditor) =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
-      asyncCheck self.updateInlayHintsAsync()
+      asyncSpawn self.updateInlayHintsAsync()
   else:
     self.inlayHintsTask.reschedule()
 
@@ -3078,7 +3076,7 @@ proc setFileReadOnlyAsync*(self: TextDocumentEditor, readOnly: bool) {.async.} =
   self.markDirty()
 
 proc setFileReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
-  asyncCheck self.setFileReadOnlyAsync(readOnly)
+  asyncSpawn self.setFileReadOnlyAsync(readOnly)
 
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool {.expose("editor.text").} =
   self.bIsRunningSavedCommands
@@ -3206,31 +3204,34 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   var progress = ""
 
-  proc updateStyledTextOverrides() =
+  proc updateStyledTextOverrides() {.gcsafe, raises: [].} =
     self.styledTextOverrides.clear()
+    try:
 
-    var options: seq[Cursor] = @[]
-    for i in 0..min(cursors.high, keys.high):
-      if not keys[i].startsWith(progress):
-        continue
+      var options: seq[Cursor] = @[]
+      for i in 0..min(cursors.high, keys.high):
+        if not keys[i].startsWith(progress):
+          continue
 
-      if not self.styledTextOverrides.contains(cursors[i].line):
-        self.styledTextOverrides[cursors[i].line] = @[]
+        if not self.styledTextOverrides.contains(cursors[i].line):
+          self.styledTextOverrides[cursors[i].line] = @[]
 
-      if progress.len > 0:
-        self.styledTextOverrides[cursors[i].line].add (cursors[i], progress, "entity.name.function")
+        if progress.len > 0:
+          self.styledTextOverrides[cursors[i].line].add (cursors[i], progress, "entity.name.function")
 
-      let cursor = (cursors[i].line, cursors[i].column + progress.len)
-      let text = keys[i][progress.len..^1]
-      self.styledTextOverrides[cursors[i].line].add (cursor, text, "constant.numeric")
+        let cursor = (cursors[i].line, cursors[i].column + progress.len)
+        let text = keys[i][progress.len..^1]
+        self.styledTextOverrides[cursors[i].line].add (cursor, text, "constant.numeric")
 
-      options.add cursors[i]
+        options.add cursors[i]
 
-    if options.len == 1:
-      self.styledTextOverrides.clear()
-      self.document.notifyTextChanged()
-      self.markDirty()
-      discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson), record=false)
+      if options.len == 1:
+        self.styledTextOverrides.clear()
+        self.document.notifyTextChanged()
+        self.markDirty()
+        discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson), record=false)
+    except:
+      discard
 
     self.document.notifyTextChanged()
     self.markDirty()
@@ -3385,60 +3386,66 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
       self.commandCount = self.commandCountRestore
       self.commandCountRestore = 0
       return res.some
-  except CatchableError:
+  except:
     let argsText = if args.isNil: "nil" else: $args
     log(lvlError, fmt"Failed to dispatch action '{action} {argsText}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   return JsonNode.none
 
-method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
+method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] {.gcsafe, raises: [].} =
   # debugf "handleAction {action}, '{arg}'"
 
-  let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
-  defer:
-    self.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
-
-  self.bIsRecordingCurrentCommand = record
-
-  let noRecordActions = [
-    "apply-selected-completion",
-    "applySelectedCompletion",
-  ].toHashSet
-
-  if record and action notin noRecordActions:
-    self.app.recordCommand("." & action, arg)
-
-  defer:
-    if record and self.bRecordCurrentCommand:
-      self.app.recordCommand("." & action, arg)
-    self.bRecordCurrentCommand = false
-
-  var args = newJArray()
   try:
-    for a in newStringStream(arg).parseJsonFragments():
-      args.add a
+    let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
+    defer:
+      self.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
 
-    if not self.isRunningSavedCommands:
-      self.currentCommandHistory.commands.add Command(command: action, args: args)
+    self.bIsRecordingCurrentCommand = record
 
-    return self.handleActionInternal(action, args)
-  except CatchableError:
-    log(lvlError, fmt"handleAction: {action}, Failed to parse args: '{arg}'")
-    return JsonNode.none
+    let noRecordActions = [
+      "apply-selected-completion",
+      "applySelectedCompletion",
+    ].toHashSet
+
+    if record and action notin noRecordActions:
+      self.app.recordCommand("." & action, arg)
+
+    defer:
+      if record and self.bRecordCurrentCommand:
+        self.app.recordCommand("." & action, arg)
+      self.bRecordCurrentCommand = false
+
+    var args = newJArray()
+    try:
+      for a in newStringStream(arg).parseJsonFragments():
+        args.add a
+
+      if not self.isRunningSavedCommands:
+        self.currentCommandHistory.commands.add Command(command: action, args: args)
+
+      return self.handleActionInternal(action, args)
+    except CatchableError:
+      log(lvlError, fmt"handleAction: {action}, Failed to parse args: '{arg}'")
+      return JsonNode.none
+  except:
+    discard
 
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse =
-  if not self.isRunningSavedCommands:
-    self.currentCommandHistory.commands.add Command(isInput: true, command: input)
+  try:
+    if not self.isRunningSavedCommands:
+      self.currentCommandHistory.commands.add Command(isInput: true, command: input)
 
-  if record:
-    self.app.recordCommand(".insert-text", $input.newJString)
+    if record:
+      self.app.recordCommand(".insert-text", $input.newJString)
 
-  # echo "handleInput '", input, "'"
-  if self.app.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
-    return Handled
+    # echo "handleInput '", input, "'"
+    if self.app.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
+      return Handled
 
-  self.insertText(input)
+    self.insertText(input)
+  except:
+    discard
   return Handled
 
 proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
@@ -3446,8 +3453,9 @@ proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
     if self.active and self.blinkCursorTask.isNotNil:
       self.blinkCursorTask.reschedule()
 
-method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
+method injectDependencies*(self: TextDocumentEditor, app: AppInterface, fs: Filesystem) {.gcsafe, raises: [].} =
   self.app = app
+  self.fs = fs
   self.platform = app.platform
   self.app.registerEditor(self)
   let config = app.getEventHandlerConfig("editor.text")
@@ -3550,7 +3558,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
 proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
   if self.diffDocument.isNotNil:
-    asyncCheck self.updateDiffAsync(gotoFirstDiff=false)
+    asyncSpawn self.updateDiffAsync(gotoFirstDiff=false)
   self.markDirty()
 
 proc handleCompletionsUpdated(self: TextDocumentEditor) =
@@ -3567,10 +3575,11 @@ proc createTextEditorInstance(): TextDocumentEditor =
   editor.completionsId = newId()
   editor.hoverId = newId()
   editor.inlayHints = @[]
-  allTextEditors.add editor
+  {.gcsafe.}:
+    allTextEditors.add editor
   return editor
 
-proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider):
+proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, configProvider: ConfigProvider):
     TextDocumentEditor =
 
   assert app.isNotNil
@@ -3581,7 +3590,7 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
 
   self.init()
   self.startBlinkCursorTask()
-  self.injectDependencies(app)
+  self.injectDependencies(app, fs)
 
   return self
 
@@ -3614,8 +3623,11 @@ method getStateJson*(self: TextDocumentEditor): JsonNode =
 method restoreStateJson*(self: TextDocumentEditor, state: JsonNode) =
   if state.kind != JObject:
     return
-  if state.hasKey("selection"):
-    let selection = state["selection"].jsonTo Selection
-    self.targetSelection = selection
-    self.scrollToCursor()
-    self.markDirty()
+  try:
+    if state.hasKey("selection"):
+      let selection = state["selection"].jsonTo Selection
+      self.targetSelection = selection
+      self.scrollToCursor()
+      self.markDirty()
+  except:
+    log lvlError, &"Failed to restore state from json: {getCurrentExceptionMsg()}\n{state}"

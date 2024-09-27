@@ -78,7 +78,7 @@ proc newVersionControlSystemPerforce*(root: string): VersionControlSystemPerforc
   result.root = root
 
   let self = result
-  asyncCheck self.detectClientAsync()
+  asyncSpawn self.detectClientAsync()
 
 method checkoutFile*(self: VersionControlSystemPerforce, path: string): Future[string] {.async.} =
   let command = "powershell"

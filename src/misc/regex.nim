@@ -246,18 +246,24 @@ proc parseGlobs*(globs: string): Globs =
     else:
       result.original.add lineStripped
 
-proc includePath*(globs: Globs, path: string): bool =
-  for negatedPattern in globs.negatedPatterns:
-    if path.globMatch(negatedPattern):
-      return true
-  return false
+proc includePath*(globs: Globs, path: string): bool  {.raises: [].}=
+  try:
+    for negatedPattern in globs.negatedPatterns:
+      if path.globMatch(negatedPattern):
+        return true
+    return false
+  except GlobbyError:
+    return false
 
-proc excludePath*(globs: Globs, path: string): bool =
-  for pattern in globs.original:
-    if path.globMatch(pattern):
-      return true
+proc excludePath*(globs: Globs, path: string): bool {.raises: [].} =
+  try:
+    for pattern in globs.original:
+      if path.globMatch(pattern):
+        return true
 
-  return false
+    return false
+  except GlobbyError:
+    return false
 
 when isMainModule:
   import std/[strformat]

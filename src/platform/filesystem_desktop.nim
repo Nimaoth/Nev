@@ -11,28 +11,40 @@ method init*(self: FileSystemDesktop, appDir: string) =
   self.appDir = appDir
 
 method loadFile*(self: FileSystemDesktop, path: string): string =
-  return readFile(path)
+  try:
+    return readFile(path)
+  except IOERror:
+    log lvlError, &"Failed to load file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+    return ""
 
 method saveFile*(self: FileSystemDesktop, path: string, content: string) =
-  writeFile(path, content)
+  try:
+    writeFile(path, content)
+  except IOError:
+    log lvlError, &"Failed to write file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 proc getApplicationDirectoryListingSync*(self: FileSystemDesktop, path: string):
-    tuple[files: seq[string], folders: seq[string]] =
-  let path = self.getApplicationFilePath path
-  for (kind, file) in walkDir(path, relative=true):
-    case kind
-    of pcFile:
-      result.files.add path // file
-    of pcDir:
-      result.folders.add path // file
-    else:
-      log lvlError, fmt"getApplicationDirectoryListing: Unhandled file type {kind} for {file}"
+    tuple[files: seq[string], folders: seq[string]] {.gcsafe, raises: [].} =
+
+  try:
+    let path = self.getApplicationFilePath path
+    for (kind, file) in walkDir(path, relative=true):
+      case kind
+      of pcFile:
+        result.files.add path // file
+      of pcDir:
+        result.folders.add path // file
+      else:
+        discard
+      #   log lvlError, &"getApplicationDirectoryListing: Unhandled file type {kind} for {file}"
+  except:
+    discard
 
 method getApplicationDirectoryListing*(self: FileSystemDesktop, path: string):
     Future[tuple[files: seq[string], folders: seq[string]]] {.async.} =
   return self.getApplicationDirectoryListingSync(path)
 
-method getApplicationFilePath*(self: FileSystemDesktop, name: string): string =
+method getApplicationFilePath*(self: FileSystemDesktop, name: string): string {.raises: [].} =
   when defined(js):
     return name
   else:

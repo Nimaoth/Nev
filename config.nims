@@ -33,10 +33,12 @@ switch("linetrace", "off")
 # required for actual builds, but for lsp this should be off to improve performance because it doesn't need to generate as many functions
 # switch("d", "exposeScriptingApi")
 
+switch("d", "npegGcsafe=true")
+
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
-switch("d", "enableNimscript=true")
-# switch("d", "enableAst=true")
+switch("d", "enableNimscript=false")
+switch("d", "enableAst=false")
 
 
 # uncomment to see logs in the console
@@ -127,8 +129,19 @@ else:
 # switch("lineDir", "off")
 # switch("profiler", "on")
 
+when defined(linux):
+  when withDir(thisDir(), system.fileExists("nimble-linux.paths")):
+    include "nimble-linux.paths"
+else:
+  when withDir(thisDir(), system.fileExists("nimble-win.paths")):
+    include "nimble-win.paths"
+
 # begin Nimble config (version 2)
---noNimblePath
-when withDir(thisDir(), system.fileExists("nimble.paths")):
-  include "nimble.paths"
+# --noNimblePath
+# when withDir(thisDir(), system.fileExists("nimble.paths")):
+#   include "nimble.paths"
 # end Nimble config
+
+when defined(useMimalloc):
+  switch("define", "useMalloc")
+  patchFile("stdlib", "malloc", "$lib/patchedstd/mimalloc")

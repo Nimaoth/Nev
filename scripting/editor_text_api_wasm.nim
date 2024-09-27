@@ -344,7 +344,8 @@ proc doMoveCursorPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
 proc editor_text_doMoveCursorNextFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
-                                 offset: int; wrap: bool; includeAfter: bool): Cursor =
+                                 offset: int; wrap: bool; includeAfter: bool): Cursor {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:

@@ -47,44 +47,45 @@ type
   MouseButton* {.pure.} = enum
     Left, Middle, Right, DoubleClick, TripleClick, Unknown
 
-proc inputToString*(input: int64, modifiers: Modifiers = {}): string
+proc inputToString*(input: int64, modifiers: Modifiers = {}): string {.gcsafe, raises: [].}
 
 let capturePattern = re"<(.*?)>"
-proc fillCaptures(dfa: CommandDFA, state: CommandState, args: string): string =
+proc fillCaptures(dfa: CommandDFA, state: CommandState, args: string): string {.gcsafe, raises: [].} =
   # debug &"fillCaptures {args}, {state}"
   var last = 0
-  for bounds in args.findAllBounds(capturePattern):
-    defer:
-      last = bounds.last + 1
-    if last < bounds.first:
-      result.add args[last..<bounds.first]
+  {.gcsafe.}:
+    for bounds in args.findAllBounds(capturePattern):
+      defer:
+        last = bounds.last + 1
+      if last < bounds.first:
+        result.add args[last..<bounds.first]
 
-    if args[bounds.first + 1] == '#':
-      let captureName = args[(bounds.first + 2)..<bounds.last]
-      if state.captures.contains(captureName):
-        result.add $state.captures[captureName].parseInt.catch(0)
+      if args[bounds.first + 1] == '#':
+        let captureName = args[(bounds.first + 2)..<bounds.last]
+        if state.captures.contains(captureName):
+          result.add $state.captures.getAssert(captureName).parseInt.catch(0)
+        else:
+          result.add "0"
+      elif args[bounds.first + 1] == '$':
+        let captureName = args[(bounds.first + 2)..<bounds.last]
+        if state.captures.contains(captureName):
+          result.add $state.captures.getAssert(captureName).newJString
+        else:
+          result.add $newJString("")
       else:
-        result.add "0"
-    elif args[bounds.first + 1] == '$':
-      let captureName = args[(bounds.first + 2)..<bounds.last]
-      if state.captures.contains(captureName):
-        result.add $state.captures[captureName].newJString
-      else:
-        result.add $newJString("")
-    else:
-      let captureName = args[(bounds.first + 1)..<bounds.last]
-      if state.captures.contains(captureName):
-        result.add $state.captures[captureName].newJString
-      else:
-        result.add args[bounds.first..bounds.last]
+        let captureName = args[(bounds.first + 1)..<bounds.last]
+        if state.captures.contains(captureName):
+          result.add $state.captures.getAssert(captureName).newJString
+        else:
+          result.add args[bounds.first..bounds.last]
 
-  if last < args.len:
-    result.add args[last..^1]
+    if last < args.len:
+      result.add args[last..^1]
 
 proc possibleFunctionIndices*(state: CommandState): int =
   return state.functionIndices.bitSetCard
 
-proc getAction*(dfa: CommandDFA, state: CommandState): (string, string) =
+proc getAction*(dfa: CommandDFA, state: CommandState): (string, string) {.gcsafe, raises: [].} =
   if state.functionIndices.bitSetCard != 1:
     log(lvlError, fmt"Multiple possible functions found: {state}")
 
@@ -106,7 +107,7 @@ proc stepEmpty(dfa: CommandDFA, state: CommandState): seq[CommandState] =
 
     result.incl dfa.stepEmpty(newState)
 
-proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, result: var seq[CommandState]) =
+proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, result: var seq[CommandState]) {.gcsafe.} =
   for transition in dfa.states[state.current].transitions.pairs:
     if currentInput in transition[0]:
       if not transition[1].next.contains(mods):
@@ -122,7 +123,7 @@ proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: 
         result.add newState
       result.add dfa.stepEmpty(newState)
 
-proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, beginEmpty: bool): seq[CommandState] =
+proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, beginEmpty: bool): seq[CommandState] {.gcsafe.} =
   if currentInput == 0:
     log(lvlError, "Input 0 is invalid")
     return @[]
@@ -140,7 +141,7 @@ proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: M
 
   return
 
-proc stepAll*(dfa: CommandDFA, states: seq[CommandState], currentInput: int64, mods: Modifiers): seq[CommandState] =
+proc stepAll*(dfa: CommandDFA, states: seq[CommandState], currentInput: int64, mods: Modifiers): seq[CommandState] {.gcsafe.} =
   # echo &"stepAll {inputToString(currentInput, mods)}, {states.len}, {states}"
   # defer:
   #   echo &"stepAll -> {result}"
@@ -470,7 +471,7 @@ proc handleNextInput(
 
 #   dfa.fillTransitionFunctionIndicesRec(0, {})
 
-proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[string] = @[]): CommandDFA =
+proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[string] = @[]): CommandDFA {.gcsafe, raises: [].} =
   new(result)
 
   # debugf"commands: {commands}"
@@ -482,22 +483,26 @@ proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[stri
       for key in keys:
         (key.inputCodes.a, key.mods)
 
-  if commands.contains(""):
-    for command in commands[""].pairs:
-      let input = command[0]
-      let function = command[1]
+  try:
+    if commands.contains(""):
+      for command in commands[""].pairs:
+        let input = command[0]
+        let function = command[1]
 
-      if input.len > 0:
-        # debugf"handle input {input} with leader {leaderInput}"
+        if input.len > 0:
+          # debugf"handle input {input} with leader {leaderInput}"
 
-        let functionIndex = if result.functionIndices.contains(function):
-          result.functionIndices[function]
-        else:
-          result.functions.add function.parseAction
-          result.functionIndices[function] = result.functions.len - 1
-          result.functions.len - 1
+          let functionIndex = if result.functionIndices.contains(function):
+            result.functionIndices[function]
+          else:
+            result.functions.add function.parseAction
+            result.functionIndices[function] = result.functions.len - 1
+            result.functions.len - 1
 
-        discard handleNextInput(result, commands, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leaders = leaders, functionIndex)
+          discard handleNextInput(result, commands, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leaders = leaders, functionIndex)
+  except CatchableError:
+    discard
+    # todo: handle errors
 
 proc buildDFA*(commands: seq[(string, string)], leaders: seq[string] = @[]): CommandDFA =
   return buildDFA({"": commands.toTable}.toTable, leaders)

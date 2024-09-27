@@ -11,14 +11,15 @@ type Document* = ref object of RootObj
   revision*: int
   undoableRevision*: int
   lastSavedRevision*: int               ## Undobale revision at the time we saved the last time
+  fs*: Filesystem
 
-method `$`*(document: Document): string {.base.} = return ""
-method save*(self: Document, filename: string = "", app: bool = false) {.base.} = discard
-method load*(self: Document, filename: string = "") {.base.} = discard
-method deinit*(self: Document) {.base.} = discard
-method getStatisticsString*(self: Document): string {.base.} = discard
+method `$`*(document: Document): string {.base, gcsafe, raises: [].} = return ""
+method save*(self: Document, filename: string = "", app: bool = false) {.base, gcsafe, raises: [].} = discard
+method load*(self: Document, filename: string = "") {.base, gcsafe, raises: [].} = discard
+method deinit*(self: Document) {.base, gcsafe, raises: [].} = discard
+method getStatisticsString*(self: Document): string {.base, gcsafe, raises: [].} = discard
 
-proc fullPath*(self: Document): string =
+proc fullPath*(self: Document): string {.gcsafe, raises: [].} =
   if not self.isBackedByFile:
     return self.filename
 
@@ -27,9 +28,9 @@ proc fullPath*(self: Document): string =
   if self.workspace.getSome(ws):
     return ws.getWorkspacePath() / self.filename
   if self.appFile:
-    return fs.getApplicationFilePath(self.filename)
+    return self.fs.getApplicationFilePath(self.filename)
 
-  when not defined(js):
+  try:
     return self.filename.absolutePath
-  else:
+  except ValueError, OSError:
     return self.filename

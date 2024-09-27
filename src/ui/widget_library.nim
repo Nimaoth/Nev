@@ -9,15 +9,15 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
     inDocument: Document, inHeaderColor: Color, inTextColor: Color, body: untyped): UINode =
 
   block:
-    var leftFunc: proc()
-    var rightFunc: proc()
+    var leftFunc: proc() {.gcsafe.}
+    var rightFunc: proc() {.gcsafe.}
 
     template onLeft(inBody: untyped) {.used.} =
-      leftFunc = proc() =
+      leftFunc = proc() {.gcsafe.} =
         inBody
 
     template onRight(inBody: untyped) {.used.} =
-      rightFunc = proc() =
+      rightFunc = proc() {.gcsafe.} =
         inBody
 
     body
@@ -53,7 +53,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
 
 proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float,
     maxLine: int, maxHeight: Option[float], flags: UINodeFlags, backgroundColor: Color,
-    handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)): UINode =
+    handleScroll: proc(delta: float) {.gcsafe.}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe.}): UINode =
 
   let sizeToContentY = SizeToContentY in flags
   builder.panel(flags):
@@ -97,7 +97,7 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
 
 proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float,
     maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color,
-    handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
+    handleScroll: proc(delta: float) {.gcsafe.}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe.}) =
   var flags = 0.UINodeFlags
   if sizeToContentX:
     flags.incl SizeToContentX

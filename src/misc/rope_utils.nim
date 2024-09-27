@@ -4,6 +4,9 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import custom_async, custom_unicode, util
 
+{.push gcsafe.}
+{.push raises: [].}
+
 func toPoint*(cursor: api.Cursor): Point = Point.init(cursor.line, cursor.column)
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
 func toRange*(selection: Selection): Range[Point] = selection.first.toPoint...selection.last.toPoint
@@ -11,11 +14,12 @@ func toCursor*(point: Point): api.Cursor = (point.row.int, point.column.int)
 func toSelection*(self: (Point, Point)): Selection = (self[0].toCursor, self[1].toCursor)
 func toSelection*(self: Range[Point]): Selection = (self.a.toCursor, self.b.toCursor)
 
-proc createRopeThread(args: tuple[str: ptr string, rope: ptr Rope]): int {.gcsafe.} =
+proc createRopeThread(args: tuple[str: ptr string, rope: ptr Rope, errorIndex: ptr int]) {.gcsafe.} =
   template content: openArray[char] = args.str[].toOpenArray(0, args.str[].high)
   let invalidUtf8Index = content.validateUtf8
   if invalidUtf8Index >= 0:
-    return invalidUtf8Index
+    args.errorIndex[] = invalidUtf8Index
+    return
 
   var index = 0
   const utf8_bom = "\xEF\xBB\xBF"
@@ -23,11 +27,13 @@ proc createRopeThread(args: tuple[str: ptr string, rope: ptr Rope]): int {.gcsaf
     index = 3
 
   args.rope[] = Rope.new(content[index..^1])
-  return -1
+  args.errorIndex[] = -1
+  return
 
 proc createRopeAsync*(str: ptr string, rope: ptr Rope): Future[Option[int]] {.async.} =
   ## Returns `some(index)` if the string contains invalid utf8 at `index`
-  var errorIndex = await spawnAsync(createRopeThread, (str, rope))
+  var errorIndex = -1
+  await spawnAsync(createRopeThread, (str, rope, errorIndex.addr))
   if errorIndex != -1:
     return errorIndex.some
   return int.none

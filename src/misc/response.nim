@@ -1,6 +1,9 @@
 import std/[json, tables, options, macros]
 import misc/[myjsonutils]
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type
   ResponseKind* {.pure.} = enum
     Error
