@@ -1,3 +1,7 @@
+# This is required for LSP to work with this file and not show tons of errros
+when defined(nimsuggest):
+  import system/nimscript
+
 switch("path", "$nim")
 switch("path", "scripting")
 switch("path", "src")
