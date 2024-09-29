@@ -11,8 +11,8 @@ import nimsumtree/[buffer, clock, rope]
 
 logCategory "collab"
 
-var sendOpsTask: DelayedTask
-var opsToSend = newSeq[(string, Operation)]()
+# var sendOpsTask: DelayedTask
+# var opsToSend = newSeq[(string, Operation)]()
 # var currentServer: AsyncSocket = nil
 
 # proc sendOps(server: AsyncSocket) {.async.} =

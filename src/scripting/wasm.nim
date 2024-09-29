@@ -378,7 +378,7 @@ when defined(js):
       if not memory.isUndefined:
         return js_fd_write(context, fd, iovs, len, ret)
 
-proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async: (raises: []).} =
+proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
   try:
     when defined(js):
       proc jsLoadWasmModuleSync(wasmData: ArrayBuffer, importObject: JsObject): Future[JsObject] {.importc.}
@@ -652,6 +652,6 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
       let wrapper = createWasmWrapper(module, R, T):
         f.call(`returnType`, `parameters`)
 
-      return wrapper.T.some
+      return wrapper.some
     except CatchableError:
       return T.none

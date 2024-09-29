@@ -6,7 +6,6 @@ import text/text_editor
 import platform/platform
 import finder/[previewer, finder, data_previewer]
 import workspaces/workspace
-import chronos
 
 import chroma
 
@@ -71,10 +70,10 @@ type
 
 proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) {.gcsafe, raises: [].}
 proc handleAction(self: Debugger, action: string, arg: string): EventResponse {.gcsafe, raises: [].}
-proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.gcsafe, async: (raises: []).}
-proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.gcsafe, async: (raises: []).}
-proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.gcsafe, async: (raises: []).}
-proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.gcsafe, async: (raises: []).}
+proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.gcsafe, async.}
+proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.gcsafe, async.}
+proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.gcsafe, async.}
+proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.gcsafe, async.}
 
 var gDebugger: Debugger = nil
 
@@ -152,7 +151,7 @@ proc createDebugger*(app: AppInterface, state: JsonNode) =
   debugger.outputEditor.renderHeader = false
   debugger.outputEditor.disableCompletions = true
 
-  discard app.onEditorRegisteredEvent.subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
+  discard app.onEditorRegisteredEvent[].subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
 
     debugger.handleEditorRegistered(e)
 
@@ -295,11 +294,11 @@ proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCurs
 
   let scope {.cursor.} = scopes[].scopes[result.scope]
   if not self.variables.contains(ids & scope.variablesReference) or
-      self.variables.getAssert(ids & scope.variablesReference).variables.len == 0:
+      self.variables[ids & scope.variablesReference].variables.len == 0:
     return
 
   var varRef = scope.variablesReference
-  var variables = self.variables.getAssert(ids & varRef).addr
+  var variables = self.variables[ids & varRef].addr
   for i, item in cursor.path:
     let index = item.index.clamp(0, variables[].variables.high)
     if index < 0:
@@ -307,10 +306,10 @@ proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCurs
 
     result.path.add (index, varRef)
     varRef = variables[].variables[index].variablesReference
-    if not self.variables.contains(ids & varRef) or self.variables.getAssert(ids & varRef).variables.len == 0:
+    if not self.variables.contains(ids & varRef) or self.variables[ids & varRef].variables.len == 0:
       break
 
-    variables = self.variables.getAssert(ids & varRef).addr
+    variables = self.variables[ids & varRef].addr
 
 proc reevaluateCurrentCursor*(self: Debugger) =
   self.variablesCursor = self.reevaluateCursorRefs(self.variablesCursor)
@@ -727,10 +726,10 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
 
   return Connection.none
 
-proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.gcsafe, async: (raises: []).} =
+proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.gcsafe, async.} =
   discard await self.getStackTrace(threadId)
 
-proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.gcsafe, async: (raises: []).} =
+proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.gcsafe, async.} =
   let threadId = if threadId.getSome(id):
     id
   elif self.currentThread.getSome(thread):
@@ -749,7 +748,7 @@ proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[Th
 
   return threadId.some
 
-proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.gcsafe, async: (raises: []).} =
+proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.gcsafe, async.} =
   let ids = self.currentVariablesContext().getOr:
     return
 
@@ -771,7 +770,7 @@ proc updateVariables(self: Debugger, variablesReference: VariablesReference, max
       await f
     # await all(futures)
 
-proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.gcsafe, async: (raises: []).} =
+proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.gcsafe, async.} =
   if self.client.getSome(client):
     self.stackTraces.withValue(threadId, stack):
       if frameIndex notin 0..stack[].stackFrames.high:
@@ -786,7 +785,7 @@ proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bo
         self.scopes[(threadId, frame.id)] = scopes.result
         scopes.result
       else:
-        self.scopes.getAssert((threadId, frame.id))
+        self.scopes[(threadId, frame.id)]
 
       let futures = collect:
         for scope in scopes.scopes:
@@ -1034,7 +1033,7 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
   if not self.breakpoints.contains(editor.document.filename):
     return
 
-  for breakpoint in self.breakpoints.getAssert(editor.document.filename):
+  for breakpoint in self.breakpoints[editor.document.filename]:
     let sign = if self.breakpointsEnabled and breakpoint.enabled:
       "🛑"
     else:
@@ -1069,9 +1068,9 @@ proc removeBreakpoint*(self: Debugger, path: string, line: int) {.raises: [], ex
   if not self.breakpoints.contains(path):
     return
 
-  for i, breakpoint in self.breakpoints.getAssert(path):
+  for i, breakpoint in self.breakpoints[path]:
     if breakpoint.breakpoint.line == line:
-      self.breakpoints.getAssert(path).removeSwap(i)
+      self.breakpoints[path].removeSwap(i)
 
       self.updateBreakpointsForFile(path)
       return
@@ -1082,7 +1081,7 @@ proc toggleBreakpointEnabled*(self: Debugger, path: string, line: int) {.expose(
   if not self.breakpoints.contains(path):
     return
 
-  for breakpoint in self.breakpoints.getAssert(path).mitems:
+  for breakpoint in self.breakpoints[path].mitems:
     if breakpoint.breakpoint.line == line:
       breakpoint.enabled = not breakpoint.enabled
 
@@ -1245,7 +1244,7 @@ proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
     # debugf"dispatch {action}, {args}"
     if dispatch(action, args).isSome:
       return Handled
-  except CatchableError:
+  except:
     log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 

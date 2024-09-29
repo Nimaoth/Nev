@@ -5,10 +5,14 @@ logCategory "connections"
 
 type Connection* = ref object of RootObj
 
+{.push hint[XCannotRaiseY]:off.}
+
 method close*(connection: Connection) {.base, gcsafe, raises: [IOError].} = discard
 method recvLine*(connection: Connection): Future[string] {.base, gcsafe, raises: [IOError].} = discard
 method recv*(connection: Connection, length: int): Future[string] {.base, gcsafe, raises: [IOError].} = discard
 method send*(connection: Connection, data: string): Future[void] {.base, gcsafe, raises: [IOError].} = discard
+
+{.pop.}
 
 when not defined(js):
   import misc/[async_process, custom_asyncnet]
@@ -40,12 +44,12 @@ when not defined(js):
 
     let process = startAsyncProcess(path, args, autoRestart=false)
 
-    var fut = newResolvableFuture[void]("newAsyncProcessConnection")
+    var fut = newFuture[void]("newAsyncProcessConnection")
     process.onRestarted = proc(): Future[void] =
       fut.complete()
       return asyncVoid()
 
-    await fut.future
+    await fut
     return ConnectionAsyncProcess(process: process)
 
   # type ConnectionAsyncSocket* = ref object of Connection

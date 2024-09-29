@@ -1,4 +1,4 @@
-import std/[strformat, typetraits, strutils, algorithm, sugar]
+import std/[algorithm, sugar]
 import misc/[regex, timer, fuzzy_matching, util, custom_async, event, id, custom_logger]
 import platform/[filesystem]
 
@@ -14,18 +14,12 @@ type
     originalIndex: Option[int]
     filtered*: bool
 
-when defined(js):
-  type
-    ItemList* = object
-      len: int = 0
-      data: ref seq[FinderItem]
-else:
-  type
-    ItemList* = object
-      len: int = 0
-      cap: int = 0
-      filtered*: int = 0
-      data: ptr UncheckedArray[FinderItem] = nil
+type
+  ItemList* = object
+    len: int = 0
+    cap: int = 0
+    filtered*: int = 0
+    data: ptr UncheckedArray[FinderItem] = nil
 
 type
   DataSource* = ref object of RootObj
@@ -55,7 +49,7 @@ method setQuery*(self: DataSource, query: string) {.base, gcsafe, raises: [].} =
 var allocated = 0
 
 proc cmp*(a, b: FinderItem): int = cmp(a.score, b.score)
-proc `<`*(a, b: FinderItem): bool = a.score < b.score # echo "xvlc"
+proc `<`*(a, b: FinderItem): bool = a.score < b.score
 
 var itemListPool = newSeq[ItemList]()
 proc newItemList*(len: int): ItemList {.gcsafe, raises: [].} =
@@ -81,15 +75,12 @@ func len*(list: ItemList): int = list.len
 func filteredLen*(list: ItemList): int = list.len - list.filtered
 
 proc free*(list: ItemList) =
-  when defined(js):
-    discard
-  else:
-    if not list.data.isNil:
-      allocated -= list.len
+  if not list.data.isNil:
+    allocated -= list.len
 
-      for i in 0..<list.len:
-        `=destroy`(list.data[i])
-      dealloc(list.data)
+    for i in 0..<list.len:
+      `=destroy`(list.data[i])
+    dealloc(list.data)
 
 proc pool*(list: ItemList) {.gcsafe.} =
   {.gcsafe.}:
@@ -98,13 +89,9 @@ proc pool*(list: ItemList) {.gcsafe.} =
 
     else:
       var list = list
-      when defined(js):
-        discard
-
-      else:
-        if list.cap > 0:
-          for i in 0..<list.len:
-            list.data[i] = FinderItem()
+      if list.cap > 0:
+        for i in 0..<list.len:
+          list.data[i] = FinderItem()
 
       list.len = 0
       list.filtered = 0
@@ -118,71 +105,44 @@ proc setLen*(list: var ItemList, newLen: int) =
 
 proc clone*(list: ItemList): ItemList =
   result = newItemList(list.len)
-  when defined(js):
-    for i in 0..<list.len:
-      result.data[][i] = list.data[][i]
-  else:
-    for i in 0..<list.len:
-      result.data[i] = list.data[i]
+  for i in 0..<list.len:
+    result.data[i] = list.data[i]
 
 proc `[]=`*(list: var ItemList, i: int, item: sink FinderItem) =
   assert i >= 0
   assert i < list.len
-  when defined(js):
-    list.data[][i] = item
-  else:
-    list.data[i] = item
+  list.data[i] = item
 
 proc `[]`*(list: ItemList, i: int): lent FinderItem =
   assert i >= 0
   assert i < list.len
-  when defined(js):
-    list.data[][i]
-  else:
-    list.data[i]
+  list.data[i]
 
 proc `[]`*(list: var ItemList, i: int): var FinderItem =
   assert i >= 0
   assert i < list.len
-  when defined(js):
-    list.data[][i]
-  else:
-    list.data[i]
+  list.data[i]
 
 template items*(list: ItemList): openArray[FinderItem] =
   # assert not list.data.isNil
-  when defined(js):
-    toOpenArray(list.data[], 0, list.len - 1)
-  else:
-    toOpenArray(list.data, 0, list.len - 1)
+  toOpenArray(list.data, 0, list.len - 1)
 
 proc reverse*(list: ItemList) =
   var x = 0
   var y = list.len - 1
   while x < y:
-    when defined(js):
-      let temp = list.data[][x]
-      list.data[][x] = list.data[][y]
-      list.data[][x] = temp
-    else:
-      swap(list.data[x], list.data[y])
+    swap(list.data[x], list.data[y])
     dec(y)
     inc(x)
 
 func sort*(list: ItemList, cmp: proc (x, y: FinderItem): int {.closure.},
            order = SortOrder.Descending) {.effectsOf: cmp.} =
   var list = list
-  when defined(js):
-    toOpenArray(list.data[], 0, list.len - 1).sort(cmp, order)
-  else:
-    toOpenArray(list.data, 0, list.len - 1).sort(cmp, order)
+  toOpenArray(list.data, 0, list.len - 1).sort(cmp, order)
 
 proc sort*(list: ItemList, order = SortOrder.Descending) =
   var list = list
-  when defined(js):
-    toOpenArray(list.data[], 0, list.len - 1).sort(order)
-  else:
-    toOpenArray(list.data, 0, list.len - 1).sort(order)
+  toOpenArray(list.data, 0, list.len - 1).sort(order)
 
 proc newItemList*(items: seq[FinderItem]): ItemList =
   result = newItemList(items.len)
@@ -197,13 +157,12 @@ proc deinit*(finder: Finder) {.gcsafe, raises: [].} =
     list.pool()
   finder.filteredItems = ItemList.none
 
-when not defined(js):
-  proc `=destroy`*(finder: typeof(Finder()[])) =
-    if finder.source.isNotNil:
-      finder.source.close()
-    `=destroy`(finder.query)
-    if finder.filteredItems.getSome(list):
-      list.pool()
+proc `=destroy`*(finder: typeof(Finder()[])) =
+  if finder.source.isNotNil:
+    finder.source.close()
+  `=destroy`(finder.query)
+  if finder.filteredItems.getSome(list):
+    list.pool()
 
 proc handleItemsChanged(self: Finder, list: ItemList) {.gcsafe, raises: [].}
 
@@ -285,12 +244,9 @@ proc filterAndSortItems(self: Finder, list: ItemList): Future[void] {.async.} =
   self.lastTriggeredFilterVersions = versions
 
   # todo: filter and sort on main thread if amount < threshold
-  when defined(js):
-    var filterResult = filterAndSortItemsThread (self.query, list, self.sort, self.minScore)
-  else:
-    var filterResult = spawnAsync(filterAndSortItemsThread, (self.query, list, self.sort, self.minScore)).await
+  var filterResult = spawnAsync(filterAndSortItemsThread, (self.query, list, self.sort, self.minScore)).await
 
-  debugf"[filterAndSortItems] -> {versions}, {filterResult.scoreTime}ms, {filterResult.sortTime}ms, {filterResult.totalTime}ms"
+  # debugf"[filterAndSortItems] -> {versions}, {filterResult.scoreTime}ms, {filterResult.sortTime}ms, {filterResult.totalTime}ms"
 
   if self.itemsVersion != versions.items:
     # Items were updated after spawning this filter and sort, so discard the result

@@ -115,7 +115,7 @@ proc traitImpl*(name: NimNode, body: NimNode, isRef: bool): NimNode =
       item.addPragma(ident"base")
 
       item[6] = genAst():
-        discard
+        raise newException(Defect, "Unimplemented")
 
       methods.add item
 

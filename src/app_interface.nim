@@ -38,7 +38,7 @@ traitRef AppInterface:
   method getOrOpenDocument*(self: AppInterface, path: string,
     app: bool = false, load: bool = true): Option[Document] {.gcsafe, raises: [].}
   method tryCloseDocument*(self: AppInterface, document: Document, force: bool): bool {.gcsafe, raises: [].}
-  method onEditorRegisteredEvent*(self: AppInterface): var Event[DocumentEditor] {.gcsafe, raises: [].}
-  method onEditorDeregisteredEvent*(self: AppInterface): var Event[DocumentEditor] {.gcsafe, raises: [].}
+  method onEditorRegisteredEvent*(self: AppInterface): ptr Event[DocumentEditor] {.gcsafe, raises: [].}
+  method onEditorDeregisteredEvent*(self: AppInterface): ptr Event[DocumentEditor] {.gcsafe, raises: [].}
 
 var gAppInterface*: AppInterface = nil

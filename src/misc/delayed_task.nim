@@ -18,7 +18,7 @@ type
 func isActive*(task: DelayedTask): bool {.gcsafe, raises: [].} = task.active
 proc reschedule*(task: DelayedTask) {.gcsafe, raises: [].}
 
-proc tick(task: DelayedTask): Future[void] {.gcsafe, async: (raises: []).} =
+proc tick(task: DelayedTask): Future[void] {.gcsafe, async.} =
   let restartCounter = task.restartCounter
 
   defer:
@@ -40,7 +40,10 @@ proc tick(task: DelayedTask): Future[void] {.gcsafe, async: (raises: []).} =
         echo task.creationStackTrace.indent(2)
 
       try:
-        await sleepAsync(chronos.milliseconds(timeToNextTick.inMilliseconds.int))
+        when defined(nevUseChronos):
+          await sleepAsync(chronos.milliseconds(timeToNextTick.inMilliseconds.int))
+        else:
+          await sleepAsync(timeToNextTick.inMilliseconds.int)
       except CancelledError:
         break
 

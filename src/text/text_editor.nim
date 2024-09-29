@@ -419,13 +419,13 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
     result.add self.modeEventHandler
 
   if inject.contains("above-mode"):
-    result.add inject.getAssert("above-mode")
+    result.add inject["above-mode"]
 
   if self.showCompletions:
     result.add self.completionEventHandler
 
   if inject.contains("above-completion"):
-    result.add inject.getAssert("above-completion")
+    result.add inject["above-completion"]
 
 proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
   if self.inlayHints.len > 0 and self.inlayHints[0].anchor.timestamp != self.document.buffer.timestamp:
@@ -2812,7 +2812,7 @@ proc selectNextTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   if not foundTabStop:
     self.currentSnippetData.get.currentTabStop = 0
-    self.selections = self.currentSnippetData.get.tabStops.getAssert(0)
+    self.selections = self.currentSnippetData.get.tabStops[0]
 
 proc selectPrevTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.currentSnippetData.isNone:

@@ -249,12 +249,12 @@ implTrait ConfigProvider, App:
     except KeyError:
       discard
 
-  proc onConfigChanged*(self: App): var Event[void] = self.onConfigChanged
+  proc onConfigChanged*(self: App): ptr Event[void] = self.onConfigChanged.addr
 
 proc handleLog(self: App, level: Level, args: openArray[string])
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig {.gcsafe, raises: [].}
-proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.}
-proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.}
+proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.gcsafe, raises: [].}
+proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.gcsafe, raises: [].}
 proc setRegisterAsync*(self: App, register: string, value: sink Register): Future[void] {.gcsafe, raises: [].}
 proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[bool] {.gcsafe, raises: [].}
 proc recordCommand*(self: App, command: string, args: string) {.gcsafe, raises: [].}
@@ -305,8 +305,8 @@ implTrait AppInterface, App:
   recordCommand(void, App, string, string)
 
   proc configProvider*(self: App): ConfigProvider {.gcsafe, raises: [].} = self.asConfigProvider
-  proc onEditorRegisteredEvent*(self: App): var Event[DocumentEditor] {.gcsafe, raises: [].} = self.onEditorRegistered
-  proc onEditorDeregisteredEvent*(self: App): var Event[DocumentEditor] {.gcsafe, raises: [].} = self.onEditorDeregistered
+  proc onEditorRegisteredEvent*(self: App): ptr Event[DocumentEditor] {.gcsafe, raises: [].} = self.onEditorRegistered.addr
+  proc onEditorDeregisteredEvent*(self: App): ptr Event[DocumentEditor] {.gcsafe, raises: [].} = self.onEditorDeregistered.addr
 
   openWorkspaceFile(Option[DocumentEditor], App, string, bool)
   openFile(Option[DocumentEditor], App, string)
@@ -985,20 +985,20 @@ proc loadSettingsFrom*(self: App, directory: string,
       &"{directory}/settings-{platformName}-{self.backend}.json",
     ]
 
-  let settings = await allFinished(
+  let settings = allFinished(
     loadFile(self, "settings", filenames[0]),
     loadFile(self, "settings", filenames[1]),
     loadFile(self, "settings", filenames[2]),
     loadFile(self, "settings", filenames[3]),
-  )
+  ).await.mapIt(it.read)
 
   assert filenames.len == settings.len
 
   for i in 0..<filenames.len:
-    if settings[i].read.isSome:
+    if settings[i].isSome:
       try:
         log lvlInfo, &"Apply settings from {filenames[i]}"
-        let json = settings[i].read.get.parseJson()
+        let json = settings[i].get.parseJson()
         self.setOption("", json, override=false)
 
       except CatchableError:
@@ -1015,18 +1015,18 @@ proc loadKeybindings*(self: App, directory: string,
       &"{directory}/keybindings-{platformName}-{self.backend}.json",
     ]
 
-  let settings = await allFinished(
+  let settings = allFinished(
     loadFile(self, "keybindings", filenames[0]),
     loadFile(self, "keybindings", filenames[1]),
     loadFile(self, "keybindings", filenames[2]),
     loadFile(self, "keybindings", filenames[3]),
-  )
+  ).await.mapIt(it.read)
 
   for i in 0..<filenames.len:
-    if settings[i].read.isSome:
+    if settings[i].isSome:
       try:
         log lvlInfo, &"Apply keybindings from {filenames[i]}"
-        let json = settings[i].read.get.parseJson()
+        let json = settings[i].get.parseJson()
         self.loadKeybindingsFromJson(json, filenames[i])
 
       except CatchableError:
@@ -1223,7 +1223,7 @@ proc runLateCommandsFromAppOptions(self: App) =
     let res = self.handleAction(action, args, record=false)
     log lvlInfo, &"'{command}' -> {res}"
 
-proc finishInitialization*(self: App, state: EditorState) {.async.}
+proc finishInitialization*(self: App, state: EditorState): Future[void] {.gcsafe, raises: [].}
 
 proc newEditor*(backend: api.Backend, platform: Platform, fs: Filesystem, options = AppOptions()): Future[App] {.gcsafe, async.} =
   var self = App()
@@ -2700,7 +2700,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     for (context, c) in self.eventHandlerConfigs.pairs:
       if not c.commands.contains(""):
         continue
-      for (keys, commandInfo) in c.commands.getAssert("").pairs:
+      for (keys, commandInfo) in c.commands[""].pairs:
         var name = commandInfo.command
 
         let key = context & keys
@@ -3720,9 +3720,9 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) {.gcsafe, ra
   self.logNextFrameTime = true
 
   for register in self.recordingKeys:
-    if not self.registers.contains(register) or self.registers.getAssert(register).kind != RegisterKind.Text:
+    if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
       self.registers[register] = Register(kind: RegisterKind.Text, text: "")
-    self.registers.getAssert(register).text.add inputToString(input, modifiers)
+    self.registers[register].text.add inputToString(input, modifiers)
 
   try:
     case self.currentEventHandlers.handleEvent(input, modifiers)
@@ -4313,11 +4313,11 @@ addGlobalDispatchTable "editor", genDispatchTable("editor")
 
 proc recordCommand*(self: App, command: string, args: string) =
   for register in self.recordingCommands:
-    if not self.registers.contains(register) or self.registers.getAssert(register).kind != RegisterKind.Text:
+    if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
       self.registers[register] = Register(kind: RegisterKind.Text, text: "")
-    if self.registers.getAssert(register).text.len > 0:
-      self.registers.getAssert(register).text.add "\n"
-    self.registers.getAssert(register).text.add command & " " & args
+    if self.registers[register].text.len > 0:
+      self.registers[register].text.add "\n"
+    self.registers[register].text.add command & " " & args
 
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
   logScope lvlInfo, &"[handleAction] '{action} {arg}'"

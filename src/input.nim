@@ -63,19 +63,19 @@ proc fillCaptures(dfa: CommandDFA, state: CommandState, args: string): string {.
       if args[bounds.first + 1] == '#':
         let captureName = args[(bounds.first + 2)..<bounds.last]
         if state.captures.contains(captureName):
-          result.add $state.captures.getAssert(captureName).parseInt.catch(0)
+          result.add $state.captures[captureName].parseInt.catch(0)
         else:
           result.add "0"
       elif args[bounds.first + 1] == '$':
         let captureName = args[(bounds.first + 2)..<bounds.last]
         if state.captures.contains(captureName):
-          result.add $state.captures.getAssert(captureName).newJString
+          result.add $state.captures[captureName].newJString
         else:
           result.add $newJString("")
       else:
         let captureName = args[(bounds.first + 1)..<bounds.last]
         if state.captures.contains(captureName):
-          result.add $state.captures.getAssert(captureName).newJString
+          result.add $state.captures[captureName].newJString
         else:
           result.add args[bounds.first..bounds.last]
 

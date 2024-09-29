@@ -62,7 +62,7 @@ proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
   except:
     discard
 
-proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.gcsafe, async: (raises: []).} =
+proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.gcsafe, async.} =
   if self.isCacheUpdateInProgress:
     return
   self.isCacheUpdateInProgress = true

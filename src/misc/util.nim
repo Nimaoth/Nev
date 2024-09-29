@@ -3,11 +3,12 @@ import results
 export options, results
 
 {.used.}
+{.push warning[ProveInit]:off.}
 
 template getSome*[T](opt: Option[T], injected: untyped): bool =
   ((let o = opt; o.isSome())) and ((let injected {.inject, cursor.} = o.get(); true))
 
-template getSome*[T](opt: Option[T], injected: untyped): bool =
+template getSome*[T](opt: Opt[T], injected: untyped): bool =
   ((let o = opt; o.isOk())) and ((let injected {.inject, cursor.} = o.get(); true))
 
 template isNotNil*(v: untyped): untyped = not v.isNil
@@ -96,36 +97,6 @@ template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
     temp
 
   matches
-
-func getAssert*[K, V](t: var Table[K, V], key: K): var V {.raises: [].} =
-  try:
-    return t[key]
-  except ValueError:
-    assert false
-
-func getAssert*[K, V](t: Table[K, V], key: K): lent V {.raises: [].} =
-  try:
-    return t[key]
-  except ValueError:
-    assert false
-
-func getAssert*[K, V](t: var OrderedTable[K, V], key: K): var V {.raises: [].} =
-  try:
-    return t[key]
-  except ValueError:
-    assert false
-
-func getAssert*[K, V](t: OrderedTable[K, V], key: K): lent V {.raises: [].} =
-  try:
-    return t[key]
-  except ValueError:
-    assert false
-
-# type ArrayLike*[T] {.explain.} = concept x, var v
-#   x.low is int
-#   x.high is int
-  # x[int] is T
-  # v[int] = T
 
 func first*[T](x: var seq[T]): var T = x[x.low]
 func last*[T](x: var seq[T]): var T = x[x.high]

@@ -13,7 +13,7 @@ logCategory "lsp"
 type LanguageServerLSP* = ref object of LanguageServer
   client: LSPClient
   languageId: string
-  initializedFuture: ResolvableFuture[bool]
+  initializedFuture: Future[bool]
 
   documentHandles: seq[tuple[document: Document, onEditHandle: Id]]
 
@@ -94,14 +94,14 @@ proc handleDiagnostics(lsp: LanguageServerLSP) {.async.} =
 
 proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     languagesServer: Option[(string, int)] = (string, int).none, workspace = ws.Workspace.none):
-    Future[Option[LanguageServer]] {.gcsafe, async: (raises: []).} =
+    Future[Option[LanguageServer]] {.gcsafe, async.} =
 
   try:
     {.gcsafe.}:
       if languageServers.contains(languageId):
-        let lsp = languageServers.getAssert(languageId)
+        let lsp = languageServers[languageId]
 
-        let initialized = await lsp.initializedFuture.future
+        let initialized = await lsp.initializedFuture
         if not initialized:
           return LanguageServer.none
 
@@ -138,7 +138,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     client.languageId = languageId
 
     var lsp = LanguageServerLSP(client: client, languageId: languageId)
-    lsp.initializedFuture = newResolvableFuture[bool]("lsp.initializedFuture")
+    lsp.initializedFuture = newFuture[bool]("lsp.initializedFuture")
     {.gcsafe.}:
       languageServers[languageId] = lsp
 
@@ -424,7 +424,7 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
     return success[seq[language_server_base.InlayHint]](hints)
 
   # todo: better error message
-  return error[seq[language_server_base.InlayHint]](-1, "Invalid response")
+  return errorResponse[seq[language_server_base.InlayHint]](-1, "Invalid response")
 
 proc toInternalSymbolKind(symbolKind: SymbolKind): SymbolType =
   try:
@@ -551,7 +551,7 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
     return success[seq[lsp_types.Diagnostic]](report.items)
 
   # todo: better error message
-  return error[seq[lsp_types.Diagnostic]](-1, "Invalid response")
+  return errorResponse[seq[lsp_types.Diagnostic]](-1, "Invalid response")
 
 method getCompletions*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Response[CompletionList]] {.async.} =

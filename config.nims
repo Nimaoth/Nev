@@ -83,6 +83,9 @@ when defined(windows):
 else:
   switch("d", "nimWasmtimeStatic=true")
 
+# results prints a ton of hints, silence them
+switch("d", "resultsGenericsOpenSymWorkaroundHint=false")
+
 when defined(musl):
   var muslGcc = findExe("musl-gcc")
   # muslGcc = "/home/nimaoth/musl/musl/bin/musl-gcc"
@@ -100,6 +103,8 @@ else:
 when defined(enableSysFatalStackTrace):
   patchFile("stdlib", "fatal", "patches/fatal")
 patchFile("stdlib", "excpt", "patches/excpt")
+patchFile("stdlib", "tables", "patches/tables") # Patch tables.nim to remove exceptions
+patchFile("chronos", "asyncengine", "patches/asyncengine") # Patch this to enable 0 timeout poll
 
 # switches for debugging
 # switch("d", "wasm3EnableStrace2")

@@ -156,7 +156,7 @@ proc getDirectoryListingRec*(folder: Workspace, path: string): Future[seq[string
 
   return resultItems
 
-proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void] {.gcsafe, raises: [CancelledError]}): Future[void] {.async: (raises: [CancelledError]).} =
+proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void] {.gcsafe, raises: [CancelledError]}): Future[void] {.async.} =
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
@@ -222,12 +222,12 @@ method normalizeImpl*(self: VFSWorkspace, path: string): string =
   return self.workspace.getAbsolutePath(path)
 
 var gWorkspace*: Workspace = nil
-var gWorkspaceFuture = newResolvableFuture[Workspace]("gWorkspace")
+var gWorkspaceFuture = newFuture[Workspace]("gWorkspace")
 
 {.pop.} # raises: []
 {.pop.} # gcsafe
 
-proc getGlobalWorkspace*(): Future[Workspace] = gWorkspaceFuture.future
+proc getGlobalWorkspace*(): Future[Workspace] = gWorkspaceFuture
 proc setGlobalWorkspace*(w: Workspace) =
   gWorkspace = w
   gWorkspaceFuture.complete(w)

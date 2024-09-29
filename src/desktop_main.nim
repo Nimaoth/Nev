@@ -280,6 +280,9 @@ rend.init()
 
 import ui/node
 
+when defined(nevUseChronos):
+  import chronos/config
+
 proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions): Future[void] {.async.} =
   var ed = await newEditor(backend, rend, fs, opts)
 
@@ -289,7 +292,11 @@ proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions):
   var lastEvent = startTimer()
   var renderedLastFrame = false
 
-  let maxPollPerFrameMs = 5.0
+  when defined(nevUseChronos):
+    let maxPollPerFrameMs = 2.5
+  else:
+    let maxPollPerFrameMs = 5.0
+
   while not ed.closeRequested:
     defer:
       inc frameIndex
@@ -358,12 +365,21 @@ proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions):
     gAsyncFrameTimer = startTimer()
     try:
       let start = startTimer()
-      var tries = 50
-      while tries > 0 and start.elapsed.ms < maxPollPerFrameMs:
-        dec tries
-        var f = sleepAsync(1.milliseconds)
-        waitFor(f)
-        # poll()
+      var tries = 25
+
+      when defined(nevUseChronos):
+        let hasPendingOperations = when chronosFutureTracking:
+          pendingFuturesCount() > 0
+        else:
+          true
+
+        while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations:
+          dec tries
+          poll()
+      else:
+        while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations():
+          dec tries
+          poll(0)
 
     except CatchableError:
       discard

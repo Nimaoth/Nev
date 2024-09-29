@@ -22,11 +22,9 @@ method loadApplicationFile*(self: FileSystem, name: string): string {.base, gcsa
 method loadApplicationFileAsync*(self: FileSystem, name: string): Future[string] {.base, gcsafe, raises: [].} = "".toFuture
 method saveApplicationFile*(self: FileSystem, name: string, content: string) {.base, gcsafe, raises: [].} = discard
 
-method findFile*(self: FileSystem, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.base, gcsafe, async: (raises: []).} =
-  return newSeq[string]()
+method findFile*(self: FileSystem, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.base, gcsafe, raises: [].} = discard
 
-method copyFile*(self: FileSystem, source: string, dest: string): Future[bool] {.base, gcsafe, async: (raises: []).} =
-  return false
+method copyFile*(self: FileSystem, source: string, dest: string): Future[bool] {.base, gcsafe, raises: [].} = discard
 
 proc normalizePathUnix*(path: string): string {.gcsafe, raises: [].} =
   var stripLeading = false

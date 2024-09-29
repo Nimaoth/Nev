@@ -1,7 +1,9 @@
-import std/[json, strutils, tables, os, osproc, streams, threadpool, options, macros]
+import std/[json, strutils, tables, os, osproc, streams, options, macros]
 import custom_logger, custom_async, util, timer
-import chronos
-export chronos
+
+{.push warning[Deprecated]:off.}
+import std/[threadpool]
+{.pop.}
 
 logCategory "asyncprocess"
 
@@ -261,7 +263,7 @@ proc send*(process: AsyncProcess, data: string): Future[void] =
     return
   return process.output.send(data)
 
-proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[bool], data: ptr Channel[char], data2: ptr Channel[Option[string]]): bool =
+proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[bool], data: ptr Channel[char], data2: ptr Channel[Option[string]]): NoExceptionDestroy =
   while true:
     let stream = chan[].recv
 
@@ -286,9 +288,7 @@ proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[b
         # echo &"readInput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
-  return true
-
-proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): bool =
+proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): NoExceptionDestroy =
   var buffer: seq[string]
   while true:
     let stream = chan[].recv
@@ -320,8 +320,6 @@ proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): 
         # echo "ioerror"
         # echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
-
-  return true
 
 proc start*(process: AsyncProcess): bool =
   log(lvlInfo, fmt"start process {process.name} {process.args}")
@@ -459,7 +457,7 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
     result[2] = getCurrentException()
 
 proc runProcessAsync*(name: string, args: seq[string] = @[], workingDir: string = "",
-    maxLines: int = int.high): Future[seq[string]] {.async: (raises: [CancelledError, IOError]).} =
+    maxLines: int = int.high): Future[seq[string]] {.async.} =
 
   log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
   let (lines, _, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, false))
@@ -468,7 +466,7 @@ proc runProcessAsync*(name: string, args: seq[string] = @[], workingDir: string 
   return lines
 
 proc runProcessAsyncOutput*(name: string, args: seq[string] = @[], workingDir: string = "",
-    maxLines: int = int.high): Future[tuple[output: string, err: string]] {.async: (raises: [CancelledError, IOError]).} =
+    maxLines: int = int.high): Future[tuple[output: string, err: string]] {.async.} =
 
   log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
   let (outLines, errLines, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, true))
@@ -500,7 +498,7 @@ proc runProcessAsyncCallback*(name: string, args: seq[string] = @[], workingDir:
       log lvlError, &"Failed to start process {name}, {args}"
       return
 
-    await all(readProcessOutputCallback(process, handleOutput), readProcessErrorCallback(process, handleError))
+    await allFutures(readProcessOutputCallback(process, handleOutput), readProcessErrorCallback(process, handleError))
     log lvlInfo, &"Command {name}, {args} finished."
 
   except:

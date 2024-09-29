@@ -260,7 +260,7 @@ proc getTypeface*(self: GuiPlatform, font: string): Typeface {.gcsafe, raises: [
       log lvlError, &"Failed to load font '{font}'"
       return nil
 
-  result = self.typefaces.getAssert(font)
+  result = self.typefaces[font]
 
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
   assert font != ""

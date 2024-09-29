@@ -103,7 +103,7 @@ proc setConsumeAllInput*(config: EventHandlerConfig, value: bool) =
 proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
   if not config.commands.contains(context):
     config.commands[context] = initTable[string, Command]()
-  config.commands.getAssert(context)[keys] = Command(command: action, source: source)
+  config.commands[context][keys] = Command(command: action, source: source)
   config.revision += 1
 
 proc removeCommand*(config: EventHandlerConfig, keys: string) =

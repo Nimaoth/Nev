@@ -1,4 +1,4 @@
-import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, threadpool, algorithm]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, algorithm]
 from std/times import nil
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
@@ -9,6 +9,10 @@ import language/[languages, language_server_base]
 import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme
 import pkg/chroma
+
+{.push warning[Deprecated]:off.}
+import std/[threadpool]
+{.pop.}
 
 import nimsumtree/[buffer, clock, static_array, rope, clone]
 import nimsumtree/sumtree except Cursor, mapIt
@@ -204,8 +208,8 @@ proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true)
 
 proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: bool = true): Selection = (self.clampCursor(selection.first, includeAfter), self.clampCursor(selection.last, includeAfter))
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gcsafe, async: (raises: []).}
-proc connectLanguageServer*(self: TextDocument) {.gcsafe, async: (raises: []).}
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gcsafe, async.}
+proc connectLanguageServer*(self: TextDocument) {.gcsafe, async.}
 proc trimTrailingWhitespace*(self: TextDocument) {.gcsafe, raises: [].}
 
 proc notifyTextChanged*(self: TextDocument) =
@@ -275,7 +279,7 @@ proc reparseTreesitterAsync*(self: TextDocument) {.gcsafe, async.} =
         else:
           TSTree()
 
-        let flowVar: FlowVar[TSTree] = spawn parseTreesitterThread(parser.addr, oldTree, self.rope.clone())
+        let flowVar = spawn parseTreesitterThread(parser.addr, oldTree, self.rope.clone())
 
         while not flowVar.isReady:
           await sleepAsync(1.milliseconds)
@@ -1286,15 +1290,15 @@ proc reloadTask(self: TextDocument) {.async.} =
   defer:
     self.autoReload = false
 
-  var lastModTime = getLastModificationTime(self.filename)
-  while self.autoReload and not self.workspace.isNone:
-    var modTime = getLastModificationTime(self.filename)
-    # if times.`>`(modTime, lastModTime):
-      # lastModTime = modTime
-      # log lvlInfo, &"File '{self.filename}' changed on disk, reload"
-      # await self.loadAsync(self.workspace.get, false)
+  # var lastModTime = getLastModificationTime(self.filename)
+  # while self.autoReload and not self.workspace.isNone:
+  #   var modTime = getLastModificationTime(self.filename)
+  #   # if times.`>`(modTime, lastModTime):
+  #     # lastModTime = modTime
+  #     # log lvlInfo, &"File '{self.filename}' changed on disk, reload"
+  #     # await self.loadAsync(self.workspace.get, false)
 
-    await sleepAsync(1000.milliseconds)
+  #   await sleepAsync(1000.milliseconds)
 
 proc enableAutoReload*(self: TextDocument, enabled: bool) =
   if not self.autoReload and enabled:
@@ -1460,10 +1464,10 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
     self.lastDiagnosticVersion = snapshot.version
     self.setCurrentDiagnostics(diagnostics.result, snapshot.some)
 
-proc connectLanguageServer*(self: TextDocument) {.gcsafe, async: (raises: []).} =
+proc connectLanguageServer*(self: TextDocument) {.gcsafe, async.} =
   discard await self.getLanguageServer()
 
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gcsafe, async: (raises: []).} =
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gcsafe, async.} =
   let languageId = if self.languageId != "":
     self.languageId
   elif getLanguageForFile(self.configProvider, self.filename).getSome(languageId):
@@ -1804,8 +1808,8 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
     self.onOperation.invoke (self, undo.op)
     lastUndo = undo.op.undo
     if untilCheckpoint.len == 0 or (undo.transactionId in self.checkpoints and
-        (untilCheckpoint in self.checkpoints.getAssert(undo.transactionId) or
-        "" in self.checkpoints.getAssert(undo.transactionId))):
+        (untilCheckpoint in self.checkpoints[undo.transactionId] or
+        "" in self.checkpoints[undo.transactionId])):
       break
 
   for editId in lastUndo.counts.keys:
@@ -1840,8 +1844,8 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
 
     let nextRedo {.cursor.} = self.buffer.history.redoStack[^1]
     if nextRedo.transaction.id in self.checkpoints and
-        (untilCheckpoint in self.checkpoints.getAssert(nextRedo.transaction.id) or
-        "" in self.checkpoints.getAssert(nextRedo.transaction.id)):
+        (untilCheckpoint in self.checkpoints[nextRedo.transaction.id] or
+        "" in self.checkpoints[nextRedo.transaction.id]):
       break
 
   for editId in lastRedo.counts.keys:

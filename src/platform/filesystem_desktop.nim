@@ -62,21 +62,20 @@ method loadApplicationFile*(self: FileSystemDesktop, name: string): string =
     log lvlError, &"Failed to load application file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return ""
 
-proc loadFileThread(args: tuple[path: string, data: ptr string]):
-    tuple[ok: bool] {.gcsafe.} =
-
+proc loadFileThread(args: tuple[path: string, data: ptr string, ok: ptr bool]) {.gcsafe.} =
   try:
     args.data[] = readFile(args.path)
-    result.ok = true
+    args.ok[] = true
   except:
-    result.ok = false
+    args.ok[] = false
 
 method loadFileAsync*(self: FileSystemDesktop, path: string): Future[string] {.async.} =
   log lvlInfo, fmt"loadFile '{path}'"
   try:
     var data = ""
-    let res = await spawnAsync(loadFileThread, (path, data.addr))
-    if not res.ok:
+    var ok = false
+    await spawnAsync(loadFileThread, (path, data.addr, ok.addr))
+    if not ok:
       log lvlError, &"Failed to load file '{path}'"
       return ""
 
@@ -90,8 +89,9 @@ method loadApplicationFileAsync*(self: FileSystemDesktop, name: string): Future[
   log lvlInfo, fmt"loadApplicationFile2 {name} -> {path}"
   try:
     var data = ""
-    let res = await spawnAsync(loadFileThread, (path, data.addr))
-    if not res.ok:
+    var ok = false
+    await spawnAsync(loadFileThread, (path, data.addr, ok.addr))
+    if not ok:
       log lvlError, &"Failed to load file '{path}'"
       return ""
 
@@ -124,15 +124,16 @@ proc findFilesRec(dir: string, filename: Regex, maxResults: int, res: var seq[st
     else:
       discard
 
-proc findFileThread(args: tuple[root: string, filename: string, maxResults: int]): seq[string] {.gcsafe.} =
+proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string]]) {.gcsafe.} =
   try:
     let filenameRegex = re(args.filename)
-    findFilesRec(args.root, filenameRegex, args.maxResults, result)
+    findFilesRec(args.root, filenameRegex, args.maxResults, args.res[])
   except:
     discard
 
 method findFile*(self: FileSystemDesktop, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async.} =
-  let res = await spawnAsync(findFileThread, (root, filenameRegex, maxResults))
+  var res = newSeq[string]()
+  await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr))
   return res
 
 method copyFile*(self: FileSystemDesktop, source: string, dest: string): Future[bool] {.async.} =

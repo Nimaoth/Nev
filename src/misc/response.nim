@@ -70,7 +70,7 @@ proc to*[K](a: Response[K], T: typedesc): Response[T] =
 proc success*[T](value: T): Response[T] =
   return Response[T](kind: ResponseKind.Success, result: value)
 
-proc error*[T](code: int, message: string, data: JsonNode = newJNull()): Response[T] =
+proc errorResponse*[T](code: int, message: string, data: JsonNode = newJNull()): Response[T] =
   return Response[T](
     kind: ResponseKind.Error,
     error: ResponseError(code: code, message: message, data: data)

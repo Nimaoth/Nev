@@ -4,7 +4,7 @@ import misc/[traits, util, event]
 traitRef ConfigProvider:
   method getConfigValue(self: ConfigProvider, path: string): Option[JsonNode] {.gcsafe, raises: [].}
   method setConfigValue(self: ConfigProvider, path: string, value: JsonNode) {.gcsafe, raises: [].}
-  method onConfigChanged*(self: ConfigProvider): var Event[void] {.gcsafe, raises: [].}
+  method onConfigChanged*(self: ConfigProvider): ptr Event[void] {.gcsafe, raises: [].}
 
 proc getValue*[T](self: ConfigProvider, path: string, default: T = T.default): T =
   template createScriptGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =

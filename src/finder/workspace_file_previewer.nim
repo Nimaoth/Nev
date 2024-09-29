@@ -82,18 +82,18 @@ proc parsePathAndLocationFromItemData*(item: FinderItem):
     if not jsonData.hasKey "path":
       return
 
-    let path = jsonData.fields.getAssert("path")
+    let path = jsonData.fields["path"]
     if path.kind != JString:
       return
 
-    let isFile = if jsonData.hasKey("isFile") and jsonData.fields.getAssert("isFile").kind == JBool:
-      jsonData.fields.getAssert("isFile").getBool.some
+    let isFile = if jsonData.hasKey("isFile") and jsonData.fields["isFile"].kind == JBool:
+      jsonData.fields["isFile"].getBool.some
     else:
       bool.none
 
     var cursor: Option[Cursor] = if jsonData.hasKey "line":
       (
-        jsonData.fields.getAssert("line").getInt,
+        jsonData.fields["line"].getInt,
         jsonData.fields.getOrDefault("column", % 0).getInt,
       ).some.catch:
         Cursor.none
@@ -264,6 +264,6 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
   else:
     if self.triggerLoadTask.isNil:
       self.triggerLoadTask = startDelayed(100, repeat=false):
-        asyncCheck self.loadAsync()
+        asyncSpawn self.loadAsync()
     else:
       self.triggerLoadTask.reschedule()

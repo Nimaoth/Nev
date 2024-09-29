@@ -128,7 +128,7 @@ proc anyColor*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g:
     if name.startsWith "#":
       return parseHexVar(name).valueOr(default)
     elif name.startsWith("&") and theme.colors.contains(name[1..^1]):
-      return theme.colors.getAssert(name[1..^1])
+      return theme.colors[name[1..^1]]
     else:
       theme.tokenColors.withValue(name, style):
         if style[].foreground.isSome:

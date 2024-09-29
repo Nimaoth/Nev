@@ -1,4 +1,4 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts, locks, times]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts, locks]
 import misc/[custom_logger, websocket, util, myjsonutils, custom_async, response]
 import scripting/expose
 import platform/filesystem
@@ -31,7 +31,7 @@ proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.us
 
       try:
         logging.log(fileLogger, level, args)
-        setLastModificationTime(logFileName, getTime())
+        # setLastModificationTime(logFileName, getTime())
       except:
         discard
 
@@ -622,7 +622,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
     client.serverCapabilities = res.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
   except:
     await client.initializedChannel.send(ServerCapabilities.none)
-    return error[JsonNode](0, &"Failed to parse server capabilities: {getCurrentExceptionMsg()}\n{res.result.pretty}")
+    return errorResponse[JsonNode](0, &"Failed to parse server capabilities: {getCurrentExceptionMsg()}\n{res.result.pretty}")
 
   client.isInitialized = true
   log lvlInfo, "Server capabilities: ", client.serverCapabilities
@@ -697,7 +697,7 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
   #   var socket = await newWebSocket(fmt"ws://localhost:{serverConfig.get.port}")
   #   let connection = LSPConnectionWebsocket(websocket: socket, processId: serverConfig.get.processId)
   #   client.connection = connection
-  #   asyncCheck client.sendInitializationRequest()
+  #   asyncSpawn client.sendInitializationRequest()
 
   else:
     when not defined(js):
@@ -706,7 +706,7 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
       let connection = LSPConnectionAsyncProcess(process: process)
 
       connection.process.onRestarted = proc(): Future[void] {.gcsafe.} =
-        asyncCheck logProcessDebugOutput(process)
+        asyncSpawn logProcessDebugOutput(process)
         return client.sendInitializationRequest()
 
       connection.process.onRestartFailed = proc(): Future[void] {.gcsafe.} =
@@ -983,7 +983,7 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
     return list.success
 
   debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
-  return error[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
+  return errorResponse[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
 proc handleWorkspaceConfigurationRequest(client: LSPClient, id: int, params: ConfigurationParams) {.async, gcsafe.} =
   debugf"handleWorkspaceConfigurationRequest {id}, {params}"
@@ -1012,11 +1012,11 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
         of "window/logMessage", "window/showMessage":
           let messageType =  response["params"]["type"].jsonTo MessageType
           let message = response["params"]["message"].jsonTo string
-          asyncCheck client.messageChannel.send (messageType, message)
+          asyncSpawn client.messageChannel.send (messageType, message)
 
         of "textDocument/publishDiagnostics":
           let params = response["params"].jsonTo(PublicDiagnosticsParams, JOptions(allowMissingKeys: true, allowExtraKeys: true))
-          asyncCheck client.diagnosticChannel.send params
+          asyncSpawn client.diagnosticChannel.send params
 
         else:
           log(lvlInfo, fmt"[run] {response}")
@@ -1030,7 +1030,7 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
         case meth
         of "workspace/configuration":
           let params = response["params"].jsonTo(ConfigurationParams, JOptions(allowMissingKeys: true, allowExtraKeys: true))
-          asyncCheck client.handleWorkspaceConfigurationRequest(id, params)
+          asyncSpawn client.handleWorkspaceConfigurationRequest(id, params)
         else:
           log lvlWarn, fmt"[run] Received request with id {id} and method {meth} but don't know how to handle it"
           discard
@@ -1092,7 +1092,7 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
       discard
 
 proc run*(client: LSPClient) =
-  asyncCheck client.runAsync()
+  asyncSpawn client.runAsync()
 
 # exposed api
 
@@ -1164,13 +1164,13 @@ proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
   defer:
     file.close()
 
-  asyncCheck client.connect()
-  asyncCheck client.runAsync()
-  asyncCheck client.handleNotifiesOpened()
-  asyncCheck client.handleNotifiesClosed()
-  asyncCheck client.handleNotifiesChanged()
-  asyncCheck client.handleNotifiesConfigurationChanged()
-  asyncCheck client.handleRequests()
+  asyncSpawn client.connect()
+  asyncSpawn client.runAsync()
+  asyncSpawn client.handleNotifiesOpened()
+  asyncSpawn client.handleNotifiesClosed()
+  asyncSpawn client.handleNotifiesChanged()
+  asyncSpawn client.handleNotifiesConfigurationChanged()
+  asyncSpawn client.handleRequests()
 
   # todo: cleanup
   while true:

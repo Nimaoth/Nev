@@ -1,4 +1,3 @@
-import std/[sugar]
 import id, util
 
 type Event*[T] = object
