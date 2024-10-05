@@ -107,6 +107,7 @@ else:
 when defined(enableSysFatalStackTrace):
   patchFile("stdlib", "fatal", "patches/fatal")
 patchFile("stdlib", "excpt", "patches/excpt")
+patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")
 patchFile("stdlib", "tables", "patches/tables") # Patch tables.nim to remove exceptions
 patchFile("chronos", "asyncengine", "patches/asyncengine") # Patch this to enable 0 timeout poll
 
