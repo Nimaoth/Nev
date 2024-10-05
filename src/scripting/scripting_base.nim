@@ -3,19 +3,24 @@ import misc/[custom_logger, custom_async]
 import expose, document_editor, compilation_config
 import platform/filesystem
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type ScriptContext* = ref object of RootObj
   fs*: Filesystem
 
-method init*(self: ScriptContext, path: string, fs: Filesystem): Future[void] {.base, gcsafe, raises: [].} = discard
-method deinit*(self: ScriptContext) {.base, gcsafe, raises: [].} = discard
-method reload*(self: ScriptContext): Future[void] {.base, gcsafe, raises: [].} = discard
+method init*(self: ScriptContext, path: string, fs: Filesystem): Future[void] {.base.} = discard
+method deinit*(self: ScriptContext) {.base.} = discard
+method reload*(self: ScriptContext): Future[void] {.base.} = discard
 
-method handleEditorModeChanged*(self: ScriptContext, editor: DocumentEditor, oldMode: string, newMode: string) {.base, gcsafe, raises: [].} = discard
-method postInitialize*(self: ScriptContext): bool {.base, gcsafe, raises: [].} = discard
-method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base, gcsafe, raises: [].} = discard
-method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode {.base, gcsafe, raises: [].} = discard
-method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base, gcsafe, raises: [].} = discard
-method getCurrentContext*(self: ScriptContext): string {.base, gcsafe, raises: [].} = ""
+method handleEditorModeChanged*(self: ScriptContext, editor: DocumentEditor, oldMode: string, newMode: string) {.base.} = discard
+method postInitialize*(self: ScriptContext): bool {.base.} = discard
+method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base.} = discard
+method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode {.base.} = discard
+method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base.} = discard
+method getCurrentContext*(self: ScriptContext): string {.base.} = ""
+
+{.pop.} # raises
 
 proc generateScriptingApiPerModule*() {.compileTime.} =
   var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"

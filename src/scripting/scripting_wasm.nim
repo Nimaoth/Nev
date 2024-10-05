@@ -10,6 +10,8 @@ when not defined(js):
 
 export scripting_base, wasm
 
+{.push gcsafe.}
+
 logCategory "scripting-wasm"
 
 type
@@ -32,7 +34,7 @@ method readImpl*(self: VFSWasmContext, path: string): Future[Option[string]] {.a
   log lvlError, &"[VFSWasmContext] read({path}): not found"
   return string.none
 
-var createEditorWasmImports: proc(): WasmImports {.gcsafe, raises: [].}
+var createEditorWasmImports: proc(): WasmImports {.raises: [].}
 
 method getCurrentContext*(self: ScriptContextWasm): string =
   result = "plugs://"
@@ -94,6 +96,8 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
     except:
       log lvlError, &"Failde to load wasm module '{file}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
+{.push raises: [].}
+
 method init*(self: ScriptContextWasm, path: string, fs: Filesystem): Future[void] {.async.} =
   self.fs = fs
   await self.loadModules("./config/wasm")
@@ -111,14 +115,14 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
 
   await self.loadModules("./config/wasm")
 
-method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) {.gcsafe, raises: [].} =
+method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
     for (m, f) in self.editorModeChangedCallbacks:
       f(editor.id.int32, oldMode.cstring, newMode.cstring)
   except:
     log lvlError, &"Failed to run handleEditorModeChanged: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-method postInitialize*(self: ScriptContextWasm): bool {.gcsafe, raises: [].} =
+method postInitialize*(self: ScriptContextWasm): bool =
   result = false
   try:
     for (m, f) in self.postInitializeCallbacks:
@@ -128,7 +132,7 @@ method postInitialize*(self: ScriptContextWasm): bool {.gcsafe, raises: [].} =
   except:
     log lvlError, &"Failed to run post initialize: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool {.gcsafe, raises: [].} =
+method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool =
   result = false
   try:
     let argStr = $arg
@@ -140,7 +144,7 @@ method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool {.
   except:
     log lvlError, &"Failed to run callback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): JsonNode {.gcsafe, raises: [].} =
+method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): JsonNode =
   try:
     result = nil
     let argStr = $arg
@@ -160,7 +164,7 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
     log lvlError, &"Failed to run handleAnyCallback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 
-method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode {.gcsafe, raises: [].} =
+method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode =
   try:
     result = nil
     let argStr = $args

@@ -9,6 +9,8 @@ import platform/filesystem
 
 export popup, selector_popup_builder
 
+{.push gcsafe.}
+
 logCategory "selector"
 createJavascriptPrototype("popup.selector")
 
