@@ -35,7 +35,7 @@ when defined(windows):
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
      defined(linux) or defined(android) or defined(solaris):
-  import ../selectors2
+  import chronos/selectors2
   export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
