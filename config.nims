@@ -110,6 +110,7 @@ patchFile("stdlib", "excpt", "patches/excpt")
 patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")
 patchFile("stdlib", "tables", "patches/tables") # Patch tables.nim to remove exceptions
 patchFile("chronos", "asyncengine", "patches/asyncengine") # Patch this to enable 0 timeout poll
+patchFile("npeg", "codegen", "patches/codegen") # Patch this for proper gcsafety
 
 # switches for debugging
 # switch("d", "wasm3EnableStrace2")

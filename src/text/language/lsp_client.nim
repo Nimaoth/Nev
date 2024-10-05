@@ -1174,4 +1174,4 @@ proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
 
   # todo: cleanup
   while true:
-    poll()
+    poll(10)

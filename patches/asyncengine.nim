@@ -96,7 +96,7 @@ func getAsyncTimestamp*(a: Duration): auto {.inline.} =
     result = cast[int32](res)
     result += min(1, cast[int32](mid))
 
-template processTimersGetTimeout(loop, timeout: untyped) =
+template processTimersGetTimeout(loop: untyped) =
   var lastFinish = curTime
   while loop.timers.len > 0:
     if loop.timers[0].function.function.isNil:
@@ -570,11 +570,11 @@ elif defined(windows):
     if res.isErr():
       raise newException(ValueError, osErrorMsg(res.error()))
 
-  proc poll*() =
+  proc poll*(timeout: int = 0) =
     let loop = getThreadDispatcher()
     var
       curTime = Moment.now()
-      curTimeout = DWORD(0)
+      curTimeout = DWORD(timeout)
       events: array[MaxEventsCount, osdefs.OVERLAPPED_ENTRY]
 
     # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
@@ -583,7 +583,7 @@ elif defined(windows):
     processCallbacks(loop)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout
-    loop.processTimersGetTimeout(curTimeout)
+    loop.processTimersGetTimeout()
 
     let networkEventsCount =
       if isNil(loop.getQueuedCompletionStatusEx):
@@ -998,11 +998,10 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Remove process' watching using process' descriptor ``procHandle``.
       removeProcess2(procHandle).tryGet()
 
-  proc poll*() {.gcsafe.} =
+  proc poll*(timeout: int = 0) {.gcsafe.} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
-    var curTimeout = 0
 
     # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
     # complete pending work of the outer `processCallbacks` call.
@@ -1010,12 +1009,12 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     processCallbacks(loop)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout.
-    loop.processTimersGetTimeout(curTimeout)
+    loop.processTimersGetTimeout()
 
     # Processing IO descriptors and all hardware events.
     let count =
       block:
-        let res = loop.selector.selectInto2(curTimeout, loop.keys)
+        let res = loop.selector.selectInto2(timeout, loop.keys)
         if res.isErr():
           raiseOsDefect(res.error(), "poll(): Unable to get OS events")
         res.get()
