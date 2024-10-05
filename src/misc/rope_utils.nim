@@ -7,7 +7,7 @@ import custom_async, custom_unicode, util
 {.push gcsafe.}
 {.push raises: [].}
 
-func toPoint*(cursor: api.Cursor): Point = Point.init(cursor.line, cursor.column)
+func toPoint*(cursor: api.Cursor): Point = Point.init(max(cursor.line, 0), max(cursor.column, 0))
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
 func toRange*(selection: Selection): Range[Point] = selection.first.toPoint...selection.last.toPoint
 func toCursor*(point: Point): api.Cursor = (point.row.int, point.column.int)
