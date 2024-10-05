@@ -3,6 +3,9 @@ import misc/[custom_unicode, custom_logger]
 import document, ui/node
 import chroma
 
+{.push stacktrace:off.}
+{.push linetrace:off.}
+
 logCategory "wigdet-library"
 
 template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: string,

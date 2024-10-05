@@ -6,6 +6,9 @@ import input
 
 export util, id, input, chroma, vmath, rect_utils
 
+{.push stacktrace:off.}
+{.push linetrace:off.}
+
 logCategory "ui-node"
 
 var logInvalidationRects* = false

@@ -156,7 +156,9 @@ proc createDebugger*(app: AppInterface, state: JsonNode) =
     debugger.handleEditorRegistered(e)
 
   try:
-    debugger.breakpoints = state["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
+    if state.isNotNil and state.kind == JObject:
+      if state.fields.contains("breakpoints"):
+        debugger.breakpoints = state["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
   except:
     discard
 
@@ -1231,7 +1233,6 @@ proc dispatchEvent*(action: string, args: JsonNode): Option[JsonNode] =
 
 proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
   # debugf"[textedit] handleAction {action}, '{args}'"
-
 
   try:
     var args = newJArray()

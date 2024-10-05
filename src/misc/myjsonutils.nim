@@ -46,6 +46,8 @@ export json
 when defined(nimPreviewSlimSystem):
   import std/assertions
 
+{.push gcsafe.}
+
 #[
 Future directions:
 add a way to customize serialization, for e.g.:

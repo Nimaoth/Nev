@@ -15,6 +15,8 @@ import nimsumtree/[buffer, rope]
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
+{.push stacktrace:off.}
+{.push linetrace:off.}
 
 logCategory "widget_builder_text"
 

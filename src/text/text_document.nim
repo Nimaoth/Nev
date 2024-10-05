@@ -330,6 +330,8 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.reloadTreesitterLanguage()
 
 func contentString*(self: TextDocument): string {.gcsafe, raises: [].} =
+  if self.rope.tree.isNil:
+    return ""
   return $self.rope
 
 var nextBufferId = 1.BufferId
@@ -579,12 +581,12 @@ proc runeCursorToCursor*(self: TextDocument, cursor: RuneCursor): Cursor =
 proc runeSelectionToSelection*(self: TextDocument, cursor: RuneSelection): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
 
-func len*(line: StyledLine): int =
+func len*(line: StyledLine): int {.stacktrace: off, linetrace: off.} =
   result = 0
   for p in line.parts:
     result += p.text.len
 
-proc runeIndex*(line: StyledLine, index: int): RuneIndex =
+proc runeIndex*(line: StyledLine, index: int): RuneIndex {.stacktrace: off, linetrace: off.} =
   var i = 0
   for part in line.parts.mitems:
     if index >= i and index < i + part.text.len:
@@ -593,7 +595,7 @@ proc runeIndex*(line: StyledLine, index: int): RuneIndex =
     i += part.text.len
     result += part.text.toOpenArray.runeLen
 
-proc runeLen*(line: StyledLine): RuneCount =
+proc runeLen*(line: StyledLine): RuneCount {.stacktrace: off, linetrace: off.} =
   for part in line.parts.mitems:
     result += part.text.toOpenArray.runeLen
 
@@ -627,7 +629,7 @@ proc cursorToVisualColumn*(self: TextDocument, cursor: Cursor): int =
       result += 1
     c.seekNextRune()
 
-proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) =
+proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) {.stacktrace: off, linetrace: off.} =
   if partIndex < line.parts.len and index != 0.RuneIndex and index != line.parts[partIndex].text.runeLen.RuneIndex:
     var copy = line.parts[partIndex]
     let byteIndex = line.parts[partIndex].text.toOpenArray.runeOffset(index)
@@ -643,13 +645,13 @@ proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) =
     copy.text = copy.text[byteIndex..^1]
     line.parts.insert(copy, partIndex + 1)
 
-proc splitAt*(line: var StyledLine, index: RuneIndex) =
+proc splitAt*(line: var StyledLine, index: RuneIndex) {.stacktrace: off, linetrace: off.} =
   for i in 0..line.parts.high:
     if line.parts[i].textRange.getSome(r) and index > r.startIndex and index < r.endIndex:
       splitPartAt(line, i, RuneIndex(index - r.startIndex))
       break
 
-proc splitAt*(self: TextDocument, line: var StyledLine, index: int) =
+proc splitAt*(self: TextDocument, line: var StyledLine, index: int) {.stacktrace: off, linetrace: off.} =
   line.splitAt(self.rope.runeIndexInLine((line.index, index)))
 
 proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
@@ -661,7 +663,7 @@ proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
     result.add ((line, bounds.first), (line, bounds.last + 1))
     start = bounds.last + 1
 
-proc overrideStyle*(line: var StyledLine, first: RuneIndex, last: RuneIndex, scope: string, priority: int) =
+proc overrideStyle*(line: var StyledLine, first: RuneIndex, last: RuneIndex, scope: string, priority: int) {.stacktrace: off, linetrace: off.} =
   var index = 0.RuneIndex
   for i in 0..line.parts.high:
     if index >= first and index + line.parts[i].text.runeLen <= last and priority < line.parts[i].priority:
@@ -670,7 +672,7 @@ proc overrideStyle*(line: var StyledLine, first: RuneIndex, last: RuneIndex, sco
       line.parts[i].priority = priority
     index += line.parts[i].text.runeLen
 
-proc overrideUnderline*(line: var StyledLine, first: RuneIndex, last: RuneIndex, underline: bool, color: Color) =
+proc overrideUnderline*(line: var StyledLine, first: RuneIndex, last: RuneIndex, underline: bool, color: Color) {.stacktrace: off, linetrace: off.} =
   var index = 0.RuneIndex
   for i in 0..line.parts.high:
     if index >= first and index + line.parts[i].text.runeLen <= last:
@@ -678,7 +680,7 @@ proc overrideUnderline*(line: var StyledLine, first: RuneIndex, last: RuneIndex,
       line.parts[i].underlineColor = color
     index += line.parts[i].text.runeLen
 
-proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
+proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) {.stacktrace: off, linetrace: off.} =
   let textRuneLen = text.runeLen
 
   for i in 0..line.parts.high:
@@ -698,16 +700,16 @@ proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string,
         line.parts[i].text = text[textOverrideFirst..<textOverrideLast]
         line.parts[i].joinNext = joinNext or line.parts[i].joinNext
 
-proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) =
+proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) {.stacktrace: off, linetrace: off.} =
   line.overrideStyle(self.rope.runeIndexInLine((line.index, first)), self.rope.runeIndexInLine((line.index, last)), scope, priority)
 
-proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, last: int, underline: bool, color: Color) =
+proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, last: int, underline: bool, color: Color) {.stacktrace: off, linetrace: off.} =
   line.overrideUnderline(self.rope.runeIndexInLine((line.index, first)), self.rope.runeIndexInLine((line.index, last)), underline, color)
 
-proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
+proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) {.stacktrace: off, linetrace: off.} =
   line.overrideStyleAndText(self.rope.runeIndexInLine((line.index, first)), text, scope, priority, opacity, joinNext)
 
-proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool, modifyCursorAtEndOfLine: bool = false) =
+proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool, modifyCursorAtEndOfLine: bool = false) {.stacktrace: off, linetrace: off.} =
   line.splitAt(offset)
   for i in 0..line.parts.high:
     if line.parts[i].textRange.getSome(r):
@@ -715,7 +717,7 @@ proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, te
         line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000, inlayContainCursor: containCursor, modifyCursorAtEndOfLine: modifyCursorAtEndOfLine), i + 1)
         return
 
-proc insertTextBefore*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string) =
+proc insertTextBefore*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string) {.stacktrace: off, linetrace: off.} =
   line.splitAt(offset)
   var index = 0.RuneIndex
   for i in 0..line.parts.high:
@@ -732,7 +734,7 @@ proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Select
     for capture in match.captures:
       result.add capture.node.getRange.toSelection
 
-proc replaceSpaces(self: TextDocument, line: var StyledLine) =
+proc replaceSpaces(self: TextDocument, line: var StyledLine) {.stacktrace: off, linetrace: off.} =
   # override whitespace
   let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
   if opacity <= 0:
@@ -766,7 +768,7 @@ proc replaceSpaces(self: TextDocument, line: var StyledLine) =
     let text = ch.repeat(s.len)
     line.overrideStyleAndText(s.a.RuneIndex, text, "comment", 0, opacity=opacity.some)
 
-proc replaceTabs(self: TextDocument, line: var StyledLine) =
+proc replaceTabs(self: TextDocument, line: var StyledLine) {.stacktrace: off, linetrace: off.} =
   var bounds: seq[Range[int]] # Rune indices
   var c = self.rope.cursorT(Point.init(line.index, 0))
   var index = 0
@@ -807,7 +809,7 @@ proc replaceTabs(self: TextDocument, line: var StyledLine) =
     currentOffset += currentTabWidth
     previousEnd = s.b
 
-proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
+proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) {.stacktrace: off, linetrace: off.} =
   # diagnostics
   self.resolveDiagnosticAnchors()
   let theme = ({.gcsafe.}: gTheme)
@@ -881,7 +883,7 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, canWrap: false, priority: 1000000000)
 
 var regexes = initTable[string, Regex]()
-proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
+proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) {.stacktrace: off, linetrace: off.} =
   # logScope lvlInfo, &"applyTreesitterHighlighting({line.index}, {self.filename})"
   try:
     var regexes = ({.gcsafe.}: regexes.addr)
@@ -986,7 +988,7 @@ proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
   except CatchableError:
     discard
 
-proc getStyledText*(self: TextDocument, i: int): StyledLine =
+proc getStyledText*(self: TextDocument, i: int): StyledLine {.stacktrace: off, linetrace: off.} =
   self.styledTextCache.withValue(i, line):
     return line[]
 

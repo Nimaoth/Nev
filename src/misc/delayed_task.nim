@@ -12,6 +12,7 @@ type
     nextTick: Time
     repeat: bool
     callback: proc() {.gcsafe, raises: [].}
+    callbackAsync: proc(): Future[void] {.gcsafe, async: (raises: []).}
     when defined(debugDelayedTasks):
       creationStackTrace: string
 
@@ -40,10 +41,7 @@ proc tick(task: DelayedTask): Future[void] {.gcsafe, async.} =
         echo task.creationStackTrace.indent(2)
 
       try:
-        when defined(nevUseChronos):
-          await sleepAsync(chronos.milliseconds(timeToNextTick.inMilliseconds.int))
-        else:
-          await sleepAsync(timeToNextTick.inMilliseconds.int)
+        await sleepAsync(chronos.milliseconds(timeToNextTick.inMilliseconds.int))
       except CancelledError:
         break
 
@@ -51,7 +49,10 @@ proc tick(task: DelayedTask): Future[void] {.gcsafe, async.} =
       return
 
     task.reschedule()
-    task.callback()
+    if task.callback != nil:
+      task.callback()
+    else:
+      await task.callbackAsync()
 
     if not task.repeat:
       break
@@ -73,6 +74,13 @@ proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: 
   if autoActivate:
     result.reschedule()
 
+proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: proc(): Future[void] {.gcsafe, async: (raises: []).}): DelayedTask {.gcsafe, raises: [].} =
+  result = DelayedTask(interval: interval.int64, repeat: repeat, callbackAsync: callback)
+  when defined(debugDelayedTasks):
+    result.creationStackTrace = getStackTrace()
+  if autoActivate:
+    result.reschedule()
+
 proc pause*(task: DelayedTask) {.gcsafe, raises: [].} =
   task.restartCounter.inc
   task.active = false
@@ -88,5 +96,10 @@ template startDelayed*(interval: int, repeat: bool = false, body: untyped): unty
 
 template startDelayedPaused*(interval: int, repeat: bool = false, body: untyped): untyped =
   newDelayedTask(interval, repeat, false, proc() =
+    body
+  )
+
+template startDelayedAsync*(interval: int, repeat: bool = false, body: untyped): untyped =
+  newDelayedTask(interval, repeat, true, proc() {.async: (raises: []).} =
     body
   )

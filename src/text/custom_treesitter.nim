@@ -4,6 +4,9 @@ import platform/filesystem
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
 
+{.push stacktrace:off.}
+{.push linetrace:off.}
+
 logCategory "treesitter"
 
 import std/dynlib
