@@ -3,6 +3,9 @@ import results
 export options, results
 
 {.used.}
+
+{.push gcsafe.}
+{.push raises: [].}
 {.push warning[ProveInit]:off.}
 
 template getSome*[T](opt: Option[T], injected: untyped): bool =
@@ -69,12 +72,6 @@ template with*(exp, val, body: untyped): untyped =
     defer:
       exp = oldValue
     body
-
-template assertNoEx*(exp: untyped): untyped =
-  try:
-    exp
-  except:
-    assert false, $instantiationInfo(-1) & "Unexpected exception " & getCurrentExceptionMsg()
 
 template catch*(exp: untyped, then: untyped): untyped =
   try:

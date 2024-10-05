@@ -677,7 +677,7 @@ proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig =
       nil
 
     self.eventHandlerConfigs[context] = newEventHandlerConfig(context, parentConfig)
-    assertNoEx self.eventHandlerConfigs[context].setLeaders(self.leaders)
+    self.eventHandlerConfigs[context].setLeaders(self.leaders)
 
   return self.eventHandlerConfigs[context].catch(EventHandlerConfig())
 

@@ -3,6 +3,8 @@ import misc/[custom_unicode, custom_logger]
 import document, ui/node
 import chroma
 
+{.push gcsafe.}
+{.push raises: [].}
 {.push stacktrace:off.}
 {.push linetrace:off.}
 
@@ -12,15 +14,15 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
     inDocument: Document, inHeaderColor: Color, inTextColor: Color, body: untyped): UINode =
 
   block:
-    var leftFunc: proc() {.gcsafe.}
-    var rightFunc: proc() {.gcsafe.}
+    var leftFunc: proc() {.gcsafe, raises: [].}
+    var rightFunc: proc() {.gcsafe, raises: [].}
 
     template onLeft(inBody: untyped) {.used.} =
-      leftFunc = proc() {.gcsafe.} =
+      leftFunc = proc() {.gcsafe, raises: [].} =
         inBody
 
     template onRight(inBody: untyped) {.used.} =
-      rightFunc = proc() {.gcsafe.} =
+      rightFunc = proc() {.gcsafe, raises: [].} =
         inBody
 
     body
@@ -38,7 +40,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
         let workspaceName = inDocument.workspace.map(wf => " - " & wf.name).get("")
         let modeText = if inMode.len == 0: "-" else: inMode
         let (directory, filename) = inDocument.filename.splitPath
-        let text = " $# - $#$# - $#$# " % [modeText, dirtyMarker, filename, directory, workspaceName]
+        let text = (" $# - $#$# - $#$# " % [modeText, dirtyMarker, filename, directory, workspaceName]).catch("")
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = inTextColor, text = text)
 
         if leftFunc.isNotNil:
@@ -56,7 +58,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
 
 proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float,
     maxLine: int, maxHeight: Option[float], flags: UINodeFlags, backgroundColor: Color,
-    handleScroll: proc(delta: float) {.gcsafe.}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe.}): UINode =
+    handleScroll: proc(delta: float) {.gcsafe, raises: [].}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe, raises: [].}): UINode =
 
   let sizeToContentY = SizeToContentY in flags
   builder.panel(flags):
@@ -100,7 +102,7 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
 
 proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float,
     maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color,
-    handleScroll: proc(delta: float) {.gcsafe.}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe.}) =
+    handleScroll: proc(delta: float) {.gcsafe, raises: [].}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe, raises: [].}) =
   var flags = 0.UINodeFlags
   if sizeToContentX:
     flags.incl SizeToContentX

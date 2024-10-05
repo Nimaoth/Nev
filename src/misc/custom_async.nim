@@ -8,7 +8,7 @@ var gAsyncFrameTimer*: Timer
 import std/[threadpool]
 {.pop.}
 
-# Prevent bs warnings on builtin types (e.g) because `=destroy(bool)` raises `Exception` when using `spawn`
+# Prevent bs warnings on builtin types (e.g bool) because `=destroy(bool)` raises `Exception` when using `spawn`
 type NoExceptionDestroy* = object
 func `=destroy`*(x: NoExceptionDestroy) {.raises: [].} = discard
 
@@ -66,6 +66,12 @@ proc doneFuture*(): Future[void] =
     result.complete()
   except:
     assert false
+
+template readFinished*[T: not void](fut: Future[T]): lent T =
+  try:
+    fut.read
+  except:
+    raiseAssert("Failed to read unfinished future")
 
 template thenIt*[T](f: Future[T], body: untyped): untyped =
   when defined(js):

@@ -2567,7 +2567,7 @@ proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Fu
 
   return matches
 
-proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
+proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] {.raises: [].} =
   self.updateCompletionsFromEngine()
 
   if completionIndex in self.completionMatchPositions:
@@ -2576,7 +2576,7 @@ proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[
   if completionIndex in self.completionMatchPositionsFutures:
     let f = self.completionMatchPositionsFutures[completionIndex]
     if f.finished:
-      return f.read
+      return f.readFinished
     else:
       return @[]
 

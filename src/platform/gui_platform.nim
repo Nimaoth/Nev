@@ -7,6 +7,9 @@ import input, monitors, lrucache, theme, compilation_config
 
 export platform
 
+{.push raises: [].}
+{.push gcsafe.}
+
 logCategory "gui-platform"
 
 const logDeletedImageCount = false
@@ -49,14 +52,16 @@ type
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
 proc centerWindowOnMonitor*(window: Window, monitor: int)
-proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font {.gcsafe, raises: [].}
-proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font {.gcsafe, raises: [].}
-proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font {.gcsafe, raises: [].}
+proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
+proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
+proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
 
 method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Typefaces: {self.typefaces.len}\n"
   result.add &"Glyph Cache: {self.glyphCache.len}\n"
   result.add &"Drawn Nodes: {self.drawnNodes.len}\n"
+
+{.pop.} # gcsafe
 
 method init*(self: GuiPlatform) =
   try:
@@ -234,11 +239,13 @@ method init*(self: GuiPlatform) =
 method deinit*(self: GuiPlatform) =
   self.window.close()
 
+{.push gcsafe.}
+
 method requestRender*(self: GuiPlatform, redrawEverything = false) =
   self.requestedRender = true
   self.redrawEverything = self.redrawEverything or redrawEverything
 
-proc getTypeface*(self: GuiPlatform, font: string): Typeface {.gcsafe, raises: [].} =
+proc getTypeface*(self: GuiPlatform, font: string): Typeface =
   let fs = ({.gcsafe.}: fs)
   if font notin self.typefaces:
     var typeface: Typeface = nil
@@ -288,18 +295,18 @@ proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
     return self.getFont(self.fontBold, fontSize)
   return self.getFont(self.fontRegular, fontSize)
 
-method size*(self: GuiPlatform): Vec2 {.gcsafe, raises: [].} =
+method size*(self: GuiPlatform): Vec2 =
   try:
     let size = self.window.size
     return vec2(size.x.float, size.y.float)
   except:
     return vec2(1, 1)
 
-method sizeChanged*(self: GuiPlatform): bool {.gcsafe, raises: [].} =
+method sizeChanged*(self: GuiPlatform): bool =
   let s = self.size
   return s.x != self.lastSize.x or s.y != self.lastSize.y
 
-proc updateCharWidth*(self: GuiPlatform) {.gcsafe, raises: [].} =
+proc updateCharWidth*(self: GuiPlatform) =
   let font = self.getFont(self.ctx.font, self.ctx.fontSize)
   let bounds = font.typeset(repeat("#_", 50)).layoutBounds()
   let boundsSingle = font.typeset("#_").layoutBounds()
@@ -311,7 +318,7 @@ proc updateCharWidth*(self: GuiPlatform) {.gcsafe, raises: [].} =
   self.builder.lineHeight = self.mLineHeight
   self.builder.lineGap = self.mLineDistance
 
-method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) {.gcsafe, raises: [].} =
+method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) =
   log lvlInfo, fmt"Update font: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}, fallbacks: {fallbackFonts}"
   self.ctx.font = fontRegular
   self.fontRegular = fontRegular
@@ -334,23 +341,23 @@ method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontIt
   self.glyphCache.clearRemovedKeys()
   self.glyphCache.clear()
 
-method `fontSize=`*(self: GuiPlatform, fontSize: float) {.gcsafe, raises: [].} =
+method `fontSize=`*(self: GuiPlatform, fontSize: float) =
   self.ctx.fontSize = fontSize
   self.updateCharWidth()
 
-method `lineDistance=`*(self: GuiPlatform, lineDistance: float) {.gcsafe, raises: [].} =
+method `lineDistance=`*(self: GuiPlatform, lineDistance: float) =
   self.mLineDistance = lineDistance
   self.updateCharWidth()
 
-method fontSize*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.ctx.fontSize
-method lineDistance*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.mLineDistance
-method lineHeight*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.mLineHeight
-method charWidth*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.mCharWidth
-method charGap*(self: GuiPlatform): float {.gcsafe, raises: [].} = self.mCharGap
+method fontSize*(self: GuiPlatform): float = self.ctx.fontSize
+method lineDistance*(self: GuiPlatform): float = self.mLineDistance
+method lineHeight*(self: GuiPlatform): float = self.mLineHeight
+method charWidth*(self: GuiPlatform): float = self.mCharWidth
+method charGap*(self: GuiPlatform): float = self.mCharGap
 
-method measureText*(self: GuiPlatform, text: string): Vec2 {.gcsafe, raises: [].} = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
+method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
 
-method processEvents*(self: GuiPlatform): int {.gcsafe.} =
+method processEvents*(self: GuiPlatform): int =
   self.eventCounter = 0
   try:
     {.gcsafe.}:
@@ -411,17 +418,21 @@ proc centerWindowOnMonitor*(window: Window, monitor: int) =
   let windowHeight = float(window.size.y)
   let monitorWidth = right - left
   let monitorHeight = bottom - top
-  window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
-                     int32(top + (monitorHeight - windowHeight) / 2))
+  {.gcsafe.}:
+    window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
+                       int32(top + (monitorHeight - windowHeight) / 2))
 
-proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) {.gcsafe.}
+proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
 
 proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, offset: float = 0) =
-  let rect = rect.grow(vec2(thickness * offset, thickness * offset))
-  boxy.drawRect(rect.splitV(thickness.relative)[0].shrink(vec2(0, thickness)), color)
-  boxy.drawRect(rect.splitVInv(thickness.relative)[1].shrink(vec2(0, thickness)), color)
-  boxy.drawRect(rect.splitH(thickness.relative)[0], color)
-  boxy.drawRect(rect.splitHInv(thickness.relative)[1], color)
+  try:
+    let rect = rect.grow(vec2(thickness * offset, thickness * offset))
+    boxy.drawRect(rect.splitV(thickness.relative)[0].shrink(vec2(0, thickness)), color)
+    boxy.drawRect(rect.splitVInv(thickness.relative)[1].shrink(vec2(0, thickness)), color)
+    boxy.drawRect(rect.splitH(thickness.relative)[0], color)
+    boxy.drawRect(rect.splitHInv(thickness.relative)[1], color)
+  except GLerror, Exception:
+    discard
 
 proc randomColor(node: UINode, a: float32): Color =
   let h = node.id.hash
@@ -430,7 +441,7 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
-method render*(self: GuiPlatform) {.gcsafe.} =
+method render*(self: GuiPlatform) =
   try:
     if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
       self.framebuffer.width = self.size.x.int32
@@ -506,89 +517,92 @@ method render*(self: GuiPlatform) {.gcsafe.} =
     discard
 
 proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
-  var nodePos = offset
-  nodePos.x += node.boundsActual.x
-  nodePos.y += node.boundsActual.y
+  try:
+    var nodePos = offset
+    nodePos.x += node.boundsActual.x
+    nodePos.y += node.boundsActual.y
 
-  var force = force
+    var force = force
 
-  if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
-    return
+    if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
+      return
 
-  node.lastRenderTime = builder.frameIndex
+    node.lastRenderTime = builder.frameIndex
 
-  if node.flags.any &{UINodeFlag.FillBackground, DrawBorder, DrawText}:
-    platform.drawnNodes.add node
+    if node.flags.any &{UINodeFlag.FillBackground, DrawBorder, DrawText}:
+      platform.drawnNodes.add node
 
-  if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
-    force = true
+    if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
+      force = true
 
-  node.lx = nodePos.x
-  node.ly = nodePos.y
-  node.lw = node.boundsActual.w
-  node.lh = node.boundsActual.h
-  let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
+    node.lx = nodePos.x
+    node.ly = nodePos.y
+    node.lw = node.boundsActual.w
+    node.lh = node.boundsActual.h
+    let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
 
-  if FillBackground in node.flags:
-    platform.boxy.drawRect(bounds, node.backgroundColor)
+    if FillBackground in node.flags:
+      platform.boxy.drawRect(bounds, node.backgroundColor)
 
-  # Mask the rest of the rendering is this function to the contentBounds
-  if MaskContent in node.flags:
-    platform.boxy.pushLayer()
-  defer:
+    # Mask the rest of the rendering is this function to the contentBounds
     if MaskContent in node.flags:
       platform.boxy.pushLayer()
-      platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
-      platform.boxy.popLayer(blendMode = MaskBlend)
-      platform.boxy.popLayer()
+    defer:
+      if MaskContent in node.flags:
+        platform.boxy.pushLayer()
+        platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+        platform.boxy.popLayer(blendMode = MaskBlend)
+        platform.boxy.popLayer()
 
-  if DrawText in node.flags:
-    let font = platform.getFont(platform.ctx.fontSize, node.flags)
+    if DrawText in node.flags:
+      let font = platform.getFont(platform.ctx.fontSize, node.flags)
 
-    let wrap = TextWrap in node.flags
-    let wrapBounds = if node.flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
-      vec2(node.w, node.h)
-    else:
-      vec2(0, 0)
+      let wrap = TextWrap in node.flags
+      let wrapBounds = if node.flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
+        vec2(node.w, node.h)
+      else:
+        vec2(0, 0)
 
-    let hAlign = if TextAlignHorizontalLeft in node.flags:
-      HorizontalAlignment.LeftAlign
-    elif TextAlignHorizontalCenter in node.flags:
-      HorizontalAlignment.CenterAlign
-    elif TextAlignHorizontalRight in node.flags:
-      HorizontalAlignment.RightAlign
-    else:
-      HorizontalAlignment.LeftAlign
+      let hAlign = if TextAlignHorizontalLeft in node.flags:
+        HorizontalAlignment.LeftAlign
+      elif TextAlignHorizontalCenter in node.flags:
+        HorizontalAlignment.CenterAlign
+      elif TextAlignHorizontalRight in node.flags:
+        HorizontalAlignment.RightAlign
+      else:
+        HorizontalAlignment.LeftAlign
 
-    let vAlign = if TextAlignVerticalTop in node.flags:
-      VerticalAlignment.TopAlign
-    elif TextAlignVerticalCenter in node.flags:
-      VerticalAlignment.MiddleAlign
-    elif TextAlignVerticalBottom in node.flags:
-      VerticalAlignment.BottomAlign
-    else:
-      VerticalAlignment.TopAlign
+      let vAlign = if TextAlignVerticalTop in node.flags:
+        VerticalAlignment.TopAlign
+      elif TextAlignVerticalCenter in node.flags:
+        VerticalAlignment.MiddleAlign
+      elif TextAlignVerticalBottom in node.flags:
+        VerticalAlignment.BottomAlign
+      else:
+        VerticalAlignment.TopAlign
 
-    let arrangement = font.typeset(node.text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
-    for i, rune in arrangement.runes:
-      if not platform.glyphCache.contains(rune):
-        var path = font.typeface.getGlyphPath(rune)
-        let rect = arrangement.selectionRects[i]
-        path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-        var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
-        for paint in font.paints:
-          image.fillPath(path, paint)
-        platform.boxy.addImage($rune, image, genMipmaps=false)
-        platform.glyphCache[rune] = $rune
+      let arrangement = font.typeset(node.text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
+      for i, rune in arrangement.runes:
+        if not platform.glyphCache.contains(rune):
+          var path = font.typeface.getGlyphPath(rune)
+          let rect = arrangement.selectionRects[i]
+          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+          var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+          for paint in font.paints:
+            image.fillPath(path, paint)
+          platform.boxy.addImage($rune, image, genMipmaps=false)
+          platform.glyphCache[rune] = $rune
 
-      let pos = vec2(nodePos.x.floor, nodePos.y.floor) + arrangement.selectionRects[i].xy
-      platform.boxy.drawImage($rune, pos, node.textColor)
+        let pos = vec2(nodePos.x.floor, nodePos.y.floor) + arrangement.selectionRects[i].xy
+        platform.boxy.drawImage($rune, pos, node.textColor)
 
-    if TextUndercurl in node.flags:
-      platform.boxy.drawRect(rect(bounds.x, bounds.yh - 2, bounds.w, 2), node.underlineColor)
+      if TextUndercurl in node.flags:
+        platform.boxy.drawRect(rect(bounds.x, bounds.yh - 2, bounds.w, 2), node.underlineColor)
 
-  for _, c in node.children:
-    builder.drawNode(platform, c, nodePos, force)
+    for _, c in node.children:
+      builder.drawNode(platform, c, nodePos, force)
 
-  if DrawBorder in node.flags:
-    platform.boxy.strokeRect(bounds, node.borderColor)
+    if DrawBorder in node.flags:
+      platform.boxy.strokeRect(bounds, node.borderColor)
+  except GLerror, Exception:
+    discard

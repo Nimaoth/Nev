@@ -211,7 +211,7 @@ template fromJsonFields(newObj, oldObj, json, discKeys, opt) =
 
   checkJson ok, $(json.len, num, numMatched, $T, json)
 
-proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions()) {.gcsafe.}
+proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions())
 
 proc discKeyMatch[T](obj: T, json: JsonNode, key: static string): bool =
   if not json.hasKey key:
@@ -317,11 +317,11 @@ proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions()) =
     # checkJson not appropriate here
     static: doAssert false, "not yet implemented: " & $T
 
-proc jsonTo*(b: JsonNode, T: typedesc, opt = Joptions()): T {.gcsafe.} =
+proc jsonTo*(b: JsonNode, T: typedesc, opt = Joptions()): T =
   ## reverse of `toJson`
   fromJson(result, b, opt)
 
-proc toJson*[T](a: T, opt = initToJsonOptions()): JsonNode {.gcsafe.} =
+proc toJson*[T](a: T, opt = initToJsonOptions()): JsonNode =
   ## serializes `a` to json; uses `toJsonHook(a: T)` if it's in scope to
   ## customize serialization, see strtabs.toJsonHook for an example.
   ##

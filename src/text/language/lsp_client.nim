@@ -1,4 +1,4 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts, locks]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts]
 import misc/[custom_logger, websocket, util, myjsonutils, custom_async, response]
 import scripting/expose
 import platform/filesystem

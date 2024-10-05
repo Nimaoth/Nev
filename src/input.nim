@@ -4,6 +4,9 @@ import input_api
 
 export input_api
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "input"
 
 type
@@ -47,10 +50,10 @@ type
   MouseButton* {.pure.} = enum
     Left, Middle, Right, DoubleClick, TripleClick, Unknown
 
-proc inputToString*(input: int64, modifiers: Modifiers = {}): string {.gcsafe, raises: [].}
+proc inputToString*(input: int64, modifiers: Modifiers = {}): string
 
 let capturePattern = re"<(.*?)>"
-proc fillCaptures(dfa: CommandDFA, state: CommandState, args: string): string {.gcsafe, raises: [].} =
+proc fillCaptures(dfa: CommandDFA, state: CommandState, args: string): string =
   # debug &"fillCaptures {args}, {state}"
   var last = 0
   {.gcsafe.}:
@@ -85,7 +88,7 @@ proc fillCaptures(dfa: CommandDFA, state: CommandState, args: string): string {.
 proc possibleFunctionIndices*(state: CommandState): int =
   return state.functionIndices.bitSetCard
 
-proc getAction*(dfa: CommandDFA, state: CommandState): (string, string) {.gcsafe, raises: [].} =
+proc getAction*(dfa: CommandDFA, state: CommandState): (string, string) =
   if state.functionIndices.bitSetCard != 1:
     log(lvlError, fmt"Multiple possible functions found: {state}")
 
@@ -107,7 +110,7 @@ proc stepEmpty(dfa: CommandDFA, state: CommandState): seq[CommandState] =
 
     result.incl dfa.stepEmpty(newState)
 
-proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, result: var seq[CommandState]) {.gcsafe.} =
+proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, result: var seq[CommandState]) =
   for transition in dfa.states[state.current].transitions.pairs:
     if currentInput in transition[0]:
       if not transition[1].next.contains(mods):
@@ -123,7 +126,7 @@ proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: 
         result.add newState
       result.add dfa.stepEmpty(newState)
 
-proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, beginEmpty: bool): seq[CommandState] {.gcsafe.} =
+proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, beginEmpty: bool): seq[CommandState] =
   if currentInput == 0:
     log(lvlError, "Input 0 is invalid")
     return @[]
@@ -141,7 +144,7 @@ proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: M
 
   return
 
-proc stepAll*(dfa: CommandDFA, states: seq[CommandState], currentInput: int64, mods: Modifiers): seq[CommandState] {.gcsafe.} =
+proc stepAll*(dfa: CommandDFA, states: seq[CommandState], currentInput: int64, mods: Modifiers): seq[CommandState] =
   # echo &"stepAll {inputToString(currentInput, mods)}, {states.len}, {states}"
   # defer:
   #   echo &"stepAll -> {result}"
@@ -471,7 +474,7 @@ proc handleNextInput(
 
 #   dfa.fillTransitionFunctionIndicesRec(0, {})
 
-proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[string] = @[]): CommandDFA {.gcsafe, raises: [].} =
+proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[string] = @[]): CommandDFA =
   new(result)
 
   # debugf"commands: {commands}"

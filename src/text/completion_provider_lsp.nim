@@ -1,8 +1,10 @@
-import std/[strutils]
 import misc/[custom_unicode, util, custom_async, event, timer, custom_logger, fuzzy_matching, response]
 import language/[lsp_types, language_server_base]
 import completion, text_document
 import scripting_api
+
+{.push gcsafe.}
+{.push raises: [].}
 
 logCategory "Comp-Lsp"
 
@@ -43,7 +45,7 @@ proc refilterCompletions(self: CompletionProviderLsp) =
     log lvlInfo, &"[Comp-Lsp] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.unfilteredCompletions.len})"
   self.onCompletionsUpdated.invoke (self)
 
-proc getLspCompletionsAsync(self: CompletionProviderLsp) {.gcsafe, async.} =
+proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
   let location = self.location
 
   # Right now we need to sleep a bit here because this function is triggered by textInserted and

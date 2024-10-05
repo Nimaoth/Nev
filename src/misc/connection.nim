@@ -1,5 +1,6 @@
-import std/[strutils]
-import misc/[util, custom_async, custom_logger]
+import misc/[util, custom_async, custom_logger, async_process]
+
+{.push gcsafe.}
 
 logCategory "connections"
 
@@ -14,118 +15,87 @@ method send*(connection: Connection, data: string): Future[void] {.base, gcsafe,
 
 {.pop.}
 
-when not defined(js):
-  import misc/[async_process, custom_asyncnet]
-  type ConnectionAsyncProcess = ref object of Connection
-    process: AsyncProcess
+type ConnectionAsyncProcess = ref object of Connection
+  process: AsyncProcess
 
-  method close*(connection: ConnectionAsyncProcess) =
-    try:
-      connection.process.destroy()
-    except OSError:
-      raise newException(IOError, "Failed to destroy process", getCurrentException())
+method close*(connection: ConnectionAsyncProcess) =
+  try:
+    connection.process.destroy()
+  except OSError:
+    raise newException(IOError, "Failed to destroy process", getCurrentException())
 
-  method recvLine*(connection: ConnectionAsyncProcess): Future[string] =
-    connection.process.recvLine()
+method recvLine*(connection: ConnectionAsyncProcess): Future[string] =
+  connection.process.recvLine()
 
-  method recv*(connection: ConnectionAsyncProcess, length: int): Future[string] =
-    connection.process.recv(length)
+method recv*(connection: ConnectionAsyncProcess, length: int): Future[string] =
+  connection.process.recv(length)
 
-  method send*(connection: ConnectionAsyncProcess, data: string): Future[void] =
-    connection.process.send(data)
+method send*(connection: ConnectionAsyncProcess, data: string): Future[void] =
+  connection.process.send(data)
 
-  proc asyncVoid() {.async.} =
-    discard
+proc asyncVoid() {.async.} =
+  discard
 
-  proc newAsyncProcessConnection*(path: string, args: seq[string]):
-      Future[ConnectionAsyncProcess] {.async.} =
+proc newAsyncProcessConnection*(path: string, args: seq[string]):
+    Future[ConnectionAsyncProcess] {.async.} =
 
-    log lvlInfo, fmt"Creating async process connection at {path} {args}"
+  log lvlInfo, fmt"Creating async process connection at {path} {args}"
 
-    let process = startAsyncProcess(path, args, autoRestart=false)
+  let process = startAsyncProcess(path, args, autoRestart=false)
 
-    var fut = newFuture[void]("newAsyncProcessConnection")
-    process.onRestarted = proc(): Future[void] =
-      fut.complete()
-      return asyncVoid()
+  var fut = newFuture[void]("newAsyncProcessConnection")
+  process.onRestarted = proc(): Future[void] =
+    fut.complete()
+    return asyncVoid()
 
-    await fut
-    return ConnectionAsyncProcess(process: process)
+  await fut
+  return ConnectionAsyncProcess(process: process)
 
-  # type ConnectionAsyncSocket* = ref object of Connection
-  #   socket: AsyncSocket
-  #   activeRequests: int = 0 # Required because AsyncSocket asserts that we don't close the socket while
-  #                           # recvLine is in progress
-  #   closeRequested: bool = false
+# todo
+# type ConnectionAsyncSocket* = ref object of Connection
+#   socket: AsyncSocket
+#   activeRequests: int = 0 # Required because AsyncSocket asserts that we don't close the socket while
+#                           # recvLine is in progress
+#   closeRequested: bool = false
 
-  # method close*(connection: ConnectionAsyncSocket) =
-  #   if connection.activeRequests > 0:
-  #     connection.closeRequested = true
-  #   else:
-  #     connection.socket.close()
-  #     connection.socket = nil
+# method close*(connection: ConnectionAsyncSocket) =
+#   if connection.activeRequests > 0:
+#     connection.closeRequested = true
+#   else:
+#     connection.socket.close()
+#     connection.socket = nil
 
-  # template handleClose(connection: Connection): untyped =
-  #   inc connection.activeRequests
-  #   defer:
-  #     dec connection.activeRequests
-  #     if connection.closeRequested and connection.activeRequests == 0:
-  #       connection.closeRequested = false
-  #       connection.close()
+# template handleClose(connection: Connection): untyped =
+#   inc connection.activeRequests
+#   defer:
+#     dec connection.activeRequests
+#     if connection.closeRequested and connection.activeRequests == 0:
+#       connection.closeRequested = false
+#       connection.close()
 
-  # method recvLine*(connection: ConnectionAsyncSocket): Future[string] {.async.} =
-  #   if connection.socket.isNil or connection.socket.isClosed:
-  #     return ""
+# method recvLine*(connection: ConnectionAsyncSocket): Future[string] {.async.} =
+#   if connection.socket.isNil or connection.socket.isClosed:
+#     return ""
 
-  #   connection.handleClose()
-  #   return await connection.socket.recvLine()
+#   connection.handleClose()
+#   return await connection.socket.recvLine()
 
-  # method recv*(connection: ConnectionAsyncSocket, length: int): Future[string] {.async.} =
-  #   if connection.socket.isNil or connection.socket.isClosed:
-  #     return ""
+# method recv*(connection: ConnectionAsyncSocket, length: int): Future[string] {.async.} =
+#   if connection.socket.isNil or connection.socket.isClosed:
+#     return ""
 
-  #   connection.handleClose()
-  #   return await connection.socket.recv(length)
+#   connection.handleClose()
+#   return await connection.socket.recv(length)
 
-  # method send*(connection: ConnectionAsyncSocket, data: string): Future[void] {.async.} =
-  #   if connection.socket.isNil or connection.socket.isClosed:
-  #     return
+# method send*(connection: ConnectionAsyncSocket, data: string): Future[void] {.async.} =
+#   if connection.socket.isNil or connection.socket.isClosed:
+#     return
 
-  #   connection.handleClose()
-  #   await connection.socket.send(data)
+#   connection.handleClose()
+#   await connection.socket.send(data)
 
-  # proc newAsyncSocketConnection*(host: string, port: Port): Future[ConnectionAsyncSocket] {.async.} =
-  #   log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"
-  #   let socket = newAsyncSocket()
-  #   await socket.connect(host, port)
-  #   return ConnectionAsyncSocket(socket: socket)
-
-# type ConnectionWebsocket* = ref object of Connection
-#   websocket: WebSocket
-#   buffer: string
-#   processId: int
-
-# method close*(connection: ConnectionWebsocket) =
-#   connection.websocket.close()
-
-# method recvLine*(connection: ConnectionWebsocket): Future[string] {.async.} =
-#   var newLineIndex = connection.buffer.find("\r\n")
-#   while newLineIndex == -1:
-#     let next = connection.websocket.receiveStrPacket().await
-#     connection.buffer.append next
-#     newLineIndex = connection.buffer.find("\r\n")
-
-#   let line = connection.buffer[0..<newLineIndex]
-#   connection.buffer = connection.buffer[newLineIndex + 2..^1]
-#   return line
-
-# method recv*(connection: ConnectionWebsocket, length: int): Future[string] {.async.} =
-#   while connection.buffer.len < length:
-#     connection.buffer.add connection.websocket.receiveStrPacket().await
-
-#   let res = connection.buffer[0..<length]
-#   connection.buffer = connection.buffer[length..^1]
-#   return res
-
-# method send*(connection: ConnectionWebsocket, data: string): Future[void] =
-#   connection.websocket.send(data)
+# proc newAsyncSocketConnection*(host: string, port: Port): Future[ConnectionAsyncSocket] {.async.} =
+#   log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"
+#   let socket = newAsyncSocket()
+#   await socket.connect(host, port)
+#   return ConnectionAsyncSocket(socket: socket)

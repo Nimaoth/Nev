@@ -1,6 +1,8 @@
 import std/[strutils]
 from glob/regexer import globToRegexString
 
+{.push gcsafe.}
+
 #[
   Globby from https://github.com/treeform/globby
 
@@ -190,6 +192,7 @@ proc escapeRegex*(s: string): string =
       result.add(toHex(ord(c), 2))
 
 import pkg/regex as reg
+export reg.RegexError
 
 type Regex* = reg.Regex2
 func re*(s: string, flags: reg.RegexFlags = {}): Regex {.raises: [RegexError].} = reg.re2(s, flags)
@@ -246,7 +249,7 @@ proc parseGlobs*(globs: string): Globs =
     else:
       result.original.add lineStripped
 
-proc includePath*(globs: Globs, path: string): bool  {.raises: [].}=
+proc includePath*(globs: Globs, path: string): bool =
   try:
     for negatedPattern in globs.negatedPatterns:
       if path.globMatch(negatedPattern):
@@ -255,7 +258,7 @@ proc includePath*(globs: Globs, path: string): bool  {.raises: [].}=
   except GlobbyError:
     return false
 
-proc excludePath*(globs: Globs, path: string): bool {.raises: [].} =
+proc excludePath*(globs: Globs, path: string): bool =
   try:
     for pattern in globs.original:
       if path.globMatch(pattern):

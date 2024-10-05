@@ -1,5 +1,8 @@
 import id, util
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type Event*[T] = object
   when T is void:
     handlers: seq[tuple[id: Id, callback: proc(): void {.gcsafe, raises: [].}]]
@@ -30,7 +33,7 @@ proc unsubscribe*[T](event: var Event[T], id: Id) =
     if event.handlers[i].id == id:
       event.handlers.removeShift(i)
 
-proc invoke*[T: void](event: Event[T]) {.gcsafe, raises: [].} =
+proc invoke*[T: void](event: Event[T]) =
   # Copy handlers so that the callback can unregister itself (which would modify event.handlers
   # while iterating)
   # To guarantee a copy we use =dup, because otherwise nim thinks it can avoid the actual copy
@@ -40,7 +43,7 @@ proc invoke*[T: void](event: Event[T]) {.gcsafe, raises: [].} =
     assert h.callback != nil
     h.callback()
 
-proc invoke*[T](event: Event[T], arg: T) {.gcsafe, raises: [].} =
+proc invoke*[T](event: Event[T], arg: T) =
   # Copy handlers so that the callback can unregister itself (which would modify event.handlers
   # while iterating)
   # To guarantee a copy we use =dup, because otherwise nim thinks it can avoid the actual copy

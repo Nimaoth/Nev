@@ -15,6 +15,9 @@ import nimsumtree/[buffer, rope]
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
+
+{.push gcsafe.}
+{.push raises: [].}
 {.push stacktrace:off.}
 {.push linetrace:off.}
 
@@ -27,11 +30,11 @@ type LocationInfos = object
   diagnostic: Option[CursorLocationInfo]
 
 type LineRenderOptions = object
-  handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) {.gcsafe.}
-  handleDrag: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) {.gcsafe.}
-  handleBeginHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe.}
-  handleHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe.}
-  handleEndHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe.}
+  handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) {.gcsafe, raises: [].}
+  handleDrag: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) {.gcsafe, raises: [].}
+  handleBeginHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe, raises: [].}
+  handleHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe, raises: [].}
+  handleEndHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe, raises: [].}
 
   wrapLine: bool
   wrapLineEndChar: string
@@ -73,8 +76,8 @@ else:
     else:
       theme.color(part.scope, default)
 
-proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool {.gcsafe.}
-proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex] {.gcsafe.}
+proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool
+proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex]
 
 proc getTextRange(line: StyledLine, partIndex: int): (RuneIndex, RuneIndex) =
   var startRune = 0.RuneIndex
@@ -459,7 +462,7 @@ proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, c
 
       inc colorIndex
 
-proc createDoubleLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float) {.gcsafe.}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe.}) =
+proc createDoubleLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float) {.gcsafe, raises: [].}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe, raises: [].}) =
   var flags = 0.UINodeFlags
   if sizeToContentX:
     flags.incl SizeToContentX
@@ -526,7 +529,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
   let changedTextBackgroundColor = app.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
 
-  proc handleClick(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) {.gcsafe.} =
+  proc handleClick(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
     if self.document.isNil:
       return
 
@@ -563,7 +566,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.app.tryActivateEditor(self)
     self.markDirty()
 
-  proc handleDrag(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) {.gcsafe.} =
+  proc handleDrag(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
     if self.document.isNil:
       return
 
@@ -598,7 +601,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.app.tryActivateEditor(self)
     self.markDirty()
 
-  proc handleBeginHover(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe.} =
+  proc handleBeginHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
     if self.document.isNil:
       return
 
@@ -615,7 +618,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.lastHoverLocationBounds = node.boundsAbsolute.some
     self.showHoverForDelayed (line, offset)
 
-  proc handleHover(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe.} =
+  proc handleHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
     if self.document.isNil:
       return
 
@@ -632,7 +635,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.lastHoverLocationBounds = node.boundsAbsolute.some
     self.showHoverForDelayed (line, offset)
 
-  proc handleEndHover(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe.} =
+  proc handleEndHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
     if self.document.isNil:
       return
 
@@ -697,10 +700,10 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     var hoverInfo = CursorLocationInfo.none
     var diagnosticInfo = CursorLocationInfo.none
 
-    proc handleScroll(delta: float) {.gcsafe.} =
+    proc handleScroll(delta: float) =
       self.scrollText(delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0))
 
-    proc handleLine(i: int, y: float, down: bool) {.gcsafe.} =
+    proc handleLine(i: int, y: float, down: bool) =
       assert i in 0..<self.document.numLines
 
       let styledLine = self.getStyledText i
@@ -737,7 +740,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       if showContextLines and (indexFromTop <= indentLevel and not self.document.shouldIgnoreAsContextLine(i)):
         contextLineTarget = max(contextLineTarget, i)
 
-      proc parseColor(str: string): Color {.gcsafe.} = app.theme.color(str, color(200/255, 200/255, 200/255))
+      proc parseColor(str: string): Color = app.theme.color(str, color(200/255, 200/255, 200/255))
 
       # selections and highlights
       var selectionsClampedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledLine)
@@ -1012,7 +1015,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
 
-    proc handleScroll(delta: float) {.gcsafe.} =
+    proc handleScroll(delta: float) =
       let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
       self.scrollOffset += scrollAmount
       self.markDirty()
@@ -1021,7 +1024,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     var maxDetailWidth = 1 * builder.charWidth
     var detailColumn: seq[UINode] = @[]
 
-    proc handleLine(i: int, y: float, down: bool) {.gcsafe.} =
+    proc handleLine(i: int, y: float, down: bool) =
       var backgroundColor = backgroundColor
 
       if i == self.selectedCompletion:
@@ -1114,10 +1117,10 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
 
-method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe.}] =
+method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   self.editor.createUI(builder, app)
 
-method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe.}] =
+method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   self.preRender()
 
   let dirty = self.dirty
@@ -1162,7 +1165,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
       builder.panel(&{LayoutVertical} + sizeFlags):
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
           onRight:
-            proc cursorString(cursor: Cursor): string {.gcsafe.} = $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
+            proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
             let readOnlyText = if self.document.readOnly: "-readonly- " else: ""
             let stagedText = if self.document.staged: "-staged- " else: ""
             let diffText = if renderDiff: "-diff- " else: ""
@@ -1230,11 +1233,11 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             self.lastHoverLocationBounds = info.bounds.transformRect(info.node, builder.root).some
 
   if self.showCompletions and self.active:
-    result.add proc() {.gcsafe.} =
+    result.add proc() =
       self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
 
   if self.showHover:
-    result.add proc() {.gcsafe.} =
+    result.add proc() =
       self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =

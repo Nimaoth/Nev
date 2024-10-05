@@ -260,7 +260,7 @@ proc genCasesCode*(program: Program, sType, uType, uId: NimNode, ms, s, si, sima
             push(`ms`.precStack, 0)
             `ip` = `ipNext`
         else:
-          let (iPrec, iAssoc) = (i.prec.newLit, i.assoc.newLit)
+          let (iPrec, _) = (i.prec.newLit, i.assoc.newLit)
           let exp = if i.assoc == assocLeft:
             quote: peek(`ms`.precStack) < `iPrec`
           else:

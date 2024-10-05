@@ -2,6 +2,9 @@ import std/[os]
 import misc/[custom_logger, custom_async, regex]
 import filesystem
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "fs-desktop"
 
 type FileSystemDesktop* = ref object of FileSystem
@@ -24,7 +27,7 @@ method saveFile*(self: FileSystemDesktop, path: string, content: string) =
     log lvlError, &"Failed to write file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 proc getApplicationDirectoryListingSync*(self: FileSystemDesktop, path: string):
-    tuple[files: seq[string], folders: seq[string]] {.gcsafe, raises: [].} =
+    tuple[files: seq[string], folders: seq[string]] =
 
   try:
     let path = self.getApplicationFilePath path
@@ -35,8 +38,7 @@ proc getApplicationDirectoryListingSync*(self: FileSystemDesktop, path: string):
       of pcDir:
         result.folders.add path // file
       else:
-        discard
-      #   log lvlError, &"getApplicationDirectoryListing: Unhandled file type {kind} for {file}"
+        log lvlError, &"getApplicationDirectoryListing: Unhandled file type {kind} for {file}"
   except:
     discard
 
@@ -44,7 +46,7 @@ method getApplicationDirectoryListing*(self: FileSystemDesktop, path: string):
     Future[tuple[files: seq[string], folders: seq[string]]] {.async.} =
   return self.getApplicationDirectoryListingSync(path)
 
-method getApplicationFilePath*(self: FileSystemDesktop, name: string): string {.raises: [].} =
+method getApplicationFilePath*(self: FileSystemDesktop, name: string): string =
   when defined(js):
     return name
   else:
@@ -62,7 +64,7 @@ method loadApplicationFile*(self: FileSystemDesktop, name: string): string =
     log lvlError, &"Failed to load application file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return ""
 
-proc loadFileThread(args: tuple[path: string, data: ptr string, ok: ptr bool]) {.gcsafe.} =
+proc loadFileThread(args: tuple[path: string, data: ptr string, ok: ptr bool]) =
   try:
     args.data[] = readFile(args.path)
     args.ok[] = true
@@ -109,26 +111,30 @@ method saveApplicationFile*(self: FileSystemDesktop, name: string, content: stri
     log lvlError, &"Failed to save application file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 proc findFilesRec(dir: string, filename: Regex, maxResults: int, res: var seq[string]) =
-  for (kind, path) in walkDir(dir, relative=false):
-    case kind
-    of pcFile:
-      if path.contains(filename):
-        res.add path
+  try:
+    for (kind, path) in walkDir(dir, relative=false):
+      case kind
+      of pcFile:
+        if path.contains(filename):
+          res.add path
+          if res.len >= maxResults:
+            return
+
+      of pcDir:
+        findFilesRec(path, filename, maxResults, res)
         if res.len >= maxResults:
           return
+      else:
+        discard
 
-    of pcDir:
-      findFilesRec(path, filename, maxResults, res)
-      if res.len >= maxResults:
-        return
-    else:
-      discard
+  except:
+    discard
 
-proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string]]) {.gcsafe.} =
+proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string]]) =
   try:
     let filenameRegex = re(args.filename)
     findFilesRec(args.root, filenameRegex, args.maxResults, args.res[])
-  except:
+  except RegexError:
     discard
 
 method findFile*(self: FileSystemDesktop, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async.} =

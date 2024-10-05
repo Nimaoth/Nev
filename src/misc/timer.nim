@@ -1,3 +1,6 @@
+{.push gcsafe.}
+{.push raises: [].}
+
 when defined(nimscript):
   type
     Ticks* = distinct int64

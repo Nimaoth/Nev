@@ -2,13 +2,16 @@ import app, view, document_editor, popup, ui/node
 
 {.used.}
 
-method createUI*(view: View, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe.}] {.base, gcsafe.} =
+{.push gcsafe.}
+{.push raises: [].}
+
+method createUI*(view: View, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe, raises: [].}] {.base.} =
   discard
 
-method createUI*(self: DocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe.}] {.base, gcsafe.} =
+method createUI*(self: DocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe, raises: [].}] {.base.} =
   discard
 
-method createUI*(self: Popup, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe.}] {.base, gcsafe.} =
+method createUI*(self: Popup, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe, raises: [].}] {.base.} =
   discard
 
 func withAlpha*(color: Color, alpha: float32): Color =

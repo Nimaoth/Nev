@@ -14,7 +14,7 @@ func toCursor*(point: Point): api.Cursor = (point.row.int, point.column.int)
 func toSelection*(self: (Point, Point)): Selection = (self[0].toCursor, self[1].toCursor)
 func toSelection*(self: Range[Point]): Selection = (self.a.toCursor, self.b.toCursor)
 
-proc createRopeThread(args: tuple[str: ptr string, rope: ptr Rope, errorIndex: ptr int]) {.gcsafe.} =
+proc createRopeThread(args: tuple[str: ptr string, rope: ptr Rope, errorIndex: ptr int]) =
   template content: openArray[char] = args.str[].toOpenArray(0, args.str[].high)
   let invalidUtf8Index = content.validateUtf8
   if invalidUtf8Index >= 0:

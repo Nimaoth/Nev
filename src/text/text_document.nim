@@ -1,5 +1,4 @@
 import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri, algorithm]
-from std/times import nil
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
@@ -331,6 +330,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
 
 func contentString*(self: TextDocument): string {.gcsafe, raises: [].} =
   if self.rope.tree.isNil:
+    # todo: this shouldn't be happening
     return ""
   return $self.rope
 
