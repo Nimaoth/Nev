@@ -102,7 +102,7 @@ proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
 
     if i < self.wordCache.len - 1 and loopTimer.elapsed.ms > 3:
       self.onCompletionsUpdated.invoke (self)
-      await sleepAsync(15)
+      await sleepAsync(15.milliseconds)
       if self.revision != revision:
         return
 
@@ -120,7 +120,7 @@ proc newCompletionProviderDocument*(document: TextDocument): CompletionProviderD
   self.updateTask = startDelayed(50, repeat=false):
     inc self.revision
     self.updateWordCache()
-    asyncCheck self.refilterCompletions()
+    asyncSpawn self.refilterCompletions()
 
   self.updateTask.pause()
 

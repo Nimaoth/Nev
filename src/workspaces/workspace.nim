@@ -6,6 +6,9 @@ import vfs
 
 import nimsumtree/rope
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "workspace"
 
 type
@@ -153,7 +156,7 @@ proc getDirectoryListingRec*(folder: Workspace, path: string): Future[seq[string
 
   return resultItems
 
-proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
+proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void] {.raises: [CancelledError]}): Future[void] {.async.} =
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
@@ -161,32 +164,38 @@ proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: Ca
   if cancellationToken.canceled:
     return
 
-  let items = await folder.getDirectoryListing(path)
+  try:
+    let items = await folder.getDirectoryListing(path)
 
-  if cancellationToken.canceled:
-    return
+    if cancellationToken.canceled:
+      return
 
-  for file in items.files:
-    let fullPath = if file.isAbsolute:
-      file
-    else:
-      path // file
-    if folder.shouldIgnore(fullPath):
-      continue
-    resultItems.add(fullPath)
+    for file in items.files:
+      let fullPath = if file.isAbsolute:
+        file
+      else:
+        path // file
+      if folder.shouldIgnore(fullPath):
+        continue
+      resultItems.add(fullPath)
 
-  for dir in items.folders:
-    let fullPath = if dir.isAbsolute:
-      dir
-    else:
-      path // dir
-    if folder.shouldIgnore(fullPath):
-      continue
-    folders.add(fullPath)
+    for dir in items.folders:
+      let fullPath = if dir.isAbsolute:
+        dir
+      else:
+        path // dir
+      if folder.shouldIgnore(fullPath):
+        continue
+      folders.add(fullPath)
+  except CatchableError:
+    discard
 
-  await sleepAsync(10)
+  await sleepAsync(10.milliseconds)
 
-  await callback(resultItems)
+  try:
+    await callback(resultItems)
+  except CatchableError:
+    discard
 
   if cancellationToken.canceled:
     return
@@ -197,7 +206,10 @@ proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: Ca
     futs.add iterateDirectoryRec(folder, dir, cancellationToken, callback)
 
   for fut in futs:
-    await fut
+    try:
+      await fut
+    except CatchableError:
+      discard
 
   return
 
@@ -210,22 +222,18 @@ method normalizeImpl*(self: VFSWorkspace, path: string): string =
   return self.workspace.getAbsolutePath(path)
 
 var gWorkspace*: Workspace = nil
-var gWorkspaceFuture = newResolvableFuture[Workspace]("gWorkspace")
+var gWorkspaceFuture = newFuture[Workspace]("gWorkspace")
 
-proc getGlobalWorkspace*(): Future[Workspace] = gWorkspaceFuture.future
+{.pop.} # raises: []
+{.pop.} # gcsafe
+
+proc getGlobalWorkspace*(): Future[Workspace] = gWorkspaceFuture
 proc setGlobalWorkspace*(w: Workspace) =
   gWorkspace = w
   gWorkspaceFuture.complete(w)
 
-when not defined(js):
-  import workspace_local
-  export workspace_local
+import workspace_local
+export workspace_local
 
 import workspace_null
 export workspace_null
-
-import workspace_github
-export workspace_github
-
-import workspace_remote
-export workspace_remote

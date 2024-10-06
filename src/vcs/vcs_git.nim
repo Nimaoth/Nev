@@ -5,6 +5,9 @@ import text/diff
 import platform/filesystem
 import vcs
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "vsc-git"
 
 type
@@ -23,21 +26,21 @@ proc parseFileStatusGit(status: char): VCSFileStatus =
   of '?': Untracked
   else: None
 
-proc parseGitRange(s: string): (int, int) =
+proc parseGitRange(s: string): Result[(int, int), ref CatchableError] =
   if s.contains(','):
     let parts = s[1..^1].split(',')
-    let first = parts[0].parseInt - 1
-    let count = parts[1].parseInt
+    let first = ?catch(parts[0].parseInt - 1)
+    let count = ?catch(parts[1].parseInt)
     if count == 0:
-      return (first + 1, first + 1)
+      return (first + 1, first + 1).ok
     # todo: -1 should maybe be done in a different place
     # return (first - 1, first - 1 + count)
-    return (first, first + count)
+    return (first, first + count).ok
   else:
-    let first = s[1..^1].parseInt - 1
+    let first = ?catch(s[1..^1].parseInt - 1)
     # todo: -1 should maybe be done in a different place
     # return (first - 1, first + 1 - 1)
-    return (first, first + 1)
+    return (first, first + 1).ok
 
 method getChangedFiles*(self: VersionControlSystemGit): Future[seq[VCSFileInfo]] {.async.} =
   log lvlInfo, "getChangedFiles"
@@ -143,8 +146,12 @@ method getFileChanges*(self: VersionControlSystemGit, path: string, staged: bool
     assert deletedRaw[0] == '-'
     assert addedRaw[0] == '+'
 
-    let deletedRange = parseGitRange(deletedRaw)
-    let addedRange = parseGitRange(addedRaw)
+    let deletedRange = parseGitRange(deletedRaw).valueOr:
+      log lvlError, &"Failed to parse deleted range: " & error.msg
+      return seq[LineMapping].none
+    let addedRange = parseGitRange(addedRaw).valueOr:
+      log lvlError, &"Failed to parse deleted range: " & error.msg
+      return seq[LineMapping].none
 
     # debug deletedRange, " -> ", addedRange
     current = LineMapping(

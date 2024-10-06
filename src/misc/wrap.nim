@@ -29,6 +29,8 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
     var mappedArgumentType = originalArgumentType
     let index = newLit(i)
 
+    let isJson = originalArgumentType.repr == "JsonNode"
+
     let tempArg = if def.isVarargs(i):
       genAst(jsonArg, index): jsonArg[index..^1]
     else:
@@ -42,25 +44,25 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
 
     # The argument for the call to scriptFunction in the wrapper
     let resWrapper = if def.argDefaultValue(i).getSome(default):
-      quote do:
-        block:
-          when `originalArgumentType` is JsonNode:
-            if `jsonArg`.len > `index`:
-              `tempArg`
-            else:
-              `default`.toJson
-          else:
-            if `jsonArg`.len > `index`:
-              `tempArg2`
-            else:
-              `default`
-    else:
-      quote do:
-        block:
-          when `originalArgumentType` is JsonNode:
+      if isJson:
+        quote do:
+          if `jsonArg`.len > `index`:
             `tempArg`
           else:
+            `default`.toJson
+      else:
+        quote do:
+          if `jsonArg`.len > `index`:
             `tempArg2`
+          else:
+            `default`
+    else:
+      if isJson:
+        quote do:
+          `tempArg`
+      else:
+        quote do:
+          `tempArg2`
 
     callScriptFuncFromJson.insert(1, resWrapper)
 
@@ -75,8 +77,11 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
       return `callScriptFuncFromJson`.toJson
 
   result = genAst(functionName = newName, call, argName = jsonArg):
-    proc functionName*(argName: JsonNode): JsonNode {.nimcall, used.} =
-      call
+    proc functionName*(argName: JsonNode): JsonNode {.nimcall, used, raises: [JsonCallError].} =
+      try:
+        call
+      except:
+        raise newException(JsonCallError, "", getCurrentException())
 
 proc serializeArgumentsToJson*(def: NimNode, targetUiae: NimNode): (NimNode, NimNode) =
   let argsName = genSym(nskVar)

@@ -35,16 +35,16 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
     let procName = ident("as" & typeName.capitalizeAscii)
     let ast = genAst(procName, name, t, isSeqLit):
 
-      proc procName*(arg: name): Option[t] =
+      proc procName*(arg: name): Option[t] {.gcsafe, raises: [].} =
         try:
           when isSeqLit:
             if arg.node.kind != JArray:
               return t.none
           return arg.node.jsonTo(t, Joptions(allowMissingKeys: true, allowExtraKeys: false)).some
-        except CatchableError:
+        except:
           return t.none
 
-      proc procName*(arg: Option[name]): Option[t] =
+      proc procName*(arg: Option[name]): Option[t] {.gcsafe, raises: [].} =
         if arg.isSome:
           return procName(arg.get)
         else:

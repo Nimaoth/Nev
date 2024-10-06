@@ -20,7 +20,7 @@ var uiUserId = newId()
 
 proc createStackTrace*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
       backgroundColor: Color, selectedBackgroundColor: Color, headerColor: Color, textColor: Color):
-    seq[proc() {.closure.}] =
+    seq[OverlayFunction] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
@@ -76,7 +76,7 @@ proc createStackTrace*(self: DebuggerView, builder: UINodeBuilder, app: App, deb
 
 proc createThreads*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
       backgroundColor: Color, selectedBackgroundColor: Color, headerColor: Color, textColor: Color):
-    seq[proc() {.closure.}] =
+    seq[OverlayFunction] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
@@ -163,7 +163,7 @@ proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debu
 proc createScope*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger, scopeId: int,
     backgroundColor: Color, selectedBackgroundColor: Color, headerColor: Color, textColor: Color,
     output: var CreateVariablesOutput):
-    seq[proc() {.closure.}] =
+    seq[OverlayFunction] =
 
   let ids = debugger.currentVariablesContext().getOr:
     return
@@ -202,7 +202,7 @@ proc createScope*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger
 
 proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
     backgroundColor: Color, selectedBackgroundColor: Color, headerColor: Color, textColor: Color):
-    seq[proc() {.closure.}] =
+    seq[OverlayFunction] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
@@ -211,7 +211,7 @@ proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debu
 
   var createVariablesOutput = CreateVariablesOutput()
 
-  var res: seq[proc() {.closure.}]
+  var res: seq[OverlayFunction]
   proc handleLine(line: int, y: float, down: bool) =
     builder.panel(&{SizeToContentY, FillX}, y = y):
       res.add self.createScope(builder, app, debugger, line, backgroundColor, selectedBackgroundColor,
@@ -255,7 +255,7 @@ proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debu
 
 proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
       backgroundColor: Color, selectedBackgroundColor: Color, headerColor: Color, textColor: Color):
-    seq[proc() {.closure.}] =
+    seq[OverlayFunction] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
@@ -283,7 +283,7 @@ proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
 
     debugger.outputEditor.createUI(builder, app)
 
-method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   let dirty = self.dirty
   self.dirty = false
 
@@ -319,7 +319,7 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
   else:
     sizeFlags.incl FillY
 
-  var res: seq[proc() {.closure.}] = @[]
+  var res: seq[OverlayFunction] = @[]
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = uiUserId.newPrimaryId):
     # onClickAny btn:

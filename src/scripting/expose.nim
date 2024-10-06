@@ -269,12 +269,9 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       callScriptFuncFromJson.insert(1, resWrapper)
       callScriptFuncFromScriptFuncWrapper.insert(1, scriptFunctionWrapper.argName(i))
 
-      let callJsonStringWrapperFunctionWasmArg = genAst(argsJson=callJsonStringWrapperFunctionWasmArr, originalArgumentType, isVarargs, arg = jsonStringWrapperFunctionWasm.argName(i)):
-        argsJson.add block:
-          when originalArgumentType is JsonNode:
-            arg
-          else:
-            arg.toJson()
+      let callJsonStringWrapperFunctionWasmArg = genAst(argsJson=callJsonStringWrapperFunctionWasmArr, arg = jsonStringWrapperFunctionWasm.argName(i)):
+        argsJson.add arg.toJson()
+
       callJsonStringWrapperFunctionWasm.insert(1, callJsonStringWrapperFunctionWasmArg)
 
     callImplFromScriptFunction.insert(1, callFromScriptArg)
@@ -294,18 +291,31 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let lineNumber = def.lineInfoObj.line
 
   if returnType.isSome:
-    let uiae = genAst(res=callJsonStringWrapperFunctionWasmRes):
-      result = parseJson($res).jsonTo(typeof(result))
-    callJsonStringWrapperFunctionWasm.add uiae
+    let returnNode = genAst(res=callJsonStringWrapperFunctionWasmRes):
+      try:
+        result = parseJson($res).jsonTo(typeof(result))
+      except:
+        raiseAssert(getCurrentExceptionMsg())
+    callJsonStringWrapperFunctionWasm.add returnNode
 
   jsonStringWrapperFunctionWasm[6] = callJsonStringWrapperFunctionWasm
 
   let jsonWrapperFunction = createJsonWrapper(scriptFunction, jsonWrapperFunctionName)
 
+  # todo: why do we remove pragmas again?
   removePragmas(def)
   removePragmas(scriptFunction)
   removePragmas(scriptFunctionWrapper)
   removePragmas(jsonStringWrapperFunctionWasm)
+
+  jsonWrapperFunction.addPragma(ident"gcsafe")
+  scriptFunction.addPragma(ident"gcsafe")
+  def.addPragma(ident"gcsafe")
+  jsonStringWrapperFunctionWasm.addPragma(ident"gcsafe")
+
+  scriptFunction.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree()))
+  def.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree()))
+  jsonStringWrapperFunctionWasm.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree()))
 
   result = quote do:
     `def`
@@ -330,18 +340,22 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
     result.add quote do:
       var `jsonStringWrapperFunctionReturnValue`: string = ""
-      proc `jsonStringWrapperFunctionName`*(arg: cstring): cstring {.exportc, used.} =
+      proc `jsonStringWrapperFunctionName`*(arg: cstring): cstring {.exportc, used, gcsafe, raises: [].} =
         try:
           let argJson = parseJson($arg)
           let res = `jsonWrapperFunctionName`(argJson)
-          if res.isNil:
-            `jsonStringWrapperFunctionReturnValue` = ""
-          else:
-            `jsonStringWrapperFunctionReturnValue` = $res
-          return `jsonStringWrapperFunctionReturnValue`.cstring
+          {.gcsafe.}:
+            if res.isNil:
+              `jsonStringWrapperFunctionReturnValue` = ""
+            else:
+              `jsonStringWrapperFunctionReturnValue` = $res
+            return `jsonStringWrapperFunctionReturnValue`.cstring
         except:
           let name = `pureFunctionNameStr`
-          logging.log lvlError, "Failed to run function " & name & &": Invalid arguments: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+          try:
+            logging.log lvlError, "Failed to run function " & name & &": Invalid arguments: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+          except:
+            discard
           return "null"
 
       static:
@@ -436,5 +450,10 @@ macro genDispatcher*(moduleName: static string): untyped =
   switch.add nnkElse.newTree(quote do: JsonNode.none)
 
   return quote do:
-    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] =
-      result = `switch`
+    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] {.gcsafe.} =
+      try:
+        result = `switch`
+      except JsonCallError as e:
+        # todo: handle errors
+        echo e.msg
+        return JsonNode.none

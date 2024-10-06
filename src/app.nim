@@ -16,19 +16,21 @@ import vcs/vcs
 
 import nimsumtree/[buffer, clock, rope]
 
-when not defined(js):
-  import misc/async_process
+import misc/async_process
 
 when enableAst:
   import ast/[model, project]
 
-when enableNimscript and not defined(js):
+when enableNimscript:
   import scripting/scripting_nim
 
 import scripting/scripting_wasm
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
+
+{.push gcsafe.}
+{.push raises: [].}
 
 logCategory "app"
 createJavascriptPrototype("editor")
@@ -42,8 +44,6 @@ elif defined(linux):
   "linux"
 elif defined(wasm):
   "wasm"
-elif defined(js):
-  "js"
 else:
   "other"
 
@@ -90,7 +90,8 @@ type OpenEditor = object
   customOptions: JsonNode
 
 type
-  OpenWorkspaceKind {.pure.} = enum Local, Remote, Github
+  # todo: this isn't necessary anymore
+  OpenWorkspaceKind {.pure.} = enum Local
   OpenWorkspace = object
     kind*: OpenWorkspaceKind
     id*: string
@@ -139,10 +140,12 @@ type
     closeRequested*: bool
     appOptions: AppOptions
 
+    fs*: Filesystem
     vfs*: VFS
 
     logNextFrameTime*: bool = false
     disableLogFrameTime*: bool = true
+    logBuffer = ""
 
     registers: Table[string, Register]
     recordingKeys: seq[string]
@@ -233,24 +236,27 @@ implTrait ConfigProvider, App:
     return node.some
 
   proc setConfigValue(self: App, path: string, value: JsonNode) =
-    let pathItems = path.split(".")
-    var node = self.options
-    for key in pathItems[0..^2]:
-      if node.kind != JObject:
+    try:
+      let pathItems = path.split(".")
+      var node = self.options
+      for key in pathItems[0..^2]:
+        if node.kind != JObject:
+          return
+        if not node.contains(key):
+          node[key] = newJObject()
+        node = node[key]
+      if node.isNil or node.kind != JObject:
         return
-      if not node.contains(key):
-        node[key] = newJObject()
-      node = node[key]
-    if node.isNil or node.kind != JObject:
-      return
-    node[pathItems[^1]] = value
+      node[pathItems[^1]] = value
+    except KeyError:
+      discard
 
-  proc onConfigChanged*(self: App): var Event[void] = self.onConfigChanged
+  proc onConfigChanged*(self: App): ptr Event[void] = self.onConfigChanged.addr
 
 proc handleLog(self: App, level: Level, args: openArray[string])
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
-proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.}
-proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.}
+proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void]
+proc getRegisterTextAsync*(self: App, register: string = ""): Future[string]
 proc setRegisterAsync*(self: App, register: string, value: sink Register): Future[void]
 proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[bool]
 proc recordCommand*(self: App, command: string, args: string)
@@ -284,6 +290,11 @@ proc currentEventHandlers*(self: App): seq[EventHandler]
 proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor]
 proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.none)
 
+proc createView(self: App, editorState: OpenEditor): View
+
+proc setFlag*(self: App, flag: string, value: bool)
+proc toggleFlag*(self: App, flag: string)
+
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
 
@@ -296,8 +307,8 @@ implTrait AppInterface, App:
   recordCommand(void, App, string, string)
 
   proc configProvider*(self: App): ConfigProvider = self.asConfigProvider
-  proc onEditorRegisteredEvent*(self: App): var Event[DocumentEditor] = self.onEditorRegistered
-  proc onEditorDeregisteredEvent*(self: App): var Event[DocumentEditor] = self.onEditorDeregistered
+  proc onEditorRegisteredEvent*(self: App): ptr Event[DocumentEditor] = self.onEditorRegistered.addr
+  proc onEditorDeregisteredEvent*(self: App): ptr Event[DocumentEditor] = self.onEditorDeregistered.addr
 
   openWorkspaceFile(Option[DocumentEditor], App, string, bool)
   openFile(Option[DocumentEditor], App, string)
@@ -324,7 +335,7 @@ type
   AppLogger* = ref object of Logger
     app: App
 
-method log*(self: AppLogger, level: Level, args: varargs[string, `$`]) {.gcsafe.} =
+method log*(self: AppLogger, level: Level, args: varargs[string, `$`]) =
   {.cast(gcsafe).}:
     self.app.handleLog(level, @args)
 
@@ -360,10 +371,11 @@ proc unregisterEditor*(self: App, editor: DocumentEditor): void =
   self.onEditorDeregistered.invoke editor
 
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
-  if not self.callbacks.contains(context):
-    return false
-  let id = self.callbacks[context]
   try:
+    if not self.callbacks.contains(context):
+      return false
+    let id = self.callbacks[context]
+
     withScriptContext self, self.nimsScriptContext:
       if self.nimsScriptContext.handleCallback(id, args):
         return true
@@ -372,15 +384,15 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
         return true
     return false
   except CatchableError:
-    log(lvlError, fmt"Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to run script handleCallback {context}: {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return false
 
 proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
   # debugf"invokeAnyCallback {context}: {args}"
   if self.callbacks.contains(context):
-    let id = self.callbacks[context]
     try:
+      let id = self.callbacks[context]
       withScriptContext self, self.nimsScriptContext:
         let res = self.nimsScriptContext.handleAnyCallback(id, args)
         if res.isNotNil:
@@ -392,7 +404,7 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
           return res
       return nil
     except CatchableError:
-      log(lvlError, fmt"Failed to run script handleAnyCallback {id}: {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to run script handleAnyCallback {context}: {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
       return nil
 
@@ -463,7 +475,7 @@ proc createEditorForDocument(self: App, document: Document): DocumentEditor =
   for editor in self.editorDefaults:
     if editor.canEdit document:
       result = editor.createWithDocument(document, self.asConfigProvider)
-      result.injectDependencies self.asAppInterface
+      result.injectDependencies self.asAppInterface, self.fs
       discard result.onMarkedDirty.subscribe () => self.platform.requestRender()
       return
 
@@ -471,64 +483,72 @@ proc createEditorForDocument(self: App, document: Document): DocumentEditor =
   return nil
 
 proc getOption*[T](editor: App, path: string, default: Option[T] = T.none): Option[T] =
-  template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
-    block:
+  try:
+    template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
+      block:
+        if editor.isNil:
+          return default
+        let node = editor.options{path.split(".")}
+        if node.isNil:
+          return default
+        accessor(node, defaultValue)
+
+    when T is bool:
+      return createScriptGetOption(editor, path, T.default, getBool).some
+    elif T is enum:
+      return parseEnum[T](createScriptGetOption(editor, path, "", getStr)).some.catch(default)
+    elif T is Ordinal:
+      return createScriptGetOption(editor, path, T.default.int, getInt).T.some
+    elif T is float32 | float64:
+      return createScriptGetOption(editor, path, T.default, getFloat).some
+    elif T is string:
+      return createScriptGetOption(editor, path, T.default, getStr).some
+    elif T is JsonNode:
       if editor.isNil:
         return default
       let node = editor.options{path.split(".")}
       if node.isNil:
         return default
-      accessor(node, defaultValue)
+      return node.some
+    else:
+      {.fatal: ("Can't get option with type " & $T).}
 
-  when T is bool:
-    return createScriptGetOption(editor, path, T.default, getBool).some
-  elif T is enum:
-    return parseEnum[T](createScriptGetOption(editor, path, "", getStr)).some.catch(default)
-  elif T is Ordinal:
-    return createScriptGetOption(editor, path, T.default.int, getInt).T.some
-  elif T is float32 | float64:
-    return createScriptGetOption(editor, path, T.default, getFloat).some
-  elif T is string:
-    return createScriptGetOption(editor, path, T.default, getStr).some
-  elif T is JsonNode:
-    if editor.isNil:
-      return default
-    let node = editor.options{path.split(".")}
-    if node.isNil:
-      return default
-    return node.some
-  else:
-    {.fatal: ("Can't get option with type " & $T).}
+  except:
+    return T.none
 
 proc getOption*[T](editor: App, path: string, default: T = T.default): T =
-  template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
-    block:
+  try:
+    template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
+      block:
+        if editor.isNil:
+          return default
+        let node = editor.options{path.split(".")}
+        if node.isNil:
+          return default
+        accessor(node, defaultValue)
+
+    when T is bool:
+      return createScriptGetOption(editor, path, default, getBool)
+    elif T is enum:
+      return parseEnum[T](createScriptGetOption(editor, path, "", getStr), default)
+    elif T is Ordinal:
+      return createScriptGetOption(editor, path, default, getInt)
+    elif T is float32 | float64:
+      return createScriptGetOption(editor, path, default, getFloat)
+    elif T is string:
+      return createScriptGetOption(editor, path, default, getStr)
+    elif T is JsonNode:
       if editor.isNil:
         return default
       let node = editor.options{path.split(".")}
       if node.isNil:
         return default
-      accessor(node, defaultValue)
+      return node
+    else:
+      {.fatal: ("Can't get option with type " & $T).}
 
-  when T is bool:
-    return createScriptGetOption(editor, path, default, getBool)
-  elif T is enum:
-    return parseEnum[T](createScriptGetOption(editor, path, "", getStr), default)
-  elif T is Ordinal:
-    return createScriptGetOption(editor, path, default, getInt)
-  elif T is float32 | float64:
-    return createScriptGetOption(editor, path, default, getFloat)
-  elif T is string:
-    return createScriptGetOption(editor, path, default, getStr)
-  elif T is JsonNode:
-    if editor.isNil:
-      return default
-    let node = editor.options{path.split(".")}
-    if node.isNil:
-      return default
-    return node
-  else:
-    {.fatal: ("Can't get option with type " & $T).}
+  except:
+    return default
 
 proc setOption*[T](editor: App, path: string, value: T) =
   template createScriptSetOption(editor, path, value, constructor: untyped): untyped =
@@ -547,22 +567,23 @@ proc setOption*[T](editor: App, path: string, value: T) =
         return
       node[pathItems[^1]] = constructor(value)
 
-  when T is bool:
-    editor.createScriptSetOption(path, value, newJBool)
-  elif T is Ordinal:
-    editor.createScriptSetOption(path, value, newJInt)
-  elif T is float32 | float64:
-    editor.createScriptSetOption(path, value, newJFloat)
-  elif T is string:
-    editor.createScriptSetOption(path, value, newJString)
-  else:
-    {.fatal: ("Can't set option with type " & $T).}
+  try:
+    when T is bool:
+      editor.createScriptSetOption(path, value, newJBool)
+    elif T is Ordinal:
+      editor.createScriptSetOption(path, value, newJInt)
+    elif T is float32 | float64:
+      editor.createScriptSetOption(path, value, newJFloat)
+    elif T is string:
+      editor.createScriptSetOption(path, value, newJString)
+    else:
+      {.fatal: ("Can't set option with type " & $T).}
 
-  editor.onConfigChanged.invoke()
-  editor.platform.requestRender(true)
+    editor.onConfigChanged.invoke()
+    editor.platform.requestRender(true)
 
-proc setFlag*(self: App, flag: string, value: bool)
-proc toggleFlag*(self: App, flag: string)
+  except:
+    discard
 
 proc currentView*(self: App): int = self.currentViewInternal
 
@@ -621,8 +642,6 @@ proc createView*(self: App, document: Document): View =
   var editor = self.createEditorForDocument document
   return EditorView(document: document, editor: editor)
 
-proc createView(self: App, editorState: OpenEditor): View
-
 proc createAndAddView*(self: App, document: Document, append = false): DocumentEditor =
   var editor = self.createEditorForDocument document
   var view = EditorView(document: document, editor: editor)
@@ -662,11 +681,11 @@ proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig =
     self.eventHandlerConfigs[context] = newEventHandlerConfig(context, parentConfig)
     self.eventHandlerConfigs[context].setLeaders(self.leaders)
 
-  return self.eventHandlerConfigs[context]
+  return self.eventHandlerConfigs[context].catch(EventHandlerConfig())
 
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor] =
-  if self.editors.contains(id):
-    return self.editors[id].some
+  self.editors.withValue(id, editor):
+    return editor[].some
 
   if self.commandLineTextEditor.id == id:
     return self.commandLineTextEditor.some
@@ -711,14 +730,15 @@ proc setLocationList(self: App, list: seq[FinderItem],
 
 proc setTheme*(self: App, path: string) =
   log(lvlInfo, fmt"Loading theme {path}")
-  if theme.loadFromFile(path).getSome(theme):
+  if theme.loadFromFile(self.fs, path).getSome(theme):
     self.theme = theme
-    gTheme = theme
+    {.gcsafe.}:
+      gTheme = theme
   else:
     log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender()
 
-when enableNimscript and not defined(js):
+when enableNimscript:
   var createScriptContext: proc(filepath: string, searchPaths: seq[string], stdPath: Option[string]): Future[Option[ScriptContext]] = nil
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
@@ -749,7 +769,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 
       withScriptContext self, self.wasmScriptContext:
         let t1 = startTimer()
-        await self.wasmScriptContext.init("./config")
+        await self.wasmScriptContext.init("./config", self.fs)
         log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
 
         let t2 = startTimer()
@@ -760,7 +780,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 
   self.runConfigCommands("wasm-plugin-post-load-commands")
 
-  when enableNimscript and not defined(js):
+  when enableNimscript:
     await sleepAsync(1)
 
     if not options.disableNimScriptPlugins:
@@ -773,7 +793,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 
         for path in searchPaths.mitems:
           if path.hasPrefix("app://", rest):
-            path = fs.getApplicationFilePath(rest)
+            path = self.fs.getApplicationFilePath(rest)
 
         if self.homeDir != "":
           let scriptPath = self.homeDir / configDirName / "custom.nims"
@@ -781,7 +801,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
             log lvlInfo, &"Found '{scriptPath}'"
 
             let stdPath = block:
-              let stdPath = fs.getApplicationFilePath("nim_std")
+              let stdPath = self.fs.getApplicationFilePath("nim_std")
               if dirExists(stdPath):
                 stdPath.some
               else:
@@ -891,9 +911,9 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
   try:
     let (isAppFile, path) = self.sessionFile.testApplicationPath()
     let stateJson = if isAppFile:
-      fs.loadApplicationFile(path).parseJson
+      self.fs.loadApplicationFile(path).parseJson
     else:
-      fs.loadFile(path).parseJson
+      self.fs.loadFile(path).parseJson
 
     state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
     log(lvlInfo, fmt"Restoring session {self.sessionFile}")
@@ -953,25 +973,25 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
           self.addCommandScript(scope, "", keys, name, args, description, source = (filename, 0, 0))
 
   except CatchableError:
-    when not defined(js):
-      log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
+    log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
 
 proc loadSettingsFrom*(self: App, directory: string,
-    loadFile: proc(self: App, context: string, path: string): Future[Option[string]]) {.async.} =
+    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
 
-  let filenames = [
-    &"{directory}/settings.json",
-    &"{directory}/settings-{platformName}.json",
-    &"{directory}/settings-{self.backend}.json",
-    &"{directory}/settings-{platformName}-{self.backend}.json",
-  ]
+  {.gcsafe.}:
+    let filenames = [
+      &"{directory}/settings.json",
+      &"{directory}/settings-{platformName}.json",
+      &"{directory}/settings-{self.backend}.json",
+      &"{directory}/settings-{platformName}-{self.backend}.json",
+    ]
 
-  let settings = await all(
+  let settings = allFinished(
     loadFile(self, "settings", filenames[0]),
     loadFile(self, "settings", filenames[1]),
     loadFile(self, "settings", filenames[2]),
     loadFile(self, "settings", filenames[3]),
-  )
+  ).await.mapIt(it.read)
 
   assert filenames.len == settings.len
 
@@ -986,21 +1006,22 @@ proc loadSettingsFrom*(self: App, directory: string,
         log(lvlError, &"Failed to load settings from {filenames[i]}: {getCurrentExceptionMsg()}")
 
 proc loadKeybindings*(self: App, directory: string,
-    loadFile: proc(self: App, context: string, path: string): Future[Option[string]]) {.async.} =
+    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
 
-  let filenames = [
-    &"{directory}/keybindings.json",
-    &"{directory}/keybindings-{platformName}.json",
-    &"{directory}/keybindings-{self.backend}.json",
-    &"{directory}/keybindings-{platformName}-{self.backend}.json",
-  ]
+  {.gcsafe.}:
+    let filenames = [
+      &"{directory}/keybindings.json",
+      &"{directory}/keybindings-{platformName}.json",
+      &"{directory}/keybindings-{self.backend}.json",
+      &"{directory}/keybindings-{platformName}-{self.backend}.json",
+    ]
 
-  let settings = await all(
+  let settings = allFinished(
     loadFile(self, "keybindings", filenames[0]),
     loadFile(self, "keybindings", filenames[1]),
     loadFile(self, "keybindings", filenames[2]),
     loadFile(self, "keybindings", filenames[3]),
-  )
+  ).await.mapIt(it.read)
 
   for i in 0..<filenames.len:
     if settings[i].isSome:
@@ -1016,7 +1037,7 @@ proc loadConfigFileFromAppDir(self: App, context: string, path: string):
     Future[Option[string]] {.async.} =
   try:
     log lvlInfo, &"Try load {context} from app:{path}"
-    let content = await fs.loadApplicationFileAsync(path)
+    let content = await self.fs.loadApplicationFileAsync(path)
     if content.len > 0:
       return content.some
   except CatchableError:
@@ -1026,18 +1047,17 @@ proc loadConfigFileFromAppDir(self: App, context: string, path: string):
 
 proc loadConfigFileFromHomeDir(self: App, context: string, path: string):
     Future[Option[string]] {.async.} =
-  when not defined(js):
-    try:
-      if self.homeDir.len == 0:
-        log lvlInfo, &"No home directory"
-        return
+  try:
+    if self.homeDir.len == 0:
+      log lvlInfo, &"No home directory"
+      return
 
-      log lvlInfo, &"Try load {context} from {self.homeDir}/{path}"
-      let content = await fs.loadFileAsync(self.homeDir // path)
-      if content.len > 0:
-        return content.some
-    except CatchableError:
-      log(lvlError, fmt"Failed to load {context} from home {self.homeDir}: {getCurrentExceptionMsg()}")
+    log lvlInfo, &"Try load {context} from {self.homeDir}/{path}"
+    let content = await self.fs.loadFileAsync(self.homeDir // path)
+    if content.len > 0:
+      return content.some
+  except CatchableError:
+    log(lvlError, fmt"Failed to load {context} from home {self.homeDir}: {getCurrentExceptionMsg()}")
 
   return string.none
 
@@ -1055,123 +1075,122 @@ proc loadConfigFileFromWorkspaceDir(self: App, context: string, path: string):
   return string.none
 
 proc loadOptionsFromAppDir*(self: App) {.async.} =
-  await all(
+  await allFutures(
     self.loadSettingsFrom("config", loadConfigFileFromAppDir),
     self.loadKeybindings("config", loadConfigFileFromAppDir)
   )
 
 proc loadOptionsFromHomeDir*(self: App) {.async.} =
-  when not defined(js):
-    await all(
-      self.loadSettingsFrom(configDirName, loadConfigFileFromHomeDir),
-      self.loadKeybindings(configDirName, loadConfigFileFromHomeDir)
-    )
+  await allFutures(
+    self.loadSettingsFrom(configDirName, loadConfigFileFromHomeDir),
+    self.loadKeybindings(configDirName, loadConfigFileFromHomeDir)
+  )
 
 proc loadOptionsFromWorkspace*(self: App) {.async.} =
-  await all(
+  await allFutures(
     self.loadSettingsFrom(configDirName, loadConfigFileFromWorkspaceDir),
     self.loadKeybindings(configDirName, loadConfigFileFromWorkspaceDir)
   )
 
-import asynchttpserver, asyncnet
+# import asynchttpserver, asyncnet
 
-proc processClient(client: AsyncSocket) {.async.} =
-  log lvlInfo, &"Process client"
-  let self: App = ({.gcsafe.}: gEditor)
+# proc processClient(client: AsyncSocket) {.async.} =
+#   log lvlInfo, &"Process client"
+#   let self: App = ({.gcsafe.}: gEditor)
 
-  try:
-    while not client.isClosed:
-      let line = await client.recvLine()
-      if line.len == 0:
-        break
+#   try:
+#     while not client.isClosed:
+#       let line = await client.recvLine()
+#       if line.len == 0:
+#         break
 
-      log lvlInfo, &"Run command from client: '{line}'"
-      let command = line
-      let (action, arg) = parseAction(command)
-      let response = self.handleAction(action, arg, record=true)
-      if response.getSome(r):
-        await client.send($r & "\n")
-      else:
-        await client.send("\n")
+#       log lvlInfo, &"Run command from client: '{line}'"
+#       let command = line
+#       let (action, arg) = parseAction(command)
+#       let response = self.handleAction(action, arg, record=true)
+#       if response.getSome(r):
+#         await client.send($r & "\n")
+#       else:
+#         await client.send("\n")
 
-  except:
-    log lvlError, &"Failed to read data from connection: {getCurrentExceptionMsg()}"
+#   except:
+#     log lvlError, &"Failed to read data from connection: {getCurrentExceptionMsg()}"
 
-proc serve(port: Port, savePort: bool) {.async.} =
-  var server: AsyncSocket
+# proc serve(port: Port, savePort: bool) {.async.} =
+#   var server: AsyncSocket
 
-  try:
-    server = newAsyncSocket()
-    server.setSockOpt(OptReuseAddr, true)
-    server.bindAddr(port)
-    server.listen()
-    let actualPort = server.getLocalAddr()[1]
-    log lvlInfo, &"Listen for connections on port {actualPort.int}"
-    if savePort:
-      let fileName = getTempDir() / (appName & "_port_" & $os.getCurrentProcessId())
-      log lvlInfo, &"Write port to {fileName}"
-      fs.saveFile(fileName, $actualPort.int)
-  except:
-    log lvlError, &"Failed to create server on port {port.int}: {getCurrentExceptionMsg()}"
-    return
+#   try:
+#     server = newAsyncSocket()
+#     server.setSockOpt(OptReuseAddr, true)
+#     server.bindAddr(port)
+#     server.listen()
+#     let actualPort = server.getLocalAddr()[1]
+#     log lvlInfo, &"Listen for connections on port {actualPort.int}"
+#     if savePort:
+#       let fileName = getTempDir() / (appName & "_port_" & $os.getCurrentProcessId())
+#       log lvlInfo, &"Write port to {fileName}"
+#       self.fs.saveFile(fileName, $actualPort.int)
+#   except:
+#     log lvlError, &"Failed to create server on port {port.int}: {getCurrentExceptionMsg()}"
+#     return
 
-  while true:
-    let client = await server.accept()
+#   while true:
+#     let client = await server.accept()
 
-    asyncCheck processClient(client)
+#     asyncSpawn processClient(client)
 
-proc listenForConnection*(self: App, port: Port) {.async.} =
-  await serve(port, self.getFlag("command-server.save-file", false))
+# proc listenForConnection*(self: App, port: Port) {.async.} =
+#   await serve(port, self.getFlag("command-server.save-file", false))
 
-proc listenForIpc(self: App, id: int) {.async.} =
-  try:
-    let ipcName = appName & "-" & $id
-    log lvlInfo, &"Listen for ipc commands through {ipcName}"
-    let  ipc = createIpc(ipcName).catch:
-      log lvlWarn, &"Ipc port 0 already occupied"
-      return
+# proc listenForIpc(self: App, id: int) {.async.} =
+#   try:
+#     let ipcName = appName & "-" & $id
+#     log lvlInfo, &"Listen for ipc commands through {ipcName}"
+#     let  ipc = createIpc(ipcName).catch:
+#       log lvlWarn, &"Ipc port 0 already occupied"
+#       return
 
-    var inBuffer: array[1024, char]
+#     var inBuffer: array[1024, char]
 
-    defer: ipc.close()
+#     defer: ipc.close()
 
-    let readHandle = open(ipcName, sideReader)
-    defer: readHandle.close()
+#     let readHandle = open(ipcName, sideReader)
+#     defer: readHandle.close()
 
-    while not self.closeRequested:
-      let c = await readHandle.readInto(cast[pointer](inBuffer[0].addr), inBuffer.len)
-      # todo: handle arbitrary message size
-      if c > 0:
-        let message = inBuffer[0..<c].join()
-        log lvlInfo, &"Run command from client: '{message}'"
+#     while not self.closeRequested:
+#       let c = await readHandle.readInto(cast[pointer](inBuffer[0].addr), inBuffer.len)
+#       # todo: handle arbitrary message size
+#       if c > 0:
+#         let message = inBuffer[0..<c].join()
+#         log lvlInfo, &"Run command from client: '{message}'"
 
-        try:
-          if message.startsWith("-r:") or message.startsWith("-R:"):
-            let (action, arg) = parseAction(message[3..^1])
-            # todo: send response
-            discard self.handleAction(action, arg, record=true)
-          elif message.startsWith("-p:"):
-            let setting = message[3..^1]
-            let i = setting.find("=")
-            if i == -1:
-              log lvlError, &"Invalid setting '{setting}', expected 'path.to.setting=value'"
-              continue
+#         try:
+#           if message.startsWith("-r:") or message.startsWith("-R:"):
+#             let (action, arg) = parseAction(message[3..^1])
+#             # todo: send response
+#             discard self.handleAction(action, arg, record=true)
+#           elif message.startsWith("-p:"):
+#             let setting = message[3..^1]
+#             let i = setting.find("=")
+#             if i == -1:
+#               log lvlError, &"Invalid setting '{setting}', expected 'path.to.setting=value'"
+#               continue
 
-            let path = setting[0..<i]
-            let value = setting[(i + 1)..^1].parseJson.catch:
-              log lvlError, &"Failed to parse value as json for '{setting}': {getCurrentExceptionMsg()}"
-              continue
+#             let path = setting[0..<i]
+#             let value = setting[(i + 1)..^1].parseJson.catch:
+#               log lvlError, &"Failed to parse value as json for '{setting}': {getCurrentExceptionMsg()}"
+#               continue
 
-            log lvlInfo, &"Set {setting}"
-            self.setOption(path, value)
-          else:
-            discard self.openFile(message)
+#             log lvlInfo, &"Set {setting}"
+#             self.setOption(path, value)
+#           else:
+#             discard self.openFile(message)
 
-        except:
-          log lvlError, &"Failed to run ipc command: {getCurrentExceptionMsg()}"
+#         except:
+#           log lvlError, &"Failed to run ipc command: {getCurrentExceptionMsg()}"
 
-  except:
-    log lvlError, &"Failed to open/read ipc messages: {getCurrentExceptionMsg()}"
+#   except:
+#     log lvlError, &"Failed to open/read ipc messages: {getCurrentExceptionMsg()}"
 
 proc applySettingsFromAppOptions(self: App) =
   log lvlInfo, &"Apply settings provided through command line"
@@ -1203,24 +1222,21 @@ proc runLateCommandsFromAppOptions(self: App) =
     let res = self.handleAction(action, args, record=false)
     log lvlInfo, &"'{command}' -> {res}"
 
-proc finishInitialization*(self: App, state: EditorState) {.async.}
+proc finishInitialization*(self: App, state: EditorState): Future[void]
 
-proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
+proc newEditor*(backend: api.Backend, platform: Platform, fs: Filesystem, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
-  # Emit this to set the editor prototype to editor_prototype, which needs to be set up before calling this
-  when defined(js):
-    {.emit: [self, " = jsCreateWithPrototype(editor_prototype, ", self, ");"].}
-    # This " is here to fix syntax highlighting
+  {.gcsafe.}:
+    gEditor = self
+    gAppInterface = self.asAppInterface
+    self.fs = fs
+    self.platform = platform
 
-  logger.addLogger AppLogger(app: self, fmtStr: "")
+    logger.addLogger AppLogger(app: self, fmtStr: "")
 
-  when not defined(js):
-    log lvlInfo, fmt"Creating App with backend {backend} and options {options}"
+  log lvlInfo, fmt"Creating App with backend {backend} and options {options}"
 
-  gEditor = self
-  gAppInterface = self.asAppInterface
-  self.platform = platform
   self.backend = backend
   self.statusBarOnTop = false
   self.appOptions = options
@@ -1229,19 +1245,18 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.vfs.mount("", VFSNull())
   self.vfs.mount("plugs://", VFSNull())
 
-  discard platform.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
-  discard platform.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
-  discard platform.onRune.subscribe proc(event: auto): void = self.handleRune(event.input, event.modifiers)
-  discard platform.onDropFile.subscribe proc(event: auto): void = self.handleDropFile(event.path, event.content)
-  discard platform.onCloseRequested.subscribe proc() = self.closeRequested = true
+  discard platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
+  discard platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
+  discard platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
+  discard platform.onDropFile.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleDropFile(event.path, event.content)
+  discard platform.onCloseRequested.subscribe proc() {.gcsafe, raises: [].} = self.closeRequested = true
 
   self.timer = startTimer()
   self.frameTimer = startTimer()
 
-  when not defined(js):
-    self.homeDir = getHomeDir().normalizePathUnix.catch:
-      log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
-      ""
+  self.homeDir = getHomeDir().normalizePathUnix.catch:
+    log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
+    ""
 
   self.layout = HorizontalLayout()
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
@@ -1274,14 +1289,16 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.applySettingsFromAppOptions()
 
-  self.logDocument = newTextDocument(self.asConfigProvider, "log", load=false, createLanguageServer=false)
+  self.logDocument = newTextDocument(self.asConfigProvider, self.fs, "log", load=false, createLanguageServer=false)
   self.documents.add self.logDocument
 
   self.theme = defaultTheme()
-  gTheme = self.theme
+  {.gcsafe.}:
+    gTheme = self.theme
+
   self.currentView = 0
 
-  self.gitIgnore = parseGlobs(fs.loadApplicationFile(".gitignore"))
+  self.gitIgnore = parseGlobs(self.fs.loadApplicationFile(".gitignore"))
 
   assignEventHandler(self.eventHandler, self.getEventHandlerConfig("editor")):
     onAction:
@@ -1313,9 +1330,9 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.commandLineMode = false
 
   self.languageServerCommandLine = newLanguageServerCommandLine(self.asAppInterface, self.commandInfos)
-  let commandLineTextDocument = newTextDocument(self.asConfigProvider, language="command-line".some, languageServer=self.languageServerCommandLine.some)
+  let commandLineTextDocument = newTextDocument(self.asConfigProvider, self.fs, language="command-line".some, languageServer=self.languageServerCommandLine.some)
   self.documents.add commandLineTextDocument
-  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.asConfigProvider)
+  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.fs, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
   self.getCommandLineTextEditor.usage = "command-line"
   self.getCommandLineTextEditor.disableScrolling = true
@@ -1330,14 +1347,10 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
     elif options.fileToOpen.isSome:
       # Don't restore a session when opening a specific file.
       discard
+    elif fileExists(defaultSessionName):
+      self.sessionFile = defaultSessionName
     else:
-      when not defined(js):
-        # In the browser we don't have access to the local file system.
-        # Outside the browser we look for a session file in the current directory.
-        if fileExists(defaultSessionName):
-          self.sessionFile = defaultSessionName
-      else:
-        self.sessionFile = "app:" & defaultSessionName
+      self.sessionFile = "app:" & defaultSessionName
 
     if self.sessionFile != "":
       self.restoreStateFromConfig(state)
@@ -1359,7 +1372,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   log lvlInfo, &"Finished creating app"
 
-  asyncCheck self.finishInitialization(state)
+  asyncSpawn self.finishInitialization(state)
 
   return self
 
@@ -1367,39 +1380,25 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
 
   self.runConfigCommands("startup-commands")
 
-  if self.getOption("command-server.port", Port.none).getSome(port):
-    asyncCheck self.listenForConnection(port)
+  # if self.getOption("command-server.port", Port.none).getSome(port):
+  #   asyncSpawn self.listenForConnection(port)
 
   if self.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
       var workspace: Workspace = nil
       case wf.kind
       of OpenWorkspaceKind.Local:
-        when not defined(js):
-          workspace = newWorkspaceFolderLocal(wf.settings)
-        else:
-          when not defined(js):
-            log lvlError, fmt"Failed to restore local workspace, local workspaces not available in js. Workspace: {wf}"
-          continue
-
-      of OpenWorkspaceKind.Remote:
-        workspace = newWorkspaceRemote(wf.settings)
-      of OpenWorkspaceKind.Github:
-        workspace = newWorkspaceFolderGithub(wf.settings)
+        workspace = newWorkspaceFolderLocal(wf.settings)
 
       workspace.id = wf.id.parseId
       workspace.name = wf.name
       if self.setWorkspaceFolder(workspace).await:
-        when not defined(js):
-          log(lvlInfo, fmt"Restoring workspace {workspace.name} ({workspace.id})")
+        log(lvlInfo, fmt"Restoring workspace {workspace.name} ({workspace.id})")
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.isNil:
-    when not defined(js):
-      log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
-      discard await self.setWorkspaceFolder newWorkspaceFolderLocal(".")
-    else:
-      discard await self.setWorkspaceFolder newWorkspaceFolderNull()
+    log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+    discard await self.setWorkspaceFolder newWorkspaceFolderLocal(".")
 
   when enableAst:
     if self.workspace.isNotNil:
@@ -1434,14 +1433,15 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
     else:
       self.help()
 
-  asyncCheck self.initScripting(self.appOptions)
+  asyncSpawn self.initScripting(self.appOptions)
 
   self.runLateCommandsFromAppOptions()
 
   log lvlInfo, &"Finished initializing app"
 
-  asyncCheck self.listenForIpc(0)
-  asyncCheck self.listenForIpc(os.getCurrentProcessId())
+  # todo
+  # asyncSpawn self.listenForIpc(0)
+  # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
 
 proc saveAppState*(self: App)
 proc printStatistics*(self: App)
@@ -1471,12 +1471,13 @@ proc shutdown*(self: App) =
 
   self.languageServerCommandLine.stop()
 
-  gAppInterface = nil
+  {.gcsafe.}:
+    gAppInterface = nil
   self[] = AppObject()
 
-  custom_treesitter.freeDynamicLibraries()
+  {.gcsafe.}:
+    custom_treesitter.freeDynamicLibraries()
 
-var logBuffer = ""
 proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
   if self.logDocument.isNotNil:
@@ -1486,15 +1487,16 @@ proc handleLog(self: App, level: Level, args: openArray[string]) =
         editor.bScrollToEndOnInsert = true
 
     let selection = self.logDocument.TextDocument.lastCursor.toSelection
-    discard self.logDocument.TextDocument.edit([selection], [selection], [logBuffer & str])
-    logBuffer = ""
+    discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
+    self.logBuffer = ""
 
   else:
-    logBuffer.add str
+    self.logBuffer.add str
 
 proc getEditor(): Option[App] =
-  if gEditor.isNil: return App.none
-  return gEditor.some
+  {.gcsafe.}:
+    if gEditor.isNil: return App.none
+    return gEditor.some
 
 static:
   addInjector(App, getEditor)
@@ -1511,7 +1513,7 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
 
 proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false)
     {.expose("editor").} =
-  asyncCheck self.reapplyConfigKeybindingsAsync(app, home, workspace)
+  asyncSpawn self.reapplyConfigKeybindingsAsync(app, home, workspace)
 
 proc splitView*(self: App) {.expose("editor").} =
   defer:
@@ -1527,7 +1529,7 @@ proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], wo
   proc handleError(line: string) {.gcsafe.} =
     {.gcsafe.}:
       log lvlError, &"[{command}] {line}"
-  asyncCheck runProcessAsyncCallback(command, args, workingDir, handleOutput, handleError)
+  asyncSpawn runProcessAsyncCallback(command, args, workingDir, handleOutput, handleError)
 
 proc disableLogFrameTime*(self: App, disable: bool) {.expose("editor").} =
   self.disableLogFrameTime = disable
@@ -1577,14 +1579,12 @@ proc getHostOs*(self: App): string {.expose("editor").} =
     return "linux"
   elif defined(windows):
     return "windows"
-  elif defined(js):
-    return "browser"
   else:
     return "unknown"
 
 proc loadApplicationFile*(self: App, path: string): Option[string] {.expose("editor").} =
   ## Load a file from the application directory (path is relative to the executable)
-  return fs.loadApplicationFile(path).some
+  return self.fs.loadApplicationFile(path).some
 
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
@@ -1597,10 +1597,10 @@ proc openDocument*(self: App, path: string, appFile = false, load = true): Optio
       if path.endsWith(".ast-model"):
         newModelDocument(path, app=appFile, workspaceFolder=self.workspace.some)
       else:
-        newTextDocument(self.asConfigProvider, path,
+        newTextDocument(self.asConfigProvider, self.fs, path,
           app=appFile, workspaceFolder=self.workspace.some, load=load)
     else:
-      newTextDocument(self.asConfigProvider, path,
+      newTextDocument(self.asConfigProvider, self.fs, path,
         app=appFile, workspaceFolder=self.workspace.some, load=load)
 
     log lvlInfo, &"Opened new document '{path}'"
@@ -1653,13 +1653,8 @@ proc setMaxViews*(self: App, maxViews: int, openExisting: bool = false) {.expose
   self.platform.requestRender()
 
 proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind =
-  when not defined(js):
-    if workspaceFolder of WorkspaceFolderLocal:
-      return OpenWorkspaceKind.Local
-  if workspaceFolder of WorkspaceRemote:
-    return OpenWorkspaceKind.Remote
-  if workspaceFolder of WorkspaceFolderGithub:
-    return OpenWorkspaceKind.Github
+  if workspaceFolder of WorkspaceFolderLocal:
+    return OpenWorkspaceKind.Local
   assert false
 
 proc saveAppState*(self: App) {.expose("editor").} =
@@ -1749,12 +1744,15 @@ proc saveAppState*(self: App) {.expose("editor").} =
       state.hiddenEditors.add editorState
 
   if self.sessionFile != "":
-    let serialized = state.toJson
-    let (isAppFile, path) = self.sessionFile.testApplicationPath()
-    if isAppFile:
-      fs.saveApplicationFile(path, serialized.pretty)
-    else:
-      fs.saveFile(path, serialized.pretty)
+    try:
+      let serialized = state.toJson
+      let (isAppFile, path) = self.sessionFile.testApplicationPath()
+      if isAppFile:
+        self.fs.saveApplicationFile(path, serialized.pretty)
+      else:
+        self.fs.saveFile(path, serialized.pretty)
+    except:
+      discard
 
 proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =
   self.platform.requestRender(redrawEverything)
@@ -1780,8 +1778,9 @@ proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool] {.async.}
   self.workspace = workspace
   self.vfs.mount "", VFSWorkspace(workspace: workspace)
 
-  if gWorkspace.isNil:
-    setGlobalWorkspace(workspace)
+  {.gcsafe.}:
+    if gWorkspace.isNil:
+      setGlobalWorkspace(workspace)
 
   await self.loadOptionsFromWorkspace()
 
@@ -1789,12 +1788,6 @@ proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool] {.async.}
 
 proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
   self.workspace.clearDirectoryCache()
-
-proc openGithubWorkspace*(self: App, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
-  asyncCheck self.setWorkspaceFolder newWorkspaceFolderGithub(user, repository, branchOrHash)
-
-proc openRemoteServerWorkspace*(self: App, url: string) {.expose("editor").} =
-  asyncCheck self.setWorkspaceFolder newWorkspaceRemote(url)
 
 proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.expose("editor").} =
   if not self.scriptActions.contains(context):
@@ -1830,10 +1823,11 @@ proc addScriptAction*(self: App, name: string, docs: string = "",
     return self.callScriptAction(name, arg)
 
   let signature = "(" & params.mapIt(it[0] & ": " & it[1]).join(", ") & ")" & returnType
-  if active:
-    extendActiveDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
-  else:
-    extendGlobalDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
+  {.gcsafe.}:
+    if active:
+      extendActiveDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
+    else:
+      extendGlobalDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
 
 proc invalidateCommandToKeysMap*(self: App) =
   self.commandInfos.invalidate()
@@ -1841,10 +1835,12 @@ proc invalidateCommandToKeysMap*(self: App) =
 proc rebuildCommandToKeysMap*(self: App) =
   self.commandInfos.rebuild(self.eventHandlerConfigs)
 
-when not defined(js):
-  proc openLocalWorkspace*(self: App, path: string) {.expose("editor").} =
-    let path = if path.isAbsolute: path else: path.absolutePath
-    asyncCheck self.setWorkspaceFolder newWorkspaceFolderLocal(path)
+proc openLocalWorkspaceAsync(self: App, path: string) {.async.} =
+  discard await self.setWorkspaceFolder newWorkspaceFolderLocal(path)
+
+proc openLocalWorkspace*(self: App, path: string) {.expose("editor").} =
+  let path = if path.isAbsolute: path else: path.absolutePath.catch().valueOr(path)
+  asyncSpawn self.openLocalWorkspaceAsync(path)
 
 proc getFlag*(self: App, flag: string, default: bool = false): bool {.expose("editor").} =
   return getOption[bool](self, flag, default)
@@ -1890,32 +1886,35 @@ proc setOption*(self: App, option: string, value: JsonNode, override: bool = tru
 
   self.platform.requestRender(true)
 
-  if option == "":
-    if not override:
-      self.options.extendJson(value, true)
-    else:
-      self.options = value
-    self.onConfigChanged.invoke()
-    return
-
-  let pathItems = option.split(".")
-  var node = self.options
-  for key in pathItems[0..^2]:
-    if node.kind != JObject:
+  try:
+    if option == "":
+      if not override:
+        self.options.extendJson(value, true)
+      else:
+        self.options = value
+      self.onConfigChanged.invoke()
       return
-    if not node.contains(key):
-      node[key] = newJObject()
-    node = node[key]
-  if node.isNil or node.kind != JObject:
-    return
 
-  let key = pathItems[^1]
-  if not override and node.hasKey(key):
-    node.fields[key].extendJson(value, true)
-  else:
-    node[key] = value
+    let pathItems = option.split(".")
+    var node = self.options
+    for key in pathItems[0..^2]:
+      if node.kind != JObject:
+        return
+      if not node.contains(key):
+        node[key] = newJObject()
+      node = node[key]
+    if node.isNil or node.kind != JObject:
+      return
 
-  self.onConfigChanged.invoke()
+    let key = pathItems[^1]
+    if not override and node.hasKey(key):
+      node.fields[key].extendJson(value, true)
+    else:
+      node[key] = value
+
+    self.onConfigChanged.invoke()
+  except:
+    discard
 
 proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
@@ -1926,7 +1925,7 @@ proc quitImmediately*(self: App, exitCode: int = 0) {.expose("editor").} =
 proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/getting_started.md"
   let docsPath = "docs/getting_started.md"
-  let textDocument = newTextDocument(self.asConfigProvider, docsPath, introductionMd, app=true, load=true)
+  let textDocument = newTextDocument(self.asConfigProvider, self.fs, docsPath, introductionMd, app=true, load=true)
   self.documents.add textDocument
   textDocument.load()
   discard self.createAndAddView(textDocument)
@@ -1937,11 +1936,11 @@ proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async.} 
   discard self.callScriptAction(callback, content.some.toJson)
 
 proc loadWorkspaceFile*(self: App, path: string, callback: string) {.expose("editor").} =
-  asyncCheck self.loadWorkspaceFileImpl(path, callback)
+  asyncSpawn self.loadWorkspaceFileImpl(path, callback)
 
 proc writeWorkspaceFile*(self: App, path: string, content: string) {.expose("editor").} =
   log lvlInfo, &"[writeWorkspaceFile] {path}"
-  asyncCheck self.workspace.saveFile(path, content)
+  asyncSpawn self.workspace.saveFile(path, content)
 
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
@@ -1984,7 +1983,8 @@ proc logs*(self: App, scrollToBottom: bool = false) {.expose("editor").} =
     editor.selection = editor.selection.last.toSelection
 
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
-  logger.toggleConsoleLogger()
+  {.gcsafe.}:
+    logger.toggleConsoleLogger()
 
 proc getViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
   ## Returns the index of the view for the given editor.
@@ -2449,23 +2449,6 @@ proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[D
 
   return self.createAndAddView(document, append = append).some
 
-proc removeFromLocalStorage*(self: App) {.expose("editor").} =
-  ## Browser only
-  ## Clears the content of the current document in local storage
-  when defined(js):
-    proc clearStorage(path: cstring) {.importjs: "window.localStorage.removeItem(#);".}
-    if self.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
-      if view.document of TextDocument:
-        clearStorage(view.document.TextDocument.filename.cstring)
-        return
-
-      when enableAst:
-        if view.document of ModelDocument:
-          clearStorage(view.document.ModelDocument.filename.cstring)
-          return
-
-      log lvlError, fmt"removeFromLocalStorage: Unknown document type"
-
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
   self.setTheme(fmt"themes/{name}.json")
 
@@ -2475,17 +2458,20 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   let originalTheme = self.theme.path
 
-  proc getItems(): seq[FinderItem] =
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
-    let themesDir = fs.getApplicationFilePath("./themes")
-    for file in walkDirRec(themesDir, relative=true):
-      if file.endsWith ".json":
-        let (relativeDirectory, name, _) = file.splitFile
-        items.add FinderItem(
-          displayName: name,
-          data: fmt"{themesDir}/{file}",
-          detail: "themes" / relativeDirectory,
-        )
+    let themesDir = self.fs.getApplicationFilePath("./themes")
+    try:
+      for file in walkDirRec(themesDir, relative=true):
+        if file.endsWith ".json":
+          let (relativeDirectory, name, _) = file.splitFile
+          items.add FinderItem(
+            displayName: name,
+            data: fmt"{themesDir}/{file}",
+            detail: "themes" / relativeDirectory,
+          )
+    except:
+      discard
 
     return items
 
@@ -2493,27 +2479,30 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.asAppInterface, "theme".some, finder.some)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "theme".some, finder.some)
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    if theme.loadFromFile(item.data).getSome(theme):
+    if theme.loadFromFile(self.fs, item.data).getSome(theme):
       self.theme = theme
-      gTheme = theme
+      {.gcsafe.}:
+        gTheme = theme
       self.platform.requestRender(true)
 
       return true
 
   popup.handleItemSelected = proc(item: FinderItem) =
-    if theme.loadFromFile(item.data).getSome(theme):
+    if theme.loadFromFile(self.fs, item.data).getSome(theme):
       self.theme = theme
-      gTheme = theme
+      {.gcsafe.}:
+        gTheme = theme
       self.platform.requestRender(true)
 
   popup.handleCanceled = proc() =
-    if theme.loadFromFile(originalTheme).getSome(theme):
+    if theme.loadFromFile(self.fs, originalTheme).getSome(theme):
       self.theme = theme
-      gTheme = theme
+      {.gcsafe.}:
+        gTheme = theme
       self.platform.requestRender(true)
 
   self.pushPopup popup
@@ -2522,7 +2511,7 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isAbsolute:
     path.normalizePathUnix
   else:
-    path.absolutePath.normalizePathUnix
+    path.absolutePath.catch().valueOr(path).normalizePathUnix
 
   log lvlInfo, fmt"createFile: '{path}'"
 
@@ -2533,7 +2522,7 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
   discard self.createAndAddView(document)
 
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup =
-  var popup = newSelectorPopup(self.asAppInterface, builder.scope, builder.finder, builder.previewer.toDisposableRef)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, builder.scope, builder.finder, builder.previewer.toDisposableRef)
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
   popup.previewScale = builder.previewScale
@@ -2646,7 +2635,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
   defer:
     self.platform.requestRender()
 
-  proc getItems(): seq[FinderItem] =
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
     for (context, c) in self.eventHandlerConfigs.pairs:
       if not c.commands.contains(""):
@@ -2655,8 +2644,8 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
         var name = commandInfo.command
 
         let key = context & keys
-        if key in self.commandDescriptions:
-          name = self.commandDescriptions[key]
+        self.commandDescriptions.withValue(key, val):
+          name = val[]
 
         items.add(FinderItem(
           displayName: name,
@@ -2672,13 +2661,13 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     return items
 
   let previewer = if preview:
-    newWorkspaceFilePreviewer(self.workspace, self.vfs, self.asConfigProvider, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newWorkspaceFilePreviewer(self.workspace, self.vfs, self.fs, self.asConfigProvider, reuseExistingDocuments = false).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
   let source = newSyncDataSource(getItems)
   let finder = newFinder(source, filterAndSort=true)
-  var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some, previewer)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -2714,12 +2703,12 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   let workspace = self.workspace
 
   let previewer = if preview:
-    newWorkspaceFilePreviewer(workspace, self.asConfigProvider).Previewer.toDisposableRef.some
+    newWorkspaceFilePreviewer(workspace, self.fs, self.asConfigProvider).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
   let finder = newFinder(newWorkspaceFilesDataSource(workspace), filterAndSort=true)
-  var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some, previewer)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -2739,7 +2728,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   defer:
     self.platform.requestRender()
 
-  proc getItems(): seq[FinderItem] =
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
     let allViews = self.views & self.hiddenViews
     for i in countdown(allViews.high, 0):
@@ -2786,7 +2775,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   else:
     DisposableRef[Previewer].none
 
-  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some, previewer)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "open".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -2822,7 +2811,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  proc getItems(): seq[FinderItem] =
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
     for document in self.documents:
       if document == self.logDocument or document == self.commandLineTextEditor.getDocument():
@@ -2862,7 +2851,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "open".some, finder.some)
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
@@ -2937,13 +2926,13 @@ proc chooseLocation*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  proc getItems(): seq[FinderItem] =
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     return self.finderItems
 
   let source = newSyncDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some, self.previewer.clone())
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "open".some, finder.some, self.previewer.clone())
 
   popup.scale.x = if self.previewer.isSome: 0.8 else: 0.4
 
@@ -3019,7 +3008,7 @@ method setQuery*(self: WorkspaceSearchDataSource, query: string) =
 
   if self.delayedTask.isNil:
     self.delayedTask = startDelayed(500, repeat=false):
-      asyncCheck self.getWorkspaceSearchResults()
+      asyncSpawn self.getWorkspaceSearchResults()
   else:
     self.delayedTask.reschedule()
 
@@ -3033,8 +3022,8 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   let source = newWorkspaceSearchDataSource(workspace, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.asAppInterface, "search".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.asConfigProvider).Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "search".some, finder.some,
+    newWorkspaceFilePreviewer(workspace, self.fs, self.asConfigProvider).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -3066,8 +3055,8 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   let source = newAsyncCallbackDataSource () => workspace.searchWorkspaceItemList(query, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.asAppInterface, "search".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.asConfigProvider).Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "search".some, finder.some,
+    newWorkspaceFilePreviewer(workspace, self.fs, self.asConfigProvider).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -3198,7 +3187,7 @@ proc revertSelectedFileAsync(popup: SelectorPopup, workspace: Workspace,
 proc diffStagedFileAsync(self: App, workspace: Workspace, path: string): Future[void] {.async.} =
   log lvlInfo, fmt"Diff staged '({path})'"
 
-  let stagedDocument = newTextDocument(self.asConfigProvider, path, load = false,
+  let stagedDocument = newTextDocument(self.asConfigProvider, self.fs, path, load = false,
     workspaceFolder = workspace.some, createLanguageServer = false)
   stagedDocument.staged = true
   stagedDocument.readOnly = true
@@ -3207,71 +3196,70 @@ proc diffStagedFileAsync(self: App, workspace: Workspace, path: string): Future[
   editor.updateDiff()
 
 proc installTreesitterParserAsync*(self: App, language: string, host: string) {.async.} =
-  when not defined(js):
-    try:
-      let (language, repo) = if (let i = language.find("/"); i != -1):
-        let first = i + 1
-        let k = language.find("/", first)
-        let last = if k == -1:
-          language.len
-        else:
-          k
-
-        (language[first..<last].replace("tree-sitter-", "").replace("-", "_"), language)
+  try:
+    let (language, repo) = if (let i = language.find("/"); i != -1):
+      let first = i + 1
+      let k = language.find("/", first)
+      let last = if k == -1:
+        language.len
       else:
-        (language, self.getOption(&"languages.{language}.treesitter", ""))
+        k
 
-      let queriesSubDir = self.getOption(&"languages.{language}.treesitter-queries", "").catch("")
+      (language[first..<last].replace("tree-sitter-", "").replace("-", "_"), language)
+    else:
+      (language, self.getOption(&"languages.{language}.treesitter", ""))
 
-      log lvlInfo, &"Install treesitter parser for {language} from {repo}"
-      let parts = repo.split("/")
-      if parts.len < 2:
-        log lvlError, &"Invalid value for languages.{language}.treesitter: '{repo}'. Expected 'user/repo'"
-        return
+    let queriesSubDir = self.getOption(&"languages.{language}.treesitter-queries", "").catch("")
 
-      let languagesRoot = fs.getApplicationFilePath("languages")
-      let userName = parts[0]
-      let repoName = parts[1]
-      let subFolder = parts[2..^1].join("/")
-      let repoPath = languagesRoot // repoName
-      let grammarPath = repoPath // subFolder
-      let queryDir = languagesRoot // language // "queries"
-      let url = &"https://{host}/{userName}/{repoName}"
+    log lvlInfo, &"Install treesitter parser for {language} from {repo}"
+    let parts = repo.split("/")
+    if parts.len < 2:
+      log lvlError, &"Invalid value for languages.{language}.treesitter: '{repo}'. Expected 'user/repo'"
+      return
 
-      if not dirExists(repoPath):
-        log lvlInfo, &"[installTreesitterParser] clone repository {url}"
-        let (output, err) = await runProcessAsyncOutput("git", @["clone", url], workingDir=languagesRoot)
-        log lvlInfo, &"git clone {url}:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
+    let languagesRoot = self.fs.getApplicationFilePath("languages")
+    let userName = parts[0]
+    let repoName = parts[1]
+    let subFolder = parts[2..^1].join("/")
+    let repoPath = languagesRoot // repoName
+    let grammarPath = repoPath // subFolder
+    let queryDir = languagesRoot // language // "queries"
+    let url = &"https://{host}/{userName}/{repoName}"
 
+    if not dirExists(repoPath):
+      log lvlInfo, &"[installTreesitterParser] clone repository {url}"
+      let (output, err) = await runProcessAsyncOutput("git", @["clone", url], workingDir=languagesRoot)
+      log lvlInfo, &"git clone {url}:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
+
+    else:
+      log lvlInfo, &"[installTreesitterParser] Update repository {url}"
+      let (output, err) = await runProcessAsyncOutput("git", @["pull"], workingDir=repoPath)
+      log lvlInfo, &"git pull:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
+
+    block:
+      log lvlInfo, &"Copy highlight queries"
+
+      let queryDirs = if queriesSubDir != "":
+        @[repoPath // queriesSubDir]
       else:
-        log lvlInfo, &"[installTreesitterParser] Update repository {url}"
-        let (output, err) = await runProcessAsyncOutput("git", @["pull"], workingDir=repoPath)
-        log lvlInfo, &"git pull:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
+        let highlightQueries = await self.fs.findFile(repoPath, r"highlights.scm$")
+        highlightQueries.mapIt(it.splitPath.head)
 
-      block:
-        log lvlInfo, &"Copy highlight queries"
+      for path in queryDirs:
+        let list = await self.fs.getApplicationDirectoryListing(path)
+        for f in list.files:
+          if f.endsWith(".scm"):
+            let fileName = f.splitPath.tail
+            log lvlInfo, &"Copy '{f}' to '{queryDir}'"
+            discard await self.fs.copyFile(f, queryDir // fileName)
 
-        let queryDirs = if queriesSubDir != "":
-          @[repoPath // queriesSubDir]
-        else:
-          let highlightQueries = await fs.findFile(repoPath, r"highlights.scm$")
-          highlightQueries.mapIt(it.splitPath.head)
+    block:
+      let (output, err) = await runProcessAsyncOutput("tree-sitter", @["build", "--wasm", grammarPath],
+        workingDir=languagesRoot)
+      log lvlInfo, &"tree-sitter build --wasm {repoPath}:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
 
-        for path in queryDirs:
-          let list = await fs.getApplicationDirectoryListing(path)
-          for f in list.files:
-            if f.endsWith(".scm"):
-              let fileName = f.splitPath.tail
-              log lvlInfo, &"Copy '{f}' to '{queryDir}'"
-              discard await fs.copyFile(f, queryDir // fileName)
-
-      block:
-        let (output, err) = await runProcessAsyncOutput("tree-sitter", @["build", "--wasm", grammarPath],
-          workingDir=languagesRoot)
-        log lvlInfo, &"tree-sitter build --wasm {repoPath}:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
-
-    except:
-      log lvlError, &"Failed to install treesitter parser for {language}: {getCurrentExceptionMsg()}"
+  except:
+    log lvlError, &"Failed to install treesitter parser for {language}: {getCurrentExceptionMsg()}"
 
 proc installTreesitterParser*(self: App, language: string, host: string = "github.com") {.
     expose("editor").} =
@@ -3300,8 +3288,7 @@ proc installTreesitterParser*(self: App, language: string, host: string = "githu
   ##   the repository `https://github.com/tree-sitter/tree-sitter-ocaml` and then build the parser from
   ##   the directory `<installdir>/languages/tree-sitter-ocaml/grammars/ocaml`
 
-  when not defined(js):
-    asyncCheck self.installTreesitterParserAsync(language, host)
+  asyncSpawn self.installTreesitterParserAsync(language, host)
 
 proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
   defer:
@@ -3313,10 +3300,10 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
     workspace.getChangedFilesFromGitAsync(all)
   var finder = newFinder(source, filterAndSort=true)
 
-  let previewer = newWorkspaceFilePreviewer(workspace, self.asConfigProvider,
+  let previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.asConfigProvider,
     openNewDocuments=true)
 
-  var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some,
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "git".some, finder.some,
     previewer.Previewer.toDisposableRef.some)
 
   popup.scale.x = 1
@@ -3329,7 +3316,7 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
       return true
 
     if fileInfo.stagedStatus != None:
-      asyncCheck self.diffStagedFileAsync(workspace, fileInfo.path)
+      asyncSpawn self.diffStagedFileAsync(workspace, fileInfo.path)
 
     else:
       let currentVersionEditor = self.openWorkspaceFile(fileInfo.path)
@@ -3346,21 +3333,21 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
     if popup.textEditor.isNil:
       return false
 
-    asyncCheck popup.stageSelectedFileAsync(workspace, source)
+    asyncSpawn popup.stageSelectedFileAsync(workspace, source)
     return true
 
   popup.addCustomCommand "unstage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
 
-    asyncCheck popup.unstageSelectedFileAsync(workspace, source)
+    asyncSpawn popup.unstageSelectedFileAsync(workspace, source)
     return true
 
   popup.addCustomCommand "revert-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
 
-    asyncCheck popup.revertSelectedFileAsync(workspace, source)
+    asyncSpawn popup.revertSelectedFileAsync(workspace, source)
     return true
 
   popup.addCustomCommand "diff-staged", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -3375,7 +3362,7 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
       return true
     debugf"diff-staged {fileInfo}"
 
-    asyncCheck self.diffStagedFileAsync(workspace, fileInfo.path)
+    asyncSpawn self.diffStagedFileAsync(workspace, fileInfo.path)
     return true
 
   self.pushPopup popup
@@ -3431,8 +3418,8 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.asConfigProvider).Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup(self.asAppInterface, self.fs, "file-explorer".some, finder.some,
+    newWorkspaceFilePreviewer(workspace, self.fs, self.asConfigProvider).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -3465,18 +3452,17 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
   self.pushPopup popup
 
 proc exploreUserConfigDir*(self: App) {.expose("editor").} =
-  when not defined(js):
-    if self.homeDir.len == 0:
-      log lvlInfo, &"No home directory"
-      return
+  if self.homeDir.len == 0:
+    log lvlInfo, &"No home directory"
+    return
 
-    self.exploreFiles(self.homeDir // configDirName)
+  self.exploreFiles(self.homeDir // configDirName)
 
 proc exploreAppConfigDir*(self: App) {.expose("editor").} =
-  self.exploreFiles(fs.getApplicationFilePath("config"))
+  self.exploreFiles(self.fs.getApplicationFilePath("config"))
 
 proc exploreHelp*(self: App) {.expose("editor").} =
-  self.exploreFiles(fs.getApplicationFilePath("docs"))
+  self.exploreFiles(self.fs.getApplicationFilePath("docs"))
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
   self.exploreFiles(self.workspace.getWorkspacePath())
@@ -3511,7 +3497,7 @@ proc openNextEditor*(self: App) {.expose("editor").} =
 
 proc setGithubAccessToken*(self: App, token: string) {.expose("editor").} =
   ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
-  fs.saveApplicationFile("GithubAccessToken", token)
+  self.fs.saveApplicationFile("GithubAccessToken", token)
 
 proc clearScriptActionsFor(self: App, scriptContext: ScriptContext) =
   var keysToRemove: seq[string]
@@ -3564,11 +3550,11 @@ proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   log lvlInfo, &"Reload config"
   if clearOptions:
     self.options = newJObject()
-  asyncCheck self.reloadConfigAsync()
+  asyncSpawn self.reloadConfigAsync()
 
 proc reloadPlugin*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload current plugin"
-  asyncCheck self.reloadPluginAsync()
+  asyncSpawn self.reloadPluginAsync()
 
 proc reloadState*(self: App) {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
@@ -3590,7 +3576,7 @@ proc logOptions*(self: App) {.expose("editor").} =
 proc dumpKeymapGraphViz*(self: App, context: string = "") {.expose("editor").} =
   for handler in self.currentEventHandlers():
     if context == "" or handler.config.context == context:
-      fs.saveApplicationFile(handler.config.context & ".dot", handler.dfa.dumpGraphViz)
+      self.fs.saveApplicationFile(handler.config.context & ".dot", handler.dfa.dumpGraphViz)
 
 proc clearCommands*(self: App, context: string) {.expose("editor").} =
   log(lvlInfo, fmt"Clearing keybindings for {context}")
@@ -3675,17 +3661,20 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
       self.registers[register] = Register(kind: RegisterKind.Text, text: "")
     self.registers[register].text.add inputToString(input, modifiers)
 
-  case self.currentEventHandlers.handleEvent(input, modifiers)
-  of Progress:
-    self.recordInputToHistory(inputToString(input, modifiers))
-    self.platform.preventDefault()
-    self.platform.requestRender()
-  of Failed, Canceled, Handled:
-    self.recordInputToHistory(inputToString(input, modifiers) & " ")
-    self.clearInputHistoryDelayed()
-    self.platform.preventDefault()
-    self.platform.requestRender()
-  of Ignored:
+  try:
+    case self.currentEventHandlers.handleEvent(input, modifiers)
+    of Progress:
+      self.recordInputToHistory(inputToString(input, modifiers))
+      self.platform.preventDefault()
+      self.platform.requestRender()
+    of Failed, Canceled, Handled:
+      self.recordInputToHistory(inputToString(input, modifiers) & " ")
+      self.clearInputHistoryDelayed()
+      self.platform.preventDefault()
+      self.platform.requestRender()
+    of Ignored:
+      discard
+  except:
     discard
 
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
@@ -3695,30 +3684,34 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleRune {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
 
-  let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
-  case self.currentEventHandlers.handleEvent(input, modifiers):
-  of Progress:
-    self.recordInputToHistory(inputToString(input, modifiers))
-    self.platform.preventDefault()
-    self.platform.requestRender()
-  of Failed, Canceled, Handled:
-    self.recordInputToHistory(inputToString(input, modifiers) & " ")
-    self.clearInputHistoryDelayed()
-    self.platform.preventDefault()
-    self.platform.requestRender()
-  of Ignored:
+  try:
+    let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
+    case self.currentEventHandlers.handleEvent(input, modifiers):
+    of Progress:
+      self.recordInputToHistory(inputToString(input, modifiers))
+      self.platform.preventDefault()
+      self.platform.requestRender()
+    of Failed, Canceled, Handled:
+      self.recordInputToHistory(inputToString(input, modifiers) & " ")
+      self.clearInputHistoryDelayed()
+      self.platform.preventDefault()
+      self.platform.requestRender()
+    of Ignored:
+      discard
+      self.platform.preventDefault()
+  except:
     discard
-    self.platform.preventDefault()
 
 proc handleDropFile*(self: App, path, content: string) =
-  let document = newTextDocument(self.asConfigProvider, path, content)
+  let document = newTextDocument(self.asConfigProvider, self.fs, path, content)
   self.documents.add document
   discard self.createAndAddView(document)
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
-  if gEditor.isNil:
-    return
-  discard gEditor.handleAction(action, arg, record=false)
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return
+    discard gEditor.handleAction(action, arg, record=false)
 
 proc scriptLog*(message: string) {.expose("editor").} =
   logNoCategory lvlInfo, fmt"[script] {message}"
@@ -3744,7 +3737,7 @@ proc addLeader*(self: App, leader: string) {.expose("editor").} =
 
 proc registerPluginSourceCode*(self: App, path: string, content: string) {.expose("editor").} =
   if self.currentScriptContext.getSome(scriptContext):
-    asyncCheck self.vfs.write(scriptContext.getCurrentContext() & path, content)
+    asyncSpawn self.vfs.write(scriptContext.getCurrentContext() & path, content)
 
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
@@ -3771,42 +3764,28 @@ proc removeCommand*(self: App, context: string, keys: string) {.expose("editor")
   self.invalidateCommandToKeysMap()
 
 proc getActivePopup*(): EditorId {.expose("editor").} =
-  if gEditor.isNil:
-    return EditorId(-1)
-  if gEditor.popups.len > 0:
-    return gEditor.popups[gEditor.popups.high].id
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return EditorId(-1)
+    if gEditor.popups.len > 0:
+      return gEditor.popups[gEditor.popups.high].id
 
   return EditorId(-1)
 
 proc getActiveEditor*(): EditorId {.expose("editor").} =
-  if gEditor.isNil:
-    return EditorId(-1)
-  if gEditor.commandLineMode:
-    return gEditor.commandLineTextEditor.id
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return EditorId(-1)
+    if gEditor.commandLineMode:
+      return gEditor.commandLineTextEditor.id
 
-  if gEditor.popups.len > 0 and gEditor.popups[gEditor.popups.high].getActiveEditor().getSome(editor):
-    return editor.id
+    if gEditor.popups.len > 0 and gEditor.popups[gEditor.popups.high].getActiveEditor().getSome(editor):
+      return editor.id
 
-  if gEditor.tryGetCurrentView().getSome(view) and view.getActiveEditor().getSome(editor):
-    return editor.id
+    if gEditor.tryGetCurrentView().getSome(view) and view.getActiveEditor().getSome(editor):
+      return editor.id
 
   return EditorId(-1)
-
-when defined(js):
-  proc getActiveEditor2*(self: App): DocumentEditor {.expose("editor"), nodispatch, nojsonwrapper.} =
-    if gEditor.isNil:
-      return nil
-    if gEditor.commandLineMode:
-      return gEditor.commandLineTextEditor
-
-    if gEditor.tryGetCurrentEditorView().getSome(view):
-      return view.editor
-
-    return nil
-else:
-  proc getActiveEditor2*(self: App): EditorId {.expose("editor").} =
-    ## Returns the active editor instance
-    return getActiveEditor()
 
 proc getActiveEditor*(self: App): Option[DocumentEditor] =
   if self.commandLineMode:
@@ -3824,149 +3803,163 @@ proc logRootNode*(self: App) {.expose("editor").} =
   let str = self.platform.builder.root.dump(true)
   debug "logRootNode: ", str
 
-proc sourceCurrentDocument*(self: App) {.expose("editor").} =
-  ## Javascript backend only!
-  ## Runs the content of the active editor as javascript using `eval()`.
-  ## "use strict" is prepended to the content to force strict mode.
-  when defined(js):
-    proc evalJs(str: cstring) {.importjs("eval(#)").}
-    proc confirmJs(msg: cstring): bool {.importjs("confirm(#)").}
-    let editor = self.getActiveEditor2()
-    if editor of TextDocumentEditor:
-      let document = editor.TextDocumentEditor.document
-      let contentStrict = "\"use strict\";\n" & document.contentString
-      log lvlWarn, contentStrict
-
-      if confirmJs((fmt"You are about to eval() some javascript ({document.filename}). Look in the console to see what's in there.").cstring):
-        evalJs(contentStrict.cstring)
-      else:
-        log(lvlWarn, fmt"Did not load config file because user declined.")
-
 proc getEditorInView*(index: int): EditorId {.expose("editor").} =
-  if gEditor.isNil:
-    return EditorId(-1)
-  if index >= 0 and index < gEditor.views.len and gEditor.views[index] of EditorView:
-    return gEditor.views[index].EditorView.editor.id
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return EditorId(-1)
+    if index >= 0 and index < gEditor.views.len and gEditor.views[index] of EditorView:
+      return gEditor.views[index].EditorView.editor.id
 
   return EditorId(-1)
 
 proc scriptIsSelectorPopup*(editorId: EditorId): bool {.expose("editor").} =
-  if gEditor.isNil:
-    return false
-  if gEditor.getPopupForId(editorId).getSome(popup):
-    return popup of SelectorPopup
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return false
+    if gEditor.getPopupForId(editorId).getSome(popup):
+      return popup of SelectorPopup
   return false
 
 proc scriptIsTextEditor*(editorId: EditorId): bool {.expose("editor").} =
-  if gEditor.isNil:
-    return false
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    return editor of TextDocumentEditor
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return false
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      return editor of TextDocumentEditor
   return false
 
 proc scriptIsAstEditor*(editorId: EditorId): bool {.expose("editor").} =
   return false
 
 proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
-  if gEditor.isNil:
-    return false
-  when enableAst:
-    if gEditor.getEditorForId(editorId).getSome(editor):
-      return editor of ModelDocumentEditor
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return false
+    when enableAst:
+      if gEditor.getEditorForId(editorId).getSome(editor):
+        return editor of ModelDocumentEditor
   return false
 
 proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expose("editor").} =
-  if gEditor.isNil:
-    return
-  defer:
-    gEditor.platform.requestRender()
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    discard editor.handleAction(action, arg, record=false)
-  elif gEditor.getPopupForId(editorId).getSome(popup):
-    discard popup.eventHandler.handleAction(action, arg)
-
-proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").} =
-  if gEditor.isNil:
-    return
-  defer:
-    gEditor.platform.requestRender()
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    discard editor.eventHandler.handleInput(text)
-
-proc scriptTextEditorSelection*(editorId: EditorId): Selection {.expose("editor").} =
-  if gEditor.isNil:
-    return ((0, 0), (0, 0))
-  defer:
-    gEditor.platform.requestRender()
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    if editor of TextDocumentEditor:
-      let editor = TextDocumentEditor(editor)
-      return editor.selection
-  return ((0, 0), (0, 0))
-
-proc scriptSetTextEditorSelection*(editorId: EditorId, selection: Selection) {.expose("editor").} =
-  if gEditor.isNil:
-    return
-  defer:
-    gEditor.platform.requestRender()
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    if editor of TextDocumentEditor:
-      editor.TextDocumentEditor.selection = selection
-
-proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] {.expose("editor").} =
-  if gEditor.isNil:
-    return @[((0, 0), (0, 0))]
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    if editor of TextDocumentEditor:
-      let editor = TextDocumentEditor(editor)
-      return editor.selections
-  return @[((0, 0), (0, 0))]
-
-proc scriptSetTextEditorSelections*(editorId: EditorId, selections: seq[Selection]) {.expose("editor").} =
-  if gEditor.isNil:
-    return
-  defer:
-    gEditor.platform.requestRender()
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    if editor of TextDocumentEditor:
-      editor.TextDocumentEditor.selections = selections
-
-proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string {.expose("editor").} =
-  if gEditor.isNil:
-    return ""
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    if editor of TextDocumentEditor:
-      let editor = TextDocumentEditor(editor)
-      if line >= 0 and line < editor.document.numLines:
-        return $editor.document.getLine(line)
-  return ""
-
-proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").} =
-  if gEditor.isNil:
-    return 0
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    if editor of TextDocumentEditor:
-      let editor = TextDocumentEditor(editor)
-      return editor.document.numLines
-  return 0
-
-template createScriptGetOption(path, default, accessor: untyped): untyped =
-  block:
-    if gEditor.isNil:
-      return default
-    let node = gEditor.options{path.split(".")}
-    if node.isNil:
-      return default
-    accessor(node, default)
-
-template createScriptSetOption(path, value: untyped): untyped =
-  block:
+  {.gcsafe.}:
     if gEditor.isNil:
       return
     defer:
       gEditor.platform.requestRender()
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      discard editor.handleAction(action, arg, record=false)
+    elif gEditor.getPopupForId(editorId).getSome(popup):
+      discard popup.eventHandler.handleAction(action, arg)
+
+proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").} =
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return
+    defer:
+      gEditor.platform.requestRender()
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      discard editor.eventHandler.handleInput(text)
+
+proc scriptTextEditorSelection*(editorId: EditorId): Selection {.expose("editor").} =
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return ((0, 0), (0, 0))
+    defer:
+      gEditor.platform.requestRender()
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      if editor of TextDocumentEditor:
+        let editor = TextDocumentEditor(editor)
+        return editor.selection
+    return ((0, 0), (0, 0))
+
+proc scriptSetTextEditorSelection*(editorId: EditorId, selection: Selection) {.expose("editor").} =
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return
+    defer:
+      gEditor.platform.requestRender()
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      if editor of TextDocumentEditor:
+        editor.TextDocumentEditor.selection = selection
+
+proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] {.expose("editor").} =
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return @[((0, 0), (0, 0))]
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      if editor of TextDocumentEditor:
+        let editor = TextDocumentEditor(editor)
+        return editor.selections
+    return @[((0, 0), (0, 0))]
+
+proc scriptSetTextEditorSelections*(editorId: EditorId, selections: seq[Selection]) {.expose("editor").} =
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return
+    defer:
+      gEditor.platform.requestRender()
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      if editor of TextDocumentEditor:
+        editor.TextDocumentEditor.selections = selections
+
+proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string {.expose("editor").} =
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return ""
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      if editor of TextDocumentEditor:
+        let editor = TextDocumentEditor(editor)
+        if line >= 0 and line < editor.document.numLines:
+          return $editor.document.getLine(line)
+    return ""
+
+proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").} =
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return 0
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      if editor of TextDocumentEditor:
+        let editor = TextDocumentEditor(editor)
+        return editor.document.numLines
+    return 0
+
+template createScriptGetOption(path, default, accessor: untyped): untyped =
+  block:
+    {.gcsafe.}:
+      if gEditor.isNil:
+        return default
+      let node = gEditor.options{path.split(".")}
+      if node.isNil:
+        return default
+      accessor(node, default)
+
+template createScriptSetOption(path, value: untyped): untyped =
+  block:
+    {.gcsafe.}:
+      if gEditor.isNil:
+        return
+      defer:
+        gEditor.platform.requestRender()
+      let pathItems = path.split(".")
+      var node = gEditor.options
+      for key in pathItems[0..^2]:
+        if node.kind != JObject:
+          return
+        if not node.contains(key):
+          node[key] = newJObject()
+        node = node[key]
+      if node.isNil or node.kind != JObject:
+        return
+      node[pathItems[^1]] = value
+      gEditor.onConfigChanged.invoke()
+
+proc setSessionDataJson*(self: App, path: string, value: JsonNode, override: bool = true) {.expose("editor").} =
+  if self.isNil or path.len == 0:
+    return
+
+  try:
     let pathItems = path.split(".")
-    var node = gEditor.options
+    var node = self.sessionData
     for key in pathItems[0..^2]:
       if node.kind != JObject:
         return
@@ -3975,31 +3968,16 @@ template createScriptSetOption(path, value: untyped): untyped =
       node = node[key]
     if node.isNil or node.kind != JObject:
       return
-    node[pathItems[^1]] = value
-    gEditor.onConfigChanged.invoke()
 
-proc setSessionDataJson*(self: App, path: string, value: JsonNode, override: bool = true) {.expose("editor").} =
-  if self.isNil or path.len == 0:
-    return
+    let key = pathItems[^1]
+    if not override and node.hasKey(key):
+      node.fields[key].extendJson(value, true)
+    else:
+      node[key] = value
 
-  let pathItems = path.split(".")
-  var node = self.sessionData
-  for key in pathItems[0..^2]:
-    if node.kind != JObject:
-      return
-    if not node.contains(key):
-      node[key] = newJObject()
-    node = node[key]
-  if node.isNil or node.kind != JObject:
-    return
-
-  let key = pathItems[^1]
-  if not override and node.hasKey(key):
-    node.fields[key].extendJson(value, true)
-  else:
-    node[key] = value
-
-  self.onConfigChanged.invoke()
+    self.onConfigChanged.invoke()
+  except:
+    discard
 
 proc getSessionDataJson*(self: App, path: string, default: JsonNode): JsonNode {.expose("editor").} =
   if self.isNil:
@@ -4011,12 +3989,13 @@ proc getSessionDataJson*(self: App, path: string, default: JsonNode): JsonNode {
 
 proc scriptGetOptionJson*(path: string, default: JsonNode): JsonNode {.expose("editor").} =
   block:
-    if gEditor.isNil:
-      return default
-    let node = gEditor.options{path.split(".")}
-    if node.isNil:
-      return default
-    return node
+    {.gcsafe.}:
+      if gEditor.isNil:
+        return default
+      let node = gEditor.options{path.split(".")}
+      if node.isNil:
+        return default
+      return node
 
 proc scriptGetOptionInt*(path: string, default: int): int {.expose("editor").} =
   result = createScriptGetOption(path, default, getInt)
@@ -4043,9 +4022,10 @@ proc scriptSetOptionString*(path: string, value: string) {.expose("editor").} =
   createScriptSetOption(path, newJString(value))
 
 proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
-  if gEditor.isNil:
-    return
-  gEditor.callbacks[path] = id
+  {.gcsafe.}:
+    if gEditor.isNil:
+      return
+    gEditor.callbacks[path] = id
 
 proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.} =
   self.registers[register] = Register(kind: RegisterKind.Text, text: text)
@@ -4163,68 +4143,74 @@ proc inputKeys*(self: App, input: string) {.expose("editor").} =
     self.handleKeyPress(inputCode.a, mods)
 
 proc collectGarbage*(self: App) {.expose("editor").} =
-  when not defined(js):
-    log lvlInfo, "collectGarbage"
+  log lvlInfo, "collectGarbage"
+  try:
     GC_FullCollect()
+  except:
+    log lvlError, &"Failed to collect garbage: {getCurrentExceptionMsg()}"
 
 proc printStatistics*(self: App) {.expose("editor").} =
-  var result = "\n"
-  result.add &"Backend: {self.backend}\n"
+  {.gcsafe.}:
+    try:
+      var result = "\n"
+      result.add &"Backend: {self.backend}\n"
 
-  result.add &"Registers:\n"
-  for (key, value) in self.registers.mpairs:
-    result.add &"    {key}: {value}\n"
+      result.add &"Registers:\n"
+      for (key, value) in self.registers.mpairs:
+        result.add &"    {key}: {value}\n"
 
-  result.add &"RecordingKeys:\n"
-  for key in self.recordingKeys:
-    result.add &"    {key}"
+      result.add &"RecordingKeys:\n"
+      for key in self.recordingKeys:
+        result.add &"    {key}"
 
-  result.add &"RecordingCommands:\n"
-  for key in self.recordingKeys:
-    result.add &"    {key}"
+      result.add &"RecordingCommands:\n"
+      for key in self.recordingKeys:
+        result.add &"    {key}"
 
-  result.add &"Event Handlers: {self.eventHandlerConfigs.len}\n"
-    # eventHandlerConfigs: Table[string, EventHandlerConfig]
+      result.add &"Event Handlers: {self.eventHandlerConfigs.len}\n"
+        # eventHandlerConfigs: Table[string, EventHandlerConfig]
 
-  result.add &"Options: {self.options.pretty.len}\n"
-  result.add &"Callbacks: {self.callbacks.len}\n"
-  result.add &"Script Actions: {self.scriptActions.len}\n"
+      result.add &"Options: {self.options.pretty.len}\n"
+      result.add &"Callbacks: {self.callbacks.len}\n"
+      result.add &"Script Actions: {self.scriptActions.len}\n"
 
-  result.add &"Input History: {self.inputHistory}\n"
-  result.add &"Editor History: {self.editorHistory}\n"
+      result.add &"Input History: {self.inputHistory}\n"
+      result.add &"Editor History: {self.editorHistory}\n"
 
-  result.add &"Command History: {self.commandHistory.len}\n"
-  # for command in self.commandHistory:
-  #   result.add &"    {command}\n"
+      result.add &"Command History: {self.commandHistory.len}\n"
+      # for command in self.commandHistory:
+      #   result.add &"    {command}\n"
 
-  result.add &"Text documents: {allTextDocuments.len}\n"
-  for document in allTextDocuments:
-    result.add document.getStatisticsString().indent(4)
-    result.add "\n\n"
+      result.add &"Text documents: {allTextDocuments.len}\n"
+      for document in allTextDocuments:
+        result.add document.getStatisticsString().indent(4)
+        result.add "\n\n"
 
-  result.add &"Text editors: {allTextEditors.len}\n"
-  for editor in allTextEditors:
-    result.add editor.getStatisticsString().indent(4)
-    result.add "\n\n"
+      result.add &"Text editors: {allTextEditors.len}\n"
+      for editor in allTextEditors:
+        result.add editor.getStatisticsString().indent(4)
+        result.add "\n\n"
 
-  # todo
-    # languageServerCommandLine: LanguageServer
-    # commandLineTextEditor: DocumentEditor
+      # todo
+        # languageServerCommandLine: LanguageServer
+        # commandLineTextEditor: DocumentEditor
 
-    # logDocument: Document
-    # documents*: seq[Document]
-    # editors*: Table[EditorId, DocumentEditor]
-    # popups*: seq[Popup]
+        # logDocument: Document
+        # documents*: seq[Document]
+        # editors*: Table[EditorId, DocumentEditor]
+        # popups*: seq[Popup]
 
-    # theme*: Theme
-    # nimsScriptContext*: ScriptContext
-    # wasmScriptContext*: ScriptContextWasm
+        # theme*: Theme
+        # nimsScriptContext*: ScriptContext
+        # wasmScriptContext*: ScriptContextWasm
 
-    # workspace*: Workspace
-  result.add &"Platform:\n{self.platform.getStatisticsString().indent(4)}\n"
-  result.add &"UI:\n{self.platform.builder.getStatisticsString().indent(4)}\n"
+        # workspace*: Workspace
+      result.add &"Platform:\n{self.platform.getStatisticsString().indent(4)}\n"
+      result.add &"UI:\n{self.platform.builder.getStatisticsString().indent(4)}\n"
 
-  log lvlInfo, result
+      log lvlInfo, result
+    except:
+      discard
 
 genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
@@ -4240,58 +4226,62 @@ proc recordCommand*(self: App, command: string, args: string) =
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
   logScope lvlInfo, &"[handleAction] '{action} {arg}'"
 
-  if record:
-    self.recordCommand(action, arg)
-
-  var args = newJArray()
   try:
-    for a in newStringStream(arg).parseJsonFragments():
-      args.add a
-  except CatchableError:
-    log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
+    if record:
+      self.recordCommand(action, arg)
 
-  if action.startsWith("."): # active action
-    if lsp_client.dispatchEvent(action[1..^1], args).getSome(r):
+    var args = newJArray()
+    try:
+      for a in newStringStream(arg).parseJsonFragments():
+        args.add a
+    except CatchableError:
+      log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+      log(lvlError, getCurrentException().getStackTrace())
+
+    if action.startsWith("."): # active action
+      if lsp_client.dispatchEvent(action[1..^1], args).getSome(r):
+        return r.some
+
+      if self.getActiveEditor().getSome(editor):
+        return editor.handleAction(action[1..^1], arg, record=false)
+
+      log lvlError, fmt"No current view"
+      return JsonNode.none
+
+    # todo: there's got to be better way than putting all these here manually
+    if collab.dispatchEvent(action, args).getSome(r):
       return r.some
 
-    if self.getActiveEditor().getSome(editor):
-      return editor.handleAction(action[1..^1], arg, record=false)
+    if debugger.dispatchEvent(action, args).getSome(r):
+      return r.some
 
-    log lvlError, fmt"No current view"
-    return JsonNode.none
+    try:
+      withScriptContext self, self.nimsScriptContext:
+        let res = self.nimsScriptContext.handleScriptAction(action, args)
+        if res.isNotNil:
+          return res.some
 
-  # todo: there's got to be better way than putting all these here manually
-  if collab.dispatchEvent(action, args).getSome(r):
-    return r.some
+      withScriptContext self, self.wasmScriptContext:
+        let res = self.wasmScriptContext.handleScriptAction(action, args)
+        if res.isNotNil:
+          return res.some
+    except CatchableError:
+      log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+      log(lvlError, getCurrentException().getStackTrace())
 
-  if debugger.dispatchEvent(action, args).getSome(r):
-    return r.some
+    try:
+      return dispatch(action, args)
+    except CatchableError:
+      log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+      log(lvlError, getCurrentException().getStackTrace())
 
-  try:
-    withScriptContext self, self.nimsScriptContext:
-      let res = self.nimsScriptContext.handleScriptAction(action, args)
-      if res.isNotNil:
-        return res.some
-
-    withScriptContext self, self.wasmScriptContext:
-      let res = self.wasmScriptContext.handleScriptAction(action, args)
-      if res.isNotNil:
-        return res.some
-  except CatchableError:
-    log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-
-  try:
-    return dispatch(action, args)
-  except CatchableError:
-    log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
+  except:
+    discard
 
   return JsonNode.none
 
 template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
-  when enableNimscript and not defined(js):
+  when enableNimscript:
     proc createAddins(): VmAddins =
       addCallable(myImpl):
         proc postInitialize(): bool

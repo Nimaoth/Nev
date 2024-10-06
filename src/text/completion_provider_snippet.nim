@@ -82,7 +82,7 @@ proc newCompletionProviderSnippet*(configProvider: ConfigProvider, document: Tex
   let self = CompletionProviderSnippet(configProvider: configProvider, document: document)
 
   # todo: unsubscribe
-  self.onConfigChangedHandle = configProvider.onConfigChanged.subscribe proc() =
+  self.onConfigChangedHandle = configProvider.onConfigChanged[].subscribe proc() =
     self.invalidateCompletionItemCache()
 
   self

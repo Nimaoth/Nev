@@ -5,6 +5,9 @@ import platform/filesystem
 when not defined(js):
   import misc/async_process
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "dap"
 
 var logVerbose = false
@@ -323,12 +326,12 @@ type
   DAPClient* = ref object
     connection: Connection
     nextId: int = 1
-    activeRequests: Table[int, tuple[command: string, future: ResolvableFuture[Response[JsonNode]]]]
+    activeRequests: Table[int, tuple[command: string, future: Future[Response[JsonNode]]]]
     requestsPerMethod: Table[string, seq[int]]
     canceledRequests: HashSet[int]
     isInitialized: bool
-    initializedFuture: ResolvableFuture[bool]
-    initializedEventFuture: ResolvableFuture[void]
+    initializedFuture: Future[bool]
+    initializedEventFuture: Future[void]
 
     onInitialized*: Event[OnInitializedData]
     onStopped*: Event[OnStoppedData]
@@ -350,8 +353,8 @@ type
 
 proc run*(client: DAPClient)
 
-proc waitInitialized*(client: DAPCLient): Future[bool] = client.initializedFuture.future
-proc waitInitializedEventReceived*(client: DAPCLient): Future[void] = client.initializedEventFuture.future
+proc waitInitialized*(client: DAPCLient): Future[bool] = client.initializedFuture
+proc waitInitializedEventReceived*(client: DAPCLient): Future[void] = client.initializedEventFuture
 
 proc encodePathUri(path: string): string = path.normalizePathUnix.split("/").mapIt(it.encodeUrl(false)).join("/")
 
@@ -370,13 +373,6 @@ proc hash*(vr: FrameId): Hash {.borrow.}
 proc `$`*(vr: FrameId): string {.borrow.}
 proc `%`*(vr: FrameId): JsonNode {.borrow.}
 
-when defined(js):
-  # todo
-  proc absolutePath(path: string): string = path
-
-proc toUri*(path: string): Uri =
-  return parseUri("file:///" & path.absolutePath.encodePathUri) # todo: use file://{} for linux
-
 proc createHeader*(contentLength: int): string =
   let header = fmt"Content-Length: {contentLength}" & "\r\n\r\n"
   return header
@@ -394,113 +390,119 @@ proc deinit*(client: DAPClient) =
   client.isInitialized = false
 
 proc parseResponse(client: DAPClient): Future[JsonNode] {.async.} =
-  var headers = initTable[string, string]()
-  var line = await client.connection.recvLine
+  try:
+    var headers = initTable[string, string]()
+    var line = await client.connection.recvLine
 
-  var sleepCounter = 0
-  while client.connection.isNotNil and line == "":
-    inc sleepCounter
-    if sleepCounter > 3:
-      await sleepAsync(30)
-      sleepCounter = 0
-      continue
+    var sleepCounter = 0
+    while client.connection.isNotNil and line == "":
+      inc sleepCounter
+      if sleepCounter > 3:
+        await sleepAsync(30.milliseconds)
+        sleepCounter = 0
+        continue
 
-    line = await client.connection.recvLine
+      line = await client.connection.recvLine
 
-  if client.connection.isNil:
-    return newJNull()
-
-  var success = true
-  var lines = @[line]
-
-  while line != "" and line != "\r\n":
     if client.connection.isNil:
       return newJNull()
 
-    let parts = line.split(":")
-    if parts.len != 2:
-      success = false
-      log lvlError, fmt"[parseResponse] Failed to parse response, no valid header format: '{line}'"
-      return newJString(line)
+    var success = true
+    var lines = @[line]
 
-    let name = parts[0]
-    if name != "Content-Length" and name != "Content-Type":
-      success = false
-      log lvlError, fmt"[parseResponse] Failed to parse response, unknown header: '{line}'"
-      return newJString(line)
+    while line != "" and line != "\r\n":
+      if client.connection.isNil:
+        return newJNull()
 
-    let value = parts[1]
-    headers[name] = value.strip
-    line = await client.connection.recvLine
-    lines.add line
+      let parts = line.split(":")
+      if parts.len != 2:
+        success = false
+        log lvlError, fmt"[parseResponse] Failed to parse response, no valid header format: '{line}'"
+        return newJString(line)
 
-  if client.connection.isNil:
+      let name = parts[0]
+      if name != "Content-Length" and name != "Content-Type":
+        success = false
+        log lvlError, fmt"[parseResponse] Failed to parse response, unknown header: '{line}'"
+        return newJString(line)
+
+      let value = parts[1]
+      headers[name] = value.strip
+      line = await client.connection.recvLine
+      lines.add line
+
+    if client.connection.isNil:
+      return newJNull()
+
+    if not success or not headers.contains("Content-Length"):
+      log(lvlError, "[parseResponse] Failed to parse response:")
+      for line in lines:
+        log(lvlError, line)
+      return newJNull()
+
+    let contentLength = headers["Content-Length"].parseInt
+    # let data = await client.socket.recv(contentLength)
+    let data = await client.connection.recv(contentLength)
+    if logVerbose:
+      debug "[recv] ", data[0..min(data.high, 500)]
+    return parseJson(data)
+
+  except CatchableError:
     return newJNull()
-
-  if not success or not headers.contains("Content-Length"):
-    log(lvlError, "[parseResponse] Failed to parse response:")
-    for line in lines:
-      log(lvlError, line)
-    return newJNull()
-
-  let contentLength = headers["Content-Length"].parseInt
-  # let data = await client.socket.recv(contentLength)
-  let data = await client.connection.recv(contentLength)
-  if logVerbose:
-    debug "[recv] ", data[0..min(data.high, 500)]
-  return parseJson(data)
 
 proc sendRPC(client: DAPClient, meth: string, command: string, args: Option[JsonNode], id: int)
     {.async.} =
 
-  var request = %*{
-    "type": meth,
-    "seq": id,
-    "command": command,
-  }
-  if args.getSome(args):
-    request["arguments"] = args
+  try:
+    var request = %*{
+      "type": meth,
+      "seq": id,
+      "command": command,
+    }
+    if args.getSome(args):
+      request["arguments"] = args
 
-  if logVerbose:
-    let str = $args
-    debugf"[sendRPC] {id} {meth}, {command}: {str[0..min(str.high, 500)]}"
+    if logVerbose:
+      let str = $args
+      debugf"[sendRPC] {id} {meth}, {command}: {str[0..min(str.high, 500)]}"
 
-  let data = $request
-  let header = createHeader(data.len)
-  let msg = header & data
+    let data = $request
+    let header = createHeader(data.len)
+    let msg = header & data
 
-  await client.connection.send(msg)
+    await client.connection.send(msg)
+  except CatchableError:
+    discard
 
 proc sendRequest(client: DAPClient, command: string, args: Option[JsonNode]): Future[Response[JsonNode]] {.async.} =
   let id = client.nextId
   inc client.nextId
 
-  let requestFuture = newResolvableFuture[Response[JsonNode]]("DAPCLient.sendRequest " & command)
+  let requestFuture = newFuture[Response[JsonNode]]("DAPCLient.sendRequest")
 
   client.activeRequests[id] = (command, requestFuture)
-  if not client.requestsPerMethod.contains(command):
-    client.requestsPerMethod[command] = @[]
-  client.requestsPerMethod[command].add id
+  client.requestsPerMethod.mgetOrPut(command, @[]).add id
 
-  asyncCheck client.sendRPC("request", command, args, id)
-  return await requestFuture.future
+  asyncSpawn client.sendRPC("request", command, args, id)
+  try:
+    return await requestFuture
+  except CatchableError:
+    return errorResponse[JsonNode](0, getCurrentExceptionMsg())
 
 proc cancelAllOf*(client: DAPClient, command: string) =
-  if not client.requestsPerMethod.contains(command):
-    return
+  client.requestsPerMethod.withValue(command, requests):
+    var futures: seq[(int, Future[Response[JsonNode]])]
+    for id in requests[]:
+      # log lvlError, &"Cancel request {command}:{id}"
+      let (_, future) = client.activeRequests[id]
+      futures.add (id, future)
+      client.activeRequests.del id
+      client.canceledRequests.incl id
 
-  var futures: seq[(int, ResolvableFuture[Response[JsonNode]])]
-  for id in client.requestsPerMethod[command]:
-    # log lvlError, &"Cancel request {command}:{id}"
-    let (_, future) = client.activeRequests[id]
-    futures.add (id, future)
-    client.activeRequests.del id
-    client.canceledRequests.incl id
+    requests[].setLen 0
 
-  client.requestsPerMethod[command].setLen 0
-
-  for (id, future) in futures:
-    future.complete canceled[JsonNode]()
+    for (id, future) in futures:
+      future.complete canceled[JsonNode]()
 
 when not defined(js):
   proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
@@ -541,15 +543,18 @@ proc disconnect*(client: DAPClient, restart: bool,
 proc setBreakpoints*(client: DAPClient, source: Source, breakpoints: seq[SourceBreakpoint], sourceModified = bool.none) {.async.} =
   log lvlInfo, &"setBreakpoints"
 
-  var args = %*{
-    "source": source,
-    "breakpoints": breakpoints,
-  }
+  try:
+    var args = newJObject()
+    args["source"] = source.toJson
+    args["breakpoints"] = breakpoints.toJson
 
-  let res = await client.sendRequest("setBreakpoints", args.some)
-  if res.isError:
-    log lvlError, &"Failed to set breakpoints: {res}"
-    return
+    let res = await client.sendRequest("setBreakpoints", args.some)
+    if res.isError:
+      log lvlError, &"Failed to set breakpoints: {res}"
+      return
+
+  except:
+    discard
 
   # debugf"{res.result.pretty}"
 
@@ -703,40 +708,43 @@ proc initialize*(client: DAPClient) {.async.} =
 
 proc newDAPClient*(connection: Connection): DAPCLient =
   var client = DAPCLient(
-    initializedFuture: newResolvableFuture[bool]("client.initializedFuture"),
-    initializedEventFuture: newResolvableFuture[void]("client.initializedEventFuture"),
+    initializedFuture: newFuture[bool]("client.initializedFuture"),
+    initializedEventFuture: newFuture[void]("client.initializedEventFuture"),
   )
 
   client.connection = connection
   client
 
 proc dispatchEvent(client: DAPClient, event: string, body: JsonNode) =
-  let opts = JOptions(allowMissingKeys: true, allowExtraKeys: true)
-  case event
-  of "initialized":
-    client.initializedEventFuture.complete()
-    client.onInitialized.invoke
-  of "stopped": client.onStopped.invoke body.jsonTo(OnStoppedData, opts)
-  of "continued": client.onContinued.invoke body.jsonTo(OnContinuedData, opts)
-  of "exited": client.onExited.invoke body.jsonTo(OnExitedData, opts)
-  of "terminated": client.onTerminated.invoke if body.kind == JObject:
-      body.jsonTo(OnTerminatedData, opts).some
+  try:
+    let opts = JOptions(allowMissingKeys: true, allowExtraKeys: true)
+    case event
+    of "initialized":
+      client.initializedEventFuture.complete()
+      client.onInitialized.invoke
+    of "stopped": client.onStopped.invoke body.jsonTo(OnStoppedData, opts)
+    of "continued": client.onContinued.invoke body.jsonTo(OnContinuedData, opts)
+    of "exited": client.onExited.invoke body.jsonTo(OnExitedData, opts)
+    of "terminated": client.onTerminated.invoke if body.kind == JObject:
+        body.jsonTo(OnTerminatedData, opts).some
+      else:
+        OnTerminatedData.none
+    of "thread": client.onThread.invoke body.jsonTo(OnThreadData, opts)
+    of "output": client.onOutput.invoke body.jsonTo(OnOutputData, opts)
+    of "breakpoint": client.onBreakpoint.invoke body.jsonTo(OnBreakpointData, opts)
+    of "module": client.onModule.invoke body.jsonTo(OnModuleData, opts)
+    of "loadedSource": client.onLoadedSource.invoke body.jsonTo(OnLoadedSourceData, opts)
+    of "process": client.onProcess.invoke body.jsonTo(OnProcessData, opts)
+    of "capabilities": client.onCapabilities.invoke body.jsonTo(OnCapabilitiesData, opts)
+    of "progressStart": client.onProgressStart.invoke body.jsonTo(OnProgressStartData, opts)
+    of "progressUpdate": client.onProgressUpdate.invoke body.jsonTo(OnProgressUpdateData, opts)
+    of "progressEnd": client.onProgressEnd.invoke body.jsonTo(OnProgressEndData, opts)
+    of "invalidated": client.onInvalidated.invoke body.jsonTo(OnInvalidatedData, opts)
+    of "memory": client.onMemory.invoke body.jsonTo(OnMemoryData, opts)
     else:
-      OnTerminatedData.none
-  of "thread": client.onThread.invoke body.jsonTo(OnThreadData, opts)
-  of "output": client.onOutput.invoke body.jsonTo(OnOutputData, opts)
-  of "breakpoint": client.onBreakpoint.invoke body.jsonTo(OnBreakpointData, opts)
-  of "module": client.onModule.invoke body.jsonTo(OnModuleData, opts)
-  of "loadedSource": client.onLoadedSource.invoke body.jsonTo(OnLoadedSourceData, opts)
-  of "process": client.onProcess.invoke body.jsonTo(OnProcessData, opts)
-  of "capabilities": client.onCapabilities.invoke body.jsonTo(OnCapabilitiesData, opts)
-  of "progressStart": client.onProgressStart.invoke body.jsonTo(OnProgressStartData, opts)
-  of "progressUpdate": client.onProgressUpdate.invoke body.jsonTo(OnProgressUpdateData, opts)
-  of "progressEnd": client.onProgressEnd.invoke body.jsonTo(OnProgressEndData, opts)
-  of "invalidated": client.onInvalidated.invoke body.jsonTo(OnInvalidatedData, opts)
-  of "memory": client.onMemory.invoke body.jsonTo(OnMemoryData, opts)
-  else:
-    log lvlError, &"Unhandled event {event} ({body})"
+      log lvlError, &"Unhandled event {event} ({body})"
+  except ValueError as e:
+    log lvlError, &"Failed to dispatch dap event '{event}': {e.msg}\n{body}"
 
 proc handleResponse(client: DAPClient, response: JsonNode) =
   if logVerbose:
@@ -797,7 +805,7 @@ proc runAsync*(client: DAPClient) {.async.} =
       log lvlError, &"[run] error: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 proc run*(client: DAPClient) =
-  asyncCheck client.runAsync()
+  asyncSpawn client.runAsync()
 
 # proc dapLogVerbose*(val: bool) {.expose("dap").} =
 #   debugf"dapLogVerbose {val}"

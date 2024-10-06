@@ -19,7 +19,7 @@ import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
 import text/custom_treesitter
 
-proc tryAttach(opts: AppOptions, processId: int)
+# proc tryAttach(opts: AppOptions, processId: int)
 
 when enableGui:
   static:
@@ -160,12 +160,12 @@ block: ## Parse command line options
 
     of cmdEnd: assert(false) # cannot happen
 
-  if attach.getSome(attach):
-    if attach:
-      tryAttach(opts, attachProcessId)
-  else:
-    if not stdout.isatty() or ownsConsole():
-      tryAttach(opts, 0)
+  # if attach.getSome(attach):
+  #   if attach:
+  #     tryAttach(opts, attachProcessId)
+  # else:
+  #   if not stdout.isatty() or ownsConsole():
+  #     tryAttach(opts, 0)
 
 if backend.isNone:
   echo "Error: No backend selected"
@@ -182,49 +182,49 @@ if not disableLogging: ## Enable loggers
       logger.enableConsoleLogger()
 
 import misc/[timer, custom_async]
-import platform/platform
+import platform/[platform, filesystem]
 import ui/widget_builders
 import text/language/language_server
 import app
 
 import asynctools/asyncipc
 
-proc tryAttach(opts: AppOptions, processId: int) =
-  if processId == 0:
-    # todo: find process by name
-    # return
-    discard
+# proc tryAttach(opts: AppOptions, processId: int) =
+#   if processId == 0:
+#     # todo: find process by name
+#     # return
+#     discard
 
-  let ipcName = appName & "-" & $processId
-  let writeHandle = open(ipcName, sideWriter).catch:
-    if processId == 0:
-      echo &"No existing editor, open new"
-      return
-    else:
-      echo &"No existing editor with process id {processId}"
-      quit(0)
+#   let ipcName = appName & "-" & $processId
+#   let writeHandle = open(ipcName, sideWriter).catch:
+#     if processId == 0:
+#       echo &"No existing editor, open new"
+#       return
+#     else:
+#       echo &"No existing editor with process id {processId}"
+#       quit(0)
 
-  defer: writeHandle.close()
+#   defer: writeHandle.close()
 
-  proc send(msg: string) =
-    echo "Send ", msg
-    waitFor writeHandle.write(cast[pointer](msg[0].addr), msg.len)
+#   proc send(msg: string) =
+#     echo "Send ", msg
+#     waitFor writeHandle.write(cast[pointer](msg[0].addr), msg.len)
 
-  # todo: instead of sending -p:... etc, translate the settings to set-option command syntax,
-  # pass the commands through as is and traslate fileToOpen to corresponding command.
-  for setting in opts.settings:
-    send("-p:" & setting)
+#   # todo: instead of sending -p:... etc, translate the settings to set-option command syntax,
+#   # pass the commands through as is and traslate fileToOpen to corresponding command.
+#   for setting in opts.settings:
+#     send("-p:" & setting)
 
-  for command in opts.earlyCommands:
-    send("-r:" & command)
+#   for command in opts.earlyCommands:
+#     send("-r:" & command)
 
-  for command in opts.lateCommands:
-    send("-R:" & command)
+#   for command in opts.lateCommands:
+#     send("-R:" & command)
 
-  if opts.fileToOpen.getSome(file):
-    send(file)
+#   if opts.fileToOpen.getSome(file):
+#     send(file)
 
-  quit(0)
+#   quit(0)
 
 when enableTerminal:
   import platform/terminal_platform
@@ -280,17 +280,19 @@ rend.init()
 
 import ui/node
 
-var renderedLastFrame = false
+import chronos/config
 
-proc runApp(): Future[void] {.async.} =
-  var ed = await newEditor(backend.get, rend, opts)
+proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions): Future[void] {.async.} =
+  var ed = await newEditor(backend, rend, fs, opts)
 
   var frameIndex = 0
   var frameTime = 0.0
 
   var lastEvent = startTimer()
+  var renderedLastFrame = false
 
-  let maxPollPerFrameMs = 5.0
+  let maxPollPerFrameMs = 2.5
+
   while not ed.closeRequested:
     defer:
       inc frameIndex
@@ -324,12 +326,18 @@ proc runApp(): Future[void] {.async.} =
       if size != rend.builder.root.boundsActual.wh or rend.requestedRender:
         rend.requestedRender = false
         rend.builder.beginFrame(size)
-        ed.updateWidgetTree(frameIndex)
-        rend.builder.endFrame()
+        try:
+          ed.updateWidgetTree(frameIndex)
+          rend.builder.endFrame()
+        except:
+          discard
         rerender = true
       elif rend.builder.animatingNodes.len > 0:
         rend.builder.frameIndex.inc
-        rend.builder.postProcessNodes()
+        try:
+          rend.builder.postProcessNodes()
+        except:
+          discard
         rerender = true
 
       updateTime = updateTimer.elapsed.ms
@@ -346,16 +354,23 @@ proc runApp(): Future[void] {.async.} =
     if frameIndex == 0:
       log lvlInfo, "First render done"
 
-    logger.flush()
+    {.gcsafe.}:
+      logger.flush()
 
     let pollTimer = startTimer()
     gAsyncFrameTimer = startTimer()
     try:
       let start = startTimer()
-      var tries = 50
-      while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations():
+      var tries = 25
+
+      let hasPendingOperations = when chronosFutureTracking:
+        pendingFuturesCount() > 0
+      else:
+        true
+
+      while tries > 0 and start.elapsed.ms < maxPollPerFrameMs and hasPendingOperations:
         dec tries
-        poll(0)
+        poll()
 
     except CatchableError:
       discard
@@ -373,7 +388,7 @@ proc runApp(): Future[void] {.async.} =
       let time = ed.getOption("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
-    elif backend.get == Terminal and frameSoFar < 5:
+    elif backend == Terminal and frameSoFar < 5:
       sleep(5 - frameSoFar.int)
       outlierTime += 5
 
@@ -385,12 +400,14 @@ proc runApp(): Future[void] {.async.} =
 
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 
-    logger.flush()
+    {.gcsafe.}:
+      logger.flush()
 
-  log lvlInfo, "Shutting down editor"
-  ed.shutdown()
-  log lvlInfo, "Shutting down platform"
-  rend.deinit()
+  try:
+    log lvlInfo, "Shutting down editor"
+    ed.shutdown()
+  except:
+    discard
 
 when defined(enableSysFatalStackTrace) and not defined(wasm):
   proc writeStackTrace2*() {.exportc: "writeStackTrace2", used.} =
@@ -399,7 +416,12 @@ when defined(enableSysFatalStackTrace) and not defined(wasm):
   if false:
     writeStackTrace2()
 
-waitFor runApp()
+waitFor runApp(rend, fs, backend.get, opts)
+try:
+  log lvlInfo, "Shutting down platform"
+  rend.deinit()
+except:
+  discard
 
 when enableGui:
   if backend.get == Gui:

@@ -4,6 +4,7 @@ import util, timer
 export strformat
 
 {.used.}
+{.push raises: [].}
 
 export logging.Level, logging.Logger, logging.defaultFmtStr, logging.addHandler
 
@@ -35,13 +36,14 @@ proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultF
 
   result.timer = startTimer()
 
-proc enableFileLogger*(self: CustomLogger, filename = "messages.log") =
+proc enableFileLogger*(self: CustomLogger, filename = "logs/messages.log") =
   when not defined(js):
     let filename = if filename.isAbsolute:
       filename
     else:
       getAppDir() / filename
-    var file = open(filename, fmWrite)
+    var file = open(filename, fmWrite).catch:
+      return
     self.fileLogger = logging.newFileLogger(file, self.levelThreshold, "", flushThreshold=logging.lvlAll).some
 
 proc enableConsoleLogger*(self: CustomLogger) =
@@ -73,10 +75,18 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
   let msg = logging.substituteLog(fmtStr, level, msgIndented)
 
   for l in self.otherLoggers:
-    logging.log(l, level, msg)
+    try:
+      {.gcsafe.}:
+        logging.log(l, level, msg)
+    except:
+      continue
 
   if self.fileLogger.getSome(l):
-    logging.log(l, level, msg)
+    try:
+      {.gcsafe.}:
+        logging.log(l, level, msg)
+    except:
+      discard
 
   if self.consoleLogger.getSome(l):
     when not defined(js):
@@ -89,13 +99,25 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
         of logging.lvlError: rgb(255, 150, 150)
         of logging.lvlFatal: rgb(255, 0, 0)
         else: rgb(255, 255, 255)
-        stdout.write(ansiForegroundColorCode(color))
+        try:
+          {.gcsafe.}:
+            stdout.write(ansiForegroundColorCode(color))
+        except IOError:
+          discard
 
-    logging.log(l, level, msg)
+    try:
+      {.gcsafe.}:
+        logging.log(l, level, msg)
+    except:
+      discard
 
     when not defined(js):
       if isTerminal:
-        stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
+        try:
+          {.gcsafe.}:
+            stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
+        except IOError:
+          discard
 
 var logger* = newCustomLogger()
 
@@ -120,7 +142,11 @@ template logCategory*(category: static string, noDebug = false): untyped =
       args.insert(0, newLit("[" & category & "] "))
 
     return genAst(level, args):
-      logging.log(level, args)
+      try:
+        {.gcsafe.}:
+          logging.log(level, args)
+      except:
+        discard
 
   macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
     return logImpl(level, args, true)
@@ -137,18 +163,26 @@ template logCategory*(category: static string, noDebug = false): untyped =
 
   template logScope(level: logging.Level, text: string): untyped {.used.} =
     let txt = text
-    logging.log(level, "[" & category & "] " & txt)
-    inc logger.indentLevel
-    let timer = startTimer()
-    defer:
-      block:
-        let elapsedMs = timer.elapsed.ms
-        let split = elapsedMs.splitDecimal
-        let elapsedMsInt = split.intpart.int
-        let elapsedUsInt = (split.floatpart * 1000).int
-        dec logger.indentLevel
-        assert logger.indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
-        logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
+    {.gcsafe.}:
+      try:
+        logging.log(level, "[" & category & "] " & txt)
+      except:
+        discard
+      inc logger.indentLevel
+      let timer = startTimer()
+      defer:
+        block:
+          let elapsedMs = timer.elapsed.ms
+          let split = elapsedMs.splitDecimal
+          let elapsedMsInt = split.intpart.int
+          let elapsedUsInt = (split.floatpart * 1000).int
+          dec logger.indentLevel
+          assert logger.indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
+          try:
+            {.gcsafe.}:
+              logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
+          except:
+            discard
 
   when noDebug:
     macro debug(x: varargs[typed, `$`]): untyped {.used.} =

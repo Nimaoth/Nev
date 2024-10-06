@@ -45,7 +45,7 @@ proc runLastConfiguration*() =
 proc addBreakpoint*(editorId: EditorId; line: int) =
   ## Line is 0-based
   debugger_addBreakpoint_void_Debugger_EditorId_int_impl(editorId, line)
-proc removeBreakpoint*(path: string; line: int) =
+proc removeBreakpoint*(path: string; line: int) {.raises: [].} =
   ## Line is 1-based
   debugger_removeBreakpoint_void_Debugger_string_int_impl(path, line)
 proc toggleBreakpointEnabled*(path: string; line: int) =

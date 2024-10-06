@@ -1,4 +1,4 @@
-import std/[strformat, typetraits, strutils, algorithm, sugar]
+import std/[algorithm, sugar]
 import misc/[regex, timer, fuzzy_matching, util, custom_async, event, id, custom_logger]
 import platform/[filesystem]
 
@@ -14,18 +14,12 @@ type
     originalIndex: Option[int]
     filtered*: bool
 
-when defined(js):
-  type
-    ItemList* = object
-      len: int = 0
-      data: ref seq[FinderItem]
-else:
-  type
-    ItemList* = object
-      len: int = 0
-      cap: int = 0
-      filtered*: int = 0
-      data: ptr UncheckedArray[FinderItem] = nil
+type
+  ItemList* = object
+    len: int = 0
+    cap: int = 0
+    filtered*: int = 0
+    data: ptr UncheckedArray[FinderItem] = nil
 
 type
   DataSource* = ref object of RootObj
@@ -49,39 +43,30 @@ type
     onItemsChangedHandle: Id
     onItemsChanged*: Event[void]
 
-method close*(self: DataSource) {.base, raises: [].} = discard
-method setQuery*(self: DataSource, query: string) {.base.} = discard
+method close*(self: DataSource) {.base, gcsafe, raises: [].} = discard
+method setQuery*(self: DataSource, query: string) {.base, gcsafe, raises: [].} = discard
 
 var allocated = 0
 
 proc cmp*(a, b: FinderItem): int = cmp(a.score, b.score)
-proc `<`*(a, b: FinderItem): bool = a.score < b.score # echo "xvlc"
+proc `<`*(a, b: FinderItem): bool = a.score < b.score
 
 var itemListPool = newSeq[ItemList]()
-proc newItemList*(len: int): ItemList =
-  if itemListPool.len > 0:
-
-    result = itemListPool.pop
-    when defined(js):
-      if result.data[].len < len:
-        result.data[].setLen len
-    else:
+proc newItemList*(len: int): ItemList {.gcsafe, raises: [].} =
+  {.gcsafe.}:
+    if itemListPool.len > 0:
+      result = itemListPool.pop
       if result.cap < len:
         result.data = cast[ptr UncheckedArray[FinderItem]](
           realloc0(result.data.pointer, sizeof(FinderItem) * result.cap, sizeof(FinderItem) * len))
         result.cap = len
 
-    result.len = len
-    return
+      result.len = len
+      return
 
-  when defined(js):
-    var s = new seq[FinderItem]
-    s[] = newSeq[FinderItem](len)
-    result = ItemList(len: len, data: s)
-  else:
-    result = ItemList(len: len, cap: len)
-    if len > 0:
-      result.data = cast[ptr UncheckedArray[FinderItem]](alloc0(sizeof(FinderItem) * len))
+  result = ItemList(len: len, cap: len)
+  if len > 0:
+    result.data = cast[ptr UncheckedArray[FinderItem]](alloc0(sizeof(FinderItem) * len))
 
   allocated += len
 
@@ -90,33 +75,28 @@ func len*(list: ItemList): int = list.len
 func filteredLen*(list: ItemList): int = list.len - list.filtered
 
 proc free*(list: ItemList) =
-  when defined(js):
-    discard
-  else:
-    if not list.data.isNil:
-      allocated -= list.len
+  if not list.data.isNil:
+    allocated -= list.len
 
-      for i in 0..<list.len:
-        `=destroy`(list.data[i])
-      dealloc(list.data)
+    for i in 0..<list.len:
+      `=destroy`(list.data[i])
+    dealloc(list.data)
 
-proc pool*(list: ItemList) =
-  if itemListPool.len > 5:
-    list.free()
-
-  else:
-    var list = list
-    when defined(js):
-      discard
+proc pool*(list: ItemList) {.gcsafe.} =
+  {.gcsafe.}:
+    if itemListPool.len > 5:
+      list.free()
 
     else:
+      var list = list
       if list.cap > 0:
         for i in 0..<list.len:
           list.data[i] = FinderItem()
 
-    list.len = 0
-    list.filtered = 0
-    itemListPool.add list
+      list.len = 0
+      list.filtered = 0
+      {.gcsafe.}:
+        itemListPool.add list
 
 proc setLen*(list: var ItemList, newLen: int) =
   assert newLen >= 0
@@ -125,78 +105,51 @@ proc setLen*(list: var ItemList, newLen: int) =
 
 proc clone*(list: ItemList): ItemList =
   result = newItemList(list.len)
-  when defined(js):
-    for i in 0..<list.len:
-      result.data[][i] = list.data[][i]
-  else:
-    for i in 0..<list.len:
-      result.data[i] = list.data[i]
+  for i in 0..<list.len:
+    result.data[i] = list.data[i]
 
 proc `[]=`*(list: var ItemList, i: int, item: sink FinderItem) =
   assert i >= 0
   assert i < list.len
-  when defined(js):
-    list.data[][i] = item
-  else:
-    list.data[i] = item
+  list.data[i] = item
 
 proc `[]`*(list: ItemList, i: int): lent FinderItem =
   assert i >= 0
   assert i < list.len
-  when defined(js):
-    list.data[][i]
-  else:
-    list.data[i]
+  list.data[i]
 
 proc `[]`*(list: var ItemList, i: int): var FinderItem =
   assert i >= 0
   assert i < list.len
-  when defined(js):
-    list.data[][i]
-  else:
-    list.data[i]
+  list.data[i]
 
 template items*(list: ItemList): openArray[FinderItem] =
   # assert not list.data.isNil
-  when defined(js):
-    toOpenArray(list.data[], 0, list.len - 1)
-  else:
-    toOpenArray(list.data, 0, list.len - 1)
+  toOpenArray(list.data, 0, list.len - 1)
 
 proc reverse*(list: ItemList) =
   var x = 0
   var y = list.len - 1
   while x < y:
-    when defined(js):
-      let temp = list.data[][x]
-      list.data[][x] = list.data[][y]
-      list.data[][x] = temp
-    else:
-      swap(list.data[x], list.data[y])
+    swap(list.data[x], list.data[y])
     dec(y)
     inc(x)
 
 func sort*(list: ItemList, cmp: proc (x, y: FinderItem): int {.closure.},
            order = SortOrder.Descending) {.effectsOf: cmp.} =
   var list = list
-  when defined(js):
-    toOpenArray(list.data[], 0, list.len - 1).sort(cmp, order)
-  else:
-    toOpenArray(list.data, 0, list.len - 1).sort(cmp, order)
+  toOpenArray(list.data, 0, list.len - 1).sort(cmp, order)
 
 proc sort*(list: ItemList, order = SortOrder.Descending) =
   var list = list
-  when defined(js):
-    toOpenArray(list.data[], 0, list.len - 1).sort(order)
-  else:
-    toOpenArray(list.data, 0, list.len - 1).sort(order)
+  toOpenArray(list.data, 0, list.len - 1).sort(order)
 
 proc newItemList*(items: seq[FinderItem]): ItemList =
   result = newItemList(items.len)
   for i, item in items:
     result[i] = item
 
-proc deinit*(finder: Finder) =
+proc deinit*(finder: Finder) {.gcsafe, raises: [].} =
   if finder.source.isNotNil:
     finder.source.close()
   finder.source = nil
@@ -204,15 +157,14 @@ proc deinit*(finder: Finder) =
     list.pool()
   finder.filteredItems = ItemList.none
 
-when not defined(js):
-  proc `=destroy`*(finder: typeof(Finder()[])) =
-    if finder.source.isNotNil:
-      finder.source.close()
-    `=destroy`(finder.query)
-    if finder.filteredItems.getSome(list):
-      list.pool()
+proc `=destroy`*(finder: typeof(Finder()[])) =
+  if finder.source.isNotNil:
+    finder.source.close()
+  `=destroy`(finder.query)
+  if finder.filteredItems.getSome(list):
+    list.pool()
 
-proc handleItemsChanged(self: Finder, list: ItemList)
+proc handleItemsChanged(self: Finder, list: ItemList) {.gcsafe, raises: [].}
 
 proc newFinder*(source: DataSource, filterAndSort: bool = true, sort: bool = true, minScore: float = 0): Finder =
   new result
@@ -292,12 +244,9 @@ proc filterAndSortItems(self: Finder, list: ItemList): Future[void] {.async.} =
   self.lastTriggeredFilterVersions = versions
 
   # todo: filter and sort on main thread if amount < threshold
-  when defined(js):
-    var filterResult = filterAndSortItemsThread (self.query, list, self.sort, self.minScore)
-  else:
-    var filterResult = spawnAsync(filterAndSortItemsThread, (self.query, list, self.sort, self.minScore)).await
+  var filterResult = spawnAsync(filterAndSortItemsThread, (self.query, list, self.sort, self.minScore)).await
 
-  debugf"[filterAndSortItems] -> {versions}, {filterResult.scoreTime}ms, {filterResult.sortTime}ms, {filterResult.totalTime}ms"
+  # debugf"[filterAndSortItems] -> {versions}, {filterResult.scoreTime}ms, {filterResult.sortTime}ms, {filterResult.totalTime}ms"
 
   if self.itemsVersion != versions.items:
     # Items were updated after spawning this filter and sort, so discard the result
@@ -320,7 +269,7 @@ proc handleItemsChanged(self: Finder, list: ItemList) =
   inc self.itemsVersion
 
   if self.filterAndSort and self.query.len > 0:
-    asyncCheck self.filterAndSortItems(list)
+    asyncSpawn self.filterAndSortItems(list)
   else:
     if self.filteredItems.getSome(list):
       list.pool()
@@ -343,7 +292,7 @@ proc setQuery*(self: Finder, query: string) =
       self.onItemsChanged.invoke()
 
     else:
-      asyncCheck self.filterAndSortItems(list.clone())
+      asyncSpawn self.filterAndSortItems(list.clone())
 
 type
   StaticDataSource* = ref object of DataSource
@@ -372,12 +321,12 @@ type
 
   AsyncCallbackDataSource* = ref object of DataSource
     wasQueried: bool = false
-    callback: proc(): Future[ItemList]
+    callback: proc(): Future[ItemList] {.gcsafe, raises: [].}
 
   SyncDataSource* = ref object of DataSource
     wasQueried: bool = false
-    callbackSeq: proc(): seq[FinderItem]
-    callbackList: proc(): ItemList
+    callbackSeq: proc(): seq[FinderItem] {.gcsafe, raises: [].}
+    callbackList: proc(): ItemList {.gcsafe, raises: [].}
 
 proc getDataAsync(self: AsyncFutureDataSource): Future[void] {.async.} =
   let list = self.future.await
@@ -391,29 +340,29 @@ proc newAsyncFutureDataSource*(future: Future[ItemList]): AsyncFutureDataSource 
   new result
   result.future = future
 
-proc newAsyncCallbackDataSource*(callback: proc(): Future[ItemList]): AsyncCallbackDataSource =
+proc newAsyncCallbackDataSource*(callback: proc(): Future[ItemList] {.gcsafe, raises: [].}): AsyncCallbackDataSource =
   new result
   result.callback = callback
 
-proc newSyncDataSource*(callback: proc(): seq[FinderItem]): SyncDataSource =
+proc newSyncDataSource*(callback: proc(): seq[FinderItem] {.gcsafe, raises: [].}): SyncDataSource =
   new result
   result.callbackSeq = callback
 
-proc newSyncDataSource*(callback: proc(): ItemList): SyncDataSource =
+proc newSyncDataSource*(callback: proc(): ItemList {.gcsafe, raises: [].}): SyncDataSource =
   new result
   result.callbackList = callback
 
-method setQuery*(self: AsyncFutureDataSource, query: string) =
+method setQuery*(self: AsyncFutureDataSource, query: string) {.gcsafe, raises: [].} =
   if not self.wasQueried:
     self.wasQueried = true
-    asyncCheck self.getDataAsync()
+    asyncSpawn self.getDataAsync()
 
-method setQuery*(self: AsyncCallbackDataSource, query: string) =
+method setQuery*(self: AsyncCallbackDataSource, query: string) {.gcsafe, raises: [].} =
   if not self.wasQueried:
     self.wasQueried = true
-    asyncCheck self.getDataAsync()
+    asyncSpawn self.getDataAsync()
 
-method setQuery*(self: SyncDataSource, query: string) =
+method setQuery*(self: SyncDataSource, query: string) {.gcsafe, raises: [].} =
   if not self.wasQueried:
     self.wasQueried = true
 
@@ -428,10 +377,10 @@ method setQuery*(self: SyncDataSource, query: string) =
 
     self.onItemsChanged.invoke list
 
-proc retrigger*(self: AsyncCallbackDataSource) =
+proc retrigger*(self: AsyncCallbackDataSource) {.gcsafe, raises: [].} =
   self.wasQueried = false
   self.setQuery("")
 
-proc retrigger*(self: SyncDataSource) =
+proc retrigger*(self: SyncDataSource) {.gcsafe, raises: [].} =
   self.wasQueried = false
   self.setQuery("")

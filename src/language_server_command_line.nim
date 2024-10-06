@@ -38,49 +38,52 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
   var completions: seq[CompletionItem]
   if useActive:
     let currentNamespace = self.app.getActiveEditor().mapIt(it.getNamespace)
-    for table in activeDispatchTables.mitems:
-      if not table.global and table.namespace.some != currentNamespace:
-        continue
+    {.gcsafe.}:
+      for table in activeDispatchTables.mitems:
+        if not table.global and table.namespace.some != currentNamespace:
+          continue
 
-      for value in table.functions.values:
+        for value in table.functions.values:
 
-        var docs = ""
-        if self.commandInfos.getInfos(value.name).getSome(infos):
-          for i, info in infos:
-            if i > 0:
-              docs.add "\n"
-            docs.add &"[{info.context}] {info.keys} -> {info.command}"
-          docs.add "\n\n"
+          var docs = ""
+          if self.commandInfos.getInfos(value.name).getSome(infos):
+            for i, info in infos:
+              if i > 0:
+                docs.add "\n"
+              docs.add &"[{info.context}] {info.keys} -> {info.command}"
+            docs.add "\n\n"
 
-        docs.add value.docs
+          docs.add value.docs
 
-        completions.add CompletionItem(
-          label: value.name,
-          # scope: table.scope,
-          kind: CompletionKind.Function,
-          detail: value.signature.some,
-          documentation: CompletionItemDocumentationVariant.init(docs).some,
-        )
+          completions.add CompletionItem(
+            label: value.name,
+            # scope: table.scope,
+            kind: CompletionKind.Function,
+            detail: value.signature.some,
+            documentation: CompletionItemDocumentationVariant.init(docs).some,
+          )
+
   else:
-    for table in globalDispatchTables.mitems:
-      for value in table.functions.values:
-        var docs = ""
-        if self.commandInfos.getInfos(value.name).getSome(infos):
-          for i, info in infos:
-            if i > 0:
-              docs.add "\n"
-            docs.add &"[{info.context}] {info.keys} -> {info.command}"
-          docs.add "\n\n"
+    {.gcsafe.}:
+      for table in globalDispatchTables.mitems:
+        for value in table.functions.values:
+          var docs = ""
+          if self.commandInfos.getInfos(value.name).getSome(infos):
+            for i, info in infos:
+              if i > 0:
+                docs.add "\n"
+              docs.add &"[{info.context}] {info.keys} -> {info.command}"
+            docs.add "\n\n"
 
-        docs.add value.docs
+          docs.add value.docs
 
-        completions.add CompletionItem(
-          label: value.name,
-          # scope: table.scope,
-          kind: CompletionKind.Function,
-          detail: value.signature.some,
-          documentation: CompletionItemDocumentationVariant.init(docs).some,
-        )
+          completions.add CompletionItem(
+            label: value.name,
+            # scope: table.scope,
+            kind: CompletionKind.Function,
+            detail: value.signature.some,
+            documentation: CompletionItemDocumentationVariant.init(docs).some,
+          )
 
   return CompletionList(items: completions).success
 

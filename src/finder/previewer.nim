@@ -9,6 +9,6 @@ logCategory "previewer"
 type
   Previewer* = ref object of RootObj
 
-method previewItem*(self: Previewer, item: FinderItem, editor: DocumentEditor) {.base.} = discard
-method delayPreview*(self: Previewer) {.base.} = discard
-method deinit*(self: Previewer) {.base.} = discard
+method previewItem*(self: Previewer, item: FinderItem, editor: DocumentEditor) {.base, gcsafe, raises: [].} = discard
+method delayPreview*(self: Previewer) {.base, gcsafe, raises: [].} = discard
+method deinit*(self: Previewer) {.base, gcsafe, raises: [].} = discard

@@ -5,8 +5,11 @@ import app_interface, text/text_editor, popup, events, scripting/expose,
   selector_popup_builder, dispatch_tables
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
+import platform/filesystem
 
 export popup, selector_popup_builder
+
+{.push gcsafe.}
 
 logCategory "selector"
 createJavascriptPrototype("popup.selector")
@@ -18,9 +21,9 @@ type
     previewEditor*: TextDocumentEditor
     selected*: int
     scrollOffset*: int
-    handleItemConfirmed*: proc(finderItem: FinderItem): bool
-    handleItemSelected*: proc(finderItem: FinderItem)
-    handleCanceled*: proc()
+    handleItemConfirmed*: proc(finderItem: FinderItem): bool {.gcsafe, raises: [].}
+    handleItemSelected*: proc(finderItem: FinderItem) {.gcsafe, raises: [].}
+    handleCanceled*: proc() {.gcsafe, raises: [].}
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
@@ -33,7 +36,7 @@ type
     maxDisplayNameWidth*: int = 50
     maxColumnWidth*: int = 60
 
-    customCommands: Table[string, proc(popup: SelectorPopup, args: JsonNode): bool]
+    customCommands: Table[string, proc(popup: SelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].}]
 
     maxItemsToShow: int = 50
 
@@ -44,9 +47,9 @@ type
 
     focusPreview*: bool
 
-proc getSearchString*(self: SelectorPopup): string
-proc closed*(self: SelectorPopup): bool
-proc getSelectedItem*(self: SelectorPopup): Option[FinderItem]
+proc getSearchString*(self: SelectorPopup): string {.gcsafe, raises: [].}
+proc closed*(self: SelectorPopup): bool {.gcsafe, raises: [].}
+proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] {.gcsafe, raises: [].}
 
 implTrait ISelectorPopup, SelectorPopup:
   getSearchString(string, SelectorPopup)
@@ -65,7 +68,7 @@ proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: s
   discard matchFuzzySublime(pattern, text, result, true, config)
   self.completionMatchPositions[i] = result
 
-method deinit*(self: SelectorPopup) =
+method deinit*(self: SelectorPopup) {.gcsafe, raises: [].} =
   logScope lvlInfo, &"[deinit] Destroying selector popup"
 
   if self.finder.isNotNil:
@@ -81,7 +84,7 @@ method deinit*(self: SelectorPopup) =
   self[] = default(typeof(self[]))
 
 proc addCustomCommand*(self: SelectorPopup, name: string,
-    command: proc(popup: SelectorPopup, args: JsonNode): bool) =
+    command: proc(popup: SelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].}) =
   self.customCommands[name] = command
 
 proc getSearchString*(self: SelectorPopup): string =
@@ -114,12 +117,13 @@ method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
     if self.customEventHandler.isNotNil:
       result.add self.customEventHandler
 
-proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] =
-  if gAppInterface.isNil: return SelectorPopup.none
-  if gAppInterface.getPopupForId(wrapper.id).getSome(editor):
-    if editor of SelectorPopup:
-      return editor.SelectorPopup.some
-  return SelectorPopup.none
+proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] {.gcsafe, raises: [].} =
+  {.gcsafe.}:
+    if gAppInterface.isNil: return SelectorPopup.none
+    if gAppInterface.getPopupForId(wrapper.id).getSome(editor):
+      if editor of SelectorPopup:
+        return editor.SelectorPopup.some
+    return SelectorPopup.none
 
 static:
   addTypeMap(SelectorPopup, api.SelectorPopup, getSelectorPopup)
@@ -275,7 +279,7 @@ proc setFocusPreview*(self: SelectorPopup, focus: bool) {.expose("popup.selector
 genDispatcher("popup.selector")
 addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
 
-proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse =
+proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
   # debugf"SelectorPopup.handleAction {action} '{arg}'"
   if self.textEditor.isNil:
     return
@@ -325,7 +329,7 @@ proc handleTextChanged*(self: SelectorPopup) =
 
   self.markDirty()
 
-proc handleItemsUpdated*(self: SelectorPopup) =
+proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].} =
   if self.textEditor.isNil or self.finder.isNil:
     return
 
@@ -346,7 +350,7 @@ proc handleItemsUpdated*(self: SelectorPopup) =
 
   self.markDirty()
 
-proc newSelectorPopup*(app: AppInterface, scopeName = string.none, finder = Finder.none,
+proc newSelectorPopup*(app: AppInterface, fs: Filesystem, scopeName = string.none, finder = Finder.none,
     previewer: sink Option[DisposableRef[Previewer]] = DisposableRef[Previewer].none): SelectorPopup =
 
   log lvlInfo, "[newSelectorPopup] " & $scopeName
@@ -357,8 +361,8 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none, finder = Find
 
   var popup = SelectorPopup(app: app)
   popup.scale = vec2(0.5, 0.5)
-  let document = newTextDocument(app.configProvider, createLanguageServer=false)
-  popup.textEditor = newTextEditor(document, app, app.configProvider)
+  let document = newTextDocument(app.configProvider, fs, createLanguageServer=false)
+  popup.textEditor = newTextEditor(document, app, fs, app.configProvider)
   popup.textEditor.usage = "search-bar"
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
@@ -379,10 +383,10 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none, finder = Find
 
     # todo: make sure this previewDocument is destroyed, we're overriding it right now
     # in the previewer with a temp document or an existing one
-    let previewDocument = newTextDocument(app.configProvider, createLanguageServer=false)
+    let previewDocument = newTextDocument(app.configProvider, fs, createLanguageServer=false)
     previewDocument.readOnly = true
 
-    popup.previewEditor = newTextEditor(previewDocument, app, app.configProvider)
+    popup.previewEditor = newTextEditor(previewDocument, app, fs, app.configProvider)
     popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
     popup.previewEditor.lineNumbers = api.LineNumbers.None.some

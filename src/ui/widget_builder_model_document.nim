@@ -955,7 +955,7 @@ proc drawCursor(self: ModelDocumentEditor, builder: UINodeBuilder, cursor: CellC
 
     return node.some
 
-method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   let dirty = self.dirty
   self.resetDirty()
 

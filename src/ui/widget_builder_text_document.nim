@@ -16,6 +16,11 @@ import nimsumtree/[buffer, rope]
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
+{.push gcsafe.}
+{.push raises: [].}
+{.push stacktrace:off.}
+{.push linetrace:off.}
+
 logCategory "widget_builder_text"
 
 type CursorLocationInfo* = tuple[node: UINode, text: string, bounds: Rect, original: Cursor]
@@ -25,11 +30,11 @@ type LocationInfos = object
   diagnostic: Option[CursorLocationInfo]
 
 type LineRenderOptions = object
-  handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int])
-  handleDrag: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int])
-  handleBeginHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int)
-  handleHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int)
-  handleEndHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int)
+  handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) {.gcsafe, raises: [].}
+  handleDrag: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) {.gcsafe, raises: [].}
+  handleBeginHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe, raises: [].}
+  handleHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe, raises: [].}
+  handleEndHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int) {.gcsafe, raises: [].}
 
   wrapLine: bool
   wrapLineEndChar: string
@@ -457,7 +462,7 @@ proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, c
 
       inc colorIndex
 
-proc createDoubleLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
+proc createDoubleLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float) {.gcsafe, raises: [].}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe, raises: [].}) =
   var flags = 0.UINodeFlags
   if sizeToContentX:
     flags.incl SizeToContentX
@@ -1112,10 +1117,10 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
 
-method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.editor.createUI(builder, app)
 
-method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.preRender()
 
   let dirty = self.dirty

@@ -6,18 +6,10 @@ import scripting_api, misc/myjsonutils
 
 proc popup_selector_setPreviewVisible_void_SelectorPopup_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc setPreviewVisible*(self: SelectorPopup; visible: bool) =
+proc setPreviewVisible*(self: SelectorPopup; visible: bool) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      visible
-    else:
-      visible.toJson()
+  argsJson.add self.toJson()
+  argsJson.add visible.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_setPreviewVisible_void_SelectorPopup_bool_wasm(
       argsJsonString.cstring)
@@ -25,13 +17,9 @@ proc setPreviewVisible*(self: SelectorPopup; visible: bool) =
 
 proc popup_selector_togglePreview_void_SelectorPopup_wasm(arg: cstring): cstring {.
     importc.}
-proc togglePreview*(self: SelectorPopup) =
+proc togglePreview*(self: SelectorPopup) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_togglePreview_void_SelectorPopup_wasm(
       argsJsonString.cstring)
@@ -39,28 +27,23 @@ proc togglePreview*(self: SelectorPopup) =
 
 proc popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_wasm(arg: cstring): cstring {.
     importc.}
-proc getSelectedItemJson*(self: SelectorPopup): JsonNode =
+proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc popup_selector_accept_void_SelectorPopup_wasm(arg: cstring): cstring {.
     importc.}
-proc accept*(self: SelectorPopup) =
+proc accept*(self: SelectorPopup) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_accept_void_SelectorPopup_wasm(
       argsJsonString.cstring)
@@ -68,13 +51,9 @@ proc accept*(self: SelectorPopup) =
 
 proc popup_selector_cancel_void_SelectorPopup_wasm(arg: cstring): cstring {.
     importc.}
-proc cancel*(self: SelectorPopup) =
+proc cancel*(self: SelectorPopup) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_cancel_void_SelectorPopup_wasm(
       argsJsonString.cstring)
@@ -82,18 +61,10 @@ proc cancel*(self: SelectorPopup) =
 
 proc popup_selector_sort_void_SelectorPopup_ToggleBool_wasm(arg: cstring): cstring {.
     importc.}
-proc sort*(self: SelectorPopup; sort: ToggleBool) =
+proc sort*(self: SelectorPopup; sort: ToggleBool) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when ToggleBool is JsonNode:
-      sort
-    else:
-      sort.toJson()
+  argsJson.add self.toJson()
+  argsJson.add sort.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_sort_void_SelectorPopup_ToggleBool_wasm(
       argsJsonString.cstring)
@@ -101,23 +72,12 @@ proc sort*(self: SelectorPopup; sort: ToggleBool) =
 
 proc popup_selector_setMinScore_void_SelectorPopup_float_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc setMinScore*(self: SelectorPopup; value: float; add: bool = false) =
+proc setMinScore*(self: SelectorPopup; value: float; add: bool = false) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when float is JsonNode:
-      value
-    else:
-      value.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      add
-    else:
-      add.toJson()
+  argsJson.add self.toJson()
+  argsJson.add value.toJson()
+  argsJson.add add.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_setMinScore_void_SelectorPopup_float_bool_wasm(
       argsJsonString.cstring)
@@ -125,18 +85,10 @@ proc setMinScore*(self: SelectorPopup; value: float; add: bool = false) =
 
 proc popup_selector_prev_void_SelectorPopup_int_wasm(arg: cstring): cstring {.
     importc.}
-proc prev*(self: SelectorPopup; count: int = 1) =
+proc prev*(self: SelectorPopup; count: int = 1) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
+  argsJson.add self.toJson()
+  argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_prev_void_SelectorPopup_int_wasm(
       argsJsonString.cstring)
@@ -144,18 +96,10 @@ proc prev*(self: SelectorPopup; count: int = 1) =
 
 proc popup_selector_next_void_SelectorPopup_int_wasm(arg: cstring): cstring {.
     importc.}
-proc next*(self: SelectorPopup; count: int = 1) =
+proc next*(self: SelectorPopup; count: int = 1) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
+  argsJson.add self.toJson()
+  argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_next_void_SelectorPopup_int_wasm(
       argsJsonString.cstring)
@@ -163,13 +107,9 @@ proc next*(self: SelectorPopup; count: int = 1) =
 
 proc popup_selector_toggleFocusPreview_void_SelectorPopup_wasm(arg: cstring): cstring {.
     importc.}
-proc toggleFocusPreview*(self: SelectorPopup) =
+proc toggleFocusPreview*(self: SelectorPopup) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_toggleFocusPreview_void_SelectorPopup_wasm(
       argsJsonString.cstring)
@@ -177,18 +117,10 @@ proc toggleFocusPreview*(self: SelectorPopup) =
 
 proc popup_selector_setFocusPreview_void_SelectorPopup_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc setFocusPreview*(self: SelectorPopup; focus: bool) =
+proc setFocusPreview*(self: SelectorPopup; focus: bool) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when SelectorPopup is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      focus
-    else:
-      focus.toJson()
+  argsJson.add self.toJson()
+  argsJson.add focus.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_setFocusPreview_void_SelectorPopup_bool_wasm(
       argsJsonString.cstring)

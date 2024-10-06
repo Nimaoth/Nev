@@ -1,10 +1,18 @@
-import std/[options, strutils, macros, genasts]
-export options
+import std/[options, strutils, macros, genasts, tables]
+import results
+export options, results
 
 {.used.}
 
+{.push gcsafe.}
+{.push raises: [].}
+{.push warning[ProveInit]:off.}
+
 template getSome*[T](opt: Option[T], injected: untyped): bool =
   ((let o = opt; o.isSome())) and ((let injected {.inject, cursor.} = o.get(); true))
+
+template getSome*[T](opt: Opt[T], injected: untyped): bool =
+  ((let o = opt; o.isOk())) and ((let injected {.inject, cursor.} = o.get(); true))
 
 template isNotNil*(v: untyped): untyped = not v.isNil
 
@@ -87,12 +95,6 @@ template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
 
   matches
 
-# type ArrayLike*[T] {.explain.} = concept x, var v
-#   x.low is int
-#   x.high is int
-  # x[int] is T
-  # v[int] = T
-
 func first*[T](x: var seq[T]): var T = x[x.low]
 func last*[T](x: var seq[T]): var T = x[x.high]
 func first*[T](x: openArray[T]): lent T = x[x.low]
@@ -143,6 +145,15 @@ template mapIt*[T](self: Option[T], op: untyped): untyped =
     some(op)
   else:
     OutType.none
+
+template applyIt*[T, E](self: Result[T, E], op: untyped, opErr: untyped): untyped =
+  let s = self
+  if s.isOk:
+    template it: untyped {.inject.} = s.unsafeValue
+    op
+  else:
+    template it: untyped {.inject.} = s.unsafeError
+    opErr
 
 template findIt*(self: untyped, op: untyped): untyped =
   block:

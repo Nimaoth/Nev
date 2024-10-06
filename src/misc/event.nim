@@ -1,18 +1,23 @@
-import std/[sugar]
 import id, util
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type Event*[T] = object
-  handlers: seq[tuple[id: Id, callback: (T) -> void]]
+  when T is void:
+    handlers: seq[tuple[id: Id, callback: proc(): void {.gcsafe, raises: [].}]]
+  else:
+    handlers: seq[tuple[id: Id, callback: proc(arg: T): void {.gcsafe, raises: [].}]]
 
 proc initEvent*[T](): Event[T] =
   result = Event[T](handlers: @[])
 
-proc subscribe*[T: void](event: var Event[T], callback: () -> void): Id =
+proc subscribe*[T: void](event: var Event[T], callback: proc(): void {.gcsafe, raises: [].}): Id =
   assert callback != nil
   result = newId()
   event.handlers.add (result, callback)
 
-proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
+proc subscribe*[T](event: var Event[T], callback: proc(arg: T): void {.gcsafe, raises: [].}): Id =
   assert callback != nil
   result = newId()
   event.handlers.add (result, callback)

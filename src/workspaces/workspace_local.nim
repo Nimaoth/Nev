@@ -1,4 +1,4 @@
-import std/[os, json, options, sequtils, strutils, asyncfile, unicode]
+import std/[os, json, options, sequtils, strutils, unicode]
 import misc/[custom_async, custom_logger, async_process, util, regex, timer, event]
 import platform/filesystem
 import workspace
@@ -6,6 +6,9 @@ import vcs/[vcs, vcs_git, vcs_perforce]
 import compilation_config
 
 import nimsumtree/[rope]
+
+{.push gcsafe.}
+{.push raises: [].}
 
 logCategory "ws-local"
 
@@ -17,9 +20,12 @@ type
     isCacheUpdateInProgress: bool = false
 
 method settings*(self: WorkspaceFolderLocal): JsonNode =
-  result = newJObject()
-  result["path"] = newJString(self.path.absolutePath)
-  result["additionalPaths"] = %self.additionalPaths
+  try:
+    result = newJObject()
+    result["path"] = newJString(self.path.absolutePath)
+    result["additionalPaths"] = %self.additionalPaths
+  except ValueError, OSError:
+    discard
 
 proc ignorePath*(ignore: Globs, path: string): bool =
   if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
@@ -33,21 +39,25 @@ proc collectFiles(dir: string, ignore: Globs, files: var seq[string]) =
   if ignore.ignorePath(dir):
     return
 
-  for (kind, path) in walkDir(dir, relative=false):
-    let pathNorm = path.normalizePathUnix
-    case kind
-    of pcFile:
-      if ignore.ignorePath(pathNorm):
-        continue
+  try:
+    for (kind, path) in walkDir(dir, relative=false):
+      let pathNorm = path.normalizePathUnix
+      case kind
+      of pcFile:
+        if ignore.ignorePath(pathNorm):
+          continue
 
-      files.add pathNorm
-    of pcDir:
-      collectFiles(pathNorm, ignore, files)
-    else:
-      discard
+        files.add pathNorm
+      of pcDir:
+        collectFiles(pathNorm, ignore, files)
+      else:
+        discard
+
+  except OSError:
+    discard
 
 proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
-    tuple[files: seq[string], time: float] {.gcsafe.} =
+    tuple[files: seq[string], time: float] =
   try:
     let t = startTimer()
 
@@ -67,30 +77,39 @@ proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.async.}
 
   log lvlInfo, "[recomputeFileCacheAsync] Start"
   let args = (@[self.path] & self.additionalPaths, self.ignore)
-  let res = spawnAsync(collectFilesThread, args).await
-  log lvlInfo, fmt"[recomputeFileCacheAsync] Finished in {res.time}ms"
+  try:
+    let res = spawnAsync(collectFilesThread, args).await
+    log lvlInfo, fmt"[recomputeFileCacheAsync] Finished in {res.time}ms"
 
-  self.cachedFiles = res.files
-  self.onCachedFilesUpdated.invoke()
+    self.cachedFiles = res.files
+    self.onCachedFilesUpdated.invoke()
+  except CancelledError:
+    discard
 
 method recomputeFileCache*(self: WorkspaceFolderLocal) =
-  asyncCheck self.recomputeFileCacheAsync()
+  asyncSpawn self.recomputeFileCacheAsync()
 
 proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
-  if relativePath.isAbsolute:
+  try:
+    if relativePath.isAbsolute:
+      relativePath
+    else:
+      self.path.absolutePath // relativePath
+  except ValueError, OSError:
     relativePath
-  else:
-    self.path.absolutePath // relativePath
 
 method getRelativePathSync*(self: WorkspaceFolderLocal, absolutePath: string): Option[string] =
-  if absolutePath.startsWith(self.path):
-    return absolutePath.relativePath(self.path, '/').normalizePathUnix.some
+  try:
+    if absolutePath.startsWith(self.path):
+      return absolutePath.relativePath(self.path, '/').normalizePathUnix.some
 
-  for path in self.additionalPaths:
-    if absolutePath.startsWith(path):
-      return absolutePath.relativePath(path, '/').normalizePathUnix.some
+    for path in self.additionalPaths:
+      if absolutePath.startsWith(path):
+        return absolutePath.relativePath(path, '/').normalizePathUnix.some
 
-  return string.none
+    return string.none
+  except:
+    return string.none
 
 method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string):
     Future[Option[string]] {.async.} =
@@ -98,7 +117,11 @@ method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string):
 
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
-method getWorkspacePath*(self: WorkspaceFolderLocal): string = self.path.absolutePath
+method getWorkspacePath*(self: WorkspaceFolderLocal): string =
+  try:
+    self.path.absolutePath
+  except ValueError, OSError:
+    return ""
 
 method setFileReadOnly*(self: WorkspaceFolderLocal, relativePath: string, readOnly: bool): Future[bool] {.
     async.} =
@@ -136,33 +159,27 @@ method fileExists*(self: WorkspaceFolderLocal, path: string): Future[bool] {.asy
   let path = self.getAbsolutePath(path)
   return path.fileExists
 
-proc loadFileThread(args: tuple[path: string, data: ptr string]):
-    tuple[ok: bool, time: float] {.gcsafe.} =
-
-  let t = startTimer()
-  defer:
-    result.time = t.elapsed.ms
-
+proc loadFileThread(args: tuple[path: string, data: ptr string]): bool =
   try:
     args.data[] = readFile(args.path)
 
     let invalidUtf8Index = args.data[].validateUtf8
     if invalidUtf8Index >= 0:
       args.data[] = &"Invalid utf-8 byte at {invalidUtf8Index}"
-      result.ok = false
+      return false
     else:
-      result.ok = true
+      return true
 
   except:
-    result.ok = false
+    return false
 
 method loadFile*(self: WorkspaceFolderLocal, relativePath: string): Future[string] {.async.} =
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[loadFile] '{path}'"
   try:
     var data = ""
-    let res = await spawnAsync(loadFileThread, (path, data.addr))
-    if not res.ok:
+    let ok = await spawnAsync(loadFileThread, (path, data.addr))
+    if not ok:
       log lvlError, &"Failed to load file '{path}'"
 
     return data.move
@@ -174,8 +191,8 @@ method loadFile*(self: WorkspaceFolderLocal, relativePath: string, data: ptr str
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[loadFile] '{path}'"
   try:
-    let res = await spawnAsync(loadFileThread, (path, data))
-    if not res.ok:
+    let ok = await spawnAsync(loadFileThread, (path, data))
+    if not ok:
       log lvlError, &"Failed to load file '{path}'"
       return
 
@@ -186,9 +203,11 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: stri
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[saveFile] '{path}'"
   try:
-    var file = openAsync(path, fmWrite)
-    await file.write(content)
-    file.close()
+    # todo: reimplement async
+    writeFile(path, content)
+    # var file = openAsync(path, fmWrite)
+    # await file.write(content)
+    # file.close()
   except:
     log lvlError, &"Failed to write file '{path}'"
 
@@ -196,10 +215,12 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: sink
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[saveFile] '{path}'"
   try:
-    var file = openAsync(path, fmWrite)
-    for chunk in content.iterateChunks:
-      await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
-    file.close()
+    # todo: reimplement async
+    writeFile(path, $content)
+    # var file = openAsync(path, fmWrite)
+    # for chunk in content.iterateChunks:
+    #   await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
+    # file.close()
   except:
     log lvlError, &"Failed to write file '{path}'"
 
@@ -221,14 +242,18 @@ proc loadDefaultIgnoreFile(self: WorkspaceFolderLocal) =
     log lvlInfo, &"No ignore file for workpace {self.name}"
 
 proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string) =
-  for (kind, file) in walkDir(path, relative=false):
-    case kind
-    of pcFile:
-      directoryListing.files.add file.normalizePathUnix
-    of pcDir:
-      directoryListing.folders.add file.normalizePathUnix
-    else:
-      log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {file}"
+  try:
+    for (kind, file) in walkDir(path, relative=false):
+      case kind
+      of pcFile:
+        directoryListing.files.add file.normalizePathUnix
+      of pcDir:
+        directoryListing.folders.add file.normalizePathUnix
+      else:
+        log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {file}"
+
+  except OSError:
+    discard
 
 method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string):
     Future[DirectoryListing] {.async.} =
@@ -325,9 +350,9 @@ proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
 
 proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal =
   new result
-  result.path = path.absolutePath.normalizePathUnix
+  result.path = path.absolutePath.catch(path).normalizePathUnix
   result.name = fmt"Local:{result.path}"
-  result.additionalPaths = additionalPaths.mapIt(it.absolutePath.normalizePathUnix)
+  result.additionalPaths = additionalPaths.mapIt(it.absolutePath.catch(path).normalizePathUnix)
   result.info = createInfo(path, result.additionalPaths)
 
   result.loadDefaultIgnoreFile()
@@ -342,6 +367,9 @@ proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]):
   result.recomputeFileCache()
 
 proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal =
-  let path = settings["path"].getStr
-  let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
-  return newWorkspaceFolderLocal(path, additionalPaths)
+  try:
+    let path = settings["path"].getStr
+    let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
+    return newWorkspaceFolderLocal(path, additionalPaths)
+  except:
+    return nil

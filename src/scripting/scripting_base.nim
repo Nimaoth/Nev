@@ -1,11 +1,15 @@
 import std/[macros, macrocache, json, strutils]
 import misc/[custom_logger, custom_async]
 import expose, document_editor, compilation_config
+import platform/filesystem
+
+{.push gcsafe.}
+{.push raises: [].}
 
 type ScriptContext* = ref object of RootObj
-  discard
+  fs*: Filesystem
 
-method init*(self: ScriptContext, path: string): Future[void] {.base.} = discard
+method init*(self: ScriptContext, path: string, fs: Filesystem): Future[void] {.base.} = discard
 method deinit*(self: ScriptContext) {.base.} = discard
 method reload*(self: ScriptContext): Future[void] {.base.} = discard
 
@@ -15,6 +19,8 @@ method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base
 method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode {.base.} = discard
 method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base.} = discard
 method getCurrentContext*(self: ScriptContext): string {.base.} = ""
+
+{.pop.} # raises
 
 proc generateScriptingApiPerModule*() {.compileTime.} =
   var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"

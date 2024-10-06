@@ -27,23 +27,23 @@ type
     onFocusChanged*: Event[bool]
     layoutOptions*: WLayoutOptions
 
-method requestRender*(self: Platform, redrawEverything = false) {.base.} = discard
-method render*(self: Platform) {.base.} = discard
-method sizeChanged*(self: Platform): bool {.base.} = discard
-method size*(self: Platform): Vec2 {.base.} = discard
-method init*(self: Platform) {.base.} = discard
-method deinit*(self: Platform) {.base.} = discard
-method processEvents*(self: Platform): int {.base.} = discard
-method `fontSize=`*(self: Platform, fontSize: float) {.base.} = discard
-method `lineDistance=`*(self: Platform, lineDistance: float) {.base.} = discard
-method setFont*(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) {.base.} = discard
-method fontSize*(self: Platform): float {.base.} = discard
-method lineDistance*(self: Platform): float {.base.} = discard
-method lineHeight*(self: Platform): float {.base.} = discard
-method charWidth*(self: Platform): float {.base.} = discard
-method charGap*(self: Platform): float {.base.} = discard
-method measureText*(self: Platform, text: string): Vec2 {.base.} = discard
-method preventDefault*(self: Platform) {.base.} = discard
-method getStatisticsString*(self: Platform): string {.base.} = discard
+method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, raises: [].} = discard
+method render*(self: Platform) {.base, gcsafe, raises: [].} = discard
+method sizeChanged*(self: Platform): bool {.base, gcsafe, raises: [].} = discard
+method size*(self: Platform): Vec2 {.base, gcsafe, raises: [].} = discard
+method init*(self: Platform) {.base, raises: [].} = discard
+method deinit*(self: Platform) {.base, raises: [].} = discard
+method processEvents*(self: Platform): int {.base, gcsafe, raises: [].} = discard
+method `fontSize=`*(self: Platform, fontSize: float) {.base, gcsafe, raises: [].} = discard
+method `lineDistance=`*(self: Platform, lineDistance: float) {.base, gcsafe, raises: [].} = discard
+method setFont*(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) {.base, gcsafe, raises: [].} = discard
+method fontSize*(self: Platform): float {.base, gcsafe, raises: [].} = discard
+method lineDistance*(self: Platform): float {.base, gcsafe, raises: [].} = discard
+method lineHeight*(self: Platform): float {.base, gcsafe, raises: [].} = discard
+method charWidth*(self: Platform): float {.base, gcsafe, raises: [].} = discard
+method charGap*(self: Platform): float {.base, gcsafe, raises: [].} = discard
+method measureText*(self: Platform, text: string): Vec2 {.base, gcsafe, raises: [].} = discard
+method preventDefault*(self: Platform) {.base, gcsafe, raises: [].} = discard
+method getStatisticsString*(self: Platform): string {.base, gcsafe, raises: [].} = discard
 
 func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance

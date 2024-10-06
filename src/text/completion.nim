@@ -5,6 +5,9 @@ import scripting_api
 
 logCategory "completion"
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type
   MergeStrategyKind* = enum
     TakeAll

@@ -821,7 +821,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   setOption "editor.text.cursor.wide.visual-line", true
   setOption "editor.text.cursor.movement.visual-line", "last"
 
-  setModeChangedHandler proc(editor, oldMode, newMode: auto) =
+  setModeChangedHandler proc(editor, oldMode, newMode: auto) {.gcsafe, raises: [].} =
     if newMode == "":
       editor.setMode "normal"
       return

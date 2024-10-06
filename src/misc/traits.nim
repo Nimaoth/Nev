@@ -112,10 +112,10 @@ proc traitImpl*(name: NimNode, body: NimNode, isRef: bool): NimNode =
   for item in body:
     case item.kind
     of nnkMethodDef:
-      item[4] = genAst():
-        {.base.}
+      item.addPragma(ident"base")
+
       item[6] = genAst():
-        discard
+        raise newException(Defect, "Unimplemented")
 
       methods.add item
 

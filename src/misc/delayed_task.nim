@@ -4,6 +4,9 @@ import custom_async
 when defined(debugDelayedTasks):
   import std/strutils
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type
   DelayedTask* = ref object
     restartCounter: int
@@ -11,7 +14,8 @@ type
     interval*: int64
     nextTick: Time
     repeat: bool
-    callback: proc()
+    callback: proc() {.gcsafe, raises: [].}
+    callbackAsync: proc(): Future[void] {.gcsafe, async: (raises: []).}
     when defined(debugDelayedTasks):
       creationStackTrace: string
 
@@ -38,13 +42,20 @@ proc tick(task: DelayedTask): Future[void] {.async.} =
       when defined(debugDelayedTasks):
         echo "====================== Tick DelayedTask"
         echo task.creationStackTrace.indent(2)
-      await sleepAsync(timeToNextTick.inMilliseconds.int)
+
+      try:
+        await sleepAsync(chronos.milliseconds(timeToNextTick.inMilliseconds.int))
+      except CancelledError:
+        break
 
     if task.restartCounter != restartCounter:
       return
 
     task.reschedule()
-    task.callback()
+    if task.callback != nil:
+      task.callback()
+    else:
+      await task.callbackAsync()
 
     if not task.repeat:
       break
@@ -52,15 +63,22 @@ proc tick(task: DelayedTask): Future[void] {.async.} =
 proc reschedule*(task: DelayedTask) =
   task.nextTick = getTime() + initDuration(milliseconds=task.interval)
   if not task.isActive:
-    asyncCheck task.tick()
+    asyncSpawn task.tick()
 
 proc schedule*(task: DelayedTask) =
   if not task.isActive:
     task.nextTick = getTime() + initDuration(milliseconds=task.interval)
-    asyncCheck task.tick()
+    asyncSpawn task.tick()
 
-proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: proc()): DelayedTask =
+proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: proc() {.gcsafe, raises: [].}): DelayedTask =
   result = DelayedTask(interval: interval.int64, repeat: repeat, callback: callback)
+  when defined(debugDelayedTasks):
+    result.creationStackTrace = getStackTrace()
+  if autoActivate:
+    result.reschedule()
+
+proc newDelayedTask*(interval: int, repeat: bool, autoActivate: bool, callback: proc(): Future[void] {.gcsafe, async: (raises: []).}): DelayedTask =
+  result = DelayedTask(interval: interval.int64, repeat: repeat, callbackAsync: callback)
   when defined(debugDelayedTasks):
     result.creationStackTrace = getStackTrace()
   if autoActivate:
@@ -81,5 +99,10 @@ template startDelayed*(interval: int, repeat: bool = false, body: untyped): unty
 
 template startDelayedPaused*(interval: int, repeat: bool = false, body: untyped): untyped =
   newDelayedTask(interval, repeat, false, proc() =
+    body
+  )
+
+template startDelayedAsync*(interval: int, repeat: bool = false, body: untyped): untyped =
+  newDelayedTask(interval, repeat, true, proc() {.async: (raises: []).} =
     body
   )
