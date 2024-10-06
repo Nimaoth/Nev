@@ -237,7 +237,7 @@ when enableGui:
     log lvlInfo, fmt"True colors: {trueColorSupport}"
 
 # Do this after every import
-# Don't remove those imports, they are needed by createNimScriptContextConstructorAndGenerateBindings
+# Don't remove those imports, they are needed by generatePluginBindings
 import std/[macrocache]
 when enableAst:
   import ast/model_document
@@ -249,7 +249,7 @@ import collab
 import scripting/scripting_base
 import wasm3, wasm3/[wasm3c, wasmconversions]
 
-createNimScriptContextConstructorAndGenerateBindings()
+generatePluginBindings()
 static:
   generateScriptingApiPerModule()
 

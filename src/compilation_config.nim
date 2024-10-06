@@ -5,7 +5,6 @@ const enableGui* {.booldefine.}: bool = false
 const enableTerminal* {.booldefine.}: bool = false
 const enableTableIdCacheChecking* {.booldefine.}: bool = false
 const enableSystemClipboard* {.booldefine.}: bool = true
-const enableNimscript* {.booldefine.}: bool = false
 const enableAst* {.booldefine.}: bool = false
 const copyWasmtimeDll* {.booldefine.}: bool = true
 const appName* {.strdefine.}: string = "nev"
@@ -17,10 +16,6 @@ func useBuiltinTreesitterLanguage*(name: string): bool = builtinTreesitterLangua
 
 static:
   echo "Builtin treesitter languages: ", builtinTreesitterLanguages
-
-when enableNimscript:
-  static:
-    echo "Nimscript plugin api enabled"
 
 when enableAst:
   static:

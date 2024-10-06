@@ -1,6 +1,6 @@
 import plugin_runtime, keybindings_normal
 
-proc loadHelixKeybindings*() {.scriptActionWasmNims("load-helix-keybindings").} =
+proc loadHelixKeybindings*() {.expose("load-helix-keybindings").} =
   loadNormalKeybindings()
 
   info "Applying Helix keybindings"

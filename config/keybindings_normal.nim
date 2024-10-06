@@ -82,7 +82,7 @@ proc loadStandardSelectorPopupKeybindings() =
   addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
   addCommand "popup.selector.file-explorer", "<C-r>", "go-up"
 
-proc loadModelKeybindings*() {.scriptActionWasmNims("load-model-keybindings").} =
+proc loadModelKeybindings*() {.expose("load-model-keybindings").} =
   let t = startTimer()
   defer:
     infof"loadModelKeybindings: {t.elapsed.ms} ms"
@@ -223,7 +223,7 @@ proc vscodeDeleteLine(editor: TextDocumentEditor) {.expose("vscode-delete-line")
 proc vscodeTodo(editor: TextDocumentEditor, command: string) {.expose("vscode-todo").} =
   infof"command not implemented: '{command}'. Open an issue."
 
-proc loadVSCodeKeybindings*() {.scriptActionWasmNims("load-vscode-keybindings").} =
+proc loadVSCodeKeybindings*() {.expose("load-vscode-keybindings").} =
   let t = startTimer()
   defer:
     infof"loadVSCodeKeybindings: {t.elapsed.ms} ms"

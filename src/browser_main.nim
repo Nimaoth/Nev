@@ -16,7 +16,7 @@ import app, app_options, compilation_config
 
 import ui/node
 
-# Don't remove those imports, they are needed by createNimScriptContextConstructorAndGenerateBindings
+# Don't remove those imports, they are needed by generatePluginBindings
 import std/[macrocache]
 when enableAst:
   import ast/model_document
@@ -24,7 +24,7 @@ import text/text_editor
 import text/language/lsp_client
 import text/language/debugger
 import selector_popup
-createNimScriptContextConstructorAndGenerateBindings()
+generatePluginBindings()
 
 # Initialize renderer
 var rend: BrowserPlatform = new BrowserPlatform

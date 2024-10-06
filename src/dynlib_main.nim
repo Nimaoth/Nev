@@ -52,7 +52,7 @@ import app
 import platform/[platform_externc, filesystem]
 
 # Do this after every import
-# Don't remove those imports, they are needed by createNimScriptContextConstructorAndGenerateBindings
+# Don't remove those imports, they are needed by generatePluginBindings
 import std/[macrocache]
 when enableAst:
   import ast/model_document
@@ -66,7 +66,7 @@ import ui/node
 import clipboard
 import scripting/scripting_base
 
-createNimScriptContextConstructorAndGenerateBindings()
+generatePluginBindings()
 static:
   generateScriptingApiPerModule()
 

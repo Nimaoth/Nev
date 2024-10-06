@@ -3,13 +3,12 @@
 ## Setup
 - Requires OpenGL 4.1 for the GUI version
 - Install Rust and cargo (required for wasmtime)
-- Install Nim version 2.0.6. (we need some file from the compiler source so you need to install nim using choosenim, the prebuilt binaries from the nim website or build nim from source, because
-  some linux package repositories, e.g. arch, don't seem to include the compiler source code, which this editor needs for nimscript)
+- Install Nim version 2.0.6
 - Clone the repository
 - Run `nimble setup`
 
-By default builds will not include the nimscript plugin api and the ast language framework.
-To enable these features pass `-D:enableNimscript=true` and `-D:enableAst=true` respectively.
+By default builds will not include the ast language framework.
+To enable these features pass `-D:enableAst=true` respectively.
 
 ## Desktop version
 - Use `nimble buildDesktop` or `nimble build` to compile the desktop version of the editor.

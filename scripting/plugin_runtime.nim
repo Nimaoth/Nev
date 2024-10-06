@@ -7,17 +7,6 @@ export embed_source.embedSource, embed_source.currentSourceLocation
 
 embedSource()
 
-when defined(nimscript):
-  proc getCurrentExceptionMsg*(): string =
-    ## Retrieves the error message that was attached to the current
-    ## exception; if there is none, `""` is returned.
-    let currException = getCurrentException()
-    return if currException == nil: "" else: currException.msg
-
-  proc getStackTrace*(e: ref Exception): string =
-    ## Stacktrace not available in nimscript
-    return ""
-
 type AnyDocumentEditor = TextDocumentEditor | ModelDocumentEditor
 
 var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
@@ -208,7 +197,7 @@ var keysPrefix*: string = ""
 
 template withKeys*(keys: varargs[string], body: untyped): untyped =
   for key in keys:
-    let oldValue = keysPrefix & "" # do this to copy the value (only really necessary in nimscript for some reason)
+    let oldValue = keysPrefix
     keysPrefix = keysPrefix & key
     defer:
       keysPrefix = oldValue

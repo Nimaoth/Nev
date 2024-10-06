@@ -41,7 +41,6 @@ switch("d", "npegGcsafe=true")
 
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
-switch("d", "enableNimscript=false")
 switch("d", "enableAst=false")
 
 

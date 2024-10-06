@@ -30,7 +30,7 @@ These additional settings files are useful for having different cofiguration on 
 (e.g. different paths to LSP executables)
 
 As these config files just specify plain values and can't contain any logic, more complex configuration has
-to be done using WASM or Nimscript plugins.
+to be done using plugins.
 
 The `keybindings*.json` files can only bind existing commands (builtin or from plugins).
 To create new commands plugins have to be used.
@@ -150,17 +150,12 @@ For custom commands plugins have to be used.
 
 ## Plugins
 
-Two plugin mechanisms are supported:
-- Wasm
-- NimScript: The editor bundles part of the Nim compiler so it can run NimScript code.
-  Allows easy hot reloading of the config file, but right now only one nimscript file is supported. Needs to be enabled with `-d:enableNimscript` (enabled by default).
+Nev currently only supports wasm plugins. It might support other plugin mechanisms in the future (e.g. native dynamic libraries or Lua)
 
 The editor API is exposed to plugins and can be used to create new commands, change settings, etc.
 
 WASM plugins are loaded from `{app_dir}/config/wasm`. The wasm modules have to conform to a certain
 API and can only use a subset of WASI right now, so it is recommended not to rely on WASI for now.
-
-The nimscript file has to be in `~/.nev/custom.nims`.
 
 In theory WASM plugins can be written in any language that supports compiling to wasm, but there
 are currently no C header files for the editor API, so for now the recommended way
@@ -205,9 +200,8 @@ addCommand "editor", "<C-a>", "custom-command-1", "hello", 13
 addCommand "editor.text", "<C-b>", "custom-command-2", "world", 42
 addTextCommand "", "<C-c>", "copy" # addTextCommand "xyz" is equivalent to addCommand "editor.text.xyz"
 
-# This is required for the main file of the plugin. If you use NimScript this is not required.
-when defined(wasm):
-  include plugin_runtime_impl
+# This is required for the main file of the plugin.
+include plugin_runtime_impl
 ```
 
 # Settings

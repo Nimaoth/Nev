@@ -1,7 +1,7 @@
 import plugin_runtime, keybindings_normal
 import misc/[timer]
 
-proc loadVimLikeKeybindings*() {.scriptActionWasmNims("load-vim-like-keybindings").} =
+proc loadVimLikeKeybindings*() {.expose("load-vim-like-keybindings").} =
   loadNormalKeybindings()
 
   let t = startTimer()
