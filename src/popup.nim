@@ -5,6 +5,9 @@ import events, input
 
 from scripting_api import EditorId, newEditorId
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type Popup* = ref object of RootObj
   id*: EditorId
   userId*: Id

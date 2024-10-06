@@ -1,21 +1,17 @@
 import std/[options, os, tables, json]
+import results
 import misc/[custom_logger, regex]
 import config_provider
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "language-detection"
 
-var regexes = initTable[string, Regex]()
-proc getRegex*(str: string): Regex =
-  if regexes.contains(str):
-    return regexes[str]
-
-  let r = re(str)
-  regexes[str] = r
-  r
-
-proc getLanguageForFile*(config: ConfigProvider, filename: string): Option[string] =
+proc getLanguageForFile*(config: ConfigProvider, filename: string): Result[string, string] =
   if filename == "":
-    return string.none
+    result.err "Can't determine language for empty filename"
+    return
 
   var extension = filename.splitFile.ext
   if extension.len > 0:
@@ -30,9 +26,12 @@ proc getLanguageForFile*(config: ConfigProvider, filename: string): Option[strin
       log lvlError, &"Expected string for value in 'language-mappings' but got {language.kind}:\n{language.pretty}"
       continue
 
-    let r = getRegex(regex)
-    if filename.contains(r):
-      return language.str.some
+    try:
+      let r = re(regex)
+      if filename.contains(r):
+        return language.str.ok
+    except RegexError as e:
+      log lvlError, &"Invalid regex '{regex}' in language mappings: {e.msg}"
 
   let languageId = case extension
   of "agda", "lagda": "agda"
@@ -59,6 +58,7 @@ proc getLanguageForFile*(config: ConfigProvider, filename: string): Option[strin
   of "md": "markdown"
   of "scm": "query"
   else:
-    return string.none
+    result.err "Unknown extension " & extension
+    return
 
-  return languageId.some
+  return languageId.ok

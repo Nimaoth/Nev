@@ -46,6 +46,8 @@ export json
 when defined(nimPreviewSlimSystem):
   import std/assertions
 
+{.push gcsafe.}
+
 #[
 Future directions:
 add a way to customize serialization, for e.g.:
@@ -209,7 +211,7 @@ template fromJsonFields(newObj, oldObj, json, discKeys, opt) =
 
   checkJson ok, $(json.len, num, numMatched, $T, json)
 
-proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions())
+proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions()) {.raises: [ValueError].}
 
 proc discKeyMatch[T](obj: T, json: JsonNode, key: static string): bool =
   if not json.hasKey key:
@@ -234,7 +236,7 @@ proc discKeysMatch[T](obj: T, json: JsonNode, keys: static seq[string]): bool =
   result = true
   discKeysMatchBodyGen(obj, json, keys)
 
-proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions()) =
+proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions()) {.raises: [ValueError].} =
   ## inplace version of `jsonTo`
   #[
   adding "json path" leading to `b` can be added in future work.
@@ -315,11 +317,11 @@ proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions()) =
     # checkJson not appropriate here
     static: doAssert false, "not yet implemented: " & $T
 
-proc jsonTo*(b: JsonNode, T: typedesc, opt = Joptions()): T =
+proc jsonTo*(b: JsonNode, T: typedesc, opt = Joptions()): T {.raises: [ValueError].} =
   ## reverse of `toJson`
   fromJson(result, b, opt)
 
-proc toJson*[T](a: T, opt = initToJsonOptions()): JsonNode =
+proc toJson*[T](a: T, opt = initToJsonOptions()): JsonNode {.raises: [].} =
   ## serializes `a` to json; uses `toJsonHook(a: T)` if it's in scope to
   ## customize serialization, see strtabs.toJsonHook for an example.
   ##

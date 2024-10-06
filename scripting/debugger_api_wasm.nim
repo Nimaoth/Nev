@@ -6,7 +6,7 @@ import scripting_api, misc/myjsonutils
 
 proc debugger_prevDebuggerView_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc prevDebuggerView*() =
+proc prevDebuggerView*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_prevDebuggerView_void_Debugger_wasm(
@@ -15,7 +15,7 @@ proc prevDebuggerView*() =
 
 proc debugger_nextDebuggerView_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc nextDebuggerView*() =
+proc nextDebuggerView*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_nextDebuggerView_void_Debugger_wasm(
@@ -24,13 +24,9 @@ proc nextDebuggerView*() =
 
 proc debugger_setDebuggerView_void_Debugger_string_wasm(arg: cstring): cstring {.
     importc.}
-proc setDebuggerView*(view: string) =
+proc setDebuggerView*(view: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      view
-    else:
-      view.toJson()
+  argsJson.add view.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_setDebuggerView_void_Debugger_string_wasm(
       argsJsonString.cstring)
@@ -38,7 +34,7 @@ proc setDebuggerView*(view: string) =
 
 proc debugger_selectFirstVariable_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc selectFirstVariable*() =
+proc selectFirstVariable*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_selectFirstVariable_void_Debugger_wasm(
@@ -47,7 +43,7 @@ proc selectFirstVariable*() =
 
 proc debugger_selectLastVariable_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc selectLastVariable*() =
+proc selectLastVariable*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_selectLastVariable_void_Debugger_wasm(
@@ -55,7 +51,7 @@ proc selectLastVariable*() =
 
 
 proc debugger_prevThread_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc prevThread*() =
+proc prevThread*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_prevThread_void_Debugger_wasm(
@@ -63,7 +59,7 @@ proc prevThread*() =
 
 
 proc debugger_nextThread_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc nextThread*() =
+proc nextThread*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_nextThread_void_Debugger_wasm(
@@ -71,7 +67,7 @@ proc nextThread*() =
 
 
 proc debugger_prevStackFrame_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc prevStackFrame*() =
+proc prevStackFrame*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_prevStackFrame_void_Debugger_wasm(
@@ -79,7 +75,7 @@ proc prevStackFrame*() =
 
 
 proc debugger_nextStackFrame_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc nextStackFrame*() =
+proc nextStackFrame*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_nextStackFrame_void_Debugger_wasm(
@@ -88,7 +84,7 @@ proc nextStackFrame*() =
 
 proc debugger_openFileForCurrentFrame_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc openFileForCurrentFrame*() =
+proc openFileForCurrentFrame*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_openFileForCurrentFrame_void_Debugger_wasm(
@@ -96,7 +92,7 @@ proc openFileForCurrentFrame*() =
 
 
 proc debugger_prevVariable_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc prevVariable*() =
+proc prevVariable*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_prevVariable_void_Debugger_wasm(
@@ -104,7 +100,7 @@ proc prevVariable*() =
 
 
 proc debugger_nextVariable_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc nextVariable*() =
+proc nextVariable*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_nextVariable_void_Debugger_wasm(
@@ -112,7 +108,7 @@ proc nextVariable*() =
 
 
 proc debugger_expandVariable_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc expandVariable*() =
+proc expandVariable*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_expandVariable_void_Debugger_wasm(
@@ -121,7 +117,7 @@ proc expandVariable*() =
 
 proc debugger_collapseVariable_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc collapseVariable*() =
+proc collapseVariable*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_collapseVariable_void_Debugger_wasm(
@@ -130,7 +126,7 @@ proc collapseVariable*() =
 
 proc debugger_stopDebugSession_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc stopDebugSession*() =
+proc stopDebugSession*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_stopDebugSession_void_Debugger_wasm(
@@ -139,7 +135,7 @@ proc stopDebugSession*() =
 
 proc debugger_stopDebugSessionDelayed_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc stopDebugSessionDelayed*() =
+proc stopDebugSessionDelayed*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_stopDebugSessionDelayed_void_Debugger_wasm(
@@ -148,13 +144,9 @@ proc stopDebugSessionDelayed*() =
 
 proc debugger_runConfiguration_void_Debugger_string_wasm(arg: cstring): cstring {.
     importc.}
-proc runConfiguration*(name: string) =
+proc runConfiguration*(name: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      name
-    else:
-      name.toJson()
+  argsJson.add name.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_runConfiguration_void_Debugger_string_wasm(
       argsJsonString.cstring)
@@ -162,7 +154,7 @@ proc runConfiguration*(name: string) =
 
 proc debugger_chooseRunConfiguration_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc chooseRunConfiguration*() =
+proc chooseRunConfiguration*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_chooseRunConfiguration_void_Debugger_wasm(
@@ -171,7 +163,7 @@ proc chooseRunConfiguration*() =
 
 proc debugger_runLastConfiguration_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc runLastConfiguration*() =
+proc runLastConfiguration*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_runLastConfiguration_void_Debugger_wasm(
@@ -180,18 +172,10 @@ proc runLastConfiguration*() =
 
 proc debugger_addBreakpoint_void_Debugger_EditorId_int_wasm(arg: cstring): cstring {.
     importc.}
-proc addBreakpoint*(editorId: EditorId; line: int) =
+proc addBreakpoint*(editorId: EditorId; line: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when EditorId is JsonNode:
-      editorId
-    else:
-      editorId.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      line
-    else:
-      line.toJson()
+  argsJson.add editorId.toJson()
+  argsJson.add line.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_addBreakpoint_void_Debugger_EditorId_int_wasm(
       argsJsonString.cstring)
@@ -199,18 +183,10 @@ proc addBreakpoint*(editorId: EditorId; line: int) =
 
 proc debugger_removeBreakpoint_void_Debugger_string_int_wasm(arg: cstring): cstring {.
     importc.}
-proc removeBreakpoint*(path: string; line: int) =
+proc removeBreakpoint*(path: string; line: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      path
-    else:
-      path.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      line
-    else:
-      line.toJson()
+  argsJson.add path.toJson()
+  argsJson.add line.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_removeBreakpoint_void_Debugger_string_int_wasm(
       argsJsonString.cstring)
@@ -218,18 +194,10 @@ proc removeBreakpoint*(path: string; line: int) =
 
 proc debugger_toggleBreakpointEnabled_void_Debugger_string_int_wasm(arg: cstring): cstring {.
     importc.}
-proc toggleBreakpointEnabled*(path: string; line: int) =
+proc toggleBreakpointEnabled*(path: string; line: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      path
-    else:
-      path.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      line
-    else:
-      line.toJson()
+  argsJson.add path.toJson()
+  argsJson.add line.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_toggleBreakpointEnabled_void_Debugger_string_int_wasm(
       argsJsonString.cstring)
@@ -237,7 +205,7 @@ proc toggleBreakpointEnabled*(path: string; line: int) =
 
 proc debugger_toggleAllBreakpointsEnabled_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc toggleAllBreakpointsEnabled*() =
+proc toggleAllBreakpointsEnabled*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_toggleAllBreakpointsEnabled_void_Debugger_wasm(
@@ -246,7 +214,7 @@ proc toggleAllBreakpointsEnabled*() =
 
 proc debugger_toggleBreakpointsEnabled_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc toggleBreakpointsEnabled*() =
+proc toggleBreakpointsEnabled*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_toggleBreakpointsEnabled_void_Debugger_wasm(
@@ -255,7 +223,7 @@ proc toggleBreakpointsEnabled*() =
 
 proc debugger_editBreakpoints_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc editBreakpoints*() =
+proc editBreakpoints*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_editBreakpoints_void_Debugger_wasm(
@@ -264,7 +232,7 @@ proc editBreakpoints*() =
 
 proc debugger_continueExecution_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
-proc continueExecution*() =
+proc continueExecution*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_continueExecution_void_Debugger_wasm(
@@ -272,21 +240,21 @@ proc continueExecution*() =
 
 
 proc debugger_stepOver_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc stepOver*() =
+proc stepOver*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_stepOver_void_Debugger_wasm(argsJsonString.cstring)
 
 
 proc debugger_stepIn_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc stepIn*() =
+proc stepIn*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_stepIn_void_Debugger_wasm(argsJsonString.cstring)
 
 
 proc debugger_stepOut_void_Debugger_wasm(arg: cstring): cstring {.importc.}
-proc stepOut*() =
+proc stepOut*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_stepOut_void_Debugger_wasm(argsJsonString.cstring)

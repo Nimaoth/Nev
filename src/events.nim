@@ -36,10 +36,10 @@ type EventHandler* = ref object
   config: EventHandlerConfig
   revision: int
   dfaInternal: CommandDFA
-  handleAction*: proc(action: string, arg: string): EventResponse
-  handleInput*: proc(input: string): EventResponse
-  handleProgress*: proc(input: int64)
-  handleCanceled*: proc(input: int64)
+  handleAction*: proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].}
+  handleInput*: proc(input: string): EventResponse {.gcsafe, raises: [].}
+  handleProgress*: proc(input: int64) {.gcsafe, raises: [].}
+  handleCanceled*: proc(input: int64) {.gcsafe, raises: [].}
 
 func newEventHandlerConfig*(context: string, parent: EventHandlerConfig = nil): EventHandlerConfig =
   new result
@@ -62,10 +62,11 @@ proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Tab
       if not commands.contains(subGraphName):
         commands[subGraphName] = initTable[string, string]()
 
-      for (keys, commandInfo) in bindings.mpairs:
-        commands[subGraphName][keys] = commandInfo.command
+      commands.withValue(subGraphName, val):
+        for (keys, commandInfo) in bindings.mpairs:
+          val[][keys] = commandInfo.command
 
-proc buildDFA*(config: EventHandlerConfig): CommandDFA =
+proc buildDFA*(config: EventHandlerConfig): CommandDFA {.gcsafe, raises: [].} =
   var commands = initTable[string, Table[string, string]]()
   config.combineCommands(commands)
   return buildDFA(commands, config.leaders)
@@ -134,7 +135,7 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
     # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
 
     template onAction(actionBody: untyped): untyped {.used.} =
-      handler.handleAction = proc(action: string, arg: string): EventResponse =
+      handler.handleAction = proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
         if handler.config.handleActions:
           let action {.inject, used.} = action
           let arg {.inject, used.} = arg
@@ -148,7 +149,7 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
           return Ignored
 
     template onInput(inputBody: untyped): untyped {.used.} =
-      handler.handleInput = proc(input: string): EventResponse =
+      handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
         if handler.config.handleInputs:
           let input {.inject, used.} = input
           return inputBody
@@ -156,12 +157,12 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
           return Ignored
 
     template onProgress(progressBody: untyped): untyped {.used.} =
-      handler.handleProgress = proc(i: int64) =
+      handler.handleProgress = proc(i: int64) {.gcsafe, raises: [].} =
         let input {.inject, used.} = i
         progressBody
 
     template onCanceled(canceledBody: untyped): untyped {.used.} =
-      handler.handleCanceled = proc(i: int64) =
+      handler.handleCanceled = proc(i: int64) {.gcsafe, raises: [].} =
         let input {.inject, used.} = i
         canceledBody
 
@@ -177,7 +178,7 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
     # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
 
     template onAction(actionBody: untyped): untyped {.used.} =
-      handler.handleAction = proc(action: string, arg: string): EventResponse =
+      handler.handleAction = proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
         if handler.config.handleActions:
           let action {.inject, used.} = action
           let arg {.inject, used.} = arg
@@ -191,7 +192,7 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
           return Ignored
 
     template onInput(inputBody: untyped): untyped {.used.} =
-      handler.handleInput = proc(input: string): EventResponse =
+      handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
         if handler.config.handleInputs:
           let input {.inject, used.} = input
           return inputBody
@@ -199,12 +200,12 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
           return Ignored
 
     template onProgress(progressBody: untyped): untyped {.used.} =
-      handler.handleProgress = proc(i: int64) =
+      handler.handleProgress = proc(i: int64) {.gcsafe, raises: [].} =
         let input {.inject, used.} = i
         progressBody
 
     template onCanceled(canceledBody: untyped): untyped {.used.} =
-      handler.handleCanceled = proc(i: int64) =
+      handler.handleCanceled = proc(i: int64) {.gcsafe, raises: [].} =
         let input {.inject, used.} = i
         canceledBody
 
@@ -228,7 +229,7 @@ proc anyInProgress*(handlers: openArray[EventHandler]): bool =
       return true
   return false
 
-proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool): EventResponse =
+proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool): EventResponse {.gcsafe.} =
   if input != 0:
     # debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, handleInput: {handleUnknownAsInput}"
 
@@ -271,7 +272,7 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
   else:
     return Failed
 
-proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers): EventResponse =
+proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers): EventResponse {.gcsafe.} =
   let anyInProgress = handlers.anyInProgress
 
   if debugEventHandlers:

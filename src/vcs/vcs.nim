@@ -2,8 +2,10 @@ import std/[options]
 import misc/[custom_async]
 import text/diff
 
-type
+{.push gcsafe.}
+{.push raises: [].}
 
+type
   VCSFileStatus* = enum None = ".", Modified = "M", Added = "A", Deleted = "D", Untracked = "?"
   VCSFileInfo* = object
     stagedStatus*: VCSFileStatus

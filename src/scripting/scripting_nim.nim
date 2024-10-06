@@ -243,7 +243,8 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
 
   return res.ScriptContext.some
 
-method init*(self: ScriptContextNim, path: string): Future[void] {.async.} =
+method init*(self: ScriptContextNim, path: string, fs: Filesystem): Future[void] {.async.} =
+  self.fs = fs
   self.state = Initializing
   self.inter = await myCreateInterpreter(self.script, self.apiModule, self.addins, self.stdPath, self.searchPaths, timerAddins, defaultDefines)
   self.state = Initialized

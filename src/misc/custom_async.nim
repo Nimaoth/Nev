@@ -4,68 +4,74 @@ import misc/timer
 ## Generally used `gAsyncFrameTimer.elapsed.ms` to get the time in milliseconds.
 var gAsyncFrameTimer*: Timer
 
-when defined(js):
-  import std/asyncjs
-  export asyncjs
+{.push warning[Deprecated]:off.}
+import std/[threadpool]
+{.pop.}
 
-  template asyncCheck*(body: untyped): untyped = discard body
-  proc sleepAsync*(ms: int): Future[void] {.importjs: "(new Promise(resolve => setTimeout(resolve, #)))".}
+# Prevent bs warnings on builtin types (e.g bool) because `=destroy(bool)` raises `Exception` when using `spawn`
+type NoExceptionDestroy* = object
+func `=destroy`*(x: NoExceptionDestroy) {.raises: [].} = discard
 
-  proc toFuture*[T](value: sink T): Future[T] {.importjs: "(Promise.resolve(#))".}
+import chronos
+export chronos
 
-  # todo: untested
-  proc all*(futs: varargs[Future[void]]): Future[void] {.importjs: "Promise.all(#)".}
-  proc all*[T](futs: varargs[Future[T]]): Future[seq[T]] {.importjs: "Promise.all(#)".}
+proc runAsyncVoid[A](f: proc(options: A) {.gcsafe, raises: [].}, options: A): NoExceptionDestroy {.raises: [].} =
+  f(options)
 
-else:
-  import std/[asyncdispatch, asyncfile, asyncfutures, threadpool]
-  export asyncdispatch, asyncfile, asyncfutures
+proc runAsync[T, A](f: proc(options: A): T {.gcsafe, raises: [].}, options: A, res: ptr T): NoExceptionDestroy {.raises: [].} =
+  res[] = f(options)
 
-  proc runAsyncVoid[A](f: proc(options: A) {.gcsafe.}, options: A): bool =
-    f(options)
-    return true
+proc runAsyncVoid(f: proc() {.gcsafe, raises: [].}): NoExceptionDestroy {.raises: [].} =
+  f()
 
-  proc runAsync[T, A](f: proc(options: A): T {.gcsafe.}, options: A): T =
-    return f(options)
+proc runAsync[T](f: proc(): T {.gcsafe, raises: [].}, res: ptr T): NoExceptionDestroy {.raises: [].} =
+  res[] = f()
 
-  proc runAsyncVoid(f: proc() {.gcsafe.}): bool =
-    f()
-    return true
+proc spawnAsync*[A](f: proc(options: A) {.gcsafe, raises: [].}, options: A): Future[void] {.async: (raises: [CancelledError]).} =
+  let flowVar: FlowVar[NoExceptionDestroy] = spawn runAsyncVoid(f, options)
+  while not flowVar.isReady:
+    await sleepAsync(10.milliseconds)
 
-  proc runAsync[T](f: proc(): T {.gcsafe.}): T =
-    return f()
+proc spawnAsync*[T, A](f: proc(options: A): T {.gcsafe, raises: [], .}, options: A): Future[T] {.async: (raises: [CancelledError]).} =
+  var res: T
+  let flowVar: FlowVar[NoExceptionDestroy] = spawn runAsync(f, options, res.addr)
+  while not flowVar.isReady:
+    await sleepAsync(10.milliseconds)
 
-  proc spawnAsync*[A](f: proc(options: A) {.gcsafe.}, options: A): Future[void] {.async.} =
-    let flowVar: FlowVarBase = spawn runAsyncVoid(f, options)
-    while not flowVar.isReady:
-      await sleepAsync(10)
+  return res
 
-  proc spawnAsync*[T, A](f: proc(options: A): T {.gcsafe.}, options: A): Future[T] {.async.} =
-    let flowVar: FlowVar[T] = spawn runAsync(f, options)
-    while not flowVar.isReady:
-      await sleepAsync(10)
+proc spawnAsync*(f: proc() {.gcsafe, raises: [], .}): Future[void] {.async: (raises: [CancelledError]).} =
+  let flowVar: FlowVar[NoExceptionDestroy] = spawn runAsyncVoid(f)
+  while not flowVar.isReady:
+    await sleepAsync(10.milliseconds)
 
-    return ^flowVar
+proc spawnAsync*[T](f: proc(): T {.gcsafe, raises: [], .}): Future[T] {.async: (raises: [CancelledError]).} =
+  var res: T
+  let flowVar: FlowVar[NoExceptionDestroy] = spawn runAsync(f, res.addr)
+  while not flowVar.isReady:
+    await sleepAsync(10.milliseconds)
 
-  proc spawnAsync*(f: proc() {.gcsafe.}): Future[void] {.async.} =
-    let flowVar: FlowVarBase = spawn runAsyncVoid(f)
-    while not flowVar.isReady:
-      await sleepAsync(10)
+  return res
 
-  proc spawnAsync*[T](f: proc(): T {.gcsafe.}): Future[T] {.async.} =
-    let flowVar: FlowVar[T] = spawn runAsync(f)
-    while not flowVar.isReady:
-      await sleepAsync(10)
-
-    return ^flowVar
-
-  proc toFuture*[T](value: sink T): Future[T] =
+proc toFuture*[T](value: sink T): Future[T] =
+  try:
     result = newFuture[T]()
     result.complete(value)
+  except:
+    assert false
 
-  proc doneFuture*(): Future[void] =
+proc doneFuture*(): Future[void] =
+  try:
     result = newFuture[void]()
     result.complete()
+  except:
+    assert false
+
+template readFinished*[T: not void](fut: Future[T]): lent T =
+  try:
+    fut.read
+  except:
+    raiseAssert("Failed to read unfinished future")
 
 template thenIt*[T](f: Future[T], body: untyped): untyped =
   when defined(js):
@@ -78,33 +84,3 @@ template thenIt*[T](f: Future[T], body: untyped): untyped =
       let it {.inject.} = a.read
       body
     )
-
-type
-  ResolvableFuture*[T] = object
-    future*: Future[T]
-    when defined(js):
-      resolve: proc(result: T)
-
-proc complete*[T](future: ResolvableFuture[T], result: sink T) =
-  when defined(js):
-    future.resolve(result)
-  else:
-    future.future.complete(result)
-
-proc complete*(future: ResolvableFuture[void]) =
-  when defined(js):
-    future.resolve()
-  else:
-    future.future.complete()
-
-proc newResolvableFuture*[T](name: string): ResolvableFuture[T] =
-  when defined(js):
-    var resolveFunc: proc(value: T) = nil
-    var requestFuture = newPromise[T](proc(resolve: proc(value: T)) =
-      resolveFunc = resolve
-    )
-    result = ResolvableFuture[T](future: requestFuture, resolve: resolveFunc)
-
-  else:
-    var requestFuture = newFuture[T](name)
-    result = ResolvableFuture[T](future: requestFuture)

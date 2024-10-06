@@ -6,12 +6,15 @@ import document
 
 from lsp_types as lsp_types import CompletionItem
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type OnRequestSaveHandle* = distinct int
 
 proc `==`(x, y: OnRequestSaveHandle): bool {.borrow.}
 
 type LanguageServer* = ref object of RootObj
-  onRequestSave: Table[OnRequestSaveHandle, proc(targetFilename: string): Future[void]]
+  onRequestSave: Table[OnRequestSaveHandle, proc(targetFilename: string): Future[void] {.gcsafe, raises: [].}]
   onRequestSaveIndex: Table[string, seq[OnRequestSaveHandle]]
   onMessage*: Event[tuple[verbosity: lsp_types.MessageType, message: string]]
   onDiagnostics*: Event[lsp_types.PublicDiagnosticsParams]
@@ -85,27 +88,27 @@ type Diagnostic* = object
   data*: Option[JsonNode]
   removed*: bool = false
 
-var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = Workspace.none): Future[Option[LanguageServer]] = nil
+var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = Workspace.none): Future[Option[LanguageServer]] {.gcsafe, raises: [].} = nil
 
-method start*(self: LanguageServer): Future[void] {.base.} = discard
-method stop*(self: LanguageServer) {.base.} = discard
-method deinit*(self: LanguageServer) {.base.} = discard
-method connect*(self: LanguageServer, document: Document) {.base.} = discard
-method disconnect*(self: LanguageServer, document: Document) {.base.} = discard
-method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
-method getDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
-method getImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
-method getTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
-method getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
-method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base.} = discard
-method getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base.} = discard
-method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard
-method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard
-method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base.} = discard
-method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
-method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base.} = discard
-method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base.} = discard
-method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base.} = {}
+method start*(self: LanguageServer): Future[void] {.base, gcsafe, raises: [].} = discard
+method stop*(self: LanguageServer) {.base, gcsafe, raises: [].} = discard
+method deinit*(self: LanguageServer) {.base, gcsafe, raises: [].} = discard
+method connect*(self: LanguageServer, document: Document) {.base, gcsafe, raises: [].} = discard
+method disconnect*(self: LanguageServer, document: Document) {.base, gcsafe, raises: [].} = discard
+method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
+method getDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
+method getImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
+method getTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
+method getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
+method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base, gcsafe, raises: [].} = discard
+method getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base, gcsafe, raises: [].} = discard
+method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base, gcsafe, raises: [].} = discard
+method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = discard
+method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = discard
+method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base, gcsafe, raises: [].} = discard
+method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base, gcsafe, raises: [].} = discard
+method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = discard
+method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base, gcsafe, raises: [].} = {}
 
 var handleIdCounter = 1
 
@@ -114,16 +117,15 @@ proc requestSave*(self: LanguageServer, filename: string, targetFilename: string
     for handle in self.onRequestSaveIndex[filename]:
       await self.onRequestSave[handle](targetFilename)
 
-proc addOnRequestSaveHandler*(self: LanguageServer, filename: string, handler: proc(targetFilename: string): Future[void]): OnRequestSaveHandle =
+proc addOnRequestSaveHandler*(self: LanguageServer, filename: string, handler: proc(targetFilename: string): Future[void] {.gcsafe, raises: [].}): OnRequestSaveHandle =
   result = handleIdCounter.OnRequestSaveHandle
   handleIdCounter.inc
   self.onRequestSave[result] = handler
 
-  if self.onRequestSaveIndex.contains(filename):
-    self.onRequestSaveIndex[filename].add result
-  else:
+  self.onRequestSaveIndex.withValue(filename, index):
+    index[].add result
+  do:
     self.onRequestSaveIndex[filename] = @[result]
-
 
 proc removeOnRequestSaveHandler*(self: LanguageServer, handle: OnRequestSaveHandle) =
   if self.onRequestSave.contains(handle):

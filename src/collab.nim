@@ -1,4 +1,6 @@
-import std/[strformat, strutils, tables, options, json, sugar, algorithm, asyncnet]
+import std/[strformat, strutils, tables, options, json, sugar, algorithm]
+import chronos/transports/stream
+
 import misc/[util, event, myjsonutils, custom_logger, custom_async, delayed_task]
 import scripting/[expose]
 import config_provider, app_interface, dispatch_tables
@@ -11,44 +13,35 @@ import nimsumtree/[buffer, clock, rope]
 
 logCategory "collab"
 
-var sendOpsTask: DelayedTask
-var opsToSend = newSeq[(string, Operation)]()
-var currentServer: AsyncSocket = nil
-
-proc sendOps(server: AsyncSocket) {.async.} =
-  for op in opsToSend:
-    let encoded = $op[1].toJson
-    await server.send(&"op {op[0]}\n{encoded}\n")
-  opsToSend.setLen(0)
-
 proc connectCollaboratorAsync(port: int) {.async.} =
   ############### CLIENT
-  var server: AsyncSocket
-
-  let app: AppInterface = ({.gcsafe.}: gAppInterface)
-
-  if currentServer != nil:
-    opsToSend.setLen(0)
-    sendOpsTask.pause()
-    currentServer.close()
-    currentServer = nil
-
   try:
-    server = newAsyncSocket()
-    currentServer = server
-    await server.connect("localhost", port.Port)
+    let app: AppInterface = ({.gcsafe.}: gAppInterface)
+    let delay = app.configProvider.getValue[:int]("sync.delay", 100)
+
+    var opsToSend = newSeq[(string, Operation)]()
+    var transp = await connect(initTAddress("127.0.0.1:" & $port))
+    var reader = newAsyncStreamReader(transp)
+    var writer = newAsyncStreamWriter(transp)
+
     log lvlInfo, &"[collab-client] Connected to port {port.int}"
 
-    let delay = app.configProvider.getValue[:int]("sync.delay", 100)
-    sendOpsTask = startDelayed(delay, repeat=false):
-      if not server.isClosed:
-        asyncCheck sendOps(server)
+    var sendOpsTask = startDelayedAsync(delay, repeat=false):
+      if not transp.closed:
+        let ops = opsToSend.move
+        for op in ops:
+          try:
+            let encoded = op[1].toJson
+            await writer.write(&"op {op[0]}\n{encoded}\n")
+          except:
+            raiseAssert("Failed to encode op " & $op)
+
     sendOpsTask.pause()
 
     var docs = initTable[string, TextDocument]()
 
-    while not server.isClosed:
-      let line = await server.recvLine()
+    while not transp.closed:
+      let line = await reader.readLine(sep = "\n")
       if line.len == 0:
         break
 
@@ -74,7 +67,10 @@ proc connectCollaboratorAsync(port: int) {.async.} =
 
         let file = getNextPart()
         let opsJson = parts[i..^1]
-        let content = await server.recv(length)
+
+        var content = ""
+        content.setLen(length)
+        await reader.readExactly(content[0].addr, length)
 
         var ops = opsJson.parseJson.jsonTo(seq[Operation]).catch:
           log lvlError, &"[collab][open {file}] Failed to parse operations: {getCurrentExceptionMsg()}\nops: {opsJson}\n{getCurrentException().getStackTrace()}"
@@ -95,7 +91,7 @@ proc connectCollaboratorAsync(port: int) {.async.} =
 
       elif line.startsWith("op "):
         let file = line[3..^1]
-        let encoded = await server.recvLine()
+        let encoded = await reader.readLine(sep = "\n")
         var op = encoded.parseJson().jsonTo(Operation).catch:
           log lvlError, &"Failed to parse operation: '{line}'"
           continue
@@ -111,21 +107,31 @@ proc connectCollaboratorAsync(port: int) {.async.} =
     return
 
 proc connectCollaborator*(port: int = 6969) {.expose("collab").} =
-  asyncCheck connectCollaboratorAsync(port)
+  asyncSpawn connectCollaboratorAsync(port)
 
-proc processCollabClient(client: AsyncSocket) {.async.} =
-  log lvlInfo, &"[collab-server] Process collab client"
+proc processCollabClient(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
   ############### SERVER
-
-  let app: AppInterface = ({.gcsafe.}: gAppInterface)
-
-  let delay = app.configProvider.getValue[:int]("sync.delay", 100)
-  sendOpsTask = startDelayed(delay, repeat=false):
-    if not client.isClosed:
-      asyncCheck sendOps(client)
-  sendOpsTask.pause()
-
+  log lvlInfo, &"[collab-server] Process collab client"
   try:
+    let app: AppInterface = ({.gcsafe.}: gAppInterface)
+    let delay = app.configProvider.getValue[:int]("sync.delay", 100)
+
+    var opsToSend = newSeq[(string, Operation)]()
+    var reader = newAsyncStreamReader(transp)
+    var writer = newAsyncStreamWriter(transp)
+
+    var sendOpsTask = startDelayedAsync(delay, repeat=false):
+      if not transp.closed:
+        let ops = opsToSend.move
+        for op in ops:
+          try:
+            let encoded = op[1].toJson
+            await writer.write(&"op {op[0]}\n{encoded}\n")
+          except:
+            raiseAssert("Failed to encode op " & $op)
+
+    sendOpsTask.pause()
+
     for doc in app.getAllDocuments():
       if doc of TextDocument:
         let doc = doc.TextDocument
@@ -138,21 +144,21 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
           allOps.sort((a, b) => cmp(a.timestamp, b.timestamp))
 
           let opsJson = allOps.toJson
-          await client.send(&"open {content.len}\t{doc.buffer.remoteId}\t{doc.filename}\t{opsJson}\n")
-          await client.send(content)
+          await writer.write(&"open {content.len}\t{doc.buffer.remoteId}\t{doc.filename}\t{opsJson}\n")
+          await writer.write(content)
 
-          discard doc.onOperation.subscribe proc(arg: tuple[document: TextDocument, op: Operation]) =
+          discard doc.onOperation.subscribe proc(arg: tuple[document: TextDocument, op: Operation]) {.gcsafe, raises: [].} =
             opsToSend.add (arg.document.filename, arg.op.clone())
             sendOpsTask.schedule()
 
-    while not client.isClosed:
-      let line = await client.recvLine()
+    while not server.closed:
+      let line = await reader.readLine(sep = "\n")
       if line.len == 0:
         break
 
       if line.startsWith("op "):
         let file = line[3..^1]
-        let encoded = await client.recvLine()
+        let encoded = await reader.readLine(sep = "\n")
         var op = encoded.parseJson().jsonTo(Operation).catch:
           log lvlError, &"[collab-server] Failed to parse operation: '{line}'"
           continue
@@ -168,26 +174,19 @@ proc processCollabClient(client: AsyncSocket) {.async.} =
     log lvlError, &"[collab-server] Failed to read data from connection: {getCurrentExceptionMsg()}"
 
 proc hostCollaboratorAsync(port: int) {.async.} =
-  var server: AsyncSocket
+  var server: StreamServer
 
   try:
-    server = newAsyncSocket()
-    server.setSockOpt(OptReuseAddr, true)
-    server.bindAddr(port.Port)
-    server.listen()
-    let actualPort = server.getLocalAddr()[1]
-    log lvlInfo, &"[collab-server] Listen for connections on port {actualPort.int}"
+    server = createStreamServer(initTAddress("127.0.0.1:" & $port), processCollabClient, {ReuseAddr})
+    server.start()
+    let localAddress = server.localAddress()
+    log lvlInfo, &"[collab-server] Listen for connections on port {localAddress}"
   except:
     log lvlError, &"[collab-server] Failed to create server on port {port.int}: {getCurrentExceptionMsg()}"
     return
 
-  while true:
-    let client = await server.accept()
-
-    asyncCheck processCollabClient(client)
-
 proc hostCollaborator*(port: int = 6969) {.expose("collab").} =
-  asyncCheck hostCollaboratorAsync(port)
+  asyncSpawn hostCollaboratorAsync(port)
 
 genDispatcher("collab")
 addGlobalDispatchTable "collab", genDispatchTable("collab")

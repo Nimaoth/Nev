@@ -1,5 +1,9 @@
-import std/[asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros]
+import std/[json, strutils, tables, os, osproc, streams, options, macros]
 import custom_logger, custom_async, util, timer
+
+{.push warning[Deprecated]:off.}
+import std/[threadpool]
+{.pop.}
 
 logCategory "asyncprocess"
 
@@ -11,8 +15,8 @@ type AsyncChannel*[T] = ref object
 type AsyncProcess* = ref object
   name: string
   args: seq[string]
-  onRestarted*: proc(): Future[void] {.gcsafe.}
-  onRestartFailed*: proc(): Future[void] {.gcsafe.}
+  onRestarted*: proc(): Future[void] {.gcsafe, raises: [].}
+  onRestartFailed*: proc(): Future[void] {.gcsafe, raises: [].}
   dontRestart: bool
   process: Process
   input: AsyncChannel[char]
@@ -77,6 +81,8 @@ proc destroy*(process: AsyncProcess) =
   # todo: should probably wait for the other thread to increment the process RC
 
 proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async.} =
+  bind milliseconds
+
   var buffer = ""
   while buffer.len < amount:
     var timer = startTimer()
@@ -84,7 +90,7 @@ proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async
     while buffer.len < amount:
       let (ok, c) = achan.chan[].tryRecv
       if not ok:
-        await sleepAsync 10
+        await sleepAsync 10.milliseconds
         timer = startTimer()
         continue
 
@@ -95,22 +101,24 @@ proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async
       buffer.add c
 
       if timer.elapsed.ms > 2:
-        await sleepAsync 10
+        await sleepAsync 10.milliseconds
         timer = startTimer()
 
     if buffer.len < amount:
-      await sleepAsync 10
+      await sleepAsync 10.milliseconds
 
   return buffer
 
 proc recv*[T: string](achan: AsyncChannel[T], amount: int): Future[string] {.async.} =
+  bind milliseconds
+
   while achan.buffer.len < amount:
     var timer = startTimer()
 
     while achan.buffer.len < amount:
       let (ok, str) = achan.chan[].tryRecv
       if not ok:
-        await sleepAsync 10
+        await sleepAsync 10.milliseconds
         timer = startTimer()
         continue
 
@@ -124,11 +132,11 @@ proc recv*[T: string](achan: AsyncChannel[T], amount: int): Future[string] {.asy
       achan.buffer.add str
 
       if timer.elapsed.ms > 2:
-        await sleepAsync 10
+        await sleepAsync 10.milliseconds
         timer = startTimer()
 
     if achan.buffer.len < amount:
-      await sleepAsync 10
+      await sleepAsync 10.milliseconds
 
   if achan.buffer.len < amount:
     return ""
@@ -138,6 +146,8 @@ proc recv*[T: string](achan: AsyncChannel[T], amount: int): Future[string] {.asy
   return res
 
 proc recvLine*[T: char](achan: AsyncChannel[T]): Future[string] {.async.} =
+  bind milliseconds
+
   var buffer = ""
 
   var cr = false
@@ -158,11 +168,13 @@ proc recvLine*[T: char](achan: AsyncChannel[T]): Future[string] {.async.} =
           return "\r\n"
         cr = false
         return buffer
-    await sleepAsync 10
+    await sleepAsync 10.milliseconds
 
   return ""
 
 proc tryRecvLine*[T: char](achan: AsyncChannel[T]): Future[Option[string]] {.async.} =
+  bind milliseconds
+
   if achan.closed:
     return string.none
 
@@ -194,25 +206,29 @@ proc tryRecvLine*[T: char](achan: AsyncChannel[T]): Future[Option[string]] {.asy
         cr = false
         return buffer.some
 
-    await sleepAsync 10
+    await sleepAsync 10.milliseconds
 
   return string.none
 
 proc send*[T](achan: AsyncChannel[Option[T]], data: T) {.async.} =
+  bind milliseconds
   while not achan.closed and not achan.chan[].trySend(data.some):
-    await sleepAsync 10
+    await sleepAsync 10.milliseconds
 
 proc send*[T](achan: AsyncChannel[T], data: sink T) {.async.} =
+  bind milliseconds
   while not achan.closed and not achan.chan[].trySend(data.move):
-    await sleepAsync 10
+    await sleepAsync 10.milliseconds
 
 proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
+  bind milliseconds
+
   while not achan.closed:
     let (ok, data) = achan.chan[].tryRecv()
     if ok:
       return data.some
 
-    await sleepAsync 50
+    await sleepAsync 50.milliseconds
 
   return T.none
 
@@ -247,7 +263,7 @@ proc send*(process: AsyncProcess, data: string): Future[void] =
     return
   return process.output.send(data)
 
-proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[bool], data: ptr Channel[char], data2: ptr Channel[Option[string]]): bool =
+proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[bool], data: ptr Channel[char], data2: ptr Channel[Option[string]]): NoExceptionDestroy =
   while true:
     let stream = chan[].recv
 
@@ -272,9 +288,7 @@ proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[b
         # echo &"readInput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
-  return true
-
-proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): bool =
+proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): NoExceptionDestroy =
   var buffer: seq[string]
   while true:
     let stream = chan[].recv
@@ -307,8 +321,6 @@ proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): 
         # echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
-  return true
-
 proc start*(process: AsyncProcess): bool =
   log(lvlInfo, fmt"start process {process.name} {process.args}")
   try:
@@ -334,7 +346,7 @@ proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
   while true:
     while process.serverDiedNotifications[].peek == 0:
       # echo "process active"
-      await sleepAsync(10)
+      await sleepAsync(10.milliseconds)
 
     # echo "process dead"
     while process.serverDiedNotifications[].peek > 0:
@@ -378,7 +390,7 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
   process.serverDiedNotifications[].open()
 
   if autoStart:
-    asyncCheck process.restartServer()
+    asyncSpawn process.restartServer()
     process.serverDiedNotifications[].send true
 
   return process
@@ -394,9 +406,9 @@ when debugAsyncProcess:
       while asyncProcessDebugOutput.peek > 0:
          let line = asyncProcessDebugOutput.recv
          debugf"> {line}"
-      await sleepAsync 10
+      await sleepAsync 10.milliseconds
 
-  asyncCheck readAsyncProcessDebugOutput()
+  asyncSpawn readAsyncProcessDebugOutput()
 
 type RunProcessThreadArgs = tuple
   processName: string
@@ -450,7 +462,7 @@ proc runProcessAsync*(name: string, args: seq[string] = @[], workingDir: string 
   log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
   let (lines, _, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, false))
   if err != nil:
-    raise err
+    raise newException(IOError, "", err)
   return lines
 
 proc runProcessAsyncOutput*(name: string, args: seq[string] = @[], workingDir: string = "",
@@ -459,24 +471,24 @@ proc runProcessAsyncOutput*(name: string, args: seq[string] = @[], workingDir: s
   log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
   let (outLines, errLines, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, true))
   if err != nil:
-    raise err
+    raise newException(IOError, "", err)
   return (outLines.join("\n"), errLines.join("\n"))
 
 proc readProcessOutputCallback(process: AsyncProcess,
-    handleOutput: proc(line: string) {.closure, gcsafe.} = nil) {.async.} =
+    handleOutput: proc(line: string) {.closure, gcsafe, raises: [].} = nil) {.async.} =
   while process.isAlive:
     let line = await process.recvLine()
     handleOutput(line)
 
 proc readProcessErrorCallback(process: AsyncProcess,
-    handleError: proc(line: string) {.closure, gcsafe.} = nil) {.async.} =
+    handleError: proc(line: string) {.closure, gcsafe, raises: [].} = nil) {.async.} =
   while process.isAlive:
     let line = await process.recvErrorLine()
     handleError(line)
 
 proc runProcessAsyncCallback*(name: string, args: seq[string] = @[], workingDir: string = "",
-    handleOutput: proc(line: string) {.closure, gcsafe.} = nil,
-    handleError: proc(line: string) {.closure, gcsafe.} = nil,
+    handleOutput: proc(line: string) {.closure, gcsafe, raises: [].} = nil,
+    handleError: proc(line: string) {.closure, gcsafe, raises: [].} = nil,
     maxLines: int = int.high) {.async.} =
 
   var process: AsyncProcess = nil
@@ -486,7 +498,7 @@ proc runProcessAsyncCallback*(name: string, args: seq[string] = @[], workingDir:
       log lvlError, &"Failed to start process {name}, {args}"
       return
 
-    await all(readProcessOutputCallback(process, handleOutput), readProcessErrorCallback(process, handleError))
+    await allFutures(readProcessOutputCallback(process, handleOutput), readProcessErrorCallback(process, handleError))
     log lvlInfo, &"Command {name}, {args} finished."
 
   except:

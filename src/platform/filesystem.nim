@@ -1,8 +1,10 @@
 {.used.}
 
 import std/[strutils, os]
-
 import misc/[custom_async, array_buffer]
+
+{.push gcsafe.}
+{.push raises: [].}
 
 type FileSystem* = ref object of RootObj
   discard
@@ -22,11 +24,9 @@ method loadApplicationFile*(self: FileSystem, name: string): string {.base.} = d
 method loadApplicationFileAsync*(self: FileSystem, name: string): Future[string] {.base.} = "".toFuture
 method saveApplicationFile*(self: FileSystem, name: string, content: string) {.base.} = discard
 
-method findFile*(self: FileSystem, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.base, async.} =
-  return newSeq[string]()
+method findFile*(self: FileSystem, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.base.} = discard
 
-method copyFile*(self: FileSystem, source: string, dest: string): Future[bool] {.base, async.} =
-  return false
+method copyFile*(self: FileSystem, source: string, dest: string): Future[bool] {.base.} = discard
 
 proc normalizePathUnix*(path: string): string =
   var stripLeading = false
@@ -39,11 +39,7 @@ proc normalizePathUnix*(path: string): string =
 
 proc `//`*(a: string, b: string): string = (a / b).normalizePathUnix
 
-when defined(js):
-  import filesystem_browser
-  let fs*: FileSystem = new FileSystemBrowser
+import filesystem_desktop
 
-else:
-  import filesystem_desktop
-  let fs*: FileSystem = new FileSystemDesktop
-  fs.init getAppDir()
+let fs*: FileSystem = new FileSystemDesktop
+fs.init getAppDir()

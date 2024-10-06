@@ -46,7 +46,8 @@ proc doMoveCursorPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
   editor_text_doMoveCursorPrevFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
       self, cursor, offset, wrap, includeAfter)
 proc doMoveCursorNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
-                                 offset: int; wrap: bool; includeAfter: bool): Cursor =
+                                 offset: int; wrap: bool; includeAfter: bool): Cursor {.
+    gcsafe, raises: [].} =
   editor_text_doMoveCursorNextFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
       self, cursor, offset, wrap, includeAfter)
 proc doMoveCursorLineCenter*(self: TextDocumentEditor; cursor: Cursor;
@@ -160,6 +161,8 @@ proc selectParentTs*(self: TextDocumentEditor; selection: Selection;
                      includeAfter: bool = true) =
   editor_text_selectParentTs_void_TextDocumentEditor_Selection_bool_impl(self,
       selection, includeAfter)
+proc printTreesitterMemoryUsage*(self: TextDocumentEditor) =
+  editor_text_printTreesitterMemoryUsage_void_TextDocumentEditor_impl(self)
 proc printTreesitterTree*(self: TextDocumentEditor) =
   editor_text_printTreesitterTree_void_TextDocumentEditor_impl(self)
 proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
@@ -195,15 +198,13 @@ proc redo*(self: TextDocumentEditor; checkpoint: string = "word") =
 proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) =
   editor_text_addNextCheckpoint_void_TextDocumentEditor_string_impl(self,
       checkpoint)
-proc printUndoHistory*(self: TextDocumentEditor; max: int = 50) =
-  editor_text_printUndoHistory_void_TextDocumentEditor_int_impl(self, max)
 proc copy*(self: TextDocumentEditor; register: string = "";
            inclusiveEnd: bool = false) =
   editor_text_copy_void_TextDocumentEditor_string_bool_impl(self, register,
       inclusiveEnd)
-proc paste*(self: TextDocumentEditor; register: string = "";
+proc paste*(self: TextDocumentEditor; registerName: string = "";
             inclusiveEnd: bool = false) =
-  editor_text_paste_void_TextDocumentEditor_string_bool_impl(self, register,
+  editor_text_paste_void_TextDocumentEditor_string_bool_impl(self, registerName,
       inclusiveEnd)
 proc scrollText*(self: TextDocumentEditor; amount: float32) =
   editor_text_scrollText_void_TextDocumentEditor_float32_impl(self, amount)
@@ -499,10 +500,6 @@ proc hideHoverDelayed*(self: TextDocumentEditor) =
   editor_text_hideHoverDelayed_void_TextDocumentEditor_impl(self)
 proc clearDiagnostics*(self: TextDocumentEditor) =
   editor_text_clearDiagnostics_void_TextDocumentEditor_impl(self)
-proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) =
-  editor_text_updateDiagnosticsForCurrent_void_TextDocumentEditor_impl(self)
-proc showDiagnosticsForCurrent*(self: TextDocumentEditor) =
-  editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_impl(self)
 proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not change permissions of the underlying file
   editor_text_setReadOnly_void_TextDocumentEditor_bool_impl(self, readOnly)

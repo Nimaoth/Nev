@@ -2,6 +2,9 @@ import std/[options, strutils, tables]
 import misc/[custom_async, util, custom_logger]
 import platform/filesystem
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "VFS"
 
 var debugLogVfs* = false
@@ -16,8 +19,8 @@ type
     discard
 
   VFSDynamic* = ref object of VFS
-    readFunc: proc(self: VFS, path: string): Future[Option[string]]
-    writeFunc: proc(self: VFS, path: string, content: string): Future[void]
+    readFunc: proc(self: VFS, path: string): Future[Option[string]] {.gcsafe, raises: [].}
+    writeFunc: proc(self: VFS, path: string, content: string): Future[void] {.gcsafe, raises: [].}
 
   VFSInMemory* = ref object of VFS
     files: Table[string, string]
@@ -84,8 +87,8 @@ method name*(self: VFSInMemory): string = "VFSInMemory"
 method readImpl*(self: VFSInMemory, path: string): Future[Option[string]] =
   if debugLogVfs:
     debugf"VFSInMemory.read({path})"
-  if self.files.contains(path):
-    return self.files[path].some.toFuture
+  self.files.withValue(path, file):
+    return file[].some.toFuture
   return string.none.toFuture
 
 method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void] =

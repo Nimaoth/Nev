@@ -12,8 +12,11 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 
+{.push gcsafe.}
+{.push raises: [].}
+
 when not defined(js):
-  import std/[asynchttpserver, osproc]
+  import std/[osproc]
 
 logCategory "debugger"
 
@@ -36,6 +39,7 @@ type
 
   Debugger* = ref object
     app: AppInterface
+    workspace: Workspace
     client: Option[DapClient]
     lastConfiguration*: Option[string]
     activeView*: ActiveView = Variables
@@ -71,13 +75,15 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor)
 proc handleAction(self: Debugger, action: string, arg: string): EventResponse
 proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.async.}
 proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.}
-proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.}
+proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.async.}
+proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.}
 
 var gDebugger: Debugger = nil
 
 proc getDebugger*(): Option[Debugger] =
-  if gDebugger.isNil: return Debugger.none
-  return gDebugger.some
+  {.gcsafe.}:
+    if gDebugger.isNil: return Debugger.none
+    return gDebugger.some
 
 static:
   addInjector(Debugger, getDebugger)
@@ -87,14 +93,15 @@ proc `&`*(ids: (ThreadId, FrameId), varRef: VariablesReference):
   (ids[0], ids[1], varRef)
 
 proc getEventHandlers*(inject: Table[string, EventHandler]): seq[EventHandler] =
-  result.add gDebugger.eventHandler
-  case gDebugger.activeView
-  of Threads: result.add gDebugger.threadsEventHandler
-  of StackTrace: result.add gDebugger.stackTraceEventHandler
-  of Variables: result.add gDebugger.variablesEventHandler
-  of Output:
-    if gDebugger.outputEditor.isNotNil:
-      result.add gDebugger.outputEditor.getEventHandlers(inject)
+  {.gcsafe.}:
+    result.add gDebugger.eventHandler
+    case gDebugger.activeView
+    of Threads: result.add gDebugger.threadsEventHandler
+    of StackTrace: result.add gDebugger.stackTraceEventHandler
+    of Variables: result.add gDebugger.variablesEventHandler
+    of Output:
+      if gDebugger.outputEditor.isNotNil:
+        result.add gDebugger.outputEditor.getEventHandlers(inject)
 
 proc getStateJson*(self: Debugger): JsonNode =
   return %*{
@@ -108,12 +115,13 @@ proc updateBreakpointsForFile(self: Debugger, path: string) =
   if self.client.getSome(client):
     if self.breakpointsEnabled:
       var bs: seq[SourceBreakpoint]
-      for b in self.breakpoints[path]:
-        if b.enabled:
-          bs.add b.breakpoint
-      asyncCheck client.setBreakpoints(Source(path: path.some), bs)
+      self.breakpoints.withValue(path, val):
+        for b in val[]:
+          if b.enabled:
+            bs.add b.breakpoint
+      asyncSpawn client.setBreakpoints(Source(path: path.some), bs)
     else:
-      asyncCheck client.setBreakpoints(Source(path: path.some), @[])
+      asyncSpawn client.setBreakpoints(Source(path: path.some), @[])
 
 proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
   if not (editor of TextDocumentEditor):
@@ -131,57 +139,64 @@ proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
     self.applyBreakpointSignsToEditor(editor)
 
 proc createDebugger*(app: AppInterface, state: JsonNode) =
-  gDebugger = Debugger(
+  var debugger = Debugger(
     app: app,
     collapsedVariables: initHashSet[(ThreadId, FrameId, VariablesReference)](),
   )
 
-  let document = newTextDocument(app.configProvider, createLanguageServer=false)
-  gDebugger.outputEditor = newTextEditor(document, app, app.configProvider)
-  gDebugger.outputEditor.usage = "debugger-output"
-  gDebugger.outputEditor.renderHeader = false
-  gDebugger.outputEditor.disableCompletions = true
+  {.gcsafe.}:
+    gDebugger = debugger
+    debugger.workspace = gWorkspace
 
-  discard app.onEditorRegisteredEvent.subscribe (e: DocumentEditor) =>
-    gDebugger.handleEditorRegistered(e)
+  let document = newTextDocument(app.configProvider, fs=nil, createLanguageServer=false)
+  debugger.outputEditor = newTextEditor(document, app, fs=nil, app.configProvider)
+  debugger.outputEditor.usage = "debugger-output"
+  debugger.outputEditor.renderHeader = false
+  debugger.outputEditor.disableCompletions = true
+
+  discard app.onEditorRegisteredEvent[].subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
+
+    debugger.handleEditorRegistered(e)
 
   try:
-    gDebugger.breakpoints = state["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
+    if state.isNotNil and state.kind == JObject:
+      if state.fields.contains("breakpoints"):
+        debugger.breakpoints = state["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
   except:
     discard
 
-  discard gDebugger.outputEditor.onMarkedDirty.subscribe () =>
-    gDebugger.app.platform.requestRender()
+  discard debugger.outputEditor.onMarkedDirty.subscribe () =>
+    debugger.app.platform.requestRender()
 
-  assignEventHandler(gDebugger.eventHandler, app.getEventHandlerConfig("debugger")):
+  assignEventHandler(debugger.eventHandler, app.getEventHandlerConfig("debugger")):
     onAction:
-      gDebugger.handleAction action, arg
+      debugger.handleAction action, arg
     # onInput:
-    #   gDebugger.handleInput input
+    #   debugger.handleInput input
 
-  assignEventHandler(gDebugger.threadsEventHandler, app.getEventHandlerConfig("debugger.threads")):
+  assignEventHandler(debugger.threadsEventHandler, app.getEventHandlerConfig("debugger.threads")):
     onAction:
-      gDebugger.handleAction action, arg
+      debugger.handleAction action, arg
     # onInput:
-    #   gDebugger.handleInput input
+    #   debugger.handleInput input
 
-  assignEventHandler(gDebugger.stackTraceEventHandler, app.getEventHandlerConfig("debugger.stacktrace")):
+  assignEventHandler(debugger.stackTraceEventHandler, app.getEventHandlerConfig("debugger.stacktrace")):
     onAction:
-      gDebugger.handleAction action, arg
+      debugger.handleAction action, arg
     # onInput:
-    #   gDebugger.handleInput input
+    #   debugger.handleInput input
 
-  assignEventHandler(gDebugger.variablesEventHandler, app.getEventHandlerConfig("debugger.variables")):
+  assignEventHandler(debugger.variablesEventHandler, app.getEventHandlerConfig("debugger.variables")):
     onAction:
-      gDebugger.handleAction action, arg
+      debugger.handleAction action, arg
     # onInput:
-    #   gDebugger.handleInput input
+    #   debugger.handleInput input
 
-  assignEventHandler(gDebugger.outputEventHandler, app.getEventHandlerConfig("debugger.output")):
+  assignEventHandler(debugger.outputEventHandler, app.getEventHandlerConfig("debugger.output")):
     onAction:
-      gDebugger.handleAction action, arg
+      debugger.handleAction action, arg
     # onInput:
-    #   gDebugger.handleInput input
+    #   debugger.handleInput input
 
 proc currentThread*(self: Debugger): Option[ThreadInfo] =
   if self.currentThreadIndex >= 0 and self.currentThreadIndex < self.threads.len:
@@ -230,9 +245,9 @@ proc selectedVariable*(self: Debugger): Option[tuple[index: int, varRef: Variabl
     return self.variablesCursor.path[self.variablesCursor.path.high].some
 
 proc currentStackTrace*(self: Debugger): Option[ptr StackTraceResponse] =
-  if self.currentThread().getSome(t) and
-      self.stackTraces.contains(t.id):
-    return self.stackTraces[t.id].addr.some
+  if self.currentThread().getSome(t):
+    self.stackTraces.withValue(t.id, val):
+      return val.some
 
 proc currentStackFrame*(self: Debugger): Option[ptr StackFrame] =
   if self.currentStackTrace().getSome(stack) and
@@ -240,9 +255,9 @@ proc currentStackFrame*(self: Debugger): Option[ptr StackFrame] =
     return stack[].stackFrames[self.currentFrameIndex].addr.some
 
 proc currentScopes*(self: Debugger): Option[ptr Scopes] =
-  if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame) and
-      self.scopes.contains((t.id, frame[].id)):
-    return self.scopes[(t.id, frame[].id)].addr.some
+  if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
+    self.scopes.withValue((t.id, frame[].id), val):
+      return val.some
 
 proc currentVariablesContext*(self: Debugger): Option[tuple[thread: ThreadId, frame: FrameId]] =
   if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
@@ -254,7 +269,7 @@ proc currentVariablesContext*(self: Debugger, varRef: VariablesReference):
     return (t.id, frame[].id, varRef).some
 
 proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.async.} =
-  if gWorkspace.isNil or not gWorkspace.fileExists(path).await:
+  if self.workspace.isNil or not self.workspace.fileExists(path).await:
     # todo: maybe we can remap some files to local file system?
     log lvlError, &"Failed to find file '{path}'"
     return
@@ -395,7 +410,7 @@ proc prevThread*(self: Debugger) {.expose("debugger").} =
   self.currentFrameIndex = 0
 
   if self.currentThread().getSome(t) and not self.stackTraces.contains(t.id):
-    asyncCheck self.updateStackTrace(t.id.some)
+    asyncSpawn self.updateStackTrace(t.id.some)
 
 proc nextThread*(self: Debugger) {.expose("debugger").} =
   if self.threads.len == 0:
@@ -408,7 +423,7 @@ proc nextThread*(self: Debugger) {.expose("debugger").} =
   self.currentFrameIndex = 0
 
   if self.currentThread().getSome(t) and not self.stackTraces.contains(t.id):
-    asyncCheck self.updateStackTrace(t.id.some)
+    asyncSpawn self.updateStackTrace(t.id.some)
 
 proc prevStackFrame*(self: Debugger) {.expose("debugger").} =
   let thread = self.currentThread().getOr:
@@ -426,7 +441,7 @@ proc prevStackFrame*(self: Debugger) {.expose("debugger").} =
   self.variablesCursor = VariableCursor()
 
   if self.currentThread().getSome(t):
-    asyncCheck self.updateScopes(t.id, self.currentFrameIndex, force=false)
+    asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
 
 proc nextStackFrame*(self: Debugger) {.expose("debugger").} =
   let thread = self.currentThread().getOr:
@@ -444,13 +459,13 @@ proc nextStackFrame*(self: Debugger) {.expose("debugger").} =
   self.variablesCursor = VariableCursor()
 
   if self.currentThread().getSome(t):
-    asyncCheck self.updateScopes(t.id, self.currentFrameIndex, force=false)
+    asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
 
 proc openFileForCurrentFrame*(self: Debugger) {.expose("debugger").} =
   if self.currentStackFrame().getSome(frame) and
       frame[].source.isSome and
       frame[].source.get.path.getSome(path):
-    asyncCheck self.tryOpenFileInWorkspace(path, (frame[].line - 1, frame[].column - 1))
+    asyncSpawn self.tryOpenFileInWorkspace(path, (frame[].line - 1, frame[].column - 1))
 
 proc prevVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
@@ -583,7 +598,7 @@ proc expandVariable*(self: Debugger) {.expose("debugger").} =
 
       if va.variablesReference != 0.VariablesReference:
         self.collapsedVariables.excl ids & va.variablesReference
-        asyncCheck self.updateVariables(va.variablesReference, 0)
+        asyncSpawn self.updateVariables(va.variablesReference, 0)
 
   else:
     self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
@@ -624,7 +639,7 @@ proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
     log lvlWarn, "No active debug session"
     return
 
-  asyncCheck self.client.get.disconnect(restart=false)
+  asyncSpawn self.client.get.disconnect(restart=false)
   self.client.get.deinit()
   self.client = DapClient.none
 
@@ -637,14 +652,14 @@ proc stopDebugSessionDelayedAsync*(self: Debugger) {.async.} =
   let oldClient = self.client.getOr:
     return
 
-  await sleepAsync(500)
+  await sleepAsync(500.milliseconds)
 
   # Make sure to not stop the debug session if the client changed since this was triggered
   if self.client.getSome(client) and client == oldClient:
     self.stopDebugSession()
 
 proc stopDebugSessionDelayed*(self: Debugger) {.expose("debugger").} =
-  asyncCheck self.stopDebugSessionDelayedAsync()
+  asyncSpawn self.stopDebugSessionDelayedAsync()
 
 template tryGet(json: untyped, field: untyped, T: untyped, default: untyped, els: untyped): untyped =
   block:
@@ -652,13 +667,13 @@ template tryGet(json: untyped, field: untyped, T: untyped, default: untyped, els
     val.jsonTo(T).catch:
       els
 
-when not defined(js):
-  proc getFreePort*(): Port =
-    var server = newAsyncHttpServer()
-    server.listen(Port(0))
-    let port = server.getPort()
-    server.close()
-    return port
+# todo
+# proc getFreePort*(): Port =
+#   var server = newAsyncHttpServer()
+#   server.listen(Port(0))
+#   let port = server.getPort()
+#   server.close()
+#   return port
 
 proc createConnectionWithType(self: Debugger, name: string): Future[Option[Connection]] {.async.} =
   log lvlInfo, &"Try create debugger connection '{name}'"
@@ -674,30 +689,31 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
 
   case connectionType
   of Tcp:
-    when not defined(js):
+    discard
+    # todo
 
-      if config.hasKey("path"):
-        let path = config.tryGet("path", string, newJNull()):
-          log lvlError, &"No/invalid debugger executable path in {config.pretty}"
-          return Connection.none
+    # if config.hasKey("path"):
+    #   let path = config.tryGet("path", string, newJNull()):
+    #     log lvlError, &"No/invalid debugger executable path in {config.pretty}"
+    #     return Connection.none
 
-        let port = getFreePort().int
-        log lvlInfo, &"Start process {path} with port {port}"
-        discard startProcess(path, args = @["-p", $port], options = {poUsePath, poDaemon})
+    #   let port = getFreePort().int
+    #   log lvlInfo, &"Start process {path} with port {port}"
+    #   discard startProcess(path, args = @["-p", $port], options = {poUsePath, poDaemon})
 
-        # todo: need to wait for process to open port?
-        await sleepAsync(500)
+    #   # todo: need to wait for process to open port?
+    #   await sleepAsync(500.milliseconds)
 
-        return newAsyncSocketConnection("127.0.0.1", port.Port).await.Connection.some
+    #   return newAsyncSocketConnection("127.0.0.1", port.Port).await.Connection.some
 
-      else:
-        let host = config.tryGet("host", string, "127.0.0.1".newJString):
-          log lvlError, &"No/invalid debugger host in {config.pretty}"
-          return Connection.none
-        let port = config.tryGet("port", int, 5678.newJInt):
-          log lvlError, &"No/invalid debugger port in {config.pretty}"
-          return Connection.none
-        return newAsyncSocketConnection(host, port.Port).await.Connection.some
+    # else:
+    #   let host = config.tryGet("host", string, "127.0.0.1".newJString):
+    #     log lvlError, &"No/invalid debugger host in {config.pretty}"
+    #     return Connection.none
+    #   let port = config.tryGet("port", int, 5678.newJInt):
+    #     log lvlError, &"No/invalid debugger port in {config.pretty}"
+    #     return Connection.none
+    #   return newAsyncSocketConnection(host, port.Port).await.Connection.some
 
   of Stdio:
     when not defined(js):
@@ -714,7 +730,10 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
 
   return Connection.none
 
-proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.} =
+proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.async.} =
+  discard await self.getStackTrace(threadId)
+
+proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.} =
   let threadId = if threadId.getSome(id):
     id
   elif self.currentThread.getSome(thread):
@@ -729,7 +748,7 @@ proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option
       return ThreadId.none
     self.stackTraces[threadId] = stackTrace.result
 
-    asyncCheck self.updateScopes(threadId, self.currentFrameIndex, force=false)
+    asyncSpawn self.updateScopes(threadId, self.currentFrameIndex, force=false)
 
   return threadId.some
 
@@ -751,33 +770,33 @@ proc updateVariables(self: Debugger, variablesReference: VariablesReference, max
         if variable.variablesReference != 0.VariablesReference:
           self.updateVariables(variable.variablesReference, maxDepth - 1)
 
-    await futures.all
+    await futures.allFutures
 
 proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.} =
-  if self.client.getSome(client) and self.stackTraces.contains(threadId):
-    let stack {.cursor.} = self.stackTraces[threadId]
-    if frameIndex notin 0..stack.stackFrames.high:
-      return
-
-    let frame {.cursor.} = stack.stackFrames[frameIndex]
-
-    let scopes = if force or not self.scopes.contains((threadId, frame.id)):
-      let scopes = await client.scopes(frame.id)
-      if scopes.isError:
+  if self.client.getSome(client):
+    self.stackTraces.withValue(threadId, stack):
+      if frameIndex notin 0..stack[].stackFrames.high:
         return
-      self.scopes[(threadId, frame.id)] = scopes.result
-      scopes.result
-    else:
-      self.scopes[(threadId, frame.id)]
 
-    let futures = collect:
-      for scope in scopes.scopes:
-        if force or not self.variables.contains((threadId, frame.id, scope.variablesReference)):
-          self.updateVariables(scope.variablesReference, 0)
+      let frame {.cursor.} = stack[].stackFrames[frameIndex]
 
-    await futures.all
+      let scopes = if force or not self.scopes.contains((threadId, frame.id)):
+        let scopes = await client.scopes(frame.id)
+        if scopes.isError:
+          return
+        self.scopes[(threadId, frame.id)] = scopes.result
+        scopes.result
+      else:
+        self.scopes[(threadId, frame.id)]
 
-    self.reevaluateCurrentCursor()
+      let futures = collect:
+        for scope in scopes.scopes:
+          if force or not self.variables.contains((threadId, frame.id, scope.variablesReference)):
+            self.updateVariables(scope.variablesReference, 0)
+
+      await futures.allFutures
+
+      self.reevaluateCurrentCursor()
 
 proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   log(lvlInfo, &"onStopped {data}")
@@ -805,10 +824,10 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
     self.lastEditor = TextDocumentEditor.none
 
-  let threadId = await self.updateStackTrace(data.threadId)
+  let threadId = await self.getStackTrace(data.threadId)
 
   if threadId.getSome(threadId) and self.stackTraces.contains(threadId):
-    asyncCheck self.updateScopes(threadId, self.currentFrameIndex, force=true)
+    asyncSpawn self.updateScopes(threadId, self.currentFrameIndex, force=true)
     let stack {.cursor.} = self.stackTraces[threadId]
 
     if stack.stackFrames.len == 0:
@@ -821,7 +840,7 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
 
 proc handleStopped(self: Debugger, data: OnStoppedData) =
   self.state = DebuggerState.Paused
-  asyncCheck self.handleStoppedAsync(data)
+  asyncSpawn self.handleStoppedAsync(data)
 
 proc handleContinued(self: Debugger, data: OnContinuedData) =
   log(lvlInfo, &"onContinued {data}")
@@ -967,7 +986,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   self.state = DebuggerState.Running
 
 proc runConfiguration*(self: Debugger, name: string) {.expose("debugger").} =
-  asyncCheck self.runConfigurationAsync(name)
+  asyncSpawn self.runConfigurationAsync(name)
 
 proc chooseRunConfiguration(self: Debugger) {.expose("debugger").} =
   var builder = SelectorPopupBuilder()
@@ -1001,7 +1020,7 @@ proc chooseRunConfiguration(self: Debugger) {.expose("debugger").} =
 
 proc runLastConfiguration*(self: Debugger) {.expose("debugger").} =
   if self.lastConfiguration.getSome(name):
-    asyncCheck self.runConfigurationAsync(name)
+    asyncSpawn self.runConfigurationAsync(name)
   else:
     self.chooseRunConfiguration()
 
@@ -1098,14 +1117,14 @@ type
   BreakpointPreviewer* = ref object of Previewer
     editor: TextDocumentEditor
     tempDocument: TextDocument
-    getPreviewTextImpl: proc(item: FinderItem): string
+    getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].}
 
 proc newBreakpointPreviewer*(configProvider: ConfigProvider, language = string.none,
-    getPreviewTextImpl: proc(item: FinderItem): string = nil): BreakpointPreviewer =
+    getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].} = nil): BreakpointPreviewer =
 
   new result
 
-  result.tempDocument = newTextDocument(configProvider, language=language,
+  result.tempDocument = newTextDocument(configProvider, fs=nil, language=language,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
   result.getPreviewTextImpl = getPreviewTextImpl
@@ -1159,7 +1178,7 @@ proc editBreakpoints(self: Debugger) {.expose("debugger").} =
   let finder = newFinder(source, filterAndSort=true)
   builder.finder = finder.some
 
-  builder.customActions["delete-breakpoint"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+  builder.customActions["delete-breakpoint"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
     if popup.getSelectedItem().getSome(item):
       let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
         log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
@@ -1170,7 +1189,7 @@ proc editBreakpoints(self: Debugger) {.expose("debugger").} =
 
     true
 
-  builder.customActions["toggle-breakpoint-enabled"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+  builder.customActions["toggle-breakpoint-enabled"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
     if popup.getSelectedItem().getSome(item):
       let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
         log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
@@ -1181,7 +1200,7 @@ proc editBreakpoints(self: Debugger) {.expose("debugger").} =
 
     true
 
-  builder.customActions["toggle-all-breakpoints-enabled"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+  builder.customActions["toggle-all-breakpoints-enabled"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
     self.toggleAllBreakpointsEnabled()
     source.retrigger()
     true
@@ -1190,19 +1209,19 @@ proc editBreakpoints(self: Debugger) {.expose("debugger").} =
 
 proc continueExecution*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):
-    asyncCheck client.continueExecution(thread.id)
+    asyncSpawn client.continueExecution(thread.id)
 
 proc stepOver*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):
-    asyncCheck client.next(thread.id)
+    asyncSpawn client.next(thread.id)
 
 proc stepIn*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):
-    asyncCheck client.stepIn(thread.id)
+    asyncSpawn client.stepIn(thread.id)
 
 proc stepOut*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):
-    asyncCheck client.stepOut(thread.id)
+    asyncSpawn client.stepOut(thread.id)
 
 genDispatcher("debugger")
 addGlobalDispatchTable "debugger", genDispatchTable("debugger")
@@ -1213,19 +1232,19 @@ proc dispatchEvent*(action: string, args: JsonNode): Option[JsonNode] =
 proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
   # debugf"[textedit] handleAction {action}, '{args}'"
 
-  var args = newJArray()
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
-
-  if self.app.invokeAnyCallback(action, args).isNotNil:
-    return Handled
-
   try:
+    var args = newJArray()
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+
+    if self.app.invokeAnyCallback(action, args).isNotNil:
+      return Handled
+
     # debugf"dispatch {action}, {args}"
     if dispatch(action, args).isSome:
       return Handled
-  except CatchableError:
-    log(lvlError, fmt"Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}")
+  except:
+    log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   return Ignored
@@ -1234,6 +1253,7 @@ method getEventHandlers*(view: DebuggerView, inject: Table[string, EventHandler]
   debugger.getEventHandlers(inject)
 
 method getActiveEditor*(self: DebuggerView): Option[DocumentEditor] =
-  if gDebugger.isNil or gDebugger.activeView != ActiveView.Output or gDebugger.outputEditor.isNil:
-    return DocumentEditor.none
-  return gDebugger.outputEditor.DocumentEditor.some
+  {.gcsafe.}:
+    if gDebugger.isNil or gDebugger.activeView != ActiveView.Output or gDebugger.outputEditor.isNil:
+      return DocumentEditor.none
+    return gDebugger.outputEditor.DocumentEditor.some

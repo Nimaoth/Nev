@@ -13,7 +13,7 @@ logCategory "lsp"
 type LanguageServerLSP* = ref object of LanguageServer
   client: LSPClient
   languageId: string
-  initializedFuture: ResolvableFuture[bool]
+  initializedFuture: Future[bool]
 
   documentHandles: seq[tuple[document: Document, onEditHandle: Id]]
 
@@ -24,27 +24,29 @@ type LanguageServerLSP* = ref object of LanguageServer
 var languageServers = initTable[string, LanguageServerLSP]()
 
 proc deinitLanguageServers*() =
-  for languageServer in languageServers.values:
-    languageServer.stop()
+  {.gcsafe.}:
+    for languageServer in languageServers.values:
+      languageServer.stop()
 
-  languageServers.clear()
+    languageServers.clear()
 
 proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_types.ConfigurationParams):
-    Future[seq[JsonNode]] {.async.} =
+    Future[seq[JsonNode]] {.gcsafe, async.} =
   var res = newSeq[JsonNode]()
 
   logScope lvlInfo, &"handleWorkspaceConfigurationRequest {params}"
   # todo: this function is quite slow (up to 100ms)
 
-  let workspaceConfigName = gAppInterface.configProvider.getValue("lsp." & self.languageId & ".workspace-configuration-name", "settings")
+  {.gcsafe.}:
+    let workspaceConfigName = gAppInterface.configProvider.getValue("lsp." & self.languageId & ".workspace-configuration-name", "settings")
 
-  for item in params.items:
-    # todo: implement scopeUri support
-    if item.section.isNone:
-      continue
+    for item in params.items:
+      # todo: implement scopeUri support
+      if item.section.isNone:
+        continue
 
-    let key = ["lsp", self.languageId, workspaceConfigName, item.section.get].filterIt(it.len > 0).join(".")
-    res.add gAppInterface.configProvider.getValue(key, newJNull())
+      let key = ["lsp", self.languageId, workspaceConfigName, item.section.get].filterIt(it.len > 0).join(".")
+      res.add gAppInterface.configProvider.getValue(key, newJNull())
 
   return res
 
@@ -92,83 +94,91 @@ proc handleDiagnostics(lsp: LanguageServerLSP) {.async.} =
 
 proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     languagesServer: Option[(string, int)] = (string, int).none, workspace = ws.Workspace.none):
-    Future[Option[LanguageServerLSP]] {.async.} =
+    Future[Option[LanguageServer]] {.gcsafe, async.} =
 
-  if languageServers.contains(languageId):
-    let lsp = languageServers[languageId]
+  try:
+    {.gcsafe.}:
+      if languageServers.contains(languageId):
+        let lsp = languageServers[languageId]
 
-    let initialized = await lsp.initializedFuture.future
-    if not initialized:
-      return LanguageServerLSP.none
+        let initialized = await lsp.initializedFuture
+        if not initialized:
+          return LanguageServer.none
 
-    return lsp.some
+        return lsp.LanguageServer.some
 
-  let config = gAppInterface.configProvider.getValue("lsp." & languageId, newJObject())
-  if config.isNil:
-    return LanguageServerLSP.none
+    {.gcsafe.}:
+      let config = gAppInterface.configProvider.getValue("lsp." & languageId, newJObject())
+    if config.isNil:
+      return LanguageServer.none
 
-  log lvlInfo, fmt"Starting language server for {languageId} with config {config}"
+    log lvlInfo, fmt"Starting language server for {languageId} with config {config}"
 
-  if not config.hasKey("path"):
-    log lvlError, &"Missing path in config for language server {languageId}"
-    return LanguageServerLSP.none
+    if not config.hasKey("path"):
+      log lvlError, &"Missing path in config for language server {languageId}"
+      return LanguageServer.none
 
-  let exePath = config["path"].jsonTo(string)
-  let args: seq[string] = if config.hasKey("args"):
-    config["args"].jsonTo(seq[string])
-  else:
-    @[]
+    let exePath = config["path"].jsonTo(string)
+    let args: seq[string] = if config.hasKey("args"):
+      config["args"].jsonTo(seq[string])
+    else:
+      @[]
 
-  let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJNull()).jsonTo(string).catch("settings")
-  let userOptions = gAppInterface.configProvider.getValue(
-    "lsp." & languageId & "." & initializationOptionsName, newJNull())
+    let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJNull()).jsonTo(string).catch("settings")
+    {.gcsafe.}:
+      let userOptions = gAppInterface.configProvider.getValue(
+        "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
-  let workspaceInfo = if workspace.getSome(workspace):
-    workspace.info.await.some
-  else:
-    ws.WorkspaceInfo.none
+    let workspaceInfo = if workspace.getSome(workspace):
+      workspace.info.await.some
+    else:
+      ws.WorkspaceInfo.none
 
-  var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, languagesServer)
-  client.languageId = languageId
+    var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, languagesServer)
+    client.languageId = languageId
 
-  var lsp = LanguageServerLSP(client: client, languageId: languageId)
-  lsp.initializedFuture = newResolvableFuture[bool]("lsp.initializedFuture")
-  languageServers[languageId] = lsp
+    var lsp = LanguageServerLSP(client: client, languageId: languageId)
+    lsp.initializedFuture = newFuture[bool]("lsp.initializedFuture")
+    {.gcsafe.}:
+      languageServers[languageId] = lsp
 
-  asyncCheck lsp.handleWorkspaceConfigurationRequests()
-  asyncCheck lsp.handleMessages()
-  asyncCheck lsp.handleDiagnostics()
-  asyncCheck client.handleResponses()
+    asyncSpawn lsp.handleWorkspaceConfigurationRequests()
+    asyncSpawn lsp.handleMessages()
+    asyncSpawn lsp.handleDiagnostics()
+    asyncSpawn client.handleResponses()
 
-  lsp.thread.createThread(lspClientRunner, client)
+    lsp.thread.createThread(lspClientRunner, client)
 
-  log lvlInfo, fmt"Started language server for '{languageId}'"
-  let serverCapabilities = client.initializedChannel.recv().await.get(ServerCapabilities.none)
-  if serverCapabilities.getSome(capabilities):
-    lsp.serverCapabilities = capabilities
-    lsp.initializedFuture.complete(true)
+    log lvlInfo, fmt"Started language server for '{languageId}'"
+    let serverCapabilities = client.initializedChannel.recv().await.get(ServerCapabilities.none)
+    if serverCapabilities.getSome(capabilities):
+      lsp.serverCapabilities = capabilities
+      lsp.initializedFuture.complete(true)
 
-    let initialConfig = config.fields.getOrDefault("initial-configuration", newJNull())
-    if initialConfig.kind != JNull:
-      asyncCheck client.notifyConfigurationChangedChannel.send(initialConfig)
+      let initialConfig = config.fields.getOrDefault("initial-configuration", newJNull())
+      if initialConfig.kind != JNull:
+        asyncSpawn client.notifyConfigurationChangedChannel.send(initialConfig)
 
-    if capabilities.textDocumentSync.asTextDocumentSyncKind().getSome(syncKind):
-      if syncKind == TextDocumentSyncKind.Full:
-        lsp.fullDocumentSync = true
+      if capabilities.textDocumentSync.asTextDocumentSyncKind().getSome(syncKind):
+        if syncKind == TextDocumentSyncKind.Full:
+          lsp.fullDocumentSync = true
 
-    elif capabilities.textDocumentSync.asTextDocumentSyncOptions().getSome(syncOptions):
-      if syncOptions.change == TextDocumentSyncKind.Full:
-        lsp.fullDocumentSync = true
+      elif capabilities.textDocumentSync.asTextDocumentSyncOptions().getSome(syncOptions):
+        if syncOptions.change == TextDocumentSyncKind.Full:
+          lsp.fullDocumentSync = true
 
-  else:
-    lsp.initializedFuture.complete(false)
-    lsp.stop()
-    return LanguageServerLSP.none
+    else:
+      lsp.initializedFuture.complete(false)
+      lsp.stop()
+      return LanguageServer.none
 
-  return languageServers[languageId].some
+    {.gcsafe.}:
+      return languageServers[languageId].LanguageServer.some
+  except:
+    return LanguageServer.none
 
 method start*(self: LanguageServerLSP): Future[void] = discard
-method stop*(self: LanguageServerLSP) =
+method stop*(self: LanguageServerLSP) {.gcsafe, raises: [].} =
   log lvlInfo, fmt"Stopping language server for '{self.languageId}'"
   # self.client.deinit()
   # todo: properly deinit client
@@ -182,10 +192,10 @@ method getCompletionTriggerChars*(self: LanguageServerLSP): set[char] =
 
 template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
   block:
-    if parsedResponse.asLocation().getSome(location):
+    if parsedResponse.asLocation().getSome(loc):
       @[Definition(
-        filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix,
-        location: (line: location.`range`.start.line, column: location.`range`.start.character)
+        filename: loc.uri.decodeUrl.parseUri.path.normalizePathUnix,
+        location: (line: loc.`range`.start.line, column: loc.`range`.start.character)
       )]
 
     elif parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
@@ -414,7 +424,7 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
     return success[seq[language_server_base.InlayHint]](hints)
 
   # todo: better error message
-  return error[seq[language_server_base.InlayHint]](-1, "Invalid response")
+  return errorResponse[seq[language_server_base.InlayHint]](-1, "Invalid response")
 
 proc toInternalSymbolKind(symbolKind: SymbolKind): SymbolType =
   try:
@@ -541,7 +551,7 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
     return success[seq[lsp_types.Diagnostic]](report.items)
 
   # todo: better error message
-  return error[seq[lsp_types.Diagnostic]](-1, "Invalid response")
+  return errorResponse[seq[lsp_types.Diagnostic]](-1, "Invalid response")
 
 method getCompletions*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Response[CompletionList]] {.async.} =
@@ -561,11 +571,11 @@ method connect*(self: LanguageServerLSP, document: Document) =
     var handle = new Id
     handle[] = document.onLoaded.subscribe proc(document: TextDocument): void =
       document.onLoaded.unsubscribe handle[]
-      asyncCheck self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
+      asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
   else:
-    asyncCheck self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
+    asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
 
-  let onEditHandle = document.onEdit.subscribe proc(args: auto): void =
+  let onEditHandle = document.onEdit.subscribe proc(args: auto): void {.gcsafe, raises: [].} =
     # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
     # todo: we should batch these, as onEdit can be called multiple times per frame
     # especially for full document sync
@@ -573,7 +583,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
     let fullPath = args.document.fullPath
 
     if self.fullDocumentSync:
-      asyncCheck self.client.notifyTextDocumentChangedChannel.send (fullPath, version, @[], args.document.contentString)
+      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (fullPath, version, @[], args.document.contentString)
     else:
       var c = args.document.buffer.visibleText.cursorT(Point)
       # todo: currently relies on edits being sorted
@@ -582,11 +592,11 @@ method connect*(self: LanguageServerLSP, document: Document) =
         let text = c.slice(Point.init(it.new.last.line, it.new.last.column))
         TextDocumentContentChangeEvent(range: language_server_base.toLspRange(it.old), text: $text)
       )
-      asyncCheck self.client.notifyTextDocumentChangedChannel.send (fullPath, version, changes, "")
+      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (fullPath, version, changes, "")
 
   self.documentHandles.add (document.Document, onEditHandle)
 
-method disconnect*(self: LanguageServerLSP, document: Document) =
+method disconnect*(self: LanguageServerLSP, document: Document) {.gcsafe, raises: [].} =
   if not (document of TextDocument):
     return
 
@@ -602,14 +612,15 @@ method disconnect*(self: LanguageServerLSP, document: Document) =
     self.documentHandles.removeSwap i
     break
 
-  # asyncCheck self.client.notifyClosedTextDocument(document.fullPath)
-  asyncCheck self.client.notifyTextDocumentClosedChannel.send(document.fullPath)
+  # asyncSpawn self.client.notifyClosedTextDocument(document.fullPath)
+  asyncSpawn self.client.notifyTextDocumentClosedChannel.send(document.fullPath)
 
   if self.documentHandles.len == 0:
     self.stop()
 
-    for (language, ls) in languageServers.pairs:
+    let languageServers = ({.gcsafe.}: languageServers.addr)
+    for (language, ls) in languageServers[].pairs:
       if ls == self:
         log lvlInfo, &"Removed language server for '{language}' from global language server list"
-        languageServers.del language
+        languageServers[].del language
         break

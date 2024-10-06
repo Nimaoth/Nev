@@ -9,6 +9,9 @@ import app, document_editor, theme, compilation_config, view
 when enableAst:
   import ui/[widget_builder_model_document]
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "widget_builder"
 
 proc updateWidgetTree*(self: App, frameIndex: int) =
@@ -21,7 +24,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   let builder = self.platform.builder
   builder.panel(rootFlags): # fullscreen overlay
 
-    var overlays: seq[proc() {.closure.}]
+    var overlays: seq[OverlayFunction]
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar

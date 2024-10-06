@@ -1,3 +1,7 @@
+# This is required for LSP to work with this file and not show tons of errros
+when defined(nimsuggest):
+  import system/nimscript
+
 switch("path", "$nim")
 switch("path", "scripting")
 switch("path", "src")
@@ -33,10 +37,12 @@ switch("linetrace", "off")
 # required for actual builds, but for lsp this should be off to improve performance because it doesn't need to generate as many functions
 # switch("d", "exposeScriptingApi")
 
+switch("d", "npegGcsafe=true")
+
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
-switch("d", "enableNimscript=true")
-# switch("d", "enableAst=true")
+switch("d", "enableNimscript=false")
+switch("d", "enableAst=false")
 
 
 # uncomment to see logs in the console
@@ -81,6 +87,9 @@ when defined(windows):
 else:
   switch("d", "nimWasmtimeStatic=true")
 
+# results prints a ton of hints, silence them
+switch("d", "resultsGenericsOpenSymWorkaroundHint=false")
+
 when defined(musl):
   var muslGcc = findExe("musl-gcc")
   # muslGcc = "/home/nimaoth/musl/musl/bin/musl-gcc"
@@ -98,6 +107,10 @@ else:
 when defined(enableSysFatalStackTrace):
   patchFile("stdlib", "fatal", "patches/fatal")
 patchFile("stdlib", "excpt", "patches/excpt")
+patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")
+patchFile("stdlib", "tables", "patches/tables") # Patch tables.nim to remove exceptions
+patchFile("chronos", "asyncengine", "patches/asyncengine") # Patch this to enable 0 timeout poll
+patchFile("npeg", "codegen", "patches/codegen") # Patch this for proper gcsafety
 
 # switches for debugging
 # switch("d", "wasm3EnableStrace2")

@@ -1,6 +1,9 @@
 import std/[options, tables]
 import events, document_editor
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type
   View* = ref object of RootObj
     dirty*: bool
