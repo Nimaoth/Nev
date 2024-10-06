@@ -1,9 +1,7 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, os, hashes]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection]
+import misc/async_process
 import platform/filesystem
-
-when not defined(js):
-  import misc/async_process
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -504,12 +502,11 @@ proc cancelAllOf*(client: DAPClient, command: string) =
     for (id, future) in futures:
       future.complete canceled[JsonNode]()
 
-when not defined(js):
-  proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
-    while process.isAlive:
-      let line = await process.recvErrorLine
-      if logServerDebug:
-        log(lvlDebug, fmt"[debug] {line}")
+proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
+  while process.isAlive:
+    let line = await process.recvErrorLine
+    if logServerDebug:
+      log(lvlDebug, fmt"[debug] {line}")
 
 proc launch*(client: DAPClient, args: JsonNode) {.async.} =
   log lvlInfo, &"Launch '{args}'"

@@ -1,6 +1,3 @@
-when defined(js):
-  {.error: "desktop_main.nim does not work in js backend.".}
-
 when defined(windows):
   static:
     echo "Compiling for windows"

@@ -257,19 +257,18 @@ proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string) 
 
 method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string):
     Future[DirectoryListing] {.async.} =
-  when not defined(js):
-    var res = DirectoryListing()
+  var res = DirectoryListing()
 
-    if relativePath == "":
-      self.loadDefaultIgnoreFile()
-      res.fillDirectoryListing(self.path)
-      for path in self.additionalPaths:
-        res.fillDirectoryListing(path)
+  if relativePath == "":
+    self.loadDefaultIgnoreFile()
+    res.fillDirectoryListing(self.path)
+    for path in self.additionalPaths:
+      res.fillDirectoryListing(path)
 
-    else:
-      res.fillDirectoryListing(self.getAbsolutePath(relativePath))
+  else:
+    res.fillDirectoryListing(self.getAbsolutePath(relativePath))
 
-    return res
+  return res
 
 proc searchWorkspaceFolder(self: WorkspaceFolderLocal, query: string, root: string, maxResults: int):
     Future[seq[SearchResult]] {.async.} =

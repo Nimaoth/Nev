@@ -183,45 +183,12 @@ proc neww*[T](value: T): ref T =
   new result
   result[] = value
 
-when defined(js):
-  func jsRound(x: float): float {.importc: "Math.round", nodecl.}
-  func roundPositive*[T: float64 | float32](x: T): T =
-    jsRound(x)
-else:
-  import std/math
-  func roundPositive*[T: float64 | float32](x: T): T = round(x)
+import std/math
+func roundPositive*[T: float64 | float32](x: T): T = round(x)
 
 template yieldAll*(iter: untyped): untyped =
   for i in iter:
     yield i
-
-proc resetOption*[T](self: var Option[T]) =
-  when defined(js):
-    proc resetOptionJs[T](self: var Option[T]) {.importJs: "#.has = false;".}
-    resetOptionJs(self)
-  else:
-    self = none(T)
-
-proc safeIntCast*[T: SomeSignedInt](x: T, Target: typedesc[SomeUnsignedInt]): Target {.inline.} =
-  ## Cast signed integer to unsigned integer.
-  ## Same as cast[Target](x), but on js backend doesn't use BigInt
-  static:
-    assert sizeof(T) == sizeof(Target)
-
-  when defined(js):
-    const signBitMask = T.high
-    let b = (x and 1).Target # last bit
-    let y = ((x shr 1) and signBitMask).Target shl 1 # every bit except last
-    result = b or y
-  else:
-    result = cast[Target](x)
-
-static:
-  assert cast[uint32](0) == 0.int32.safeIntCast(uint32)
-  assert cast[uint32](1) == 1.int32.safeIntCast(uint32)
-  assert cast[uint32](-1) == -1.int32.safeIntCast(uint32)
-  assert cast[uint16](-1) == -1.int16.safeIntCast(uint16)
-  assert cast[uint8](-1) == -1.int8.safeIntCast(uint8)
 
 proc align*[T](address, alignment: T): T =
   if alignment == 0: # Actually, this is illegal. This branch exists to actively
@@ -236,21 +203,6 @@ template softAssert*(condition: bool, message: string): untyped =
   if not condition:
     echo message
     raise newException(CatchableAssertion, message)
-
-when defined(js):
-  # on js the normal string.add function can cause stack overflows when the
-  # argument is too long, because it uses x.apply(push, y)
-  template append*(x: var string, y: string): untyped =
-    ## Concatenates `x` and `y` in place.
-    ##
-    ## See also `system.add`.
-    x = x & y
-else:
-  template append*(x: var string, y: string) =
-    ## Concatenates `x` and `y` in place.
-    ##
-    ## See also `system.add`.
-    x.add(y)
 
 func removeSwap*[T](s: var seq[T]; index: int) = s.del(index)
 func removeShift*[T](s: var seq[T]; index: int) = s.delete(index)

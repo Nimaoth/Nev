@@ -241,10 +241,6 @@ proc hash*(node: AstNode): Hash = node.id.hash
 proc hash*(class: NodeClass): Hash = class.id.hash
 proc hash*(language: Language): Hash = language.id.hash
 
-when defined(js):
-  proc getIdAstNodeJs*(node: AstNode): cstring {.exportc, used.} =
-    {.emit: ["return toCString(", node, ".id);"].} #"""
-
 method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
 method getValue*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
 method getScope*(self: ModelComputationContextBase, node: AstNode): seq[AstNode] {.base.} = discard

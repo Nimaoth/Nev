@@ -59,13 +59,6 @@ macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: sta
       return
   exposedFunctions[moduleName] = nnkStmtList.newTree(val)
 
-template createJavascriptPrototype*(moduleName: static string) =
-  when defined(js):
-    registerJsPrototype(moduleName)
-    const prototypeName = moduleName.replace(".", "_")
-    {.emit: ["""var """, prototypeName, """_prototype = {}"""].}
-    # """
-
 proc generateUniqueName*(moduleName: string, def: NimNode): string =
   result = moduleName
   result.add "_"

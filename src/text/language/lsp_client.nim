@@ -207,20 +207,15 @@ method recvLine(connection: LSPConnection): Future[string] {.base, gcsafe.} = di
 method recv(connection: LSPConnection, length: int): Future[string] {.base, gcsafe.} = discard
 method send(connection: LSPConnection, data: string): Future[void] {.base, gcsafe.} = discard
 
-when not defined(js):
-  type LSPConnectionAsyncProcess = ref object of LSPConnection
-    process: AsyncProcess
+type LSPConnectionAsyncProcess = ref object of LSPConnection
+  process: AsyncProcess
 
-  method close(connection: LSPConnectionAsyncProcess) = connection.process.destroy
-  method recvLine(connection: LSPConnectionAsyncProcess): Future[string] = connection.process.recvLine
-  method recv(connection: LSPConnectionAsyncProcess, length: int): Future[string] = connection.process.recv(length)
-  method send(connection: LSPConnectionAsyncProcess, data: string): Future[void] = connection.process.send(data)
+method close(connection: LSPConnectionAsyncProcess) = connection.process.destroy
+method recvLine(connection: LSPConnectionAsyncProcess): Future[string] = connection.process.recvLine
+method recv(connection: LSPConnectionAsyncProcess, length: int): Future[string] = connection.process.recv(length)
+method send(connection: LSPConnectionAsyncProcess, data: string): Future[void] = connection.process.send(data)
 
 proc encodePathUri(path: string): string = path.normalizePathUnix.split("/").mapIt(it.encodeUrl(false)).join("/")
-
-when defined(js):
-  # todo
-  proc absolutePath(path: string): string = path
 
 proc toUri*(path: string): Uri =
   when defined(linux):
@@ -643,12 +638,11 @@ proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args
   #   # log lvlError, &"Failed to connect to languages server {url}:{port}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
   #   return (int, int).none
 
-when not defined(js):
-  proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
-    while process.isAlive:
-      let line = await process.recvErrorLine
-      if logServerDebug:
-        log(lvlDebug, fmt"[server] {line}")
+proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
+  while process.isAlive:
+    let line = await process.recvErrorLine
+    if logServerDebug:
+      log(lvlDebug, fmt"[server] {line}")
 
 proc sendInitializationRequest(client: LSPClient) {.async, gcsafe.} =
   log(lvlInfo, "Initializing client...")
@@ -662,38 +656,18 @@ proc sendInitializationRequest(client: LSPClient) {.async, gcsafe.} =
 proc connect*(client: LSPClient) {.async, gcsafe.} =
   # client.initializedFuture = newFuture[bool]("client.initializedFuture")
 
-  if client.languagesServer.getSome(lsConfig):
-    log lvlInfo, fmt"Using languages server at '{lsConfig[0]}:{lsConfig[1]}' to find LSP connection"
-    let serverConfig = await tryGetPortFromLanguagesServer(lsConfig[0], lsConfig[1], client.serverExecutablePath, client.args)
-    if serverConfig.isNone:
-      log(lvlError, "Failed to connect to languages server: no port found")
-      await client.initializedChannel.send(ServerCapabilities.none)
-      return
+  log lvlInfo, fmt"Using process '{client.serverExecutablePath} {client.args}' as LSP connection"
+  let process = startAsyncProcess(client.serverExecutablePath, client.args)
+  let connection = LSPConnectionAsyncProcess(process: process)
 
-  #   # log lvlInfo, fmt"Using websocket connection on port {serverConfig.get.port} as LSP connection"
-  #   var socket = await newWebSocket(fmt"ws://localhost:{serverConfig.get.port}")
-  #   let connection = LSPConnectionWebsocket(websocket: socket, processId: serverConfig.get.processId)
-  #   client.connection = connection
-  #   asyncSpawn client.sendInitializationRequest()
+  connection.process.onRestarted = proc(): Future[void] {.gcsafe.} =
+    asyncSpawn logProcessDebugOutput(process)
+    return client.sendInitializationRequest()
 
-  else:
-    when not defined(js):
-      log lvlInfo, fmt"Using process '{client.serverExecutablePath} {client.args}' as LSP connection"
-      let process = startAsyncProcess(client.serverExecutablePath, client.args)
-      let connection = LSPConnectionAsyncProcess(process: process)
+  connection.process.onRestartFailed = proc(): Future[void] {.gcsafe.} =
+    return client.initializedChannel.send(ServerCapabilities.none)
 
-      connection.process.onRestarted = proc(): Future[void] {.gcsafe.} =
-        asyncSpawn logProcessDebugOutput(process)
-        return client.sendInitializationRequest()
-
-      connection.process.onRestartFailed = proc(): Future[void] {.gcsafe.} =
-        return client.initializedChannel.send(ServerCapabilities.none)
-
-      client.connection = connection
-
-    else:
-      log lvlError, "LSP connection not implemented for JS"
-      return
+  client.connection = connection
 
 proc translatePath(client: LSPClient, path: string): string =
   if path.startsWith("@") and client.workspaceInfo.getSome info:

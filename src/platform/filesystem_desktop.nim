@@ -47,13 +47,10 @@ method getApplicationDirectoryListing*(self: FileSystemDesktop, path: string):
   return self.getApplicationDirectoryListingSync(path)
 
 method getApplicationFilePath*(self: FileSystemDesktop, name: string): string =
-  when defined(js):
+  if isAbsolute(name):
     return name
   else:
-    if isAbsolute(name):
-      return name
-    else:
-      return self.appDir / name
+    return self.appDir / name
 
 method loadApplicationFile*(self: FileSystemDesktop, name: string): string =
   let path = self.getApplicationFilePath name

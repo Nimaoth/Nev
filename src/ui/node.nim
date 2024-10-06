@@ -177,23 +177,14 @@ proc `contentDirty=`*(node: UINode, value: bool) {.inline.} =
   #   echo getStackTrace()
   node.mContentDirty = value
 
-when defined(js):
-  func id*(node: UINode): lent Id {.importjs: "#.mId".}
-  func text*(node: UINode): lent string {.importjs: "#.mText".}
-  func backgroundColor*(node: UINode): Color {.importjs: "#.mBackgroundColor".}
-  func borderColor*(node: UINode): Color {.importjs: "#.mBorderColor".}
-  func textColor*(node: UINode): Color {.importjs: "#.mTextColor".}
-  func underlineColor*(node: UINode): Color {.importjs: "#.mUnderlineColor".}
-  func flags*(node: UINode): UINodeFlags {.importjs: "#.flags".}
-else:
-  func id*(node: UINode): lent Id {.inline.} = node.mId
-  func text*(node: UINode): lent string {.inline.} = node.mText
-  func backgroundColor*(node: UINode): Color {.inline.} = node.mBackgroundColor
-  func borderColor*(node: UINode): Color {.inline.} = node.mBorderColor
-  func textColor*(node: UINode): Color {.inline.} = node.mTextColor
-  func underlineColor*(node: UINode): Color {.inline.} = node.mUnderlineColor
+func id*(node: UINode): lent Id {.inline.} = node.mId
+func text*(node: UINode): lent string {.inline.} = node.mText
+func backgroundColor*(node: UINode): Color {.inline.} = node.mBackgroundColor
+func borderColor*(node: UINode): Color {.inline.} = node.mBorderColor
+func textColor*(node: UINode): Color {.inline.} = node.mTextColor
+func underlineColor*(node: UINode): Color {.inline.} = node.mUnderlineColor
 
-  func flags*(node: UINode): UINodeFlags {.inline.} = node.flags
+func flags*(node: UINode): UINodeFlags {.inline.} = node.flags
 
 func lastChange*(node: UINode): int {.inline.} = max(node.mLastContentChange, max(node.mLastPositionChange, max(node.mLastSizeChange, max(node.mLastClearInvalidation, node.mLastDrawInvalidation))))
 func lastSizeChange*(node: UINode): int {.inline.} = node.mLastSizeChange
@@ -492,10 +483,10 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
     builder.returnNode c
 
   if builder.draggedNode == node.some:
-    builder.draggedNode.resetOption()
+    builder.draggedNode = UINode.none
 
   if builder.hoveredNode == node.some:
-    builder.hoveredNode.resetOption()
+    builder.hoveredNode = UINode.none
 
   when defined(uiNodeDebugData):
     node.aDebugData.metaData = nil
@@ -573,7 +564,7 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.mHandleHover = nil
   node.mHandleScroll = nil
 
-  node.clearRect.resetOption()
+  node.clearRect = Rect.none
 
 proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
   if last.isNil:
@@ -678,8 +669,7 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
     else:
       node.boundsRaw.h = (parent.h - node.y).roundPositive
 
-  when not defined(js):
-    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
 proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
@@ -695,8 +685,7 @@ proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   if SizeToContentY in node.flags and child.yh > node.h:
     node.boundsRaw.h = child.yh.roundPositive
 
-  when not defined(js):
-    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
 proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
   if SizeToContentX in node.flags:
@@ -750,8 +739,7 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
 
     node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).roundPositive
 
-  when not defined(js):
-    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
 proc postLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "postLayout"
@@ -787,13 +775,12 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
     else:
       node.boundsRaw.h = (node.parent.h - node.y).roundPositive
 
-  when not defined(js):
-    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
 
-# todo: use sink instead of var (doesn't work properly in js, it thinks it's a ref but it isn't)
+# todo: use sink instead of var
 proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode =
   if userId.kind == Primary and builder.namedNodes.contains(userId.id):
     result = builder.namedNodes[userId.id]
@@ -887,7 +874,7 @@ proc removeFromParent*(node: UINode) =
   node.next = nil
   node.parent = nil
 
-# todo: use sink instead of var (doesn't work properly in js, it thinks it's a ref but it isn't)
+# todo: use sink instead of var
 proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId: var UIUserId): UINode =
   let insert = true
 
@@ -1042,8 +1029,7 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   if inH.isSome: node.boundsRaw.h = inH.get.roundPositive
   if inPivot.isSome: node.pivot = inPivot.get
 
-  when not defined(js):
-    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
   node.logp fmt"panel begin {builder.currentParent.id}, {builder.currentChild.?id} {node.id}"
 
@@ -1140,8 +1126,7 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
     node.boundsActual.h = node.h
     builder.animatingNodes.excl node.id
 
-  when not defined(js):
-    assert not node.boundsActual.isNan, fmt"node {node.dump}: boundsActual contains Nan"
+  assert not node.boundsActual.isNan, fmt"node {node.dump}: boundsActual contains Nan"
 
   let newPosAbsoluteX = node.boundsActual.x + offsetX
   let newPosAbsoluteY = node.boundsActual.y + offsetY
@@ -1178,16 +1163,14 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
   node.lw = node.boundsActual.w
   node.lh = node.boundsActual.h
 
-  when not defined(js):
-    assert not node.boundsAbsolute.isNan, fmt"node {node.dump}: boundsAbsolute contains Nan"
+  assert not node.boundsAbsolute.isNan, fmt"node {node.dump}: boundsAbsolute contains Nan"
 
   node.boundsOld.x = node.boundsActual.x
   node.boundsOld.y = node.boundsActual.y
   node.boundsOld.w = node.boundsActual.w
   node.boundsOld.h = node.boundsActual.h
 
-  when not defined(js):
-    assert not node.boundsOld.isNan, fmt"node {node.dump}: boundsOld contains Nan"
+  assert not node.boundsOld.isNan, fmt"node {node.dump}: boundsOld contains Nan"
 
   node.mFlagsOld = node.flags
 
@@ -1431,8 +1414,7 @@ proc retain*(builder: UINodeBuilder): bool =
 
   node.boundsRaw.w = w
   node.boundsRaw.h = h
-  when not defined(js):
-    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
   builder.currentChild = builder.currentParent.last
 

@@ -12,7 +12,6 @@ export popup, selector_popup_builder
 {.push gcsafe.}
 
 logCategory "selector"
-createJavascriptPrototype("popup.selector")
 
 type
   SelectorPopup* = ref object of Popup

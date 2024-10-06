@@ -14,8 +14,6 @@ type
 proc `=copy`*[T: Disposable](a: var DisposableRef[T], b: DisposableRef[T]) {.error.}
 proc `=dup`*[T: Disposable](a: DisposableRef[T]): DisposableRef[T] {.error.}
 proc `=destroy`*[T: Disposable](a: DisposableRef[T]) =
-  when defined(js):
-    {.emit: ["if (", a, " === undefined) return;"].}
   if not a.count.isNil:
     a.count[].dec
     # debugf"=destroy DisposableRef {$a.count[]} {a.obj.isNil}"

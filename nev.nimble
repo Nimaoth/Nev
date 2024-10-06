@@ -147,10 +147,6 @@ task buildLspWs, "Build the websocket proxy for language servers":
 task buildLspWsWindows, "Build the websocket proxy for language servers":
   selfExec fmt"c -o:./tools/lsp-ws{exe} {crossCompileWinArgs} {getCommandLineParams()} ./tools/lsp_ws.nim"
 
-task buildBrowser, "Build the browser version":
-  selfExec fmt"js -o:./build/nev.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking -d:enableAst=true {getCommandLineParams()} ./src/browser_main.nim"
-  # selfExec fmt"js -o:./build/nev.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off --jsbigint64:off {getCommandLineParams()} ./src/browser_main.nim"
-
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":
     selfExec fmt"c -d:release -o:wasm/{projectName()}.wasm {getCommandLineParams()}"
