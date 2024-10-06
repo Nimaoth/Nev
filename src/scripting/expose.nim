@@ -12,15 +12,8 @@ const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to li
 const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
 const exposedFunctions* = CacheTable"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 const wasmImportedFunctions* = CacheTable"WasmImportedFunctions"
-const jsPrototypes = CacheTable"JsPrototypes"
 
 template varargs*() {.pragma.}
-
-template nodispatch*() {.pragma.}
-  ## Don't add this function to the dispatcher, and don't create a json wrapper
-
-template nojsonwrapper*() {.pragma.}
-  ## Don't add this function to the dispatcher, and don't create a json wrapper
 
 macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
   mapperFunctions[$source] = mapperFunction
@@ -28,9 +21,6 @@ macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
 
 macro addInjector*(name: untyped, function: typed) =
   injectors[$name] = function
-
-macro registerJsPrototype*(name: static string) =
-  jsPrototypes[name] = nnkStmtList.newTree()
 
 macro addWasmImportedFunction*(moduleName: static string, name: untyped, thisSide: untyped, wasmSide: untyped) =
   let n = nnkStmtList.newTree(name, thisSide, wasmSide)
@@ -346,15 +336,12 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         addWasmImportedFunction(`moduleName`, `jsonStringWrapperFunctionName`, `jsonStringWrapperFunctionWasm`):
           proc `jsonStringWrapperFunctionName`(`arg`: cstring): cstring {.importc.}
 
+  result.add quote do:
+    static:
+      # This makes the function dispatchable
+      addFunction(`pureFunctionName`, `signature`, `jsonWrapperFunctionName`, `moduleName`, `documentationStr`)
 
-  # Only add the json wrapper and dispatch function if the {.nodispatch.} is not present
-  if not def.hasCustomPragma("nodispatch") or not def.hasCustomPragma("nojsonwrapper"):
-    result.add quote do:
-      static:
-        # This makes the function dispatchable
-        addFunction(`pureFunctionName`, `signature`, `jsonWrapperFunctionName`, `moduleName`, `documentationStr`)
-
-    # echo result[result.len - 1].repr
+  # echo result[result.len - 1].repr
 
 macro genDispatchTable*(moduleName: static string): untyped =
   defer:
