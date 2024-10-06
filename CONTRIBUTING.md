@@ -22,13 +22,9 @@ Scan through our [existing issues](https://github.com/Nimaoth/Nev/issues) to fin
 ### Make Changes
 
 1. Fork the repository.
-2. Install Nim 2.0.2
+2. Install Nim 2.0.6
 3. Create a working branch and start with your changes!
-4. Make sure you're changes work in the desktop/terminal/browser version
-
-#### Developing/Testing the browser version
-
-TODO
+4. Make sure you're changes work in the desktop/terminal version
 
 ### Pull Request
 
