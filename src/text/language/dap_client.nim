@@ -351,7 +351,7 @@ type
     onInvalidated*: Event[OnInvalidatedData]
     onMemory*: Event[OnMemoryData]
 
-proc run*(client: DAPClient) {.gcsafe, raises: [].}
+proc run*(client: DAPClient)
 
 proc waitInitialized*(client: DAPCLient): Future[bool] = client.initializedFuture
 proc waitInitializedEventReceived*(client: DAPCLient): Future[void] = client.initializedEventFuture
@@ -389,7 +389,7 @@ proc deinit*(client: DAPClient) =
   client.canceledRequests.clear()
   client.isInitialized = false
 
-proc parseResponse(client: DAPClient): Future[JsonNode] {.gcsafe, async.} =
+proc parseResponse(client: DAPClient): Future[JsonNode] {.async.} =
   try:
     var headers = initTable[string, string]()
     var line = await client.connection.recvLine
@@ -451,7 +451,7 @@ proc parseResponse(client: DAPClient): Future[JsonNode] {.gcsafe, async.} =
     return newJNull()
 
 proc sendRPC(client: DAPClient, meth: string, command: string, args: Option[JsonNode], id: int)
-    {.gcsafe, async.} =
+    {.async.} =
 
   try:
     var request = %*{
@@ -474,7 +474,7 @@ proc sendRPC(client: DAPClient, meth: string, command: string, args: Option[Json
   except CatchableError:
     discard
 
-proc sendRequest(client: DAPClient, command: string, args: Option[JsonNode]): Future[Response[JsonNode]] {.gcsafe, async.} =
+proc sendRequest(client: DAPClient, command: string, args: Option[JsonNode]): Future[Response[JsonNode]] {.async.} =
   let id = client.nextId
   inc client.nextId
 
@@ -511,20 +511,20 @@ when not defined(js):
       if logServerDebug:
         log(lvlDebug, fmt"[debug] {line}")
 
-proc launch*(client: DAPClient, args: JsonNode) {.gcsafe, async.} =
+proc launch*(client: DAPClient, args: JsonNode) {.async.} =
   log lvlInfo, &"Launch '{args}'"
   let res = await client.sendRequest("launch", args.some)
   if res.isError:
     log lvlError, &"Failed to launch: {res}"
 
-proc attach*(client: DAPClient, args: JsonNode) {.gcsafe, async.} =
+proc attach*(client: DAPClient, args: JsonNode) {.async.} =
   log lvlInfo, &"Attach '{args}'"
   let res = await client.sendRequest("attach", args.some)
   if res.isError:
     log lvlError, &"Failed to attach: {res}"
 
 proc disconnect*(client: DAPClient, restart: bool,
-    terminateDebuggee = bool.none, suspendDebuggee = bool.none) {.gcsafe, async.} =
+    terminateDebuggee = bool.none, suspendDebuggee = bool.none) {.async.} =
 
   log lvlInfo, &"disconnect (restart={restart}, terminateDebuggee={terminateDebuggee}, suspendDebuggee={suspendDebuggee})"
 
@@ -540,7 +540,7 @@ proc disconnect*(client: DAPClient, restart: bool,
   if res.isError:
     log lvlError, &"Failed to disconnect: {res}"
 
-proc setBreakpoints*(client: DAPClient, source: Source, breakpoints: seq[SourceBreakpoint], sourceModified = bool.none) {.gcsafe, async.} =
+proc setBreakpoints*(client: DAPClient, source: Source, breakpoints: seq[SourceBreakpoint], sourceModified = bool.none) {.async.} =
   log lvlInfo, &"setBreakpoints"
 
   try:
@@ -558,14 +558,14 @@ proc setBreakpoints*(client: DAPClient, source: Source, breakpoints: seq[SourceB
 
   # debugf"{res.result.pretty}"
 
-proc configurationDone*(client: DAPClient) {.gcsafe, async.} =
+proc configurationDone*(client: DAPClient) {.async.} =
   log lvlInfo, &"configurationDone"
   let res = await client.sendRequest("configurationDone", JsonNode.none)
   if res.isError:
     log lvlError, &"Failed to finish configuration: {res}"
     return
 
-proc continueExecution*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none) {.gcsafe, async.} =
+proc continueExecution*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none) {.async.} =
   log lvlInfo, &"continueExecution (threadId={threadId}, singleThreaded={singleThreaded})"
 
   var args = %*{
@@ -580,7 +580,7 @@ proc continueExecution*(client: DAPClient, threadId: ThreadId, singleThreaded = 
     return
 
 proc next*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none,
-    granularity = SteppingGranularity.none) {.gcsafe, async.} =
+    granularity = SteppingGranularity.none) {.async.} =
 
   log lvlInfo, &"next (threadId={threadId}, singleThreaded={singleThreaded}, granularity={granularity})"
 
@@ -598,7 +598,7 @@ proc next*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none,
     return
 
 proc stepIn*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none, targetId = int.none,
-    granularity = SteppingGranularity.none) {.gcsafe, async.} =
+    granularity = SteppingGranularity.none) {.async.} =
 
   log lvlInfo, &"stepIn (threadId={threadId}, singleThreaded={singleThreaded}, targetId={targetId}, granularity={granularity})"
 
@@ -618,7 +618,7 @@ proc stepIn*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none, 
     return
 
 proc stepOut*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none,
-    granularity = SteppingGranularity.none) {.gcsafe, async.} =
+    granularity = SteppingGranularity.none) {.async.} =
 
   log lvlInfo, &"stepOut (threadId={threadId}, singleThreaded={singleThreaded}, granularity={granularity})"
 
@@ -636,7 +636,7 @@ proc stepOut*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none,
     return
 
 proc stackTrace*(client: DAPClient, threadId: ThreadId, startFrame = int.none, levels = int.none,
-    format = StackFrameFormat.none): Future[Response[StackTraceResponse]] {.gcsafe, async.} =
+    format = StackFrameFormat.none): Future[Response[StackTraceResponse]] {.async.} =
 
   log lvlInfo, &"stackTrace (threadId={threadId}, startFrame={startFrame}, levels={levels}, format={format})"
 
@@ -657,7 +657,7 @@ proc stackTrace*(client: DAPClient, threadId: ThreadId, startFrame = int.none, l
 
   return res.to(StackTraceResponse)
 
-proc getThreads*(client: DAPClient): Future[Response[Threads]] {.gcsafe, async.} =
+proc getThreads*(client: DAPClient): Future[Response[Threads]] {.async.} =
   log lvlInfo, &"getThreads"
   let res = await client.sendRequest("threads", JsonNode.none)
   if res.isError:
@@ -665,7 +665,7 @@ proc getThreads*(client: DAPClient): Future[Response[Threads]] {.gcsafe, async.}
     return res.to(Threads)
   return res.to(Threads)
 
-proc scopes*(client: DAPClient, frameId: FrameId): Future[Response[Scopes]] {.gcsafe, async.} =
+proc scopes*(client: DAPClient, frameId: FrameId): Future[Response[Scopes]] {.async.} =
   log lvlInfo, &"scopes"
   var args = %*{
     "frameId": frameId,
@@ -676,7 +676,7 @@ proc scopes*(client: DAPClient, frameId: FrameId): Future[Response[Scopes]] {.gc
     return res.to(Scopes)
   return res.to(Scopes)
 
-proc variables*(client: DAPClient, variablesReference: VariablesReference): Future[Response[Variables]] {.gcsafe, async.} =
+proc variables*(client: DAPClient, variablesReference: VariablesReference): Future[Response[Variables]] {.async.} =
   log lvlInfo, &"variables"
   var args = %*{
     "variablesReference": variablesReference,
@@ -687,7 +687,7 @@ proc variables*(client: DAPClient, variablesReference: VariablesReference): Futu
     return res.to(Variables)
   return res.to(Variables)
 
-proc initialize*(client: DAPClient) {.gcsafe, async.} =
+proc initialize*(client: DAPClient) {.async.} =
   log lvlInfo, "Initialize client"
   client.run()
 
@@ -770,7 +770,7 @@ proc handleResponse(client: DAPClient, response: JsonNode) =
   else:
     log lvlError, &"[handleResponse] error: received response ({id}) without active request: {response}"
 
-proc runAsync*(client: DAPClient) {.gcsafe, async.} =
+proc runAsync*(client: DAPClient) {.async.} =
   while client.connection.isNotNil:
     if logVerbose:
       debugf"[run] Waiting for response {(client.activeRequests.len)}"

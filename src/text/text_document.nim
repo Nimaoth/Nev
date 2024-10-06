@@ -1295,6 +1295,7 @@ proc reloadTask(self: TextDocument) {.async.} =
   defer:
     self.autoReload = false
 
+  # todo
   # var lastModTime = getLastModificationTime(self.filename)
   # while self.autoReload and not self.workspace.isNone:
   #   var modTime = getLastModificationTime(self.filename)

@@ -203,6 +203,7 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: stri
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[saveFile] '{path}'"
   try:
+    # todo: reimplement async
     writeFile(path, content)
     # var file = openAsync(path, fmWrite)
     # await file.write(content)
@@ -214,6 +215,7 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: sink
   let path = self.getAbsolutePath(relativePath)
   logScope lvlInfo, &"[saveFile] '{path}'"
   try:
+    # todo: reimplement async
     writeFile(path, $content)
     # var file = openAsync(path, fmWrite)
     # for chunk in content.iterateChunks:

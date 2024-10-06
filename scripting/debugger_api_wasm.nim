@@ -183,7 +183,7 @@ proc addBreakpoint*(editorId: EditorId; line: int) {.gcsafe, raises: [].} =
 
 proc debugger_removeBreakpoint_void_Debugger_string_int_wasm(arg: cstring): cstring {.
     importc.}
-proc removeBreakpoint*(path: string; line: int) {.raises: [], gcsafe, raises: [].} =
+proc removeBreakpoint*(path: string; line: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add path.toJson()
   argsJson.add line.toJson()

@@ -90,7 +90,8 @@ type OpenEditor = object
   customOptions: JsonNode
 
 type
-  OpenWorkspaceKind {.pure.} = enum Local, Remote, Github
+  # todo: this isn't necessary anymore
+  OpenWorkspaceKind {.pure.} = enum Local
   OpenWorkspace = object
     kind*: OpenWorkspaceKind
     id*: string
@@ -1389,13 +1390,6 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
       of OpenWorkspaceKind.Local:
         workspace = newWorkspaceFolderLocal(wf.settings)
 
-      of OpenWorkspaceKind.Remote:
-        # workspace = newWorkspaceRemote(wf.settings)
-        discard
-      of OpenWorkspaceKind.Github:
-        # workspace = newWorkspaceFolderGithub(wf.settings)
-        discard
-
       workspace.id = wf.id.parseId
       workspace.name = wf.name
       if self.setWorkspaceFolder(workspace).await:
@@ -1445,6 +1439,7 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
 
   log lvlInfo, &"Finished initializing app"
 
+  # todo
   # asyncSpawn self.listenForIpc(0)
   # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
 
@@ -1793,14 +1788,6 @@ proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool] {.async.}
 
 proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
   self.workspace.clearDirectoryCache()
-
-proc openGithubWorkspace*(self: App, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
-  # asyncSpawn self.setWorkspaceFolder newWorkspaceFolderGithub(user, repository, branchOrHash)
-  discard
-
-proc openRemoteServerWorkspace*(self: App, url: string) {.expose("editor").} =
-  # asyncSpawn self.setWorkspaceFolder newWorkspaceRemote(url)
-  discard
 
 proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.expose("editor").} =
   if not self.scriptActions.contains(context):

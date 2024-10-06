@@ -12,6 +12,9 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 
+{.push gcsafe.}
+{.push raises: [].}
+
 when not defined(js):
   import std/[osproc]
 
@@ -68,16 +71,16 @@ type
     scopes*: Table[(ThreadId, FrameId), Scopes]
     variables*: Table[(ThreadId, FrameId, VariablesReference), Variables]
 
-proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) {.gcsafe, raises: [].}
-proc handleAction(self: Debugger, action: string, arg: string): EventResponse {.gcsafe, raises: [].}
-proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.gcsafe, async.}
-proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.gcsafe, async.}
-proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.gcsafe, async.}
-proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.gcsafe, async.}
+proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor)
+proc handleAction(self: Debugger, action: string, arg: string): EventResponse
+proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.async.}
+proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.}
+proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.async.}
+proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.}
 
 var gDebugger: Debugger = nil
 
-proc getDebugger*(): Option[Debugger] {.gcsafe.} =
+proc getDebugger*(): Option[Debugger] =
   {.gcsafe.}:
     if gDebugger.isNil: return Debugger.none
     return gDebugger.some
@@ -89,7 +92,7 @@ proc `&`*(ids: (ThreadId, FrameId), varRef: VariablesReference):
     tuple[thread: ThreadId, frame: FrameId, varRef: VariablesReference] =
   (ids[0], ids[1], varRef)
 
-proc getEventHandlers*(inject: Table[string, EventHandler]): seq[EventHandler] {.gcsafe, raises: [].} =
+proc getEventHandlers*(inject: Table[string, EventHandler]): seq[EventHandler] =
   {.gcsafe.}:
     result.add gDebugger.eventHandler
     case gDebugger.activeView
@@ -105,7 +108,7 @@ proc getStateJson*(self: Debugger): JsonNode =
     "breakpoints": self.breakpoints,
   }
 
-proc updateBreakpointsForFile(self: Debugger, path: string) {.gcsafe, raises: [].} =
+proc updateBreakpointsForFile(self: Debugger, path: string) =
   if self.app.getEditorForPath(path).getSome(editor) and editor of TextDocumentEditor:
     self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
 
@@ -120,7 +123,7 @@ proc updateBreakpointsForFile(self: Debugger, path: string) {.gcsafe, raises: []
     else:
       asyncSpawn client.setBreakpoints(Source(path: path.some), @[])
 
-proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) {.gcsafe, raises: [].} =
+proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
   if not (editor of TextDocumentEditor):
     return
   let editor = editor.TextDocumentEditor
@@ -129,7 +132,7 @@ proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) {.gcsafe, r
 
   if editor.document.isLoadingAsync:
     var id = new Id
-    id[] = editor.document.onLoaded.subscribe proc(document: TextDocument) {.gcsafe, raises: [].} =
+    id[] = editor.document.onLoaded.subscribe proc(document: TextDocument) =
       document.onLoaded.unsubscribe(id[])
       self.applyBreakpointSignsToEditor(editor)
   else:
@@ -230,38 +233,38 @@ proc setDebuggerView*(self: Debugger, view: string) {.expose("debugger").} =
     log lvlError, &"Invalid view '{view}'"
     return
 
-proc isSelected*(self: Debugger, r: VariablesReference, index: int): bool {.gcsafe, raises: [].} =
+proc isSelected*(self: Debugger, r: VariablesReference, index: int): bool =
   return self.variablesCursor.path.len > 0 and
     self.variablesCursor.path[self.variablesCursor.path.high] == (index, r)
 
-proc isScopeSelected*(self: Debugger, index: int): bool {.gcsafe, raises: [].} =
+proc isScopeSelected*(self: Debugger, index: int): bool =
   return self.variablesCursor.path.len == 0 and self.variablesCursor.scope == index
 
-proc selectedVariable*(self: Debugger): Option[tuple[index: int, varRef: VariablesReference]] {.gcsafe, raises: [].} =
+proc selectedVariable*(self: Debugger): Option[tuple[index: int, varRef: VariablesReference]] =
   if self.variablesCursor.path.len > 0:
     return self.variablesCursor.path[self.variablesCursor.path.high].some
 
-proc currentStackTrace*(self: Debugger): Option[ptr StackTraceResponse] {.gcsafe, raises: [].} =
+proc currentStackTrace*(self: Debugger): Option[ptr StackTraceResponse] =
   if self.currentThread().getSome(t):
     self.stackTraces.withValue(t.id, val):
       return val.some
 
-proc currentStackFrame*(self: Debugger): Option[ptr StackFrame] {.gcsafe, raises: [].} =
+proc currentStackFrame*(self: Debugger): Option[ptr StackFrame] =
   if self.currentStackTrace().getSome(stack) and
       self.currentFrameIndex in 0..stack[].stackFrames.high:
     return stack[].stackFrames[self.currentFrameIndex].addr.some
 
-proc currentScopes*(self: Debugger): Option[ptr Scopes] {.gcsafe, raises: [].} =
+proc currentScopes*(self: Debugger): Option[ptr Scopes] =
   if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
     self.scopes.withValue((t.id, frame[].id), val):
       return val.some
 
-proc currentVariablesContext*(self: Debugger): Option[tuple[thread: ThreadId, frame: FrameId]] {.gcsafe, raises: [].} =
+proc currentVariablesContext*(self: Debugger): Option[tuple[thread: ThreadId, frame: FrameId]] =
   if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
     return (t.id, frame[].id).some
 
 proc currentVariablesContext*(self: Debugger, varRef: VariablesReference):
-    Option[tuple[thread: ThreadId, frame: FrameId, varRef: VariablesReference]] {.gcsafe, raises: [].} =
+    Option[tuple[thread: ThreadId, frame: FrameId, varRef: VariablesReference]] =
   if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
     return (t.id, frame[].id, varRef).some
 
@@ -283,7 +286,7 @@ proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.as
       color(1, 1, 1, 0.3))
     self.lastEditor = textEditor.some
 
-proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCursor {.gcsafe, raises: [].} =
+proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCursor =
   let scopes = self.currentScopes().getOr:
     return VariableCursor()
 
@@ -664,14 +667,13 @@ template tryGet(json: untyped, field: untyped, T: untyped, default: untyped, els
     val.jsonTo(T).catch:
       els
 
-when not defined(js):
-  proc getFreePort*(): Port =
-    discard
-    # var server = newAsyncHttpServer()
-    # server.listen(Port(0))
-    # let port = server.getPort()
-    # server.close()
-    # return port
+# todo
+# proc getFreePort*(): Port =
+#   var server = newAsyncHttpServer()
+#   server.listen(Port(0))
+#   let port = server.getPort()
+#   server.close()
+#   return port
 
 proc createConnectionWithType(self: Debugger, name: string): Future[Option[Connection]] {.async.} =
   log lvlInfo, &"Try create debugger connection '{name}'"
@@ -688,30 +690,30 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
   case connectionType
   of Tcp:
     discard
-  #   when not defined(js):
+    # todo
 
-  #     if config.hasKey("path"):
-  #       let path = config.tryGet("path", string, newJNull()):
-  #         log lvlError, &"No/invalid debugger executable path in {config.pretty}"
-  #         return Connection.none
+    # if config.hasKey("path"):
+    #   let path = config.tryGet("path", string, newJNull()):
+    #     log lvlError, &"No/invalid debugger executable path in {config.pretty}"
+    #     return Connection.none
 
-  #       let port = getFreePort().int
-  #       log lvlInfo, &"Start process {path} with port {port}"
-  #       discard startProcess(path, args = @["-p", $port], options = {poUsePath, poDaemon})
+    #   let port = getFreePort().int
+    #   log lvlInfo, &"Start process {path} with port {port}"
+    #   discard startProcess(path, args = @["-p", $port], options = {poUsePath, poDaemon})
 
-  #       # todo: need to wait for process to open port?
-  #       await sleepAsync(500.milliseconds)
+    #   # todo: need to wait for process to open port?
+    #   await sleepAsync(500.milliseconds)
 
-  #       return newAsyncSocketConnection("127.0.0.1", port.Port).await.Connection.some
+    #   return newAsyncSocketConnection("127.0.0.1", port.Port).await.Connection.some
 
-  #     else:
-  #       let host = config.tryGet("host", string, "127.0.0.1".newJString):
-  #         log lvlError, &"No/invalid debugger host in {config.pretty}"
-  #         return Connection.none
-  #       let port = config.tryGet("port", int, 5678.newJInt):
-  #         log lvlError, &"No/invalid debugger port in {config.pretty}"
-  #         return Connection.none
-  #       return newAsyncSocketConnection(host, port.Port).await.Connection.some
+    # else:
+    #   let host = config.tryGet("host", string, "127.0.0.1".newJString):
+    #     log lvlError, &"No/invalid debugger host in {config.pretty}"
+    #     return Connection.none
+    #   let port = config.tryGet("port", int, 5678.newJInt):
+    #     log lvlError, &"No/invalid debugger port in {config.pretty}"
+    #     return Connection.none
+    #   return newAsyncSocketConnection(host, port.Port).await.Connection.some
 
   of Stdio:
     when not defined(js):
@@ -728,10 +730,10 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
 
   return Connection.none
 
-proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.gcsafe, async.} =
+proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]) {.async.} =
   discard await self.getStackTrace(threadId)
 
-proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.gcsafe, async.} =
+proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.} =
   let threadId = if threadId.getSome(id):
     id
   elif self.currentThread.getSome(thread):
@@ -750,7 +752,7 @@ proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[Th
 
   return threadId.some
 
-proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.gcsafe, async.} =
+proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.async.} =
   let ids = self.currentVariablesContext().getOr:
     return
 
@@ -768,11 +770,9 @@ proc updateVariables(self: Debugger, variablesReference: VariablesReference, max
         if variable.variablesReference != 0.VariablesReference:
           self.updateVariables(variable.variablesReference, maxDepth - 1)
 
-    for f in futures:
-      await f
-    # await all(futures)
+    await futures.allFutures
 
-proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.gcsafe, async.} =
+proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bool) {.async.} =
   if self.client.getSome(client):
     self.stackTraces.withValue(threadId, stack):
       if frameIndex notin 0..stack[].stackFrames.high:
@@ -794,9 +794,7 @@ proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bo
           if force or not self.variables.contains((threadId, frame.id, scope.variablesReference)):
             self.updateVariables(scope.variablesReference, 0)
 
-      for f in futures:
-        await f
-      # await futures.all
+      await futures.allFutures
 
       self.reevaluateCurrentCursor()
 
@@ -1064,7 +1062,7 @@ proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("deb
 
     self.updateBreakpointsForFile(path)
 
-proc removeBreakpoint*(self: Debugger, path: string, line: int) {.raises: [], expose("debugger").} =
+proc removeBreakpoint*(self: Debugger, path: string, line: int) {.expose("debugger").} =
   ## Line is 1-based
   log lvlInfo, &"removeBreakpoint {path}:{line}"
   if not self.breakpoints.contains(path):

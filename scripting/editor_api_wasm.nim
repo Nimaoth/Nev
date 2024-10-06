@@ -197,29 +197,6 @@ proc clearWorkspaceCaches*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_openGithubWorkspace_void_App_string_string_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc openGithubWorkspace*(user: string; repository: string; branchOrHash: string) {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add user.toJson()
-  argsJson.add repository.toJson()
-  argsJson.add branchOrHash.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openGithubWorkspace_void_App_string_string_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_openRemoteServerWorkspace_void_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc openRemoteServerWorkspace*(url: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add url.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openRemoteServerWorkspace_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_callScriptAction_JsonNode_App_string_JsonNode_wasm(arg: cstring): cstring {.
     importc.}
 proc callScriptAction*(context: string; args: JsonNode): JsonNode {.gcsafe,

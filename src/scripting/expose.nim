@@ -96,7 +96,6 @@ proc removePragmas(node: var NimNode) =
   for param in node[3]:
     case param
     of IdentDefs[PragmaExpr[@name, .._], .._]:
-      # echo "=================== removePragmas ", name.repr, "\n", param.treeRepr, "\n", node.repr
       param[0] = name
 
 macro expose*(moduleName: static string, def: untyped): untyped =
@@ -303,6 +302,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   let jsonWrapperFunction = createJsonWrapper(scriptFunction, jsonWrapperFunctionName)
 
+  # todo: why do we remove pragmas again?
   removePragmas(def)
   removePragmas(scriptFunction)
   removePragmas(scriptFunctionWrapper)
