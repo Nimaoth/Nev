@@ -33,7 +33,6 @@ template catch(exp: untyped, then: untyped): untyped =
 
 const releaseWindows = "release_windows"
 const releaseLinux = "release_linux"
-const releaseWeb = "release_web"
 
 proc copySharedFilesTo(dir: string) =
   cpDir2 "config", dir
@@ -71,7 +70,6 @@ proc copySharedFilesTo(dir: string) =
 
 var packageWindows = false
 var packageLinux = false
-var packageWeb = false
 
 var optParser = initOptParser("")
 for kind, key, val in optParser.getopt():
@@ -85,8 +83,6 @@ for kind, key, val in optParser.getopt():
       packageWindows = true
     of "linux", "l":
       packageLinux = true
-    of "web", "W":
-      packageWeb = true
 
   of cmdEnd: assert(false) # cannot happen
 
@@ -113,23 +109,5 @@ if packageLinux:
     cpFile2 "nev-musl", releaseLinux
     cpFile2 "tools/remote-workspace-host", releaseLinux
     cpFile2 "tools/lsp-ws", releaseLinux
-
-if packageWeb:
-  echo "Package web..."
-  mkDir releaseWeb
-  if fileExists "build/nev.js":
-    copySharedFilesTo releaseWeb
-    cpFile2 "build/nev.js", releaseWeb
-    cpFile2 "web/nev_browser.html", releaseWeb
-    cpFile2 "web/nev_glue.js", releaseWeb
-    cpFile2 "web/scripting_runtime.js", releaseWeb
-    withDir releaseWeb:
-      catch exec("wget -Otree-sitter.js https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.js"):
-        echo "[ERROR] Failed to download tree-sitter.js"
-        exitCode = 1
-
-      catch exec("wget -Otree-sitter.wasm https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.wasm"):
-        echo "[ERROR] Failed to download tree-sitter.wasm"
-        exitCode = 1
 
 quit exitCode

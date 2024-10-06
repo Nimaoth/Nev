@@ -1,8 +1,0 @@
-{
-    "nim.project": ["src/desktop_main.nim"],
-    "nim.projectMapping": [{
-            "projectFile": "src/desktop_main.nim",
-            "fileRegex": ".*\\.nim"
-        }
-    ]
-}
