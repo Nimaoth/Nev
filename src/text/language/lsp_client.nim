@@ -212,33 +212,6 @@ when not defined(js):
   method recv(connection: LSPConnectionAsyncProcess, length: int): Future[string] = connection.process.recv(length)
   method send(connection: LSPConnectionAsyncProcess, data: string): Future[void] = connection.process.send(data)
 
-# type LSPConnectionWebsocket = ref object of LSPConnection
-#   websocket: WebSocket
-#   buffer: string
-#   processId: int
-
-# method close(connection: LSPConnectionWebsocket) = connection.websocket.close()
-# method recvLine(connection: LSPConnectionWebsocket): Future[string] {.async.} =
-#   var newLineIndex = connection.buffer.find("\r\n")
-#   while newLineIndex == -1:
-#     let next = connection.websocket.receiveStrPacket().await
-#     connection.buffer.append next
-#     newLineIndex = connection.buffer.find("\r\n")
-
-#   let line = connection.buffer[0..<newLineIndex]
-#   connection.buffer = connection.buffer[newLineIndex + 2..^1]
-#   return line
-
-# method recv(connection: LSPConnectionWebsocket, length: int): Future[string] {.async.} =
-#   while connection.buffer.len < length:
-#     connection.buffer.add connection.websocket.receiveStrPacket().await
-
-#   let res = connection.buffer[0..<length]
-#   connection.buffer = connection.buffer[length..^1]
-#   return res
-
-# method send(connection: LSPConnectionWebsocket, data: string): Future[void] = connection.websocket.send(data)
-
 proc encodePathUri(path: string): string = path.normalizePathUnix.split("/").mapIt(it.encodeUrl(false)).join("/")
 
 when defined(js):

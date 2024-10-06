@@ -61,43 +61,43 @@ proc ignorePath*(workspace: Workspace, path: string): bool =
     return true
   return false
 
-method getVcsForFile*(self: Workspace, file: string): Option[VersionControlSystem] {.base, gcsafe, raises: [].} = discard
-method getAllVersionControlSystems*(self: Workspace): seq[VersionControlSystem] {.base, gcsafe, raises: [].} = discard
+method getVcsForFile*(self: Workspace, file: string): Option[VersionControlSystem] {.base.} = discard
+method getAllVersionControlSystems*(self: Workspace): seq[VersionControlSystem] {.base.} = discard
 
-method isReadOnly*(self: Workspace): bool {.base, gcsafe, raises: [].} = true
-method settings*(self: Workspace): JsonNode {.base, gcsafe, raises: [].} = discard
+method isReadOnly*(self: Workspace): bool {.base.} = true
+method settings*(self: Workspace): JsonNode {.base.} = discard
 
-method clearDirectoryCache*(self: Workspace) {.base, gcsafe, raises: [].} = discard
-method recomputeFileCache*(self: Workspace) {.base, gcsafe, raises: [].} = discard
+method clearDirectoryCache*(self: Workspace) {.base.} = discard
+method recomputeFileCache*(self: Workspace) {.base.} = discard
 
 method setFileReadOnly*(self: Workspace, relativePath: string, readOnly: bool): Future[bool] {.
-  base, gcsafe, raises: [].} = false.toFuture
+  base.} = false.toFuture
 
-method isFileReadOnly*(self: Workspace, relativePath: string): Future[bool] {.base, gcsafe, raises: [].} =
+method isFileReadOnly*(self: Workspace, relativePath: string): Future[bool] {.base.} =
   false.toFuture
 
-method fileExists*(self: Workspace, path: string): Future[bool] {.base, gcsafe, raises: [].} =
+method fileExists*(self: Workspace, path: string): Future[bool] {.base.} =
   false.toFuture
 
-method loadFile*(self: Workspace, relativePath: string): Future[string] {.base, gcsafe, raises: [].} =
+method loadFile*(self: Workspace, relativePath: string): Future[string] {.base.} =
   discard
 
-method loadFile*(self: Workspace, relativePath: string, data: ptr string): Future[void] {.base, gcsafe, raises: [].} =
+method loadFile*(self: Workspace, relativePath: string, data: ptr string): Future[void] {.base.} =
   discard
 
-method saveFile*(self: Workspace, relativePath: string, content: string): Future[void] {.base, gcsafe, raises: [].} =
+method saveFile*(self: Workspace, relativePath: string, content: string): Future[void] {.base.} =
   discard
 
-method saveFile*(self: Workspace, relativePath: string, content: ArrayBuffer): Future[void] {.base, gcsafe, raises: [].} =
+method saveFile*(self: Workspace, relativePath: string, content: ArrayBuffer): Future[void] {.base.} =
   discard
 
-method saveFile*(self: Workspace, relativePath: string, content: sink Rope): Future[void] {.base, gcsafe, raises: [].} =
+method saveFile*(self: Workspace, relativePath: string, content: sink Rope): Future[void] {.base.} =
   doneFuture()
 
-method getWorkspacePath*(self: Workspace): string {.base, gcsafe, raises: [].} = discard
+method getWorkspacePath*(self: Workspace): string {.base.} = discard
 
-method getDirectoryListing*(self: Workspace, relativePath: string): Future[DirectoryListing] {.base, gcsafe, raises: [].} = discard
-method searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[seq[SearchResult]] {.base, gcsafe, raises: [].} = discard
+method getDirectoryListing*(self: Workspace, relativePath: string): Future[DirectoryListing] {.base.} = discard
+method searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[seq[SearchResult]] {.base.} = discard
 
 proc getAbsolutePath*(self: Workspace, path: string): string =
   if path.isAbsolute:
@@ -156,7 +156,7 @@ proc getDirectoryListingRec*(folder: Workspace, path: string): Future[seq[string
 
   return resultItems
 
-proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void] {.gcsafe, raises: [CancelledError]}): Future[void] {.async.} =
+proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void] {.raises: [CancelledError]}): Future[void] {.async.} =
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
@@ -232,15 +232,8 @@ proc setGlobalWorkspace*(w: Workspace) =
   gWorkspace = w
   gWorkspaceFuture.complete(w)
 
-when not defined(js):
-  import workspace_local
-  export workspace_local
+import workspace_local
+export workspace_local
 
 import workspace_null
 export workspace_null
-
-# import workspace_github
-# export workspace_github
-
-# import workspace_remote
-# export workspace_remote

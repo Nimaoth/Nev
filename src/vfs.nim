@@ -2,6 +2,9 @@ import std/[options, strutils, tables]
 import misc/[custom_async, util, custom_logger]
 import platform/filesystem
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "VFS"
 
 var debugLogVfs* = false
@@ -26,25 +29,25 @@ type
     target*: VFS
     targetPrefix*: string
 
-proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.gcsafe, raises: [].}
-proc read*(self: VFS, path: string): Future[Option[string]] {.gcsafe, raises: [].}
-proc write*(self: VFS, path: string, content: string): Future[void] {.gcsafe, raises: [].}
-proc normalize*(self: VFS, path: string): string {.gcsafe, raises: [].}
+proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string]
+proc read*(self: VFS, path: string): Future[Option[string]]
+proc write*(self: VFS, path: string, content: string): Future[void]
+proc normalize*(self: VFS, path: string): string
 
 proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, string]())
 
-method name*(self: VFS): string {.base, gcsafe, raises: [].} = "VFS"
+method name*(self: VFS): string {.base.} = "VFS"
 
-method readImpl*(self: VFS, path: string): Future[Option[string]] {.base, gcsafe, raises: [].} =
+method readImpl*(self: VFS, path: string): Future[Option[string]] {.base.} =
   discard
 
-method writeImpl*(self: VFS, path: string, content: string): Future[void] {.base, gcsafe, raises: [].} =
+method writeImpl*(self: VFS, path: string, content: string): Future[void] {.base.} =
   doneFuture()
 
-method getVFSImpl*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.base, gcsafe, raises: [].} =
+method getVFSImpl*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.base.} =
   (nil, "")
 
-method normalizeImpl*(self: VFS, path: string): string {.base, gcsafe, raises: [].} =
+method normalizeImpl*(self: VFS, path: string): string {.base.} =
   path
 
 method name*(self: VFSNull): string = "VFSNull"
@@ -94,7 +97,7 @@ method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void
   self.files[path] = content
   doneFuture()
 
-proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.gcsafe, raises: [].} =
+proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] =
   for i in countdown(self.mounts.high, 0):
     if path.startsWith(self.mounts[i].prefix):
       if debugLogVfs:
@@ -105,7 +108,7 @@ proc getVFS*(self: VFS, path: string): tuple[vfs: VFS, relativePath: string] {.g
   if result.vfs.isNil:
     result = (self, path)
 
-proc read*(self: VFS, path: string): Future[Option[string]] {.gcsafe, raises: [].} =
+proc read*(self: VFS, path: string): Future[Option[string]] =
   if debugLogVfs:
     debugf"[{self.name}] '{self.prefix}' read({path})"
   let (vfs, path) = self.getVFS(path)
@@ -116,7 +119,7 @@ proc read*(self: VFS, path: string): Future[Option[string]] {.gcsafe, raises: []
   if result.isNil:
     result = string.none.toFuture
 
-proc write*(self: VFS, path: string, content: string): Future[void] {.gcsafe, raises: [].} =
+proc write*(self: VFS, path: string, content: string): Future[void] =
   if debugLogVfs:
     debugf"[{self.name}] '{self.prefix}' write({path})"
   let (vfs, path) = self.getVFS(path)
@@ -127,7 +130,7 @@ proc write*(self: VFS, path: string, content: string): Future[void] {.gcsafe, ra
   if result.isNil:
     result = doneFuture()
 
-proc normalize*(self: VFS, path: string): string {.gcsafe, raises: [].} =
+proc normalize*(self: VFS, path: string): string =
   var (vfs, path) = self.getVFS(path)
   while vfs.parent.getSome(parent):
     path = vfs.prefix & path

@@ -7,6 +7,9 @@ import compilation_config
 
 import nimsumtree/[rope]
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "ws-local"
 
 type
@@ -16,8 +19,7 @@ type
     versionControlSystems*: seq[VersionControlSystem]
     isCacheUpdateInProgress: bool = false
 
-# method settings*(self: Workspace): JsonNode {.base, gcsafe, raises: [].} = discard
-method settings*(self: WorkspaceFolderLocal): JsonNode {.gcsafe, raises: [].} =
+method settings*(self: WorkspaceFolderLocal): JsonNode =
   try:
     result = newJObject()
     result["path"] = newJString(self.path.absolutePath)
@@ -37,21 +39,25 @@ proc collectFiles(dir: string, ignore: Globs, files: var seq[string]) =
   if ignore.ignorePath(dir):
     return
 
-  for (kind, path) in walkDir(dir, relative=false):
-    let pathNorm = path.normalizePathUnix
-    case kind
-    of pcFile:
-      if ignore.ignorePath(pathNorm):
-        continue
+  try:
+    for (kind, path) in walkDir(dir, relative=false):
+      let pathNorm = path.normalizePathUnix
+      case kind
+      of pcFile:
+        if ignore.ignorePath(pathNorm):
+          continue
 
-      files.add pathNorm
-    of pcDir:
-      collectFiles(pathNorm, ignore, files)
-    else:
-      discard
+        files.add pathNorm
+      of pcDir:
+        collectFiles(pathNorm, ignore, files)
+      else:
+        discard
+
+  except OSError:
+    discard
 
 proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
-    tuple[files: seq[string], time: float] {.gcsafe.} =
+    tuple[files: seq[string], time: float] =
   try:
     let t = startTimer()
 
@@ -62,7 +68,7 @@ proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
   except:
     discard
 
-proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.gcsafe, async.} =
+proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.async.} =
   if self.isCacheUpdateInProgress:
     return
   self.isCacheUpdateInProgress = true
@@ -80,7 +86,7 @@ proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.gcsafe,
   except CancelledError:
     discard
 
-method recomputeFileCache*(self: WorkspaceFolderLocal) {.gcsafe, raises: [].} =
+method recomputeFileCache*(self: WorkspaceFolderLocal) =
   asyncSpawn self.recomputeFileCacheAsync()
 
 proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
@@ -92,7 +98,7 @@ proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
   except ValueError, OSError:
     relativePath
 
-method getRelativePathSync*(self: WorkspaceFolderLocal, absolutePath: string): Option[string] {.raises: [].} =
+method getRelativePathSync*(self: WorkspaceFolderLocal, absolutePath: string): Option[string] =
   try:
     if absolutePath.startsWith(self.path):
       return absolutePath.relativePath(self.path, '/').normalizePathUnix.some
@@ -111,7 +117,7 @@ method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string):
 
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
-method getWorkspacePath*(self: WorkspaceFolderLocal): string {.raises: [].} =
+method getWorkspacePath*(self: WorkspaceFolderLocal): string =
   try:
     self.path.absolutePath
   except ValueError, OSError:
@@ -153,7 +159,7 @@ method fileExists*(self: WorkspaceFolderLocal, path: string): Future[bool] {.asy
   let path = self.getAbsolutePath(path)
   return path.fileExists
 
-proc loadFileThread(args: tuple[path: string, data: ptr string]): bool {.gcsafe.} =
+proc loadFileThread(args: tuple[path: string, data: ptr string]): bool =
   try:
     args.data[] = readFile(args.path)
 
@@ -234,14 +240,18 @@ proc loadDefaultIgnoreFile(self: WorkspaceFolderLocal) =
     log lvlInfo, &"No ignore file for workpace {self.name}"
 
 proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string) =
-  for (kind, file) in walkDir(path, relative=false):
-    case kind
-    of pcFile:
-      directoryListing.files.add file.normalizePathUnix
-    of pcDir:
-      directoryListing.folders.add file.normalizePathUnix
-    else:
-      log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {file}"
+  try:
+    for (kind, file) in walkDir(path, relative=false):
+      case kind
+      of pcFile:
+        directoryListing.files.add file.normalizePathUnix
+      of pcDir:
+        directoryListing.folders.add file.normalizePathUnix
+      else:
+        log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {file}"
+
+  except OSError:
+    discard
 
 method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string):
     Future[DirectoryListing] {.async.} =
@@ -336,7 +346,7 @@ proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
     let vcs = newVersionControlSystemPerforce(path)
     return vcs.VersionControlSystem.some
 
-proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal {.gcsafe, raises: [].} =
+proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal =
   new result
   result.path = path.absolutePath.catch(path).normalizePathUnix
   result.name = fmt"Local:{result.path}"
@@ -354,7 +364,7 @@ proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]):
 
   result.recomputeFileCache()
 
-proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal {.gcsafe, raises: [].} =
+proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal =
   try:
     let path = settings["path"].getStr
     let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)

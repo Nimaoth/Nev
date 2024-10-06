@@ -146,6 +146,15 @@ template mapIt*[T](self: Option[T], op: untyped): untyped =
   else:
     OutType.none
 
+template applyIt*[T, E](self: Result[T, E], op: untyped, opErr: untyped): untyped =
+  let s = self
+  if s.isOk:
+    template it: untyped {.inject.} = s.unsafeValue
+    op
+  else:
+    template it: untyped {.inject.} = s.unsafeError
+    opErr
+
 template findIt*(self: untyped, op: untyped): untyped =
   block:
     var index = -1

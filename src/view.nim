@@ -1,6 +1,9 @@
 import std/[options, tables]
 import events, document_editor
 
+{.push gcsafe.}
+{.push raises: [].}
+
 type
   View* = ref object of RootObj
     dirty*: bool
@@ -8,17 +11,17 @@ type
 
   DebuggerView* = ref object of View
 
-method activate*(view: View) {.base, gcsafe, raises: [].} =
+method activate*(view: View) {.base.} =
   view.active = true
 
-method deactivate*(view: View) {.base, gcsafe, raises: [].} =
+method deactivate*(view: View) {.base.} =
   view.active = false
 
-method markDirty*(view: View, notify: bool = true) {.base, gcsafe, raises: [].} =
+method markDirty*(view: View, notify: bool = true) {.base.} =
   view.dirty = true
 
-method getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.base, gcsafe, raises: [].} =
+method getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.base.} =
   discard
 
-method getActiveEditor*(self: View): Option[DocumentEditor] {.base, gcsafe, raises: [].} =
+method getActiveEditor*(self: View): Option[DocumentEditor] {.base.} =
   discard

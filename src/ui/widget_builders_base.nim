@@ -2,16 +2,18 @@ import app, view, document_editor, popup, ui/node
 
 {.used.}
 
+type OverlayFunction* = proc() {.closure, gcsafe, raises: [].}
+
 {.push gcsafe.}
 {.push raises: [].}
 
-method createUI*(view: View, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe, raises: [].}] {.base.} =
+method createUI*(view: View, builder: UINodeBuilder, app: App): seq[OverlayFunction] {.base.} =
   discard
 
-method createUI*(self: DocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe, raises: [].}] {.base.} =
+method createUI*(self: DocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] {.base.} =
   discard
 
-method createUI*(self: Popup, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe, raises: [].}] {.base.} =
+method createUI*(self: Popup, builder: UINodeBuilder, app: App): seq[OverlayFunction] {.base.} =
   discard
 
 func withAlpha*(color: Color, alpha: float32): Color =

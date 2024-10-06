@@ -423,7 +423,7 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
       log(lvlError, getCurrentException().getStackTrace())
       return nil
 
-method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] {.base, gcsafe.} =
+method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] {.base, gcsafe, raises: [].} =
   return @[bounds]
 
 method layoutViews*(layout: HorizontalLayout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] =

@@ -7,7 +7,7 @@ import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme
-import pkg/chroma
+import pkg/[chroma, results]
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -123,15 +123,15 @@ type
 var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
-proc clearStyledTextCache*(self: TextDocument, line: Option[int] = int.none) {.gcsafe, raises: [].}
-proc clearDiagnostics*(self: TextDocument) {.gcsafe, raises: [].}
-proc numLines*(self: TextDocument): int {.noSideEffect, raises: [].}
-proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) {.gcsafe, raises: [].}
-proc resolveDiagnosticAnchors*(self: TextDocument) {.gcsafe, raises: [].}
-proc recordSnapshotForDiagnostics(self: TextDocument) {.gcsafe, raises: [].}
-proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point) {.gcsafe, raises: [].}
+proc clearStyledTextCache*(self: TextDocument, line: Option[int] = int.none)
+proc clearDiagnostics*(self: TextDocument)
+proc numLines*(self: TextDocument): int {.noSideEffect.}
+proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
+proc resolveDiagnosticAnchors*(self: TextDocument)
+proc recordSnapshotForDiagnostics(self: TextDocument)
+proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 
-func rope*(self: TextDocument): lent Rope {.raises: [].} = self.buffer.snapshot.visibleText
+func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
 proc getSizeBytes(line: StyledLine): int =
   result = sizeof(StyledLine)
@@ -167,7 +167,7 @@ method getStatisticsString*(self: TextDocument): string =
   except:
     discard
 
-proc tabWidth*(self: TextDocument): int {.gcsafe, raises: [].}
+proc tabWidth*(self: TextDocument): int
 
 proc nextLineId*(self: TextDocument): int32 =
   result = self.nextLineIdCounter
@@ -207,9 +207,9 @@ proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true)
 
 proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: bool = true): Selection = (self.clampCursor(selection.first, includeAfter), self.clampCursor(selection.last, includeAfter))
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gcsafe, async.}
-proc connectLanguageServer*(self: TextDocument) {.gcsafe, async.}
-proc trimTrailingWhitespace*(self: TextDocument) {.gcsafe, raises: [].}
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]]
+proc connectLanguageServer*(self: TextDocument) {. async.}
+proc trimTrailingWhitespace*(self: TextDocument)
 
 proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
@@ -253,7 +253,7 @@ proc parseTreesitterThread(parser: ptr TSParser, oldTree: TSTree, text: sink Rop
 
   return newTree
 
-proc reparseTreesitterAsync*(self: TextDocument) {.gcsafe, async.} =
+proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
   self.isParsingAsync = true
   defer:
     self.isParsingAsync = false
@@ -328,7 +328,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.mLanguageId = languageId
     self.reloadTreesitterLanguage()
 
-func contentString*(self: TextDocument): string {.gcsafe, raises: [].} =
+func contentString*(self: TextDocument): string =
   if self.rope.tree.isNil:
     # todo: this shouldn't be happening
     return ""
@@ -385,7 +385,7 @@ proc `content=`*(self: TextDocument, value: sink string) =
   self.clearStyledTextCache()
   self.notifyTextChanged()
 
-proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].} =
+proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
 
   let selections = self.clampAndMergeSelections(selections).map (s) => s.normalized
 
@@ -486,12 +486,12 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
     assert s.last.line in 0..int32.high
     assert s.last.column in 0..int32.high
 
-proc replaceAll*(self: TextDocument, value: sink Rope) {.gcsafe, raises: [].} =
+proc replaceAll*(self: TextDocument, value: sink Rope) =
   let fullRange = ((0, 0), self.rope.summary().lines.toCursor)
   self.nextCheckpoints.incl ""
   discard self.edit([fullRange], [], [value])
 
-proc replaceAll*(self: TextDocument, value: sink string) {.gcsafe, raises: [].} =
+proc replaceAll*(self: TextDocument, value: sink string) =
   let invalidUtf8Index = value.validateUtf8
   if invalidUtf8Index >= 0:
     log lvlError, &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
@@ -1116,8 +1116,11 @@ proc newTextDocument*(
 
   if language.getSome(language):
     self.languageId = language
-  elif getLanguageForFile(self.configProvider, filename).getSome(language):
-    self.languageId = language
+  else:
+    getLanguageForFile(self.configProvider, filename).applyIt:
+      self.languageId = it
+    do:
+      log lvlError, it
 
   if self.languageId != "":
     if (let value = self.configProvider.getValue("languages." & self.languageId, newJNull()); value.kind == JObject):
@@ -1181,7 +1184,7 @@ proc saveAsync(self:  TextDocument, ws: Workspace) {.async.} =
   await ws.saveFile(self.filename, self.rope.clone())
   self.onSaved.invoke()
 
-method save*(self: TextDocument, filename: string = "", app: bool = false) {.gcsafe.} =
+method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   logScope lvlInfo, &"[save] '{self.filename}'"
 
@@ -1211,7 +1214,7 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) {.gcs
   self.isBackedByFile = true
   self.lastSavedRevision = self.undoableRevision
 
-proc autoDetectIndentStyle(self: TextDocument) {.gcsafe, raises: [].} =
+proc autoDetectIndentStyle(self: TextDocument) =
   let maxSamples = self.configProvider.getValue("text.auto-detect-indent.samples", 50)
   let maxTime = self.configProvider.getValue("text.auto-detect-indent.timeout", 20.0)
 
@@ -1330,9 +1333,10 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.filename = filename
   self.isBackedByFile = false
 
-  if (let language = getLanguageForFile(self.configProvider, filename); language.isSome):
-    self.languageId = language.get
-  else:
+  getLanguageForFile(self.configProvider, filename).applyIt:
+    self.languageId = it
+  do:
+    log lvlError, it
     self.languageId = ""
 
   self.onPreLoaded.invoke self
@@ -1466,17 +1470,10 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
     self.lastDiagnosticVersion = snapshot.version
     self.setCurrentDiagnostics(diagnostics.result, snapshot.some)
 
-proc connectLanguageServer*(self: TextDocument) {.gcsafe, async.} =
+proc connectLanguageServer*(self: TextDocument) {.async.} =
   discard await self.getLanguageServer()
 
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gcsafe, async.} =
-  let languageId = if self.languageId != "":
-    self.languageId
-  elif getLanguageForFile(self.configProvider, self.filename).getSome(languageId):
-    languageId
-  else:
-    return LanguageServer.none
-
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
   if self.languageServer.isSome:
     return self.languageServer
 
@@ -1508,7 +1505,7 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.gc
       @[]
 
   {.gcsafe.}:
-    let languageServerFuture = getOrCreateLanguageServer(languageId, self.filename, workspaces, config, self.workspace)
+    let languageServerFuture = getOrCreateLanguageServer(self.languageId, self.filename, workspaces, config, self.workspace)
 
   self.languageServerFuture = languageServerFuture.some
   try:

@@ -13,8 +13,8 @@ export util, id, input, chroma, vmath, rect_utils
 
 logCategory "ui-node"
 
-var logInvalidationRects* = false
-var logPanel* = false
+const logInvalidationRects* = false
+const logPanel* = false
 var totalNodes = 0
 
 defineBitFlagSized(uint64):
@@ -284,17 +284,16 @@ proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = roundPositive(bui
 proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): Option[UINode]
 
-var stackSize = 0
 template logi(node: UINode, msg: varargs[string, `$`]) =
-  if logInvalidationRects:
+  when logInvalidationRects:
     var uiae = ""
     for c in msg:
       uiae.add $c
-    echo "| ".repeat(stackSize), "i: ", uiae, "    | ", node.dump, ""
+    echo "i: ", uiae, "    | ", node.dump, ""
 
 template logp(node: UINode, msg: untyped) =
-  if logPanel:
-    echo "| ".repeat(stackSize), "p: ", msg, "    | ", node.dump, ""
+  when logPanel:
+    echo "p: ", msg, "    | ", node.dump, ""
 
 proc newNodeBuilder*(): UINodeBuilder =
   new result
@@ -1068,12 +1067,6 @@ proc finishNode*(builder: UINodeBuilder, currentNode: UINode) =
   builder.currentChild = currentNode
 
 proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: float32 = 0, offsetY: float32 = 0, inClearRect = Rect.none) =
-  # if inClearRect.isSome:
-  #   node.logi "postProcessNodeBackwards ", offsetX, ", ", offsetY, ", ", inClearRect
-
-  # stackSize.inc
-  # defer: stackSize.dec
-
   if node.flags != node.mFlagsOld:
     node.contentDirty = true
     node.mLastContentChange = builder.frameIndex
@@ -1226,12 +1219,6 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
     node.contentDirty = false
 
 proc postProcessNodeForwards(builder: UINodeBuilder, node: UINode, inDrawRect = Rect.none) =
-  # if inDrawRect.isSome:
-  #   node.logi "postProcessNodeForwards ", inDrawRect, ", ", node.boundsActual
-
-  # stackSize.inc
-  # defer: stackSize.dec
-
   if inDrawRect.isSome and inDrawRect.get.intersects(node.boundsActual):
     node.mLastDrawInvalidation = builder.frameIndex
     node.logi "invalidate draw"
@@ -1367,9 +1354,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
           onBody
           return true
 
-      # inc stackSize
       defer:
-        # dec stackSize
         builder.finishNode(currentNode)
 
       body

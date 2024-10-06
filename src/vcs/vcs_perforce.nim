@@ -3,6 +3,9 @@ import misc/[async_process, custom_async, util, custom_logger]
 import platform/filesystem
 import vcs
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "vsc-perforce"
 
 type

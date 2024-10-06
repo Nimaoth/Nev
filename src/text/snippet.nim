@@ -5,6 +5,9 @@ import scripting_api
 import regex
 import misc/custom_logger
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "snippet"
 
 type
@@ -68,7 +71,12 @@ proc updateSnippetData(data: var SnippetData, tokens: openArray[Token], variable
     of Variable:
       if token.regex.isSome:
         let value = variables.getOrDefault(token.name, "")
-        let regex = re2 token.regex.get
+        let regex = try:
+          re2 token.regex.get
+        except RegexError:
+          # todo: handle error
+          continue
+
         var match: RegexMatch2
 
         let matched = value.find(regex, match)
@@ -213,6 +221,8 @@ func `$`*(t: Token): string =
   of Format:
     return "&" & $t.tabStopIndex & "(" & t.transformation & t.tokens.join(" | ") & ")"
 
+{.pop.} # raises
+
 # LSP snippet parser
 # See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#snippet_syntax
 const snippetParser = peg("snippet", state: Snippet):
@@ -305,7 +315,9 @@ const snippetParser = peg("snippet", state: Snippet):
     state.tokens = state.stack.pop
     state.tokens.add token
 
-proc parseSnippet*(input: string): Option[Snippet] {.gcsafe, raises: [].} =
+{.push raises: [].}
+
+proc parseSnippet*(input: string): Option[Snippet] =
   var snippet = Snippet()
   try:
     let res = snippetParser.match(input, snippet)

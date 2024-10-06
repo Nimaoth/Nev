@@ -8,13 +8,16 @@ import text/text_editor
 import app, selector_popup, theme
 import finder/finder
 
-logCategory "selector-popup-ui"
-
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
+{.push gcsafe.}
+{.push raises: [].}
+
+logCategory "selector-popup-ui"
+
 proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBuilder, app: App):
-    seq[proc() {.closure, gcsafe.}] =
+    seq[OverlayFunction] =
 
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let name = item.displayName
@@ -28,7 +31,7 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = item.detail,
         textColor = textColor.darken(0.2))
 
-method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure, gcsafe.}] =
+method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   # let dirty = self.dirty
   self.resetDirty()
 
