@@ -34,3 +34,11 @@
 ./scripting/lsp_api.nim
 ./scripting/popup_selector_api_wasm.nim
 ./scripting/popup_selector_api.nim
+./scripting/collab_api.nim
+./scripting/collab_api_wasm.nim
+./release_windows
+./release_windows_old
+./release_linux
+./release_linux_old
+./nim_std
+./patches
