@@ -2,9 +2,13 @@
 
 ## [0.x.x](https://github.com/Nimaoth/Nev/compare/v0.2.1...main) (2024-08-18)
 
+- Removed NimScript plugins, for now only wasm plugins are supported (Lua plugins might be added later)
+- File content is now stored as a rope CRDT instead of a string array. This allows a bunch of improvements:
+  - Better performance for big files
+  - Treesitter parsing is now done on a background thread
+  - File loading is now completely asynchronous, so no freezes when opening large files.
 - Customizable language detection
 - Basic harpoon plugin port
-- Load NimScript plugin from user directory
 - Added command for browsing docs (`explore-help`)
 - Support WASM treesitter parsers
 - Integrate wasmtime as new WASM engine, for now only for treesitter parsers
@@ -13,6 +17,7 @@
 - Open split view in new view instead of current
 - Added command for dumping key map as graphviz file
 - Better performance overall
+- Switched to chronos instead of std/asyncdispatch
 - And many small fixes and improvements
 
 ### Vim
@@ -23,4 +28,3 @@
 
 - More LSP support
 - Basic DAP support
--
