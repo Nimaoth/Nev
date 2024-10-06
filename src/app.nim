@@ -21,9 +21,6 @@ import misc/async_process
 when enableAst:
   import ast/[model, project]
 
-when enableNimscript:
-  import scripting/scripting_nim
-
 import scripting/scripting_wasm
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
@@ -163,7 +160,6 @@ type
 
     workspace*: Workspace
 
-    nimsScriptContext*: ScriptContext
     wasmScriptContext*: ScriptContextWasm
     initializeCalled: bool
 
@@ -376,9 +372,6 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
       return false
     let id = self.callbacks[context]
 
-    withScriptContext self, self.nimsScriptContext:
-      if self.nimsScriptContext.handleCallback(id, args):
-        return true
     withScriptContext self, self.wasmScriptContext:
       if self.wasmScriptContext.handleCallback(id, args):
         return true
@@ -393,10 +386,6 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
   if self.callbacks.contains(context):
     try:
       let id = self.callbacks[context]
-      withScriptContext self, self.nimsScriptContext:
-        let res = self.nimsScriptContext.handleAnyCallback(id, args)
-        if res.isNotNil:
-          return res
 
       withScriptContext self, self.wasmScriptContext:
         let res = self.wasmScriptContext.handleAnyCallback(id, args)
@@ -410,11 +399,6 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
 
   else:
     try:
-      withScriptContext self, self.nimsScriptContext:
-        let res = self.nimsScriptContext.handleScriptAction(context, args)
-        if res.isNotNil:
-          return res
-
       withScriptContext self, self.wasmScriptContext:
         let res = self.wasmScriptContext.handleScriptAction(context, args)
         if res.isNotNil:
@@ -460,8 +444,6 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
 
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
-    withScriptContext self, self.nimsScriptContext:
-      self.nimsScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
     withScriptContext self, self.wasmScriptContext:
       self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
   except CatchableError:
@@ -738,9 +720,6 @@ proc setTheme*(self: App, path: string) =
     log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender()
 
-when enableNimscript:
-  var createScriptContext: proc(filepath: string, searchPaths: seq[string], stdPath: Option[string]): Future[Option[ScriptContext]] = nil
-
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
 proc runConfigCommands(self: App, key: string) =
@@ -779,54 +758,6 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
       log lvlError, &"Failed to load wasm configs: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
   self.runConfigCommands("wasm-plugin-post-load-commands")
-
-  when enableNimscript:
-    await sleepAsync(1)
-
-    if not options.disableNimScriptPlugins:
-      try:
-        var searchPaths = @["app://src", "app://scripting"]
-        let searchPathsJson = self.options{@["scripting", "search-paths"]}
-        if not searchPathsJson.isNil:
-          for sp in searchPathsJson:
-            searchPaths.add sp.getStr
-
-        for path in searchPaths.mitems:
-          if path.hasPrefix("app://", rest):
-            path = self.fs.getApplicationFilePath(rest)
-
-        if self.homeDir != "":
-          let scriptPath = self.homeDir / configDirName / "custom.nims"
-          if fileExists(scriptPath):
-            log lvlInfo, &"Found '{scriptPath}'"
-
-            let stdPath = block:
-              let stdPath = self.fs.getApplicationFilePath("nim_std")
-              if dirExists(stdPath):
-                stdPath.some
-              else:
-                string.none
-
-            if createScriptContext(scriptPath, searchPaths, stdPath).await.getSome(scriptContext):
-              self.nimsScriptContext = scriptContext
-            else:
-              log lvlError, "Failed to create nim script context"
-
-          else:
-            log lvlInfo, &"No custom.nims found in home ~/{configDirName}"
-
-          withScriptContext self, self.nimsScriptContext:
-            log(lvlInfo, fmt"init nim script config")
-            await self.nimsScriptContext.init(self.homeDir / configDirName)
-            log(lvlInfo, fmt"post init nim script config")
-            discard self.nimsScriptContext.postInitialize()
-
-        log(lvlInfo, fmt"finished configs")
-        self.initializeCalled = true
-      except CatchableError:
-        log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
-
-  self.runConfigCommands("nims-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
 
   log lvlInfo, &"Finished loading plugins"
@@ -1464,8 +1395,6 @@ proc shutdown*(self: App) =
   for document in self.documents:
     document.deinit()
 
-  if self.nimsScriptContext.isNotNil:
-    self.nimsScriptContext.deinit()
   if self.wasmScriptContext.isNotNil:
     self.wasmScriptContext.deinit()
 
@@ -3528,18 +3457,6 @@ proc reloadPluginAsync*(self: App) {.async.} =
     except CatchableError:
       log lvlError, &"Failed to reload wasm plugins: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-  if self.nimsScriptContext.isNotNil:
-    try:
-      self.clearScriptActionsFor(self.nimsScriptContext)
-      withScriptContext self, self.nimsScriptContext:
-        await self.nimsScriptContext.reload()
-      if not self.initializeCalled:
-        withScriptContext self, self.nimsScriptContext:
-          discard self.nimsScriptContext.postInitialize()
-        self.initializeCalled = true
-    except CatchableError:
-      log lvlError, &"Failed to reload nimscript config: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadOptionsFromAppDir()
   await self.loadOptionsFromHomeDir()
@@ -4201,7 +4118,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
         # popups*: seq[Popup]
 
         # theme*: Theme
-        # nimsScriptContext*: ScriptContext
         # wasmScriptContext*: ScriptContextWasm
 
         # workspace*: Workspace
@@ -4256,11 +4172,6 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
       return r.some
 
     try:
-      withScriptContext self, self.nimsScriptContext:
-        let res = self.nimsScriptContext.handleScriptAction(action, args)
-        if res.isNotNil:
-          return res.some
-
       withScriptContext self, self.wasmScriptContext:
         let res = self.wasmScriptContext.handleScriptAction(action, args)
         if res.isNotNil:
@@ -4280,28 +4191,5 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
 
   return JsonNode.none
 
-template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
-  when enableNimscript:
-    proc createAddins(): VmAddins =
-      addCallable(myImpl):
-        proc postInitialize(): bool
-      addCallable(myImpl):
-        proc handleEditorModeChanged(id: EditorId, oldMode: string, newMode: string)
-      addCallable(myImpl):
-        proc handleCallback(id: int, args: JsonNode): bool
-      addCallable(myImpl):
-        proc handleScriptAction(name: string, args: JsonNode): JsonNode
-
-      return implNimScriptModule(myImpl)
-
-    const addins = createAddins()
-
-    static:
-      generateScriptingApi(addins)
-
-    createScriptContextConstructor(addins)
-
-    proc createScriptContextImpl(filepath: string, searchPaths: seq[string], stdPath: Option[string]): Future[Option[ScriptContext]] = createScriptContextNim(filepath, searchPaths, stdPath)
-    createScriptContext = createScriptContextImpl
-
+template generatePluginBindings*(): untyped =
   createEditorWasmImportConstructor()

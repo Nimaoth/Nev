@@ -1,6 +1,6 @@
 import plugin_runtime, keybindings_normal
 
-proc loadCustomKeybindings*() {.scriptActionWasmNims("load-custom-keybindings").} =
+proc loadCustomKeybindings*() {.expose("load-custom-keybindings").} =
   loadNormalKeybindings()
 
   info "Applying Custom keybindings"

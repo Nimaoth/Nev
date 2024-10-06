@@ -35,6 +35,5 @@ addCommand "editor", "<C-a>", "custom-command-1", "hello", 13
 addCommand "editor.text", "<C-b>", "custom-command-2", "world", 42
 addTextCommand "", "<C-c>", "copy" # addTextCommand "xyz" is equivalent to addCommand "editor.text.xyz"
 
-# This is required for the main file of the plugin. If you use NimScript this is not required.
-when defined(wasm):
-  include plugin_runtime_impl
+# This is required for the main file of the plugin.
+include plugin_runtime_impl

@@ -299,7 +299,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
 
   # addCommand "editor.model.goto", "<END>", "end"
 
-proc exampleScriptAction*(a: int, b: string): string {.scriptActionWasmNims("example-script-action").} =
+proc exampleScriptAction*(a: int, b: string): string {.expose("example-script-action").} =
   ## Test documentation stuff
   infof "exampleScriptAction called with {a}, {b}"
   return b & $a

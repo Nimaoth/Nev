@@ -6,9 +6,6 @@ import fusion/matching
 import misc/[util, custom_logger, macro_utils, wrap]
 import compilation_config, dispatch_tables
 
-when enableNimscript and not defined(js):
-  import nimscripter
-
 const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (referring to nim type) to function which maps these types
 const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to list of tuples of name and wrapper
@@ -325,12 +322,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     static:
         # This causes the function wrapper to be emitted in a file, so it can be imported in configs
         addScriptWrapper(`scriptFunctionWrapperRepr`, `moduleName`, `lineNumber`)
-
-  when enableNimscript and not defined(js):
-    result.add quote do:
-      static:
-        # This adds the script function to nimscripter so it can generate bindings for the nim interpreter
-        addToCache(`scriptFunctionSym`, "myImpl")
 
   if not def.hasCustomPragma("nojsonwrapper"):
     let jsonStringWrapperFunctionReturnValue = genSym(nskVar, functionName.strVal & "WasmReturnValue")
