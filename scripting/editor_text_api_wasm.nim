@@ -6,18 +6,11 @@ import scripting_api, misc/myjsonutils
 
 proc editor_text_enableAutoReload_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc enableAutoReload*(self: TextDocumentEditor; enabled: bool) =
+proc enableAutoReload*(self: TextDocumentEditor; enabled: bool) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      enabled
-    else:
-      enabled.toJson()
+  argsJson.add self.toJson()
+  argsJson.add enabled.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_enableAutoReload_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
@@ -25,320 +18,200 @@ proc enableAutoReload*(self: TextDocumentEditor; enabled: bool) =
 
 proc editor_text_getFileName_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc getFileName*(self: TextDocumentEditor): string =
+proc getFileName*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getFileName_string_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_lineCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc lineCount*(self: TextDocumentEditor): int =
+proc lineCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_lineCount_int_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_lineLength_int_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
     importc.}
-proc lineLength*(self: TextDocumentEditor; line: int): int =
+proc lineLength*(self: TextDocumentEditor; line: int): int {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      line
-    else:
-      line.toJson()
+  argsJson.add self.toJson()
+  argsJson.add line.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_lineLength_int_TextDocumentEditor_int_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_screenLineCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc screenLineCount*(self: TextDocumentEditor): int =
+proc screenLineCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_screenLineCount_int_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorLine*(self: TextDocumentEditor; cursor: Cursor; offset: int;
-                       wrap: bool = false; includeAfter: bool = false): Cursor =
+                       wrap: bool = false; includeAfter: bool = false): Cursor {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorVisualLine*(self: TextDocumentEditor; cursor: Cursor;
                              offset: int; wrap: bool = false;
-                             includeAfter: bool = false): Cursor =
+                             includeAfter: bool = false): Cursor {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorHome*(self: TextDocumentEditor; cursor: Cursor; offset: int;
-                       wrap: bool; includeAfter: bool): Cursor =
+                       wrap: bool; includeAfter: bool): Cursor {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorEnd*(self: TextDocumentEditor; cursor: Cursor; offset: int;
-                      wrap: bool; includeAfter: bool): Cursor =
+                      wrap: bool; includeAfter: bool): Cursor {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorVisualHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorVisualHome*(self: TextDocumentEditor; cursor: Cursor;
-                             offset: int; wrap: bool; includeAfter: bool): Cursor =
+                             offset: int; wrap: bool; includeAfter: bool): Cursor {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorVisualHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorVisualEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorVisualEnd*(self: TextDocumentEditor; cursor: Cursor;
-                            offset: int; wrap: bool; includeAfter: bool): Cursor =
+                            offset: int; wrap: bool; includeAfter: bool): Cursor {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorVisualEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorPrevFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
-                                 offset: int; wrap: bool; includeAfter: bool): Cursor =
+                                 offset: int; wrap: bool; includeAfter: bool): Cursor {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorPrevFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorNextFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
@@ -347,267 +220,146 @@ proc doMoveCursorNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
                                  offset: int; wrap: bool; includeAfter: bool): Cursor {.
     gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorNextFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorLineCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorLineCenter*(self: TextDocumentEditor; cursor: Cursor;
-                             offset: int; wrap: bool; includeAfter: bool): Cursor =
+                             offset: int; wrap: bool; includeAfter: bool): Cursor {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorLineCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorCenter*(self: TextDocumentEditor; cursor: Cursor; offset: int;
-                         wrap: bool; includeAfter: bool): Cursor =
+                         wrap: bool; includeAfter: bool): Cursor {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorCenter_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
-                         wrap: bool = true; includeAfter: bool = true): Cursor =
+                         wrap: bool = true; includeAfter: bool = true): Cursor {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_includeSelectionEnd_Selection_TextDocumentEditor_Selection_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc includeSelectionEnd*(self: TextDocumentEditor; res: Selection;
-                          includeAfter: bool = true): Selection =
+                          includeAfter: bool = true): Selection {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      res
-    else:
-      res.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add res.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_includeSelectionEnd_Selection_TextDocumentEditor_Selection_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
     arg: cstring): cstring {.importc.}
 proc findSurroundStart*(editor: TextDocumentEditor; cursor: Cursor; count: int;
-                        c0: char; c1: char; depth: int = 1): Option[Cursor] =
+                        c0: char; c1: char; depth: int = 1): Option[Cursor] {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      editor
-    else:
-      editor.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
-  argsJson.add block:
-    when char is JsonNode:
-      c0
-    else:
-      c0.toJson()
-  argsJson.add block:
-    when char is JsonNode:
-      c1
-    else:
-      c1.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      depth
-    else:
-      depth.toJson()
+  argsJson.add editor.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add count.toJson()
+  argsJson.add c0.toJson()
+  argsJson.add c1.toJson()
+  argsJson.add depth.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_findSurroundEnd_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
     arg: cstring): cstring {.importc.}
 proc findSurroundEnd*(editor: TextDocumentEditor; cursor: Cursor; count: int;
-                      c0: char; c1: char; depth: int = 1): Option[Cursor] =
+                      c0: char; c1: char; depth: int = 1): Option[Cursor] {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      editor
-    else:
-      editor.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
-  argsJson.add block:
-    when char is JsonNode:
-      c0
-    else:
-      c0.toJson()
-  argsJson.add block:
-    when char is JsonNode:
-      c1
-    else:
-      c1.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      depth
-    else:
-      depth.toJson()
+  argsJson.add editor.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add count.toJson()
+  argsJson.add c0.toJson()
+  argsJson.add c1.toJson()
+  argsJson.add depth.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_findSurroundEnd_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_setMode_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc setMode*(self: TextDocumentEditor; mode: string) =
+proc setMode*(self: TextDocumentEditor; mode: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      mode
-    else:
-      mode.toJson()
+  argsJson.add self.toJson()
+  argsJson.add mode.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setMode_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
@@ -615,54 +367,41 @@ proc setMode*(self: TextDocumentEditor; mode: string) =
 
 proc editor_text_mode_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc mode*(self: TextDocumentEditor): string =
+proc mode*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_mode_string_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getContextWithMode_string_TextDocumentEditor_string_wasm(
     arg: cstring): cstring {.importc.}
-proc getContextWithMode*(self: TextDocumentEditor; context: string): string =
+proc getContextWithMode*(self: TextDocumentEditor; context: string): string {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      context
-    else:
-      context.toJson()
+  argsJson.add self.toJson()
+  argsJson.add context.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getContextWithMode_string_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_wasm(
     arg: cstring): cstring {.importc.}
 proc updateTargetColumn*(self: TextDocumentEditor;
-                         cursor: SelectionCursor = Last) =
+                         cursor: SelectionCursor = Last) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_wasm(
       argsJsonString.cstring)
@@ -670,13 +409,9 @@ proc updateTargetColumn*(self: TextDocumentEditor;
 
 proc editor_text_invertSelection_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc invertSelection*(self: TextDocumentEditor) =
+proc invertSelection*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_invertSelection_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -684,232 +419,138 @@ proc invertSelection*(self: TextDocumentEditor) =
 
 proc editor_text_getRevision_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc getRevision*(self: TextDocumentEditor): int =
+proc getRevision*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getRevision_int_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getUsage_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc getUsage*(self: TextDocumentEditor): string =
+proc getUsage*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getUsage_string_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getText_string_TextDocumentEditor_Selection_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getText*(self: TextDocumentEditor; selection: Selection;
-              inclusiveEnd: bool = false): string =
+              inclusiveEnd: bool = false): string {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inclusiveEnd
-    else:
-      inclusiveEnd.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add inclusiveEnd.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getText_string_TextDocumentEditor_Selection_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
-             notify: bool = true; record: bool = true): seq[Selection] =
+             notify: bool = true; record: bool = true): seq[Selection] {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when seq[Selection] is JsonNode:
-      selections
-    else:
-      selections.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      text
-    else:
-      text.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      notify
-    else:
-      notify.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      record
-    else:
-      record.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selections.toJson()
+  argsJson.add text.toJson()
+  argsJson.add notify.toJson()
+  argsJson.add record.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_insertMulti_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc insertMulti*(self: TextDocumentEditor; selections: seq[Selection];
                   texts: seq[string]; notify: bool = true; record: bool = true): seq[
-    Selection] =
+    Selection] {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when seq[Selection] is JsonNode:
-      selections
-    else:
-      selections.toJson()
-  argsJson.add block:
-    when seq[string] is JsonNode:
-      texts
-    else:
-      texts.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      notify
-    else:
-      notify.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      record
-    else:
-      record.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selections.toJson()
+  argsJson.add texts.toJson()
+  argsJson.add notify.toJson()
+  argsJson.add record.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_insertMulti_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc delete*(self: TextDocumentEditor; selections: seq[Selection];
              notify: bool = true; record: bool = true;
-             inclusiveEnd: bool = false): seq[Selection] =
+             inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when seq[Selection] is JsonNode:
-      selections
-    else:
-      selections.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      notify
-    else:
-      notify.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      record
-    else:
-      record.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inclusiveEnd
-    else:
-      inclusiveEnd.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selections.toJson()
+  argsJson.add notify.toJson()
+  argsJson.add record.toJson()
+  argsJson.add inclusiveEnd.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc edit*(self: TextDocumentEditor; selections: seq[Selection];
            texts: seq[string]; notify: bool = true; record: bool = true;
-           inclusiveEnd: bool = false): seq[Selection] =
+           inclusiveEnd: bool = false): seq[Selection] {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when seq[Selection] is JsonNode:
-      selections
-    else:
-      selections.toJson()
-  argsJson.add block:
-    when seq[string] is JsonNode:
-      texts
-    else:
-      texts.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      notify
-    else:
-      notify.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      record
-    else:
-      record.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inclusiveEnd
-    else:
-      inclusiveEnd.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selections.toJson()
+  argsJson.add texts.toJson()
+  argsJson.add notify.toJson()
+  argsJson.add record.toJson()
+  argsJson.add inclusiveEnd.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_deleteLines_void_TextDocumentEditor_Slice_int_Selections_wasm(
     arg: cstring): cstring {.importc.}
 proc deleteLines*(self: TextDocumentEditor; slice: Slice[int];
-                  oldSelections: Selections) =
+                  oldSelections: Selections) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Slice[int] is JsonNode:
-      slice
-    else:
-      slice.toJson()
-  argsJson.add block:
-    when Selections is JsonNode:
-      oldSelections
-    else:
-      oldSelections.toJson()
+  argsJson.add self.toJson()
+  argsJson.add slice.toJson()
+  argsJson.add oldSelections.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_deleteLines_void_TextDocumentEditor_Slice_int_Selections_wasm(
       argsJsonString.cstring)
@@ -917,13 +558,9 @@ proc deleteLines*(self: TextDocumentEditor; slice: Slice[int];
 
 proc editor_text_selectPrev_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectPrev*(self: TextDocumentEditor) =
+proc selectPrev*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectPrev_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -931,13 +568,9 @@ proc selectPrev*(self: TextDocumentEditor) =
 
 proc editor_text_selectNext_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectNext*(self: TextDocumentEditor) =
+proc selectNext*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectNext_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -945,18 +578,11 @@ proc selectNext*(self: TextDocumentEditor) =
 
 proc editor_text_selectInside_void_TextDocumentEditor_Cursor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectInside*(self: TextDocumentEditor; cursor: Cursor) =
+proc selectInside*(self: TextDocumentEditor; cursor: Cursor) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectInside_void_TextDocumentEditor_Cursor_wasm(
       argsJsonString.cstring)
@@ -964,13 +590,9 @@ proc selectInside*(self: TextDocumentEditor; cursor: Cursor) =
 
 proc editor_text_selectInsideCurrent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectInsideCurrent*(self: TextDocumentEditor) =
+proc selectInsideCurrent*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectInsideCurrent_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -978,18 +600,10 @@ proc selectInsideCurrent*(self: TextDocumentEditor) =
 
 proc editor_text_selectLine_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
     importc.}
-proc selectLine*(self: TextDocumentEditor; line: int) =
+proc selectLine*(self: TextDocumentEditor; line: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      line
-    else:
-      line.toJson()
+  argsJson.add self.toJson()
+  argsJson.add line.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectLine_void_TextDocumentEditor_int_wasm(
       argsJsonString.cstring)
@@ -997,13 +611,9 @@ proc selectLine*(self: TextDocumentEditor; line: int) =
 
 proc editor_text_selectLineCurrent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectLineCurrent*(self: TextDocumentEditor) =
+proc selectLineCurrent*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectLineCurrent_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1012,27 +622,19 @@ proc selectLineCurrent*(self: TextDocumentEditor) =
 proc editor_text_getParentNodeSelection_Selection_TextDocumentEditor_Selection_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getParentNodeSelection*(self: TextDocumentEditor; selection: Selection;
-                             includeAfter: bool = true): Selection =
+                             includeAfter: bool = true): Selection {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getParentNodeSelection_Selection_TextDocumentEditor_Selection_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getNextNamedSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_wasm(
@@ -1040,102 +642,65 @@ proc editor_text_getNextNamedSiblingNodeSelection_Option_Selection_TextDocumentE
 proc getNextNamedSiblingNodeSelection*(self: TextDocumentEditor;
                                        selection: Selection;
                                        includeAfter: bool = true): Option[
-    Selection] =
+    Selection] {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getNextNamedSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getNextSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getNextSiblingNodeSelection*(self: TextDocumentEditor;
                                   selection: Selection;
-                                  includeAfter: bool = true): Option[Selection] =
+                                  includeAfter: bool = true): Option[Selection] {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getNextSiblingNodeSelection_Option_Selection_TextDocumentEditor_Selection_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getParentNodeSelections_Selections_TextDocumentEditor_Selections_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getParentNodeSelections*(self: TextDocumentEditor; selections: Selections;
-                              includeAfter: bool = true): Selections =
+                              includeAfter: bool = true): Selections {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selections is JsonNode:
-      selections
-    else:
-      selections.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selections.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getParentNodeSelections_Selections_TextDocumentEditor_Selections_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc selectParentTs*(self: TextDocumentEditor; selection: Selection;
-                     includeAfter: bool = true) =
+                     includeAfter: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectParentTs_void_TextDocumentEditor_Selection_bool_wasm(
       argsJsonString.cstring)
@@ -1143,13 +708,9 @@ proc selectParentTs*(self: TextDocumentEditor; selection: Selection;
 
 proc editor_text_printTreesitterMemoryUsage_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
-proc printTreesitterMemoryUsage*(self: TextDocumentEditor) =
+proc printTreesitterMemoryUsage*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_printTreesitterMemoryUsage_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1157,13 +718,9 @@ proc printTreesitterMemoryUsage*(self: TextDocumentEditor) =
 
 proc editor_text_printTreesitterTree_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc printTreesitterTree*(self: TextDocumentEditor) =
+proc printTreesitterTree*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_printTreesitterTree_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1171,13 +728,10 @@ proc printTreesitterTree*(self: TextDocumentEditor) =
 
 proc editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
-proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
+proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1185,18 +739,11 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
 
 proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc selectParentCurrentTs*(self: TextDocumentEditor; includeAfter: bool = true) =
+proc selectParentCurrentTs*(self: TextDocumentEditor; includeAfter: bool = true) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectParentCurrentTs_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
@@ -1207,78 +754,46 @@ proc editor_text_getNextNodeWithSameType_Option_Selection_TextDocumentEditor_Sel
 proc getNextNodeWithSameType*(self: TextDocumentEditor; selection: Selection;
                               offset: int = 0; includeAfter: bool = true;
                               wrap: bool = true; stepIn: bool = true;
-                              stepOut: bool = true): Option[Selection] =
+                              stepOut: bool = true): Option[Selection] {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      stepIn
-    else:
-      stepIn.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      stepOut
-    else:
-      stepOut.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add includeAfter.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add stepIn.toJson()
+  argsJson.add stepOut.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getNextNodeWithSameType_Option_Selection_TextDocumentEditor_Selection_int_bool_bool_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_wasm(
     arg: cstring): cstring {.importc.}
-proc shouldShowCompletionsAt*(self: TextDocumentEditor; cursor: Cursor): bool =
+proc shouldShowCompletionsAt*(self: TextDocumentEditor; cursor: Cursor): bool {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_autoShowCompletions_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc autoShowCompletions*(self: TextDocumentEditor) =
+proc autoShowCompletions*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_autoShowCompletions_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1286,23 +801,12 @@ proc autoShowCompletions*(self: TextDocumentEditor) =
 
 proc editor_text_insertText_void_TextDocumentEditor_string_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true) =
+proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      text
-    else:
-      text.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      autoIndent
-    else:
-      autoIndent.toJson()
+  argsJson.add self.toJson()
+  argsJson.add text.toJson()
+  argsJson.add autoIndent.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_insertText_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
@@ -1310,13 +814,9 @@ proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true
 
 proc editor_text_indent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc indent*(self: TextDocumentEditor) =
+proc indent*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_indent_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1324,13 +824,9 @@ proc indent*(self: TextDocumentEditor) =
 
 proc editor_text_unindent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc unindent*(self: TextDocumentEditor) =
+proc unindent*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_unindent_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1338,13 +834,9 @@ proc unindent*(self: TextDocumentEditor) =
 
 proc editor_text_insertIndent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc insertIndent*(self: TextDocumentEditor) =
+proc insertIndent*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_insertIndent_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1352,18 +844,11 @@ proc insertIndent*(self: TextDocumentEditor) =
 
 proc editor_text_undo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =
+proc undo*(self: TextDocumentEditor; checkpoint: string = "word") {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      checkpoint
-    else:
-      checkpoint.toJson()
+  argsJson.add self.toJson()
+  argsJson.add checkpoint.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_undo_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
@@ -1371,18 +856,11 @@ proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =
 
 proc editor_text_redo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc redo*(self: TextDocumentEditor; checkpoint: string = "word") =
+proc redo*(self: TextDocumentEditor; checkpoint: string = "word") {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      checkpoint
-    else:
-      checkpoint.toJson()
+  argsJson.add self.toJson()
+  argsJson.add checkpoint.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_redo_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
@@ -1390,18 +868,11 @@ proc redo*(self: TextDocumentEditor; checkpoint: string = "word") =
 
 proc editor_text_addNextCheckpoint_void_TextDocumentEditor_string_wasm(
     arg: cstring): cstring {.importc.}
-proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) =
+proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      checkpoint
-    else:
-      checkpoint.toJson()
+  argsJson.add self.toJson()
+  argsJson.add checkpoint.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_addNextCheckpoint_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
@@ -1410,23 +881,11 @@ proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) =
 proc editor_text_copy_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc copy*(self: TextDocumentEditor; register: string = "";
-           inclusiveEnd: bool = false) =
+           inclusiveEnd: bool = false) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      register
-    else:
-      register.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inclusiveEnd
-    else:
-      inclusiveEnd.toJson()
+  argsJson.add self.toJson()
+  argsJson.add register.toJson()
+  argsJson.add inclusiveEnd.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_copy_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
@@ -1435,23 +894,11 @@ proc copy*(self: TextDocumentEditor; register: string = "";
 proc editor_text_paste_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc paste*(self: TextDocumentEditor; registerName: string = "";
-            inclusiveEnd: bool = false) =
+            inclusiveEnd: bool = false) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      registerName
-    else:
-      registerName.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inclusiveEnd
-    else:
-      inclusiveEnd.toJson()
+  argsJson.add self.toJson()
+  argsJson.add registerName.toJson()
+  argsJson.add inclusiveEnd.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_paste_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
@@ -1459,18 +906,10 @@ proc paste*(self: TextDocumentEditor; registerName: string = "";
 
 proc editor_text_scrollText_void_TextDocumentEditor_float32_wasm(arg: cstring): cstring {.
     importc.}
-proc scrollText*(self: TextDocumentEditor; amount: float32) =
+proc scrollText*(self: TextDocumentEditor; amount: float32) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when float32 is JsonNode:
-      amount
-    else:
-      amount.toJson()
+  argsJson.add self.toJson()
+  argsJson.add amount.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_scrollText_void_TextDocumentEditor_float32_wasm(
       argsJsonString.cstring)
@@ -1478,18 +917,10 @@ proc scrollText*(self: TextDocumentEditor; amount: float32) =
 
 proc editor_text_scrollLines_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
     importc.}
-proc scrollLines*(self: TextDocumentEditor; amount: int) =
+proc scrollLines*(self: TextDocumentEditor; amount: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      amount
-    else:
-      amount.toJson()
+  argsJson.add self.toJson()
+  argsJson.add amount.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_scrollLines_void_TextDocumentEditor_int_wasm(
       argsJsonString.cstring)
@@ -1497,13 +928,9 @@ proc scrollLines*(self: TextDocumentEditor; amount: int) =
 
 proc editor_text_duplicateLastSelection_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
-proc duplicateLastSelection*(self: TextDocumentEditor) =
+proc duplicateLastSelection*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_duplicateLastSelection_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1511,13 +938,9 @@ proc duplicateLastSelection*(self: TextDocumentEditor) =
 
 proc editor_text_addCursorBelow_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc addCursorBelow*(self: TextDocumentEditor) =
+proc addCursorBelow*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_addCursorBelow_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1525,13 +948,9 @@ proc addCursorBelow*(self: TextDocumentEditor) =
 
 proc editor_text_addCursorAbove_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc addCursorAbove*(self: TextDocumentEditor) =
+proc addCursorAbove*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_addCursorAbove_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1541,169 +960,91 @@ proc editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_bool_
     arg: cstring): cstring {.importc.}
 proc getPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
                         offset: int = 0; includeAfter: bool = true;
-                        wrap: bool = true): Selection =
+                        wrap: bool = true): Selection {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add includeAfter.toJson()
+  argsJson.add wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
                         offset: int = 0; includeAfter: bool = true;
-                        wrap: bool = true): Selection =
+                        wrap: bool = true): Selection {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add includeAfter.toJson()
+  argsJson.add wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getPrevDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getPrevDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
                         severity: int = 0; offset: int = 0;
-                        includeAfter: bool = true; wrap: bool = true): Selection =
+                        includeAfter: bool = true; wrap: bool = true): Selection {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      severity
-    else:
-      severity.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add severity.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add includeAfter.toJson()
+  argsJson.add wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getPrevDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getNextDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getNextDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
                         severity: int = 0; offset: int = 0;
-                        includeAfter: bool = true; wrap: bool = true): Selection =
+                        includeAfter: bool = true; wrap: bool = true): Selection {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      severity
-    else:
-      severity.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add severity.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add includeAfter.toJson()
+  argsJson.add wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getNextDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_closeDiff_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc closeDiff*(self: TextDocumentEditor) =
+proc closeDiff*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_closeDiff_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1711,58 +1052,43 @@ proc closeDiff*(self: TextDocumentEditor) =
 
 proc editor_text_getPrevChange_Selection_TextDocumentEditor_Cursor_wasm(
     arg: cstring): cstring {.importc.}
-proc getPrevChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
+proc getPrevChange*(self: TextDocumentEditor; cursor: Cursor): Selection {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getPrevChange_Selection_TextDocumentEditor_Cursor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_wasm(
     arg: cstring): cstring {.importc.}
-proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
+proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_updateDiff_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) =
+proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      gotoFirstDiff
-    else:
-      gotoFirstDiff.toJson()
+  argsJson.add self.toJson()
+  argsJson.add gotoFirstDiff.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_updateDiff_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
@@ -1770,13 +1096,9 @@ proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) =
 
 proc editor_text_checkoutFile_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc checkoutFile*(self: TextDocumentEditor) =
+proc checkoutFile*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_checkoutFile_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1785,23 +1107,12 @@ proc checkoutFile*(self: TextDocumentEditor) =
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc addNextFindResultToSelection*(self: TextDocumentEditor;
-                                   includeAfter: bool = true; wrap: bool = true) =
+                                   includeAfter: bool = true; wrap: bool = true) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
+  argsJson.add self.toJson()
+  argsJson.add includeAfter.toJson()
+  argsJson.add wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_wasm(
       argsJsonString.cstring)
@@ -1810,23 +1121,12 @@ proc addNextFindResultToSelection*(self: TextDocumentEditor;
 proc editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc addPrevFindResultToSelection*(self: TextDocumentEditor;
-                                   includeAfter: bool = true; wrap: bool = true) =
+                                   includeAfter: bool = true; wrap: bool = true) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
+  argsJson.add self.toJson()
+  argsJson.add includeAfter.toJson()
+  argsJson.add wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_bool_bool_wasm(
       argsJsonString.cstring)
@@ -1834,13 +1134,9 @@ proc addPrevFindResultToSelection*(self: TextDocumentEditor;
 
 proc editor_text_setAllFindResultToSelection_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
-proc setAllFindResultToSelection*(self: TextDocumentEditor) =
+proc setAllFindResultToSelection*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setAllFindResultToSelection_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1848,13 +1144,9 @@ proc setAllFindResultToSelection*(self: TextDocumentEditor) =
 
 proc editor_text_clearSelections_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc clearSelections*(self: TextDocumentEditor) =
+proc clearSelections*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_clearSelections_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -1865,38 +1157,14 @@ proc editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bo
 proc moveCursorColumn*(self: TextDocumentEditor; distance: int;
                        cursor: SelectionCursor = SelectionCursor.Config;
                        all: bool = true; wrap: bool = true;
-                       includeAfter: bool = true) =
+                       includeAfter: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      distance
-    else:
-      distance.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add distance.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_wasm(
       argsJsonString.cstring)
@@ -1907,38 +1175,14 @@ proc editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool
 proc moveCursorLine*(self: TextDocumentEditor; distance: int;
                      cursor: SelectionCursor = SelectionCursor.Config;
                      all: bool = true; wrap: bool = true;
-                     includeAfter: bool = true) =
+                     includeAfter: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      distance
-    else:
-      distance.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add distance.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_wasm(
       argsJsonString.cstring)
@@ -1949,38 +1193,14 @@ proc editor_text_moveCursorVisualLine_void_TextDocumentEditor_int_SelectionCurso
 proc moveCursorVisualLine*(self: TextDocumentEditor; distance: int;
                            cursor: SelectionCursor = SelectionCursor.Config;
                            all: bool = true; wrap: bool = true;
-                           includeAfter: bool = true) =
+                           includeAfter: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      distance
-    else:
-      distance.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add distance.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorVisualLine_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_wasm(
       argsJsonString.cstring)
@@ -1990,23 +1210,11 @@ proc editor_text_moveCursorHome_void_TextDocumentEditor_SelectionCursor_bool_was
     arg: cstring): cstring {.importc.}
 proc moveCursorHome*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config;
-                     all: bool = true) =
+                     all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorHome_void_TextDocumentEditor_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2016,28 +1224,13 @@ proc editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_bool
     arg: cstring): cstring {.importc.}
 proc moveCursorEnd*(self: TextDocumentEditor;
                     cursor: SelectionCursor = SelectionCursor.Config;
-                    all: bool = true; includeAfter: bool = true) =
+                    all: bool = true; includeAfter: bool = true) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
       argsJsonString.cstring)
@@ -2047,23 +1240,11 @@ proc editor_text_moveCursorVisualHome_void_TextDocumentEditor_SelectionCursor_bo
     arg: cstring): cstring {.importc.}
 proc moveCursorVisualHome*(self: TextDocumentEditor;
                            cursor: SelectionCursor = SelectionCursor.Config;
-                           all: bool = true) =
+                           all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorVisualHome_void_TextDocumentEditor_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2073,28 +1254,13 @@ proc editor_text_moveCursorVisualEnd_void_TextDocumentEditor_SelectionCursor_boo
     arg: cstring): cstring {.importc.}
 proc moveCursorVisualEnd*(self: TextDocumentEditor;
                           cursor: SelectionCursor = SelectionCursor.Config;
-                          all: bool = true; includeAfter: bool = true) =
+                          all: bool = true; includeAfter: bool = true) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorVisualEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
       argsJsonString.cstring)
@@ -2104,28 +1270,12 @@ proc editor_text_moveCursorTo_void_TextDocumentEditor_string_SelectionCursor_boo
     arg: cstring): cstring {.importc.}
 proc moveCursorTo*(self: TextDocumentEditor; str: string;
                    cursor: SelectionCursor = SelectionCursor.Config;
-                   all: bool = true) =
+                   all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      str
-    else:
-      str.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add str.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorTo_void_TextDocumentEditor_string_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2135,28 +1285,12 @@ proc editor_text_moveCursorBefore_void_TextDocumentEditor_string_SelectionCursor
     arg: cstring): cstring {.importc.}
 proc moveCursorBefore*(self: TextDocumentEditor; str: string;
                        cursor: SelectionCursor = SelectionCursor.Config;
-                       all: bool = true) =
+                       all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      str
-    else:
-      str.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add str.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorBefore_void_TextDocumentEditor_string_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2165,28 +1299,13 @@ proc moveCursorBefore*(self: TextDocumentEditor; str: string;
 proc editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorNextFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
-                               all: bool = true; wrap: bool = true) =
+                               all: bool = true; wrap: bool = true) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
       argsJsonString.cstring)
@@ -2195,28 +1314,13 @@ proc moveCursorNextFindResult*(self: TextDocumentEditor; cursor: SelectionCursor
 proc editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
-                               all: bool = true; wrap: bool = true) =
+                               all: bool = true; wrap: bool = true) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      wrap
-    else:
-      wrap.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
       argsJsonString.cstring)
@@ -2226,23 +1330,11 @@ proc editor_text_moveCursorLineCenter_void_TextDocumentEditor_SelectionCursor_bo
     arg: cstring): cstring {.importc.}
 proc moveCursorLineCenter*(self: TextDocumentEditor;
                            cursor: SelectionCursor = SelectionCursor.Config;
-                           all: bool = true) =
+                           all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorLineCenter_void_TextDocumentEditor_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2252,23 +1344,11 @@ proc editor_text_moveCursorCenter_void_TextDocumentEditor_SelectionCursor_bool_w
     arg: cstring): cstring {.importc.}
 proc moveCursorCenter*(self: TextDocumentEditor;
                        cursor: SelectionCursor = SelectionCursor.Config;
-                       all: bool = true) =
+                       all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorCenter_void_TextDocumentEditor_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2277,18 +1357,11 @@ proc moveCursorCenter*(self: TextDocumentEditor;
 proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
     arg: cstring): cstring {.importc.}
 proc scrollToCursor*(self: TextDocumentEditor;
-                     cursor: SelectionCursor = SelectionCursor.Config) =
+                     cursor: SelectionCursor = SelectionCursor.Config) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
       argsJsonString.cstring)
@@ -2297,18 +1370,11 @@ proc scrollToCursor*(self: TextDocumentEditor;
 proc editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_wasm(
     arg: cstring): cstring {.importc.}
 proc setNextScrollBehaviour*(self: TextDocumentEditor;
-                             scrollBehaviour: ScrollBehaviour) =
+                             scrollBehaviour: ScrollBehaviour) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when ScrollBehaviour is JsonNode:
-      scrollBehaviour
-    else:
-      scrollBehaviour.toJson()
+  argsJson.add self.toJson()
+  argsJson.add scrollBehaviour.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_wasm(
       argsJsonString.cstring)
@@ -2317,23 +1383,12 @@ proc setNextScrollBehaviour*(self: TextDocumentEditor;
 proc editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_wasm(
     arg: cstring): cstring {.importc.}
 proc setCursorScrollOffset*(self: TextDocumentEditor; offset: float;
-                            cursor: SelectionCursor = SelectionCursor.Config) =
+                            cursor: SelectionCursor = SelectionCursor.Config) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when float is JsonNode:
-      offset
-    else:
-      offset.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add offset.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_wasm(
       argsJsonString.cstring)
@@ -2341,34 +1396,26 @@ proc setCursorScrollOffset*(self: TextDocumentEditor; offset: float;
 
 proc editor_text_getContentBounds_Vec2_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc getContentBounds*(self: TextDocumentEditor): Vec2 =
+proc getContentBounds*(self: TextDocumentEditor): Vec2 {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getContentBounds_Vec2_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_wasm(
     arg: cstring): cstring {.importc.}
 proc centerCursor*(self: TextDocumentEditor;
-                   cursor: SelectionCursor = SelectionCursor.Config) =
+                   cursor: SelectionCursor = SelectionCursor.Config) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_wasm(
       argsJsonString.cstring)
@@ -2376,13 +1423,9 @@ proc centerCursor*(self: TextDocumentEditor;
 
 proc editor_text_reloadTreesitter_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc reloadTreesitter*(self: TextDocumentEditor) =
+proc reloadTreesitter*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_reloadTreesitter_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -2390,13 +1433,9 @@ proc reloadTreesitter*(self: TextDocumentEditor) =
 
 proc editor_text_deleteLeft_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc deleteLeft*(self: TextDocumentEditor) =
+proc deleteLeft*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_deleteLeft_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -2404,18 +1443,11 @@ proc deleteLeft*(self: TextDocumentEditor) =
 
 proc editor_text_deleteRight_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc deleteRight*(self: TextDocumentEditor; includeAfter: bool = true) =
+proc deleteRight*(self: TextDocumentEditor; includeAfter: bool = true) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      includeAfter
-    else:
-      includeAfter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_deleteRight_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
@@ -2423,33 +1455,24 @@ proc deleteRight*(self: TextDocumentEditor; includeAfter: bool = true) =
 
 proc editor_text_getCommandCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc getCommandCount*(self: TextDocumentEditor): int =
+proc getCommandCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getCommandCount_int_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_setCommandCount_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
     importc.}
-proc setCommandCount*(self: TextDocumentEditor; count: int) =
+proc setCommandCount*(self: TextDocumentEditor; count: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
+  argsJson.add self.toJson()
+  argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setCommandCount_void_TextDocumentEditor_int_wasm(
       argsJsonString.cstring)
@@ -2457,18 +1480,11 @@ proc setCommandCount*(self: TextDocumentEditor; count: int) =
 
 proc editor_text_setCommandCountRestore_void_TextDocumentEditor_int_wasm(
     arg: cstring): cstring {.importc.}
-proc setCommandCountRestore*(self: TextDocumentEditor; count: int) =
+proc setCommandCountRestore*(self: TextDocumentEditor; count: int) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
+  argsJson.add self.toJson()
+  argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setCommandCountRestore_void_TextDocumentEditor_int_wasm(
       argsJsonString.cstring)
@@ -2476,18 +1492,11 @@ proc setCommandCountRestore*(self: TextDocumentEditor; count: int) =
 
 proc editor_text_updateCommandCount_void_TextDocumentEditor_int_wasm(
     arg: cstring): cstring {.importc.}
-proc updateCommandCount*(self: TextDocumentEditor; digit: int) =
+proc updateCommandCount*(self: TextDocumentEditor; digit: int) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      digit
-    else:
-      digit.toJson()
+  argsJson.add self.toJson()
+  argsJson.add digit.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_updateCommandCount_void_TextDocumentEditor_int_wasm(
       argsJsonString.cstring)
@@ -2495,23 +1504,12 @@ proc updateCommandCount*(self: TextDocumentEditor; digit: int) =
 
 proc editor_text_setFlag_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc setFlag*(self: TextDocumentEditor; name: string; value: bool) =
+proc setFlag*(self: TextDocumentEditor; name: string; value: bool) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      name
-    else:
-      name.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      value
-    else:
-      value.toJson()
+  argsJson.add self.toJson()
+  argsJson.add name.toJson()
+  argsJson.add value.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setFlag_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
@@ -2519,203 +1517,132 @@ proc setFlag*(self: TextDocumentEditor; name: string; value: bool) =
 
 proc editor_text_getFlag_bool_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc getFlag*(self: TextDocumentEditor; name: string): bool =
+proc getFlag*(self: TextDocumentEditor; name: string): bool {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      name
-    else:
-      name.toJson()
+  argsJson.add self.toJson()
+  argsJson.add name.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getFlag_bool_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_runAction_Option_JsonNode_TextDocumentEditor_string_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
 proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): Option[
-    JsonNode] =
+    JsonNode] {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      action
-    else:
-      action.toJson()
-  argsJson.add block:
-    when JsonNode is JsonNode:
-      args
-    else:
-      args.toJson()
+  argsJson.add self.toJson()
+  argsJson.add action.toJson()
+  argsJson.add args.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runAction_Option_JsonNode_TextDocumentEditor_string_JsonNode_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_findWordBoundary_Selection_TextDocumentEditor_Cursor_wasm(
     arg: cstring): cstring {.importc.}
-proc findWordBoundary*(self: TextDocumentEditor; cursor: Cursor): Selection =
+proc findWordBoundary*(self: TextDocumentEditor; cursor: Cursor): Selection {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_findWordBoundary_Selection_TextDocumentEditor_Cursor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getSelectionInPair_Selection_TextDocumentEditor_Cursor_char_wasm(
     arg: cstring): cstring {.importc.}
 proc getSelectionInPair*(self: TextDocumentEditor; cursor: Cursor;
-                         delimiter: char): Selection =
+                         delimiter: char): Selection {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when char is JsonNode:
-      delimiter
-    else:
-      delimiter.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add delimiter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getSelectionInPair_Selection_TextDocumentEditor_Cursor_char_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getSelectionInPairNested_Selection_TextDocumentEditor_Cursor_char_char_wasm(
     arg: cstring): cstring {.importc.}
 proc getSelectionInPairNested*(self: TextDocumentEditor; cursor: Cursor;
-                               open: char; close: char): Selection =
+                               open: char; close: char): Selection {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when char is JsonNode:
-      open
-    else:
-      open.toJson()
-  argsJson.add block:
-    when char is JsonNode:
-      close
-    else:
-      close.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add open.toJson()
+  argsJson.add close.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getSelectionInPairNested_Selection_TextDocumentEditor_Cursor_char_char_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_extendSelectionWithMove_Selection_TextDocumentEditor_Selection_string_int_wasm(
     arg: cstring): cstring {.importc.}
 proc extendSelectionWithMove*(self: TextDocumentEditor; selection: Selection;
-                              move: string; count: int = 0): Selection =
+                              move: string; count: int = 0): Selection {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add move.toJson()
+  argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_extendSelectionWithMove_Selection_TextDocumentEditor_Selection_string_int_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_wasm(
     arg: cstring): cstring {.importc.}
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
-                          move: string; count: int = 0): Selection =
+                          move: string; count: int = 0): Selection {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add move.toJson()
+  argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_applyMove_void_TextDocumentEditor_JsonNode_wasm(arg: cstring): cstring {.
     importc.}
-proc applyMove*(self: TextDocumentEditor; args: JsonNode) =
+proc applyMove*(self: TextDocumentEditor; args: JsonNode) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when JsonNode is JsonNode:
-      args
-    else:
-      args.toJson()
+  argsJson.add self.toJson()
+  argsJson.add args.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_applyMove_void_TextDocumentEditor_JsonNode_wasm(
       argsJsonString.cstring)
@@ -2725,33 +1652,13 @@ proc editor_text_deleteMove_void_TextDocumentEditor_string_bool_SelectionCursor_
     arg: cstring): cstring {.importc.}
 proc deleteMove*(self: TextDocumentEditor; move: string; inside: bool = false;
                  which: SelectionCursor = SelectionCursor.Config;
-                 all: bool = true) =
+                 all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inside
-    else:
-      inside.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      which
-    else:
-      which.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add move.toJson()
+  argsJson.add inside.toJson()
+  argsJson.add which.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_deleteMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2761,33 +1668,13 @@ proc editor_text_selectMove_void_TextDocumentEditor_string_bool_SelectionCursor_
     arg: cstring): cstring {.importc.}
 proc selectMove*(self: TextDocumentEditor; move: string; inside: bool = false;
                  which: SelectionCursor = SelectionCursor.Config;
-                 all: bool = true) =
+                 all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inside
-    else:
-      inside.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      which
-    else:
-      which.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add move.toJson()
+  argsJson.add inside.toJson()
+  argsJson.add which.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2798,33 +1685,13 @@ proc editor_text_extendSelectMove_void_TextDocumentEditor_string_bool_SelectionC
 proc extendSelectMove*(self: TextDocumentEditor; move: string;
                        inside: bool = false;
                        which: SelectionCursor = SelectionCursor.Config;
-                       all: bool = true) =
+                       all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inside
-    else:
-      inside.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      which
-    else:
-      which.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add move.toJson()
+  argsJson.add inside.toJson()
+  argsJson.add which.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_extendSelectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2833,33 +1700,14 @@ proc extendSelectMove*(self: TextDocumentEditor; move: string;
 proc editor_text_copyMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc copyMove*(self: TextDocumentEditor; move: string; inside: bool = false;
-               which: SelectionCursor = SelectionCursor.Config; all: bool = true) =
+               which: SelectionCursor = SelectionCursor.Config; all: bool = true) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inside
-    else:
-      inside.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      which
-    else:
-      which.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add move.toJson()
+  argsJson.add inside.toJson()
+  argsJson.add which.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_copyMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2869,33 +1717,13 @@ proc editor_text_changeMove_void_TextDocumentEditor_string_bool_SelectionCursor_
     arg: cstring): cstring {.importc.}
 proc changeMove*(self: TextDocumentEditor; move: string; inside: bool = false;
                  which: SelectionCursor = SelectionCursor.Config;
-                 all: bool = true) =
+                 all: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      inside
-    else:
-      inside.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      which
-    else:
-      which.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
+  argsJson.add self.toJson()
+  argsJson.add move.toJson()
+  argsJson.add inside.toJson()
+  argsJson.add which.toJson()
+  argsJson.add all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_changeMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
@@ -2905,33 +1733,13 @@ proc editor_text_moveLast_void_TextDocumentEditor_string_SelectionCursor_bool_in
     arg: cstring): cstring {.importc.}
 proc moveLast*(self: TextDocumentEditor; move: string;
                which: SelectionCursor = SelectionCursor.Config;
-               all: bool = true; count: int = 0) =
+               all: bool = true; count: int = 0) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      which
-    else:
-      which.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
+  argsJson.add self.toJson()
+  argsJson.add move.toJson()
+  argsJson.add which.toJson()
+  argsJson.add all.toJson()
+  argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveLast_void_TextDocumentEditor_string_SelectionCursor_bool_int_wasm(
       argsJsonString.cstring)
@@ -2941,33 +1749,13 @@ proc editor_text_moveFirst_void_TextDocumentEditor_string_SelectionCursor_bool_i
     arg: cstring): cstring {.importc.}
 proc moveFirst*(self: TextDocumentEditor; move: string;
                 which: SelectionCursor = SelectionCursor.Config;
-                all: bool = true; count: int = 0) =
+                all: bool = true; count: int = 0) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when SelectionCursor is JsonNode:
-      which
-    else:
-      which.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      all
-    else:
-      all.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
+  argsJson.add self.toJson()
+  argsJson.add move.toJson()
+  argsJson.add which.toJson()
+  argsJson.add all.toJson()
+  argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveFirst_void_TextDocumentEditor_string_SelectionCursor_bool_int_wasm(
       argsJsonString.cstring)
@@ -2977,33 +1765,13 @@ proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_strin
     arg: cstring): cstring {.importc.}
 proc setSearchQuery*(self: TextDocumentEditor; query: string;
                      escapeRegex: bool = false; prefix: string = "";
-                     suffix: string = "") =
+                     suffix: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      query
-    else:
-      query.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      escapeRegex
-    else:
-      escapeRegex.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      prefix
-    else:
-      prefix.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      suffix
-    else:
-      suffix.toJson()
+  argsJson.add self.toJson()
+  argsJson.add query.toJson()
+  argsJson.add escapeRegex.toJson()
+  argsJson.add prefix.toJson()
+  argsJson.add suffix.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_wasm(
       argsJsonString.cstring)
@@ -3013,48 +1781,28 @@ proc editor_text_setSearchQueryFromMove_Selection_TextDocumentEditor_string_int_
     arg: cstring): cstring {.importc.}
 proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
                              count: int = 0; prefix: string = "";
-                             suffix: string = ""): Selection =
+                             suffix: string = ""): Selection {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      move
-    else:
-      move.toJson()
-  argsJson.add block:
-    when int is JsonNode:
-      count
-    else:
-      count.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      prefix
-    else:
-      prefix.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      suffix
-    else:
-      suffix.toJson()
+  argsJson.add self.toJson()
+  argsJson.add move.toJson()
+  argsJson.add count.toJson()
+  argsJson.add prefix.toJson()
+  argsJson.add suffix.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setSearchQueryFromMove_Selection_TextDocumentEditor_string_int_string_string_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_toggleLineComment_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc toggleLineComment*(self: TextDocumentEditor) =
+proc toggleLineComment*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_toggleLineComment_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3062,13 +1810,9 @@ proc toggleLineComment*(self: TextDocumentEditor) =
 
 proc editor_text_gotoDefinition_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc gotoDefinition*(self: TextDocumentEditor) =
+proc gotoDefinition*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_gotoDefinition_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3076,13 +1820,9 @@ proc gotoDefinition*(self: TextDocumentEditor) =
 
 proc editor_text_gotoDeclaration_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc gotoDeclaration*(self: TextDocumentEditor) =
+proc gotoDeclaration*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_gotoDeclaration_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3090,13 +1830,9 @@ proc gotoDeclaration*(self: TextDocumentEditor) =
 
 proc editor_text_gotoTypeDefinition_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc gotoTypeDefinition*(self: TextDocumentEditor) =
+proc gotoTypeDefinition*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_gotoTypeDefinition_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3104,13 +1840,9 @@ proc gotoTypeDefinition*(self: TextDocumentEditor) =
 
 proc editor_text_gotoImplementation_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc gotoImplementation*(self: TextDocumentEditor) =
+proc gotoImplementation*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_gotoImplementation_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3118,13 +1850,9 @@ proc gotoImplementation*(self: TextDocumentEditor) =
 
 proc editor_text_gotoReferences_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc gotoReferences*(self: TextDocumentEditor) =
+proc gotoReferences*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_gotoReferences_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3132,13 +1860,9 @@ proc gotoReferences*(self: TextDocumentEditor) =
 
 proc editor_text_switchSourceHeader_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc switchSourceHeader*(self: TextDocumentEditor) =
+proc switchSourceHeader*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_switchSourceHeader_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3146,13 +1870,9 @@ proc switchSourceHeader*(self: TextDocumentEditor) =
 
 proc editor_text_getCompletions_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc getCompletions*(self: TextDocumentEditor) =
+proc getCompletions*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getCompletions_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3160,13 +1880,9 @@ proc getCompletions*(self: TextDocumentEditor) =
 
 proc editor_text_gotoSymbol_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc gotoSymbol*(self: TextDocumentEditor) =
+proc gotoSymbol*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_gotoSymbol_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3175,23 +1891,11 @@ proc gotoSymbol*(self: TextDocumentEditor) =
 proc editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc fuzzySearchLines*(self: TextDocumentEditor; minScore: float = 0.2;
-                       sort: bool = true) =
+                       sort: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when float is JsonNode:
-      minScore
-    else:
-      minScore.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      sort
-    else:
-      sort.toJson()
+  argsJson.add self.toJson()
+  argsJson.add minScore.toJson()
+  argsJson.add sort.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_fuzzySearchLines_void_TextDocumentEditor_float_bool_wasm(
       argsJsonString.cstring)
@@ -3199,18 +1903,11 @@ proc fuzzySearchLines*(self: TextDocumentEditor; minScore: float = 0.2;
 
 proc editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_wasm(
     arg: cstring): cstring {.importc.}
-proc gotoWorkspaceSymbol*(self: TextDocumentEditor; query: string = "") =
+proc gotoWorkspaceSymbol*(self: TextDocumentEditor; query: string = "") {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      query
-    else:
-      query.toJson()
+  argsJson.add self.toJson()
+  argsJson.add query.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
@@ -3218,13 +1915,9 @@ proc gotoWorkspaceSymbol*(self: TextDocumentEditor; query: string = "") =
 
 proc editor_text_hideCompletions_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc hideCompletions*(self: TextDocumentEditor) =
+proc hideCompletions*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_hideCompletions_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3232,13 +1925,9 @@ proc hideCompletions*(self: TextDocumentEditor) =
 
 proc editor_text_selectPrevCompletion_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectPrevCompletion*(self: TextDocumentEditor) =
+proc selectPrevCompletion*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectPrevCompletion_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3246,13 +1935,9 @@ proc selectPrevCompletion*(self: TextDocumentEditor) =
 
 proc editor_text_selectNextCompletion_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectNextCompletion*(self: TextDocumentEditor) =
+proc selectNextCompletion*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectNextCompletion_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3260,28 +1945,23 @@ proc selectNextCompletion*(self: TextDocumentEditor) =
 
 proc editor_text_hasTabStops_bool_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc hasTabStops*(self: TextDocumentEditor): bool =
+proc hasTabStops*(self: TextDocumentEditor): bool {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_hasTabStops_bool_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_clearTabStops_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc clearTabStops*(self: TextDocumentEditor) =
+proc clearTabStops*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_clearTabStops_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3289,13 +1969,9 @@ proc clearTabStops*(self: TextDocumentEditor) =
 
 proc editor_text_selectNextTabStop_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectNextTabStop*(self: TextDocumentEditor) =
+proc selectNextTabStop*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectNextTabStop_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3303,13 +1979,9 @@ proc selectNextTabStop*(self: TextDocumentEditor) =
 
 proc editor_text_selectPrevTabStop_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc selectPrevTabStop*(self: TextDocumentEditor) =
+proc selectPrevTabStop*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectPrevTabStop_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3317,18 +1989,11 @@ proc selectPrevTabStop*(self: TextDocumentEditor) =
 
 proc editor_text_applyCompletion_void_TextDocumentEditor_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
-proc applyCompletion*(self: TextDocumentEditor; completion: JsonNode) =
+proc applyCompletion*(self: TextDocumentEditor; completion: JsonNode) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when JsonNode is JsonNode:
-      completion
-    else:
-      completion.toJson()
+  argsJson.add self.toJson()
+  argsJson.add completion.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_applyCompletion_void_TextDocumentEditor_JsonNode_wasm(
       argsJsonString.cstring)
@@ -3336,13 +2001,9 @@ proc applyCompletion*(self: TextDocumentEditor; completion: JsonNode) =
 
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
-proc applySelectedCompletion*(self: TextDocumentEditor) =
+proc applySelectedCompletion*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_applySelectedCompletion_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3350,18 +2011,11 @@ proc applySelectedCompletion*(self: TextDocumentEditor) =
 
 proc editor_text_showHoverFor_void_TextDocumentEditor_Cursor_wasm(arg: cstring): cstring {.
     importc.}
-proc showHoverFor*(self: TextDocumentEditor; cursor: Cursor) =
+proc showHoverFor*(self: TextDocumentEditor; cursor: Cursor) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Cursor is JsonNode:
-      cursor
-    else:
-      cursor.toJson()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_showHoverFor_void_TextDocumentEditor_Cursor_wasm(
       argsJsonString.cstring)
@@ -3369,13 +2023,9 @@ proc showHoverFor*(self: TextDocumentEditor; cursor: Cursor) =
 
 proc editor_text_showHoverForCurrent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc showHoverForCurrent*(self: TextDocumentEditor) =
+proc showHoverForCurrent*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_showHoverForCurrent_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3383,13 +2033,9 @@ proc showHoverForCurrent*(self: TextDocumentEditor) =
 
 proc editor_text_hideHover_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc hideHover*(self: TextDocumentEditor) =
+proc hideHover*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_hideHover_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3397,13 +2043,9 @@ proc hideHover*(self: TextDocumentEditor) =
 
 proc editor_text_cancelDelayedHideHover_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
-proc cancelDelayedHideHover*(self: TextDocumentEditor) =
+proc cancelDelayedHideHover*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_cancelDelayedHideHover_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3411,13 +2053,9 @@ proc cancelDelayedHideHover*(self: TextDocumentEditor) =
 
 proc editor_text_hideHoverDelayed_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc hideHoverDelayed*(self: TextDocumentEditor) =
+proc hideHoverDelayed*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_hideHoverDelayed_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3425,13 +2063,9 @@ proc hideHoverDelayed*(self: TextDocumentEditor) =
 
 proc editor_text_clearDiagnostics_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc clearDiagnostics*(self: TextDocumentEditor) =
+proc clearDiagnostics*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_clearDiagnostics_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3439,18 +2073,10 @@ proc clearDiagnostics*(self: TextDocumentEditor) =
 
 proc editor_text_setReadOnly_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) =
+proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      readOnly
-    else:
-      readOnly.toJson()
+  argsJson.add self.toJson()
+  argsJson.add readOnly.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setReadOnly_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
@@ -3458,18 +2084,11 @@ proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) =
 
 proc editor_text_setFileReadOnly_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc setFileReadOnly*(self: TextDocumentEditor; readOnly: bool) =
+proc setFileReadOnly*(self: TextDocumentEditor; readOnly: bool) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      readOnly
-    else:
-      readOnly.toJson()
+  argsJson.add self.toJson()
+  argsJson.add readOnly.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setFileReadOnly_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
@@ -3477,28 +2096,24 @@ proc setFileReadOnly*(self: TextDocumentEditor; readOnly: bool) =
 
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
-proc isRunningSavedCommands*(self: TextDocumentEditor): bool =
+proc isRunningSavedCommands*(self: TextDocumentEditor): bool {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_isRunningSavedCommands_bool_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_runSavedCommands_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc runSavedCommands*(self: TextDocumentEditor) =
+proc runSavedCommands*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runSavedCommands_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3507,18 +2122,10 @@ proc runSavedCommands*(self: TextDocumentEditor) =
 proc editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc clearCurrentCommandHistory*(self: TextDocumentEditor;
-                                 retainLast: bool = false) =
+                                 retainLast: bool = false) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      retainLast
-    else:
-      retainLast.toJson()
+  argsJson.add self.toJson()
+  argsJson.add retainLast.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
@@ -3526,13 +2133,9 @@ proc clearCurrentCommandHistory*(self: TextDocumentEditor;
 
 proc editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
-proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
+proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3540,33 +2143,25 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
 
 proc editor_text_getSelection_Selection_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc getSelection*(self: TextDocumentEditor): Selection =
+proc getSelection*(self: TextDocumentEditor): Selection {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getSelection_Selection_TextDocumentEditor_wasm(
       argsJsonString.cstring)
-  result = parseJson($res).jsonTo(typeof(result))
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
     arg: cstring): cstring {.importc.}
-proc setSelection*(self: TextDocumentEditor; selection: Selection) =
+proc setSelection*(self: TextDocumentEditor; selection: Selection) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
       argsJsonString.cstring)
@@ -3574,18 +2169,11 @@ proc setSelection*(self: TextDocumentEditor; selection: Selection) =
 
 proc editor_text_setTargetSelection_void_TextDocumentEditor_Selection_wasm(
     arg: cstring): cstring {.importc.}
-proc setTargetSelection*(self: TextDocumentEditor; selection: Selection) =
+proc setTargetSelection*(self: TextDocumentEditor; selection: Selection) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when Selection is JsonNode:
-      selection
-    else:
-      selection.toJson()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setTargetSelection_void_TextDocumentEditor_Selection_wasm(
       argsJsonString.cstring)
@@ -3593,18 +2181,11 @@ proc setTargetSelection*(self: TextDocumentEditor; selection: Selection) =
 
 proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_wasm(
     arg: cstring): cstring {.importc.}
-proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
+proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  argsJson.add block:
-    when string is JsonNode:
-      action
-    else:
-      action.toJson()
+  argsJson.add self.toJson()
+  argsJson.add action.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
@@ -3612,13 +2193,9 @@ proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
 
 proc editor_text_recordCurrentCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc recordCurrentCommand*(self: TextDocumentEditor) =
+proc recordCurrentCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_recordCurrentCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3626,13 +2203,9 @@ proc recordCurrentCommand*(self: TextDocumentEditor) =
 
 proc editor_text_runSingleClickCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc runSingleClickCommand*(self: TextDocumentEditor) =
+proc runSingleClickCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runSingleClickCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3640,13 +2213,9 @@ proc runSingleClickCommand*(self: TextDocumentEditor) =
 
 proc editor_text_runDoubleClickCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc runDoubleClickCommand*(self: TextDocumentEditor) =
+proc runDoubleClickCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runDoubleClickCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3654,13 +2223,9 @@ proc runDoubleClickCommand*(self: TextDocumentEditor) =
 
 proc editor_text_runTripleClickCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc runTripleClickCommand*(self: TextDocumentEditor) =
+proc runTripleClickCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runTripleClickCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
@@ -3668,13 +2233,9 @@ proc runTripleClickCommand*(self: TextDocumentEditor) =
 
 proc editor_text_runDragCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
-proc runDragCommand*(self: TextDocumentEditor) =
+proc runDragCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
+  argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runDragCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)

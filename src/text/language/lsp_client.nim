@@ -25,12 +25,16 @@ proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.us
   return genAst(level, args):
     {.gcsafe.}:
       if file == nil:
-        logFileName = getAppDir() / & "lsp.log"
-        file = open(logFileName, fmWrite)
-        fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+        try:
+          logFileName = getAppDir() / & "lsp.log"
+          file = open(logFileName, fmWrite)
+          fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+        except IOError:
+          discard
 
       try:
-        logging.log(fileLogger, level, args)
+        if fileLogger != nil:
+          logging.log(fileLogger, level, args)
         # setLastModificationTime(logFileName, getTime())
       except:
         discard

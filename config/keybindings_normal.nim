@@ -3,11 +3,11 @@ import misc/[event, id, timer]
 
 {.used.}
 
-proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: string, newMode: string)) =
+proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: string, newMode: string) {.gcsafe, raises: [].}) =
   let modeChangedHandler = getOption("editor.text.mode-changed-handler", "")
   if modeChangedHandler != "":
     onEditorModeChanged.unsubscribe(parseId(modeChangedHandler))
-  let id = onEditorModeChanged.subscribe proc(arg: auto) =
+  let id = onEditorModeChanged.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
     # infof"onEditorModeChanged: {arg.editor}, {arg.oldMode}, {arg.newMode}"
     if arg.editor.isTextEditor(editor) and not editor.isRunningSavedCommands:
       handler(editor, arg.oldMode, arg.newMode)

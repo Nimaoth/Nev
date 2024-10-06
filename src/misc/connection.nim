@@ -8,7 +8,7 @@ type Connection* = ref object of RootObj
 
 {.push hint[XCannotRaiseY]:off.}
 
-method close*(connection: Connection) {.base, gcsafe, raises: [IOError].} = discard
+method close*(connection: Connection) {.base, gcsafe, raises: [].} = discard
 method recvLine*(connection: Connection): Future[string] {.base, gcsafe, raises: [IOError].} = discard
 method recv*(connection: Connection, length: int): Future[string] {.base, gcsafe, raises: [IOError].} = discard
 method send*(connection: Connection, data: string): Future[void] {.base, gcsafe, raises: [IOError].} = discard
@@ -22,7 +22,7 @@ method close*(connection: ConnectionAsyncProcess) =
   try:
     connection.process.destroy()
   except OSError:
-    raise newException(IOError, "Failed to destroy process", getCurrentException())
+    discard
 
 method recvLine*(connection: ConnectionAsyncProcess): Future[string] =
   connection.process.recvLine()

@@ -5,26 +5,18 @@ import scripting_api, misc/myjsonutils
 
 
 proc collab_connectCollaborator_void_int_wasm(arg: cstring): cstring {.importc.}
-proc connectCollaborator*(port: int = 6969) =
+proc connectCollaborator*(port: int = 6969) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when int is JsonNode:
-      port
-    else:
-      port.toJson()
+  argsJson.add port.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = collab_connectCollaborator_void_int_wasm(
       argsJsonString.cstring)
 
 
 proc collab_hostCollaborator_void_int_wasm(arg: cstring): cstring {.importc.}
-proc hostCollaborator*(port: int = 6969) =
+proc hostCollaborator*(port: int = 6969) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add block:
-    when int is JsonNode:
-      port
-    else:
-      port.toJson()
+  argsJson.add port.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = collab_hostCollaborator_void_int_wasm(
       argsJsonString.cstring)

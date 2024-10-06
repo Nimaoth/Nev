@@ -5,6 +5,9 @@ import platform/filesystem
 when not defined(js):
   import misc/async_process
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "dap"
 
 var logVerbose = false
@@ -370,13 +373,6 @@ proc hash*(vr: FrameId): Hash {.borrow.}
 proc `$`*(vr: FrameId): string {.borrow.}
 proc `%`*(vr: FrameId): JsonNode {.borrow.}
 
-when defined(js):
-  # todo
-  proc absolutePath(path: string): string = path
-
-proc toUri*(path: string): Uri =
-  return parseUri("file:///" & path.absolutePath.encodePathUri) # todo: use file://{} for linux
-
 proc createHeader*(contentLength: int): string =
   let header = fmt"Content-Length: {contentLength}" & "\r\n\r\n"
   return header
@@ -720,32 +716,35 @@ proc newDAPClient*(connection: Connection): DAPCLient =
   client
 
 proc dispatchEvent(client: DAPClient, event: string, body: JsonNode) =
-  let opts = JOptions(allowMissingKeys: true, allowExtraKeys: true)
-  case event
-  of "initialized":
-    client.initializedEventFuture.complete()
-    client.onInitialized.invoke
-  of "stopped": client.onStopped.invoke body.jsonTo(OnStoppedData, opts)
-  of "continued": client.onContinued.invoke body.jsonTo(OnContinuedData, opts)
-  of "exited": client.onExited.invoke body.jsonTo(OnExitedData, opts)
-  of "terminated": client.onTerminated.invoke if body.kind == JObject:
-      body.jsonTo(OnTerminatedData, opts).some
+  try:
+    let opts = JOptions(allowMissingKeys: true, allowExtraKeys: true)
+    case event
+    of "initialized":
+      client.initializedEventFuture.complete()
+      client.onInitialized.invoke
+    of "stopped": client.onStopped.invoke body.jsonTo(OnStoppedData, opts)
+    of "continued": client.onContinued.invoke body.jsonTo(OnContinuedData, opts)
+    of "exited": client.onExited.invoke body.jsonTo(OnExitedData, opts)
+    of "terminated": client.onTerminated.invoke if body.kind == JObject:
+        body.jsonTo(OnTerminatedData, opts).some
+      else:
+        OnTerminatedData.none
+    of "thread": client.onThread.invoke body.jsonTo(OnThreadData, opts)
+    of "output": client.onOutput.invoke body.jsonTo(OnOutputData, opts)
+    of "breakpoint": client.onBreakpoint.invoke body.jsonTo(OnBreakpointData, opts)
+    of "module": client.onModule.invoke body.jsonTo(OnModuleData, opts)
+    of "loadedSource": client.onLoadedSource.invoke body.jsonTo(OnLoadedSourceData, opts)
+    of "process": client.onProcess.invoke body.jsonTo(OnProcessData, opts)
+    of "capabilities": client.onCapabilities.invoke body.jsonTo(OnCapabilitiesData, opts)
+    of "progressStart": client.onProgressStart.invoke body.jsonTo(OnProgressStartData, opts)
+    of "progressUpdate": client.onProgressUpdate.invoke body.jsonTo(OnProgressUpdateData, opts)
+    of "progressEnd": client.onProgressEnd.invoke body.jsonTo(OnProgressEndData, opts)
+    of "invalidated": client.onInvalidated.invoke body.jsonTo(OnInvalidatedData, opts)
+    of "memory": client.onMemory.invoke body.jsonTo(OnMemoryData, opts)
     else:
-      OnTerminatedData.none
-  of "thread": client.onThread.invoke body.jsonTo(OnThreadData, opts)
-  of "output": client.onOutput.invoke body.jsonTo(OnOutputData, opts)
-  of "breakpoint": client.onBreakpoint.invoke body.jsonTo(OnBreakpointData, opts)
-  of "module": client.onModule.invoke body.jsonTo(OnModuleData, opts)
-  of "loadedSource": client.onLoadedSource.invoke body.jsonTo(OnLoadedSourceData, opts)
-  of "process": client.onProcess.invoke body.jsonTo(OnProcessData, opts)
-  of "capabilities": client.onCapabilities.invoke body.jsonTo(OnCapabilitiesData, opts)
-  of "progressStart": client.onProgressStart.invoke body.jsonTo(OnProgressStartData, opts)
-  of "progressUpdate": client.onProgressUpdate.invoke body.jsonTo(OnProgressUpdateData, opts)
-  of "progressEnd": client.onProgressEnd.invoke body.jsonTo(OnProgressEndData, opts)
-  of "invalidated": client.onInvalidated.invoke body.jsonTo(OnInvalidatedData, opts)
-  of "memory": client.onMemory.invoke body.jsonTo(OnMemoryData, opts)
-  else:
-    log lvlError, &"Unhandled event {event} ({body})"
+      log lvlError, &"Unhandled event {event} ({body})"
+  except ValueError as e:
+    log lvlError, &"Failed to dispatch dap event '{event}': {e.msg}\n{body}"
 
 proc handleResponse(client: DAPClient, response: JsonNode) =
   if logVerbose:

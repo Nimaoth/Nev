@@ -26,8 +26,10 @@ from nimsumtree/sumtree as st import summaryType, itemSummary, Bias
 
 export text_document, document_editor, id
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "texted"
-createJavascriptPrototype("editor.text")
 
 let searchResultsId = newId()
 let errorNodesHighlightId = newId()
@@ -181,37 +183,37 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Completions: {self.completions.len}\n"
   result.add &"LastItems: {self.lastItems.len}"
 
-proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, configProvider: ConfigProvider): TextDocumentEditor {.gcsafe, raises: [].}
-proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.gcsafe, raises: [].}
-proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse {.gcsafe, raises: [].}
-proc showCompletionWindow(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc updateCompletionsFromEngine(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc hideCompletions*(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection {.gcsafe, raises: [].}
-proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection {.gcsafe, raises: [].}
-proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.gcsafe, raises: [].}
-proc updateInlayHints*(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection {.gcsafe, raises: [].}
-proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1)) {.gcsafe, raises: [].}
-proc clearCustomHighlights*(self: TextDocumentEditor, id: Id) {.gcsafe, raises: [].}
-proc updateSearchResults(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.gcsafe, raises: [].}
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) {.gcsafe, raises: [].}
-proc getContextWithMode*(self: TextDocumentEditor, context: string): string {.gcsafe, raises: [].}
-proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.gcsafe, raises: [].}
+proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, configProvider: ConfigProvider): TextDocumentEditor
+proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
+proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
+proc showCompletionWindow(self: TextDocumentEditor)
+proc updateCompletionsFromEngine(self: TextDocumentEditor)
+proc hideCompletions*(self: TextDocumentEditor)
+proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
+proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
+proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
+proc updateInlayHints*(self: TextDocumentEditor)
+proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
+proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1))
+proc clearCustomHighlights*(self: TextDocumentEditor, id: Id)
+proc updateSearchResults(self: TextDocumentEditor)
+proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
+proc getContextWithMode*(self: TextDocumentEditor, context: string): string
+proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 
-proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer) {.gcsafe, raises: [].}
-proc handleTextDocumentTextChanged(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) {.gcsafe, raises: [].}
-proc handleTextDocumentLoaded(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc handleTextDocumentPreLoaded(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc handleTextDocumentSaved(self: TextDocumentEditor) {.gcsafe, raises: [].}
-proc handleCompletionsUpdated(self: TextDocumentEditor) {.gcsafe, raises: [].}
+proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
+proc handleTextDocumentTextChanged(self: TextDocumentEditor)
+proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
+proc handleTextDocumentLoaded(self: TextDocumentEditor)
+proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
+proc handleTextDocumentSaved(self: TextDocumentEditor)
+proc handleCompletionsUpdated(self: TextDocumentEditor)
 
 proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
-  includeAfter: bool = true, wrap: bool = true): Selection {.gcsafe, raises: [].}
+  includeAfter: bool = true, wrap: bool = true): Selection
 proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
-  includeAfter: bool = true, wrap: bool = true): Selection {.gcsafe, raises: [].}
+  includeAfter: bool = true, wrap: bool = true): Selection
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor =
   self.document.clampCursor(cursor, includeAfter)
@@ -375,7 +377,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
   self.handleDocumentChanged()
 
-method deinit*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+method deinit*(self: TextDocumentEditor) =
   let filename = if self.document.isNotNil: self.document.filename else: ""
   logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
 
@@ -413,7 +415,7 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
   else: return false
 
 method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]
-    ): seq[EventHandler] {.gcsafe, raises: [].} =
+    ): seq[EventHandler] =
   result = @[self.eventHandler]
   if not self.modeEventHandler.isNil:
     result.add self.modeEventHandler
@@ -594,7 +596,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   self.markDirty()
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
-    scrollBehaviour = ScrollBehaviour.none) {.raises: [].} =
+    scrollBehaviour = ScrollBehaviour.none) =
   if self.disableScrolling:
     return
 
@@ -610,7 +612,7 @@ proc isThickCursor*(self: TextDocumentEditor): bool =
     return true
   return self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.wide"), false)
 
-proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor {.gcsafe, raises: [].} =
+proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor =
   case which
   of Config:
     let key = self.getContextWithMode("editor.text.cursor.movement")
@@ -621,7 +623,7 @@ proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionC
   of First:
     return selection.first
 
-proc getCursor(self: TextDocumentEditor, which: SelectionCursor): Cursor {.gcsafe, raises: [].} =
+proc getCursor(self: TextDocumentEditor, which: SelectionCursor): Cursor =
   return self.getCursor(self.selection, which)
 
 proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor,
@@ -723,7 +725,7 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
   result["type"] = newJString("editor.text")
   result["id"] = newJInt(self.id.int)
 
-proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
+proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: [ValueError].} =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
@@ -879,7 +881,7 @@ proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset
   return self.getPrevFindResult(cursor, offset, includeAfter=includeAfter).first
 
 proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
-    wrap: bool, includeAfter: bool): Cursor {.gcsafe, raises: [], expose: "editor.text".} =
+    wrap: bool, includeAfter: bool): Cursor {.expose: "editor.text".} =
   return self.getNextFindResult(cursor, offset, includeAfter=includeAfter).first
 
 proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
@@ -2234,7 +2236,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
 
       return result
 
-proc mapAllOrLast[T](self: openArray[T], all: bool, p: proc(v: T): T {.gcsafe, raises: [].}): seq[T] {.gcsafe, raises: [].} =
+proc mapAllOrLast[T](self: openArray[T], all: bool, p: proc(v: T): T {.gcsafe, raises: [].}): seq[T] =
   if all:
     result = self.map p
   else:
@@ -2567,7 +2569,7 @@ proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Fu
 
   return matches
 
-proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] {.raises: [].} =
+proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
   self.updateCompletionsFromEngine()
 
   if completionIndex in self.completionMatchPositions:
@@ -2830,7 +2832,7 @@ proc selectPrevTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
       self.selections = val[]
       break
 
-proc applyCompletion*(self: TextDocumentEditor, completion: Completion) {.gcsafe, raises: [].} =
+proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   let completion = completion
   log(lvlInfo, fmt"Applying completion {completion.item.label}")
 
@@ -3115,7 +3117,7 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text"
   self.currentCommandHistory.commands.setLen 0
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
-  let pattern = re"[_a-zA-Z0-9]+"
+  let pattern = catch(re"[_a-zA-Z0-9]+").expect("Invalid regex???")
 
   # todo: use RopeCursor
   for li, line in self.lastRenderedLines:
@@ -3204,7 +3206,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   var progress = ""
 
-  proc updateStyledTextOverrides() {.gcsafe, raises: [].} =
+  proc updateStyledTextOverrides() =
     self.styledTextOverrides.clear()
     try:
 
@@ -3393,7 +3395,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 
   return JsonNode.none
 
-method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] {.gcsafe, raises: [].} =
+method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
   # debugf "handleAction {action}, '{arg}'"
 
   try:
@@ -3453,7 +3455,7 @@ proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
     if self.active and self.blinkCursorTask.isNotNil:
       self.blinkCursorTask.reschedule()
 
-method injectDependencies*(self: TextDocumentEditor, app: AppInterface, fs: Filesystem) {.gcsafe, raises: [].} =
+method injectDependencies*(self: TextDocumentEditor, app: AppInterface, fs: Filesystem) =
   self.app = app
   self.fs = fs
   self.platform = app.platform
