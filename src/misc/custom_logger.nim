@@ -8,12 +8,8 @@ export strformat
 
 export logging.Level, logging.Logger, logging.defaultFmtStr, logging.addHandler
 
-when not defined(js):
-  import std/[terminal, colors]
-  type FileLogger = logging.FileLogger
-else:
-  type FileLogger = ref object of logging.Logger
-    discard
+import std/[terminal, colors]
+type FileLogger = logging.FileLogger
 
 type
   CustomLogger* = ref object of logging.Logger
@@ -37,14 +33,13 @@ proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultF
   result.timer = startTimer()
 
 proc enableFileLogger*(self: CustomLogger, filename = "logs/messages.log") =
-  when not defined(js):
-    let filename = if filename.isAbsolute:
-      filename
-    else:
-      getAppDir() / filename
-    var file = open(filename, fmWrite).catch:
-      return
-    self.fileLogger = logging.newFileLogger(file, self.levelThreshold, "", flushThreshold=logging.lvlAll).some
+  let filename = if filename.isAbsolute:
+    filename
+  else:
+    getAppDir() / filename
+  var file = open(filename, fmWrite).catch:
+    return
+  self.fileLogger = logging.newFileLogger(file, self.levelThreshold, "", flushThreshold=logging.lvlAll).some
 
 proc enableConsoleLogger*(self: CustomLogger) =
   self.consoleLogger = logging.Logger(logging.newConsoleLogger(self.levelThreshold, "", flushThreshold=logging.lvlAll)).some
@@ -61,7 +56,7 @@ proc toggleConsoleLogger*(self: CustomLogger) =
   else:
     self.enableConsoleLogger()
 
-let isTerminal {.used.} = when not defined(js) and declared(isatty): isatty(stdout) else: false
+let isTerminal {.used.} = when declared(isatty): isatty(stdout) else: false
 
 func formatTime(t: float64): string =
   if t >= 1000:
@@ -89,21 +84,20 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
       discard
 
   if self.consoleLogger.getSome(l):
-    when not defined(js):
-      if isTerminal:
-        let color = case level
-        of logging.lvlDebug: rgb(100, 100, 200)
-        of logging.lvlInfo: rgb(200, 200, 200)
-        of logging.lvlNotice: rgb(200, 255, 255)
-        of logging.lvlWarn: rgb(200, 200, 100)
-        of logging.lvlError: rgb(255, 150, 150)
-        of logging.lvlFatal: rgb(255, 0, 0)
-        else: rgb(255, 255, 255)
-        try:
-          {.gcsafe.}:
-            stdout.write(ansiForegroundColorCode(color))
-        except IOError:
-          discard
+    if isTerminal:
+      let color = case level
+      of logging.lvlDebug: rgb(100, 100, 200)
+      of logging.lvlInfo: rgb(200, 200, 200)
+      of logging.lvlNotice: rgb(200, 255, 255)
+      of logging.lvlWarn: rgb(200, 200, 100)
+      of logging.lvlError: rgb(255, 150, 150)
+      of logging.lvlFatal: rgb(255, 0, 0)
+      else: rgb(255, 255, 255)
+      try:
+        {.gcsafe.}:
+          stdout.write(ansiForegroundColorCode(color))
+      except IOError:
+        discard
 
     try:
       {.gcsafe.}:
@@ -111,23 +105,18 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
     except:
       discard
 
-    when not defined(js):
-      if isTerminal:
-        try:
-          {.gcsafe.}:
-            stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
-        except IOError:
-          discard
+    if isTerminal:
+      try:
+        {.gcsafe.}:
+          stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
+      except IOError:
+        discard
 
 var logger* = newCustomLogger()
 
-when defined(js):
-  logger.enableConsoleLogger()
-
 proc flush*(logger: logging.Logger) =
   if logger of FileLogger:
-    when not defined(js):
-      logger.FileLogger.file.flushFile()
+    logger.FileLogger.file.flushFile()
   elif logger of CustomLogger and logger.CustomLogger.fileLogger.getSome(l):
     l.flush()
 

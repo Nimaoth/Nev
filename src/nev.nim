@@ -1,4 +1,1 @@
-when defined(js):
-  include browser_main
-else:
-  include desktop_main
+include desktop_main

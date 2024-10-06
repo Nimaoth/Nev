@@ -74,13 +74,8 @@ template readFinished*[T: not void](fut: Future[T]): lent T =
     raiseAssert("Failed to read unfinished future")
 
 template thenIt*[T](f: Future[T], body: untyped): untyped =
-  when defined(js):
-    discard f.then(proc(a: T) =
-      let it {.inject.} = a
-      body
-    )
-  else:
-    f.addCallback(proc(a: Future[T]) =
-      let it {.inject.} = a.read
-      body
-    )
+  f.addCallback(proc(a: Future[T]) =
+    let it {.inject.} = a.read
+    body
+  )
+

@@ -21,6 +21,5 @@ when enableAst:
   static:
     echo "Ast framework enabled"
 
-when not defined(js):
-  when not enableGui and not enableTerminal:
-    {.error: "No backend enabled".}
+when not enableGui and not enableTerminal:
+  {.error: "No backend enabled".}

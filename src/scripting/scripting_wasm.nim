@@ -2,11 +2,8 @@ import std/[macros, macrocache, genasts, json, strutils, os]
 import misc/[custom_logger, custom_async, util]
 import platform/filesystem
 import scripting_base, document_editor, expose, vfs
-
 import wasm
-
-when not defined(js):
-  import wasm3, wasm3/wasmconversions
+import wasm3, wasm3/wasmconversions
 
 export scripting_base, wasm
 

@@ -63,18 +63,11 @@ type LineRenderOptions = object
 
   indentInSpaces: int
 
-when defined(js):
-  template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
-    if part.scopeIsToken:
-      theme.tokenColor(part.scopeC, default)
-    else:
-      theme.color(part.scope, default)
-else:
-  template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
-    if part.scopeIsToken:
-      theme.tokenColor(part.scope, default)
-    else:
-      theme.color(part.scope, default)
+template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
+  if part.scopeIsToken:
+    theme.tokenColor(part.scope, default)
+  else:
+    theme.color(part.scope, default)
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool
 proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex]

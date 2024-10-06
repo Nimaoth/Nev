@@ -1007,10 +1007,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
         var scrollContent: UINode
 
+        # todo
         let animate = 0.UINodeFlags
-        # when defined(js):
-        #   let animate = 0.UINodeFlags
-        # else:
         #   let animate = if builder.charWidth > 1: &{AnimatePosition} else: 0.UINodeFlags
 
         builder.panel(&{FillX, FillY, FillBackground, MaskContent, OverlappingChildren}, backgroundColor = backgroundColor):

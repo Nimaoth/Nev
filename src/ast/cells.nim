@@ -26,8 +26,6 @@ type
     noSpaceRight*: bool
 
   Cell* {.acyclic.} = ref object of RootObj
-    when defined(js):
-      aDebug*: cstring
     id*: CellId
     parent* {.cursor.}: Cell
     flags*: CellFlags
@@ -459,8 +457,6 @@ proc fill*(map: NodeCellMap, self: Cell) =
     return
   self.fillChildren(map)
   self.filled = true
-  when defined(js):
-    self.aDebug = cstring $self
 
 proc expand*(map: NodeCellMap, self: Cell, path: openArray[int]) =
   map.fill(self)

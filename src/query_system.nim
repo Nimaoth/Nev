@@ -12,60 +12,10 @@ var currentIndent* = 0
 
 func repeat2*(s: string, n: Natural): string = repeat s, n
 
-when defined(js):
-  import compilation_config
-
-  type Cache[K, V] {.importjs: "Map".} = ref object
-    discard
-  proc newCache[K, V](capacity: int): Cache[K, V] {.importjs: "(new Map())".}
-
-  proc mapKeyJs*[A](key: A): cstring =
-    const typeName = $A
-    {.emit: ["let temp = ", key, ";"].}
-    # @note: This assumes that the object doesn't actually change so the generated id can be cached
-    #        The js backend will however sometimes reuse the same object, in which case you need to invalidate
-    #        the cached id.
-    when enableTableIdCacheChecking:
-      {.emit: ["let newId = getId", typeName, "Js(temp);"].}
-      {.emit: ["if (temp._id !== undefined && temp._id !== newId) {console.error('new id for ', temp, ', ', temp._id, ' -> ', newId); debugger;} "].}
-      {.emit: ["temp._id = newId;"].}
-    else:
-      {.emit: ["if (temp._id === undefined) temp._id = getId", typeName, "Js(", key, ");"].}
-    {.emit: ["return temp._id;"].}
-
-  proc invalidateCachedId*[T](v: T) {.importjs: "#._id = undefined".}
-
-  proc getOrDefaultJs[A, B](t: Cache[A, B], key: cstring, default: B): B {.importjs: "orDefaultJs((#).get(#), (#))"}
-  proc getOrDefault*[A, B](t: Cache[A, B], key: A, default: B): B = getOrDefaultJs[A, B](t, key.mapKeyJs, default)
-
-  proc getJs*[A, B](t: Cache[A, B], key: cstring): B {.importjs: "#.get(#)".}
-  proc `[]`*[A, B](t: Cache[A, B], key: A): B = getJs[A, B](t, key.mapKeyJs)
-
-  proc setJs*[A, B](t: Cache[A, B], key: cstring, val: sink B) {.importjs: "#.set(#, #)".}
-  proc `[]=`*[A, B](t: Cache[A, B], key: A, val: sink B) = setJs[A, B](t, key.mapKeyJs, val)
-
-  proc containsJs*[A, B](t: Cache[A, B], key: cstring): bool {.importjs: "#.has(#)".}
-  proc contains*[A, B](t: Cache[A, B], key: A): bool = containsJs[A, B](t, key.mapKeyJs)
-
-  proc delJs*[A, B](t: Cache[A, B], key: cstring) {.importjs: "#.delete(#)".}
-  proc del*[A, B](t: Cache[A, B], key: A) = delJs[A, B](t, key.mapKeyJs)
-
-  proc clearJs*[A, B](t: Cache[A, B]) {.importjs: "#.clear()".}
-  proc clear*[A, B](t: Cache[A, B]) = clearJs[A, B](t)
-
-  proc pairs*[A, B](t: Cache[A, B]): seq[(A, B)] =
-    {.emit: ["for (var [k, v] in ", t, ".entries()) {", result, ".push({Field0: k, Field1: v});}"].} #"""
-
-  proc values*[A, B](t: Cache[A, B]): seq[B] =
-    proc valuesJs(t: Cache[A, B]): ref RootObj {.importjs: "#.values()".}
-    let iter = t.valuesJs()
-    {.emit: ["for (var i in ", iter, ") {", result, ".push(i);}"].} #"""
-
-else:
-  # type Cache[K, V] = LruCache[K, V]
-  # proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
-  type Cache[K, V] = Table[K, V]
-  proc newCache[K, V](capacity: int): Cache[K, V] = initTable[K, V](capacity)
+# type Cache[K, V] = LruCache[K, V]
+# proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
+type Cache[K, V] = Table[K, V]
+proc newCache[K, V](capacity: int): Cache[K, V] = initTable[K, V](capacity)
 
 proc init[K, V](result: var Cache[K, V], capacity: int) =
   result = newCache[K, V](capacity)
@@ -97,13 +47,6 @@ type
     dependencies*: Cache[Dependency, seq[Dependency]]
     queryNames*: Table[UpdateFunction, string]
     revision*: int
-
-when defined(js):
-  proc getIdItemIdJs*(item: ItemId): cstring {.exportc, used.} =
-    {.emit: ["return '' + toCString(", item, ".Field0) + ", item, ".Field1;"].} #"""
-
-  proc getIdDependencyJs*(dep: Dependency): cstring {.exportc, used.} =
-    {.emit: ["return getIdItemIdJs(", dep, ".Field0) + ", dep, ".Field1;"].} #"""
 
 func `$`*(stats: QueryStats): string =
   return fmt"{stats.time.ms:>6.2f}ms  {stats.forcedCalls:4}/{stats.totalCalls:4}"
@@ -779,10 +722,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       let verified = ctx.depGraph.verified.getOrDefault(key, 0)
 
       for i, dep in ctx.depGraph.getDependencies(key):
-        when defined(js):
-          # In the javascript backend the dep variable is reused, so we need to clear the cached id
-          dep.invalidateCachedId()
-          dep.item.invalidateCachedId()
         if dep.item.id == null:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency got deleted -> red, failed"
           return Error
@@ -873,11 +812,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`, recordDependency: bool = true): `value` =
           try:
-            when not defined(js):
-              let timer = startTimer()
-              ctx.`stats`.totalCalls += 1
-              defer:
-                ctx.`stats`.time += timer.elapsed
+            let timer = startTimer()
+            ctx.`stats`.totalCalls += 1
+            defer:
+              ctx.`stats`.time += timer.elapsed
 
             defer:
               if ctx.dependencyStack.len == 0:
@@ -951,11 +889,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
           try:
-            when not defined(js):
-              let timer = startTimer()
-              ctx.`stats`.totalCalls += 1
-              defer:
-                ctx.`stats`.time += timer.elapsed
+            let timer = startTimer()
+            ctx.`stats`.totalCalls += 1
+            defer:
+              ctx.`stats`.time += timer.elapsed
 
             defer:
               if ctx.dependencyStack.len == 0:

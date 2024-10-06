@@ -30,7 +30,6 @@ from scripting_api import Backend
 {.push raises: [].}
 
 logCategory "app"
-createJavascriptPrototype("editor")
 
 const configDirName = "." & appName
 const defaultSessionName = &".{appName}-session"

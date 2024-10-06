@@ -3570,9 +3570,6 @@ proc handleCompletionsUpdated(self: TextDocumentEditor) =
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
   let editor = TextDocumentEditor(eventHandler: nil, selectionsInternal: @[(0, 0).toSelection])
-  when defined(js):
-    {.emit: [editor, " = jsCreateWithPrototype(editor_text_prototype, ", editor, ");"].}
-    # This " is here to fix syntax highlighting
   editor.cursorsId = newId()
   editor.completionsId = newId()
   editor.hoverId = newId()

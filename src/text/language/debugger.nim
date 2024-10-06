@@ -1,4 +1,4 @@
-import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
+import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils, osproc]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
 import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view
@@ -14,9 +14,6 @@ from scripting_api as api import nil
 
 {.push gcsafe.}
 {.push raises: [].}
-
-when not defined(js):
-  import std/[osproc]
 
 logCategory "debugger"
 
@@ -716,14 +713,13 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
     #   return newAsyncSocketConnection(host, port.Port).await.Connection.some
 
   of Stdio:
-    when not defined(js):
-      let exePath = config.tryGet("path", string, newJNull()):
-        log lvlError, &"No/invalid debugger path in {config.pretty}"
-        return Connection.none
-      let args = config.tryGet("args", seq[string], newJArray()):
-        log lvlError, &"No/invalid debugger args in {config.pretty}"
-        return Connection.none
-      return newAsyncProcessConnection(exePath, args).await.Connection.some
+    let exePath = config.tryGet("path", string, newJNull()):
+      log lvlError, &"No/invalid debugger path in {config.pretty}"
+      return Connection.none
+    let args = config.tryGet("args", seq[string], newJArray()):
+      log lvlError, &"No/invalid debugger args in {config.pretty}"
+      return Connection.none
+    return newAsyncProcessConnection(exePath, args).await.Connection.some
 
   of Websocket:
     log lvlError, &"Websocket connection not implemented yet!"

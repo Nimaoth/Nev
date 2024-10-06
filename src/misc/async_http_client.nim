@@ -1,77 +1,60 @@
 import std/[options]
 import custom_async, array_buffer
 
-when defined(js):
+import std/[httpclient]
 
-  proc jsGetAsync(url: cstring, authToken: cstring): Future[cstring] {.importc.}
-  proc jsPostAsync(url: cstring, content: cstring, authToken: cstring): Future[cstring] {.importc.}
-  proc jsPostBinaryAsync(url: cstring, content: ArrayBuffer, authToken: cstring): Future[cstring] {.importc.}
+var clients: seq[AsyncHttpClient] = @[]
+var totalClients = 0
+const maxClients = 25
 
-  proc httpGet*(url: string, authToken: Option[string] = string.none): Future[string] {.async.} =
-    let cstr = await jsGetAsync(url.cstring, authToken.get("").cstring)
-    return $cstr
+proc getClient(): Future[AsyncHttpClient] {.async.} =
+  while clients.len == 0:
+    if totalClients < maxClients:
+      inc totalClients
+      return newAsyncHttpClient(userAgent = "Thunder Client (https://www.thunderclient.com)")
+    await sleepAsync(10)
+  return clients.pop
 
-  proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[string] {.async.} =
-    return $jsPostAsync(url.cstring, content.cstring, authToken.get("").cstring).await
+template withClient(client, body: untyped): untyped =
+  block:
+    let client = await getClient()
+    defer:
+      clients.add client
+    body
 
-  proc httpPost*(url: string, content: ArrayBuffer, authToken: Option[string] = string.none): Future[string] {.async.} =
-    return $jsPostBinaryAsync(url.cstring, content, authToken.get("").cstring).await
+proc httpGet*(url: string, authToken: Option[string] = string.none): Future[string] {.async.} =
+  var headers = newHttpHeaders()
+  if authToken.isSome:
+    headers.add("Authorization", authToken.get)
 
-else:
-  import std/[httpclient]
+  withClient client:
+    var response = await client.request(url, HttpGet, headers=headers)
+    let body = await response.body
+    return body
 
-  var clients: seq[AsyncHttpClient] = @[]
-  var totalClients = 0
-  const maxClients = 25
+proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[string] {.async.} =
+  var headers = newHttpHeaders()
+  if authToken.isSome:
+    headers.add("Authorization", authToken.get)
 
-  proc getClient(): Future[AsyncHttpClient] {.async.} =
-    while clients.len == 0:
-      if totalClients < maxClients:
-        inc totalClients
-        return newAsyncHttpClient(userAgent = "Thunder Client (https://www.thunderclient.com)")
-      await sleepAsync(10)
-    return clients.pop
+  headers.add("content-type", "text/plain")
 
-  template withClient(client, body: untyped): untyped =
-    block:
-      let client = await getClient()
-      defer:
-        clients.add client
-      body
+  withClient client:
+    let response = client.request(url, HttpPost, body=content, headers=headers).await
+    return response.body.await
 
-  proc httpGet*(url: string, authToken: Option[string] = string.none): Future[string] {.async.} =
-    var headers = newHttpHeaders()
-    if authToken.isSome:
-      headers.add("Authorization", authToken.get)
+proc httpPost*(url: string, content: ArrayBuffer, authToken: Option[string] = string.none): Future[string] {.async.} =
+  var str = newStringOfCap(content.buffer.len)
+  str.setLen(content.buffer.len)
+  for i in 0..content.buffer.high:
+    str[i] = content.buffer[i].char
 
-    withClient client:
-      var response = await client.request(url, HttpGet, headers=headers)
-      let body = await response.body
-      return body
+  var headers = newHttpHeaders()
+  if authToken.isSome:
+    headers.add("Authorization", authToken.get)
 
-  proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[string] {.async.} =
-    var headers = newHttpHeaders()
-    if authToken.isSome:
-      headers.add("Authorization", authToken.get)
+  headers.add("content-type", "application/octet-stream")
 
-    headers.add("content-type", "text/plain")
-
-    withClient client:
-      let response = client.request(url, HttpPost, body=content, headers=headers).await
-      return response.body.await
-
-  proc httpPost*(url: string, content: ArrayBuffer, authToken: Option[string] = string.none): Future[string] {.async.} =
-    var str = newStringOfCap(content.buffer.len)
-    str.setLen(content.buffer.len)
-    for i in 0..content.buffer.high:
-      str[i] = content.buffer[i].char
-
-    var headers = newHttpHeaders()
-    if authToken.isSome:
-      headers.add("Authorization", authToken.get)
-
-    headers.add("content-type", "application/octet-stream")
-
-    withClient client:
-      let response = client.request(url, HttpPost, body=str, headers=headers).await
-      return response.body.await
+  withClient client:
+    let response = client.request(url, HttpPost, body=str, headers=headers).await
+    return response.body.await

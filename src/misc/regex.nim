@@ -223,14 +223,8 @@ iterator findAllBounds*(buf: string, pattern: Regex): tuple[first: int, last: in
     start = bounds.last + 1
 
 proc glob*(pattern: string): Regex =
-  when defined(js):
-    # js doesn't support (?s) syntax in the regex, but we can pass a flag
-    # to the regex itself to make it case insensitive
-    let regexString = globToRegexString(pattern, isDos=false, ignoreCase=false)
-    return reg.re2(regexString, ignoreCase=true)
-  else:
-    let regexString = globToRegexString(pattern, isDos=false, ignoreCase=true)
-    return reg.re2(regexString)
+  let regexString = globToRegexString(pattern, isDos=false, ignoreCase=true)
+  return reg.re2(regexString)
 
 type Globs* = object
   negatedPatterns: seq[string]
