@@ -279,9 +279,7 @@ import ui/node
 
 import chronos/config
 
-proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions): Future[void] {.async.} =
-  var ed = await newEditor(backend, rend, fs, opts)
-
+proc run(app: App, rend: Platform, backend: Backend) =
   var frameIndex = 0
   var frameTime = 0.0
 
@@ -290,7 +288,7 @@ proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions):
 
   let maxPollPerFrameMs = 2.5
 
-  while not ed.closeRequested:
+  while not app.closeRequested:
     defer:
       inc frameIndex
 
@@ -307,8 +305,8 @@ proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions):
 
     var updateTime, renderTime: float
     block:
-      let delta = ed.frameTimer.elapsed.ms
-      ed.frameTimer = startTimer()
+      let delta = app.frameTimer.elapsed.ms
+      app.frameTimer = startTimer()
 
       let updateTimer = startTimer()
 
@@ -324,7 +322,7 @@ proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions):
         rend.requestedRender = false
         rend.builder.beginFrame(size)
         try:
-          ed.updateWidgetTree(frameIndex)
+          app.updateWidgetTree(frameIndex)
           rend.builder.endFrame()
         except:
           discard
@@ -346,7 +344,7 @@ proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions):
         rend.render()
         renderTime = renderTimer.elapsed.ms
 
-      frameTime = ed.frameTimer.elapsed.ms
+      frameTime = app.frameTimer.elapsed.ms
 
     if frameIndex == 0:
       log lvlInfo, "First render done"
@@ -377,12 +375,12 @@ proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions):
     var outlierTime = 20.0
 
     let frameSoFar = totalTimer.elapsed.ms
-    if lastEvent.elapsed.ms > ed.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
-      let time = ed.getOption("platform.reduced-fps-2.ms", 30)
+    if lastEvent.elapsed.ms > app.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
+      let time = app.getOption("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
-    elif lastEvent.elapsed.ms > ed.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
-      let time = ed.getOption("platform.reduced-fps-2.ms", 15)
+    elif lastEvent.elapsed.ms > app.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
+      let time = app.getOption("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
     elif backend == Terminal and frameSoFar < 5:
@@ -390,21 +388,29 @@ proc runApp(rend: Platform, fs: Filesystem, backend: Backend, opts: AppOptions):
       outlierTime += 5
 
     let totalTime = totalTimer.elapsed.ms
-    if not ed.disableLogFrameTime and
-        (eventCounter > 0 or totalTime > outlierTime or ed.logNextFrameTime):
+    if not app.disableLogFrameTime and
+        (eventCounter > 0 or totalTime > outlierTime or app.logNextFrameTime):
       log(lvlDebug, fmt"Total: {totalTime:>5.2f}, Poll: {pollTime:>5.2f}ms, Event: {eventTime:>5.2f}ms, Frame: {frameTime:>5.2f}ms (u: {updateTime:>5.2f}ms, r: {renderTime:>5.2f}ms)")
-    ed.logNextFrameTime = false
+    app.logNextFrameTime = false
 
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 
     {.gcsafe.}:
       logger.flush()
 
+proc main() =
+  let app = waitFor newApp(backend.get, rend, fs, opts)
+  run(app, rend, backend.get)
+
   try:
     log lvlInfo, "Shutting down editor"
-    ed.shutdown()
+    app.shutdown()
+    log lvlInfo, "Shutting down platform"
+    rend.deinit()
   except:
     discard
+
+main()
 
 when defined(enableSysFatalStackTrace) and not defined(wasm):
   proc writeStackTrace2*() {.exportc: "writeStackTrace2", used.} =
@@ -412,13 +418,6 @@ when defined(enableSysFatalStackTrace) and not defined(wasm):
 
   if false:
     writeStackTrace2()
-
-waitFor runApp(rend, fs, backend.get, opts)
-try:
-  log lvlInfo, "Shutting down platform"
-  rend.deinit()
-except:
-  discard
 
 when enableGui:
   if backend.get == Gui:

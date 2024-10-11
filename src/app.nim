@@ -1154,7 +1154,7 @@ proc runLateCommandsFromAppOptions(self: App) =
 
 proc finishInitialization*(self: App, state: EditorState): Future[void]
 
-proc newEditor*(backend: api.Backend, platform: Platform, fs: Filesystem, options = AppOptions()): Future[App] {.async.} =
+proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
   {.gcsafe.}:
@@ -4139,7 +4139,13 @@ proc recordCommand*(self: App, command: string, args: string) =
     self.registers[register].text.add command & " " & args
 
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
-  logScope lvlInfo, &"[handleAction] '{action} {arg}'"
+  let t = startTimer()
+  if not self.bIsReplayingCommands:
+    log lvlInfo, &"[handleAction] '{action} {arg}'"
+  defer:
+    if not self.bIsReplayingCommands:
+      let elapsed = t.elapsed
+      log lvlInfo, &"[handleAction] '{action} {arg}' took {elapsed.ms} ms"
 
   try:
     if record:
