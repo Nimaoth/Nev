@@ -2,6 +2,9 @@ import std/[macrocache, json, options, tables, strutils, strformat, sequtils]
 import misc/[util, custom_logger]
 import binary_encoder
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "wasm-builder"
 
 type
@@ -397,9 +400,9 @@ proc addGlobal*[T](self: WasmBuilder, typ: WasmValueType, mut: bool, init: T, id
   of I64: WasmInstr(kind: I64Const, i64Const: init.int64)
   of F32: WasmInstr(kind: F32Const, f32Const: init.float32)
   of F64: WasmInstr(kind: F64Const, f64Const: init.float64)
-  of V128: raise newException(Exception, "V128 not supported")
-  of FuncRef: raise newException(Exception, "FuncRef not supported")
-  of ExternRef: raise newException(Exception, "ExternRef not supported")
+  of V128: raiseAssert("V128 not supported")
+  of FuncRef: raiseAssert("FuncRef not supported")
+  of ExternRef: raiseAssert("ExternRef not supported")
 
   return self.addGlobal(typ, mut, WasmExpr(instr: @[instr]), id)
 
@@ -1641,7 +1644,10 @@ proc getInstrType*(self: WasmBuilder, instr: WasmInstr): WasmFunctionType =
   else:
     WasmFunctionType()
 
-proc validate*(self: WasmBuilder, instr: WasmInstr, expectedSize: Option[int], path: seq[int], doLog: bool): bool =
+{.pop.}
+{.pop.}
+
+proc validate*(self: WasmBuilder, instr: WasmInstr, expectedSize: Option[int], path: seq[int], doLog: bool): bool {.raises: [Exception].} =
   result = true
 
   if expectedSize.getSome(expectedSize) and self.getStackChange(instr) != expectedSize:

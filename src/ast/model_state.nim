@@ -4,6 +4,8 @@ import vmath, lrucache
 import misc/[id, util, timer, custom_logger]
 import query_system, model, ast_ids
 
+{.push gcsafe.}
+
 logCategory "model-state"
 
 type
@@ -13,7 +15,7 @@ type
   Diagnostics* = object
     queries*: Table[Dependency, seq[Diagnostic]]
 
-func fingerprint*(node: AstNode): Fingerprint
+func fingerprint*(node: AstNode): Fingerprint {.raises: [].}
 
 CreateContext ModelState:
   input AstNode
@@ -27,16 +29,16 @@ CreateContext ModelState:
   var project: Project = nil
   var currentKey: Dependency
 
-  proc inputAstNode(ctx: ModelState, id: ItemId): AstNode {.inputProvider.}
+  proc inputAstNode(ctx: ModelState, id: ItemId): AstNode {.inputProvider, raises: [CatchableError].}
 
-  proc recoverType(ctx: ModelState, key: Dependency) {.recover("Type").}
-  # proc recoverValue(ctx: ModelState, key: Dependency) {.recover("Value").}
+  proc recoverType(ctx: ModelState, key: Dependency) {.recover("Type"), raises: [].}
+  # proc recoverValue(ctx: ModelState, key: Dependency) {.recover("Value"), raises: [].}
 
-  proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode {.query("Type").}
-  proc computeValueImpl(ctx: ModelState, node: AstNode): AstNode {.query("Value").}
-  proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] {.query("Scope").}
-  proc computeValidImpl(ctx: ModelState, node: AstNode): bool {.query("Valid").}
-  # proc computeValueImpl(ctx: ModelState, node: AstNode): Value {.query("Value").}
+  proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode {.query("Type"), raises: [CatchableError].}
+  proc computeValueImpl(ctx: ModelState, node: AstNode): AstNode {.query("Value"), raises: [CatchableError].}
+  proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] {.query("Scope"), raises: [CatchableError].}
+  proc computeValidImpl(ctx: ModelState, node: AstNode): bool {.query("Valid"), raises: [CatchableError].}
+  # proc computeValueImpl(ctx: ModelState, node: AstNode): Value {.query("Value"), raises: [CatchableError].}
 
 type ModelComputationContext* = ref object of ModelComputationContextBase
   state*: ModelState
@@ -47,16 +49,16 @@ proc newModelComputationContext*(project: Project): ModelComputationContext =
   result.state.computationContextOwner = result
   result.state.project = project
 
-method computeType*(self: ModelComputationContext, node: AstNode): AstNode =
+method computeType*(self: ModelComputationContext, node: AstNode): AstNode {.gcsafe, raises: [CatchableError].} =
   return self.state.computeType(node)
 
-method getScope*(self: ModelComputationContext, node: AstNode): seq[AstNode] =
+method getScope*(self: ModelComputationContext, node: AstNode): seq[AstNode] {.gcsafe, raises: [CatchableError].} =
   return self.state.computeScope(node)
 
-method getValue*(self: ModelComputationContext, node: AstNode): AstNode =
+method getValue*(self: ModelComputationContext, node: AstNode): AstNode {.gcsafe, raises: [CatchableError].} =
   return self.state.computeValue(node)
 
-method validateNode*(self: ModelComputationContext, node: AstNode): bool =
+method validateNode*(self: ModelComputationContext, node: AstNode): bool {.gcsafe, raises: [CatchableError].} =
   self.state.computeValid(node)
 
 proc addDiagnostic*(self: ModelState, node: AstNode, msg: string) =
@@ -78,14 +80,14 @@ proc addDiagnostic*(self: ModelState, node: AstNode, msg: string) =
 method addDiagnostic*(self: ModelComputationContext, node: AstNode, msg: string) =
   self.state.addDiagnostic(node, msg)
 
-method getDiagnostics*(self: ModelComputationContext, node: NodeId): seq[string] =
+method getDiagnostics*(self: ModelComputationContext, node: NodeId): seq[string] {.raises: [CatchableError].} =
   if not self.state.diagnosticsPerNode.contains(node):
     return @[]
   for ds in self.state.diagnosticsPerNode[node].queries.values:
     for d in ds:
       result.add d.message
 
-method dependOn*(self: ModelComputationContext, node: AstNode) =
+method dependOn*(self: ModelComputationContext, node: AstNode) {.raises: [CatchableError].} =
   self.state.recordDependency(node.getItem)
 
 method dependOnCurrentRevision*(self: ModelComputationContext) =
@@ -262,7 +264,7 @@ proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode =
   if not language.typeComputers.contains(node.class):
     return nil
 
-  let typeComputer = language.typeComputers[node.class]
+  let typeComputer = language.typeComputers[node.class].fun
 
   let typ = typeComputer(ctx.computationContextOwner.ModelComputationContext, node)
 
@@ -282,7 +284,7 @@ proc computeValueImpl(ctx: ModelState, node: AstNode): AstNode =
   if not language.valueComputers.contains(node.class):
     return nil
 
-  let valueComputer = language.valueComputers[node.class]
+  let valueComputer = language.valueComputers[node.class].fun
 
   let value = valueComputer(ctx.computationContextOwner.ModelComputationContext, node)
 
@@ -299,7 +301,7 @@ proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] =
 
   while class.isNotNil:
     if language.scopeComputers.contains(class.id):
-      let scopeComputer = language.scopeComputers[class.id]
+      let scopeComputer = language.scopeComputers[class.id].fun
       return scopeComputer(ctx.computationContextOwner.ModelComputationContext, node)
     class = class.base
 
@@ -341,6 +343,6 @@ proc computeValidImpl(ctx: ModelState, node: AstNode): bool =
 
   while class.isNotNil:
     if language.validationComputers.contains(class.id):
-      let validationComputer = language.validationComputers[class.id]
+      let validationComputer = language.validationComputers[class.id].fun
       return validationComputer(ctx.computationContextOwner.ModelComputationContext, node)
     class = class.base

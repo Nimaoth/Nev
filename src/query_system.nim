@@ -6,6 +6,8 @@ import misc/[id, util, custom_logger, macro_utils, timer]
 {.experimental: "dynamicBindSym".}
 {.experimental: "caseStmtMacros".}
 
+{.push gcsafe.}
+
 logCategory "query"
 
 var currentIndent* = 0
@@ -27,10 +29,10 @@ type
 
   ItemId* = tuple[id: Id, typ: int]
 
-  UpdateFunctionImpl* = proc(item: ItemId): Fingerprint
+  UpdateFunctionImpl* = proc(item: ItemId): Fingerprint {.gcsafe, raises: [CatchableError].}
   UpdateFunction* = int
   Dependency* = tuple[item: ItemId, update: UpdateFunction]
-  RecursionRecoveryFunction = proc(key: Dependency)
+  RecursionRecoveryFunction = proc(key: Dependency) {.gcsafe, raises: [CatchableError].}
 
   NodeColor* = enum Grey, Red, Green
   MarkGreenResult* = enum Ok, Error, Recursion
@@ -328,6 +330,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let name = queryName query
     let key = queryArgType query
     let value = queryValueType query
+    let updateName = ident "update" & name
 
     let queryCacheName = ident("queryCache" & name)
     queryCaches.add queryCacheName
@@ -338,15 +341,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       newEmptyNode()
     )
     memberList.add nnkIdentDefs.newTree(
-      nnkPostfix.newTree(ident"*", ident("update" & name)),
+      nnkPostfix.newTree(ident"*", updateName),
       nnkPar.newTree(
-        nnkProcTy.newTree(
-          nnkFormalParams.newTree(
-            bindSym"Fingerprint",
-            nnkIdentDefs.newTree(genSym(nskParam), bindSym"ItemId", newEmptyNode())
-          ),
-          newEmptyNode()
-        )
+        bindSym"UpdateFunctionImpl"
       ),
       newEmptyNode()
     )
@@ -426,7 +423,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     queryInitializers.add block:
       genAst(ctx, updateName, items, stats, valueType, queryCache, useFingerprinting, idx, name, queryFunction, inputNotFoundHandler):
-        ctx.updateName = proc (item: ItemId): Fingerprint =
+        ctx.updateName = proc (item: ItemId): Fingerprint {.gcsafe, raises: [CatchableError].} =
           let arg = if ctx.items.contains(item):
             ctx.items[item]
           else:
@@ -459,7 +456,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let recoveryFunction = queryFunctionName query
     let idx = updateFunctionTable[updateName.strVal]
     queryInitializers.add quote do:
-      `ctx`.recoveryFunctions[`idx`] = proc(key: Dependency) =
+      `ctx`.recoveryFunctions[`idx`] = proc(key: Dependency) {.gcsafe, raises: [CatchableError].} =
         `recoveryFunction`(`ctx`, key)
 
   # Add initializer for each input and data
@@ -577,7 +574,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # proc recordDependency(ctx: Context, item: ItemId, update: UpdateFunction)
   result.add quote do:
-    proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction = -1) =
+    proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction = -1) {.raises: [CatchableError].} =
       if ctx.dependencyStack.len > 0:
         ctx.dependencyStack[ctx.dependencyStack.high].add (item, update)
 
@@ -643,7 +640,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # proc force(ctx: Context, key: Dependency)
   result.add quote do:
-    proc force(ctx: `contextName`, key: Dependency) =
+    proc force(ctx: `contextName`, key: Dependency) {.raises: [CatchableError].} =
       inc currentIndent, if ctx.enableLogging: 1 else: 0
       defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
       if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "force ", ctx.depGraph.queryNames[key.update], key.item
@@ -690,7 +687,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # proc tryMarkGreen(ctx: Context, key: Dependency): bool
   result.add quote do:
-    proc tryMarkGreen(ctx: `contextName`, key: Dependency, tryForce: bool = true): MarkGreenResult =
+    proc tryMarkGreen(ctx: `contextName`, key: Dependency, tryForce: bool = true): MarkGreenResult {.raises: [CatchableError].} =
       inc currentIndent, if ctx.enableLogging: 1 else: 0
       defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
       if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
@@ -810,7 +807,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     if useCache:
       result.add quote do:
-        proc `computeName`*(ctx: `contextName`, input: `key`, recordDependency: bool = true): `value` =
+        proc `computeName`*(ctx: `contextName`, input: `key`, recordDependency: bool = true): `value` {.raises: [CatchableError].} =
           try:
             let timer = startTimer()
             ctx.`stats`.totalCalls += 1
@@ -878,16 +875,17 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               raise newException(CatchableError, "compute" & `name` & "(" & $input & "): not in cache anymore")
             return ctx.`queryCache`[input]
 
-          except CatchableError:
+          # todo: this could probably just be finally:
+          except CatchableError as e:
             log(lvlError, getCurrentExceptionMsg())
             log(lvlError, getCurrentException().getStackTrace())
             if ctx.dependencyStack.len > 0:
-              raise
+              raise e
 
 
     else:
       result.add quote do:
-        proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
+        proc `computeName`*(ctx: `contextName`, input: `key`): `value` {.raises: [CatchableError].} =
           try:
             let timer = startTimer()
             ctx.`stats`.totalCalls += 1

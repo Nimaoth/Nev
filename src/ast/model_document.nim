@@ -8,13 +8,15 @@ import ui/node
 import lang/[lang_language, lang_builder, cell_language, property_validator_language, scope_language]
 import finder/[finder]
 
-import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
+import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state]
 import document, document_editor, text/text_document, events, scripting/expose, input
 import config_provider, app_interface, dispatch_tables, selector_popup
 import model, base_language, editor_language, cells, ast_ids, project
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "model"
-createJavascriptPrototype("editor.model")
 
 type
   CellCursor* = object
@@ -110,6 +112,7 @@ type
 
   ModelDocument* = ref object of Document
     model*: Model
+    projectService*: AstProjectService
     project*: Project
     ctx*: ModelComputationContext
 
@@ -150,6 +153,8 @@ type
     app*: AppInterface
     configProvider*: ConfigProvider
     document*: ModelDocument
+
+    projectService*: AstProjectService
 
     cursorsId*: Id
     completionsId*: Id
@@ -203,8 +208,8 @@ type
     scrolledNode*: UINode
     targetCellPosition*: Vec2
     selection*: CellSelection
-    handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool)
-    setCursor*: proc(cell: Cell, offset: int, drag: bool)
+    handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) {.gcsafe, raises: [].}
+    setCursor*: proc(cell: Cell, offset: int, drag: bool) {.gcsafe, raises: [].}
     selectionColor*: Color
     errorColor*: Color
     isThickCursor*: bool
@@ -249,7 +254,7 @@ proc showCompletionWindow*(self: ModelDocumentEditor)
 proc toCursor*(map: NodeCellMap, cell: Cell, column: int): CellCursor
 proc toCursor*(map: NodeCellMap, cell: Cell, start: bool): CellCursor
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor]
-proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell]
+proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Option[Cell]
 proc getParentInfo*(selection: CellSelection): tuple[cell: Cell, left: seq[int], right: seq[int]]
 
 proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int)
@@ -270,27 +275,23 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   self.appFile = app
   self.workspace = workspaceFolder
 
-  getGlobalProject().thenIt:
-    self.project = it
-    if self.filename.len > 0:
-      self.load()
-
   self.builder = newCellBuilder(idNone().LanguageId)
 
 method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
-    raise newException(IOError, "Missing filename")
+    log lvlError, &"save: Missing filename"
+    return
 
   log lvlInfo, fmt"Saving model source file '{self.filename}'"
   let serialized = $self.model.toJson
 
   if self.workspace.getSome(ws):
-    asyncCheck ws.saveFile(self.filename, serialized)
+    asyncSpawn ws.saveFile(self.filename, serialized)
   elif self.appFile:
-    fs.saveApplicationFile(self.filename, serialized)
+    self.fs.saveApplicationFile(self.filename, serialized)
   else:
-    fs.saveFile(self.filename, serialized)
+    self.fs.saveFile(self.filename, serialized)
 
 template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
 template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
@@ -322,7 +323,10 @@ proc retriggerValidation*(self: ModelDocumentEditor) =
     self.validateNodesTask = startDelayed(500, repeat=false):
       measureBlock "validateNodes":
         for cell in self.nodeCellMap.cells.values:
-          discard self.document.ctx.validateNode(cell.node)
+          try:
+            discard self.document.ctx.validateNode(cell.node)
+          except Exception:
+            discard
       self.markDirty()
   else:
     self.validateNodesTask.reschedule()
@@ -492,7 +496,7 @@ proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode
 
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   while self.project.isNil:
-    await sleepAsync(1)
+    await sleepAsync(10.milliseconds)
 
   self.ctx = self.project.computationContext.ModelComputationContext
 
@@ -502,7 +506,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
       log lvlError, fmt"Can only open model files from workspaces right now"
       return
 
-    if self.project.loadModelAsync(self.filename).await.getSome(model):
+    if self.projectService.loadModelAsync(self.filename).await.getSome(model):
       self.model = model
 
       discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
@@ -512,30 +516,33 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
       self.builder.clear()
       for language in self.model.languages:
-        self.builder.addBuilder(getBuilder(language.id))
+        self.builder.addBuilder(self.projectService.builders.getBuilder(language.id))
 
       # self.project.builder = self.builder
 
       self.undoList.setLen 0
       self.redoList.setLen 0
 
-      functionInstances.clear()
-      structInstances.clear()
+      {.gcsafe.}:
+        functionInstances.clear()
+        structInstances.clear()
       self.ctx.state.clearCache()
 
   except CatchableError:
     log lvlError, fmt"Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
     log lvlError, getCurrentException().getStackTrace()
 
-  self.onModelChanged.invoke (self)
+  if self.model.isNotNil:
+    self.onModelChanged.invoke (self)
 
 method load*(self: ModelDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
   if filename.len == 0:
-    raise newException(IOError, "Missing filename")
+    log lvlError, &"save: Missing filename"
+    return
 
   self.filename = filename
-  asyncCheck self.loadAsync()
+  asyncSpawn self.loadAsync()
 
 proc getSubstitutionTarget(cell: Cell): (AstNode, RoleId, int) =
   ## Returns the parent cell, role, and index where to insert/replace a substitution
@@ -543,7 +550,7 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, RoleId, int) =
     return (cell.node, cell.PlaceholderCell.role, 0)
   return (cell.node.parent, cell.node.role, cell.node.index)
 
-proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void): bool =
+proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void {.gcsafe, raises: [].}): bool =
   # if it's a reference and there is only one reference role, then we can substitute the reference using the scope
   if class.substitutionReference.getSome(referenceRole):
     # debugf"getSubstitutionsForClass {class.name}"
@@ -561,7 +568,10 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
     let (parent, role, index) = targetCell.getSubstitutionTarget()
 
     # debugf"getScope {parent}, {targetCell.node}"
-    let scope = self.document.ctx.getScope(targetCell.node)
+    let scope = self.document.ctx.getScope(targetCell.node).catch:
+      log lvlError, &"Failed to get scope for {targetCell.node}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+      return false
+
     for decl in scope:
       # debugf"scope: {decl}, {decl.nodeClass.isSubclassOf(refClass.id)}"
       if decl.nodeClass.isSubclassOf(refClass.id):
@@ -616,7 +626,10 @@ proc updateCompletions(self: ModelDocumentEditor) =
       return
 
     debugf"updateCompletions ref {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
-    let scope = self.document.ctx.getScope(node)
+    let scope = self.document.ctx.getScope(node).catch:
+      log lvlError, &"Failed to get scope for {node}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+      return
+
     for decl in scope:
       # debugf"scope: {decl}, {decl.nodeClass.name}, {decl.nodeClass.isSubclassOf(slotClass.id)}"
       if decl.nodeClass.isSubclassOf(slotClass.id):
@@ -781,8 +794,6 @@ proc handleBuilderChanged(self: ModelDocumentEditor) =
   self.markDirty()
 
 proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
-  # debugf "handleModelChanged"
-
   discard self.document.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
   discard self.document.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
   discard self.document.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
@@ -871,7 +882,7 @@ proc toJson*(self: api.ModelDocumentEditor, opt = initToJsonOptions()): JsonNode
   result["type"] = newJString("editor.model")
   result["id"] = newJInt(self.id.int)
 
-proc fromJsonHook*(t: var api.ModelDocumentEditor, jsonNode: JsonNode) =
+proc fromJsonHook*(t: var api.ModelDocumentEditor, jsonNode: JsonNode) {.raises: [ValueError].} =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
@@ -990,19 +1001,38 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
 
   return self
 
-method injectDependencies*(self: ModelDocumentEditor, app: AppInterface) =
+proc waitForProjectService(self: ModelDocumentEditor) {.async: (raises: []).} =
+  if self.app.getServices().getServiceAsync(AstProjectService).await.getSome(s):
+    self.projectService = s
+    self.document.projectService = s
+    self.document.project = s.project
+    if self.document.filename.len > 0:
+      self.document.load()
+  else:
+    log lvlError, &"Failed to get AstProjectService"
+
+method injectDependencies*(self: ModelDocumentEditor, app: AppInterface, fs: Filesystem) =
   self.app = app
   self.app.registerEditor(self)
+  self.fs = fs
+
+  asyncSpawn self.waitForProjectService()
 
   self.eventHandler = eventHandler(app.getEventHandlerConfig("editor.model")):
     onAction:
-      self.handleAction action, arg
+      if self.handleAction(action, arg).isSome:
+        Handled
+      else:
+        Ignored
     onInput:
       self.handleInput input
 
   self.completionEventHandler = eventHandler(app.getEventHandlerConfig("editor.model.completion")):
     onAction:
-      self.handleAction action, arg
+      if self.handleAction(action, arg).isSome:
+        Handled
+      else:
+        Ignored
     onInput:
       self.handleInput input
 
@@ -1010,11 +1040,12 @@ method unregister*(self: ModelDocumentEditor) =
   self.app.unregisterEditor(self)
 
 proc getModelDocumentEditor(wrapper: api.ModelDocumentEditor): Option[ModelDocumentEditor] =
-  if gAppInterface.isNil: return ModelDocumentEditor.none
-  if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
-    if editor of ModelDocumentEditor:
-      return editor.ModelDocumentEditor.some
-  return ModelDocumentEditor.none
+  {.gcsafe.}:
+    if gAppInterface.isNil: return ModelDocumentEditor.none
+    if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
+      if editor of ModelDocumentEditor:
+        return editor.ModelDocumentEditor.some
+    return ModelDocumentEditor.none
 
 proc getTargetCell*(cursor: CellCursor, resolveCollection: bool = true): Option[Cell] =
   let cell = cursor.baseCell
@@ -1061,7 +1092,10 @@ proc setMode*(self: ModelDocumentEditor, mode: string) {.expose("editor.model").
     let config = self.getModeConfig(mode)
     self.modeEventHandler = eventHandler(config):
       onAction:
-        self.handleAction action, arg
+        if self.handleAction(action, arg).isSome:
+          Handled
+        else:
+          Ignored
       onInput:
         self.handleInput input
 
@@ -1239,7 +1273,7 @@ proc getNextCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
 
   return cell
 
-proc getPreviousInLineWhere*(self: ModelDocumentEditor, cell: Cell, predicate: proc(cell: Cell): bool): Cell =
+proc getPreviousInLineWhere*(self: ModelDocumentEditor, cell: Cell, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Cell =
   result = self.getPreviousCellInLine(cell)
   while not predicate(result):
     let oldResult = result
@@ -1247,7 +1281,7 @@ proc getPreviousInLineWhere*(self: ModelDocumentEditor, cell: Cell, predicate: p
     if result == oldResult:
       break
 
-proc getNextInLineWhere*(self: ModelDocumentEditor, cell: Cell, predicate: proc(cell: Cell): bool): Cell =
+proc getNextInLineWhere*(self: ModelDocumentEditor, cell: Cell, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Cell =
   result = self.getNextCellInLine(cell)
   while not predicate(result):
     let oldResult = result
@@ -1332,7 +1366,7 @@ proc getNextLeaf*(cell: Cell, map: NodeCellMap, childIndex: Option[int] = int.no
 
     return cell.some
 
-proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Option[Cell] =
   var temp = cell
   while true:
     var c = temp.getPreviousLeaf(map)
@@ -1345,7 +1379,7 @@ proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: C
       return Cell.none
     temp = c.get
 
-proc getNextLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getNextLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Option[Cell] =
   var temp = cell
   while true:
     var c = temp.getNextLeaf(map)
@@ -1357,7 +1391,7 @@ proc getNextLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell)
       return Cell.none
     temp = c.get
 
-proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell])): Option[Cell] =
+proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell]) {.gcsafe, raises: [].}): Option[Cell] =
   var temp = cell
   while true:
     var c = if direction == Left: temp.getPreviousLeaf(map) else: temp.getNextLeaf(map)
@@ -1370,31 +1404,31 @@ proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, p
       return Cell.none
     temp = c.get
 
-proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Option[Cell] =
   case direction
   of Left:
     return cell.getPreviousLeafWhere(map, predicate)
   of Right:
     return cell.getNextLeafWhere(map, predicate)
 
-proc getSelfOrPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getSelfOrPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Option[Cell] =
   if cell.isLeaf and predicate(cell):
     return cell.some
   return cell.getPreviousLeafWhere(map, predicate)
 
-proc getSelfOrNextLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getSelfOrNextLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Option[Cell] =
   if cell.isLeaf and predicate(cell):
     return cell.some
   return cell.getNextLeafWhere(map, predicate)
 
-proc getSelfOrNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell])): Option[Cell] =
+proc getSelfOrNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell]) {.gcsafe, raises: [].}): Option[Cell] =
   if cell.isLeaf:
     let (stop, res) = predicate(cell)
     if stop:
       return res
   return cell.getNeighborLeafWhere(map, direction, predicate)
 
-proc getSelfOrNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getSelfOrNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): bool {.gcsafe, raises: [].}): Option[Cell] =
   if cell.isLeaf and predicate(cell):
     return cell.some
   return cell.getNeighborLeafWhere(map, direction, predicate)
@@ -1818,9 +1852,12 @@ proc gotoInvalidNode*(self: ModelDocumentEditor, direction: Direction) =
     var nextCell = getNeighborLeafWhere(cell, self.nodeCellMap, direction, proc(c: Cell): bool =
         if c == cell or c.node == originalNode or not isVisible(cell):
           return false
-        discard self.document.ctx.validateNode(c.node)
-        if self.document.ctx.getDiagnostics(c.node.id).len > 0:
-          return true
+        try:
+          discard self.document.ctx.validateNode(c.node)
+          if self.document.ctx.getDiagnostics(c.node.id).len > 0:
+            return true
+        except Exception:
+          discard
         return false
       )
 
@@ -1831,9 +1868,12 @@ proc gotoInvalidNode*(self: ModelDocumentEditor, direction: Direction) =
             return false
           if c == cell:
             return true
-          discard self.document.ctx.validateNode(c.node)
-          if self.document.ctx.getDiagnostics(c.node.id).len > 0:
-            return true
+          try:
+            discard self.document.ctx.validateNode(c.node)
+            if self.document.ctx.getDiagnostics(c.node.id).len > 0:
+              return true
+          except Exception:
+            discard
           return false
         )
 
@@ -2569,8 +2609,8 @@ proc createNewNodeAt*(self: ModelDocumentEditor, cursor: CellCursor): Option[Ast
   var ok = false
   var addBefore = true
   var candidate = cell.getSelfOrNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool =
-    if c.node.selfDescription().getSome(desc):
-      debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
+    # if c.node.selfDescription().getSome(desc):
+      # debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
 
     if c.node != originalNode and not c.node.isDescendant(originalNode):
       return true
@@ -2590,8 +2630,8 @@ proc createNewNodeAt*(self: ModelDocumentEditor, cursor: CellCursor): Option[Ast
     debug "search outside"
     candidate = cell.getSelfOrNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool =
       # inc i
-      if c.node.selfDescription().getSome(desc):
-        debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
+      # if c.node.selfDescription().getSome(desc):
+      #   debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
       # return isVisible(c)
       # return i > 10
 
@@ -2989,8 +3029,9 @@ proc clearModelCache*(self: ModelDocumentEditor) {.expose("editor.model").} =
       n.model = nil
   self.document.model.tempNodes.setLen 0
 
-  functionInstances.clear()
-  structInstances.clear()
+  {.gcsafe.}:
+    functionInstances.clear()
+    structInstances.clear()
 
   # for rootNode in self.document.model.rootNodes:
   #   self.document.ctx.state.insertNode(rootNode)
@@ -3011,51 +3052,62 @@ proc intToString(a: int32): cstring =
 var lineBuffer {.global.} = ""
 
 proc printI32(a: int32) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printU32(a: uint32) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printI64(a: int64) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printU64(a: uint64) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printF32(a: float32) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printF64(a: float64) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printChar(a: int32) =
-  lineBuffer.add $a.Rune
+  {.gcsafe.}:
+    lineBuffer.add $a.Rune
 
 proc printString(a: cstring, len: int32) =
-  let str = $a
-  assert len <= a.len
-  lineBuffer.add str[0..<len]
+  {.gcsafe.}:
+    let str = $a
+    assert len <= a.len
+    lineBuffer.add str[0..<len]
 
 proc printLine() =
-  log lvlInfo, lineBuffer
-  lineBuffer = ""
+  {.gcsafe.}:
+    let l = lineBuffer
+    lineBuffer = ""
+    log lvlInfo, l
 
 proc loadAppFile(a: cstring): cstring =
-  let file = fs.loadApplicationFile($a)
-  # log lvlInfo, fmt"loadAppFile {a} -> {file}"
-  return file.cstring
+  {.gcsafe.}:
+    let file = fs.loadApplicationFile($a)
+    # log lvlInfo, fmt"loadAppFile {a} -> {file}"
+    return file.cstring
 
 proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   let timer = startTimer()
@@ -3082,7 +3134,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
     "<anonymous>"
 
   measureBlock fmt"Compile '{name}' to wasm":
-    var compiler = newBaseLanguageWasmCompiler(self.document.ctx)
+    var compiler = newBaseLanguageWasmCompiler(self.projectService.repository, self.document.ctx)
     compiler.addBaseLanguage()
     compiler.addEditorLanguage()
     compiler.addFunctionToCompile(function.get)
@@ -3110,14 +3162,18 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
       log lvlError, fmt"Failed to create wasm module from generated binary for {name}: {getCurrentExceptionMsg()}"
       return
 
-  if module.get.findFunction($function.get.id, void, proc(): void).getSome(f):
+  if module.get.findFunction($function.get.id, void, proc(): void {.gcsafe, raises: [CatchableError].}).getSome(f):
     measureBlock fmt"Run '{name}'":
-      f()
+      try:
+        f()
+      except Exception as e:
+        log lvlError, &"Failed to run function {function.get.id}: {e.msg}\n{e.getStackTrace()}"
+
   else:
     log lvlError, fmt"Failed to find function {function.get.id} in wasm module"
 
 proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  asyncCheck runSelectedFunctionAsync(self)
+  asyncSpawn runSelectedFunctionAsync(self)
 
 proc copyNodeAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   let selection = self.selection.normalized
@@ -3155,7 +3211,7 @@ proc copyNodeAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
     self.app.setRegisterTextAsync($json, "").await
 
 proc copyNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  asyncCheck self.copyNodeAsync()
+  asyncSpawn self.copyNodeAsync()
 
 proc getNodeFromRegister(self: ModelDocumentEditor, register: string): Future[seq[AstNode]] {.async.} =
   let text = self.app.getRegisterTextAsync(register).await
@@ -3234,10 +3290,10 @@ proc pasteNodeAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   self.markDirty()
 
 proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  asyncCheck self.pasteNodeAsync()
+  asyncSpawn self.pasteNodeAsync()
 
 proc chooseLanguageFromUser*(self: ModelDocumentEditor, languageIds: openArray[LanguageId],
-    handleConfirmed: proc(language: Language)) =
+    handleConfirmed: proc(language: Language) {.gcsafe, raises: [].}) =
 
   if self.document.project.isNil:
     log lvlError, fmt"No project set for model document '{self.document.filename}'"
@@ -3249,7 +3305,7 @@ proc chooseLanguageFromUser*(self: ModelDocumentEditor, languageIds: openArray[L
   proc getLanguagesAsync(): Future[ItemList] {.async.} =
     var items = newItemList(languageIds.len)
     for i, id in languageIds:
-      let language = await resolveLanguage(self.document.model.project, self.document.workspace.get, id)
+      let language = await self.projectService.resolveLanguage(self.document.model.project, self.document.workspace.get, id)
       if language.getSome(language):
         languages[id] = language
         items[i] = FinderItem(
@@ -3287,7 +3343,7 @@ proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.chooseLanguageFromUser(languages, proc(language: Language) =
     log lvlInfo, fmt"Add language {language.name} ({language.id}) to model {self.document.model.id}"
     self.document.model.addLanguage(language)
-    self.document.builder.addBuilder(getBuilder(language.id))
+    self.document.builder.addBuilder(self.projectService.builders.getBuilder(language.id))
   )
 
 proc createNewModelAsync*(self: ModelDocumentEditor, name: string) {.async.} =
@@ -3307,7 +3363,7 @@ proc createNewModelAsync*(self: ModelDocumentEditor, name: string) {.async.} =
     log lvlError, fmt"Failed to create model: no workspace"
 
 proc createNewModel*(self: ModelDocumentEditor, name: string) {.expose("editor.model").} =
-  asyncCheck self.createNewModelAsync(name)
+  asyncSpawn self.createNewModelAsync(name)
 
 proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.document.project.isNil:
@@ -3353,7 +3409,7 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
   builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
     log lvlInfo, fmt"Add model {item.displayName} to project"
-    asyncCheck self.document.project.loadModelAsync(item.data)
+    asyncSpawn self.document.projectService.loadModelAsync(item.data).asyncDiscard
     true
 
   discard self.app.pushSelectorPopup(builder)
@@ -3379,26 +3435,15 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
         data: $model.id,
       )
 
-    if not self.document.model.hasImport(lang_builder.baseInterfacesModel.id):
-      result.add FinderItem(
-        displayName: "BaseInterfacesModel",
-        detail: $lang_builder.baseInterfacesModel.id & "\tBuiltin",
-        data: $lang_builder.baseInterfacesModel.id,
-      )
-
-    if not self.document.model.hasImport(lang_builder.baseLanguageModel.id):
-      result.add FinderItem(
-        displayName: "BaseLanguageModel",
-        detail: $lang_builder.baseLanguageModel.id & "\tBuiltin",
-        data: $lang_builder.baseLanguageModel.id,
-      )
-
-    if not self.document.model.hasImport(lang_builder.langLanguageModel.id):
-      result.add FinderItem(
-        displayName: "LangLanguageModel",
-        detail: $lang_builder.langLanguageModel.id & "\tBuiltin",
-        data: $lang_builder.langLanguageModel.id,
-      )
+    for (languageId, model) in self.projectService.repository.languageModels.pairs:
+      if not self.document.model.hasImport(model.id):
+        log lvlInfo, fmt"Add imported model {model.path} ({model.id})"
+        let language = self.projectService.repository.language(languageId).get
+        result.add FinderItem(
+          displayName: language.name,
+          detail: $model.id & "\tBuiltin",
+          data: $model.id,
+        )
 
   var builder = SelectorPopupBuilder()
   builder.scope = "model-import-model".some
@@ -3416,20 +3461,10 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
     defer:
       source.retrigger()
 
-    if modelId == baseInterfacesModel.id:
-      log lvlInfo, fmt"Add imported model {lang_builder.baseInterfacesModel.path} ({lang_builder.baseInterfacesModel.id})"
-      self.document.model.addImport(lang_builder.baseInterfacesModel)
-      return false
-
-    if modelId == baseLanguageModel.id:
-      log lvlInfo, fmt"Add imported model {lang_builder.baseLanguageModel.path} ({lang_builder.baseLanguageModel.id})"
-      self.document.model.addImport(lang_builder.baseLanguageModel)
-      return false
-
-    if modelId == langLanguageModel.id:
-      log lvlInfo, fmt"Add imported model {lang_builder.langLanguageModel.path} ({lang_builder.langLanguageModel.id})"
-      self.document.model.addImport(lang_builder.langLanguageModel)
-      return false
+    for (languageId, model) in self.projectService.repository.languageModels.pairs:
+      if modelId == model.id:
+        log lvlInfo, fmt"Add imported model {model.path} ({model.id})"
+        self.document.model.addImport(model)
 
     if self.document.project.getModel(modelId).getSome(model):
       log lvlInfo, fmt"Add imported model {model.path} ({model.id})"
@@ -3444,7 +3479,7 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
 proc compileLanguageAsync*(self: ModelDocumentEditor) {.async.} =
   while self.document.project.isNil or self.document.model.isNil:
-    await sleepAsync(1)
+    await sleepAsync(1.milliseconds)
 
   let project = self.document.project
   let model = self.document.model
@@ -3459,17 +3494,17 @@ proc compileLanguageAsync*(self: ModelDocumentEditor) {.async.} =
       if document of ModelDocument:
         let modelDocument = document.ModelDocument
         if modelDocument.model.hasLanguage(languageId):
-          modelDocument.builder.addBuilder(getBuilder(languageId))
+          modelDocument.builder.addBuilder(self.projectService.builders.getBuilder(languageId))
           modelDocument.onBuilderChanged.invoke()
 
           for root in modelDocument.model.rootNodes:
             root.forEach2 child:
               modelDocument.ctx.state.updateNode(child)
 
-  project.updateLanguageFromModel(model).await
+  self.projectService.updateLanguageFromModel(model).await
 
 proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  asyncCheck self.compileLanguageAsync()
+  asyncSpawn self.compileLanguageAsync()
 
 proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   var classes = initTable[ClassId, NodeClass]()
@@ -3520,7 +3555,7 @@ proc saveProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlError, fmt"No project set for model document '{self.document.filename}'"
     return
 
-  asyncCheck self.document.project.save()
+  asyncSpawn self.document.projectService.save()
 
 proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.document.project.isNil:
@@ -3536,7 +3571,7 @@ proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
       let model = if project.getModel(language.id.ModelId).getSome(model):
         model
       else:
-        let model = createModelForLanguage(language)
+        let model = self.projectService.repository.createModelForLanguage(language)
         project.addModel(model)
         model
 
@@ -3549,13 +3584,14 @@ proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
       self.document.builder.clear()
       for language in self.document.model.languages:
-        self.document.builder.addBuilder(getBuilder(language.id))
+        self.document.builder.addBuilder(self.projectService.builders.getBuilder(language.id))
 
       self.document.undoList.setLen 0
       self.document.redoList.setLen 0
 
-      functionInstances.clear()
-      structInstances.clear()
+      {.gcsafe.}:
+        functionInstances.clear()
+        structInstances.clear()
       self.document.ctx.state.clearCache()
 
     except CatchableError:
@@ -3678,14 +3714,17 @@ method handleAction*(self: ModelDocumentEditor, action: string, arg: string, rec
 
   return JsonNode.none
 
-method getStateJson*(self: ModelDocumentEditor): JsonNode =
-  return %*{
-    "cursor": %*{
-      "index": self.cursor.index,
-      "path": self.cursor.path,
-      "nodeId": self.cursor.node.id.Id.toJson,
+method getStateJson*(self: ModelDocumentEditor): JsonNode {.gcsafe, raises: [].} =
+  if self.cursor.node.isNil:
+    return %*{}
+  else:
+    return %*{
+      "cursor": %*{
+        "index": self.cursor.index,
+        "path": self.cursor.path,
+        "nodeId": self.cursor.node.id.Id.toJson,
+      }
     }
-  }
 
 method restoreStateJson*(self: ModelDocumentEditor, state: JsonNode) =
   if state.kind != JObject:

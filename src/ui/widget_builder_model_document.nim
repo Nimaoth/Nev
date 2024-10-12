@@ -11,6 +11,11 @@ import app, document_editor, theme, config_provider, input, app_interface, selec
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
+{.push gcsafe.}
+{.push raises: [].}
+{.push stacktrace:off.}
+{.push linetrace:off.}
+
 logCategory "widget_builder_model_document"
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
@@ -56,9 +61,9 @@ type
 
 var stackSize = 0
 var cellPath = newSeq[int]()
-var enableLogc {.exportc.} = false
+const enableLogc = false
 template logc(node: untyped, msg: varargs[string, `$`]) =
-  if enableLogc:
+  when enableLogc:
     var uiae = ""
     for c in msg:
       uiae.add $c
@@ -120,7 +125,7 @@ proc currentDirectionData(self: CellLayoutContext): var DirectionData =
 proc isCurrentLineEmpty(self: CellLayoutContext): bool =
   return (self.currentDirectionData.lines.len == 0 or self.currentDirectionData.lines.last.len == 0) and self.tempNode.first.isNil
 
-proc findNodeContainingMinX(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode] =
+proc findNodeContainingMinX(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): Option[UINode] =
   result = UINode.none
   if pos.x > node.lx + node.lw or pos.y < node.ly or pos.y > node.ly + node.lh:
     return
@@ -384,7 +389,10 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
 
   let hasErrors = if cell.parent == nil or cell.parent.node != cell.node or true:
     # this is a root cell of a node
-    updateContext.ctx.getDiagnostics(cell.node.id).len > 0
+    try:
+      updateContext.ctx.getDiagnostics(cell.node.id).len > 0
+    except Exception:
+      true
   else:
     false
 
@@ -479,9 +487,9 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
         if ctx.currentIndent > 0:
           currentNode.aDebugData.metaData["indent"] = ctx.currentIndent.newJInt
 
-method createCellUI*(cell: Cell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.base.} = discard
+method createCellUI*(cell: Cell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.base, gcsafe, raises: [].} = discard
 
-method createCellUI*(cell: ConstantCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
+method createCellUI*(cell: ConstantCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.gcsafe, raises: [].} =
   if not cell.isVisible:
     return
 
@@ -494,7 +502,7 @@ method createCellUI*(cell: ConstantCell, builder: UINodeBuilder, app: App, ctx: 
   let (text, color) = app.getTextAndColor(cell)
   createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
-method createCellUI*(cell: PlaceholderCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
+method createCellUI*(cell: PlaceholderCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.gcsafe, raises: [].} =
   if not cell.isVisible:
     return
 
@@ -506,7 +514,7 @@ method createCellUI*(cell: PlaceholderCell, builder: UINodeBuilder, app: App, ct
   let (text, color) = app.getTextAndColor(cell)
   createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
-method createCellUI*(cell: AliasCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
+method createCellUI*(cell: AliasCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.gcsafe, raises: [].} =
   if not cell.isVisible:
     return
 
@@ -518,7 +526,7 @@ method createCellUI*(cell: AliasCell, builder: UINodeBuilder, app: App, ctx: Cel
   let (text, color) = app.getTextAndColor(cell)
   createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
-method createCellUI*(cell: PropertyCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
+method createCellUI*(cell: PropertyCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.gcsafe, raises: [].} =
   if not cell.isVisible:
     return
 
@@ -657,7 +665,7 @@ proc shouldBeOnNewLine(cell: Cell): bool =
 
   return false
 
-method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
+method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.gcsafe, raises: [].} =
   if not cell.isVisible:
     return
 
@@ -749,7 +757,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         lastNewLine = false
 
       try:
-        cellPath.add i
+        # cellPath.add i
         c.createCellUI(
           builder, app, ctx, updateContext, spaceLeft,
           if i == centerIndex and path.len > 1:
@@ -759,7 +767,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
           else:
             @[int.high],
           cursorFirst.getChildPath(i), cursorLast.getChildPath(i))
-        discard cellPath.pop
+        # discard cellPath.pop
 
         if i == centerIndex:
           # echo "center ", cellPath, ", ", path
@@ -835,9 +843,9 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         spaceLeft = false
 
       try:
-        cellPath.add i
+        # cellPath.add i
         c.createCellUI(builder, app, ctx, updateContext, spaceLeft, @[int.high], cursorFirst.getChildPath(i), cursorLast.getChildPath(i))
-        discard cellPath.pop
+        # discard cellPath.pop
       finally:
         ctx.prevNoSpaceRight = false
         if c.style.isNotNil:
@@ -1136,8 +1144,12 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   if node.parent.isNotNil: discard self.document.ctx.validateNode(node.parent)
                 except CatchableError:
                   log lvlError, fmt"failed to validate node {node.dump}"
-                var errors = self.document.ctx.getDiagnostics(node.id)
-                if node.parent.isNotNil: errors.add self.document.ctx.getDiagnostics(node.parent.id)
+                var errors: seq[string]
+                try:
+                  errors.add self.document.ctx.getDiagnostics(node.id)
+                  if node.parent.isNotNil: errors.add self.document.ctx.getDiagnostics(node.parent.id)
+                except CatchableError as e:
+                  discard
 
                 let class = node.nodeClass
 

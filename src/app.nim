@@ -1340,10 +1340,6 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
     discard await self.setWorkspaceFolder newWorkspaceFolderLocal(".")
 
-  when enableAst:
-    if self.workspace.isNotNil:
-      setProjectWorkspace(self.workspace)
-
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
     discard self.openFile(filePath)
@@ -1600,11 +1596,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   var state = EditorState()
   state.theme = self.theme.path
 
-  when enableAst:
-    if gProjectWorkspace.isNotNil:
-      state.astProjectWorkspaceId = $gProjectWorkspace.id
-    if gProject.isNotNil:
-      state.astProjectPath = gProject.path.some
+  # todo: save ast project state
 
   if self.backend == api.Backend.Terminal:
     state.fontSize = self.loadedFontSize
