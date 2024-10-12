@@ -148,7 +148,11 @@ template logCategory*(category: static string, noDebug = false): untyped =
     body
     block:
       let descriptionString = description
-      logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
+      try:
+        {.gcsafe.}:
+          logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
+      except:
+        discard
 
   template logScope(level: logging.Level, text: string): untyped {.used.} =
     let txt = text

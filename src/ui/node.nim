@@ -1303,37 +1303,37 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       let currentNode {.used, inject.} = node
 
       template onClick(button: MouseButton, onClickBody: untyped) {.used.} =
-        currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool =
+        currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           if btn == button:
             onClickBody
 
       template onClickAny(btn: untyped, onClickBody: untyped) {.used.} =
-        currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool =
+        currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onClickBody
 
       template onReleased(onBody: untyped) {.used.} =
-        currentNode.handleReleased = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool =
+        currentNode.handleReleased = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody
 
       template onDrag(button: MouseButton, onDragBody: untyped) {.used.} =
-        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, d: Vec2): bool =
+        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, d: Vec2): bool {.gcsafe, raises: [].} =
           if btn == button:
             onDragBody
 
       template onBeginHover(onBody: untyped) {.used.} =
-        currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2): bool =
+        currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody
 
       template onEndHover(onBody: untyped) {.used.} =
-        currentNode.handleEndHover = proc(node: UINode, pos {.inject.}: Vec2): bool =
+        currentNode.handleEndHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody
 
       template onHover(onBody: untyped) {.used.} =
-        currentNode.handleHover = proc(node: UINode, pos {.inject.}: Vec2): bool =
+        currentNode.handleHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody
 
       template onScroll(onBody: untyped) {.used.} =
-        currentNode.handleScroll = proc(node: UINode, pos {.inject.}: Vec2, delta {.inject.}: Vec2, modifiers {.inject.}: set[Modifier]): bool =
+        currentNode.handleScroll = proc(node: UINode, pos {.inject.}: Vec2, delta {.inject.}: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].} =
           onBody
           return true
 

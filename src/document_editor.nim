@@ -95,7 +95,7 @@ method handleMouseMove*(self: DocumentEditor, mousePosWindow: Vec2, mousePosDelt
   discard
 
 method getStateJson*(self: DocumentEditor): JsonNode {.base, gcsafe, raises: [].} =
-  discard
+  return newJObject()
 
 method restoreStateJson*(self: DocumentEditor, state: JsonNode) {.base, gcsafe, raises: [].} =
   discard

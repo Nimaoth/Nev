@@ -12,8 +12,8 @@ import std/[threadpool]
 type NoExceptionDestroy* = object
 func `=destroy`*(x: NoExceptionDestroy) {.raises: [].} = discard
 
-import chronos
-export chronos
+import chronos except asyncDiscard
+export chronos except asyncDiscard
 
 proc runAsyncVoid[A](f: proc(options: A) {.gcsafe, raises: [].}, options: A): NoExceptionDestroy {.raises: [].} =
   f(options)
@@ -66,6 +66,9 @@ proc doneFuture*(): Future[void] =
     result.complete()
   except:
     assert false
+
+proc asyncDiscard*[T](f: Future[T]): Future[void] {.async.} =
+  discard await f
 
 template readFinished*[T: not void](fut: Future[T]): lent T =
   try:
