@@ -62,14 +62,21 @@ proc initService(self: Services, name: string) {.async.} =
     service.state = Failed
 
 proc addService*(self: Services, name: string, service: Service, dependencies: seq[string] = @[]) =
-  log lvlInfo, &"addService {name}"
+  log lvlInfo, &"addService {name}, dependencies: {dependencies}"
   service.services = self
   self.registered[name] = service
   service.state = Registered
 
+  var dependencies = dependencies
+  for name in self.running.keys:
+    let idx = dependencies.find(name)
+    if idx != -1:
+      dependencies.removeSwap(idx)
+
   if dependencies.len == 0:
     asyncSpawn self.initService(name)
   else:
+    log lvlInfo, &"addService {name}, remaining dependencies: {dependencies}"
     self.dependencies[name] = dependencies
 
 proc getService*(self: Services, T: typedesc): Option[T] {.gcsafe, raises: [].} =
@@ -96,26 +103,19 @@ proc getServiceAsync*(self: Services, T: typedesc): Future[Option[T]] {.gcsafe, 
 proc addService*[T: Service](self: Services, service: T) {.gcsafe, raises: [].} =
   self.addService(T.serviceName, service)
 
-# func addBuiltinServiceImpl(T: NimNode, name: static string, names: static seq[string], dependencies: varargs[typed]) =
-#   echo "addBuiltinService ", T.treeRepr, ", ", dependencies.treeRepr
-#   builtinServices.add nnkTupleExpr.newTree(T, genAst(T, T.serviceName))
-
-macro addBuiltinServiceImpl(T: typed, name: static string, names: static seq[string], dependencies: varargs[typed]) =
-  echo "addBuiltinService ", T.treeRepr, ", ", dependencies.treeRepr
+macro addBuiltinServiceImpl(T: typed, name: static string, dependencies: static seq[string]) =
   var dependencyNames = nnkBracket.newTree()
-  for n in names:
+  for n in dependencies:
     dependencyNames.add n.newLit
 
   builtinServices.add nnkBracket.newTree(T, newLit(name), nnkPrefix.newTree(ident"@", dependencyNames))
 
 macro addBuiltinService*(T: typed, dependencies: varargs[typed]) =
-  echo "addBuiltinService ", T.treeRepr, ", ", dependencies.treeRepr
   var dependencyNames = nnkPrefix.newTree(ident"@", nnkBracket.newTree())
   for d in dependencies:
-    dependencyNames.add genAst(d, d.serviceName)
-  echo dependencyNames.treeRepr
-  result = genAst(T, dependencies):
-    addBuiltinServiceImpl(T, T.serviceName, @[], dependencies)
+    dependencyNames[1].add genAst(d, d.serviceName)
+  result = genAst(T, dependencyNames):
+    addBuiltinServiceImpl(T, T.serviceName, dependencyNames)
 
 macro addBuiltinServices*(services: Services) =
   result = nnkStmtList.newTree()
@@ -124,7 +124,6 @@ macro addBuiltinServices*(services: Services) =
     let T = serviceInfo[0]
     let name = serviceInfo[1]
     let dependencies = serviceInfo[2]
-    echo serviceInfo.treeRepr
     result.add genAst(services, T, name, dependencies, services.addService(name, T(), dependencies))
 
   echo result.repr
