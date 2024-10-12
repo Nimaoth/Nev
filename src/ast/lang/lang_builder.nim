@@ -305,7 +305,7 @@ proc intToString(a: int32): cstring =
 proc createScopeComputerFromNode*(repository: Repository, class: ClassId, functionNode: AstNode, module: WasmModule,
     scopeComputers: var Table[ClassId, ScopeComputer]) =
   let name = $functionNode.id
-  if module.findFunction(name, void, proc(arrPtr: WasmPtr, node: WasmPtr) {.gcsafe, raises: [CatchableError].}).getSome(computeScopeImpl):
+  if module.findFunction(name, void, proc(module: WasmModule, fun: PFunction, arrPtr: WasmPtr, node: WasmPtr) {.gcsafe, raises: [CatchableError].}).getSome(computeScopeImpl):
     proc computeScopeImplWrapper(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] {.gcsafe, raises: [CatchableError].} =
       let sp = module.stackSave()
       defer:
@@ -317,7 +317,7 @@ proc createScopeComputerFromNode*(repository: Repository, class: ClassId, functi
       let indexPtr: WasmPtr = module.stackAlloc(4)
       module.setInt32(indexPtr, index)
       try:
-        computeScopeImpl(arrPtr, indexPtr)
+        computeScopeImpl.fun(module, computeScopeImpl.pfun, arrPtr, indexPtr)
       except Exception as e:
         raise newException(CatchableError, &"Failed to compute scope using wasm impl: {e.msg}", e)
 
@@ -427,7 +427,7 @@ proc updateLanguageFromModel*(repository: Repository, language: Language, model:
     imp.addFunction("intToString", intToString)
     imports.add imp
 
-    imports.add getLangApiImports()
+    imports.add repository.getLangApiImports()
 
     measureBlock fmt"Create wasm module for language '{model.path}'":
       let module = try:
@@ -451,6 +451,7 @@ proc updateLanguageFromModel*(repository: Repository, language: Language, model:
   var validationComputers = initTable[ClassId, ValidationComputer]()
 
   if wasmModule.getSome(module):
+    module.addUserData(repository)
     for (class, functionNode) in scopeDefinitions:
       capture class, functionNode:
         createScopeComputerFromNode(repository, class, functionNode, module, scopeComputers)
@@ -459,9 +460,10 @@ proc updateLanguageFromModel*(repository: Repository, language: Language, model:
 
   if wasmModule.getSome(module):
     for (class, role, functionNode) in propertyValidators:
-      capture class, role, functionNode:
+      capture module, class, role, functionNode:
         let name = $functionNode.id
-        if module.findFunction(name, bool, proc(node: WasmPtr, a: string): bool {.gcsafe.}).getSome(validateImpl):
+        let m = module
+        if m.findFunction(name, bool, proc(module: WasmModule, fun: PFunction, node: WasmPtr, a: string): bool {.gcsafe.}).getSome(validateImpl):
           let validator = if not language.validators.contains(class):
             let validator = NodeValidator()
             language.validators[class] = validator
@@ -482,8 +484,9 @@ proc updateLanguageFromModel*(repository: Repository, language: Language, model:
                 0
               module.setInt32(p, index)
 
-              validateImpl(p, propertyValue)
+              validateImpl.fun(module, validateImpl.pfun, p, propertyValue)
             except Exception as e:
+              log lvlError, &"Failed to validate node property: {propertyValue}\n{node}"
               return false
 
           # debugf"register propertyy validator for {class}, {role}"

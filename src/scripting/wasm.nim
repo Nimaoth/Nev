@@ -1,16 +1,17 @@
-import std/[macros, macrocache, json, options, tables, genasts]
-import misc/[custom_logger, custom_async, util, array_buffer]
+import std/[macros, macrocache, json, options, tables, genasts, strutils]
+import misc/[custom_logger, custom_async, util, array_buffer, id]
 import platform/filesystem
 
 logCategory "wasi"
 
 import wasm3, wasm3/[wasm3c, wasmconversions]
 
-export WasmPtr
+export WasmPtr, PFunction
 
 type WasmModule* = ref object
   env: WasmEnv
   path*: string
+  userData: Table[string, ref RootObj]
 
 type WasmImports* = object
   namespace*: string
@@ -20,6 +21,18 @@ type WasmImports* = object
 proc `$`*(p: WasmPtr): string {.borrow.}
 proc `+`*(p: WasmPtr, offset: SomeNumber): WasmPtr =
   return WasmPtr(p.int + offset.int)
+
+proc addUserData*[T](self: WasmModule, userData: T) =
+  mixin wasmUserDataKey
+  let key = T.wasmUserDataKey
+  self.userData[key] = userData
+
+proc getUserData*(self: WasmModule, T: typedesc): T =
+  mixin wasmUserDataKey
+  let key = T.wasmUserDataKey
+  self.userData.withValue(key, val):
+    return val[].T
+  raiseAssert("No userdata for " & $T)
 
 proc alloc*(module: WasmModule, size: uint32): WasmPtr =
   return module.env.alloc(size)
@@ -260,14 +273,14 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports], fs: Filesystem):
     log lvlError, &"Failed to load wasm binary from file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return WasmModule.none
 
-macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc, body: untyped): untyped =
+macro createWasmWrapper(returnType: typedesc, typ: typedesc, body: untyped): untyped =
+  # echo "createWasmWrapper"
+
   var params: seq[NimNode] = @[]
   var args: seq[NimNode] = @[]
 
   let returnCString = returnType.getType[1].repr == "cstring"
 
-  # echo "createWasmWrapper"
-  # echo returnType.getTypeImpl.treeRepr
   var actualReturnType = if returnCString:
     var actualReturnType = genAst():
       typedesc[WasmPtr]
@@ -277,11 +290,14 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
 
   params.add returnType.getType[1]
 
-  # echo actualReturnType.treeRepr
+  let moduleSym = genSym(nskParam, "module")
+  let pfunSym = genSym(nskParam, "pfun")
+  params.add nnkIdentDefs.newTree(moduleSym, typ.getType[1][2], newEmptyNode())
+  params.add nnkIdentDefs.newTree(pfunSym, typ.getType[1][3], newEmptyNode())
 
-  for i, p in typ.getType[1][2..^1]:
+  for i, p in typ.getType[1][4..^1]:
     let argSym = genSym(nskParam, "p" & $i)
-
+    let repr = p.repr
     let isCString = p.repr == "cstring"
     let isString = p.repr == "string"
 
@@ -290,28 +306,29 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
     var arg = argSym
 
     if isCString:
-      arg = genAst(argSym):
+      arg = genAst(argSym, moduleSym):
         block:
-          let p: WasmPtr = module.alloc(argSym.len.uint32 + 1)
-          module.copyMem(p, cast[pointer](argSym), argSym.len + 1)
+          let p: WasmPtr = moduleSym.alloc(argSym.len.uint32 + 1)
+          moduleSym.copyMem(p, cast[pointer](argSym), argSym.len + 1)
           p
     elif isString:
-      arg = genAst(argSym):
+      arg = genAst(argSym, moduleSym):
         block:
-          let p: WasmPtr = module.alloc(argSym.len.uint32 + 1)
-          module.copyMem(p, cast[ptr char](argSym.cstring), argSym.len + 1)
+          let p: WasmPtr = moduleSym.alloc(argSym.len.uint32 + 1)
+          moduleSym.copyMem(p, cast[ptr char](argSym.cstring), argSym.len + 1)
           p.uint64 or (argSym.len.uint64 shl 32)
 
     args.add(arg)
 
   discard body.replace("returnType", [actualReturnType])
   discard body.replace("parameters", args)
+  discard body.replace("f", [pfunSym])
 
   if returnType.getType[1].repr != "void":
     if returnCString:
-      body[0] = genAst(value = body[0]):
+      body[0] = genAst(value = body[0], moduleSym):
         let p = value
-        let res = module.getString(p)
+        let res = moduleSym.getString(p)
         return res
     else:
       body[0] = nnkReturnStmt.newTree(body[0])
@@ -320,20 +337,24 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
   #   echo result.repr
 
   result = newProc(params=params, body=body)
+  result.addPragma(ident"gcsafe")
   result.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree(bindSym"CatchableError")))
 
-proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): Option[T] =
+proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): Option[tuple[pfun: PFunction, fun: T]] =
   try:
     let f = module.env.findFunction(name)
     if f.isNil:
-      return T.none
+      return
 
-    let wrapper = createWasmWrapper(module, R, T):
+    let wrapper = createWasmWrapper(R, T):
       try:
-        f.call(`returnType`, `parameters`)
+        `f`.call(`returnType`, `parameters`)
       except WasmError as e:
         raise newException(CatchableError, "Failed to call function " & e.msg, e)
 
-    return wrapper.some
-  except CatchableError:
-    return T.none
+    result = typeof(result.get).default.some
+    result.get.pfun = f
+    result.get.fun = wrapper
+  except CatchableError as e:
+    log lvlError, &"Failed to find function {name}: {e.msg}"
+    return

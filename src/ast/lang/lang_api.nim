@@ -8,8 +8,9 @@ logCategory "lang-api"
 
 proc langApiNodeParent(module: WasmModule, retNodeHandlePtr: WasmPtr, nodeHandlePtr: WasmPtr) =
   # debugf"langApiNodeParent {retNodeHandlePtr}, {nodeHandlePtr}"
+  let repository = module.getUserData(Repository)
   let nodeIndex = module.getInt32(nodeHandlePtr)
-  let node = gNodeRegistry.getNode(nodeIndex).getOr:
+  let node = repository.getNode(nodeIndex).getOr:
     log lvlError, fmt"Invalid node handle: {nodeIndex}"
     module.setInt32(retNodeHandlePtr, 0)
     return
@@ -19,13 +20,13 @@ proc langApiNodeParent(module: WasmModule, retNodeHandlePtr: WasmPtr, nodeHandle
     module.setInt32(retNodeHandlePtr, 0)
     return
 
-  let parentIndex = gNodeRegistry.getNodeIndex(node.parent)
+  let parentIndex = repository.getNodeIndex(node.parent)
   module.setInt32(retNodeHandlePtr, parentIndex)
 
 proc langApiNodeId(module: WasmModule, retPtr: WasmPtr, nodeIndexPtr: WasmPtr) =
-  # debugf"langApiNodeId {retPtr}, {nodeIndexPtr}"
+  let repository = module.getUserData(Repository)
   let nodeIndex = module.getInt32(nodeIndexPtr)
-  let node = gNodeRegistry.getNode(nodeIndex).getOr:
+  let node = repository.getNode(nodeIndex).getOr:
     log lvlError, fmt"Invalid node handle: {nodeIndex}"
     module.setInt32(retPtr, 0)
     module.setInt32(retPtr + 4, 0)
@@ -46,8 +47,9 @@ proc langApiIdToString(module: WasmModule, idPtr: WasmPtr): string =
   return $id
 
 proc langApiNodeChildren(module: WasmModule, retPtr: WasmPtr, nodeIndexPtr: WasmPtr) =
+  let repository = module.getUserData(Repository)
   let nodeIndex = module.getInt32(nodeIndexPtr)
-  let node = gNodeRegistry.getNode(nodeIndex).getOr:
+  let node = repository.getNode(nodeIndex).getOr:
     log lvlError, fmt"Invalid node handle: {nodeIndex}"
     module.setInt32(retPtr, 0)
     module.setInt32(retPtr + 4, 0)
@@ -63,7 +65,7 @@ proc langApiNodeChildren(module: WasmModule, retPtr: WasmPtr, nodeIndexPtr: Wasm
   var index = 0
   for children in node.childLists.mitems:
     for c in children.nodes:
-      let nodeIndex = gNodeRegistry.getNodeIndex(c)
+      let nodeIndex = repository.getNodeIndex(c)
       module.setInt32(mem + index * 4, nodeIndex)
       index += 1
 
@@ -72,8 +74,9 @@ proc langApiNodeChildren(module: WasmModule, retPtr: WasmPtr, nodeIndexPtr: Wasm
   module.setInt32(retPtr + 8, mem.int32)
 
 proc langApiNodeModel(module: WasmModule, retPtr: WasmPtr, nodeIndexPtr: WasmPtr) =
+  let repository = module.getUserData(Repository)
   let nodeIndex = module.getInt32(nodeIndexPtr)
-  let node = gNodeRegistry.getNode(nodeIndex).getOr:
+  let node = repository.getNode(nodeIndex).getOr:
     log lvlError, fmt"Invalid node handle: {nodeIndex}"
     module.setInt32(retPtr, 0)
     return
@@ -83,12 +86,13 @@ proc langApiNodeModel(module: WasmModule, retPtr: WasmPtr, nodeIndexPtr: WasmPtr
     module.setInt32(retPtr, 0)
     return
 
-  let modelIndex = gNodeRegistry.getModelIndex(model)
+  let modelIndex = repository.getModelIndex(model)
   module.setInt32(retPtr, modelIndex)
 
 proc langApiModelRootNodes(module: WasmModule, retPtr: WasmPtr, modelIndexPtr: WasmPtr) =
+  let repository = module.getUserData(Repository)
   let modelIndex = module.getInt32(modelIndexPtr)
-  let model = gNodeRegistry.getModel(modelIndex).getOr:
+  let model = repository.getModel(modelIndex).getOr:
     log lvlError, fmt"Invalid model handle: {modelIndex}"
     module.setInt32(retPtr, 0)
     module.setInt32(retPtr + 4, 0)
@@ -97,14 +101,15 @@ proc langApiModelRootNodes(module: WasmModule, retPtr: WasmPtr, modelIndexPtr: W
 
   let mem = module.alloc(model.rootNodes.len.uint32 * 4)
   for i in 0..model.rootNodes.high:
-    let nodeIndex = gNodeRegistry.getNodeIndex(model.rootNodes[i])
+    let nodeIndex = repository.getNodeIndex(model.rootNodes[i])
     module.setInt32(mem + i * 4, nodeIndex)
 
   module.setInt32(retPtr, model.rootNodes.len.int32)
   module.setInt32(retPtr + 4, model.rootNodes.len.int32)
   module.setInt32(retPtr + 8, mem.int32)
 
-proc getLangApiImports*(): WasmImports =
+proc getLangApiImports*(repository: Repository): WasmImports =
+
   result = WasmImports(namespace: "base")
   result.addFunction("node-id", langApiNodeId)
   result.addFunction("id-to-string", langApiIdToString)

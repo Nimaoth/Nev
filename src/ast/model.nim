@@ -162,7 +162,7 @@ type
     onNodePropertyChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]]]
     onNodeReferenceChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId]]
 
-  Repository* = ref object
+  Repository* = ref object of RootObj
     languages*: Table[LanguageId, Language]
     languageFutures*: Table[LanguageId, Future[Language]]
     languageModels*: Table[LanguageId, Model]
@@ -190,6 +190,8 @@ proc resolveReference*(self: Model, id: NodeId): Option[AstNode]
 proc resolveReference*(self: Project, id: NodeId): Option[AstNode]
 proc dump*(node: AstNode, model: Model = nil, recurse: bool = false): string
 proc replaceReferences*(node: AstNode, idMap: var Table[NodeId, NodeId])
+
+func wasmUserDataKey*(_: typedesc[Repository]): string = "wasm.userdata.repository"
 
 {.pop.}
 {.pop.}
