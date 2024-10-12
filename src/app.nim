@@ -1,5 +1,4 @@
-import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques, algorithm]
-import asynctools/asyncipc
+import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, regex, disposable_ref, rope_utils]
 import ui/node
@@ -1342,10 +1341,6 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
     discard await self.setWorkspaceFolder newWorkspaceFolderLocal(".")
 
-  when enableAst:
-    if self.workspace.isNotNil:
-      setProjectWorkspace(self.workspace)
-
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
     discard self.openFile(filePath)
@@ -1602,11 +1597,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   var state = EditorState()
   state.theme = self.theme.path
 
-  when enableAst:
-    if gProjectWorkspace.isNotNil:
-      state.astProjectWorkspaceId = $gProjectWorkspace.id
-    if gProject.isNotNil:
-      state.astProjectPath = gProject.path.some
+  # todo: save ast project state
 
   if self.backend == api.Backend.Terminal:
     state.fontSize = self.loadedFontSize
