@@ -1,6 +1,5 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, os, hashes]
+import std/[json, strutils, strformat, macros, options, tables, sets, hashes]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection]
-import misc/async_process
 import platform/filesystem
 
 {.push gcsafe.}
@@ -9,7 +8,7 @@ import platform/filesystem
 logCategory "dap"
 
 var logVerbose = false
-var logServerDebug = true
+# var logServerDebug = true
 
 proc fromJsonHook*[T](a: var Response[T], b: JsonNode, opt = Joptions()) =
   if not b["success"].getBool:
@@ -353,8 +352,6 @@ proc run*(client: DAPClient)
 
 proc waitInitialized*(client: DAPCLient): Future[bool] = client.initializedFuture
 proc waitInitializedEventReceived*(client: DAPCLient): Future[void] = client.initializedEventFuture
-
-proc encodePathUri(path: string): string = path.normalizePathUnix.split("/").mapIt(it.encodeUrl(false)).join("/")
 
 proc `==`*(a, b: VariablesReference): bool {.borrow.}
 proc hash*(vr: VariablesReference): Hash {.borrow.}

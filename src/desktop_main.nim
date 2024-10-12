@@ -11,7 +11,7 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, macros, strutils, os, terminal, strformat]
+import std/[parseopt, options, macros, strutils, os, strformat]
 import misc/[custom_logger, util]
 import compilation_config, scripting_api, app_options
 import text/custom_treesitter
@@ -184,7 +184,7 @@ import ui/widget_builders
 import text/language/language_server
 import app
 
-import asynctools/asyncipc
+# import asynctools/asyncipc
 
 # proc tryAttach(opts: AppOptions, processId: int) =
 #   if processId == 0:
