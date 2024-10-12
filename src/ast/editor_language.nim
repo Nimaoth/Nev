@@ -1,61 +1,68 @@
 import std/[tables, strformat]
 import ui/node
 import misc/[id, util, custom_logger]
-import model, cells, base_language, cell_builder_database
+import model, cells, base_language
 
 export base_language
 
 logCategory "base-language"
 
-let IdEditorLanguage* = "654fbb281446e19b3822521f".parseId.LanguageId
+const IdEditorLanguage* = "654fbb281446e19b3822521f".parseId.LanguageId
 
-let IdLoadAppFile* = "654fbb281446e19b3822521d".parseId.ClassId
-let IdLoadAppFileArgument* = "654fbb281446e19b3822521e".parseId.RoleId
+const IdLoadAppFile* = "654fbb281446e19b3822521d".parseId.ClassId
+const IdLoadAppFileArgument* = "654fbb281446e19b3822521e".parseId.RoleId
 
-let Id654fbb281446e19b38225220* = "654fbb281446e19b38225220".parseId
-let Id654fbb281446e19b38225221* = "654fbb281446e19b38225221".parseId
-let Id654fbb281446e19b38225222* = "654fbb281446e19b38225222".parseId
-let Id654fbb281446e19b38225223* = "654fbb281446e19b38225223".parseId
-let Id654fbb281446e19b38225224* = "654fbb281446e19b38225224".parseId
-let Id654fbb281446e19b38225225* = "654fbb281446e19b38225225".parseId
-let Id654fbb281446e19b38225226* = "654fbb281446e19b38225226".parseId
-let Id654fbb281446e19b38225227* = "654fbb281446e19b38225227".parseId
-let Id654fbb281446e19b38225228* = "654fbb281446e19b38225228".parseId
-let Id654fbb281446e19b38225229* = "654fbb281446e19b38225229".parseId
+const Id654fbb281446e19b38225220* = "654fbb281446e19b38225220".parseId
+const Id654fbb281446e19b38225221* = "654fbb281446e19b38225221".parseId
+const Id654fbb281446e19b38225222* = "654fbb281446e19b38225222".parseId
+const Id654fbb281446e19b38225223* = "654fbb281446e19b38225223".parseId
+const Id654fbb281446e19b38225224* = "654fbb281446e19b38225224".parseId
+const Id654fbb281446e19b38225225* = "654fbb281446e19b38225225".parseId
+const Id654fbb281446e19b38225226* = "654fbb281446e19b38225226".parseId
+const Id654fbb281446e19b38225227* = "654fbb281446e19b38225227".parseId
+const Id654fbb281446e19b38225228* = "654fbb281446e19b38225228".parseId
+const Id654fbb281446e19b38225229* = "654fbb281446e19b38225229".parseId
 
-let loadAppFileClass* = newNodeClass(IdLoadAppFile, "LoadAppFile", alias="load app file", base=expressionClass,
-  children=[
-    NodeChildDescription(id: IdLoadAppFileArgument, role: "file", class: expressionClass.id, count: ChildCount.One)])
+proc createEditorLanguage*(repository: Repository, builders: CellBuilderDatabase) =
+  var typeComputers = initTable[ClassId, TypeComputer]()
+  var valueComputers = initTable[ClassId, ValueComputer]()
+  var scopeComputers = initTable[ClassId, ScopeComputer]()
+  var validationComputers = initTable[ClassId, ValidationComputer]()
 
-var builder = newCellBuilder(IdEditorLanguage)
+  defineComputerHelpers(typeComputers, valueComputers, scopeComputers, validationComputers)
 
-builder.addBuilderFor IdLoadAppFile, idNone(), [
-  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
-  CellBuilderCommand(kind: AliasCell, disableEditing: true),
-  CellBuilderCommand(kind: Children, childrenRole: IdLoadAppFileArgument, placeholder: "<filename>".some, uiFlags: &{LayoutHorizontal}),
-]
+  let expressionClass = repository.resolveClass(IdExpression)
+  let stringTypeInstance = repository.getNode(IdStringTypeInstance).get
 
-var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
-var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
-var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
-var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
+  let loadAppFileClass = newNodeClass(IdLoadAppFile, "LoadAppFile", alias="load app file", base=expressionClass,
+    children=[
+      NodeChildDescription(id: IdLoadAppFileArgument, role: "file", class: expressionClass.id, count: ChildCount.One)])
 
-typeComputers[loadAppFileClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  debugf"compute type for load app file {node}"
-  return stringTypeInstance
+  var builder = newCellBuilder(IdEditorLanguage)
 
-# scope
+  builder.addBuilderFor IdLoadAppFile, idNone(), [
+    CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+    CellBuilderCommand(kind: AliasCell, disableEditing: true),
+    CellBuilderCommand(kind: Children, childrenRole: IdLoadAppFileArgument, placeholder: "<filename>".some, uiFlags: &{LayoutHorizontal}),
+  ]
 
-let editorLanguage* = newLanguage(IdEditorLanguage, "Editor", @[
-  loadAppFileClass,
-], typeComputers, valueComputers, scopeComputers, validationComputers, [base_language.baseLanguage])
-registerBuilder(IdEditorLanguage, builder)
+  typeComputer(loadAppFileClass.id):
+    debugf"compute type for load app file {node}"
+    stringTypeInstance
 
-let editorModel* = block:
-  var model = newModel(newId().ModelId)
-  model.addLanguage(base_language.baseLanguage)
-  model.addLanguage(editorLanguage)
+  let baseLanguage = repository.language(IdBaseLanguage).get
 
-  model
+  let editorLanguage = newLanguage(IdEditorLanguage, "Editor", @[
+    loadAppFileClass,
+  ], typeComputers, valueComputers, scopeComputers, validationComputers, [baseLanguage])
 
-# print baseLanguage
+  # todo
+  builders.registerBuilder(IdEditorLanguage, builder)
+
+  let editorModel = newModel(newId().ModelId)
+  editorModel.addLanguage(baseLanguage)
+  editorModel.addLanguage(editorLanguage)
+
+  repository.registerLanguage(editorLanguage)
+
+  # print baseLanguage

@@ -5,6 +5,9 @@ import model, ast_ids
 
 logCategory "cells"
 
+{.push gcsafe.}
+{.push raises: [].}
+
 defineBitFlag:
   type CellBuilderFlag* = enum
     OnlyExactMatch
@@ -18,8 +21,8 @@ defineBitFlag:
     NoSpaceRight
 
 type
-  CellIsVisiblePredicate* = proc(node: AstNode): bool
-  CellNodeFactory* = proc(): AstNode
+  CellIsVisiblePredicate* = proc(node: AstNode): bool {.gcsafe, raises: [].}
+  CellNodeFactory* = proc(): AstNode {.gcsafe, raises: [].}
 
   CellStyle* = ref object
     noSpaceLeft*: bool
@@ -35,7 +38,7 @@ type
     line*: int
     displayText*: Option[string]
     shadowText*: string
-    fillChildren*: proc(map: NodeCellMap): void
+    fillChildren*: proc(map: NodeCellMap): void {.gcsafe, raises: [].}
     filled*: bool
     customIsVisible*: CellIsVisiblePredicate
     nodeFactory*: CellNodeFactory
@@ -51,7 +54,7 @@ type
     foregroundColor*: Color
     backgroundColor*: Color
 
-  CellBuilderFunction* = proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell
+  CellBuilderFunction* = proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell {.gcsafe, raises: [].}
 
   CellBuilder* = ref object
     sourceLanguage*: LanguageId
@@ -128,15 +131,24 @@ type
     of EndCollectionCell:
       discard
 
+  CellBuilderDatabase* = ref object
+    builders: Table[LanguageId, CellBuilder]
+
+proc registerBuilder*(self: CellBuilderDatabase, language: LanguageId, builder: CellBuilder) =
+  self.builders[language] = builder
+
+proc getBuilder*(self: CellBuilderDatabase, language: LanguageId): CellBuilder =
+  return self.builders[language]
+
 method dump*(self: Cell, recurse: bool = false): string {.base.} = discard
 method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} = Cell.none
 proc editableLow*(self: Cell, ignoreStyle: bool = false): int
 proc editableHigh*(self: Cell, ignoreStyle: bool = false): int
 proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags = 0.CellFlags): Cell
 proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, owner: AstNode, role: RoleId, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
-    customIsVisible: proc(node: AstNode): bool = nil,
-    separatorFunc: proc(builder: CellBuilder): Cell = nil,
-    placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell = buildDefaultPlaceholder,
+    customIsVisible: proc(node: AstNode): bool {.gcsafe, raises: [].} = nil,
+    separatorFunc: proc(builder: CellBuilder): Cell {.gcsafe, raises: [].} = nil,
+    placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell {.gcsafe, raises: [].} = buildDefaultPlaceholder,
     builderFunc: CellBuilderFunction = nil): Cell
 proc buildReference*(map: NodeCellMap, node: AstNode, owner: AstNode, role: RoleId, builderFunc: CellBuilderFunction = nil): Cell
 
@@ -477,7 +489,7 @@ proc cell*(map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell =
     # debugf"get parent cell for {node}"
     let parentCell = map.cell(node.parent, useDefault)
     map.fill(parentCell)
-    softAssert map.map.contains(node.id), fmt"Generating parent cell for {node.parent} didn't generate cells for {node}"
+    assert map.map.contains(node.id), fmt"Generating parent cell for {node.parent} didn't generate cells for {node}"
     return map.map[node.id]
 
   # root node
@@ -605,7 +617,7 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
   let class = node.nodeClass
 
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
-  cell.fillChildren = proc(m: NodeCellMap) =
+  cell.fillChildren = proc(m: NodeCellMap) {.gcsafe, raises: [].} =
     var hasAnyChildren = node.properties.len > 0 or node.references.len > 0 or node.childLists.len > 0
     for prop in node.childLists:
       if node.children(prop.role).len > 0:
@@ -631,7 +643,7 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
         let name: string = if class.isNil:
           fmt"<unkown {prop.role}>"
         else:
-          class.propertyDescription(prop.role).map(proc(decs: PropertyDescription): string = decs.role).get($prop.role)
+          class.propertyDescription(prop.role).map(proc(decs: PropertyDescription): string {.gcsafe, raises: [].} = decs.role).get($prop.role)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
         propCell.add PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: node, property: prop.role)
@@ -643,7 +655,7 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
         let name: string = if class.isNil:
           fmt"<unkown {prop.role}>"
         else:
-          class.nodeReferenceDescription(prop.role).map(proc(decs: NodeReferenceDescription): string = decs.role).get($prop.role)
+          class.nodeReferenceDescription(prop.role).map(proc(decs: NodeReferenceDescription): string {.gcsafe, raises: [].} = decs.role).get($prop.role)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
 
@@ -666,7 +678,7 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
         let name: string = if class.isNil:
           fmt"<unkown {prop.role}>"
         else:
-          class.nodeChildDescription(prop.role).map(proc(decs: NodeChildDescription): string = decs.role).get($prop.role)
+          class.nodeChildDescription(prop.role).map(proc(decs: NodeChildDescription): string {.gcsafe, raises: [].} = decs.role).get($prop.role)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true) #, increaseIndentAfter: children.len > 1)
 
@@ -708,7 +720,7 @@ proc buildCellWithCommands*(map: NodeCellMap, node: AstNode, owner: AstNode, com
     if parent.isNil: # root
       assert stack.len == 0
       assert currentCollectionCell.isNil
-      cell.fillChildren = proc(m: NodeCellMap) =
+      cell.fillChildren = proc(m: NodeCellMap) {.gcsafe, raises: [].} =
         discard map.buildCellWithCommands(node, owner, commands, cell, 1)
       return cell
 
@@ -754,7 +766,7 @@ proc buildCellWithCommands*(map: NodeCellMap, node: AstNode, owner: AstNode, com
             disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
         else:
           var cell = CollectionCell(node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
-          cell.fillChildren = proc(map: NodeCellMap) =
+          cell.fillChildren = proc(map: NodeCellMap) {.gcsafe, raises: [].} =
             cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "<", flags: &{NoSpaceRight})
             cell.add map.buildCell(targetNode, owner=node)
             cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ">", flags: &{NoSpaceLeft})
@@ -780,15 +792,15 @@ proc buildCellWithCommands*(map: NodeCellMap, node: AstNode, owner: AstNode, com
         return cell
 
     of Children:
-      var separator: proc(builder: CellBuilder): Cell
-      var placeholder: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell
+      var separator: proc(builder: CellBuilder): Cell {.gcsafe, raises: [].}
+      var placeholder: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell {.gcsafe, raises: [].}
       if command.separator.isSome:
-        separator = proc(builder: CellBuilder): Cell =
+        separator = proc(builder: CellBuilder): Cell {.gcsafe, raises: [].} =
           ConstantCell(node: owner ?? node, referenceNode: node, text: command.separator.get, flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
 
       if command.placeholder.isSome:
         let text = command.placeholder.get
-        placeholder = proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell =
+        placeholder = proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell {.gcsafe, raises: [].} =
           PlaceholderCell(node: owner ?? node, referenceNode: node, role: role, shadowText: text, flags: flags)
       else:
         placeholder = buildDefaultPlaceholder
@@ -844,9 +856,9 @@ proc buildReference*(map: NodeCellMap, node: AstNode, owner: AstNode, role: Role
     return ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, text: $node.reference(role))
 
 proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, owner: AstNode, role: RoleId, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
-    customIsVisible: proc(node: AstNode): bool = nil,
-    separatorFunc: proc(builder: CellBuilder): Cell = nil,
-    placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell = buildDefaultPlaceholder,
+    customIsVisible: proc(node: AstNode): bool {.gcsafe, raises: [].} = nil,
+    separatorFunc: proc(builder: CellBuilder): Cell {.gcsafe, raises: [].} = nil,
+    placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell {.gcsafe, raises: [].} = buildDefaultPlaceholder,
     builderFunc: CellBuilderFunction = nil): Cell =
 
   let children = node.children(role)
@@ -866,28 +878,28 @@ proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, owner
   result.customIsVisible = customIsVisible
 
 template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, inOwner: AstNode, r: RoleId, uiFlags: UINodeFlags, cellFlags: CellFlags, body: untyped): Cell =
-  var isVisibleFunc: proc(node: AstNode): bool = nil
-  var separatorFunc: proc(builder: CellBuilder): Cell = nil
-  var placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, childFlags: CellFlags): Cell = nil
+  var isVisibleFunc: proc(node: AstNode): bool {.gcsafe, raises: [].} = nil
+  var separatorFunc: proc(builder: CellBuilder): Cell {.gcsafe, raises: [].} = nil
+  var placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, childFlags: CellFlags): Cell {.gcsafe, raises: [].} = nil
 
   var builder {.inject.} = b
   var node {.inject.} = n
   var role {.inject.} = r
 
   template separator(bod: untyped): untyped {.used.} =
-    separatorFunc = proc(builder {.inject.}: CellBuilder): Cell =
+    separatorFunc = proc(builder {.inject.}: CellBuilder): Cell {.gcsafe, raises: [].} =
       return bod
 
   template placeholder(bod: untyped): untyped {.used.} =
-    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, owner {.inject.}: AstNode, role {.inject.}: RoleId, childFlags: CellFlags): Cell =
+    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, owner {.inject.}: AstNode, role {.inject.}: RoleId, childFlags: CellFlags): Cell {.gcsafe, raises: [].} =
       return bod
 
   template placeholder(text: string): untyped {.used.} =
-    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, owner {.inject.}: AstNode, role {.inject.}: RoleId, childFlags: CellFlags): Cell =
+    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, owner {.inject.}: AstNode, role {.inject.}: RoleId, childFlags: CellFlags): Cell {.gcsafe, raises: [].} =
       return PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: text, flags: childFlags)
 
   template visible(bod: untyped): untyped {.used.} =
-    isVisibleFunc = proc(node {.inject.}: AstNode): bool =
+    isVisibleFunc = proc(node {.inject.}: AstNode): bool {.gcsafe, raises: [].} =
       return bod
 
   placeholder("...")

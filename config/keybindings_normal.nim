@@ -171,9 +171,9 @@ proc loadModelKeybindings*() {.expose("load-model-keybindings").} =
 
   addCommand "editor.model", "<C-SPACE>", "show-completions"
 
-  addCommand "editor.model", "<LEADER>mr", "run-selected-function"
-  addCommand "editor.model", "<LEADER>md", "toggle-use-default-cell-builder"
-  addCommand "editor.model", "<LEADER>mc", "compile-language"
+  addCommand "editor.model", "<LEADER>er", "run-selected-function"
+  addCommand "editor.model", "<LEADER>ed", "toggle-use-default-cell-builder"
+  addCommand "editor.model", "<LEADER>ec", "compile-language"
 
   addCommand "editor.model", "gd", "goto-definition"
   addCommand "editor.model", "gp", "goto-prev-reference"

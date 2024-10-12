@@ -144,7 +144,9 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
 
   # defer:
   #   echo result.repr
+
   result = newProc(outFunction, params=params, body=body)
+  result.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree(bindSym"CatchableError")))
 
 proc getWasmType(typ: NimNode): string =
   # echo typ.treeRepr
@@ -317,7 +319,8 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
   # defer:
   #   echo result.repr
 
-  return newProc(params=params, body=body)
+  result = newProc(params=params, body=body)
+  result.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree(bindSym"CatchableError")))
 
 proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): Option[T] =
   try:
@@ -326,7 +329,10 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
       return T.none
 
     let wrapper = createWasmWrapper(module, R, T):
-      f.call(`returnType`, `parameters`)
+      try:
+        f.call(`returnType`, `parameters`)
+      except WasmError as e:
+        raise newException(CatchableError, "Failed to call function " & e.msg, e)
 
     return wrapper.some
   except CatchableError:

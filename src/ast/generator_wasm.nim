@@ -5,6 +5,10 @@ import misc/[id, custom_logger, util]
 import scripting/[wasm_builder]
 import model
 
+{.push gcsafe.}
+{.push raises: [].}
+{.push hint[XCannotRaiseY]:off.}
+
 logCategory "generator-wasm"
 
 type
@@ -27,10 +31,16 @@ type
   TypeAttributes* = tuple[size: int32, align: int32, passReturnAsOutParam: bool]
   WasmTypeAttributes* = tuple[typ: WasmValueType, load: WasmInstrKind, store: WasmInstrKind]
 
+  TypeAttributeComputer* = proc(self: LanguageWasmCompilerExtension, typ: AstNode): TypeAttributes {.gcsafe, raises: [CatchableError].}
+  GeneratorFunc* = proc(self: LanguageWasmCompilerExtension, node: AstNode, dest: Destination) {.gcsafe, raises: [CatchableError].}
+  FunctionInputOutputComputer* = proc(self: LanguageWasmCompilerExtension, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]] {.gcsafe, raises: [CatchableError].}
+  FunctionConstructorComputer* = proc(self: LanguageWasmCompilerExtension, node: AstNode, exportName: Option[string], inputs: seq[WasmValueType], outputs: seq[WasmValueType]): WasmFuncIdx {.gcsafe, raises: [CatchableError].}
+
   BaseLanguageWasmCompiler* = ref object
     builder*: WasmBuilder
 
     ctx*: ModelComputationContextBase
+    repository*: Repository
 
     wasmFuncs: Table[NodeId, WasmFuncIdx]
 
@@ -40,9 +50,9 @@ type
     labelIndices*: Table[NodeId, int] # Not the actual index
     wasmValueTypes*: Table[ClassId, WasmTypeAttributes]
     typeAttributes*: Table[ClassId, TypeAttributes]
-    typeAttributeComputers*: Table[ClassId, proc(typ: AstNode): TypeAttributes]
-    functionInputOutputComputer*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]]]
-    functionConstructors*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string], inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]): WasmFuncIdx]
+    typeAttributeComputers*: Table[ClassId, tuple[ext: LanguageWasmCompilerExtension, gen: TypeAttributeComputer]]
+    functionInputOutputComputer*: Table[ClassId, tuple[ext: LanguageWasmCompilerExtension, gen: FunctionInputOutputComputer]]
+    functionConstructors*: Table[ClassId, tuple[ext: LanguageWasmCompilerExtension, gen: FunctionConstructorComputer]]
 
     loopBranchIndices*: Table[NodeId, tuple[breakIndex: int, continueIndex: int]]
     functionTableIndices*: Table[NodeId, (WasmTableIdx, int32)]
@@ -61,7 +71,8 @@ type
 
     genDebugCode: bool
 
-    generators*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination)]
+    generators*: Table[ClassId, tuple[ext: LanguageWasmCompilerExtension, gen: GeneratorFunc]]
+    extensions: seq[LanguageWasmCompilerExtension]
 
     # imported
     printI32: WasmFuncIdx
@@ -97,13 +108,20 @@ type
 
     globalData: seq[uint8]
 
-proc compileFunction*(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: WasmFuncIdx)
-proc getOrCreateWasmFunc*(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): WasmFuncIdx
-proc compileRemainingFunctions*(self: BaseLanguageWasmCompiler)
+  LanguageWasmCompilerExtension* = ref object of RootObj
+    compiler*: BaseLanguageWasmCompiler
 
-proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguageWasmCompiler =
+method genNode*(self: LanguageWasmCompilerExtension, node: AstNode, dest: Destination) {.raises: [CatchableError].} =
+  discard
+
+proc compileFunction*(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: WasmFuncIdx) {.raises: [CatchableError].}
+proc getOrCreateWasmFunc*(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): WasmFuncIdx
+proc compileRemainingFunctions*(self: BaseLanguageWasmCompiler) {.raises: [CatchableError].}
+
+proc newBaseLanguageWasmCompiler*(repository: Repository, ctx: ModelComputationContextBase): BaseLanguageWasmCompiler =
   new result
   result.builder = newWasmBuilder()
+  result.repository = repository
   result.ctx = ctx
 
   result.builder.mems.add(WasmMem(typ: WasmMemoryType(limits: WasmLimits(min: 255))))
@@ -319,7 +337,7 @@ proc addFunctionToCompile*(self: BaseLanguageWasmCompiler, node: AstNode) =
   let functionName = $node.id
   discard self.getOrCreateWasmFunc(node, exportName=functionName.some)
 
-proc compileToBinary*(self: BaseLanguageWasmCompiler): seq[uint8] =
+proc compileToBinary*(self: BaseLanguageWasmCompiler): seq[uint8] {.raises: [CatchableError].} =
   self.compileRemainingFunctions()
 
   let activeDataSize = self.globalData.len.int32
@@ -335,14 +353,18 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler): seq[uint8] =
 
   # debugf"{self.builder}"
 
-  if not self.builder.validate(false):
-    log(lvlError, "Wasm validation failed")
-    # discard self.builder.validate(true)
+  try:
+    {.gcsafe.}:
+      if not self.builder.validate(false):
+        log(lvlError, "Wasm validation failed")
+        # discard self.builder.validate(true)
+  except:
+    log lvlError, &"Failed to validate: {getCurrentExceptionMsg()}"
 
   let binary = self.builder.generateBinary()
   return binary
 
-proc compileRemainingFunctions*(self: BaseLanguageWasmCompiler) =
+proc compileRemainingFunctions*(self: BaseLanguageWasmCompiler) {.raises: [CatchableError].} =
   while self.functionsToCompile.len > 0:
     let function = self.functionsToCompile.pop
     self.compileFunction(function[0], function[1])
@@ -350,11 +372,47 @@ proc compileRemainingFunctions*(self: BaseLanguageWasmCompiler) =
 proc addImport*(self: BaseLanguageWasmCompiler, id: Id, env: string, name: string, inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]) =
   self.wasmFuncs[id.NodeId] = self.builder.addImport(env, name, self.builder.addType(inputs, outputs))
 
-proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  if self.generators.contains(node.class):
-    let generator = self.generators[node.class]
-    generator(self, node, dest)
-  else:
+proc addExtension*(self: BaseLanguageWasmCompiler, ext: LanguageWasmCompilerExtension) {.raises: [].} =
+  self.extensions.add(ext)
+  ext.compiler = self
+
+proc addFunctionInputOutput*[T: LanguageWasmCompilerExtension](self: T, id: ClassId,
+    gen: proc(self: T, node: AstNode):
+      tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]] {.nimcall, gcsafe, raises: [CatchableError].}
+    ) {.raises: [].} =
+  proc wrapper(self: LanguageWasmCompilerExtension, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]] {.gcsafe, raises: [CatchableError].} =
+    gen(self.T, node)
+
+  self.compiler.functionInputOutputComputer[id] = (self, wrapper)
+
+proc addFunctionConstructor*[T: LanguageWasmCompilerExtension](self: T, id: ClassId,
+    gen: proc(self: T, node: AstNode, exportName: Option[string], inputs: seq[WasmValueType],
+      outputs: seq[WasmValueType]): WasmFuncIdx {.gcsafe, raises: [CatchableError].}) {.raises: [].} =
+  proc wrapper(self: LanguageWasmCompilerExtension, node: AstNode, exportName: Option[string], inputs: seq[WasmValueType],
+      outputs: seq[WasmValueType]): WasmFuncIdx {.gcsafe, raises: [CatchableError].} =
+    gen(self.T, node, exportName, inputs, outputs)
+  self.compiler.functionConstructors[id] = (self, wrapper)
+
+proc addGenerator*[T: LanguageWasmCompilerExtension](self: T, id: ClassId,
+    gen: proc(self: T, node: AstNode, dest: Destination) {.gcsafe, raises: [CatchableError].}) {.raises: [].} =
+  proc wrapper(self: LanguageWasmCompilerExtension, node: AstNode, dest: Destination) {.gcsafe, raises: [CatchableError].} =
+    gen(self.T, node, dest)
+  self.compiler.generators[id] = (self, wrapper)
+
+proc addTypeAttributes*(self: LanguageWasmCompilerExtension, id: ClassId,
+    size: int32, align: int32, passReturnAsOutParam: bool = false) {.raises: [].} =
+  self.compiler.typeAttributes[id] = (size, align, passReturnAsOutParam)
+
+proc addTypeAttributeComputer*[T: LanguageWasmCompilerExtension](self: T, id: ClassId,
+    gen: proc(self: T, typ: AstNode): TypeAttributes {.gcsafe, raises: [CatchableError].}) {.raises: [].} =
+  proc wrapper(self: LanguageWasmCompilerExtension, node: AstNode): TypeAttributes {.gcsafe, raises: [CatchableError].} =
+    gen(self.T, node)
+  self.compiler.typeAttributeComputers[id] = (self, wrapper)
+
+proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) {.raises: [CatchableError].} =
+  self.generators.withValue(node.class, val):
+    val[].gen(val[].ext, node, dest)
+  do:
     let class = node.nodeClass
     log(lvlWarn, fmt"genNode: Node class not implemented: {class.name}")
 
@@ -364,14 +422,14 @@ proc toWasmValueType*(self: BaseLanguageWasmCompiler, typ: AstNode): Option[Wasm
   # log lvlError, fmt"toWasmValueType: Type not implemented: {`$`(typ, true)}"
   return WasmValueType.none
 
-proc getTypeAttributes*(self: BaseLanguageWasmCompiler, typ: AstNode): TypeAttributes =
-  if self.typeAttributes.contains(typ.class):
-    return self.typeAttributes[typ.class]
-  if self.typeAttributeComputers.contains(typ.class):
-    return self.typeAttributeComputers[typ.class](typ)
+proc getTypeAttributes*(self: BaseLanguageWasmCompiler, typ: AstNode): TypeAttributes {.raises: [CatchableError].} =
+  self.typeAttributes.withValue(typ.class, val):
+    return val[]
+  self.typeAttributeComputers.withValue(typ.class, val):
+    return val[].gen(val[].ext, typ)
   return (0, 1, false)
 
-proc shouldPassAsOutParamater*(self: BaseLanguageWasmCompiler, typ: AstNode): bool =
+proc shouldPassAsOutParamater*(self: BaseLanguageWasmCompiler, typ: AstNode): bool {.raises: [CatchableError].} =
   let (size, _, passReturnAsOutParam) = self.getTypeAttributes(typ)
   if passReturnAsOutParam:
     return true
@@ -393,33 +451,36 @@ proc getWasmFunc*(self: BaseLanguageWasmCompiler, id: Id): WasmFuncIdx =
     return 0.WasmFuncIdx
   return self.wasmFuncs[id.NodeId]
 
-proc getFunctionTypeIdx*(self: BaseLanguageWasmCompiler, node: AstNode): WasmTypeIdx =
-  let (inputs, outputs) = if self.functionInputOutputComputer.contains(node.class):
-    self.functionInputOutputComputer[node.class](self, node)
-  else:
-    log lvlError, fmt"getFunctionTypeIdx: Function not implemented: {`$`(node, true)}"
-    return 0.WasmTypeIdx
+proc getFunctionTypeIdx*(self: BaseLanguageWasmCompiler, node: AstNode): WasmTypeIdx {.raises: [CatchableError].} =
+  self.functionInputOutputComputer.withValue(node.class, val):
+    let (inputs, outputs) = val[].gen(val[].ext, node)
+    return self.builder.getFunctionTypeIdx(inputs, outputs)
 
-  return self.builder.getFunctionTypeIdx(inputs, outputs)
+  log lvlError, fmt"getFunctionTypeIdx: Function not implemented: {`$`(node, true)}"
+  return 0.WasmTypeIdx
 
 proc getOrCreateWasmFunc*(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): WasmFuncIdx =
-  if not self.wasmFuncs.contains(node.id):
-    # debugf"getOrCreateWasmFunc {exportName}: {node}"
-    let (inputs, outputs) = if self.functionInputOutputComputer.contains(node.class):
-      self.functionInputOutputComputer[node.class](self, node)
-    else:
-      log lvlError, fmt"getOrCreateWasmFunc: Function IO not implemented: {`$`(node, true)}"
-      return 0.WasmFuncIdx
+  self.wasmFuncs.withValue(node.id, val):
+    return val[]
 
-    let funcIdx = if self.functionConstructors.contains(node.class):
-      self.functionConstructors[node.class](self, node, exportName, inputs, outputs)
-    else:
-      log lvlError, fmt"getOrCreateWasmFunc: Function constructor not implemented: {`$`(node, true)}"
-      return 0.WasmFuncIdx
+  # debugf"getOrCreateWasmFunc {exportName}: {node}"
+  self.functionInputOutputComputer.withValue(node.class, val):
+    self.functionConstructors.withValue(node.class, val2):
+      try:
+        let (inputs, outputs) = val[].gen(val[].ext, node)
+        let f: FunctionConstructorComputer = val2[].gen
+        let funcIdx = f(val2[].ext, node, exportName, inputs, outputs)
+        self.wasmFuncs[node.id] = funcIdx
+        return funcIdx
+      except CatchableError as e:
+        log lvlError, &"getOrCreateWasmFunc: Failed to create wasm function: {e.msg}\n{`$`(node, true)}"
+        return 0.WasmFuncIdx
 
-    self.wasmFuncs[node.id] = funcIdx
+    log lvlError, fmt"getOrCreateWasmFunc: Function constructor not implemented: {`$`(node, true)}"
+    return 0.WasmFuncIdx
 
-  return self.wasmFuncs[node.id]
+  log lvlError, fmt"getOrCreateWasmFunc: Function IO not implemented: {`$`(node, true)}"
+  return 0.WasmFuncIdx
 
 proc getOrCreateFuncRef*(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): (WasmTableIdx, int32) =
   if not self.functionTableIndices.contains(node.id):
@@ -433,7 +494,7 @@ proc createLocal*(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode, name
     self.currentLocals.add((wasmType, name))
     self.localIndices[id] = LocalVariable(kind: Local, localIdx: result)
 
-proc createStackLocal*(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode): int32 =
+proc createStackLocal*(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode): int32 {.raises: [CatchableError].} =
   let (size, alignment, _) = self.getTypeAttributes(typ)
 
   self.currentStackLocalsSize = self.currentStackLocalsSize.align(alignment)
@@ -490,7 +551,7 @@ proc loadInstr*(self: BaseLanguageWasmCompiler, op: WasmInstrKind, offset: uint3
   instr.memArg = WasmMemArg(offset: offset, align: align)
   self.currentExpr.instr.add instr
 
-proc compileFunction*(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: WasmFuncIdx) =
+proc compileFunction*(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: WasmFuncIdx) {.raises: [CatchableError].} =
   assert self.exprStack.len == 0
   self.currentExpr = WasmExpr()
   self.currentLocals.setLen 0
@@ -502,7 +563,7 @@ proc genDrop*(self: BaseLanguageWasmCompiler, node: AstNode) =
   self.instr(Drop)
   # todo: size of node, stack
 
-proc genStoreDestination*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+proc genStoreDestination*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) {.raises: [CatchableError].} =
   case dest
   of Stack(): discard
   of Memory(offset: @offset, align: @align):
@@ -512,7 +573,7 @@ proc genStoreDestination*(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
   of Discard():
     self.genDrop(node)
 
-proc genNodeChildren*(self: BaseLanguageWasmCompiler, node: AstNode, role: RoleId, dest: Destination) =
+proc genNodeChildren*(self: BaseLanguageWasmCompiler, node: AstNode, role: RoleId, dest: Destination) {.raises: [CatchableError].} =
   let count = node.childCount(role)
   for i, c in node.children(role):
     let childDest = if i == count - 1:
@@ -563,7 +624,7 @@ proc genBranchLabel*(self: BaseLanguageWasmCompiler, node: AstNode, offset: int)
   let actualIndex = WasmLabelIdx(self.exprStack.high - index - offset)
   self.instr(Br, brLabelIdx: actualIndex)
 
-proc genCopyToDestination*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+proc genCopyToDestination*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) {.raises: [CatchableError].} =
   case dest
   of Stack():
     let typ = self.ctx.computeType(node)
