@@ -492,7 +492,6 @@ proc updateLanguageFromModel*(repository: Repository, language: Language, model:
           # debugf"register propertyy validator for {class}, {role}"
           validator.propertyValidators[role] = PropertyValidator(kind: Custom, impl: validateImplWrapper)
 
-  # todo
   if updateBuilder:
     builders.registerBuilder(language.id, builder)
 

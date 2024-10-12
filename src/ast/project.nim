@@ -25,8 +25,6 @@ func serviceName*(_: typedesc[AstProjectService]): string = "AstProjectService"
 
 addBuiltinService(AstProjectService, WorkspaceService)
 
-# proc initDelayed(self: AstProjectService) {.async, async: (raises: []).} =
-
 proc loadModelAsync*(self: AstProjectService, path: string): Future[Option[Model]] {.async: (raises: []).}
 
 method init*(self: AstProjectService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
