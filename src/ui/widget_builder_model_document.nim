@@ -1148,7 +1148,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                 try:
                   errors.add self.document.ctx.getDiagnostics(node.id)
                   if node.parent.isNotNil: errors.add self.document.ctx.getDiagnostics(node.parent.id)
-                except CatchableError as e:
+                except CatchableError:
                   discard
 
                 let class = node.nodeClass

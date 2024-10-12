@@ -6,7 +6,6 @@ import scripting/[wasm_builder]
 import model, ast_ids, base_language, generator_wasm
 
 {.push gcsafe.}
-{.push raises: [CatchableError].}
 
 logCategory "base-language-wasm"
 
@@ -827,26 +826,6 @@ proc genNodeAddressOf(self: BaseLanguageExtension, node: AstNode, dest: Destinat
 
   self.compiler.genNode(valueNode, Destination(kind: LValue))
   self.compiler.genStoreDestination(node, dest)
-
-proc genCopyToDestination(self: BaseLanguageExtension, node: AstNode, dest: Destination) =
-  case dest
-  of Stack():
-    let typ = self.compiler.ctx.computeType(node)
-    let instr = self.compiler.getTypeMemInstructions(typ).load
-    # debugf"copy {node} to stack destination, type {typ}, instr {instr}, offset 0"
-    self.compiler.loadInstr(instr, 0, 0)
-
-  of Memory():
-    let typ = self.compiler.ctx.computeType(node)
-    let (sourceSize, _, _) = self.compiler.getTypeAttributes(typ)
-    self.compiler.instr(I32Const, i32Const: sourceSize)
-    self.compiler.instr(MemoryCopy)
-
-  of Discard():
-    self.compiler.instr(Drop)
-
-  of LValue():
-    discard
 
 proc genNodeDeref(self: BaseLanguageExtension, node: AstNode, dest: Destination) =
   let valueNode = node.firstChild(IdDerefValue).getOr:

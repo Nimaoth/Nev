@@ -39,7 +39,6 @@ template defineComputerHelpers*(typeComputers, valueComputers, scopeComputers, v
       validationComputers[id] = ValidationComputer(fun: fun)
 
 {.push gcsafe.}
-{.push raises: [CatchableError].}
 
 logCategory "base-language"
 
