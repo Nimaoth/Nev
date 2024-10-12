@@ -1,4 +1,4 @@
-import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils, osproc]
+import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
 import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view
