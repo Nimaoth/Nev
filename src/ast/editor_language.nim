@@ -56,7 +56,6 @@ proc createEditorLanguage*(repository: Repository, builders: CellBuilderDatabase
     loadAppFileClass,
   ], typeComputers, valueComputers, scopeComputers, validationComputers, [baseLanguage])
 
-  # todo
   builders.registerBuilder(IdEditorLanguage, builder)
 
   let editorModel = newModel(newId().ModelId)
@@ -64,5 +63,3 @@ proc createEditorLanguage*(repository: Repository, builders: CellBuilderDatabase
   editorModel.addLanguage(editorLanguage)
 
   repository.registerLanguage(editorLanguage)
-
-  # print baseLanguage

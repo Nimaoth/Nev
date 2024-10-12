@@ -196,7 +196,6 @@ func wasmUserDataKey*(_: typedesc[Repository]): string = "wasm.userdata.reposito
 {.pop.}
 {.pop.}
 
-# proc forEach*(node: AstNode, f: proc(node: AstNode) {.closure, gcsafe, raises: [].}) =
 proc forEach*(node: AstNode, f: proc(node: AstNode) {.closure.}) {.effectsOf: [f].} =
   f(node)
   for item in node.childLists.mitems:
