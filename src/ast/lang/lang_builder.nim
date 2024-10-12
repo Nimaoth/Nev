@@ -1,9 +1,12 @@
 import std/[tables, strformat, options, os, sugar]
 import misc/[id, util, custom_logger, custom_async, array_buffer, array_table]
 import ui/node
-import ast/[ast_ids, model, cells, cell_builder_database, base_language, generator_wasm, base_language_wasm]
+import ast/[ast_ids, model, cells, base_language, generator_wasm, base_language_wasm]
 import scripting/wasm
 import lang_api, lang_language
+
+{.push gcsafe.}
+{.push raises: [].}
 
 logCategory "lang-builder"
 
@@ -242,46 +245,56 @@ proc createCellBuilderFromDefinition(builder: CellBuilder, def: AstNode): bool =
 var lineBuffer {.global.} = ""
 
 proc printI32(a: int32) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printU32(a: uint32) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printI64(a: int64) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printU64(a: uint64) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printF32(a: float32) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printF64(a: float64) =
-  if lineBuffer.len > 0:
-    lineBuffer.add " "
-  lineBuffer.add $a
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
 proc printChar(a: int32) =
-  lineBuffer.add $a.char
+  {.gcsafe.}:
+    lineBuffer.add $a.char
 
 proc printString(a: cstring, len: int32) =
-  let str = $a
-  assert len <= a.len
-  lineBuffer.add str[0..<len]
+  {.gcsafe.}:
+    let str = $a
+    assert len <= a.len
+    lineBuffer.add str[0..<len]
 
 proc printLine() =
-  log lvlInfo, lineBuffer
-  lineBuffer = ""
+  {.gcsafe.}:
+    let l = lineBuffer
+    lineBuffer = ""
+    log lvlInfo, l
 
 proc intToString(a: int32): cstring =
   let res = $a
@@ -289,20 +302,24 @@ proc intToString(a: int32): cstring =
 
 ##### end of temp stuff
 
-proc createScopeComputerFromNode*(class: ClassId, functionNode: AstNode, module: WasmModule, scopeComputers: var Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]) =
+proc createScopeComputerFromNode*(repository: Repository, class: ClassId, functionNode: AstNode, module: WasmModule,
+    scopeComputers: var Table[ClassId, ScopeComputer]) =
   let name = $functionNode.id
-  if module.findFunction(name, void, proc(arrPtr: WasmPtr, node: WasmPtr)).getSome(computeScopeImpl):
-    proc computeScopeImplWrapper(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  if module.findFunction(name, void, proc(module: WasmModule, fun: PFunction, arrPtr: WasmPtr, node: WasmPtr) {.gcsafe, raises: [CatchableError].}).getSome(computeScopeImpl):
+    proc computeScopeImplWrapper(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] {.gcsafe, raises: [CatchableError].} =
       let sp = module.stackSave()
       defer:
         module.stackRestore(sp)
 
-      let index = gNodeRegistry.getNodeIndex(node)
+      let index = repository.getNodeIndex(node)
 
       let arrPtr: WasmPtr = module.stackAlloc(4 * 3)
       let indexPtr: WasmPtr = module.stackAlloc(4)
       module.setInt32(indexPtr, index)
-      computeScopeImpl(arrPtr, indexPtr)
+      try:
+        computeScopeImpl.fun(module, computeScopeImpl.pfun, arrPtr, indexPtr)
+      except Exception as e:
+        raise newException(CatchableError, &"Failed to compute scope using wasm impl: {e.msg}", e)
 
       let resultLen = module.getInt32(arrPtr)
       let resultPtr = module.getInt32(arrPtr + 8).WasmPtr
@@ -310,17 +327,17 @@ proc createScopeComputerFromNode*(class: ClassId, functionNode: AstNode, module:
       var nodes = newSeqOfCap[AstNode](resultLen)
       for i in 0..<resultLen:
         let nodeIndex = module.getInt32(resultPtr + i * 4)
-        if gNodeRegistry.getNode(nodeIndex).getSome(node):
+        if repository.getNode(nodeIndex).getSome(node):
           nodes.add node
         else:
           log lvlError, fmt"Invalid node index returned from scope function: {nodeIndex}"
 
       return nodes
 
-    scopeComputers[class] = computeScopeImplWrapper
+    scopeComputers[class] = ScopeComputer(fun: computeScopeImplWrapper)
 
 
-proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: bool = true, ctx = ModelComputationContextBase.none): Future[bool] {.async.} =
+proc updateLanguageFromModel*(repository: Repository, language: Language, model: Model, builders: CellBuilderDatabase, updateBuilder: bool = true, ctx = ModelComputationContextBase.none): Future[bool] {.async: (raises: []).} =
   log lvlInfo, fmt"updateLanguageFromModel {model.path} ({model.id})"
   var classMap = initTable[ClassId, NodeClass]()
   var classes: seq[NodeClass] = @[]
@@ -380,7 +397,7 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
 
   let wasmModule = if ctx.getSome(ctx):
     measureBlock fmt"Compile language model '{model.path}' to wasm":
-      var compiler = newBaseLanguageWasmCompiler(ctx)
+      var compiler = newBaseLanguageWasmCompiler(repository, ctx)
       compiler.addBaseLanguage()
 
       for (_, _, functionNode) in propertyValidators:
@@ -389,7 +406,11 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
       for (_, functionNode) in scopeDefinitions:
         compiler.addFunctionToCompile(functionNode)
 
-      let binary = compiler.compileToBinary()
+      let binary = try:
+        compiler.compileToBinary()
+      except CatchableError as e:
+        log lvlError, &"Failed to compile module to wasm: {e.msg}\n{e.getStackTrace()}"
+        return false
 
     var imports = newSeq[WasmImports]()
 
@@ -406,34 +427,43 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
     imp.addFunction("intToString", intToString)
     imports.add imp
 
-    imports.add getLangApiImports()
+    imports.add repository.getLangApiImports()
 
     measureBlock fmt"Create wasm module for language '{model.path}'":
-      let module = await newWasmModule(binary.toArrayBuffer, imports)
-      if module.isNone:
-        log lvlError, fmt"Failed to create wasm module from generated binary for {model.path}"
+      let module = try:
+        let module = await newWasmModule(binary.toArrayBuffer, imports)
+        if module.isNone:
+          log lvlError, fmt"Failed to create wasm module from generated binary for {model.path}"
+
+        module
+      except CatchableError as e:
+        log lvlError, fmt"Failed to create wasm module from generated binary for {model.path}: {e.msg}\n{e.getStackTrace()}"
+        return false
 
     module
 
   else:
     WasmModule.none
 
-  var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
-  var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
-  var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
-  var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
+  var typeComputers = initTable[ClassId, TypeComputer]()
+  var valueComputers = initTable[ClassId, ValueComputer]()
+  var scopeComputers = initTable[ClassId, ScopeComputer]()
+  var validationComputers = initTable[ClassId, ValidationComputer]()
 
   if wasmModule.getSome(module):
+    module.addUserData(repository)
     for (class, functionNode) in scopeDefinitions:
       capture class, functionNode:
-        createScopeComputerFromNode(class, functionNode, module, scopeComputers)
+        createScopeComputerFromNode(repository, class, functionNode, module, scopeComputers)
+
   language.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers)
 
   if wasmModule.getSome(module):
     for (class, role, functionNode) in propertyValidators:
-      capture class, role, functionNode:
+      capture module, class, role, functionNode:
         let name = $functionNode.id
-        if module.findFunction(name, bool, proc(node: WasmPtr, a: string): bool).getSome(validateImpl):
+        let m = module
+        if m.findFunction(name, bool, proc(module: WasmModule, fun: PFunction, node: WasmPtr, a: string): bool {.gcsafe.}).getSome(validateImpl):
           let validator = if not language.validators.contains(class):
             let validator = NodeValidator()
             language.validators[class] = validator
@@ -441,41 +471,61 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
           else:
             language.validators[class]
 
-          proc validateImplWrapper(node: Option[AstNode], propertyValue: string): bool =
-            let sp = module.stackSave()
-            defer:
-              module.stackRestore(sp)
+          proc validateImplWrapper(node: Option[AstNode], propertyValue: string): bool {.gcsafe, raises: [].} =
+            try:
+              let sp = module.stackSave()
+              defer:
+                module.stackRestore(sp)
 
-            let p: WasmPtr = module.stackAlloc(4)
-            let index: int32 = if node.getSome(node):
-              gNodeRegistry.getNodeIndex(node)
-            else:
-              0
-            module.setInt32(p, index)
-            validateImpl(p, propertyValue)
+              let p: WasmPtr = module.stackAlloc(4)
+              let index: int32 = if node.getSome(node):
+                repository.getNodeIndex(node)
+              else:
+                0
+              module.setInt32(p, index)
+
+              validateImpl.fun(module, validateImpl.pfun, p, propertyValue)
+            except Exception as e:
+              log lvlError, &"Failed to validate node property '{propertyValue}': {e.msg}\n{node}"
+              return false
 
           # debugf"register propertyy validator for {class}, {role}"
           validator.propertyValidators[role] = PropertyValidator(kind: Custom, impl: validateImplWrapper)
 
   if updateBuilder:
-    registerBuilder(language.id, builder)
+    builders.registerBuilder(language.id, builder)
 
   return true
 
-proc createLanguageFromModel*(model: Model, ctx = ModelComputationContextBase.none, createBuilder: bool = true): Future[Language] {.async.} =
+proc createLanguageFromModel*(repository: Repository, model: Model, builders: CellBuilderDatabase, ctx = ModelComputationContextBase.none, createBuilder: bool = true): Future[Language] {.async: (raises: []).} =
   log lvlInfo, fmt"createLanguageFromModel {model.path} ({model.id})"
 
   let name = model.path.splitFile.name
   let language = newLanguage(model.id.LanguageId, name)
-  if not language.updateLanguageFromModel(model, ctx = ctx, updateBuilder = createBuilder).await:
+  if not repository.updateLanguageFromModel(language, model, builders, ctx = ctx, updateBuilder = createBuilder).await:
     return Language nil
   return language
 
-proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
+proc createNodeFromNodeClass(repository: Repository, classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
   # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"
 
+  let classReferenceClass = repository.resolveClass(IdClassReference)
+  let roleReferenceClass = repository.resolveClass(IdRoleReference)
+  let classDefinitionClass = repository.resolveClass(IdClassDefinition)
+  let propertyDefinitionClass = repository.resolveClass(IdPropertyDefinition)
+  let referenceDefinitionClass = repository.resolveClass(IdReferenceDefinition)
+
+  let propertyTypeNumberClass = repository.resolveClass(IdPropertyTypeNumber)
+  let propertyTypeStringClass = repository.resolveClass(IdPropertyTypeString)
+  let propertyTypeBoolClass = repository.resolveClass(IdPropertyTypeBool)
+  let childrenDefinitionClass = repository.resolveClass(IdChildrenDefinition)
+
+  let countZeroOrOneClass = repository.resolveClass(IdCountZeroOrOne)
+  let countOneClass = repository.resolveClass(IdCountOne)
+  let countZeroOrMoreClass = repository.resolveClass(IdCountZeroOrMore)
+  let countOneOrMoreClass = repository.resolveClass(IdCountOneOrMore)
+
   result = newAstNode(classDefinitionClass, class.id.NodeId.some)
-  # classes[class.id] = result
 
   result.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: class.name))
   result.setProperty(IdClassDefinitionAlias, PropertyValue(kind: String, stringValue: class.alias))
@@ -510,11 +560,11 @@ proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeCl
     var propertyNode = newAstNode(propertyDefinitionClass, property.id.NodeId.some)
     propertyNode.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: property.role))
 
-    let propertyTypeClass = if property.typ == Int:
+    let propertyTypeClass = if property.typ == PropertyType.Int:
       propertyTypeNumberClass
-    elif property.typ == String:
+    elif property.typ == PropertyType.String:
       propertyTypeStringClass
-    elif property.typ == Bool:
+    elif property.typ == PropertyType.Bool:
       propertyTypeBoolClass
     else:
       log lvlError, fmt"Invalid property type specified for {property}"
@@ -559,21 +609,31 @@ proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeCl
 
   # debugf"node {result.dump(recurse=true)}"
 
-proc createModelForLanguage*(language: Language): Model =
+proc createModelForLanguage*(repository: Repository, language: Language): Model =
+  let langLanguage = repository.language(IdLangLanguage).get
+  let langRootClass = repository.resolveClass(IdLangRoot)
+
   result = newModel(language.id.ModelId)
-  result.addLanguage(lang_language.langLanguage)
+  result.addLanguage(langLanguage)
 
   let root = newAstNode(langRootClass)
   var classes = initTable[ClassId, AstNode]()
   for class in language.classes.values:
-    root.add IdLangRootChildren, createNodeFromNodeClass(classes, class)
+    root.add IdLangRootChildren, repository.createNodeFromNodeClass(classes, class)
 
+  repository.languageModels[language.id] = result
+  repository.models[result.id] = result
   result.addRootNode(root)
 
-let baseInterfacesModel* = createModelForLanguage(base_language.baseInterfaces)
+proc createBaseAndLangModels*(repository: Repository) =
+  let baseLanguage = repository.language(IdBaseLanguage).get
+  let baseInterfaces = repository.language(IdBaseInterfaces).get
+  let langLanguage = repository.language(IdLangLanguage).get
 
-let baseLanguageModel* = createModelForLanguage(base_language.baseLanguage)
-baseLanguageModel.addImport(baseInterfacesModel)
+  let baseInterfacesModel = repository.createModelForLanguage(baseInterfaces)
 
-let langLanguageModel* = createModelForLanguage(lang_language.langLanguage)
-langLanguageModel.addImport(baseInterfacesModel)
+  let baseLanguageModel = repository.createModelForLanguage(baseLanguage)
+  baseLanguageModel.addImport(baseInterfacesModel)
+
+  let langLanguageModel = repository.createModelForLanguage(langLanguage)
+  langLanguageModel.addImport(baseInterfacesModel)
