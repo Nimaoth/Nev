@@ -4,8 +4,12 @@ import chroma, regex
 import misc/[util, array_table, myjsonutils, id, macro_utils, custom_logger, event, custom_async]
 import workspaces/[workspace]
 import platform/filesystem
+import results
 
 export id
+
+{.push gcsafe.}
+{.push raises: [].}
 
 logCategory "types"
 
@@ -92,25 +96,27 @@ type
     references*: seq[tuple[role: RoleId, node: NodeId]]
     childLists*: seq[tuple[role: RoleId, nodes: seq[AstNode]]]
 
-  AstNodeRegistry* = ref object
-    nodeToIndex*: Table[NodeId, int32]
-    nodes*: seq[AstNode]
-
-    modelToIndex*: Table[ModelId, int32]
-    models*: seq[Model]
-
   PropertyValidatorKind* = enum Regex, Custom
   PropertyValidator* = ref object
     case kind*: PropertyValidatorKind
     of Regex:
       pattern*: Regex2
     of Custom:
-      impl*: proc(node: Option[AstNode], property: string): bool
+      impl*: proc(node: Option[AstNode], property: string): bool {.gcsafe, raises: [].}
 
   NodeValidator* = ref object
     propertyValidators*: ArrayTable[RoleId, PropertyValidator]
 
   ModelComputationContextBase* = ref object of RootObj
+
+  TypeComputer* = object
+    fun*: proc(ctx: ModelComputationContextBase, node: AstNode): AstNode {.closure, gcsafe, raises: [CatchableError].}
+  ValueComputer* = object
+    fun*: proc(ctx: ModelComputationContextBase, node: AstNode): AstNode {.closure, gcsafe, raises: [CatchableError].}
+  ScopeComputer* = object
+    fun*: proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] {.closure, gcsafe, raises: [CatchableError].}
+  ValidationComputer* = object
+    fun*: proc(ctx: ModelComputationContextBase, node: AstNode): bool {.closure, gcsafe, raises: [CatchableError].}
 
   Language* {.acyclic.} = ref object
     name* : string
@@ -127,10 +133,10 @@ type
     baseLanguages: seq[Language]
 
     # functions for computing the type of a node
-    typeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
-    valueComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
-    scopeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]
-    validationComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]
+    typeComputers*: Table[ClassId, TypeComputer]
+    valueComputers*: Table[ClassId, ValueComputer]
+    scopeComputers*: Table[ClassId, ScopeComputer]
+    validationComputers*: Table[ClassId, ValidationComputer]
 
     onChanged*: Event[Language]
 
@@ -156,7 +162,22 @@ type
     onNodePropertyChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]]]
     onNodeReferenceChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId]]
 
+  Repository* = ref object of RootObj
+    languages*: Table[LanguageId, Language]
+    languageFutures*: Table[LanguageId, Future[Language]]
+    languageModels*: Table[LanguageId, Model]
+    classesToLanguages*: Table[ClassId, Language]
+    childClasses*: Table[ClassId, seq[NodeClass]]
+    models*: Table[ModelId, Model]
+
+    nodeToIndex*: Table[NodeId, int32]
+    nodes*: seq[AstNode]
+
+    modelToIndex*: Table[ModelId, int32]
+    modelList*: seq[Model]
+
   Project* = ref object
+    repository*: Repository
     rootDirectory*: string
     path*: string
     modelPaths*: Table[ModelId, string]
@@ -170,10 +191,24 @@ proc resolveReference*(self: Project, id: NodeId): Option[AstNode]
 proc dump*(node: AstNode, model: Model = nil, recurse: bool = false): string
 proc replaceReferences*(node: AstNode, idMap: var Table[NodeId, NodeId])
 
+func wasmUserDataKey*(_: typedesc[Repository]): string = "wasm.userdata.repository"
+
+{.pop.}
+{.pop.}
+
+proc forEach*(node: AstNode, f: proc(node: AstNode) {.closure.}) {.effectsOf: [f].} =
+  f(node)
+  for item in node.childLists.mitems:
+    for c in item.nodes:
+      c.forEach(f)
+
 template forEach2*(node: AstNode, it: untyped, body: untyped): untyped =
   node.forEach proc(n: AstNode) =
     let it = n
     body
+
+{.push gcsafe.}
+{.push raises: [].}
 
 iterator childrenRec*(node: AstNode): AstNode =
   var stack: seq[tuple[node: AstNode, listIndex: int, childIndex: int]]
@@ -241,14 +276,16 @@ proc hash*(node: AstNode): Hash = node.id.hash
 proc hash*(class: NodeClass): Hash = class.id.hash
 proc hash*(language: Language): Hash = language.id.hash
 
-method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
-method getValue*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
-method getScope*(self: ModelComputationContextBase, node: AstNode): seq[AstNode] {.base.} = discard
-method validateNode*(self: ModelComputationContextBase, node: AstNode): bool {.base.} = discard
-method dependOn*(self: ModelComputationContextBase, node: AstNode) {.base.} = discard
-method dependOnCurrentRevision*(self: ModelComputationContextBase) {.base.} = discard
-method addDiagnostic*(self: ModelComputationContextBase, node: AstNode, msg: string) {.base.} = discard
-method getDiagnostics*(self: ModelComputationContextBase, node: NodeId): seq[string] {.base.} = discard
+{.push hint[XCannotRaiseY]:off.}
+method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base, raises: [CatchableError].} = discard
+method getValue*(self: ModelComputationContextBase, node: AstNode): AstNode {.base, raises: [CatchableError].} = discard
+method getScope*(self: ModelComputationContextBase, node: AstNode): seq[AstNode] {.base, raises: [CatchableError].} = discard
+method validateNode*(self: ModelComputationContextBase, node: AstNode): bool {.base, raises: [CatchableError].} = discard
+method dependOn*(self: ModelComputationContextBase, node: AstNode) {.base, raises: [CatchableError].} = discard
+method dependOnCurrentRevision*(self: ModelComputationContextBase) {.base, raises: [CatchableError].} = discard
+method addDiagnostic*(self: ModelComputationContextBase, node: AstNode, msg: string) {.base, raises: [CatchableError].} = discard
+method getDiagnostics*(self: ModelComputationContextBase, node: NodeId): seq[string] {.base, raises: [CatchableError].} = discard
+{.pop.}
 
 proc notifyNodeDeleted(self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   self.onNodeDeleted.invoke (self, parent, child, role, index)
@@ -269,12 +306,6 @@ proc resolveClass*(language: Language, classId: ClassId): NodeClass
 proc newModel*(id: ModelId = default(ModelId)): Model
 proc addRootNode*(self: Model, node: AstNode)
 proc addLanguage*(self: Model, language: Language)
-
-proc forEach*(node: AstNode, f: proc(node: AstNode) {.closure.}) =
-  f(node)
-  for item in node.childLists.mitems:
-    for c in item.nodes:
-      c.forEach(f)
 
 proc verify*(self: Language): bool =
   result = true
@@ -321,10 +352,10 @@ proc addRootNodes*(language: Language, rootNodes: openArray[AstNode]) =
 
 proc update*(self: Language,
     classes: openArray[NodeClass] = [],
-    typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
-    valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
-    scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]](),
-    validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool](),
+    typeComputers = initTable[ClassId, TypeComputer](),
+    valueComputers = initTable[ClassId, ValueComputer](),
+    scopeComputers = initTable[ClassId, ScopeComputer](),
+    validationComputers = initTable[ClassId, ValidationComputer](),
     baseLanguages: openArray[Language] = [],
     rootNodes: openArray[AstNode] = [],
   ) =
@@ -351,10 +382,10 @@ proc update*(self: Language,
 
 proc newLanguage*(id: LanguageId, name: string,
     classes: openArray[NodeClass] = [],
-    typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
-    valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
-    scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]](),
-    validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool](),
+    typeComputers = initTable[ClassId, TypeComputer](),
+    valueComputers = initTable[ClassId, ValueComputer](),
+    scopeComputers = initTable[ClassId, ScopeComputer](),
+    validationComputers = initTable[ClassId, ValidationComputer](),
     baseLanguages: openArray[Language] = [],
     rootNodes: openArray[AstNode] = [],
   ): Language =
@@ -366,7 +397,7 @@ proc newLanguage*(id: LanguageId, name: string,
 
   result.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers, baseLanguages, rootNodes)
 
-proc forEachChildClass*(self: Model, base: NodeClass, handler: proc(c: NodeClass)) =
+proc forEachChildClass*(self: Model, base: NodeClass, handler: proc(c: NodeClass) {.gcsafe, raises: [].}) =
   handler(base)
   if self.childClasses.contains(base.id):
     for c in self.childClasses[base.id]:
@@ -436,7 +467,7 @@ proc addLanguage*(self: Model, language: Language) =
     # self.addLanguage(baseLanguage)
     self.updateClassesFromLanguage(baseLanguage)
 
-  discard language.onChanged.subscribe proc(language: Language) =
+  discard language.onChanged.subscribe proc(language: Language) {.gcsafe, raises: [].} =
     if self.hasLanguage(language.id):
       self.classesToLanguages.clear
       self.childClasses.clear
@@ -593,8 +624,8 @@ proc propertyDescription*(self: NodeClass, id: RoleId): Option[PropertyDescripti
     if inter.isNotNil and inter.propertyDescription(id).getSome(pd):
       return pd.some
 
-let defaultNumberPattern = re2"[0-9]+"
-let defaultBoolPattern = re2"true|false"
+const defaultNumberPattern = re2"[0-9]+"
+const defaultBoolPattern = re2"true|false"
 
 proc isValidPropertyValue*(language: Language, class: NodeClass, role: RoleId, value: string, node: Option[AstNode] = AstNode.none): bool =
   # debugf"isValidPropertyValue {class.name} ({class.id}) {role} '{value}'"
@@ -893,7 +924,7 @@ proc insert*(node: AstNode, role: RoleId, index: int, child: AstNode) =
         node.model.notifyNodeInserted(node, child, role, index)
       return
 
-  raise newException(CatchableError, fmt"Unknown role {role} for node {node.id} of class {node.class}")
+  raiseAssert(fmt"Unknown role {role} for node {node.id} of class {node.class}")
 
 proc setChild*(node: AstNode, role: RoleId, child: AstNode) =
   ## Sets `child` as child of `node` in the given `role`. Asserts that `node` has a child list for the given `role`
@@ -925,7 +956,7 @@ proc setChild*(node: AstNode, role: RoleId, child: AstNode) =
         node.model.notifyNodeInserted(node, child, role, 0)
       return
 
-  raise newException(CatchableError, fmt"Unknown role {role} for node {node.id} of class {node.class}")
+  raiseAssert(fmt"Unknown role {role} for node {node.id} of class {node.class}")
 
 proc remove*(node: AstNode, child: AstNode) =
   for children in node.childLists.mitems:
@@ -1260,7 +1291,7 @@ proc fromJsonHook*(value: var PropertyValue, json: JsonNode) =
   else:
     log(lvlError, fmt"Unknown PropertyValue {json}")
 
-proc jsonToAstNode*(json: JsonNode, model: Model, opt = Joptions()): Option[AstNode] =
+proc jsonToAstNode*(json: JsonNode, model: Model, opt = Joptions()): Option[AstNode] {.raises: [ValueError].} =
   let id = json["id"].jsonTo NodeId
   let classId = json["class"].jsonTo ClassId
 
@@ -1294,164 +1325,254 @@ proc jsonToAstNode*(json: JsonNode, model: Model, opt = Joptions()): Option[AstN
 
   return node.some
 
+# todo: return Result[]
 proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
   if json.kind != JObject:
-    log(lvlError, fmt"Expected JObject")
+    log lvlError, fmt"Expected JObject"
     return false
 
-  if json.hasKey("models"):
-    for modelPath, modelIdJson in json["models"]:
-      let absolutePath = if modelPath.isAbsolute:
-        modelPath
-      else:
-        project.rootDirectory // modelPath
+  try:
+    if json.hasKey("models"):
+      for modelPath, modelIdJson in json["models"]:
+        let absolutePath = if modelPath.isAbsolute:
+          modelPath
+        else:
+          project.rootDirectory // modelPath
 
-      let id = modelIdJson.jsonTo ModelId
-      project.modelPaths[id] = absolutePath
-      log lvlInfo, fmt"[Project.loadFromJson] Contains model ({id}): '{absolutePath}'"
+        let id = modelIdJson.jsonTo ModelId
+        project.modelPaths[id] = absolutePath
+        log lvlInfo, fmt"[Project.loadFromJson] Contains model ({id}): '{absolutePath}'"
+
+  except ValueError as e:
+    log lvlError, fmt"Failet to decode json: {e.msg}\n{json}"
+    return false
 
   return true
 
 proc loadFromJsonAsync*(model: Model, project: Project, workspace: Workspace, path: string, json: JsonNode,
-  resolveLanguage: proc(project: Project, workspace: Workspace, id: LanguageId): Future[Option[Language]],
-  resolveModel: proc(project: Project, workspace: Workspace, id: ModelId): Future[Option[Model]],
+  resolveLanguage: proc(project: Project, workspace: Workspace, id: LanguageId): Future[Option[Language]] {.gcsafe, async: (raises: []).},
+  resolveModel: proc(project: Project, workspace: Workspace, id: ModelId): Future[Option[Model]] {.gcsafe, async: (raises: []).},
   opt = Joptions()): Future[bool] {.async.} =
   model.path = path
   if json.kind != JObject:
     log(lvlError, fmt"Expected JObject")
     return false
 
-  if json.hasKey("id"):
-    model.id = json["id"].jsonTo ModelId
-  else:
-    log(lvlError, fmt"Missing id")
+  try:
+    if json.hasKey("id"):
+      model.id = json["id"].jsonTo ModelId
+    else:
+      log(lvlError, fmt"Missing id")
+      return false
+
+    if json.hasKey("languages"):
+      for languageIdJson in json["languages"]:
+        let id = languageIdJson.jsonTo LanguageId
+        if resolveLanguage(project, workspace, id).await.getSome(language):
+          model.addLanguage(language)
+        else:
+          log(lvlError, fmt"Unknown language {id}")
+          return false
+    else:
+      log(lvlWarn, fmt"Missing languages")
+
+    if json.hasKey("models"):
+      for modelIdJson in json["models"]:
+        let id = modelIdJson.jsonTo ModelId
+        model.importedModels.incl id
+        if resolveModel(project, workspace, id).await.getSome(m):
+          model.addImport(m)
+        else:
+          log(lvlError, fmt"Unknown model {id}")
+          return false
+
+    if json.hasKey("rootNodes"):
+      for node in json["rootNodes"]:
+        if node.jsonToAstNode(model, opt).getSome(node):
+          model.addRootNode(node)
+        else:
+          log(lvlError, fmt"Failed to parse root node from json")
+          return false
+    else:
+      log(lvlWarn, fmt"Missing root nodes")
+
+  except ValueError as e:
+    log lvlError, fmt"Failet to decode json: {e.msg}\n{json}"
     return false
-
-  if json.hasKey("languages"):
-    for languageIdJson in json["languages"]:
-      let id = languageIdJson.jsonTo LanguageId
-      if resolveLanguage(project, workspace, id).await.getSome(language):
-        model.addLanguage(language)
-      else:
-        log(lvlError, fmt"Unknown language {id}")
-        return false
-  else:
-    log(lvlWarn, fmt"Missing languages")
-
-  if json.hasKey("models"):
-    for modelIdJson in json["models"]:
-      let id = modelIdJson.jsonTo ModelId
-      model.importedModels.incl id
-      if resolveModel(project, workspace, id).await.getSome(m):
-        model.addImport(m)
-      else:
-        log(lvlError, fmt"Unknown model {id}")
-        return false
-
-  if json.hasKey("rootNodes"):
-    for node in json["rootNodes"]:
-      if node.jsonToAstNode(model, opt).getSome(node):
-        model.addRootNode(node)
-      else:
-        log(lvlError, fmt"Failed to parse root node from json")
-        return false
-  else:
-    log(lvlWarn, fmt"Missing root nodes")
 
   return true
 
 proc loadFromJson*(model: Model, path: string, json: JsonNode,
-  resolveLanguage: proc(id: LanguageId): Option[Language],
-  resolveModel: proc(project: Project, id: ModelId): Option[Model],
+  resolveLanguage: proc(id: LanguageId): Option[Language] {.gcsafe, raises: [].},
+  resolveModel: proc(project: Project, id: ModelId): Option[Model] {.gcsafe, raises: [].},
   opt = Joptions()): bool =
   model.path = path
   if json.kind != JObject:
     log(lvlError, fmt"Expected JObject")
     return false
 
-  if json.hasKey("id"):
-    model.id = json["id"].jsonTo ModelId
-  else:
-    log(lvlError, fmt"Missing id")
+  try:
+    if json.hasKey("id"):
+      model.id = json["id"].jsonTo ModelId
+    else:
+      log(lvlError, fmt"Missing id")
+      return false
+
+    if json.hasKey("languages"):
+      for languageIdJson in json["languages"]:
+        let id = languageIdJson.jsonTo LanguageId
+        if resolveLanguage(id).getSome(language):
+          model.addLanguage(language)
+        else:
+          log(lvlError, fmt"Unknown language {id}")
+          return false
+    else:
+      log(lvlWarn, fmt"Missing languages")
+
+    if json.hasKey("models"):
+      for modelIdJson in json["models"]:
+        let id = modelIdJson.jsonTo ModelId
+        model.importedModels.incl id
+        if resolveModel(model.project, id).getSome(m):
+          model.addImport(m)
+        else:
+          log(lvlError, fmt"Unknown model {id}")
+          return false
+
+    if json.hasKey("rootNodes"):
+      for node in json["rootNodes"]:
+        if node.jsonToAstNode(model, opt).getSome(node):
+          model.addRootNode(node)
+        else:
+          log(lvlError, fmt"Failed to parse root node from json")
+          return false
+    else:
+      log(lvlWarn, fmt"Missing root nodes")
+
+  except ValueError as e:
+    log lvlError, fmt"Failet to decode json: {e.msg}\n{json}"
     return false
-
-  if json.hasKey("languages"):
-    for languageIdJson in json["languages"]:
-      let id = languageIdJson.jsonTo LanguageId
-      if resolveLanguage(id).getSome(language):
-        model.addLanguage(language)
-      else:
-        log(lvlError, fmt"Unknown language {id}")
-        return false
-  else:
-    log(lvlWarn, fmt"Missing languages")
-
-  if json.hasKey("models"):
-    for modelIdJson in json["models"]:
-      let id = modelIdJson.jsonTo ModelId
-      model.importedModels.incl id
-      if resolveModel(model.project, id).getSome(m):
-        model.addImport(m)
-      else:
-        log(lvlError, fmt"Unknown model {id}")
-        return false
-
-  if json.hasKey("rootNodes"):
-    for node in json["rootNodes"]:
-      if node.jsonToAstNode(model, opt).getSome(node):
-        model.addRootNode(node)
-      else:
-        log(lvlError, fmt"Failed to parse root node from json")
-        return false
-  else:
-    log(lvlWarn, fmt"Missing root nodes")
 
   return true
 
-var gNodeRegistry* = AstNodeRegistry()
-gNodeRegistry.nodes.add nil
-gNodeRegistry.models.add nil
-
-proc getNode*(registry: AstNodeRegistry, index: int32): Option[AstNode] =
-  if index <= 0 or index >= registry.nodes.len:
+proc getNode*(self: Repository, index: int32): Option[AstNode] =
+  if index <= 0 or index >= self.nodes.len:
     log lvlError, fmt"getNode: index {index} out of range"
     return AstNode.none
-  return registry.nodes[index].some
+  return self.nodes[index].some
 
-proc registerNode*(registry: AstNodeRegistry, node: AstNode): int32 =
+proc getNode*(self: Repository, id: NodeId): Option[AstNode] =
+  let index = self.nodeToIndex.getOrDefault(id, -1.int32)
+  if index <= 0 or index >= self.nodes.len:
+    log lvlError, fmt"getNode: {id} not registered"
+    return AstNode.none
+  return self.nodes[index].some
+
+proc registerNode*(self: Repository, node: AstNode): int32 =
   if node.registryIndex != 0:
     log lvlWarn, fmt"registerNode: node {node} already registered"
     return node.registryIndex
 
-  result = registry.nodes.len.int32
+  result = self.nodes.len.int32
   node.registryIndex = result
-  registry.nodes.add node
-  registry.nodeToIndex[node.id] = result
+  self.nodes.add node
+  self.nodeToIndex[node.id] = result
 
-proc getNodeIndex*(registry: AstNodeRegistry, node: AstNode): int32 =
+proc getNodeIndex*(self: Repository, node: AstNode): int32 =
   if node.registryIndex != 0:
     return node.registryIndex
 
-  return registry.registerNode(node)
+  return self.registerNode(node)
 
-proc getModel*(registry: AstNodeRegistry, index: int32): Option[Model] =
-  if index <= 0 or index >= registry.models.len:
+proc getModel*(self: Repository, index: int32): Option[Model] =
+  if index <= 0 or index >= self.modelList.len:
     log lvlError, fmt"getModel: index {index} out of range"
     return Model.none
-  return registry.models[index].some
+  return self.modelList[index].some
 
-proc registerModel*(registry: AstNodeRegistry, model: Model): int32 =
+proc registerModel*(self: Repository, model: Model): int32 =
   if model.registryIndex != 0:
     log lvlWarn, fmt"registerModel: model {model.path} ({model.id}) already registered"
     return model.registryIndex
 
-  result = registry.models.len.int32
+  result = self.modelList.len.int32
   model.registryIndex = result
-  registry.models.add model
-  registry.modelToIndex[model.id] = result
+  self.models[model.id] = model
+  self.modelList.add model
+  self.modelToIndex[model.id] = result
 
-proc getModelIndex*(registry: AstNodeRegistry, model: Model): int32 =
+proc updateClassesFromLanguage(self: Repository, language: Language) =
+  for c in language.classes.keys:
+    self.classesToLanguages[c] = language
+
+  for c in language.classes.values:
+    if c.base.isNotNil:
+      if not self.childClasses.contains(c.base.id):
+        self.childClasses[c.base.id] = @[]
+      self.childClasses[c.base.id].add c
+
+    for i in c.interfaces:
+      if not self.childClasses.contains(i.id):
+        self.childClasses[i.id] = @[]
+      self.childClasses[i.id].add c
+
+proc registerLanguage*(self: Repository, language: Language, model: Model = nil) =
+  log lvlInfo, &"[repository] Register language: {language.name} ({language.id})"
+  if not language.verify():
+    log lvlError, &"[repository] Failed to verify language"
+    return
+
+  for baseLanguage in language.baseLanguages:
+    # self.addLanguage(baseLanguage)
+    self.updateClassesFromLanguage(baseLanguage)
+
+  discard language.onChanged.subscribe proc(language: Language) {.gcsafe, raises: [].} =
+    if self.languages.contains(language.id):
+      self.classesToLanguages.clear
+      self.childClasses.clear
+      for l in self.languages.values:
+        self.updateClassesFromLanguage(l)
+
+  self.languages[language.id] = language
+  self.updateClassesFromLanguage(language)
+
+  self.languages[language.id] = language
+  if model.isNotNil:
+    self.languageModels[language.id] = model
+    discard self.registerModel(model)
+
+proc registerLanguageModel*(self: Repository, languageId: LanguageId, model: Model): int32 =
+  log lvlInfo, &"[repository] Register language model for {languageId}: {model.id}"
+  assert languageId.ModelId == model.id
+  assert languageId in self.languages
+  self.languageModels[languageId] = model
+  discard self.registerModel(model)
+
+proc getModelIndex*(self: Repository, model: Model): int32 =
   if model.registryIndex != 0:
     return model.registryIndex
 
-  return registry.registerModel(model)
+  return self.registerModel(model)
+
+# todo: return Option[]
+proc resolveClass*(self: Repository, classId: ClassId): NodeClass =
+  let language = self.classesToLanguages.getOrDefault(classId, nil)
+  result = if language.isNil: nil else: language.resolveClass(classId)
+
+proc getLanguageForClass*(self: Repository, classId: ClassId): Language =
+  if self.classesToLanguages.contains(classId):
+    return self.classesToLanguages[classId]
+  log lvlError, fmt"getLanguageForClass: no language for class {classId}"
+  return nil
+
+proc language*(self: Repository, languageId: LanguageId): Option[Language] =
+  self.languages.withValue(languageId, val):
+    return val[].some
+
+proc languageModel*(self: Repository, languageId: LanguageId): Option[Model] =
+  self.languageModels.withValue(languageId, val):
+    return val[].some
+
+proc model*(self: Repository, modelId: ModelId): Option[Model] =
+  self.models.withValue(modelId, val):
+    return val[].some

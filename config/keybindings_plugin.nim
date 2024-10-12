@@ -24,6 +24,9 @@ proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
     loadDefaultKeybindings(true)
     loadVSCodeKeybindings()
 
+  when enableAst:
+    loadModelKeybindings()
+
   reapplyConfigKeybindings(reapplyApp, reapplyHome, reapplyWorkspace)
 
 if getBackend() == Terminal:

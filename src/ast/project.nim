@@ -4,129 +4,148 @@ import misc/[util, custom_logger, custom_async, myjsonutils, custom_unicode]
 import workspaces/[workspace]
 import ui/node
 import lang/[lang_language, lang_builder, cell_language, property_validator_language, scope_language]
-import ast/[model_state, base_language, editor_language, ast_ids, model]
+import ast/[model_state, base_language, editor_language, ast_ids, model, cells]
+import service
+import results
 
-const projectPath = "./model/playground.ast-project"
-var gProject*: Project = nil
-var gProjectWorkspace*: Workspace = nil
+{.push gcsafe.}
 
 logCategory "ast-project"
 
-proc loadModelAsync*(project: Project, path: string): Future[Option[Model]] {.async.}
-proc resolveModel*(project: Project, ws: Workspace, id: ModelId): Future[Option[Model]] {.async.}
-proc resolveLanguage*(project: Project, ws: Workspace, id: LanguageId): Future[Option[Language]] {.async.}
+type
+  AstProjectService* = ref object of Service
+    project*: Project
+    workspace*: Workspace
+    repository*: Repository
+    builders*: CellBuilderDatabase
+    resolveLanguage*: proc(project: Project, workspace: Workspace, id: LanguageId): Future[Option[Language]] {.gcsafe, async: (raises: []).}
+    resolveModel: proc(project: Project, workspace: Workspace, id: ModelId): Future[Option[Model]] {.gcsafe, async: (raises: []).}
 
-proc setProjectWorkspace*(ws: Workspace) =
-  gProjectWorkspace = ws
+func serviceName*(_: typedesc[AstProjectService]): string = "AstProjectService"
 
-proc getProjectWorkspace*(): Future[Workspace] {.async.} =
-  while gProjectWorkspace.isNil:
-    log lvlInfo, fmt"[getProjectWorkspace] Waiting for project workspace to load..."
-    sleepAsync(100).await
-  return gProjectWorkspace
+addBuiltinService(AstProjectService, WorkspaceService)
 
-proc getGlobalProject*(): Future[Project] {.async.} =
-  if gProject.isNil:
+proc loadModelAsync*(self: AstProjectService, path: string): Future[Option[Model]] {.async: (raises: []).}
 
-    let ws = getProjectWorkspace().await
+method init*(self: AstProjectService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"AstProjectService.init"
+  let workspaceService = self.services.getServiceAsync(WorkspaceService).await.get
 
-    let projectPath = ws.getAbsolutePath(projectPath)
-    log lvlInfo, fmt"[getGlobalProject] Loading project source file '{projectPath}'"
+  while workspaceService.workspace.isNil:
+    try:
+      sleepAsync(10.milliseconds).await
+    except CancelledError:
+      discard
 
-    gProject = newProject()
-    gProject.rootDirectory = projectPath.splitPath[0]
-    gProject.path = projectPath
-    gProject.computationContext = newModelComputationContext(gProject)
+  log lvlInfo, &"AstProjectService.init 2"
+  self.workspace = workspaceService.workspace
 
-    let jsonText = ws.loadFile(gProject.path).await
+  let projectPath = self.workspace.getAbsolutePath("./model/playground.ast-project")
+  log lvlInfo, fmt"[getGlobalProject] Loading project source file '{projectPath}'"
+
+  self.project = newProject()
+  self.project.rootDirectory = projectPath.splitPath[0]
+  self.project.path = projectPath
+  self.project.computationContext = newModelComputationContext(self.project)
+
+  self.repository = Repository()
+  self.builders = CellBuilderDatabase()
+
+  proc resolveLanguage(project: Project, ws: Workspace, id: LanguageId): Future[Option[Language]] {.gcsafe, async: (raises: []).} =
+    if self.repository.language(id).getSome(language):
+      return language.some
+    elif project.dynamicLanguages.contains(id):
+      return project.dynamicLanguages[id].some
+    elif project.modelPaths.contains(id.ModelId):
+      let languageModel = self.loadModelAsync(project.modelPaths[id.ModelId]).await.getOr:
+        return Language.none
+
+      if not languageModel.hasLanguage(IdLangLanguage):
+        return Language.none
+
+      let language = self.repository.createLanguageFromModel(languageModel, self.builders, ctx = project.computationContext.some).await
+      project.dynamicLanguages[language.id] = language
+      return language.some
+    else:
+      return Language.none
+
+  proc resolveModel(project: Project, ws: Workspace, id: ModelId): Future[Option[Model]] {.gcsafe, async: (raises: []).} =
+    if self.repository.model(id).getSome(model):
+      return model.some
+
+    assert project.loaded
+
+    log lvlInfo, fmt"resolveModel {id}"
+    if project.getModel(id).getSome(model):
+      return model.some
+
+    if project.modelPaths.contains(id):
+      let path = project.modelPaths[id]
+      return self.loadModelAsync(path).await
+
+    log lvlError, fmt"project.resolveModel {id}: not found"
+    return Model.none
+
+  self.resolveLanguage = resolveLanguage
+  self.resolveModel = resolveModel
+
+  try:
+    self.repository.createBaseLanguage(self.builders)
+    self.repository.createLangLanguage(self.builders)
+    self.repository.createBaseAndLangModels()
+    await self.repository.createCellLanguage(self.builders)
+    await self.repository.createScopeLanguage(self.builders)
+    await self.repository.createPropertyValidatorLanguage(self.builders)
+    self.repository.createEditorLanguage(self.builders)
+  except CatchableError as e:
+    result.err(e)
+    return
+
+  try:
+    let jsonText = self.workspace.loadFile(self.project.path).await
     let json = jsonText.parseJson
-    if gProject.loadFromJson(json):
-      gProject.loaded = true
+    if self.project.loadFromJson(json):
+      self.project.loaded = true
+  except CatchableError as e:
+    result.err(e)
+    return
 
-  return gProject
+  return ok()
 
-proc save*(project: Project): Future[void] {.async.} =
+proc save*(self: AstProjectService): Future[void] {.async.} =
+  let project = self.project
+
   log lvlInfo, fmt"Saving project '{project.path}'..."
-  let ws = getProjectWorkspace().await
   let serialized = project.toJson.pretty
-  ws.saveFile(project.path, serialized).await
+  self.workspace.saveFile(project.path, serialized).await
   log lvlInfo, fmt"Saving project '{project.path}' done"
 
-proc loadModelAsync*(project: Project, path: string): Future[Option[Model]] {.async.} =
+proc loadModelAsync*(self: AstProjectService, path: string): Future[Option[Model]] {.async: (raises: []).} =
+  let project = self.project
   log lvlInfo, fmt"loadModelAsync {path}"
 
-  let ws = getProjectWorkspace().await
-  let jsonText = ws.loadFile(path).await
+  try:
+    let jsonText = self.workspace.loadFile(path).await
 
-  let json = jsonText.parseJson.catch:
-    log lvlError, &"project.loadModelAsync: Failed to parse json: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-    return Model.none
+    let json = jsonText.parseJson.catch:
+      log lvlError, &"project.loadModelAsync: Failed to parse json: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+      return Model.none
 
-  var model = newModel()
-  if not model.loadFromJsonAsync(project, ws, path, json, resolveLanguage, resolveModel).await:
-    log lvlError, fmt"project.loadModelAsync: Failed to load model: no id"
-    return Model.none
+    var model = newModel()
+    if not model.loadFromJsonAsync(project, self.workspace, path, json, self.resolveLanguage, self.resolveModel).await:
+      log lvlError, fmt"project.loadModelAsync: Failed to load model: no id"
+      return Model.none
 
-  if project.getModel(model.id).getSome(existing):
-    log lvlInfo, fmt"project.loadModelAsync: Model {model.id} already exists in project"
-    return existing.some
+    if project.getModel(model.id).getSome(existing):
+      log lvlInfo, fmt"project.loadModelAsync: Model {model.id} already exists in project"
+      return existing.some
 
-  project.addModel(model)
+    project.addModel(model)
 
-  return model.some
-
-proc resolveLanguage*(project: Project, ws: Workspace, id: LanguageId): Future[Option[Language]] {.async.} =
-  if id == IdBaseLanguage:
-    return base_language.baseLanguage.some
-  elif id == IdBaseInterfaces:
-    return base_language.baseInterfaces.some
-  elif id == IdEditorLanguage:
-    return editor_language.editorLanguage.some
-  elif id == IdLangLanguage:
-    return lang_language.langLanguage.some
-  elif id == IdCellLanguage:
-    return cell_language.getCellLanguage().await.some
-  elif id == IdPropertyValidatorLanguage:
-    return property_validator_language.getPropertyValidatorLanguage().await.some
-  elif id == IdScopeLanguage:
-    return scope_language.getScopeLanguage().await.some
-  elif project.dynamicLanguages.contains(id):
-    return project.dynamicLanguages[id].some
-  elif project.modelPaths.contains(id.ModelId):
-    let languageModel = project.loadModelAsync(project.modelPaths[id.ModelId]).await.getOr:
-      return Language.none
-
-    if not languageModel.hasLanguage(IdLangLanguage):
-      return Language.none
-
-    let language = createLanguageFromModel(languageModel, ctx = project.computationContext.some).await
-    project.dynamicLanguages[language.id] = language
-    return language.some
-  else:
-    return Language.none
-
-proc resolveModel*(project: Project, ws: Workspace, id: ModelId): Future[Option[Model]] {.async.} =
-  if id == baseInterfacesModel.id:
-    return lang_builder.baseInterfacesModel.some
-  if id == baseLanguageModel.id:
-    return lang_builder.baseLanguageModel.some
-  if id == langLanguageModel.id:
-    return lang_builder.langLanguageModel.some
-
-  while not project.loaded:
-    log lvlInfo, fmt"Waiting for project to load"
-    sleepAsync(1).await
-
-  log lvlInfo, fmt"resolveModel {id}"
-  if project.getModel(id).getSome(model):
     return model.some
-
-  if project.modelPaths.contains(id):
-    let path = project.modelPaths[id]
-    return project.loadModelAsync(path).await
-
-  log lvlError, fmt"project.resolveModel {id}: not found"
-  return Model.none
+  except CatchableError as e:
+    log lvlError, &"Failed to load model '{path}': {e.msg}"
+    return Model.none
 
 proc getAllAvailableLanguages*(project: Project): seq[LanguageId] =
   let l = collect(newSeq):
@@ -134,45 +153,26 @@ proc getAllAvailableLanguages*(project: Project): seq[LanguageId] =
       languageId
   return @[IdBaseLanguage, IdBaseInterfaces, IdEditorLanguage, IdLangLanguage, IdCellLanguage, IdPropertyValidatorLanguage, IdScopeLanguage] & l
 
-proc updateLanguageFromModel*(project: Project, model: Model): Future[void] {.async.} =
+proc updateLanguageFromModel*(self: AstProjectService, model: Model): Future[void] {.async.} =
   let languageId = model.id.LanguageId
 
-  if languageId == IdCellLanguage:
+  if self.repository.language(languageId).getSome(language):
+    log lvlInfo, fmt"Updating language {language.name} ({languageId}) with model {model.path} ({model.id})"
     try:
-      log lvlInfo, fmt"Updating cell language ({languageId}) with model {model.path} ({model.id})"
-      updateCellLanguage(model).await
-      return
+      discard await self.repository.updateLanguageFromModel(language, model, self.builders, updateBuilder=false)
     except CatchableError:
-      log lvlError, fmt"Failed to update cell language from model: {getCurrentExceptionMsg()}"
+      log lvlError, fmt"Failed to update language from model: {getCurrentExceptionMsg()}"
     return
 
-  if languageId == IdPropertyValidatorLanguage:
-    try:
-      log lvlInfo, fmt"Updating property validator language ({languageId}) with model {model.path} ({model.id})"
-      updatePropertyValidatorLanguage(model).await
-      return
-    except CatchableError:
-      log lvlError, fmt"Failed to update property validator language from model: {getCurrentExceptionMsg()}"
-    return
-
-  if languageId == IdScopeLanguage:
-    try:
-      log lvlInfo, fmt"Updating scope language ({languageId}) with model {model.path} ({model.id})"
-      updateScopeLanguage(model).await
-      return
-    except CatchableError:
-      log lvlError, fmt"Failed to update scope language from model: {getCurrentExceptionMsg()}"
-    return
-
-  if project.dynamicLanguages.contains(languageId):
-    let language = project.dynamicLanguages[languageId]
+  if self.project.dynamicLanguages.contains(languageId):
+    let language = self.project.dynamicLanguages[languageId]
     try:
       log lvlInfo, fmt"Updating language {language.name} ({language.id}) with model {model.path} ({model.id})"
-      discard language.updateLanguageFromModel(model, ctx = project.computationContext.some).await
+      discard self.repository.updateLanguageFromModel(language, model, self.builders, ctx = self.project.computationContext.some).await
       return
     except CatchableError:
       log lvlError, fmt"Failed to update language from model: {getCurrentExceptionMsg()}"
 
   log lvlInfo, fmt"Compiling language from model {model.path} ({model.id})"
-  let language = createLanguageFromModel(model, ctx = project.computationContext.some).await
-  project.dynamicLanguages[language.id] = language
+  let language = self.repository.createLanguageFromModel(model, self.builders, ctx = self.project.computationContext.some).await
+  self.project.dynamicLanguages[language.id] = language
