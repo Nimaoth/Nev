@@ -1,5 +1,5 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, hashes]
-import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection]
+import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection, async_process]
 import platform/filesystem
 
 {.push gcsafe.}
@@ -8,7 +8,7 @@ import platform/filesystem
 logCategory "dap"
 
 var logVerbose = false
-# var logServerDebug = true
+var logServerDebug = true
 
 proc fromJsonHook*[T](a: var Response[T], b: JsonNode, opt = Joptions()) =
   if not b["success"].getBool:
