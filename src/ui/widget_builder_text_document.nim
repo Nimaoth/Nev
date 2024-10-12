@@ -1110,9 +1110,6 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
 
-method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
-  self.editor.createUI(builder, app)
-
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.preRender()
 

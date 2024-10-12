@@ -398,8 +398,12 @@ proc run(app: App, rend: Platform, backend: Backend) =
     {.gcsafe.}:
       logger.flush()
 
+import service
+var services = Services()
+services.addBuiltinServices()
+
 proc main() =
-  let app = waitFor newApp(backend.get, rend, fs, opts)
+  let app = waitFor newApp(backend.get, rend, fs, services, opts)
   run(app, rend, backend.get)
 
   try:

@@ -13,6 +13,7 @@ import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config, vfs
 import vcs/vcs
+import service
 
 import nimsumtree/[buffer, clock, rope]
 
@@ -138,6 +139,8 @@ type
 
     fs*: Filesystem
     vfs*: VFS
+
+    services: Services
 
     logNextFrameTime*: bool = false
     disableLogFrameTime*: bool = true
@@ -284,6 +287,9 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
 proc currentEventHandlers*(self: App): seq[EventHandler]
 proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor]
 proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.none)
+proc getServices*(self: App): Services
+proc getService*(self: App, name: string): Option[Service]
+proc addService*(self: App, name: string, service: Service)
 
 proc createView(self: App, editorState: OpenEditor): View
 
@@ -325,6 +331,9 @@ implTrait AppInterface, App:
   getDocument(Option[Document], App, string, bool)
   getOrOpenDocument(Option[Document], App, string, bool, bool)
   tryCloseDocument(bool, App, Document, bool)
+  getServices(Services, App)
+  getService(Option[Service], App, string)
+  addService(void, App, string, Service)
 
 type
   AppLogger* = ref object of Logger
@@ -1154,7 +1163,7 @@ proc runLateCommandsFromAppOptions(self: App) =
 
 proc finishInitialization*(self: App, state: EditorState): Future[void]
 
-proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, options = AppOptions()): Future[App] {.async.} =
+proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services: Services, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
   {.gcsafe.}:
@@ -1170,6 +1179,7 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, options =
   self.backend = backend
   self.statusBarOnTop = false
   self.appOptions = options
+  self.services = services
 
   self.vfs = VFS()
   self.vfs.mount("", VFSNull())
@@ -1706,6 +1716,8 @@ proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool] {.async.}
   self.workspace = workspace
   self.vfs.mount "", VFSWorkspace(workspace: workspace)
 
+  self.services.getService(WorkspaceService).get.workspace = workspace
+
   {.gcsafe.}:
     if gWorkspace.isNil:
       setGlobalWorkspace(workspace)
@@ -2148,6 +2160,15 @@ proc tryCloseDocument*(self: App, document: Document, force: bool): bool =
   document.deinit()
 
   return true
+
+proc getServices*(self: App): Services =
+  self.services
+
+proc getService*(self: App, name: string): Option[Service] =
+  self.services.getService(name)
+
+proc addService*(self: App, name: string, service: Service) =
+  self.services.addService(name, service)
 
 proc moveCurrentViewToTop*(self: App) {.expose("editor").} =
   if self.views.len > 0:

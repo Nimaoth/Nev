@@ -4,6 +4,8 @@ import platform/platform
 import finder/[finder, previewer]
 import events, popup, document_editor, document, config_provider, selector_popup_builder, register
 from scripting_api import EditorId
+import service
+export service
 
 traitRef AppInterface:
   method platform*(self: AppInterface): Platform {.gcsafe, raises: [].}
@@ -40,5 +42,17 @@ traitRef AppInterface:
   method tryCloseDocument*(self: AppInterface, document: Document, force: bool): bool {.gcsafe, raises: [].}
   method onEditorRegisteredEvent*(self: AppInterface): ptr Event[DocumentEditor] {.gcsafe, raises: [].}
   method onEditorDeregisteredEvent*(self: AppInterface): ptr Event[DocumentEditor] {.gcsafe, raises: [].}
+  method getServices*(self: AppInterface): Services {.gcsafe, raises: [].}
+  method getService*(self: AppInterface, name: string): Option[Service] {.gcsafe, raises: [].}
+  method addService*(self: AppInterface, name: string, service: Service) {.gcsafe, raises: [].}
+
+proc getService*(self: AppInterface, T: typedesc[Service]): Option[T] {.gcsafe, raises: [].} =
+  let service = self.getService(T.serviceName)
+  if service.isSome and service.get of T:
+    service.get.T.some
+  return T.none
+
+proc addService*[T: Service](self: AppInterface, service: T) {.gcsafe, raises: [].} =
+  self.addService(T.serviceName, service)
 
 var gAppInterface*: AppInterface = nil

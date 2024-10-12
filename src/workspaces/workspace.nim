@@ -3,6 +3,7 @@ import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, cu
 import platform/filesystem
 import vcs/vcs
 import vfs
+import service
 
 import nimsumtree/rope
 
@@ -37,7 +38,18 @@ type
   VFSWorkspace* = ref object of VFS
     workspace*: Workspace
 
-type WorkspacePath* = distinct string
+  WorkspacePath* = distinct string
+
+  WorkspaceService* = ref object of Service
+    workspace*: Workspace
+
+func serviceName*(_: typedesc[WorkspaceService]): string = "WorkspaceService"
+
+addBuiltinService(WorkspaceService)
+
+method init*(self: WorkspaceService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"WorkspaceService.init"
+  return ok()
 
 proc encodePath*(workspace: Workspace, path: string): WorkspacePath =
   return WorkspacePath(fmt"ws://{workspace.id}/{path}")

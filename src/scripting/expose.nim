@@ -1,5 +1,3 @@
-
-
 import std/[json, strutils, sequtils, tables, options, macros, genasts, macrocache, typetraits, sugar]
 from std/logging import nil
 import fusion/matching
