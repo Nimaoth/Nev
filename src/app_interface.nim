@@ -25,6 +25,7 @@ traitRef AppInterface:
   method unregisterEditor*(self: AppInterface, editor: DocumentEditor): void {.gcsafe, raises: [].}
   method tryActivateEditor*(self: AppInterface, editor: DocumentEditor) {.gcsafe, raises: [].}
   method getActiveEditor*(self: AppInterface): Option[DocumentEditor] {.gcsafe, raises: [].}
+  method getActiveViewEditor*(self: AppInterface): Option[DocumentEditor] {.gcsafe, raises: [].}
   method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor] {.gcsafe, raises: [].}
   method getEditorForPath*(self: AppInterface, path: string): Option[DocumentEditor] {.gcsafe, raises: [].}
   method getPopupForId*(self: AppInterface, id: EditorId): Option[Popup] {.gcsafe, raises: [].}

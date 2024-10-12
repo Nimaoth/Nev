@@ -267,6 +267,7 @@ proc registerEditor*(self: App, editor: DocumentEditor): void
 proc unregisterEditor*(self: App, editor: DocumentEditor): void
 proc tryActivateEditor*(self: App, editor: DocumentEditor): void
 proc getActiveEditor*(self: App): Option[DocumentEditor]
+proc getActiveViewEditor*(self: App): Option[DocumentEditor]
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
 proc getEditorForPath*(self: App, path: string): Option[DocumentEditor]
 proc getPopupForId*(self: App, id: EditorId): Option[Popup]
@@ -319,6 +320,7 @@ implTrait AppInterface, App:
   registerEditor(void, App, DocumentEditor)
   tryActivateEditor(void, App, DocumentEditor)
   getActiveEditor(Option[DocumentEditor], App)
+  getActiveViewEditor(Option[DocumentEditor], App)
   unregisterEditor(void, App, DocumentEditor)
   getEditorForId(Option[DocumentEditor], App, EditorId)
   getEditorForPath(Option[DocumentEditor], App, string)
@@ -3723,6 +3725,12 @@ proc getActiveEditor*(self: App): Option[DocumentEditor] =
   if self.popups.len > 0 and self.popups[self.popups.high].getActiveEditor().getSome(editor):
     return editor.some
 
+  if self.tryGetCurrentEditorView().getSome(view):
+    return view.editor.some
+
+  return DocumentEditor.none
+
+proc getActiveViewEditor*(self: App): Option[DocumentEditor] =
   if self.tryGetCurrentEditorView().getSome(view):
     return view.editor.some
 

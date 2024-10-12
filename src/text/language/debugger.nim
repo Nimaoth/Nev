@@ -68,6 +68,16 @@ type
     scopes*: Table[(ThreadId, FrameId), Scopes]
     variables*: Table[(ThreadId, FrameId, VariablesReference), Variables]
 
+type
+  DebuggerService = ref object of Service
+
+func serviceName*(_: typedesc[DebuggerService]): string = "DebuggerService"
+addBuiltinService(DebuggerService)
+
+method init*(self: DebuggerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"DebuggerService.init"
+  return ok()
+
 proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor)
 proc handleAction(self: Debugger, action: string, arg: string): EventResponse
 proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.async.}
