@@ -8,12 +8,10 @@ export id, ast_ids
 logCategory "lang-language"
 
 {.push gcsafe.}
-{.push raises: [CatchableError].}
 
 proc createLangLanguage*(repository: Repository, builders: CellBuilderDatabase) =
   log lvlInfo, &"createLangLanguage"
 
-  let baseLanguage = repository.language(IdBaseLanguage).get
   let namedInterface = repository.resolveClass(IdINamed)
 
   let propertyTypeClass = newNodeClass(IdPropertyType, "PropertyType", isAbstract=true)

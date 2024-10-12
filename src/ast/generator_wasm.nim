@@ -111,9 +111,6 @@ type
   LanguageWasmCompilerExtension* = ref object of RootObj
     compiler*: BaseLanguageWasmCompiler
 
-method genNode*(self: LanguageWasmCompilerExtension, node: AstNode, dest: Destination) {.raises: [CatchableError].} =
-  discard
-
 proc compileFunction*(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: WasmFuncIdx) {.raises: [CatchableError].}
 proc getOrCreateWasmFunc*(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): WasmFuncIdx
 proc compileRemainingFunctions*(self: BaseLanguageWasmCompiler) {.raises: [CatchableError].}

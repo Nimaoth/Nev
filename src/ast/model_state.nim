@@ -5,6 +5,7 @@ import misc/[id, util, timer, custom_logger]
 import query_system, model, ast_ids
 
 {.push gcsafe.}
+{.push hint[XCannotRaiseY]:off.}
 
 logCategory "model-state"
 

@@ -1,4 +1,4 @@
-import std/[macros, macrocache, json, options, tables, genasts, strutils]
+import std/[macros, macrocache, json, options, tables, genasts]
 import misc/[custom_logger, custom_async, util, array_buffer, id]
 import platform/filesystem
 
@@ -210,7 +210,9 @@ template addFunction*(self: var WasmImports, name: string, function: static proc
   block:
     template buildFunction(runtime, outFunction: untyped) =
       let module = cast[WasmModule](m3_GetUserData(runtime))
+      {.push hint[XCannotRaiseY]:off.}
       createHostWrapper(module, function, outFunction)
+      {.pop.}
     self.functions.add toWasmHostProcTemplate(buildFunction, self.namespace, name, getWasmSignature(function))
 
 type
@@ -346,11 +348,13 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
     if f.isNil:
       return
 
+    {.push hint[XCannotRaiseY]:off.}
     let wrapper = createWasmWrapper(R, T):
       try:
         `f`.call(`returnType`, `parameters`)
       except WasmError as e:
         raise newException(CatchableError, "Failed to call function " & e.msg, e)
+    {.pop.}
 
     result = typeof(result.get).default.some
     result.get.pfun = f

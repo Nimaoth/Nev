@@ -277,6 +277,7 @@ proc hash*(node: AstNode): Hash = node.id.hash
 proc hash*(class: NodeClass): Hash = class.id.hash
 proc hash*(language: Language): Hash = language.id.hash
 
+{.push hint[XCannotRaiseY]:off.}
 method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base, raises: [CatchableError].} = discard
 method getValue*(self: ModelComputationContextBase, node: AstNode): AstNode {.base, raises: [CatchableError].} = discard
 method getScope*(self: ModelComputationContextBase, node: AstNode): seq[AstNode] {.base, raises: [CatchableError].} = discard
@@ -285,6 +286,7 @@ method dependOn*(self: ModelComputationContextBase, node: AstNode) {.base, raise
 method dependOnCurrentRevision*(self: ModelComputationContextBase) {.base, raises: [CatchableError].} = discard
 method addDiagnostic*(self: ModelComputationContextBase, node: AstNode, msg: string) {.base, raises: [CatchableError].} = discard
 method getDiagnostics*(self: ModelComputationContextBase, node: NodeId): seq[string] {.base, raises: [CatchableError].} = discard
+{.pop.}
 
 proc notifyNodeDeleted(self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   self.onNodeDeleted.invoke (self, parent, child, role, index)

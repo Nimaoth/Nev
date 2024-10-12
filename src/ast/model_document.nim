@@ -3481,7 +3481,6 @@ proc compileLanguageAsync*(self: ModelDocumentEditor) {.async.} =
   while self.document.project.isNil or self.document.model.isNil:
     await sleepAsync(1.milliseconds)
 
-  let project = self.document.project
   let model = self.document.model
 
   if not model.hasLanguage(IdLangLanguage):

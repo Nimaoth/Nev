@@ -486,7 +486,7 @@ proc updateLanguageFromModel*(repository: Repository, language: Language, model:
 
               validateImpl.fun(module, validateImpl.pfun, p, propertyValue)
             except Exception as e:
-              log lvlError, &"Failed to validate node property: {propertyValue}\n{node}"
+              log lvlError, &"Failed to validate node property '{propertyValue}': {e.msg}\n{node}"
               return false
 
           # debugf"register propertyy validator for {class}, {role}"
