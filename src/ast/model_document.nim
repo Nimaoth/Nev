@@ -3162,10 +3162,10 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
       log lvlError, fmt"Failed to create wasm module from generated binary for {name}: {getCurrentExceptionMsg()}"
       return
 
-  if module.get.findFunction($function.get.id, void, proc(): void {.gcsafe, raises: [CatchableError].}).getSome(f):
+  if module.get.findFunction($function.get.id, void, proc(module: WasmModule, pfun: PFunction): void {.gcsafe, raises: [CatchableError].}).getSome(f):
     measureBlock fmt"Run '{name}'":
       try:
-        f()
+        f.fun(module.get, f.pfun)
       except Exception as e:
         log lvlError, &"Failed to run function {function.get.id}: {e.msg}\n{e.getStackTrace()}"
 
