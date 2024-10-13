@@ -1,5 +1,5 @@
 import std/[macros, macrocache, genasts, json, strutils, os]
-import misc/[custom_logger, custom_async, util]
+import misc/[custom_logger, custom_async, util, id]
 import platform/filesystem
 import scripting_base, document_editor, expose, vfs
 import wasm
@@ -31,7 +31,7 @@ method readImpl*(self: VFSWasmContext, path: string): Future[Option[string]] {.a
   log lvlError, &"[VFSWasmContext] read({path}): not found"
   return string.none
 
-var createEditorWasmImports: proc(): WasmImports {.raises: [].}
+var createEditorWasmImports*: proc(): WasmImports {.raises: [].}
 
 method getCurrentContext*(self: ScriptContextWasm): string =
   result = "plugs://"
@@ -192,8 +192,11 @@ template createEditorWasmImportConstructor*() =
           let name = f[0].strVal.newLit
           let function = f[0]
 
-          let imp = genAst(imports, name, function):
-            imports.addFunction(name, function)
+          let id = taggedId("editor.wasm_api." & f[0].strVal)
+          let argId = taggedId("editor.wasm_api.arg." & f[0].strVal)
+
+          let imp = genAst(imports, name, function, idStr = $id, argIdStr = $argId):
+            imports.addFunction(name, function, idStr.parseId, argIdStr.parseId)
           list.add imp
 
       return list

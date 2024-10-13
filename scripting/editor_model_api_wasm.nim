@@ -707,3 +707,100 @@ proc findDeclaration*(self: ModelDocumentEditor; global: bool) {.gcsafe,
   let res {.used.} = editor_model_findDeclaration_void_ModelDocumentEditor_bool_wasm(
       argsJsonString.cstring)
 
+
+proc editor_model_getCommandCount_int_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getCommandCount*(self: ModelDocumentEditor): int {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_getCommandCount_int_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_model_setCommandCount_void_ModelDocumentEditor_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc setCommandCount*(self: ModelDocumentEditor; count: int) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add count.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_setCommandCount_void_ModelDocumentEditor_int_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_setCommandCountRestore_void_ModelDocumentEditor_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc setCommandCountRestore*(self: ModelDocumentEditor; count: int) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add count.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_setCommandCountRestore_void_ModelDocumentEditor_int_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_updateCommandCount_void_ModelDocumentEditor_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc updateCommandCount*(self: ModelDocumentEditor; digit: int) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add digit.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_updateCommandCount_void_ModelDocumentEditor_int_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_isRunningSavedCommands_bool_ModelDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc isRunningSavedCommands*(self: ModelDocumentEditor): bool {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_isRunningSavedCommands_bool_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_model_runSavedCommands_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc runSavedCommands*(self: ModelDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_runSavedCommands_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_clearCurrentCommandHistory_void_ModelDocumentEditor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc clearCurrentCommandHistory*(self: ModelDocumentEditor;
+                                 retainLast: bool = false) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add retainLast.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_clearCurrentCommandHistory_void_ModelDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_saveCurrentCommandHistory_void_ModelDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc saveCurrentCommandHistory*(self: ModelDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_saveCurrentCommandHistory_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+

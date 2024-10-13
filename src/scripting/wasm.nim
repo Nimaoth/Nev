@@ -16,6 +16,9 @@ type WasmModule* = ref object
 type WasmImports* = object
   namespace*: string
   functions: seq[WasmHostProc]
+  functionNames*: seq[string]
+  ids*: seq[Id]
+  argIds*: seq[Id]
   module: WasmModule
 
 proc `$`*(p: WasmPtr): string {.borrow.}
@@ -206,6 +209,18 @@ macro getWasmSignature(function: typed): string =
   # echo function.getType.repr, " -> ", signature
   return newLit(signature)
 
+template addFunction*(self: var WasmImports, name: string, function: static proc, id: Id, argId: Id) =
+  block:
+    template buildFunction(runtime, outFunction: untyped) =
+      let module = cast[WasmModule](m3_GetUserData(runtime))
+      {.push hint[XCannotRaiseY]:off.}
+      createHostWrapper(module, function, outFunction)
+      {.pop.}
+    self.functions.add toWasmHostProcTemplate(buildFunction, self.namespace, name, getWasmSignature(function))
+    self.functionNames.add name
+    self.ids.add id
+    self.argIds.add argId
+
 template addFunction*(self: var WasmImports, name: string, function: static proc) =
   block:
     template buildFunction(runtime, outFunction: untyped) =
@@ -214,6 +229,9 @@ template addFunction*(self: var WasmImports, name: string, function: static proc
       createHostWrapper(module, function, outFunction)
       {.pop.}
     self.functions.add toWasmHostProcTemplate(buildFunction, self.namespace, name, getWasmSignature(function))
+    self.functionNames.add name
+    self.ids.add newId()
+    self.argIds.add newId()
 
 type
   WasiFD* = distinct uint32

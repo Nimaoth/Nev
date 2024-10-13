@@ -1,5 +1,5 @@
 import std/[os, json, options, sequtils, strutils, unicode]
-import misc/[custom_async, custom_logger, async_process, util, regex, timer, event]
+import misc/[custom_async, custom_logger, async_process, util, regex, timer, event, array_buffer]
 import platform/filesystem
 import workspace
 import vcs/[vcs, vcs_git, vcs_perforce]
@@ -217,6 +217,19 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: sink
   try:
     # todo: reimplement async
     writeFile(path, $content)
+    # var file = openAsync(path, fmWrite)
+    # for chunk in content.iterateChunks:
+    #   await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
+    # file.close()
+  except:
+    log lvlError, &"Failed to write file '{path}'"
+
+method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: ArrayBuffer): Future[void] {.async.} =
+  let path = self.getAbsolutePath(relativePath)
+  logScope lvlInfo, &"[saveFile] '{path}'"
+  try:
+    # todo: reimplement async
+    writeFile(path, cast[string](content.buffer))
     # var file = openAsync(path, fmWrite)
     # for chunk in content.iterateChunks:
     #   await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)

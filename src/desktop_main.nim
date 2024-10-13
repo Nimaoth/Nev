@@ -427,6 +427,9 @@ when enableGui:
   if backend.get == Gui:
     myDisableTrueColors()
 
+static:
+  writeTaggedIds()
+
 when defined(windows) and copyWasmtimeDll:
   import std/[compilesettings]
   import wasmh

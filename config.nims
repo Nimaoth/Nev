@@ -47,6 +47,8 @@ switch("d", "enableAst=false")
 # uncomment to see logs in the console
 switch("d", "allowConsoleLogger")
 
+let taggedIdsFile = thisDir() & "/tagged_ids.txt"
+switch("d", "taggedIdsFile=" & taggedIdsFile)
 
 switch("d", "wasm3HasWasi")
 switch("d", "wasm3VerboseErrorMessages")
