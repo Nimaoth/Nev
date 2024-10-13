@@ -9,8 +9,6 @@ import debugger_api_wasm
 export debugger_api_wasm
 import editor_api_wasm
 export editor_api_wasm
-import editor_model_api_wasm
-export editor_model_api_wasm
 import editor_text_api_wasm
 export editor_text_api_wasm
 import lsp_api_wasm
@@ -18,4 +16,4 @@ export lsp_api_wasm
 import popup_selector_api_wasm
 export popup_selector_api_wasm
 
-const enableAst* = true
+const enableAst* = false
