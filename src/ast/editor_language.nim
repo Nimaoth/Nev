@@ -41,7 +41,6 @@ proc createEditorLanguage*(repository: Repository, builders: CellBuilderDatabase
       CellBuilderCommand(kind: Children, childrenRole: argId, placeholder: "<arg>".some, uiFlags: &{LayoutHorizontal}),
     ]
 
-    # capture name:
     typeComputer(id):
       debugf"compute type for '{name}' {node}"
       stringTypeInstance

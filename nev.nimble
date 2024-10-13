@@ -110,7 +110,7 @@ task buildTerminal, "Build the terminal version":
   selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildTerminalDebug, "Build the terminal version (debug)":
-  selfExec fmt"c -o:nevd{exe} -d:sysFatalInt3 --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime -d:enableTerminal -d:enableGui=false --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDebug, "Build the debug version":
   selfExec fmt"c -o:nev{exe} --debuginfo:on --debugger:native --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
@@ -119,16 +119,11 @@ task buildDebugVcc, "Build the debug version":
   selfExec fmt"c -o:nevd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime -d:enableSysFatalStackTrace --debuginfo:on -g --lineDir:off --nilChecks:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
-  # selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime -d:enableSysFatalStackTrace --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
   # selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
   selfExec fmt"c -o:nev{exe} {crossCompileWinArgs} -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
-
-task buildNimscriptDll, "Build the nimscript dll":
-  # Disable clipboard for now because it breaks hot reloading
-  selfExec fmt"c -o:config/dll/nimscript.dll --noMain --app:lib {getCommandLineParams()} ./src/scripting/scripting_nim_dll.nim"
 
 task buildDll, "Build the dll version":
   # Disable clipboard for now because it breaks hot reloading
@@ -162,6 +157,4 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
 
 task flamegraph, "Perf/flamegraph":
-  withDir "/home/nimaoth/dev/zed":
-    exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraphs/rope-10.svg -- nevd"
-    # exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraphs/rope-10.svg -- nevd src/app.nim"
+  exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"

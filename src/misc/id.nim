@@ -20,9 +20,9 @@
 
 type Oid* = object ## An OID.
   padding: int32
-  time*: int32
-  fuzz*: int32
-  count*: int32
+  time: int32
+  fuzz: int32
+  count: int32
 
 type Id* = distinct Oid
 
