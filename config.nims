@@ -41,7 +41,7 @@ switch("d", "npegGcsafe=true")
 
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
-switch("d", "enableAst=false")
+switch("d", "enableAst=true")
 
 
 # uncomment to see logs in the console
@@ -90,6 +90,7 @@ else:
 
 # results prints a ton of hints, silence them
 switch("d", "resultsGenericsOpenSymWorkaroundHint=false")
+switch("exceptions", "goto")
 
 when defined(musl):
   var muslGcc = findExe("musl-gcc")
@@ -141,8 +142,19 @@ else:
 # switch("lineDir", "off")
 # switch("profiler", "on")
 
+when defined(linux):
+  when withDir(thisDir(), fileExists("nimble-linux.paths")):
+    include "nimble-linux.paths"
+else:
+  when withDir(thisDir(), fileExists("nimble-win.paths")):
+    include "nimble-win.paths"
+
 # begin Nimble config (version 2)
 --noNimblePath
 when withDir(thisDir(), system.fileExists("nimble.paths")):
   include "nimble.paths"
 # end Nimble config
+
+when defined(useMimalloc):
+  switch("define", "useMalloc")
+  patchFile("stdlib", "malloc", "$lib/patchedstd/mimalloc")
