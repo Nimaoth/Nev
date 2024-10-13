@@ -87,10 +87,33 @@ proc loadModelKeybindings*() {.expose("load-model-keybindings").} =
   defer:
     infof"loadModelKeybindings: {t.elapsed.ms} ms"
 
+  for id in getAllEditors():
+    if id.isModelEditor(editor):
+      editor.setMode("normal")
+
   info "Applying model keybindings"
 
-  setHandleInputs "editor.model", true
+  setHandleInputs "editor.model", false
   setOption "editor.model.cursor.wide.", false
+  setOption "editor.model.default-mode", "normal"
+
+  setHandleInputs "editor.model.normal", false
+  setOption "editor.model.cursor.wide.normal", true
+
+  setHandleInputs "editor.model.insert", true
+  setOption "editor.model.cursor.wide.insert", false
+
+  setHandleInputs "editor.model.visual", false
+  setOption "editor.model.cursor.wide.visual", true
+  setOption "editor.model.cursor.movement.visual", "last"
+
+  addCommand "editor.model", "i", "set-mode", "insert"
+  addCommand "editor.model", "<ESCAPE>", "set-mode", "normal"
+  addCommand "editor.model.insert", "<SPACE>", "insert-text-at-cursor", " "
+  addModelCommandBlock "", "a":
+    echo "uiae"
+    editor.setMode("insert")
+    editor.moveCursorRightLine()
 
   addCommand("editor.model", "<LEFT>", "move-cursor-left-line")
   addCommand("editor.model", "<RIGHT>", "move-cursor-right-line")
@@ -103,7 +126,9 @@ proc loadModelKeybindings*() {.expose("load-model-keybindings").} =
   addCommand("editor.model", "<A-UP>", "select-node")
   addCommand("editor.model", "<A-DOWN>", "select-prev")
   addCommand("editor.model", "<C-LEFT>", "move-cursor-left-cell")
+  addCommand("editor.model", "b", "move-cursor-left-cell")
   addCommand("editor.model", "<C-RIGHT>", "move-cursor-right-cell")
+  addCommand("editor.model", "w", "move-cursor-right-cell")
   addCommand("editor.model", "<HOME>", "move-cursor-line-start")
   addCommand("editor.model", "<END>", "move-cursor-line-end")
   addCommand("editor.model", "<A-HOME>", "move-cursor-line-start-inline")
@@ -129,8 +154,13 @@ proc loadModelKeybindings*() {.expose("load-model-keybindings").} =
   addCommand("editor.model", "<C-z>", "undo")
   addCommand("editor.model", "<C-y>", "redo")
 
+  addCommand("editor.model", "u", "undo")
+  addCommand("editor.model", "U", "redo")
+
   addCommand("editor.model", "<C-c>", "copy-node")
+  addCommand("editor.model", "y", "copy-node")
   addCommand("editor.model", "<C-v>", "paste-node")
+  addCommand("editor.model", "p", "paste-node")
 
   addCommand("editor.model", "<C-i>", "invert-selection")
   addModelCommand "", "<C-r>", "select-prev"
@@ -170,6 +200,8 @@ proc loadModelKeybindings*() {.expose("load-model-keybindings").} =
   addCommand "editor.model", "<S-TAB>", "select-prev-placeholder"
 
   addCommand "editor.model", "<C-SPACE>", "show-completions"
+  addCommand "editor.model.insert", "<C-p>", "show-completions"
+  addCommand "editor.model.insert", "<C-n>", "show-completions"
 
   addCommand "editor.model", "<LEADER>er", "run-selected-function"
   addCommand "editor.model", "<LEADER>ed", "toggle-use-default-cell-builder"
@@ -182,10 +214,12 @@ proc loadModelKeybindings*() {.expose("load-model-keybindings").} =
 
   addCommand "editor.model.completion", "<ESCAPE>", "hide-completions"
   addCommand "editor.model.completion", "<UP>", "select-prev-completion"
+  addCommand "editor.model.completion", "<C-p>", "select-prev-completion"
   addCommand "editor.model.completion", "<DOWN>", "select-next-completion"
+  addCommand "editor.model.completion", "<C-n>", "select-next-completion"
   addCommand "editor.model.completion", "<C-SPACE>", "move-cursor-start"
-  addCommand "editor.model.completion", "<TAB>", "apply-selected-completion"
   addCommand "editor.model.completion", "<ENTER>", "apply-selected-completion"
+  addCommand "editor.model.completion", "<C-y>", "apply-selected-completion"
 
   addCommand "editor.model.goto", "<END>", "end"
 

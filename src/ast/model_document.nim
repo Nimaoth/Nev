@@ -7,6 +7,7 @@ import workspaces/[workspace]
 import ui/node
 import lang/[lang_language, lang_builder, cell_language, property_validator_language, scope_language]
 import finder/[finder]
+import scripting/scripting_wasm
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state]
 import document, document_editor, text/text_document, events, scripting/expose, input
@@ -89,6 +90,13 @@ proc normalized*(selection: CellSelection): CellSelection =
   return if selection.first < selection.last: selection else: (selection.last, selection.first)
 
 type
+  Command = object
+    isInput: bool
+    command: string
+    args: JsonNode
+  CommandHistory = object
+    commands: seq[Command]
+
   ModelOperationKind = enum
     Delete
     Replace
@@ -199,6 +207,14 @@ type
     completionsScrollOffset*: float
     scrollToCompletion*: Option[int]
 
+    commandCount*: int
+    commandCountRestore*: int
+    currentCommandHistory: CommandHistory
+    savedCommandHistory: CommandHistory
+    bIsRunningSavedCommands: bool
+    bRecordCurrentCommand: bool = false
+    bIsRecordingCurrentCommand: bool = false
+
   UpdateContext* = ref object
     nodeCellMap*: NodeCellMap
     cellToWidget*: Table[CellId, UINode]
@@ -250,6 +266,8 @@ proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCu
 proc isThickCursor*(self: ModelDocumentEditor): bool
 proc getContextWithMode*(self: ModelDocumentEditor, context: string): string
 proc showCompletionWindow*(self: ModelDocumentEditor)
+proc setMode*(self: ModelDocumentEditor, mode: string)
+proc handleActionInternal(self: ModelDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
 
 proc toCursor*(map: NodeCellMap, cell: Cell, column: int): CellCursor
 proc toCursor*(map: NodeCellMap, cell: Cell, start: bool): CellCursor
@@ -611,6 +629,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
     debugf"updateCompletions child {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
 
     model.forEachChildClass slotClass, proc(childClass: NodeClass) =
+      # debugf"class: {childClass.name}"
       if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.incl(c)):
         return
 
@@ -647,7 +666,7 @@ proc refilterCompletions(self: ModelDocumentEditor) =
     return
 
   let text = targetCell.currentText
-  let index = self.cursor.index
+  let index = min(self.cursor.index, text.len)
   # debugf "refilter '{text}' {index}"
   let prefix = text[0..<index]
 
@@ -885,22 +904,33 @@ proc toJson*(self: api.ModelDocumentEditor, opt = initToJsonOptions()): JsonNode
 proc fromJsonHook*(t: var api.ModelDocumentEditor, jsonNode: JsonNode) {.raises: [ValueError].} =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
-proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
+proc handleInput(self: ModelDocumentEditor, input: string, record: bool = true): EventResponse =
   # log lvlInfo, fmt"[modeleditor]: Handle input '{input}'"
 
   self.mCursorBeforeTransaction = self.selection
 
-  if self.app.invokeCallback(self.getContextWithMode("editor.model.input-handler"), input.newJString):
-    self.document.finishTransaction()
-    self.markDirty()
-    return Handled
+  try:
+    if not self.bIsRunningSavedCommands:
+      self.currentCommandHistory.commands.add Command(isInput: true, command: input)
 
-  if self.insertTextAtCursor(input):
-    self.document.finishTransaction()
-    self.markDirty()
-    return Handled
+    if record:
+      self.app.recordCommand(".insert-text", $input.newJString)
 
-  return Ignored
+    # echo "handleInput '", input, "'"
+    if self.app.invokeCallback(self.getContextWithMode("editor.model.input-handler"), input.newJString):
+      self.document.finishTransaction()
+      self.markDirty()
+      return Handled
+
+    if self.insertTextAtCursor(input):
+      self.document.finishTransaction()
+      self.markDirty()
+      return Handled
+
+  except:
+    discard
+
+  return Handled
 
 proc getItemAtPixelPosition(self: ModelDocumentEditor, posWindow: Vec2): Option[int] =
   result = int.none
@@ -1035,6 +1065,8 @@ method injectDependencies*(self: ModelDocumentEditor, app: AppInterface, fs: Fil
         Ignored
     onInput:
       self.handleInput input
+
+  self.setMode(self.configProvider.getValue("editor.model.default-mode", ""))
 
 method unregister*(self: ModelDocumentEditor) =
   self.app.unregisterEditor(self)
@@ -2961,52 +2993,72 @@ proc selectNextCompletion*(self: ModelDocumentEditor) {.expose("editor.model").}
   self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
+proc applyCompletion(self: ModelDocumentEditor, completionText: string, completion: ModelCompletion) =
+  let parent = completion.parent
+  let role = completion.role
+  let index = completion.index
+
+  case completion.kind:
+  of ModelCompletionKind.SubstituteClass:
+    parent.remove(role, index)
+
+    var newNode = newAstNode(completion.class)
+    newNode.fillDefaultChildren(parent.model, true)
+    parent.insert(role, index, newNode)
+    self.rebuildCells()
+    self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
+    if completion.property.getSome(role):
+      var cell = PropertyCell(node: newNode, property: role)
+      cell.setText(completionText)
+
+  of ModelCompletionKind.SubstituteReference:
+    parent.remove(role, index)
+
+    let newNode = newAstNode(completion.class)
+    newNode.setReference(completion.referenceRole, completion.referenceTarget.id)
+    parent.insert(role, index, newNode)
+    self.rebuildCells()
+    self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
+  of ModelCompletionKind.ChangeReference:
+    debugf"update reference of {completion.parent}:{completion.role} to {completion.changeReferenceTarget}"
+    completion.parent.setReference(completion.role, completion.changeReferenceTarget.id)
+    self.rebuildCells()
+    # self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
+  var c = self.cursor
+  c.index = c.targetCell.editableHigh
+  self.cursor = c
+
+  self.showCompletions = false
+
+# todo
+# proc applyCompletion*(self: TextDocumentEditor, json: JsonNode) {.expose("editor.model").} =
+#   try:
+#     var completion = ModelCompletion(kind: ModelCompletionKind.SubstituteClass)
+#     # let completion = completion.jsonTo(ModelCompletion)
+#     let parent = self.projectService.project.resolveReference(json["parent"].jsonTo(NodeId)).getOr:
+#     self.applyCompletion(completion)
+#   except:
+#     log lvlError, &"[applyCompletion] Failed to parse completion {completion}"
+
 proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
 
   let completionText = self.cursor.targetCell.currentText
 
-  if self.selectedCompletion < self.completionsLen:
-    let completion = self.getCompletion(self.selectedCompletion)
-    let parent = completion.parent
-    let role = completion.role
-    let index = completion.index
+  if self.selectedCompletion >= self.completionsLen:
+    return
 
-    case completion.kind:
-    of ModelCompletionKind.SubstituteClass:
-      parent.remove(role, index)
+  let completion = self.getCompletion(self.selectedCompletion)
+  self.applyCompletion(completionText, completion)
 
-      var newNode = newAstNode(completion.class)
-      newNode.fillDefaultChildren(parent.model, true)
-      parent.insert(role, index, newNode)
-      self.rebuildCells()
-      self.cursor = self.getFirstEditableCellOfNode(newNode).get
-
-      if completion.property.getSome(role):
-        var cell = PropertyCell(node: newNode, property: role)
-        cell.setText(completionText)
-
-    of ModelCompletionKind.SubstituteReference:
-      parent.remove(role, index)
-
-      let newNode = newAstNode(completion.class)
-      newNode.setReference(completion.referenceRole, completion.referenceTarget.id)
-      parent.insert(role, index, newNode)
-      self.rebuildCells()
-      self.cursor = self.getFirstEditableCellOfNode(newNode).get
-
-    of ModelCompletionKind.ChangeReference:
-      debugf"update reference of {completion.parent}:{completion.role} to {completion.changeReferenceTarget}"
-      completion.parent.setReference(completion.role, completion.changeReferenceTarget.id)
-      self.rebuildCells()
-      # self.cursor = self.getFirstEditableCellOfNode(newNode).get
-
-    self.showCompletions = false
-
-  var c = self.cursor
-  c.index = c.targetCell.editableHigh
-  self.cursor = c
+  # todo
+  # if self.bIsRecordingCurrentCommand:
+  #   completion.origin = runeCursor.some
+  #   self.app.recordCommand("." & "apply-completion", $completion.toJson)
 
   self.markDirty()
 
@@ -3140,8 +3192,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
     compiler.addFunctionToCompile(function.get)
     let binary = compiler.compileToBinary()
 
-  if self.document.workspace.getSome(workspace):
-    discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
+  asyncSpawn self.projectService.workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
 
   var imp = WasmImports(namespace: "env")
   imp.addFunction("print_i32", printI32)
@@ -3156,8 +3207,22 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   imp.addFunction("intToString", intToString)
   imp.addFunction("loadAppFile", loadAppFile)
 
+  {.gcsafe.}:
+    var editorImports = createEditorWasmImports()
+    editorImports.addFunction("print_i32", printI32)
+    editorImports.addFunction("print_u32", printU32)
+    editorImports.addFunction("print_i64", printI64)
+    editorImports.addFunction("print_u64", printU64)
+    editorImports.addFunction("print_f32", printF32)
+    editorImports.addFunction("print_f64", printF64)
+    editorImports.addFunction("print_char", printChar)
+    editorImports.addFunction("print_string", printString)
+    editorImports.addFunction("print_line", printLine)
+    editorImports.addFunction("intToString", intToString)
+    editorImports.addFunction("loadAppFile", loadAppFile)
+
   measureBlock fmt"Create wasm module for '{name}'":
-    let module = await newWasmModule(binary.toArrayBuffer, @[imp])
+    let module = await newWasmModule(binary.toArrayBuffer, @[editorImports])
     if module.isNone:
       log lvlError, fmt"Failed to create wasm module from generated binary for {name}: {getCurrentExceptionMsg()}"
       return
@@ -3218,15 +3283,18 @@ proc getNodeFromRegister(self: ModelDocumentEditor, register: string): Future[se
   let json = text.parseJson
   var res = newSeq[AstNode]()
 
-  if json.kind == JObject:
-    if json.jsonToAstNode(self.document.model).getSome(node):
-      res.add node
-  elif json.kind == JArray:
-    for j in json:
-      if j.jsonToAstNode(self.document.model).getSome(node):
+  try:
+    if json.kind == JObject:
+      if json.jsonToAstNode(self.document.model).getSome(node):
         res.add node
-  else:
-    log lvlError, fmt"Can't parse node from register"
+    elif json.kind == JArray:
+      for j in json:
+        if j.jsonToAstNode(self.document.model).getSome(node):
+          res.add node
+    else:
+      log lvlError, fmt"Can't parse node from register"
+  except CatchableError:
+    log lvlError, fmt"Can't parse node from register: '{text}'"
 
   return res
 
@@ -3687,8 +3755,92 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
 
   discard self.app.pushSelectorPopup(builder)
 
+proc getCommandCount*(self: ModelDocumentEditor): int {.expose("editor.model").} =
+  return self.commandCount
+
+proc setCommandCount*(self: ModelDocumentEditor, count: int) {.expose("editor.model").} =
+  self.commandCount = count
+
+proc setCommandCountRestore*(self: ModelDocumentEditor, count: int) {.expose("editor.model").} =
+  self.commandCountRestore = count
+
+proc updateCommandCount*(self: ModelDocumentEditor, digit: int) {.expose("editor.model").} =
+  self.commandCount = self.commandCount * 10 + digit
+
+proc isRunningSavedCommands*(self: ModelDocumentEditor): bool {.expose("editor.model").} =
+  self.bIsRunningSavedCommands
+
+proc runSavedCommands*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.bIsRunningSavedCommands:
+    return
+  self.bIsRunningSavedCommands = true
+  defer:
+    self.bIsRunningSavedCommands = false
+
+  var commandHistory = self.savedCommandHistory
+  for command in commandHistory.commands.mitems:
+    let isRecursive = command.command == "run-saved-commands" or command.command == "runSavedCommands"
+    if not command.isInput and isRecursive:
+      continue
+
+    if command.isInput:
+      discard self.handleInput(command.command, record=false)
+    else:
+      discard self.handleActionInternal(command.command, command.args)
+
+  self.savedCommandHistory = commandHistory
+
+proc clearCurrentCommandHistory*(self: ModelDocumentEditor, retainLast: bool = false) {.
+    expose("editor.model").} =
+  if retainLast and self.currentCommandHistory.commands.len > 0:
+    let last = self.currentCommandHistory.commands[self.currentCommandHistory.commands.high]
+    self.currentCommandHistory.commands.setLen 0
+    self.currentCommandHistory.commands.add last
+  else:
+    self.currentCommandHistory.commands.setLen 0
+
+proc saveCurrentCommandHistory*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.savedCommandHistory = self.currentCommandHistory
+  self.currentCommandHistory.commands.setLen 0
+
 genDispatcher("editor.model")
 addActiveDispatchTable "editor.model", genDispatchTable("editor.model")
+
+proc handleActionInternal(self: ModelDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
+  # debugf"[textedit] handleAction {action}, '{args}'"
+
+  var args = args.copy
+  args.elems.insert api.ModelDocumentEditor(id: self.id).toJson, 0
+
+  block:
+    let res = self.app.invokeAnyCallback(action, args)
+    if res.isNotNil:
+      dec self.commandCount
+      while self.commandCount > 0:
+        if self.app.invokeAnyCallback(action, args).isNil:
+          break
+        dec self.commandCount
+      self.commandCount = self.commandCountRestore
+      self.commandCountRestore = 0
+      return res.some
+
+  try:
+    # debugf"dispatch {action}, {args}"
+    if dispatch(action, args).getSome(res):
+      dec self.commandCount
+      while self.commandCount > 0:
+        if dispatch(action, args).isNone:
+          break
+        dec self.commandCount
+      self.commandCount = self.commandCountRestore
+      self.commandCountRestore = 0
+      return res.some
+  except:
+    let argsText = if args.isNil: "nil" else: $args
+    log(lvlError, fmt"Failed to dispatch action '{action} {argsText}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+
+  return JsonNode.none
 
 method handleAction*(self: ModelDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
   # log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
@@ -3697,19 +3849,40 @@ method handleAction*(self: ModelDocumentEditor, action: string, arg: string, rec
 
   self.mCursorBeforeTransaction = self.selection
 
-  var args = newJArray()
   try:
-    args.add api.ModelDocumentEditor(id: self.id).toJson
+    let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
+    defer:
+      self.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
 
-    for a in newStringStream(arg).parseJsonFragments():
-      args.add a
+    self.bIsRecordingCurrentCommand = record
 
-    if dispatch(action, args).getSome(res):
-      self.markDirty()
-      return res.some
-  except CatchableError:
-    log lvlError, fmt"Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}"
-    log lvlError, getCurrentException().getStackTrace()
+    let noRecordActions = [
+      "apply-selected-completion",
+      "applySelectedCompletion",
+    ].toHashSet
+
+    if record and action notin noRecordActions:
+      self.app.recordCommand("." & action, arg)
+
+    defer:
+      if record and self.bRecordCurrentCommand:
+        self.app.recordCommand("." & action, arg)
+      self.bRecordCurrentCommand = false
+
+    var args = newJArray()
+    try:
+      for a in newStringStream(arg).parseJsonFragments():
+        args.add a
+
+      if not self.bIsRunningSavedCommands:
+        self.currentCommandHistory.commands.add Command(command: action, args: args)
+
+      return self.handleActionInternal(action, args)
+    except CatchableError:
+      log(lvlError, fmt"handleAction: {action}, Failed to parse args: '{arg}'")
+      return JsonNode.none
+  except:
+    discard
 
   return JsonNode.none
 
