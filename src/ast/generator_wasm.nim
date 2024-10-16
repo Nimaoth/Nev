@@ -129,16 +129,16 @@ proc newBaseLanguageWasmCompiler*(repository: Repository, ctx: ModelComputationC
   result.stackSize = wasmPageSize * 10
   result.activeDataOffset = align(result.stackSize, wasmPageSize)
 
-  result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
-  result.printU32 = result.builder.addImport("env", "print_u32", result.builder.addType([I32], []))
-  result.printI64 = result.builder.addImport("env", "print_i64", result.builder.addType([I64], []))
-  result.printU64 = result.builder.addImport("env", "print_u64", result.builder.addType([I64], []))
-  result.printF32 = result.builder.addImport("env", "print_f32", result.builder.addType([F32], []))
-  result.printF64 = result.builder.addImport("env", "print_f64", result.builder.addType([F64], []))
-  result.printChar = result.builder.addImport("env", "print_char", result.builder.addType([I32], []))
-  result.printString = result.builder.addImport("env", "print_string", result.builder.addType([I32, I32], []))
-  result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
-  result.intToString = result.builder.addImport("env", "intToString", result.builder.addType([I32], [I32]))
+  result.printI32 = result.builder.addImport("model_env", "print_i32", result.builder.addType([I32], []))
+  result.printU32 = result.builder.addImport("model_env", "print_u32", result.builder.addType([I32], []))
+  result.printI64 = result.builder.addImport("model_env", "print_i64", result.builder.addType([I64], []))
+  result.printU64 = result.builder.addImport("model_env", "print_u64", result.builder.addType([I64], []))
+  result.printF32 = result.builder.addImport("model_env", "print_f32", result.builder.addType([F32], []))
+  result.printF64 = result.builder.addImport("model_env", "print_f64", result.builder.addType([F64], []))
+  result.printChar = result.builder.addImport("model_env", "print_char", result.builder.addType([I32], []))
+  result.printString = result.builder.addImport("model_env", "print_string", result.builder.addType([I32, I32], []))
+  result.printLine = result.builder.addImport("model_env", "print_line", result.builder.addType([], []))
+  result.intToString = result.builder.addImport("model_env", "intToString", result.builder.addType([I32], [I32]))
 
   result.stackBase = result.builder.addGlobal(I32, mut=true, 0, id="__stack_base")
   result.stackEnd = result.builder.addGlobal(I32, mut=true, 0, id="__stack_end")
@@ -330,9 +330,11 @@ proc newBaseLanguageWasmCompiler*(repository: Repository, ctx: ModelComputationC
       WasmInstr(kind: I64Or),
     ]))
 
-proc addFunctionToCompile*(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc addFunctionToCompile*(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none) =
   let functionName = $node.id
-  discard self.getOrCreateWasmFunc(node, exportName=functionName.some)
+  let funcIdx = self.getOrCreateWasmFunc(node, exportName=functionName.some)
+  if exportName.getSome(name):
+    self.builder.addExport(name, funcIdx)
 
 proc compileToBinary*(self: BaseLanguageWasmCompiler): seq[uint8] {.raises: [CatchableError].} =
   self.compileRemainingFunctions()
