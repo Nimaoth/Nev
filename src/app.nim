@@ -12,7 +12,7 @@ import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config, vfs
 import vcs/vcs
-import service
+import service, layout
 
 import nimsumtree/[buffer, clock, rope]
 
@@ -65,18 +65,6 @@ method getEventHandlers*(view: EditorView, inject: Table[string, EventHandler]):
 
 method getActiveEditor*(self: EditorView): Option[DocumentEditor] =
   self.editor.some
-
-type
-  Layout* = ref object of RootObj
-    discard
-  HorizontalLayout* = ref object of Layout
-    discard
-  VerticalLayout* = ref object of Layout
-    discard
-  FibonacciLayout* = ref object of Layout
-    discard
-  LayoutProperties = ref object
-    props: Table[string, float32]
 
 type OpenEditor = object
   filename: string
@@ -173,9 +161,7 @@ type
     currentViewInternal: int
     views*: seq[View]
     hiddenViews*: seq[View]
-    layout*: Layout
-    layout_props*: LayoutProperties
-    maximizeView*: bool
+    layout*: LayoutService
 
     activeEditorInternal: Option[EditorId]
     editorHistory: Deque[EditorId]
@@ -351,7 +337,6 @@ proc handleDropFile*(self: App, path, content: string)
 
 proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind
 proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool]
-proc setLayout*(self: App, layout: string)
 
 template withScriptContext(self: App, scriptContext: untyped, body: untyped): untyped =
   if scriptContext.isNotNil:
@@ -417,39 +402,6 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
       log(lvlError, fmt"Failed to run script handleScriptAction {context}: {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
       return nil
-
-method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] {.base.} =
-  return @[bounds]
-
-method layoutViews*(layout: HorizontalLayout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] =
-  let mainSplit = props.props.getOrDefault("main-split", 0.5)
-  result = @[]
-  var rect = bounds
-  for i in 0..<views:
-    let ratio = if i == 0 and views > 1: mainSplit else: 1.0 / (views - i).float32
-    let (view_rect, remaining) = rect.splitV(ratio.percent)
-    rect = remaining
-    result.add view_rect
-
-method layoutViews*(layout: VerticalLayout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] =
-  let mainSplit = props.props.getOrDefault("main-split", 0.5)
-  result = @[]
-  var rect = bounds
-  for i in 0..<views:
-    let ratio = if i == 0 and views > 1: mainSplit else: 1.0 / (views - i).float32
-    let (view_rect, remaining) = rect.splitH(ratio.percent)
-    rect = remaining
-    result.add view_rect
-
-method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] =
-  let mainSplit = props.props.getOrDefault("main-split", 0.5)
-  result = @[]
-  var rect = bounds
-  for i in 0..<views:
-    let ratio = if i == 0 and views > 1: mainSplit elif i == views - 1: 1.0 else: 0.5
-    let (view_rect, remaining) = if i mod 2 == 0: rect.splitV(ratio.percent) else: rect.splitH(ratio.percent)
-    rect = remaining
-    result.add view_rect
 
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
@@ -865,7 +817,7 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
         log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
 
     if not state.layout.isEmptyOrWhitespace:
-      self.setLayout(state.layout)
+      self.layout.setLayout(state.layout)
 
     let fontSize = max(state.fontSize.float, 10.0)
     self.loadedFontSize = fontSize
@@ -1199,8 +1151,7 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
     log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
     ""
 
-  self.layout = HorizontalLayout()
-  self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
+  self.layout = services.getService(LayoutService).get
 
   self.registers = initTable[string, Register]()
 
@@ -1618,12 +1569,13 @@ proc saveAppState*(self: App) {.expose("editor").} =
   if getDebugger().getSome(debugger):
     state.debuggerState = debugger.getStateJson().some
 
-  if self.layout of HorizontalLayout:
-    state.layout = "horizontal"
-  elif self.layout of VerticalLayout:
-    state.layout = "vertical"
-  else:
-    state.layout = "fibonacci"
+  # todo
+  # if self.layout of HorizontalLayout:
+  #   state.layout = "horizontal"
+  # elif self.layout of VerticalLayout:
+  #   state.layout = "vertical"
+  # else:
+  #   state.layout = "fibonacci"
 
   # Save open workspace folders
   let kind = self.workspace.openWorkspaceKind()
@@ -1893,10 +1845,6 @@ proc platformLineHeight*(self: App): float32 {.expose("editor").} =
 
 proc platformLineDistance*(self: App): float32 {.expose("editor").} =
   return self.platform.lineDistance
-
-proc changeLayoutProp*(self: App, prop: string, change: float32) {.expose("editor").} =
-  self.layout_props.props.mgetOrPut(prop, 0) += change
-  self.platform.requestRender(true)
 
 proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
@@ -2179,10 +2127,6 @@ proc prevView*(self: App) {.expose("editor").} =
   self.currentView = if self.views.len == 0: 0 else: (self.currentView + self.views.len - 1) mod self.views.len
   self.platform.requestRender()
 
-proc toggleMaximizeView*(self: App) {.expose("editor").} =
-  self.maximizeView = not self.maximizeView
-  self.platform.requestRender()
-
 proc moveCurrentViewPrev*(self: App) {.expose("editor").} =
   if self.views.len > 0:
     let view = self.views[self.currentView]
@@ -2199,14 +2143,6 @@ proc moveCurrentViewNext*(self: App) {.expose("editor").} =
     self.views.delete(self.currentView)
     self.views.insert(view, index)
     self.currentView = index
-  self.platform.requestRender()
-
-proc setLayout*(self: App, layout: string) {.expose("editor").} =
-  self.layout = case layout
-    of "horizontal": HorizontalLayout()
-    of "vertical": VerticalLayout()
-    of "fibonacci": FibonacciLayout()
-    else: FibonacciLayout()
   self.platform.requestRender()
 
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
@@ -4194,6 +4130,9 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
       return r.some
 
     if debugger.dispatchEvent(action, args).getSome(r):
+      return r.some
+
+    if layout.dispatchEvent(action, args).getSome(r):
       return r.some
 
     try:

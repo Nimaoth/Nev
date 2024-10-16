@@ -4,7 +4,7 @@ import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger]
-import app, document_editor, theme, compilation_config, view
+import app, document_editor, theme, compilation_config, view, layout
 
 when enableAst:
   import ui/[widget_builder_model_document]
@@ -34,7 +34,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
         let maxViews = getOption[int](self, "editor.maxViews", int.high)
-        let maximizedText = if self.maximizeView:
+        let maximizedText = if self.layout.maximizeView:
           "[Fullscreen]"
         elif maxViews == int.high:
           fmt"[Max: ∞]"
@@ -59,7 +59,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
         let overlay = currentNode
 
-        if self.maximizeView:
+        if self.layout.maximizeView:
           let view {.cursor.} = self.views[self.currentView]
           let wasActive = view.active
           if not self.commandLineMode:
@@ -74,7 +74,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
             overlays.add view.createUI(builder, self)
 
         else:
-          let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
+          let rects = self.layout.layout.layoutViews(self.layout.layout_props, rect(0, 0, 1, 1), self.views.len)
           for i, view in self.views:
             let xy = rects[i].xy * overlay.bounds.wh
             let xwyh = rects[i].xwyh * overlay.bounds.wh

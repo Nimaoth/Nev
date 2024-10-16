@@ -182,7 +182,7 @@ import misc/[timer, custom_async]
 import platform/[platform, filesystem]
 import ui/widget_builders
 import text/language/language_server
-import app
+import app, platform_service
 
 # import asynctools/asyncipc
 
@@ -244,6 +244,7 @@ import text/language/debugger
 import selector_popup
 import collab
 import scripting/scripting_base
+import layout
 import wasm3, wasm3/[wasm3c, wasmconversions]
 
 generatePluginBindings()
@@ -251,12 +252,12 @@ static:
   generateScriptingApiPerModule()
 
 # Initialize renderer
-var rend: Platform = nil
+var plat: Platform = nil
 case backend.get
 of Terminal:
   when enableTerminal:
     log(lvlInfo, "Creating terminal renderer")
-    rend = new TerminalPlatform
+    plat = new TerminalPlatform
   else:
     echo "[error] Terminal backend not available in this build"
     quit(1)
@@ -264,7 +265,7 @@ of Terminal:
 of Gui:
   when enableGui:
     log(lvlInfo, "Creating GUI renderer")
-    rend = new GuiPlatform
+    plat = new GuiPlatform
   else:
     echo "[error] GUI backend not available in this build"
     quit(1)
@@ -273,13 +274,13 @@ else:
     echo "[error] This should not happen"
     quit(1)
 
-rend.init()
+plat.init()
 
 import ui/node
 
 import chronos/config
 
-proc run(app: App, rend: Platform, backend: Backend) =
+proc run(app: App, plat: Platform, backend: Backend) =
   var frameIndex = 0
   var frameTime = 0.0
 
@@ -297,7 +298,7 @@ proc run(app: App, rend: Platform, backend: Backend) =
     # handle events
     let eventTimer = startTimer()
     gAsyncFrameTimer = startTimer()
-    let eventCounter = rend.processEvents()
+    let eventCounter = plat.processEvents()
     let eventTime = eventTimer.elapsed.ms
 
     if eventCounter > 0:
@@ -310,27 +311,27 @@ proc run(app: App, rend: Platform, backend: Backend) =
 
       let updateTimer = startTimer()
 
-      rend.builder.frameTime = delta
+      plat.builder.frameTime = delta
 
       when enableGui:
-        let size = if rend of GuiPlatform and rend.GuiPlatform.showDrawnNodes: rend.size * vec2(0.5, 1) else: rend.size
+        let size = if plat of GuiPlatform and plat.GuiPlatform.showDrawnNodes: plat.size * vec2(0.5, 1) else: plat.size
       else:
-        let size = rend.size
+        let size = plat.size
 
       var rerender = false
-      if size != rend.builder.root.boundsActual.wh or rend.requestedRender:
-        rend.requestedRender = false
-        rend.builder.beginFrame(size)
+      if size != plat.builder.root.boundsActual.wh or plat.requestedRender:
+        plat.requestedRender = false
+        plat.builder.beginFrame(size)
         try:
           app.updateWidgetTree(frameIndex)
-          rend.builder.endFrame()
+          plat.builder.endFrame()
         except:
           discard
         rerender = true
-      elif rend.builder.animatingNodes.len > 0:
-        rend.builder.frameIndex.inc
+      elif plat.builder.animatingNodes.len > 0:
+        plat.builder.frameIndex.inc
         try:
-          rend.builder.postProcessNodes()
+          plat.builder.postProcessNodes()
         except:
           discard
         rerender = true
@@ -341,7 +342,7 @@ proc run(app: App, rend: Platform, backend: Backend) =
 
       if rerender:
         let renderTimer = startTimer()
-        rend.render()
+        plat.render()
         renderTime = renderTimer.elapsed.ms
 
       frameTime = app.frameTimer.elapsed.ms
@@ -399,18 +400,19 @@ proc run(app: App, rend: Platform, backend: Backend) =
       logger.flush()
 
 import service
-var services = Services()
-services.addBuiltinServices()
+gServices = Services()
+gServices.addBuiltinServices()
+gServices.getService(PlatformService).get.setPlatform(plat)
 
 proc main() =
-  let app = waitFor newApp(backend.get, rend, fs, services, opts)
-  run(app, rend, backend.get)
+  let app = waitFor newApp(backend.get, plat, fs, gServices, opts)
+  run(app, plat, backend.get)
 
   try:
     log lvlInfo, "Shutting down editor"
     app.shutdown()
     log lvlInfo, "Shutting down platform"
-    rend.deinit()
+    plat.deinit()
   except:
     discard
 
