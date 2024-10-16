@@ -378,16 +378,17 @@ proc addCustomTextMove*(name: string, action: proc(editor: TextDocumentEditor, c
   customMoves[name] = action
 
 # Model commands
-template addModelCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
-  let context = getContextWithMode("editor.model", mode)
-  addCommand context, keys, proc() =
-    try:
-      let editor {.inject, used.} = ModelDocumentEditor(id: getActiveEditor())
-      body
-    except:
-      let m {.inject.} = mode
-      let k {.inject.} = keys
-      infof"ModelCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+template addModelCommandBlock*(mode: string, keys: string, body: untyped): untyped =
+  block:
+    let p = proc() =
+      try:
+        let editor {.inject, used.} = ModelDocumentEditor(id: getActiveEditor())
+        body
+      except:
+        let m {.inject.} = mode
+        let k {.inject.} = keys
+        infof"ModelCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+    addCommand getContextWithMode("editor.model", mode), keys, p, currentSourceLocation(-2)
 
 proc addModelCommand*(mode: string, keys: string, action: proc(editor: ModelDocumentEditor): void) =
   let context = getContextWithMode("editor.model", mode)

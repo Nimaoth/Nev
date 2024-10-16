@@ -13,17 +13,6 @@ export id
 
 logCategory "types"
 
-template defineUniqueId(name: untyped): untyped =
-  type name* = distinct Id
-
-  proc `==`*(a, b: name): bool {.borrow.}
-  proc `$`*(a: name): string {.borrow.}
-  proc isNone*(id: name): bool {.borrow.}
-  proc isSome*(id: name): bool {.borrow.}
-  proc hash*(id: name): Hash {.borrow.}
-  proc fromJsonHook*(id: var name, json: JsonNode) {.borrow.}
-  proc toJson*(id: name, opt: ToJsonOptions): JsonNode = newJString $id
-
 defineUniqueId(CellId)
 defineUniqueId(RoleId)
 defineUniqueId(ClassId)

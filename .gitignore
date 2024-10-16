@@ -87,6 +87,12 @@ config/wasm/callback_test_plugin.wasm
 config/callback_test_plugin.nim
 
 #
+config/custom.nim
+config/callback_test_plugin.wasm
+tools/collect_highlight_captures.nims
+big.txt
+bigger.txt
+/ast*
 .nev/keybindings.json
 .nev/settings-windows.json
 .nev/settings-windows-gui.json
