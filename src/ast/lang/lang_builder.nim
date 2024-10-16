@@ -414,7 +414,7 @@ proc updateLanguageFromModel*(repository: Repository, language: Language, model:
 
     var imports = newSeq[WasmImports]()
 
-    var imp = WasmImports(namespace: "env")
+    var imp = WasmImports(namespace: "model_env")
     imp.addFunction("print_i32", printI32)
     imp.addFunction("print_u32", printU32)
     imp.addFunction("print_i64", printI64)

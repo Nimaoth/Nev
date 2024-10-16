@@ -1,4 +1,4 @@
-import std/[macros, macrocache, genasts, json, strutils, os]
+import std/[macros, macrocache, genasts, json, strutils, os, unicode]
 import misc/[custom_logger, custom_async, util, id]
 import platform/filesystem
 import scripting_base, document_editor, expose, vfs
@@ -43,11 +43,88 @@ macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; ret
   result = quote do:
     default(`returnType`)
 
+var lineBuffer {.global.} = ""
+
+proc printI32(a: int32) =
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
+
+proc printU32(a: uint32) =
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
+
+proc printI64(a: int64) =
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
+
+proc printU64(a: uint64) =
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
+
+proc printF32(a: float32) =
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
+
+proc printF64(a: float64) =
+  {.gcsafe.}:
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
+
+proc printChar(a: int32) =
+  {.gcsafe.}:
+    lineBuffer.add $a.Rune
+
+proc printString(a: cstring, len: int32) =
+  {.gcsafe.}:
+    let str = $a
+    assert len <= a.len
+    lineBuffer.add str[0..<len]
+
+proc printLine() =
+  {.gcsafe.}:
+    let l = lineBuffer
+    lineBuffer = ""
+    log lvlInfo, l
+
+proc intToString(a: int32): cstring =
+  let res = $a
+  return res.cstring
+
+proc loadAppFile(a: cstring): cstring =
+  {.gcsafe.}:
+    let file = fs.loadApplicationFile($a)
+    # log lvlInfo, fmt"loadAppFile {a} -> {file}"
+    return file.cstring
+
 proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} =
   let (files, _) = await self.fs.getApplicationDirectoryListing(path)
 
   {.gcsafe.}:
     var editorImports = createEditorWasmImports()
+    editorImports.addFunction("loadAppFile", loadAppFile)
+
+  var modelImports = WasmImports(namespace: "model_env")
+  modelImports.addFunction("print_i32", printI32)
+  modelImports.addFunction("print_u32", printU32)
+  modelImports.addFunction("print_i64", printI64)
+  modelImports.addFunction("print_u64", printU64)
+  modelImports.addFunction("print_f32", printF32)
+  modelImports.addFunction("print_f64", printF64)
+  modelImports.addFunction("print_char", printChar)
+  modelImports.addFunction("print_string", printString)
+  modelImports.addFunction("print_line", printLine)
+  modelImports.addFunction("intToString", intToString)
 
   for file in files:
     if not file.endsWith(".wasm"):
@@ -55,7 +132,7 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
 
     try:
       log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"
-      let module = await newWasmModule(file, @[editorImports], self.fs)
+      let module = await newWasmModule(file, @[editorImports, modelImports], self.fs)
 
       if module.getSome(module):
         self.vfs.mount(file.splitFile.name & "/", newInMemoryVFS())

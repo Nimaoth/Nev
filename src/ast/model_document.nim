@@ -3189,12 +3189,12 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
     var compiler = newBaseLanguageWasmCompiler(self.projectService.repository, self.document.ctx)
     compiler.addBaseLanguage()
     compiler.addEditorLanguage()
-    compiler.addFunctionToCompile(function.get)
+    compiler.addFunctionToCompile(function.get, "plugin_main".some)
     let binary = compiler.compileToBinary()
 
   asyncSpawn self.projectService.workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
 
-  var imp = WasmImports(namespace: "env")
+  var imp = WasmImports(namespace: "model_env")
   imp.addFunction("print_i32", printI32)
   imp.addFunction("print_u32", printU32)
   imp.addFunction("print_i64", printI64)
@@ -3205,24 +3205,13 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   imp.addFunction("print_string", printString)
   imp.addFunction("print_line", printLine)
   imp.addFunction("intToString", intToString)
-  imp.addFunction("loadAppFile", loadAppFile)
 
   {.gcsafe.}:
     var editorImports = createEditorWasmImports()
-    editorImports.addFunction("print_i32", printI32)
-    editorImports.addFunction("print_u32", printU32)
-    editorImports.addFunction("print_i64", printI64)
-    editorImports.addFunction("print_u64", printU64)
-    editorImports.addFunction("print_f32", printF32)
-    editorImports.addFunction("print_f64", printF64)
-    editorImports.addFunction("print_char", printChar)
-    editorImports.addFunction("print_string", printString)
-    editorImports.addFunction("print_line", printLine)
-    editorImports.addFunction("intToString", intToString)
     editorImports.addFunction("loadAppFile", loadAppFile)
 
   measureBlock fmt"Create wasm module for '{name}'":
-    let module = await newWasmModule(binary.toArrayBuffer, @[editorImports])
+    let module = await newWasmModule(binary.toArrayBuffer, @[imp, editorImports])
     if module.isNone:
       log lvlError, fmt"Failed to create wasm module from generated binary for {name}: {getCurrentExceptionMsg()}"
       return
