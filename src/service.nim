@@ -25,6 +25,8 @@ type
     dependencies: Table[string, seq[string]]
     pending: Table[string, Future[Option[Service]]]
 
+var gServices*: Services
+
 method init*(self: Service): Future[Result[void, ref CatchableError]] {.base, async: (raises: []).} = discard
 
 proc getService*(self: Services, name: string, state: Option[ServiceState] = ServiceState.none): Option[Service] =
@@ -79,8 +81,8 @@ proc addService*(self: Services, name: string, service: Service, dependencies: s
     log lvlInfo, &"addService {name}, remaining dependencies: {dependencies}"
     self.dependencies[name] = dependencies
 
-proc getService*(self: Services, T: typedesc): Option[T] {.gcsafe, raises: [].} =
-  let service = self.getService(T.serviceName)
+proc getService*(self: Services, T: typedesc, state: Option[ServiceState] = ServiceState.none): Option[T] {.gcsafe, raises: [].} =
+  let service = self.getService(T.serviceName, state)
   if service.isSome and service.get of T:
     return service.get.T.some
   return T.none

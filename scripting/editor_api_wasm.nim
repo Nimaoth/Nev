@@ -391,17 +391,6 @@ proc platformLineDistance*(): float32 {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_changeLayoutProp_void_App_string_float32_wasm(arg: cstring): cstring {.
-    importc.}
-proc changeLayoutProp*(prop: string; change: float32) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add prop.toJson()
-  argsJson.add change.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_changeLayoutProp_void_App_string_float32_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_toggleStatusBarLocation_void_App_wasm(arg: cstring): cstring {.
     importc.}
 proc toggleStatusBarLocation*() {.gcsafe, raises: [].} =
@@ -549,14 +538,6 @@ proc prevView*() {.gcsafe, raises: [].} =
   let res {.used.} = editor_prevView_void_App_wasm(argsJsonString.cstring)
 
 
-proc editor_toggleMaximizeView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc toggleMaximizeView*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_toggleMaximizeView_void_App_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_moveCurrentViewPrev_void_App_wasm(arg: cstring): cstring {.importc.}
 proc moveCurrentViewPrev*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
@@ -570,15 +551,6 @@ proc moveCurrentViewNext*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_moveCurrentViewNext_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_setLayout_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc setLayout*(layout: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add layout.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setLayout_void_App_string_wasm(
       argsJsonString.cstring)
 
 
