@@ -124,7 +124,7 @@ proc fromJsonHook*(style: var set[FontStyle], jsonNode: JsonNode) =
   if text.contains "bold": style.incl Bold
   if text.contains "underline": style.incl Underline
 
-proc fromJsonHook*(style: var Style, jsonNode: JsonNode) =
+proc fromJsonHook*(style: var Style, jsonNode: JsonNode) {.raises: [ValueError].} =
   if jsonNode.hasKey("foreground"):
     style.foreground = some(jsonNode["foreground"].jsonTo Color)
   if jsonNode.hasKey("background"):
@@ -134,7 +134,7 @@ proc fromJsonHook*(style: var Style, jsonNode: JsonNode) =
   if jsonNode.hasKey("fontStyle"):
     style.fontStyle = jsonNode["fontStyle"].jsonTo set[FontStyle]
 
-proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme =
+proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme {.raises: [ValueError].} =
   result = Theme()
   result.name = json["name"].jsonTo string
 

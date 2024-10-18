@@ -386,7 +386,7 @@ proc renderLine*(
 
         # Fill rest of line with background
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = options.backgroundColor):
-          capture line, currentNode:
+          capture line:
             onClickAny btn:
               if options.handleClick.isNotNil:
                 options.handleClick(btn, pos, line.index, int.none)

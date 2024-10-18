@@ -275,11 +275,6 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
         return newJString(line)
 
       let name = parts[0]
-      if name != "Content-Length" and name != "Content-Type":
-        success = false
-        log lvlError, fmt"[parseResponse] Failed to parse response, unknown header: '{line}'"
-        return newJString(line)
-
       let value = parts[1]
       headers[name] = value.strip
       line = await client.connection.recvLine

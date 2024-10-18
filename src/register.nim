@@ -12,8 +12,8 @@ type
 
 func clone*(register: Register): Register =
   case register.kind
-  of Text: Register(kind: Text, text: register.text)
-  of Rope: Register(kind: Rope, rope: register.rope.clone())
+  of RegisterKind.Text: Register(kind: RegisterKind.Text, text: register.text)
+  of RegisterKind.Rope: Register(kind: RegisterKind.Rope, rope: register.rope.clone())
 
 proc getText*(register: Register): string =
   case register.kind
