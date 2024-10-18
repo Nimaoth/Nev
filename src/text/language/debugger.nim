@@ -39,7 +39,7 @@ type
     workspace: Workspace
     client: Option[DapClient]
     lastConfiguration*: Option[string]
-    activeView*: ActiveView = Variables
+    activeView*: ActiveView = ActiveView.Variables
     currentThreadIndex*: int
     currentFrameIndex*: int
     maxVariablesScrollOffset*: float
@@ -103,10 +103,10 @@ proc getEventHandlers*(inject: Table[string, EventHandler]): seq[EventHandler] =
   {.gcsafe.}:
     result.add gDebugger.eventHandler
     case gDebugger.activeView
-    of Threads: result.add gDebugger.threadsEventHandler
-    of StackTrace: result.add gDebugger.stackTraceEventHandler
-    of Variables: result.add gDebugger.variablesEventHandler
-    of Output:
+    of ActiveView.Threads: result.add gDebugger.threadsEventHandler
+    of ActiveView.StackTrace: result.add gDebugger.stackTraceEventHandler
+    of ActiveView.Variables: result.add gDebugger.variablesEventHandler
+    of ActiveView.Output:
       if gDebugger.outputEditor.isNotNil:
         result.add gDebugger.outputEditor.getEventHandlers(inject)
 
@@ -223,17 +223,17 @@ proc isCollapsed*(self: Debugger, ids: (ThreadId, FrameId, VariablesReference)):
 
 proc prevDebuggerView*(self: Debugger) {.expose("debugger").} =
   self.activeView = case self.activeView
-  of Threads: ActiveView.Output
-  of StackTrace: ActiveView.Threads
-  of Variables: ActiveView.StackTrace
-  of Output: ActiveView.Variables
+  of ActiveView.Threads: ActiveView.Output
+  of ActiveView.StackTrace: ActiveView.Threads
+  of ActiveView.Variables: ActiveView.StackTrace
+  of ActiveView.Output: ActiveView.Variables
 
 proc nextDebuggerView*(self: Debugger) {.expose("debugger").} =
   self.activeView = case self.activeView
-  of Threads: ActiveView.StackTrace
-  of StackTrace: ActiveView.Variables
-  of Variables: ActiveView.Output
-  of Output: ActiveView.Threads
+  of ActiveView.Threads: ActiveView.StackTrace
+  of ActiveView.StackTrace: ActiveView.Variables
+  of ActiveView.Variables: ActiveView.Output
+  of ActiveView.Output: ActiveView.Threads
 
 proc setDebuggerView*(self: Debugger, view: string) {.expose("debugger").} =
   self.activeView = view.parseEnum[:ActiveView].catch:

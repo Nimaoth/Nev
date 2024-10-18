@@ -159,8 +159,8 @@
       }
     },
     "boxy": {
-      "version": "0.4.2",
-      "vcsRevision": "8043ba7ac3458bdf7995f11cd06fe00548279ed6",
+      "version": "0.4.4",
+      "vcsRevision": "371c40a0b7cf8eced67a31797b019570154c3906",
       "url": "https://github.com/Nimaoth/boxy",
       "downloadMethod": "git",
       "dependencies": [
@@ -170,7 +170,7 @@
         "bitty"
       ],
       "checksums": {
-        "sha1": "9c638d41cfb2dbacd13a90006bf883935c9eab8d"
+        "sha1": "364d0f9d48141eb4bcee96bb0ff33372b476230f"
       }
     },
     "c2nim": {
@@ -347,13 +347,13 @@
       }
     },
     "nimsumtree": {
-      "version": "0.3.5",
-      "vcsRevision": "da06e6314415f8fef69f45114ab4e508270b73fe",
+      "version": "0.3.6",
+      "vcsRevision": "7c8f1bf0c1fcd2e0fa8698a0a717494b8f70609d",
       "url": "https://github.com/Nimaoth/nimsumtree",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "d61463035dc623240070a01d70a9e050d6f333a7"
+        "sha1": "31c8fd17d2c87d515cb5892e42fd7efa253ac085"
       }
     },
     "nimtreesitter": {
@@ -432,15 +432,15 @@
       }
     },
     "wasm3": {
-      "version": "0.1.14",
-      "vcsRevision": "6dfb94c735eecd0219f9aeecba9ad4c9349b942a",
+      "version": "0.1.15",
+      "vcsRevision": "a9a258f8484c1f35b5167ce547250bd15fa52a1d",
       "url": "https://github.com/Nimaoth/wasm3",
       "downloadMethod": "git",
       "dependencies": [
         "micros"
       ],
       "checksums": {
-        "sha1": "f602a174feb50a4a5f57e0ad4ffc5ef7f9ecf149"
+        "sha1": "86cc8176d1f9d07b948112f7f9677bef774c7c08"
       }
     },
     "ws": {

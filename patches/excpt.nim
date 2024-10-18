@@ -73,8 +73,12 @@ type
 
 when NimStackTraceMsgs:
   var frameMsgBuf* {.threadvar.}: string
+
+when not defined(nimV2):
+  var
+    framePtr {.threadvar.}: PFrame
+
 var
-  framePtr {.threadvar.}: PFrame
   currException {.threadvar.}: ref Exception
 
 when not gotoBasedExceptions:
@@ -148,10 +152,12 @@ when not gotoBasedExceptions:
 proc pushCurrentException(e: sink(ref Exception)) {.compilerRtl, inl.} =
   e.up = currException
   currException = e
+  #showErrorMessage2 "A"
 
 proc popCurrentException {.compilerRtl, inl.} =
   assert currException != nil, "popCurrentException: currException is nil"
   currException = currException.up
+  #showErrorMessage2 "B"
 
 proc popCurrentExceptionEx(id: uint) {.compilerRtl.} =
   discard "only for bootstrapping compatbility"

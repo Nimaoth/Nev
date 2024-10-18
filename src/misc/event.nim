@@ -38,7 +38,11 @@ proc invoke*[T: void](event: Event[T]) =
   # while iterating)
   # To guarantee a copy we use =dup, because otherwise nim thinks it can avoid the actual copy
   # because neither of them is modified from within this function.
-  let handlers = event.handlers.`=dup`
+  var handlers: typeof(event.handlers)
+  handlers.setLen event.handlers.len
+  for i in 0..event.handlers.high:
+    handlers[i] = event.handlers[i]
+
   for h in handlers:
     assert h.callback != nil
     h.callback()
@@ -48,7 +52,11 @@ proc invoke*[T](event: Event[T], arg: T) =
   # while iterating)
   # To guarantee a copy we use =dup, because otherwise nim thinks it can avoid the actual copy
   # because neither of them is modified from within this function.
-  let handlers = event.handlers.`=dup`
+  var handlers: typeof(event.handlers)
+  handlers.setLen event.handlers.len
+  for i in 0..event.handlers.high:
+    handlers[i] = event.handlers[i]
+
   for h in handlers:
     assert h.callback != nil
     h.callback(arg)
