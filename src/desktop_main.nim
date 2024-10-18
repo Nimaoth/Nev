@@ -245,6 +245,8 @@ import selector_popup
 import collab
 import scripting/scripting_base
 import layout
+import config_provider
+import vcs/vcs_api
 import wasm3, wasm3/[wasm3c, wasmconversions]
 
 generatePluginBindings()
@@ -376,12 +378,12 @@ proc run(app: App, plat: Platform, backend: Backend) =
     var outlierTime = 20.0
 
     let frameSoFar = totalTimer.elapsed.ms
-    if lastEvent.elapsed.ms > app.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
-      let time = app.getOption("platform.reduced-fps-2.ms", 30)
+    if lastEvent.elapsed.ms > app.config.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
+      let time = app.config.getOption("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
-    elif lastEvent.elapsed.ms > app.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
-      let time = app.getOption("platform.reduced-fps-2.ms", 15)
+    elif lastEvent.elapsed.ms > app.config.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
+      let time = app.config.getOption("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
     elif backend == Terminal and frameSoFar < 5:

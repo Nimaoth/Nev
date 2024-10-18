@@ -2,7 +2,6 @@ import std/[os, json, options, sequtils, strutils, unicode]
 import misc/[custom_async, custom_logger, async_process, util, regex, timer, event]
 import platform/filesystem
 import workspace
-import vcs/[vcs, vcs_git, vcs_perforce]
 import compilation_config
 
 import nimsumtree/[rope]
@@ -16,7 +15,6 @@ type
   WorkspaceFolderLocal* = ref object of Workspace
     path*: string
     additionalPaths: seq[string]
-    versionControlSystems*: seq[VersionControlSystem]
     isCacheUpdateInProgress: bool = false
 
 method settings*(self: WorkspaceFolderLocal): JsonNode =
@@ -323,29 +321,9 @@ method searchWorkspace*(self: WorkspaceFolderLocal, query: string, maxResults: i
 
   return res
 
-method getVcsForFile*(self: WorkspaceFolderLocal, file: string): Option[VersionControlSystem] =
-  let absolutePath = self.getAbsolutePath(file)
-  for vcs in self.versionControlSystems:
-    if absolutePath.startsWith(vcs.root):
-      return vcs.some
-
-method getAllVersionControlSystems*(self: WorkspaceFolderLocal): seq[VersionControlSystem] =
-  return self.versionControlSystems
-
 proc createInfo(path: string, additionalPaths: seq[string]): Future[WorkspaceInfo] {.async.} =
   let additionalPaths = additionalPaths.mapIt((it.absolutePath, it.some))
   return WorkspaceInfo(name: path, folders: @[(path.absolutePath, path.some)] & additionalPaths)
-
-proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
-  if dirExists(path // ".git"):
-    log lvlInfo, fmt"Found git repository in {path}"
-    let vcs = newVersionControlSystemGit(path)
-    return vcs.VersionControlSystem.some
-
-  if fileExists(path // ".p4ignore"):
-    log lvlInfo, fmt"Found perforce repository in {path}"
-    let vcs = newVersionControlSystemPerforce(path)
-    return vcs.VersionControlSystem.some
 
 proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal =
   new result
@@ -355,13 +333,6 @@ proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]):
   result.info = createInfo(path, result.additionalPaths)
 
   result.loadDefaultIgnoreFile()
-
-  if detectVersionControlSystemIn(result.path).getSome(vcs):
-    result.versionControlSystems.add vcs
-
-  for path in result.additionalPaths:
-    if detectVersionControlSystemIn(path).getSome(vcs):
-      result.versionControlSystems.add vcs
 
   result.recomputeFileCache()
 

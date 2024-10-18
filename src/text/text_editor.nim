@@ -45,6 +45,10 @@ type
 type TextDocumentEditor* = ref object of DocumentEditor
   app*: AppInterface
   platform*: Platform
+  configProvider: ConfigProvider
+  services*: Services
+  vcs: VCSService
+
   document*: TextDocument
   snapshot: BufferSnapshot
   selectionAnchors: seq[(Anchor, Anchor)]
@@ -62,8 +66,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   diagnosticsId*: Id
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
-
-  configProvider: ConfigProvider
 
   selectionsBeforeReload: Selections
   selectionsInternal: Selections
@@ -1794,7 +1796,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   inc self.diffRevision
   let revision = self.diffRevision
 
-  let vcs = self.document.workspace.get.getVcsForFile(self.document.filename).getOr:
+  let vcs = self.vcs.getVcsForFile(self.document.filename).getOr:
     log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{self.document.filename}'"
     return
 
@@ -1866,7 +1868,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
 
   let ws = self.document.workspace.get
   let path = self.document.filename
-  let vcs = ws.getVcsForFile(path).getOr:
+  let vcs = self.vcs.getVcsForFile(path).getOr:
     log lvlError, fmt"No vcs assigned to document '{path}'"
     return
 
@@ -3459,6 +3461,8 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface, fs: File
   self.app = app
   self.fs = fs
   self.platform = app.platform
+  self.services = app.getServices()
+  self.vcs = self.services.getService(VCSService).get
   self.app.registerEditor(self)
   let config = app.getEventHandlerConfig("editor.text")
   assignEventHandler(self.eventHandler, config):

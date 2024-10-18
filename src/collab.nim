@@ -188,8 +188,4 @@ proc hostCollaboratorAsync(port: int) {.async.} =
 proc hostCollaborator*(port: int = 6969) {.expose("collab").} =
   asyncSpawn hostCollaboratorAsync(port)
 
-genDispatcher("collab")
 addGlobalDispatchTable "collab", genDispatchTable("collab")
-
-proc dispatchEvent*(action: string, args: JsonNode): Option[JsonNode] =
-  dispatch(action, args)

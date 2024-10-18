@@ -1,10 +1,13 @@
 import std/[json, tables]
+import misc/[wrap]
+
+export JsonCallError
 
 type
   ExposedFunction* = object
     name*: string
     docs*: string
-    dispatch*: proc(arg: JsonNode): JsonNode
+    dispatch*: proc(arg: JsonNode): JsonNode {.gcsafe, raises: [JsonCallError].}
     params*: seq[tuple[name: string, typ: string]]
     returnType*: string
     signature*: string

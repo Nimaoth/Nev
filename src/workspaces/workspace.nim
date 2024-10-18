@@ -1,7 +1,6 @@
 import std/[json, options, os, strutils]
 import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger, event]
 import platform/filesystem
-import vcs/vcs
 import vfs
 import service
 
@@ -72,9 +71,6 @@ proc ignorePath*(workspace: Workspace, path: string): bool =
 
     return true
   return false
-
-method getVcsForFile*(self: Workspace, file: string): Option[VersionControlSystem] {.base.} = discard
-method getAllVersionControlSystems*(self: Workspace): seq[VersionControlSystem] {.base.} = discard
 
 method isReadOnly*(self: Workspace): bool {.base.} = true
 method settings*(self: Workspace): JsonNode {.base.} = discard

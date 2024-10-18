@@ -4,6 +4,22 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc editor_getOptionJson_JsonNode_ConfigService_string_JsonNode_wasm(
+    arg: cstring): cstring {.importc.}
+proc getOptionJson*(path: string; default: JsonNode): JsonNode {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add path.toJson()
+  argsJson.add default.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_getOptionJson_JsonNode_ConfigService_string_JsonNode_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_reapplyConfigKeybindings_void_App_bool_bool_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc reapplyConfigKeybindings*(app: bool = false; home: bool = false;
@@ -238,52 +254,6 @@ proc openLocalWorkspace*(path: string) {.gcsafe, raises: [].} =
   argsJson.add path.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_openLocalWorkspace_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_getFlag_bool_App_string_bool_wasm(arg: cstring): cstring {.importc.}
-proc getFlag*(flag: string; default: bool = false): bool {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add flag.toJson()
-  argsJson.add default.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getFlag_bool_App_string_bool_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_setFlag_void_App_string_bool_wasm(arg: cstring): cstring {.importc.}
-proc setFlag*(flag: string; value: bool) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add flag.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setFlag_void_App_string_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_toggleFlag_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc toggleFlag*(flag: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add flag.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_toggleFlag_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_setOption_void_App_string_JsonNode_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc setOption*(option: string; value: JsonNode; override: bool = true) {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add option.toJson()
-  argsJson.add value.toJson()
-  argsJson.add override.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setOption_void_App_string_JsonNode_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -767,16 +737,6 @@ proc installTreesitterParser*(language: string; host: string = "github.com") {.
       argsJsonString.cstring)
 
 
-proc editor_chooseGitActiveFiles_void_App_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc chooseGitActiveFiles*(all: bool = false) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add all.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_chooseGitActiveFiles_void_App_bool_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_exploreFiles_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc exploreFiles*(root: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
@@ -882,13 +842,6 @@ proc saveSession*(sessionFile: string = "") {.gcsafe, raises: [].} =
   let argsJsonString = $argsJson
   let res {.used.} = editor_saveSession_void_App_string_wasm(
       argsJsonString.cstring)
-
-
-proc editor_logOptions_void_App_wasm(arg: cstring): cstring {.importc.}
-proc logOptions*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_logOptions_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_dumpKeymapGraphViz_void_App_string_wasm(arg: cstring): cstring {.
@@ -1288,129 +1241,6 @@ proc getSessionDataJson*(path: string; default: JsonNode): JsonNode {.gcsafe,
     result = parseJson($res).jsonTo(typeof(result))
   except:
     raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_scriptGetOptionJson_JsonNode_string_JsonNode_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptGetOptionJson*(path: string; default: JsonNode): JsonNode {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add default.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptGetOptionJson_JsonNode_string_JsonNode_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_scriptGetOptionInt_int_string_int_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptGetOptionInt*(path: string; default: int): int {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add default.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptGetOptionInt_int_string_int_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_scriptGetOptionFloat_float_string_float_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptGetOptionFloat*(path: string; default: float): float {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add default.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptGetOptionFloat_float_string_float_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_scriptGetOptionBool_bool_string_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptGetOptionBool*(path: string; default: bool): bool {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add default.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptGetOptionBool_bool_string_bool_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_scriptGetOptionString_string_string_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptGetOptionString*(path: string; default: string): string {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add default.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptGetOptionString_string_string_string_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_scriptSetOptionInt_void_string_int_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptSetOptionInt*(path: string; value: int) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptSetOptionInt_void_string_int_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_scriptSetOptionFloat_void_string_float_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptSetOptionFloat*(path: string; value: float) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptSetOptionFloat_void_string_float_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_scriptSetOptionBool_void_string_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptSetOptionBool*(path: string; value: bool) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptSetOptionBool_void_string_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_scriptSetOptionString_void_string_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptSetOptionString*(path: string; value: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptSetOptionString_void_string_string_wasm(
-      argsJsonString.cstring)
 
 
 proc editor_scriptSetCallback_void_string_int_wasm(arg: cstring): cstring {.

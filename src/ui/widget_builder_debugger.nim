@@ -8,6 +8,7 @@ import app, theme, view
 import text/text_editor
 import text/language/debugger
 import text/language/dap_client
+import config_provider
 
 import ui/node
 
@@ -287,7 +288,7 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[Over
   let dirty = self.dirty
   self.dirty = false
 
-  let transparentBackground = getOption[bool](app, "ui.background.transparent", false)
+  let transparentBackground = app.config.getOption[:bool]("ui.background.transparent", false)
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
   var backgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(0.025)
   var activeBackgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 40/255))

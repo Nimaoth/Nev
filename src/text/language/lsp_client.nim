@@ -1059,11 +1059,7 @@ proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
   debugf"lspLogServerDebug {val}"
   logServerDebug = val
 
-genDispatcher("lsp")
-addActiveDispatchTable "lsp", genDispatchTable("lsp"), global=true
-
-proc dispatchEvent*(action: string, args: JsonNode): Option[JsonNode] =
-  dispatch(action, args)
+addGlobalDispatchTable "lsp", genDispatchTable("lsp")
 
 proc handleNotifiesOpened(client: LSPClient) {.async, gcsafe.} =
   while client != nil:

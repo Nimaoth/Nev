@@ -6,6 +6,9 @@ import platform/filesystem
 
 from scripting_api import EditorId, newEditorId
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "document-editor"
 
 type DocumentEditor* = ref object of RootObj

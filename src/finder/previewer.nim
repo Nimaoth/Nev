@@ -4,6 +4,9 @@ import finder
 
 export previewer, finder
 
+{.push gcsafe.}
+{.push raises: [].}
+
 logCategory "previewer"
 
 type

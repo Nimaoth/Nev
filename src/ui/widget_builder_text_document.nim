@@ -504,15 +504,15 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   else:
     flags.incl FillY
 
-  let inclusive = getOption[bool](app, "editor.text.inclusive-selection", false)
+  let inclusive = app.config.getOption[:bool]("editor.text.inclusive-selection", false)
 
-  let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute)
+  let lineNumbers = self.lineNumbers.get app.config.getOption[:LineNumbers]("editor.text.line-numbers", LineNumbers.Absolute)
   let charWidth = builder.charWidth
 
   let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
 
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
-  let showContextLines = not renderDiff and getOption[bool](app, "editor.text.context-lines", true)
+  let showContextLines = not renderDiff and app.config.getOption[:bool]("editor.text.context-lines", true)
 
   let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
@@ -647,8 +647,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   options.handleHover = handleHover
   options.handleEndHover = handleEndHover
 
-  options.wrapLineEndChar = getOption[string](app, "editor.text.wrap-line-end-char", "↲")
-  options.wrapLine = getOption[bool](app, "editor.text.wrap-lines", true)
+  options.wrapLineEndChar = app.config.getOption[:string]("editor.text.wrap-line-end-char", "↲")
+  options.wrapLine = app.config.getOption[:bool]("editor.text.wrap-lines", true)
   options.wrapLineEndColor = app.theme.tokenColor(@["comment"], color(100/255, 100/255, 100/255))
 
   var selectionsPerLine = initTable[int, seq[Selection]]()
@@ -694,7 +694,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     var diagnosticInfo = CursorLocationInfo.none
 
     proc handleScroll(delta: float) =
-      self.scrollText(delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0))
+      self.scrollText(delta * app.config.asConfigProvider.getValue("text.scroll-speed", 40.0))
 
     proc handleLine(i: int, y: float, down: bool) =
       assert i in 0..<self.document.numLines
@@ -961,7 +961,7 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
       textNode = currentNode
 
     onScroll:
-      let scrollSpeed = app.asConfigProvider.getValue("text.hover-scroll-speed", 20.0)
+      let scrollSpeed = app.config.asConfigProvider.getValue("text.hover-scroll-speed", 20.0)
       # todo: clamp bottom
       self.hoverScrollOffset = clamp(self.hoverScrollOffset + delta.y * scrollSpeed, -1000, 0)
       self.markDirty()
@@ -979,7 +979,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let transparentBackground = getOption[bool](app, "ui.background.transparent", false)
+  let transparentBackground = app.config.getOption[:bool]("ui.background.transparent", false)
   var backgroundColor = app.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
   let borderColor = app.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
   let selectedBackgroundColor = app.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
@@ -1009,7 +1009,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     completionsPanel = currentNode
 
     proc handleScroll(delta: float) =
-      let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
+      let scrollAmount = delta * app.config.asConfigProvider.getValue("text.scroll-speed", 40.0)
       self.scrollOffset += scrollAmount
       self.markDirty()
 
@@ -1116,8 +1116,8 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let dirty = self.dirty
   self.resetDirty()
 
-  let transparentBackground = getOption[bool](app, "ui.background.transparent", false)
-  let darkenInactive = getOption[float](app, "text.background.inactive-darken", 0.025)
+  let transparentBackground = app.config.getOption[:bool]("ui.background.transparent", false)
+  let darkenInactive = app.config.getOption[:float]("text.background.inactive-darken", 0.025)
 
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
   var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(darkenInactive)
@@ -1200,8 +1200,8 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
                   self.previousBaseIndex = targetLine
                   self.scrollOffset = 0
                 else:
-                  let configMarginRelative = getOption[bool](app, "text.cursor-margin-relative", true)
-                  let configMargin = getOption[float](app, "text.cursor-margin", 0.2)
+                  let configMarginRelative = app.config.getOption[:bool]("text.cursor-margin-relative", true)
+                  let configMargin = app.config.getOption[:float]("text.cursor-margin", 0.2)
                   let margin = if self.targetLineMargin.getSome(margin):
                     clamp(margin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
                   elif configMarginRelative:

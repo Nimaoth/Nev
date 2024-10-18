@@ -4,7 +4,7 @@ import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger]
-import app, document_editor, theme, compilation_config, view, layout
+import app, document_editor, theme, compilation_config, view, layout, config_provider
 
 when enableAst:
   import ui/[widget_builder_model_document]
@@ -33,7 +33,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
-        let maxViews = getOption[int](self, "editor.maxViews", int.high)
+        let maxViews = self.config.getOption[:int]("editor.maxViews", int.high)
         let maximizedText = if self.layout.maximizeView:
           "[Fullscreen]"
         elif maxViews == int.high:

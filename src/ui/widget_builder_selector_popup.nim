@@ -7,6 +7,7 @@ import ui/[widget_builders_base, widget_library]
 import text/text_editor
 import app, selector_popup, theme
 import finder/finder
+import config_provider
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
@@ -117,7 +118,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
                   var row: seq[UINode] = @[]
 
                   builder.panel(&{FillX, SizeToContentY}):
-                    if app.getOption("ui.selector.show-score", false):
+                    if app.config.getOption("ui.selector.show-score", false):
                       row.add builder.createTextWithMaxWidth($item.score, maxColumnWidth, "...", detailColor, &{TextItalic})
 
                     row.add builder.highlightedText(name, matchIndices, textColor,
