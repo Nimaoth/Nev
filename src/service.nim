@@ -42,6 +42,7 @@ proc initService(self: Services, name: string) {.async.} =
   log lvlInfo, &"initService {name}"
   let service = self.registered[name]
   let res = await service.init()
+  log lvlInfo, &"initService {name} done"
   if res.isOk:
     self.running[name] = service
     service.state = Running
@@ -88,7 +89,7 @@ proc getService*(self: Services, T: typedesc, state: Option[ServiceState] = Serv
   return T.none
 
 proc getServiceAsync*(self: Services, T: typedesc): Future[Option[T]] {.gcsafe, async: (raises: []).} =
-  var service = self.getService(T.serviceName)
+  var service = self.getService(T.serviceName, ServiceState.Running.some)
   if service.isSome and service.get of T:
     return service.get.T.some
   self.pending.withValue(T.serviceName, fut):

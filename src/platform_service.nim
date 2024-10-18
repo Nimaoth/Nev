@@ -24,5 +24,6 @@ method init*(self: PlatformService): Future[Result[void, ref CatchableError]] {.
 
 proc setPlatform*(self: PlatformService, platform: Platform) =
   assert self.platform.isNil
+  log lvlInfo, &"PlatformService.setPlatform"
   self.platform = platform
   self.platformSetFuture.complete()

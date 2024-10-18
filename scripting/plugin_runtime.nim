@@ -140,34 +140,14 @@ proc getLineCount*(editor: TextDocumentEditor): int =
   return scriptGetTextEditorLineCount(editor.id)
 
 proc getOption*[T](path: string, default: T = T.default): T =
-  when T is bool:
-    return scriptGetOptionBool(path, default).T
-  elif T is enum:
-    return parseEnum[T](scriptGetOptionString(path, ""), default)
-  elif T is Ordinal:
-    return scriptGetOptionInt(path, default).T
-  elif T is float32 | float64:
-    return scriptGetOptionFloat(path, default).T
-  elif T is string:
-    return scriptGetOptionString(path, default)
-  else:
-    let json: JsonNode = scriptGetOptionJson(path, newJNull())
+  try:
+    let json: JsonNode = plugin_api.getOptionJson(path, newJNull())
     return json.jsonTo T
+  except:
+    return default
 
 proc setOption*[T](path: string, value: T) =
-  # echo "setOption ", path, ", ", value
-  when T is bool:
-    scriptSetOptionBool(path, value)
-  elif T is enum:
-    scriptSetOptionString(path, $value)
-  elif T is Ordinal:
-    scriptSetOptionInt(path, value.int)
-  elif T is float32 | float64:
-    scriptSetOptionFloat(path, value.float64)
-  elif T is string:
-    scriptSetOptionString(path, value)
-  else:
-    {.fatal: ("Can't set option with type " & $T).}
+  plugin_api.setOption(path, value.toJson)
 
 proc getSessionData*[T](path: string, default: T = T.default): T =
   return getSessionDataJson(path, default.toJson).jsonTo(T)

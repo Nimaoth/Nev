@@ -6,7 +6,7 @@ import std/options
 
 proc loadVSCodeSnippets*(file: string, language: string) {.expose("load-vscode-snippets").} =
   loadWorkspaceFile file, proc(content: Option[string]) =
-    if content.isNone:
+    if content.isNone or content.get.len == 0:
       return
 
     try:
@@ -19,7 +19,7 @@ proc loadVSCodeSnippets*(file: string, language: string) {.expose("load-vscode-s
 
 proc loadVSCodeDebuggerConfig*(file: string) {.expose("load-vscode-debugger-config").} =
   loadWorkspaceFile file, proc(content: Option[string]) =
-    if content.isNone:
+    if content.isNone or content.get.len == 0:
       return
 
     try:

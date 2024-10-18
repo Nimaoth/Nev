@@ -72,13 +72,13 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
 
 ###########################################################################
 
-proc getEditor(): Option[LayoutService] =
+proc getLayoutService(): Option[LayoutService] =
   {.gcsafe.}:
     if gServices.isNil: return LayoutService.none
     return gServices.getService(LayoutService)
 
 static:
-  addInjector(LayoutService, getEditor)
+  addInjector(LayoutService, getLayoutService)
 
 proc setLayout*(self: LayoutService, layout: string) {.expose("layout").} =
   self.layout = case layout
@@ -96,8 +96,4 @@ proc toggleMaximizeView*(self: LayoutService) {.expose("layout").} =
   self.maximizeView = not self.maximizeView
   self.platform.requestRender()
 
-genDispatcher("layout")
 addGlobalDispatchTable "layout", genDispatchTable("layout")
-
-proc dispatchEvent*(action: string, args: JsonNode): Option[JsonNode] =
-  dispatch(action, args)

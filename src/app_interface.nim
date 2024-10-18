@@ -46,6 +46,7 @@ traitRef AppInterface:
   method getServices*(self: AppInterface): Services {.gcsafe, raises: [].}
   method getService*(self: AppInterface, name: string): Option[Service] {.gcsafe, raises: [].}
   method addService*(self: AppInterface, name: string, service: Service) {.gcsafe, raises: [].}
+  method createAndAddView*(self: AppInterface, document: Document, append: bool = false): DocumentEditor {.gcsafe, raises: [].}
 
 proc getService*(self: AppInterface, T: typedesc[Service]): Option[T] {.gcsafe, raises: [].} =
   let service = self.getService(T.serviceName)

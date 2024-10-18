@@ -537,3 +537,29 @@ proc toJArray*(arr: openArray[JsonNode]): JsonNode =
   result = newJArray()
   for v in arr:
     result.add v
+
+proc extendJson*(a: var JsonNode, b: JsonNode, extend: bool) =
+  if not extend:
+    a = b
+    return
+
+  func parse(action: string): (string, bool) =
+    if action.startsWith("+"):
+      (action[1..^1], true)
+    else:
+      (action, false)
+
+  if (a.kind, b.kind) == (JObject, JObject):
+    for (action, value) in b.fields.pairs:
+      let (key, extend) = action.parse()
+      if a.hasKey(key):
+        a.fields[key].extendJson(value, extend)
+      else:
+        a[key] = value
+
+  elif (a.kind, b.kind) == (JArray, JArray):
+    for value in b.elems:
+      a.elems.add value
+
+  else:
+    a = b
