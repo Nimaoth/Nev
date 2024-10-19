@@ -197,8 +197,6 @@ type
 
     sessionFile*: string
 
-    gitIgnore: Globs
-
     currentLocationListIndex: int
     finderItems: seq[FinderItem]
     previewer: Option[DisposableRef[Previewer]]
@@ -1053,8 +1051,6 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
     gTheme = self.theme
 
   self.currentView = 0
-
-  self.gitIgnore = parseGlobs(self.fs.loadApplicationFile(".gitignore"))
 
   assignEventHandler(self.eventHandler, self.getEventHandlerConfig("editor")):
     onAction:
@@ -3322,69 +3318,6 @@ proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").
       gEditor.platform.requestRender()
     if gEditor.getEditorForId(editorId).getSome(editor):
       discard editor.eventHandler.handleInput(text)
-
-proc scriptTextEditorSelection*(editorId: EditorId): Selection {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return ((0, 0), (0, 0))
-    defer:
-      gEditor.platform.requestRender()
-    if gEditor.getEditorForId(editorId).getSome(editor):
-      if editor of TextDocumentEditor:
-        let editor = TextDocumentEditor(editor)
-        return editor.selection
-    return ((0, 0), (0, 0))
-
-proc scriptSetTextEditorSelection*(editorId: EditorId, selection: Selection) {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return
-    defer:
-      gEditor.platform.requestRender()
-    if gEditor.getEditorForId(editorId).getSome(editor):
-      if editor of TextDocumentEditor:
-        editor.TextDocumentEditor.selection = selection
-
-proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return @[((0, 0), (0, 0))]
-    if gEditor.getEditorForId(editorId).getSome(editor):
-      if editor of TextDocumentEditor:
-        let editor = TextDocumentEditor(editor)
-        return editor.selections
-    return @[((0, 0), (0, 0))]
-
-proc scriptSetTextEditorSelections*(editorId: EditorId, selections: seq[Selection]) {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return
-    defer:
-      gEditor.platform.requestRender()
-    if gEditor.getEditorForId(editorId).getSome(editor):
-      if editor of TextDocumentEditor:
-        editor.TextDocumentEditor.selections = selections
-
-proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return ""
-    if gEditor.getEditorForId(editorId).getSome(editor):
-      if editor of TextDocumentEditor:
-        let editor = TextDocumentEditor(editor)
-        if line >= 0 and line < editor.document.numLines:
-          return $editor.document.getLine(line)
-    return ""
-
-proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return 0
-    if gEditor.getEditorForId(editorId).getSome(editor):
-      if editor of TextDocumentEditor:
-        let editor = TextDocumentEditor(editor)
-        return editor.document.numLines
-    return 0
 
 proc setSessionDataJson*(self: App, path: string, value: JsonNode, override: bool = true) {.expose("editor").} =
   if self.isNil or path.len == 0:

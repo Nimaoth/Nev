@@ -1086,6 +1086,9 @@ proc getText*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool
     string {.expose("editor.text").} =
   return self.document.contentString(selection, inclusiveEnd)
 
+proc getLine*(self: TextDocumentEditor, line: int): string {.expose("editor.text").} =
+  return $self.document.getLine(line)
+
 proc insert*(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true,
     record: bool = true): seq[Selection] {.expose("editor.text").} =
   return self.document.edit(selections, self.selections, [text], notify, record)
@@ -3183,8 +3186,14 @@ proc assignKeys*(self: TextDocumentEditor, cursors: openArray[Cursor]): seq[stri
 proc getSelection*(self: TextDocumentEditor): Selection {.expose("editor.text").} =
   self.selection
 
+proc getSelections*(self: TextDocumentEditor): Selections {.expose("editor.text").} =
+  self.selections
+
 proc setSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
   self.selection = selection
+
+proc setSelections*(self: TextDocumentEditor, selections: Selections) {.expose("editor.text").} =
+  self.selections = selections
 
 proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
   self.targetSelection = selection
