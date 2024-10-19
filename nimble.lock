@@ -326,16 +326,6 @@
         "sha1": "bf02a33b9ac528b92aec2088bb8b38d91eb23603"
       }
     },
-    "nimscripter": {
-      "version": "1.0.21",
-      "vcsRevision": "49155be204bf823de4d89de663046bdf43d3e1a9",
-      "url": "https://github.com/Nimaoth/nimscripter",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "dfe09fbcf8040027630301c43b4dbe9d9f0fab4d"
-      }
-    },
     "nimsumtree": {
       "version": "0.3.6",
       "vcsRevision": "7c8f1bf0c1fcd2e0fa8698a0a717494b8f70609d",
