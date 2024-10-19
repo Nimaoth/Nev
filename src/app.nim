@@ -167,16 +167,10 @@ proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previe
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
-proc getServices*(self: App): Services
 
 implTrait AppInterface, App:
-  proc platform*(self: App): Platform = self.platform
-
-  proc configProvider*(self: App): ConfigProvider = self.config.asConfigProvider
-
   getActiveEditor(Option[DocumentEditor], App)
   setLocationList(void, App, seq[FinderItem], Option[Previewer])
-  getServices(Services, App)
 
 type
   AppLogger* = ref object of Logger
@@ -1267,9 +1261,6 @@ proc closeUnusedDocuments*(self: App) =
 
     # Only close one document on each iteration so we don't create spikes
     break
-
-proc getServices*(self: App): Services =
-  self.services
 
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = initialValue
