@@ -16,7 +16,6 @@ logCategory "selector"
 
 type
   SelectorPopup* = ref object of Popup
-    app*: AppInterface
     services*: Services
     layout*: LayoutService
     events*: EventHandlerService
@@ -355,7 +354,7 @@ proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].} =
 
   self.markDirty()
 
-proc newSelectorPopup*(app: AppInterface, fs: Filesystem, scopeName = string.none, finder = Finder.none,
+proc newSelectorPopup*(services: Services, fs: Filesystem, scopeName = string.none, finder = Finder.none,
     previewer: sink Option[DisposableRef[Previewer]] = DisposableRef[Previewer].none): SelectorPopup =
 
   log lvlInfo, "[newSelectorPopup] " & $scopeName
@@ -364,16 +363,14 @@ proc newSelectorPopup*(app: AppInterface, fs: Filesystem, scopeName = string.non
   assert finder.isSome
   assert finder.get.isNotNil
 
-  let services = app.getServices()
-
-  var popup = SelectorPopup(app: app)
+  var popup = SelectorPopup()
   popup.services = services
   popup.layout = services.getService(LayoutService).get
   popup.events = services.getService(EventHandlerService).get
   popup.plugins = services.getService(PluginService).get
   popup.scale = vec2(0.5, 0.5)
   let document = newTextDocument(services, fs, createLanguageServer=false)
-  popup.textEditor = newTextEditor(document, app, fs, services)
+  popup.textEditor = newTextEditor(document, fs, services)
   popup.textEditor.usage = "search-bar"
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
@@ -397,7 +394,7 @@ proc newSelectorPopup*(app: AppInterface, fs: Filesystem, scopeName = string.non
     let previewDocument = newTextDocument(services, fs, createLanguageServer=false)
     previewDocument.readOnly = true
 
-    popup.previewEditor = newTextEditor(previewDocument, app, fs, services)
+    popup.previewEditor = newTextEditor(previewDocument, fs, services)
     popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
     popup.previewEditor.lineNumbers = api.LineNumbers.None.some

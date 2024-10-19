@@ -1,11 +1,11 @@
-import std/[tables, options, json, sugar, sets]
+import std/[tables, options, json, sugar]
 import bumpy
 import results
 import platform/platform
 import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util]
 import scripting/expose
 import workspaces/workspace
-import service, platform_service, dispatch_tables, document, document_editor, view, events, config_provider, popup
+import service, platform_service, dispatch_tables, document, document_editor, view, events, config_provider, popup, selector_popup_builder
 from scripting_api import EditorId
 
 {.push gcsafe.}
@@ -26,6 +26,8 @@ type
     document*: Document # todo: remove
     editor*: DocumentEditor
 
+  PushSelectorPopupImpl = proc(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.gcsafe, raises: [].}
+
   LayoutService* = ref object of Service
     platform: Platform
     workspace: Workspace
@@ -45,6 +47,10 @@ type
     onEditorDeregistered*: Event[DocumentEditor]
 
     pinnedDocuments*: seq[Document]
+
+    pushSelectorPopupImpl: PushSelectorPopupImpl
+
+var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
@@ -68,6 +74,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   self.editors = self.services.getService(DocumentEditorService).get
   self.layout = HorizontalLayout()
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
+  self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
   asyncSpawn self.waitForWorkspace()
   return ok()
 
@@ -270,6 +277,9 @@ proc popPopup*(self: LayoutService, popup: Popup) =
     discard self.popups.pop
   self.platform.requestRender()
 
+proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
+  self.pushSelectorPopupImpl(self, builder)
+
 ###########################################################################
 
 proc getLayoutService(): Option[LayoutService] =
@@ -426,6 +436,23 @@ proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true
       return view.EditorView.editor.some
 
   return DocumentEditor.none
+
+proc openWorkspaceFile*(self: LayoutService, path: string, append: bool = false): Option[DocumentEditor] =
+  defer:
+    self.platform.requestRender()
+
+  let path = self.workspace.getAbsolutePath(path)
+
+  log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
+  if self.tryOpenExisting(path, append = append).getSome(editor):
+    log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
+    return editor.some
+
+  let document = self.editors.getOrOpenDocument(path).getOr:
+    log(lvlError, fmt"Failed to load file {path}")
+    return DocumentEditor.none
+
+  return self.createAndAddView(document, append = append)
 
 proc openFile*(self: LayoutService, path: string, appFile: bool = false): Option[DocumentEditor] =
   defer:

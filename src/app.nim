@@ -1,13 +1,13 @@
 import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, rope_utils]
+  array_set, delayed_task, disposable_ref]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_command_line
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, register
+import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config, vfs
@@ -114,19 +114,10 @@ type
     disableLogFrameTime*: bool = true
     logBuffer = ""
 
-    recordingKeys: seq[string]
-    recordingCommands: seq[string]
-    bIsReplayingKeys: bool = false
-    bIsReplayingCommands: bool = false
-
-    callbacks: Table[string, int]
-
     workspace*: Workspace
 
     wasmScriptContext*: ScriptContextWasm
     initializeCalled: bool
-
-    currentScriptContext: Option[ScriptContext] = ScriptContext.none
 
     statusBarOnTop*: bool
     inputHistory*: string
@@ -169,10 +160,7 @@ type
 var gEditor* {.exportc.}: App = nil
 
 proc handleLog(self: App, level: Level, args: openArray[string])
-proc recordCommand*(self: App, command: string, args: string)
-proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[DocumentEditor]
 proc getActiveEditor*(self: App): Option[DocumentEditor]
-proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup
 proc help*(self: App, about: string = "")
 proc setHandleInputs*(self: App, context: string, value: bool)
 proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none)
@@ -184,13 +172,9 @@ proc getServices*(self: App): Services
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
 
-  recordCommand(void, App, string, string)
-
   proc configProvider*(self: App): ConfigProvider = self.config.asConfigProvider
 
-  openWorkspaceFile(Option[DocumentEditor], App, string, bool)
   getActiveEditor(Option[DocumentEditor], App)
-  pushSelectorPopup(ISelectorPopup, App, SelectorPopupBuilder)
   setLocationList(void, App, seq[FinderItem], Option[Previewer])
   getServices(Services, App)
 
@@ -399,10 +383,10 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
 
 proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
   try:
-    let oldScriptContext = self.currentScriptContext
-    self.currentScriptContext = ScriptContext.none
+    let oldScriptContext = self.plugins.currentScriptContext
+    self.plugins.currentScriptContext = ScriptContext.none
     defer:
-      self.currentScriptContext = oldScriptContext
+      self.plugins.currentScriptContext = oldScriptContext
 
     for (scope, commands) in json.fields.pairs:
       for (keys, command) in commands.fields.pairs:
@@ -783,7 +767,7 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
   self.languageServerCommandLine = newLanguageServerCommandLine(self.services)
   let commandLineTextDocument = newTextDocument(self.services, self.fs, language="command-line".some, languageServer=self.languageServerCommandLine.some)
   self.editors.documents.add commandLineTextDocument
-  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.fs, self.services)
+  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.fs, self.services)
   self.commandLineTextEditor.renderHeader = false
   self.getCommandLineTextEditor.usage = "command-line"
   self.getCommandLineTextEditor.disableScrolling = true
@@ -1180,11 +1164,11 @@ proc addScriptAction*(self: App, name: string, docs: string = "",
     log lvlError, fmt"Duplicate script action {name}"
     return
 
-  if self.currentScriptContext.isNone:
+  if self.plugins.currentScriptContext.isNone:
     log lvlError, fmt"addScriptAction({name}) should only be called from a script"
     return
 
-  self.scriptActions[name] = ScriptAction(name: name, scriptContext: self.currentScriptContext.get)
+  self.scriptActions[name] = ScriptAction(name: name, scriptContext: self.plugins.currentScriptContext.get)
 
   proc dispatch(arg: JsonNode): JsonNode =
     return self.callScriptAction(name, arg)
@@ -1399,23 +1383,6 @@ proc loadWorkspaceFile*(self: App, path: string) =
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
-proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[DocumentEditor] =
-  defer:
-    self.platform.requestRender()
-
-  let path = self.workspace.getAbsolutePath(path)
-
-  log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
-  if self.layout.tryOpenExisting(path, append = append).getSome(editor):
-    log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
-    return editor.some
-
-  let document = self.editors.getOrOpenDocument(path).getOr:
-    log(lvlError, fmt"Failed to load file {path}")
-    return DocumentEditor.none
-
-  return self.layout.createAndAddView(document, append = append)
-
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
   self.setTheme(fmt"themes/{name}.json")
 
@@ -1446,7 +1413,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "theme".some, finder.some)
+  var popup = newSelectorPopup(self.services, self.fs, "theme".some, finder.some)
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
@@ -1487,35 +1454,6 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
     return
 
   discard self.layout.createAndAddView(document)
-
-proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup =
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, builder.scope, builder.finder, builder.previewer.toDisposableRef)
-  popup.scale.x = builder.scaleX
-  popup.scale.y = builder.scaleY
-  popup.previewScale = builder.previewScale
-  popup.sizeToContentY = builder.sizeToContentY
-  popup.previewVisible = builder.previewVisible
-  popup.maxDisplayNameWidth = builder.maxDisplayNameWidth
-  popup.maxColumnWidth = builder.maxColumnWidth
-
-  if builder.handleItemSelected.isNotNil:
-    popup.handleItemSelected = proc(item: FinderItem) =
-      builder.handleItemSelected(popup.asISelectorPopup, item)
-
-  if builder.handleItemConfirmed.isNotNil:
-    popup.handleItemConfirmed = proc(item: FinderItem): bool =
-      return builder.handleItemConfirmed(popup.asISelectorPopup, item)
-
-  if builder.handleCanceled.isNotNil:
-    popup.handleCanceled = proc() =
-      builder.handleCanceled(popup.asISelectorPopup)
-
-  for command, handler in builder.customActions.pairs:
-    capture handler:
-      popup.addCustomCommand command, proc(popup: SelectorPopup, args: JsonNode): bool =
-        return handler(popup.asISelectorPopup, args)
-
-  self.layout.pushPopup popup
 
 type
   WorkspaceFilesDataSource* = ref object of DataSource
@@ -1634,7 +1572,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
   let source = newSyncDataSource(getItems)
   let finder = newFinder(source, filterAndSort=true)
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "file".some, finder.some, previewer)
+  var popup = newSelectorPopup(self.services, self.fs, "file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1651,7 +1589,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
     let pathNorm = self.vfs.normalize(path)
 
-    let editor = self.openWorkspaceFile(pathNorm)
+    let editor = self.layout.openWorkspaceFile(pathNorm)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1675,13 +1613,13 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     DisposableRef[Previewer].none
 
   let finder = newFinder(newWorkspaceFilesDataSource(workspace), filterAndSort=true)
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "file".some, finder.some, previewer)
+  var popup = newSelectorPopup(self.services, self.fs, "file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    discard self.openWorkspaceFile(item.data)
+    discard self.layout.openWorkspaceFile(item.data)
     return true
 
   self.layout.pushPopup popup
@@ -1742,7 +1680,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   else:
     DisposableRef[Previewer].none
 
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "open".some, finder.some, previewer)
+  var popup = newSelectorPopup(self.services, self.fs, "open".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1821,7 +1759,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "open".some, finder.some)
+  var popup = newSelectorPopup(self.services, self.fs, "open".some, finder.some)
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
@@ -1868,7 +1806,7 @@ proc gotoNextLocation*(self: App) {.expose("editor").} =
 
   log lvlInfo, &"[gotoNextLocation] Found {path}:{location}"
 
-  let editor = self.openWorkspaceFile(path)
+  let editor = self.layout.openWorkspaceFile(path)
   if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
@@ -1887,7 +1825,7 @@ proc gotoPrevLocation*(self: App) {.expose("editor").} =
 
   log lvlInfo, &"[gotoPrevLocation] Found {path}:{location}"
 
-  let editor = self.openWorkspaceFile(path)
+  let editor = self.layout.openWorkspaceFile(path)
   if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
@@ -1902,7 +1840,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
   let source = newSyncDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "open".some, finder.some, self.previewer.clone())
+  var popup = newSelectorPopup(self.services, self.fs, "open".some, finder.some, self.previewer.clone())
 
   popup.scale.x = if self.previewer.isSome: 0.8 else: 0.4
 
@@ -1916,7 +1854,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.openWorkspaceFile(path)
+    let editor = self.layout.openWorkspaceFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1992,7 +1930,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   let source = newWorkspaceSearchDataSource(workspace, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "search".some, finder.some,
+  var popup = newSelectorPopup(self.services, self.fs, "search".some, finder.some,
     newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
@@ -2007,7 +1945,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.openWorkspaceFile(path)
+    let editor = self.layout.openWorkspaceFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -2025,7 +1963,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   let source = newAsyncCallbackDataSource () => workspace.searchWorkspaceItemList(query, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "search".some, finder.some,
+  var popup = newSelectorPopup(self.services, self.fs, "search".some, finder.some,
     newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
@@ -2040,7 +1978,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.openWorkspaceFile(path)
+    let editor = self.layout.openWorkspaceFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -2194,7 +2132,7 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.asAppInterface, self.fs, "file-explorer".some, finder.some,
+  var popup = newSelectorPopup(self.services, self.fs, "file-explorer".some, finder.some,
     newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
@@ -2205,7 +2143,7 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
       return true
 
     if fileInfo.isFile:
-      if self.openWorkspaceFile(fileInfo.path).getSome(editor):
+      if self.layout.openWorkspaceFile(fileInfo.path).getSome(editor):
         if editor of TextDocumentEditor and popup.getPreviewSelection().getSome(selection):
           editor.TextDocumentEditor.selection = selection
           editor.TextDocumentEditor.centerCursor()
@@ -2408,7 +2346,7 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   # logScope lvlDebug, &"handleKeyPress {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
 
-  for register in self.recordingKeys:
+  for register in self.registers.recordingKeys:
     if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
       self.registers.registers[register] = Register(kind: RegisterKind.Text, text: "")
     self.registers.registers[register].text.add inputToString(input, modifiers)
@@ -2473,7 +2411,7 @@ proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
   log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
 
 proc registerPluginSourceCode*(self: App, path: string, content: string) {.expose("editor").} =
-  if self.currentScriptContext.getSome(scriptContext):
+  if self.plugins.currentScriptContext.getSome(scriptContext):
     asyncSpawn self.vfs.write(scriptContext.getCurrentContext() & path, content)
 
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("editor").} =
@@ -2489,7 +2427,7 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
     self.events.commandDescriptions[context & subContext & keys] = description
 
   var source = source
-  if self.currentScriptContext.getSome(scriptContext):
+  if self.plugins.currentScriptContext.getSome(scriptContext):
     source.filename = scriptContext.getCurrentContext() & source.filename
 
   self.events.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
@@ -2586,41 +2524,21 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
       return
-    gEditor.callbacks[path] = id
-
-proc startRecordingKeys*(self: App, register: string) {.expose("editor").} =
-  log lvlInfo, &"Start recording keys into '{register}'"
-  self.recordingKeys.incl register
-
-proc stopRecordingKeys*(self: App, register: string) {.expose("editor").} =
-  log lvlInfo, &"Stop recording keys into '{register}'"
-  self.recordingKeys.excl register
-
-proc startRecordingCommands*(self: App, register: string) {.expose("editor").} =
-  log lvlInfo, &"Start recording commands into '{register}'"
-  self.recordingCommands.incl register
-
-proc stopRecordingCommands*(self: App, register: string) {.expose("editor").} =
-  log lvlInfo, &"Stop recording commands into '{register}'"
-  self.recordingCommands.excl register
-
-proc isReplayingCommands*(self: App): bool {.expose("editor").} = self.bIsReplayingCommands
-proc isReplayingKeys*(self: App): bool {.expose("editor").} = self.bIsReplayingKeys
-proc isRecordingCommands*(self: App, registry: string): bool {.expose("editor").} = self.recordingCommands.contains(registry)
+    gEditor.plugins.callbacks[path] = id
 
 proc replayCommands*(self: App, register: string) {.expose("editor").} =
   if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
     log lvlError, fmt"No commands recorded in register '{register}'"
     return
 
-  if self.bIsReplayingCommands:
+  if self.registers.bIsReplayingCommands:
     log lvlError, fmt"replayCommands '{register}': Already replaying commands"
     return
 
   log lvlInfo, &"replayCommands '{register}':\n{self.registers.registers[register].text}"
-  self.bIsReplayingCommands = true
+  self.registers.bIsReplayingCommands = true
   defer:
-    self.bIsReplayingCommands = false
+    self.registers.bIsReplayingCommands = false
 
   for command in self.registers.registers[register].text.splitLines:
     let (action, arg) = parseAction(command)
@@ -2631,14 +2549,14 @@ proc replayKeys*(self: App, register: string) {.expose("editor").} =
     log lvlError, fmt"No commands recorded in register '{register}'"
     return
 
-  if self.bIsReplayingKeys:
+  if self.registers.bIsReplayingKeys:
     log lvlError, fmt"replayKeys '{register}': Already replaying keys"
     return
 
   log lvlInfo, &"replayKeys '{register}': {self.registers.registers[register].text}"
-  self.bIsReplayingKeys = true
+  self.registers.bIsReplayingKeys = true
   defer:
-    self.bIsReplayingKeys = false
+    self.registers.bIsReplayingKeys = false
 
   for (inputCode, mods, _) in parseInputs(self.registers.registers[register].text):
     self.handleKeyPress(inputCode.a, mods)
@@ -2665,18 +2583,18 @@ proc printStatistics*(self: App) {.expose("editor").} =
         result.add &"    {key}: {value}\n"
 
       result.add &"RecordingKeys:\n"
-      for key in self.recordingKeys:
+      for key in self.registers.recordingKeys:
         result.add &"    {key}"
 
       result.add &"RecordingCommands:\n"
-      for key in self.recordingKeys:
+      for key in self.registers.recordingKeys:
         result.add &"    {key}"
 
       result.add &"Event Handlers: {self.events.eventHandlerConfigs.len}\n"
         # events.eventHandlerConfigs: Table[string, EventHandlerConfig]
 
       result.add &"Options: {self.config.settings.pretty.len}\n"
-      result.add &"Callbacks: {self.callbacks.len}\n"
+      result.add &"Callbacks: {self.plugins.callbacks.len}\n"
       result.add &"Script Actions: {self.scriptActions.len}\n"
 
       result.add &"Input History: {self.inputHistory}\n"
@@ -2719,26 +2637,18 @@ proc printStatistics*(self: App) {.expose("editor").} =
 genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
 
-proc recordCommand*(self: App, command: string, args: string) =
-  for register in self.recordingCommands:
-    if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
-      self.registers.registers[register] = Register(kind: RegisterKind.Text, text: "")
-    if self.registers.registers[register].text.len > 0:
-      self.registers.registers[register].text.add "\n"
-    self.registers.registers[register].text.add command & " " & args
-
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
   let t = startTimer()
-  if not self.bIsReplayingCommands:
+  if not self.registers.bIsReplayingCommands:
     log lvlInfo, &"[handleAction] '{action} {arg}'"
   defer:
-    if not self.bIsReplayingCommands:
+    if not self.registers.bIsReplayingCommands:
       let elapsed = t.elapsed
       log lvlInfo, &"[handleAction] '{action} {arg}' took {elapsed.ms} ms"
 
   try:
     if record:
-      self.recordCommand(action, arg)
+      self.registers.recordCommand(action, arg)
 
     var args = newJArray()
     try:

@@ -15,8 +15,8 @@ type
 
   PluginService* = ref object of Service
     scriptContexts*: seq[ScriptContext]
-    callbacks: Table[string, int]
-    currentScriptContext: Option[ScriptContext] = ScriptContext.none
+    callbacks*: Table[string, int]
+    currentScriptContext*: Option[ScriptContext] = ScriptContext.none
 
 method init*(self: ScriptContext, path: string, fs: Filesystem): Future[void] {.base.} = discard
 method deinit*(self: ScriptContext) {.base.} = discard
