@@ -6,7 +6,7 @@ import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
 import vcs/vcs
-import app_interface, config_provider, vfs
+import app_interface, vfs, service, document_editor
 
 import nimsumtree/[rope]
 
@@ -15,9 +15,10 @@ logCategory "workspace-file-previewer"
 type
   WorkspaceFilePreviewer* = ref object of Previewer
     workspace: Workspace
+    services*: Services
+    editors*: DocumentEditorService
     fs: Filesystem
     vfs: Option[VFS]
-    configProvider: ConfigProvider
     editor: TextDocumentEditor
     tempDocument: TextDocument
     reuseExistingDocuments: bool
@@ -30,28 +31,32 @@ type
     currentStaged: bool
     currentDiff: bool
 
-proc newWorkspaceFilePreviewer*(workspace: Workspace, fs: Filesystem, configProvider: ConfigProvider,
+proc newWorkspaceFilePreviewer*(workspace: Workspace, fs: Filesystem, services: Services,
     openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
   new result
   result.workspace = workspace
+  result.services = services
+  result.editors = services.getService(DocumentEditorService).get
   result.fs = fs
 
   result.openNewDocuments = openNewDocuments
   result.reuseExistingDocuments = reuseExistingDocuments
-  result.tempDocument = newTextDocument(configProvider, fs, workspaceFolder=workspace.some,
+  result.tempDocument = newTextDocument(services, fs, workspaceFolder=workspace.some,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
 
-proc newWorkspaceFilePreviewer*(workspace: Workspace, vfs: VFS, fs: Filesystem, configProvider: ConfigProvider,
+proc newWorkspaceFilePreviewer*(workspace: Workspace, vfs: VFS, fs: Filesystem, services: Services,
     openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
   new result
   result.workspace = workspace
+  result.services = services
+  result.editors = services.getService(DocumentEditorService).get
   result.fs = fs
   result.vfs = vfs.some
 
   result.openNewDocuments = openNewDocuments
   result.reuseExistingDocuments = reuseExistingDocuments
-  result.tempDocument = newTextDocument(configProvider, fs, workspaceFolder=workspace.some,
+  result.tempDocument = newTextDocument(services, fs, workspaceFolder=workspace.some,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
 
@@ -111,16 +116,14 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   let location = self.currentLocation
   let editor = self.editor
 
-  let app = editor.app
-
   logScope lvlDebug, &"loadAsync {path}"
 
   let document = if self.currentStaged or not self.reuseExistingDocuments:
     Document.none
   elif self.openNewDocuments:
-    app.getOrOpenDocument(path, app=false)
+    self.editors.getOrOpenDocument(path)
   else:
-    app.getDocument(path, app=false)
+    self.editors.getDocument(path)
 
   if document.getSome(document):
     if not (document of TextDocument):

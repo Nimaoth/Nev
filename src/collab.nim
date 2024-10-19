@@ -3,7 +3,7 @@ import chronos/transports/stream
 
 import misc/[util, event, myjsonutils, custom_logger, custom_async, delayed_task]
 import scripting/[expose]
-import config_provider, app_interface, dispatch_tables
+import config_provider, app_interface, dispatch_tables, document_editor
 import document
 
 import text/text_document
@@ -16,8 +16,10 @@ logCategory "collab"
 proc connectCollaboratorAsync(port: int) {.async.} =
   ############### CLIENT
   try:
-    let app: AppInterface = ({.gcsafe.}: gAppInterface)
-    let delay = app.configProvider.getValue[:int]("sync.delay", 100)
+    let services: Services = ({.gcsafe.}: gServices)
+    let editors = services.getService(DocumentEditorService).get
+    let config = services.getService(ConfigService).get
+    let delay = config.getOption[:int]("sync.delay", 100)
 
     var opsToSend = newSeq[(string, Operation)]()
     var transp = await connect(initTAddress("127.0.0.1:" & $port))
@@ -76,7 +78,7 @@ proc connectCollaboratorAsync(port: int) {.async.} =
           log lvlError, &"[collab][open {file}] Failed to parse operations: {getCurrentExceptionMsg()}\nops: {opsJson}\n{getCurrentException().getStackTrace()}"
           continue
 
-        if app.getOrOpenDocument(file).getSome(doc):
+        if editors.getOrOpenDocument(file).getSome(doc):
           if doc of TextDocument:
             let doc = doc.TextDocument
             docs[file] = doc
@@ -96,7 +98,7 @@ proc connectCollaboratorAsync(port: int) {.async.} =
           log lvlError, &"Failed to parse operation: '{line}'"
           continue
 
-        if app.getOrOpenDocument(file).getSome(doc) and doc of TextDocument:
+        if editors.getOrOpenDocument(file).getSome(doc) and doc of TextDocument:
           doc.TextDocument.applyRemoteChanges(@[op.move])
 
       else:
@@ -113,8 +115,10 @@ proc processCollabClient(server: StreamServer, transp: StreamTransport) {.async:
   ############### SERVER
   log lvlInfo, &"[collab-server] Process collab client"
   try:
-    let app: AppInterface = ({.gcsafe.}: gAppInterface)
-    let delay = app.configProvider.getValue[:int]("sync.delay", 100)
+    let services: Services = ({.gcsafe.}: gServices)
+    let editors = services.getService(DocumentEditorService).get
+    let config = services.getService(ConfigService).get
+    let delay = config.getOption[:int]("sync.delay", 100)
 
     var opsToSend = newSeq[(string, Operation)]()
     var reader = newAsyncStreamReader(transp)
@@ -132,7 +136,7 @@ proc processCollabClient(server: StreamServer, transp: StreamTransport) {.async:
 
     sendOpsTask.pause()
 
-    for doc in app.getAllDocuments():
+    for doc in editors.getAllDocuments():
       if doc of TextDocument:
         let doc = doc.TextDocument
         if doc.filename != "" and doc.filename != "log":
@@ -163,7 +167,7 @@ proc processCollabClient(server: StreamServer, transp: StreamTransport) {.async:
           log lvlError, &"[collab-server] Failed to parse operation: '{line}'"
           continue
 
-        if app.getOrOpenDocument(file).getSome(doc) and doc of TextDocument:
+        if editors.getOrOpenDocument(file).getSome(doc) and doc of TextDocument:
           doc.TextDocument.applyRemoteChanges(@[op.move])
 
       else:

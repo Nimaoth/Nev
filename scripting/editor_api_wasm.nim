@@ -33,13 +33,6 @@ proc reapplyConfigKeybindings*(app: bool = false; home: bool = false;
       argsJsonString.cstring)
 
 
-proc editor_splitView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc splitView*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_splitView_void_App_wasm(argsJsonString.cstring)
-
-
 proc editor_runExternalCommand_void_App_string_seq_string_string_wasm(
     arg: cstring): cstring {.importc.}
 proc runExternalCommand*(command: string; args: seq[string] = @[];
@@ -131,17 +124,6 @@ proc toggleShowDrawnNodes*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_toggleShowDrawnNodes_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_setMaxViews_void_App_int_bool_wasm(arg: cstring): cstring {.importc.}
-proc setMaxViews*(maxViews: int; openExisting: bool = false) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add maxViews.toJson()
-  argsJson.add openExisting.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setMaxViews_void_App_int_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -383,144 +365,6 @@ proc toggleConsoleLogger*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_toggleConsoleLogger_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_showEditor_void_App_EditorId_Option_int_wasm(arg: cstring): cstring {.
-    importc.}
-proc showEditor*(editorId: EditorId; viewIndex: Option[int] = int.none) {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add editorId.toJson()
-  argsJson.add viewIndex.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_showEditor_void_App_EditorId_Option_int_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_getVisibleEditors_seq_EditorId_App_wasm(arg: cstring): cstring {.
-    importc.}
-proc getVisibleEditors*(): seq[EditorId] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getVisibleEditors_seq_EditorId_App_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_getHiddenEditors_seq_EditorId_App_wasm(arg: cstring): cstring {.
-    importc.}
-proc getHiddenEditors*(): seq[EditorId] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getHiddenEditors_seq_EditorId_App_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_getExistingEditor_Option_EditorId_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc getExistingEditor*(path: string): Option[EditorId] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getExistingEditor_Option_EditorId_App_string_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_getOrOpenEditor_Option_EditorId_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc getOrOpenEditor*(path: string): Option[EditorId] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getOrOpenEditor_Option_EditorId_App_string_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_closeView_void_App_int_bool_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc closeView*(index: int; keepHidden: bool = true; restoreHidden: bool = true) {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add index.toJson()
-  argsJson.add keepHidden.toJson()
-  argsJson.add restoreHidden.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_closeView_void_App_int_bool_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_closeCurrentView_void_App_bool_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc closeCurrentView*(keepHidden: bool = true; restoreHidden: bool = true) {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add keepHidden.toJson()
-  argsJson.add restoreHidden.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_closeCurrentView_void_App_bool_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_closeOtherViews_void_App_bool_wasm(arg: cstring): cstring {.importc.}
-proc closeOtherViews*(keepHidden: bool = true) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add keepHidden.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_closeOtherViews_void_App_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_moveCurrentViewToTop_void_App_wasm(arg: cstring): cstring {.importc.}
-proc moveCurrentViewToTop*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_moveCurrentViewToTop_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_nextView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc nextView*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_nextView_void_App_wasm(argsJsonString.cstring)
-
-
-proc editor_prevView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc prevView*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_prevView_void_App_wasm(argsJsonString.cstring)
-
-
-proc editor_moveCurrentViewPrev_void_App_wasm(arg: cstring): cstring {.importc.}
-proc moveCurrentViewPrev*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_moveCurrentViewPrev_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_moveCurrentViewNext_void_App_wasm(arg: cstring): cstring {.importc.}
-proc moveCurrentViewNext*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_moveCurrentViewNext_void_App_wasm(
       argsJsonString.cstring)
 
 
@@ -854,27 +698,6 @@ proc dumpKeymapGraphViz*(context: string = "") {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_clearCommands_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc clearCommands*(context: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add context.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_clearCommands_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_getAllEditors_seq_EditorId_App_wasm(arg: cstring): cstring {.importc.}
-proc getAllEditors*(): seq[EditorId] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getAllEditors_seq_EditorId_App_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_setMode_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc setMode*(mode: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
@@ -937,33 +760,6 @@ proc changeAnimationSpeed*(factor: float) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_setLeader_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc setLeader*(leader: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add leader.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setLeader_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_setLeaders_void_App_seq_string_wasm(arg: cstring): cstring {.importc.}
-proc setLeaders*(leaders: seq[string]) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add leaders.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setLeaders_void_App_seq_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_addLeader_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc addLeader*(leader: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add leader.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_addLeader_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_registerPluginSourceCode_void_App_string_string_wasm(arg: cstring): cstring {.
     importc.}
 proc registerPluginSourceCode*(path: string; content: string) {.gcsafe,
@@ -992,17 +788,6 @@ proc addCommandScript*(context: string; subContext: string; keys: string;
   argsJson.add source.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_addCommandScript_void_App_string_string_string_string_string_string_tuple_filename_string_line_int_column_int_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_removeCommand_void_App_string_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc removeCommand*(context: string; keys: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add context.toJson()
-  argsJson.add keys.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_removeCommand_void_App_string_string_wasm(
       argsJsonString.cstring)
 
 
@@ -1035,19 +820,6 @@ proc logRootNode*() {.gcsafe, raises: [].} =
   let res {.used.} = editor_logRootNode_void_App_wasm(argsJsonString.cstring)
 
 
-proc editor_getEditorInView_EditorId_int_wasm(arg: cstring): cstring {.importc.}
-proc getEditorInView*(index: int): EditorId {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add index.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getEditorInView_EditorId_int_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_scriptIsSelectorPopup_bool_EditorId_wasm(arg: cstring): cstring {.
     importc.}
 proc scriptIsSelectorPopup*(editorId: EditorId): bool {.gcsafe, raises: [].} =
@@ -1069,20 +841,6 @@ proc scriptIsTextEditor*(editorId: EditorId): bool {.gcsafe, raises: [].} =
   argsJson.add editorId.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_scriptIsTextEditor_bool_EditorId_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_scriptIsAstEditor_bool_EditorId_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptIsAstEditor*(editorId: EditorId): bool {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add editorId.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptIsAstEditor_bool_EditorId_wasm(
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
@@ -1129,35 +887,6 @@ proc scriptInsertTextInto*(editorId: EditorId; text: string) {.gcsafe,
       argsJsonString.cstring)
 
 
-proc editor_setSessionDataJson_void_App_string_JsonNode_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc setSessionDataJson*(path: string; value: JsonNode; override: bool = true) {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add value.toJson()
-  argsJson.add override.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setSessionDataJson_void_App_string_JsonNode_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_getSessionDataJson_JsonNode_App_string_JsonNode_wasm(arg: cstring): cstring {.
-    importc.}
-proc getSessionDataJson*(path: string; default: JsonNode): JsonNode {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  argsJson.add default.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getSessionDataJson_JsonNode_App_string_JsonNode_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_scriptSetCallback_void_string_int_wasm(arg: cstring): cstring {.
     importc.}
 proc scriptSetCallback*(path: string; id: int) {.gcsafe, raises: [].} =
@@ -1167,31 +896,6 @@ proc scriptSetCallback*(path: string; id: int) {.gcsafe, raises: [].} =
   let argsJsonString = $argsJson
   let res {.used.} = editor_scriptSetCallback_void_string_int_wasm(
       argsJsonString.cstring)
-
-
-proc editor_setRegisterText_void_App_string_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc setRegisterText*(text: string; register: string = "") {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add text.toJson()
-  argsJson.add register.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setRegisterText_void_App_string_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_getRegisterText_string_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc getRegisterText*(register: string): string {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add register.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_getRegisterText_string_App_string_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_startRecordingKeys_void_App_string_wasm(arg: cstring): cstring {.

@@ -1,8 +1,9 @@
-import std/[json, tables, options]
+import std/[json, tables, options, sugar, sets]
 import vmath, bumpy
-import misc/[event, custom_logger, id]
-import document, events, input, config_provider
-import platform/filesystem
+import misc/[event, custom_logger, id, custom_async, util, array_set]
+import platform/[platform, filesystem]
+import scripting/expose
+import document, events, input, service, platform_service, dispatch_tables
 
 from scripting_api import EditorId, newEditorId
 
@@ -11,17 +12,49 @@ from scripting_api import EditorId, newEditorId
 
 logCategory "document-editor"
 
-type DocumentEditor* = ref object of RootObj
-  id*: EditorId
-  userId*: Id
-  eventHandler*: EventHandler
-  renderHeader*: bool
-  fillAvailableSpace*: bool
-  lastContentBounds*: Rect
-  onMarkedDirty*: Event[void]
-  mDirty: bool ## Set to true to trigger rerender
-  active: bool
-  fs*: Filesystem
+type
+  DocumentEditor* = ref object of RootObj
+    id*: EditorId
+    userId*: Id
+    eventHandler*: EventHandler
+    renderHeader*: bool
+    fillAvailableSpace*: bool
+    lastContentBounds*: Rect
+    onMarkedDirty*: Event[void]
+    mDirty: bool ## Set to true to trigger rerender
+    active: bool
+    fs*: Filesystem
+
+  DocumentFactory* = ref object of RootObj
+  DocumentEditorFactory* = ref object of RootObj
+
+  DocumentEditorService* = ref object of Service
+    platform: Platform
+    editors*: Table[EditorId, DocumentEditor]
+    pinnedEditors*: HashSet[EditorId]
+    documents*: seq[Document]
+    editorDefaults*: seq[DocumentEditor]
+    onEditorRegistered*: Event[DocumentEditor]
+    onEditorDeregistered*: Event[DocumentEditor]
+
+    documentFactories: seq[DocumentFactory]
+    editorFactories: seq[DocumentEditorFactory]
+
+func serviceName*(_: typedesc[DocumentEditorService]): string = "DocumentEditorService"
+
+addBuiltinService(DocumentEditorService, PlatformService)
+
+method init*(self: DocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"DocumentEditorService.init"
+  self.platform = self.services.getService(PlatformService).get.platform
+  assert self.platform != nil
+  return ok()
+
+method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
+method createDocument*(self: DocumentFactory, services: Services, path: string): Document {.base, gcsafe, raises: [].} = discard
+
+method canEditDocument*(self: DocumentEditorFactory, document: Document): bool {.base, gcsafe, raises: [].} = discard
+method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor {.base, gcsafe, raises: [].} = discard
 
 func id*(self: DocumentEditor): EditorId = self.id
 
@@ -69,7 +102,7 @@ method deinit*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
 method canEdit*(self: DocumentEditor, document: Document): bool {.base, gcsafe, raises: [].} =
   return false
 
-method createWithDocument*(self: DocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor {.base, gcsafe, raises: [].} =
+method createWithDocument*(self: DocumentEditor, document: Document, services: Services): DocumentEditor {.base, gcsafe, raises: [].} =
   return nil
 
 method getDocument*(self: DocumentEditor): Document {.base, gcsafe, raises: [].} = discard
@@ -105,6 +138,142 @@ method restoreStateJson*(self: DocumentEditor, state: JsonNode) {.base, gcsafe, 
 
 method getStatisticsString*(self: DocumentEditor): string {.base, gcsafe, raises: [].} = discard
 
+proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) =
+  self.documentFactories.add(factory)
+
+proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) =
+  self.editorFactories.add(factory)
+
+proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
+  let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
+  log lvlInfo, fmt"registerEditor {editor.id} '{filename}'"
+  self.editors[editor.id] = editor
+  self.onEditorRegistered.invoke editor
+
+proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
+  let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
+  log lvlInfo, fmt"unregisterEditor {editor.id} '{filename}'"
+  self.editors.del(editor.id)
+  self.onEditorDeregistered.invoke editor
+
+proc getAllDocuments*(self: DocumentEditorService): seq[Document] =
+  for it in self.editors.values:
+    result.incl it.getDocument
+
+proc getDocument*(self: DocumentEditorService, path: string, appFile = false): Option[Document] =
+  for document in self.documents:
+    if document.appFile == appFile and document.filename == path:
+      return document.some
+
+  return Document.none
+
+proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] =
+  for id, editor in self.editors.pairs:
+    if editor.getDocument() == document:
+      result.add editor
+
+proc getEditorForId*(self: DocumentEditorService, id: EditorId): Option[DocumentEditor] =
+  self.editors.withValue(id, editor):
+    return editor[].some
+
+  return DocumentEditor.none
+
+proc openDocument*(self: DocumentEditorService, path: string, appFile = false, load = true): Option[Document] =
+  try:
+    log lvlInfo, &"Open new document '{path}'"
+
+    var document: Document = nil
+    for factory in self.documentFactories:
+      if factory.canOpenFile(path):
+        document = factory.createDocument(self.services, path)
+        break
+
+    if document == nil:
+      log lvlError, &"Failed to create document for '{path}'"
+
+    log lvlInfo, &"Opened new document '{path}'"
+    self.documents.add document
+    return document.some
+
+  except CatchableError:
+    log(lvlError, fmt"[openDocument] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+    return Document.none
+
+proc getOrOpenDocument*(self: DocumentEditorService, path: string, appFile = false, load = true): Option[Document] =
+  result = self.getDocument(path, appFile)
+  if result.isSome:
+    return
+
+  return self.openDocument(path, appFile, load)
+
 import app_interface
 method injectDependencies*(self: DocumentEditor, ed: AppInterface, fs: Filesystem) {.base, gcsafe, raises: [].} =
   discard
+
+proc createEditorForDocument*(self: DocumentEditorService, document: Document): Option[DocumentEditor] =
+  for factory in self.editorFactories:
+    if factory.canEditDocument(document):
+      result = factory.createEditor(self.services, document).some
+      break
+
+  if result.isNone:
+    log lvlError, &"Failed to create editor for document '{document.filename}'"
+    return
+
+  discard result.get.onMarkedDirty.subscribe () => self.platform.requestRender()
+
+proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) =
+  let document = editor.getDocument()
+  log lvlInfo, fmt"closeEditor: '{editor.getDocument().filename}'"
+
+  if editor.id in self.pinnedEditors:
+    log lvlWarn, &"Can't close editor {editor.id} for '{editor.getDocument().filename}' because it's pinned"
+    return
+
+  editor.deinit()
+
+  var hasAnotherEditor = false
+  for id, editor in self.editors.pairs:
+    if editor.getDocument() == document:
+      hasAnotherEditor = true
+      break
+
+  if not hasAnotherEditor:
+    log lvlInfo, fmt"Document has no other editors, closing it."
+    document.deinit()
+    self.documents.del(document)
+
+###########################################################################
+
+proc getDocumentEditorService(): Option[DocumentEditorService] =
+  {.gcsafe.}:
+    if gServices.isNil: return DocumentEditorService.none
+    return gServices.getService(DocumentEditorService)
+
+static:
+  addInjector(DocumentEditorService, getDocumentEditorService)
+
+proc getAllEditors*(self: DocumentEditorService): seq[EditorId] {.expose("editors").} =
+  for id in self.editors.keys:
+    result.add id
+
+proc getExistingEditor*(self: DocumentEditorService, path: string): Option[EditorId] {.expose("editors").} =
+  ## Returns an existing editor for the given file if one exists,
+  ## or none otherwise.
+  defer:
+    log lvlInfo, &"getExistingEditor {path} -> {result}"
+
+  if path.len == 0:
+    return EditorId.none
+
+  for id, editor in self.editors.pairs:
+    if editor.getDocument() == nil:
+      continue
+    if editor.getDocument().filename != path:
+      continue
+    return id.some
+
+  return EditorId.none
+
+addGlobalDispatchTable "editors", genDispatchTable("editors")

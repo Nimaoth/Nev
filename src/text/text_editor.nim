@@ -5,14 +5,14 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
   custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils]
-import scripting/[expose]
+import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import language/[language_server_base]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent,
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
-import config_provider, app_interface
+import config_provider, app_interface, service, layout, platform_service
 import diff
 import workspaces/workspace
 import finder/[previewer, finder]
@@ -45,9 +45,14 @@ type
 type TextDocumentEditor* = ref object of DocumentEditor
   app*: AppInterface
   platform*: Platform
-  configProvider: ConfigProvider
+  configProvider*: ConfigProvider
+  editors*: DocumentEditorService
+  layout*: LayoutService
   services*: Services
   vcs: VCSService
+  events: EventHandlerService
+  plugins: PluginService
+  registers: Registers
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -162,6 +167,41 @@ type TextDocumentEditor* = ref object of DocumentEditor
   completionsDirty: bool
   searchResultsDirty: bool
 
+type
+  TextDocumentEditorService* = ref object of Service
+  TextDocumentFactory* = ref object of DocumentFactory
+  TextDocumentEditorFactory* = ref object of DocumentEditorFactory
+
+proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, services: Services): TextDocumentEditor
+
+func serviceName*(_: typedesc[TextDocumentEditorService]): string = "TextDocumentEditorService"
+
+addBuiltinService(TextDocumentEditorService, DocumentEditorService)
+
+method init*(self: TextDocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"TextDocumentEditorService.init"
+  let editors = self.services.getService(DocumentEditorService).get
+  editors.addDocumentFactory(TextDocumentFactory())
+  editors.addDocumentEditorFactory(TextDocumentEditorFactory())
+  return ok()
+
+method canOpenFile*(self: TextDocumentFactory, path: string): bool =
+  return true
+
+method createDocument*(self: TextDocumentFactory, services: Services, path: string): Document =
+  let fs = ({.gcsafe.}: fs)
+  let workspace = ({.gcsafe.}: gWorkspace)
+
+  return newTextDocument(services, fs, path, app=false, workspaceFolder=workspace.some, load=true)
+
+method canEditDocument*(self: TextDocumentEditorFactory, document: Document): bool =
+  return document of TextDocument
+
+method createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document): DocumentEditor =
+  let app = ({.gcsafe.}: gAppInterface)
+  let fs = ({.gcsafe.}: fs)
+  result = newTextEditor(document.TextDocument, app, fs, services)
+
 var allTextEditors*: seq[TextDocumentEditor] = @[]
 
 method getStatisticsString*(self: TextDocumentEditor): string =
@@ -185,7 +225,6 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Completions: {self.completions.len}\n"
   result.add &"LastItems: {self.lastItems.len}"
 
-proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, configProvider: ConfigProvider): TextDocumentEditor
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode]
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
@@ -383,7 +422,7 @@ method deinit*(self: TextDocumentEditor) =
   let filename = if self.document.isNotNil: self.document.filename else: ""
   logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
 
-  self.app.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
+  self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
 
   self.unregister()
 
@@ -710,14 +749,14 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   {.gcsafe.}:
-    if gAppInterface.isNil: return TextDocumentEditor.none
-    if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
-      if editor of TextDocumentEditor:
-        return editor.TextDocumentEditor.some
+    if gServices.getService(DocumentEditorService).getSome(editors):
+      if editors.getEditorForId(wrapper.id).getSome(editor):
+        if editor of TextDocumentEditor:
+          return editor.TextDocumentEditor.some
   return TextDocumentEditor.none
 
 proc getModeConfig(self: TextDocumentEditor, mode: string): EventHandlerConfig =
-  return self.app.getEventHandlerConfig("editor.text." & mode)
+  return self.events.getEventHandlerConfig("editor.text." & mode)
 
 static:
   addTypeMap(TextDocumentEditor, api.TextDocumentEditor, getTextDocumentEditor)
@@ -1045,7 +1084,7 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
   let oldMode = self.currentMode
   self.currentMode = mode
 
-  self.app.handleModeChanged(self, oldMode, self.currentMode)
+  self.plugins.handleModeChanged(self, oldMode, self.currentMode)
 
   self.markDirty()
 
@@ -1547,7 +1586,7 @@ proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool):
 
     text.add(c.sliceRope(target.toPoint, Bias.Right))
 
-  self.app.setRegisterAsync(register, Register(kind: Rope, rope: text.move)).await
+  self.registers.setRegisterAsync(register, Register(kind: Rope, rope: text.move)).await
   # self.app.setRegisterTextAsync(text, register).await
 
 proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.
@@ -1559,7 +1598,7 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
   log lvlInfo, fmt"paste register from '{registerName}', inclusiveEnd: {inclusiveEnd}"
 
   var register: Register
-  if not self.app.getRegisterAsync(registerName, register.addr).await:
+  if not self.registers.getRegisterAsync(registerName, register.addr).await:
     return
 
   if self.document.isNil:
@@ -1825,7 +1864,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
       return
 
     if self.diffDocument.isNil:
-      self.diffDocument = newTextDocument(self.configProvider, self.fs,
+      self.diffDocument = newTextDocument(self.services, self.fs,
         language=self.document.languageId.some, createLanguageServer = false)
 
     self.diffDocument.languageId = self.document.languageId
@@ -1844,7 +1883,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
       return
 
     if self.diffDocument.isNil:
-      self.diffDocument = newTextDocument(self.configProvider, self.fs,
+      self.diffDocument = newTextDocument(self.services, self.fs,
         language=self.document.languageId.some, createLanguageServer = false)
 
     self.diffDocument.languageId = self.document.languageId
@@ -2024,7 +2063,7 @@ proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   log(lvlInfo, "reloadTreesitter")
 
   unloadTreesitterLanguage(self.document.languageId)
-  for doc in self.app.getAllDocuments():
+  for doc in self.editors.getAllDocuments():
     if doc of TextDocument:
       let doc = doc.TextDocument
       if doc.languageId == self.document.languageId:
@@ -2228,7 +2267,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     else:
       result = cursor.toSelection
 
-      let cursorJson = self.app.invokeAnyCallback("editor.text.custom-move", %*{
+      let cursorJson = self.plugins.invokeAnyCallback("editor.text.custom-move", %*{
         "editor": self.id,
         "move": move,
         "cursor": cursor.toJson,
@@ -2418,7 +2457,7 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
   let editor = if self.document.workspace.isSome:
     self.app.openWorkspaceFile(filename)
   else:
-    self.app.openFile(filename)
+    self.layout.openFile(filename)
 
   if editor.getSome(editor):
     if location.getSome(location):
@@ -2476,7 +2515,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.configProvider).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
@@ -2544,7 +2583,7 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
       if self.document.workspace.isSome:
         discard self.app.openWorkspaceFile(filename)
       else:
-        discard self.app.openFile(filename)
+        discard self.layout.openFile(filename)
 
 proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Future[seq[int]] {.async.} =
   let revision = self.completionEngine.revision
@@ -2630,7 +2669,7 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
       )
 
   if self.document.workspace.getSome(workspace):
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.configProvider).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true, minScore=minScore, sort=sort)
   builder.finder = finder.some
 
@@ -2655,7 +2694,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
     )
 
   if self.document.workspace.getSome(workspace):
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.configProvider).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
@@ -2737,7 +2776,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scaleX = 0.85
     builder.scaleY = 0.8
 
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.configProvider).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)
     builder.finder = finder.some
 
@@ -3280,7 +3319,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   self.currentMode = mode
 
-  self.app.handleModeChanged(self, oldMode, self.currentMode)
+  self.plugins.handleModeChanged(self, oldMode, self.currentMode)
 
   self.markDirty()
 
@@ -3377,11 +3416,11 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
 
   block:
-    let res = self.app.invokeAnyCallback(action, args)
+    let res = self.plugins.invokeAnyCallback(action, args)
     if res.isNotNil:
       dec self.commandCount
       while self.commandCount > 0:
-        if self.app.invokeAnyCallback(action, args).isNil:
+        if self.plugins.invokeAnyCallback(action, args).isNil:
           break
         dec self.commandCount
       self.commandCount = self.commandCountRestore
@@ -3453,7 +3492,7 @@ proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventRe
       self.app.recordCommand(".insert-text", $input.newJString)
 
     # echo "handleInput '", input, "'"
-    if self.app.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
+    if self.plugins.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
       return Handled
 
     self.insertText(input)
@@ -3469,11 +3508,14 @@ proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
 method injectDependencies*(self: TextDocumentEditor, app: AppInterface, fs: Filesystem) =
   self.app = app
   self.fs = fs
-  self.platform = app.platform
   self.services = app.getServices()
+  self.platform = self.services.getService(PlatformService).get.platform
   self.vcs = self.services.getService(VCSService).get
-  self.app.registerEditor(self)
-  let config = app.getEventHandlerConfig("editor.text")
+  self.events = self.services.getService(EventHandlerService).get
+  self.plugins = self.services.getService(PluginService).get
+  self.registers = self.services.getService(Registers).get
+  self.editors.registerEditor(self)
+  let config = self.events.getEventHandlerConfig("editor.text")
   assignEventHandler(self.eventHandler, config):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
@@ -3483,7 +3525,7 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface, fs: File
     onInput:
       self.handleInput input, record=true
 
-  assignEventHandler(self.completionEventHandler, app.getEventHandlerConfig("editor.text.completion")):
+  assignEventHandler(self.completionEventHandler, self.events.getEventHandlerConfig("editor.text.completion")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
         Handled
@@ -3492,7 +3534,7 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface, fs: File
     onInput:
       self.handleInput input, record=true
 
-  self.onFocusChangedHandle = self.app.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
+  self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
   self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
 
@@ -3591,13 +3633,16 @@ proc createTextEditorInstance(): TextDocumentEditor =
     allTextEditors.add editor
   return editor
 
-proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, configProvider: ConfigProvider):
+proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, services: Services):
     TextDocumentEditor =
 
   assert app.isNotNil
 
   var self = createTextEditorInstance()
-  self.configProvider = configProvider
+  self.services = services
+  self.configProvider = services.getService(ConfigService).get.asConfigProvider
+  self.editors = services.getService(DocumentEditorService).get
+  self.layout = services.getService(LayoutService).get
   self.setDocument(document)
 
   self.init()
@@ -3608,11 +3653,14 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, fs: Filesystem, c
 
 method getDocument*(self: TextDocumentEditor): Document = self.document
 
-method createWithDocument*(_: TextDocumentEditor, document: Document, configProvider: ConfigProvider):
+method createWithDocument*(_: TextDocumentEditor, document: Document, services: Services):
     DocumentEditor =
 
   var self = createTextEditorInstance()
-  self.configProvider = configProvider
+  self.services = services
+  self.configProvider = services.getService(ConfigService).get.asConfigProvider
+  self.editors = services.getService(DocumentEditorService).get
+  self.layout = services.getService(LayoutService).get
 
   self.setDocument(document.TextDocument)
   self.init()
@@ -3621,11 +3669,7 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
   return self
 
 method unregister*(self: TextDocumentEditor) =
-  if self.app.isNil:
-    log lvlError, &"[unregister] app is nil, probably called twice"
-    return
-
-  self.app.unregisterEditor(self)
+  self.editors.unregisterEditor(self)
 
 method getStateJson*(self: TextDocumentEditor): JsonNode =
   return %*{

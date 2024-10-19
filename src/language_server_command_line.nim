@@ -3,19 +3,19 @@ import misc/[custom_logger, custom_async, util, response]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import platform/filesystem
-import dispatch_tables, app_interface, document_editor, command_info
+import dispatch_tables, document_editor, service, layout, events
 
 logCategory "language-server-command-line"
 
 type LanguageServerCommandLine* = ref object of LanguageServer
-  app: AppInterface
+  services: Services
+  events: EventHandlerService
   files: Table[string, string]
-  commandInfos: CommandInfos
 
-proc newLanguageServerCommandLine*(app: AppInterface, commandInfos: CommandInfos): LanguageServer =
+proc newLanguageServerCommandLine*(services: Services): LanguageServer =
   var server = new LanguageServerCommandLine
-  server.app = app
-  server.commandInfos = commandInfos
+  server.services = services
+  server.events = services.getService(EventHandlerService).get
   return server
 
 method getDefinition*(self: LanguageServerCommandLine, filename: string, location: Cursor):
@@ -29,6 +29,8 @@ method saveTempFile*(self: LanguageServerCommandLine, filename: string, content:
 method getCompletions*(self: LanguageServerCommandLine, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   await self.requestSave(filename, filename)
 
+  let layout = self.services.getService(LayoutService).get
+
   var useActive = false
   if self.files.contains(filename):
     let commandName = self.files[filename]
@@ -37,7 +39,7 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
 
   var completions: seq[CompletionItem]
   if useActive:
-    let currentNamespace = self.app.getActiveViewEditor().mapIt(it.getNamespace)
+    let currentNamespace = layout.getActiveViewEditor().mapIt(it.getNamespace)
     {.gcsafe.}:
       for table in activeDispatchTables.mitems:
         if not table.global and table.namespace.some != currentNamespace:
@@ -46,7 +48,7 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
         for value in table.functions.values:
 
           var docs = ""
-          if self.commandInfos.getInfos(value.name).getSome(infos):
+          if self.events.commandInfos.getInfos(value.name).getSome(infos):
             for i, info in infos:
               if i > 0:
                 docs.add "\n"
@@ -68,7 +70,7 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
       for table in globalDispatchTables.mitems:
         for value in table.functions.values:
           var docs = ""
-          if self.commandInfos.getInfos(value.name).getSome(infos):
+          if self.events.commandInfos.getInfos(value.name).getSome(infos):
             for i, info in infos:
               if i > 0:
                 docs.add "\n"

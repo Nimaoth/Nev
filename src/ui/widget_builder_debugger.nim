@@ -334,7 +334,7 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[Over
 
           var text = &"Debugger"
           if getDebugger().getSome(debugger):
-            case debugger.state
+            case debugger.debuggerState
             of DebuggerState.None: text.add " - Not started"
             of DebuggerState.Starting: text.add " - Starting"
             of DebuggerState.Paused: text.add " - Paused"

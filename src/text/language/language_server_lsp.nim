@@ -2,7 +2,7 @@ import std/[strutils, options, json, tables, uri, strformat, sequtils, typedthre
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process]
 import platform/filesystem
-import language_server_base, app_interface, config_provider, lsp_client, document
+import language_server_base, app_interface, config_provider, lsp_client, document, service
 import workspaces/workspace as ws
 
 import nimsumtree/buffer
@@ -38,7 +38,8 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
   # todo: this function is quite slow (up to 100ms)
 
   {.gcsafe.}:
-    let workspaceConfigName = gAppInterface.configProvider.getValue("lsp." & self.languageId & ".workspace-configuration-name", "settings")
+    let config = gServices.getService(ConfigService).get
+    let workspaceConfigName = config.getOption("lsp." & self.languageId & ".workspace-configuration-name", "settings")
 
     for item in params.items:
       # todo: implement scopeUri support
@@ -46,7 +47,7 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
         continue
 
       let key = ["lsp", self.languageId, workspaceConfigName, item.section.get].filterIt(it.len > 0).join(".")
-      res.add gAppInterface.configProvider.getValue(key, newJNull())
+      res.add config.getOption(key, newJNull())
 
   return res
 
@@ -108,7 +109,9 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
         return lsp.LanguageServer.some
 
     {.gcsafe.}:
-      let config = gAppInterface.configProvider.getValue("lsp." & languageId, newJObject())
+      let configs = gServices.getService(ConfigService).get
+
+    let config = configs.getOption("lsp." & languageId, newJObject())
     if config.isNil:
       return LanguageServer.none
 
@@ -125,9 +128,8 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       @[]
 
     let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJNull()).jsonTo(string).catch("settings")
-    {.gcsafe.}:
-      let userOptions = gAppInterface.configProvider.getValue(
-        "lsp." & languageId & "." & initializationOptionsName, newJNull())
+    let userOptions = configs.getOption(
+      "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
     let workspaceInfo = if workspace.getSome(workspace):
       workspace.info.await.some

@@ -60,7 +60,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
         let overlay = currentNode
 
         if self.layout.maximizeView:
-          let view {.cursor.} = self.views[self.currentView]
+          let view {.cursor.} = self.layout.views[self.layout.currentView]
           let wasActive = view.active
           if not self.commandLineMode:
             view.activate()
@@ -74,14 +74,14 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
             overlays.add view.createUI(builder, self)
 
         else:
-          let rects = self.layout.layout.layoutViews(self.layout.layout_props, rect(0, 0, 1, 1), self.views.len)
-          for i, view in self.views:
+          let rects = self.layout.layout.layoutViews(self.layout.layout_props, rect(0, 0, 1, 1), self.layout.views.len)
+          for i, view in self.layout.views:
             let xy = rects[i].xy * overlay.bounds.wh
             let xwyh = rects[i].xwyh * overlay.bounds.wh
             let bounds = rect(xy, xwyh - xy)
 
             let wasActive = view.active
-            if (self.currentView == i) and not self.commandLineMode:
+            if (self.layout.currentView == i) and not self.commandLineMode:
               view.activate()
             else:
               view.deactivate()
@@ -93,7 +93,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
               overlays.add view.createUI(builder, self)
 
     # popups
-    for i, popup in self.popups:
+    for i, popup in self.layout.popups:
       overlays.add popup.createUI(builder, self)
 
     for overlay in overlays:

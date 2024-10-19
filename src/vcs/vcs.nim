@@ -28,7 +28,7 @@ type
     fs*: Filesystem
 
 func serviceName*(_: typedesc[VCSService]): string = "VCSService"
-addBuiltinService(VCSService, WorkspaceService)
+addBuiltinService(VCSService, WorkspaceService, ConfigService)
 
 func isUntracked*(fileInfo: VCSFileInfo): bool = fileInfo.unstagedStatus == Untracked
 
@@ -67,12 +67,8 @@ proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
     let vcs = newVersionControlSystemPerforce(path)
     return vcs.VersionControlSystem.some
 
-method init*(self: VCSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"VCSService.init"
-  self.config = self.services.getService(ConfigService).get
-  self.fs = ({.gcsafe.}: fs)
-
-  let workspaceService = self.services.getServiceAsync(WorkspaceService).await.get
+proc waitForWorkspace(self: VCSService) {.async: (raises: []).} =
+  let workspaceService = self.services.getService(WorkspaceService).get
   while workspaceService.workspace.isNil:
     try:
       sleepAsync(10.milliseconds).await
@@ -89,6 +85,13 @@ method init*(self: VCSService): Future[Result[void, ref CatchableError]] {.async
         self.versionControlSystems.add vcs
   except CatchableError as e:
     log lvlError, &"Failed to detect version control systems: {e.msg}\n{e.getStackTrace()}"
+
+
+method init*(self: VCSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"VCSService.init"
+  self.config = self.services.getService(ConfigService).get
+  self.fs = ({.gcsafe.}: fs)
+  asyncSpawn self.waitForWorkspace()
 
   return ok()
 
