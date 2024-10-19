@@ -99,6 +99,7 @@ when defined(musl):
 
   # Disable system clipboard because it doesn't build with musl right now
   switch("d", "enableSystemClipboard=false")
+  switch("d", "nimWasmtimeBuildMusl=true")
 
 else:
   switch("d", "ssl")
