@@ -462,6 +462,21 @@ proc getText*(self: TextDocumentEditor; selection: Selection;
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_getLine_string_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc getLine*(self: TextDocumentEditor; line: int): string {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add line.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getLine_string_TextDocumentEditor_int_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
@@ -2155,6 +2170,20 @@ proc getSelection*(self: TextDocumentEditor): Selection {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_getSelections_Selections_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getSelections*(self: TextDocumentEditor): Selections {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getSelections_Selections_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
     arg: cstring): cstring {.importc.}
 proc setSelection*(self: TextDocumentEditor; selection: Selection) {.gcsafe,
@@ -2164,6 +2193,18 @@ proc setSelection*(self: TextDocumentEditor; selection: Selection) {.gcsafe,
   argsJson.add selection.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setSelections_void_TextDocumentEditor_Selections_wasm(
+    arg: cstring): cstring {.importc.}
+proc setSelections*(self: TextDocumentEditor; selections: Selections) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add selections.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setSelections_void_TextDocumentEditor_Selections_wasm(
       argsJsonString.cstring)
 
 

@@ -115,29 +115,20 @@ proc runAction*(id: EditorId, action: string, arg: string = "") =
 proc runAction*(editor: TextDocumentEditor, action: string, arg: string = "") =
   scriptRunActionFor(editor.id, action, arg)
 
-proc insertText*(editor: AnyDocumentEditor, text: string) =
-  scriptInsertTextInto(editor.id, text)
-
 proc selection*(editor: TextDocumentEditor): Selection =
   return editor.getSelection()
+
+proc selections*(editor: TextDocumentEditor): seq[Selection] =
+  return editor.getSelections()
 
 proc `selection=`*(editor: TextDocumentEditor, selection: Selection) =
   editor.setSelection(selection)
 
+proc `selections=`*(editor: TextDocumentEditor, selections: seq[Selection]) =
+  editor.setSelections(selections)
+
 proc `targetSelection=`*(editor: TextDocumentEditor, selection: Selection) =
   editor.setTargetSelection(selection)
-
-proc selections*(editor: TextDocumentEditor): seq[Selection] =
-  return scriptTextEditorSelections(editor.id)
-
-proc `selections=`*(editor: TextDocumentEditor, selection: seq[Selection]) =
-  scriptSetTextEditorSelections(editor.id, selection)
-
-proc getLine*(editor: TextDocumentEditor, line: int): string =
-  return scriptGetTextEditorLine(editor.id, line)
-
-proc getLineCount*(editor: TextDocumentEditor): int =
-  return scriptGetTextEditorLineCount(editor.id)
 
 proc getOption*[T](path: string, default: T = T.default): T =
   try:
