@@ -1105,8 +1105,6 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
       discard
     elif fileExists(defaultSessionName):
       self.sessionFile = defaultSessionName
-    else:
-      self.sessionFile = "app:" & defaultSessionName
 
     if self.sessionFile != "":
       self.restoreStateFromConfig(state)
