@@ -95,8 +95,8 @@ if packageWindows:
     cpFile2 "nev.exe", releaseWindows
     cpFile2 "nevt.exe", releaseWindows, optional=true
     cpFile2 "wasmtime.dll", releaseWindows, optional=true
-    cpFile2 "tools/remote-workspace-host.exe", releaseWindows
-    cpFile2 "tools/lsp-ws.exe", releaseWindows
+    # cpFile2 "tools/remote-workspace-host.exe", releaseWindows
+    # cpFile2 "tools/lsp-ws.exe", releaseWindows
 
 if packageLinux:
   echo "Package linux..."
@@ -107,7 +107,7 @@ if packageLinux:
     cpFile2 "nev", releaseLinux
     cpFile2 "nevt", releaseLinux, optional=true
     cpFile2 "nev-musl", releaseLinux
-    cpFile2 "tools/remote-workspace-host", releaseLinux
-    cpFile2 "tools/lsp-ws", releaseLinux
+    # cpFile2 "tools/remote-workspace-host", releaseLinux
+    # cpFile2 "tools/lsp-ws", releaseLinux
 
 quit exitCode
