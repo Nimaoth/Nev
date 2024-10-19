@@ -1,7 +1,7 @@
 import std/[strutils, tables, options]
 import nimsumtree/rope
 import scripting/[expose]
-import misc/[custom_logger, custom_async, util, rope_utils]
+import misc/[custom_logger, custom_async, util, rope_utils, array_set]
 import clipboard, service, dispatch_tables
 
 {.push gcsafe.}
@@ -40,6 +40,11 @@ proc numLines*(register: Register): int =
 type
   Registers* = ref object of Service
     registers*: Table[string, Register]
+    recordingKeys*: seq[string]
+    recordingCommands*: seq[string]
+    bIsReplayingKeys*: bool = false
+    bIsReplayingCommands*: bool = false
+
 
 func serviceName*(_: typedesc[Registers]): string = "Registers"
 
@@ -92,6 +97,14 @@ proc getRegisterAsync*(self: Registers, register: string, res: ptr Register): Fu
 
   return false
 
+proc recordCommand*(self: Registers, command: string, args: string) =
+  for register in self.recordingCommands:
+    if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+      self.registers[register] = Register(kind: RegisterKind.Text, text: "")
+    if self.registers[register].text.len > 0:
+      self.registers[register].text.add "\n"
+    self.registers[register].text.add command & " " & args
+
 ###########################################################################
 
 proc getRegisters(): Option[Registers] =
@@ -114,5 +127,30 @@ proc getRegisterText*(self: Registers, register: string): string {.expose("regis
     return self.registers[register].getText()
 
   return ""
+
+proc startRecordingKeys*(self: Registers, register: string) {.expose("registers").} =
+  log lvlInfo, &"Start recording keys into '{register}'"
+  self.recordingKeys.incl register
+
+proc stopRecordingKeys*(self: Registers, register: string) {.expose("registers").} =
+  log lvlInfo, &"Stop recording keys into '{register}'"
+  self.recordingKeys.excl register
+
+proc startRecordingCommands*(self: Registers, register: string) {.expose("registers").} =
+  log lvlInfo, &"Start recording commands into '{register}'"
+  self.recordingCommands.incl register
+
+proc stopRecordingCommands*(self: Registers, register: string) {.expose("registers").} =
+  log lvlInfo, &"Stop recording commands into '{register}'"
+  self.recordingCommands.excl register
+
+proc isReplayingCommands*(self: Registers): bool {.expose("registers").} =
+  self.bIsReplayingCommands
+
+proc isReplayingKeys*(self: Registers): bool {.expose("registers").} =
+  self.bIsReplayingKeys
+
+proc isRecordingCommands*(self: Registers, registry: string): bool {.expose("registers").} =
+  self.recordingCommands.contains(registry)
 
 addGlobalDispatchTable "registers", genDispatchTable("registers")

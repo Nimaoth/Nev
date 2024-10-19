@@ -162,7 +162,7 @@ proc waitForApp(self: Debugger) {.async: (raises: []).} =
   self.app = ({.gcsafe.}: gAppInterface)
 
   let document = newTextDocument(self.services, fs=nil, createLanguageServer=false)
-  self.outputEditor = newTextEditor(document, self.app, fs=nil, self.services)
+  self.outputEditor = newTextEditor(document, fs=nil, self.services)
   self.outputEditor.usage = "debugger-output"
   self.outputEditor.renderHeader = false
   self.outputEditor.disableCompletions = true
@@ -299,7 +299,7 @@ proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.as
     log lvlError, &"Failed to find file '{path}'"
     return
 
-  let editor = self.app.openWorkspaceFile(path, append = true)
+  let editor = self.layout.openWorkspaceFile(path, append = true)
 
   if editor.getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
@@ -1040,7 +1040,7 @@ proc chooseRunConfiguration(self: Debugger) {.expose("debugger").} =
     self.runConfiguration(item.displayName)
     true
 
-  discard self.app.pushSelectorPopup(builder)
+  discard self.layout.pushSelectorPopup(builder)
 
 proc runLastConfiguration*(self: Debugger) {.expose("debugger").} =
   if self.lastConfiguration.getSome(name):
@@ -1229,7 +1229,7 @@ proc editBreakpoints(self: Debugger) {.expose("debugger").} =
     source.retrigger()
     true
 
-  discard self.app.pushSelectorPopup(builder)
+  discard self.layout.pushSelectorPopup(builder)
 
 proc continueExecution*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):

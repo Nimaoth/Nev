@@ -102,9 +102,6 @@ method deinit*(self: DocumentEditor) {.base, gcsafe, raises: [].} =
 method canEdit*(self: DocumentEditor, document: Document): bool {.base, gcsafe, raises: [].} =
   return false
 
-method createWithDocument*(self: DocumentEditor, document: Document, services: Services): DocumentEditor {.base, gcsafe, raises: [].} =
-  return nil
-
 method getDocument*(self: DocumentEditor): Document {.base, gcsafe, raises: [].} = discard
 
 method handleAction*(self: DocumentEditor, action: string, arg: string, record: bool = true): Option[JsonNode] {.base, gcsafe, raises: [].} = discard
@@ -206,10 +203,6 @@ proc getOrOpenDocument*(self: DocumentEditorService, path: string, appFile = fal
     return
 
   return self.openDocument(path, appFile, load)
-
-import app_interface
-method injectDependencies*(self: DocumentEditor, ed: AppInterface, fs: Filesystem) {.base, gcsafe, raises: [].} =
-  discard
 
 proc createEditorForDocument*(self: DocumentEditorService, document: Document): Option[DocumentEditor] =
   for factory in self.editorFactories:

@@ -6,7 +6,7 @@ import scripting/expose
 import workspaces/workspace
 import finder/[finder, previewer, workspace_file_previewer]
 import platform/[platform, filesystem]
-import service, dispatch_tables, platform_service, app_interface
+import service, dispatch_tables, platform_service
 import selector_popup, vcs, layout
 
 logCategory "vcs_api"
@@ -150,7 +150,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   let previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services,
     openNewDocuments=true)
 
-  var popup = newSelectorPopup(({.gcsafe.}: gAppInterface), self.fs, "git".some, finder.some,
+  var popup = newSelectorPopup(self.services, self.fs, "git".some, finder.some,
     previewer.Previewer.toDisposableRef.some)
 
   popup.scale.x = 1
@@ -166,7 +166,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       asyncSpawn self.diffStagedFileAsync(workspace, fileInfo.path)
 
     else:
-      let currentVersionEditor = ({.gcsafe.}: gAppInterface).openWorkspaceFile(fileInfo.path)
+      let currentVersionEditor = self.services.getService(LayoutService).get.openWorkspaceFile(fileInfo.path)
       if currentVersionEditor.getSome(editor):
         if editor of TextDocumentEditor:
           editor.TextDocumentEditor.updateDiff()
