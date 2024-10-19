@@ -77,7 +77,7 @@ proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.async.}
   let args = (@[self.path] & self.additionalPaths, self.ignore)
   try:
     let res = spawnAsync(collectFilesThread, args).await
-    log lvlInfo, fmt"[recomputeFileCacheAsync] Finished in {res.time}ms"
+    log lvlInfo, fmt"[recomputeFileCacheAsync] Found {res.files.len} files in {res.time}ms"
 
     self.cachedFiles = res.files
     self.onCachedFilesUpdated.invoke()
