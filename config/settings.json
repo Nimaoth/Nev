@@ -101,6 +101,7 @@
         "\\.(js|jsx)$": "javascript",
         "\\.json$": "json",
         "\\.lock$": "json",
+        "\\.yml$": "yaml",
         "\\.nix$": "nix",
         "\\.ocaml$": "ocaml",
         "\\.php$": "php",
@@ -351,6 +352,17 @@
                 "["
             ],
             "lineComment": "//"
+        },
+        "yaml": {
+            "treesitter": "tree-sitter-grammars/tree-sitter-yaml",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "{",
+                "["
+            ],
+            "lineComment": "#"
         },
         "markdown": {
             "treesitter": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
