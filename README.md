@@ -1,42 +1,40 @@
 # Nev
 
-![Build and tests](https://github.com/Nimaoth/Nev/actions/workflows/main.yml/badge.svg?event=push)
+![Build](https://github.com/Nimaoth/Nev/actions/workflows/main.yml/badge.svg?event=push)
 
 This is still very early in developement and very experimental. Use at your own risk!
 
-Previously named `Absytree`.
+Nev is a text editor focused on keyboard usage, customizability and speed which runs in the terminal and in a GUI.
+It also aims to provide tools for writing code out of the box, like Git integration, syntax highlighting using [Treesitter](https://tree-sitter.github.io/tree-sitter/), language integration using [LSP](https://microsoft.github.io/language-server-protocol) and debugging using [DAP](https://microsoft.github.io/debug-adapter-protocol/).
 
-## Programming Language + Editor
+I'm also experimenting with a programming languange system where instead of writing the source code as plain text,
+the abstract syntac tree (AST) is edited directly (or rather through _projections_, which are still trees).
+This feature is not included in release builds, and has to enabled by compiling with `-D:enableAst=true`.
 
-Nev is a text editor + programming languange workbench where instead of writing the source code as text in text files,
-the abstract syntac tree (AST) is edited directly (or rather through _projections_, which are still trees)
-Languages will be extendable with custom AST node types, by either translating those to nodes of other languages or by implementing code generation
-for the backend (at the moment only WASM).
+## Features
+- Vim motions (incomplete)
+- [LSP](docs/lsp.md) (incomplete)
+- [Syntax highlighting](docs/treesitter.md) using treesitter (no support for nested languages yet)
+- Basic debugging using DAP
+- [Fuzzy search for various things](docs/finders.md)
+- [Sessions](docs/sessions.md)
+- [WASM plugins](docs/configuration.md)
+- Basic git integration (list/diff/add/stage/unstage/revert changed files)
+- Basic collaborative editing (only two p2p clients supported)
 
-The editor is available for the terminal and as a desktop GUI app.
-
-## Goals
-- For the text editor:
-  - Sit somewhere inbetween Vim and VS Code
-  - The most important tools are built in (e.g. syntax highlighting with tree-sitter, LSP support)
-  - Can be used purely as a text editor (ignoring the AST language framework)
-  - Little to no configuration needed to get nice experience out of the box
-  - Support Vim motions
-- General goals:
-  - Keyboard focused (only basic mouse support)
-  - Easily extendable with scripting
-  - Good performance
+## Installation
+Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build from source](docs/building_from_source.md)
 
 ## Inspirations
-- [JetBrains MPS](https://github.com/JetBrains/MPS)
-- [Dion Systems Editor](https://dion.systems/gallery.html)
 - [NeoVim](https://github.com/neovim/neovim)
 - [Helix](https://github.com/helix-editor/helix)
+- [Zed](https://github.com/zed-industries/zed)
+- [JetBrains MPS](https://github.com/JetBrains/MPS)
+- [Dion Systems Editor](https://dion.systems/gallery.html)
 
 ## Important notes if you intend to use it
-
 - Current only UTF-8 encoded files are supported
-- Language servers, Treesitter parsers and debug adapters have to installed manually at the moment
+- Language servers, debug adapters have to installed manually at the moment, treesitter parsers require [emscripten](https://github.com/emscripten-core/emscripten)
 - Read the [docs](docs/getting_started.md)
 
 ## Docs
