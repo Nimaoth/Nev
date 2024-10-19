@@ -367,15 +367,13 @@
       }
     },
     "nimwasmtime": {
-      "version": "0.1.7",
-      "vcsRevision": "b273c288ed4f0c9f3e77fc809df7cffd6b4e2fa1",
+      "version": "0.1.8",
+      "vcsRevision": "d320d8154862b3302e503a4857528ef0f5a9de03",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
-      "dependencies": [
-        "nimgen"
-      ],
+      "dependencies": [],
       "checksums": {
-        "sha1": "54d6dba8f74ac561053551462447a7498bec84ef"
+        "sha1": "cea3b9dcae2abf984b79c7c0468a9b332e489aee"
       }
     },
     "npeg": {
@@ -409,8 +407,8 @@
       }
     },
     "treesitter": {
-      "version": "0.1.15",
-      "vcsRevision": "1fc6f627a23e585700df4124683876cd4fc5a6d3",
+      "version": "0.1.16",
+      "vcsRevision": "e35ff79d04622a528d455de5fddde3cd2da1f758",
       "url": "https://github.com/Nimaoth/nimtreesitter-api",
       "downloadMethod": "git",
       "dependencies": [
@@ -418,7 +416,7 @@
         "nimwasmtime"
       ],
       "checksums": {
-        "sha1": "3bb5409058f8c1b2c651c990880370bdf0ef7b24"
+        "sha1": "1b27a5c794a46ae46b3d96f4e518b29c024514b6"
       }
     },
     "urlly": {
