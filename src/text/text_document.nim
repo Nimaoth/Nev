@@ -6,7 +6,7 @@ import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjso
 import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
-import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme
+import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme, service
 import pkg/[chroma, results]
 
 {.push warning[Deprecated]:off.}
@@ -60,6 +60,7 @@ type
   TextDocument* = ref object of Document
     buffer*: Buffer
     mLanguageId: string
+    services: Services
 
     nextLineIdCounter: int32 = 0
 
@@ -1085,7 +1086,7 @@ proc reloadTreesitterLanguage*(self: TextDocument) =
   asyncSpawn self.loadTreesitterLanguage()
 
 proc newTextDocument*(
-    configProvider: ConfigProvider,
+    services: Services,
     fs: Filesystem,
     filename: string = "",
     content: string = "",
@@ -1108,7 +1109,8 @@ proc newTextDocument*(
   self.currentTree = TSTree()
   self.appFile = app
   self.workspace = workspaceFolder
-  self.configProvider = configProvider
+  self.services = services
+  self.configProvider = services.getService(ConfigService).get.asConfigProvider
   self.createLanguageServer = createLanguageServer
   self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
 

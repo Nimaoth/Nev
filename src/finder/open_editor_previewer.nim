@@ -2,17 +2,19 @@ import std/[options, strformat, strutils]
 import misc/[util, custom_logger]
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import finder, previewer
-import app_interface, config_provider
+import finder, previewer, service
 
 logCategory "open-editor-previewer"
 
 type
   OpenEditorPreviewer* = ref object of Previewer
-    configProvider: ConfigProvider
+    services*: Services
+    editors*: DocumentEditorService
 
-proc newOpenEditorPreviewer*(configProvider: ConfigProvider): OpenEditorPreviewer =
+proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
   new result
+  result.services = services
+  result.editors = services.getService(DocumentEditorService).get
 
 method deinit*(self: OpenEditorPreviewer) =
   logScope lvlInfo, &"[deinit] Destroying open editor previewer"
@@ -33,9 +35,8 @@ method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: Documen
     return
 
   let editor = editor.TextDocumentEditor
-  let app = editor.app
 
-  let editorToPreview = app.getEditorForId(editorId).getOr:
+  let editorToPreview = self.editors.getEditorForId(editorId).getOr:
     return
 
   if not (editorToPreview of TextDocumentEditor):

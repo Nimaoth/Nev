@@ -5,7 +5,7 @@ import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_builders_base, widget_library]
-import app, document_editor, theme, config_provider, app_interface
+import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
 import text/diff
 
@@ -556,7 +556,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       self.runTripleClickCommand()
 
     self.updateTargetColumn(Last)
-    self.app.tryActivateEditor(self)
+    self.layout.tryActivateEditor(self)
     self.markDirty()
 
   proc handleDrag(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
@@ -591,7 +591,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.selection = (first, newCursor)
     self.runDragCommand()
     self.updateTargetColumn(Last)
-    self.app.tryActivateEditor(self)
+    self.layout.tryActivateEditor(self)
     self.markDirty()
 
   proc handleBeginHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
@@ -1147,7 +1147,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
     onClickAny btn:
-      self.app.tryActivateEditor(self)
+      self.layout.tryActivateEditor(self)
 
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode

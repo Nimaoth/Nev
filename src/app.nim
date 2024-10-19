@@ -1,17 +1,17 @@
 import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, regex, disposable_ref, rope_utils]
+  array_set, delayed_task, disposable_ref, rope_utils]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_command_line
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, command_info, register
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view, register
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config, vfs
-import service, layout
+import service, layout, session
 
 import nimsumtree/[rope]
 
@@ -41,29 +41,6 @@ elif defined(wasm):
   "wasm"
 else:
   "other"
-
-type
-  EditorView* = ref object of View
-    document*: Document # todo: remove
-    editor*: DocumentEditor
-
-method activate*(view: EditorView) =
-  view.active = true
-  view.editor.active = true
-
-method deactivate*(view: EditorView) =
-  view.active = true
-  view.editor.active = false
-
-method markDirty*(view: EditorView, notify: bool = true) =
-  view.dirty = true
-  view.editor.markDirty(notify)
-
-method getEventHandlers*(view: EditorView, inject: Table[string, EventHandler]): seq[EventHandler] =
-  view.editor.getEventHandlers(inject)
-
-method getActiveEditor*(self: EditorView): Option[DocumentEditor] =
-  self.editor.some
 
 type OpenEditor = object
   filename: string
@@ -128,22 +105,20 @@ type
 
     services: Services
     config*: ConfigService
+    session*: SessionService
+    events*: EventHandlerService
+    plugins*: PluginService
+    registers: Registers
 
     logNextFrameTime*: bool = false
     disableLogFrameTime*: bool = true
     logBuffer = ""
 
-    registers: Table[string, Register]
     recordingKeys: seq[string]
     recordingCommands: seq[string]
     bIsReplayingKeys: bool = false
     bIsReplayingCommands: bool = false
 
-    eventHandlerConfigs: Table[string, EventHandlerConfig]
-    commandInfos*: CommandInfos
-    commandDescriptions*: Table[string, string]
-
-    sessionData: JsonNode
     callbacks: Table[string, int]
 
     workspace*: Workspace
@@ -157,24 +132,13 @@ type
     inputHistory*: string
     clearInputHistoryTask: DelayedTask
 
-    currentViewInternal: int
-    views*: seq[View]
-    hiddenViews*: seq[View]
     layout*: LayoutService
-
-    activeEditorInternal: Option[EditorId]
-    editorHistory: Deque[EditorId]
 
     theme*: Theme
     loadedFontSize: float
     loadedLineDistance: float
 
-    documents*: seq[Document]
-    editors*: Table[EditorId, DocumentEditor]
-    popups*: seq[Popup]
-
-    onEditorRegistered*: Event[DocumentEditor]
-    onEditorDeregistered*: Event[DocumentEditor]
+    editors*: DocumentEditorService
 
     logDocument: Document
 
@@ -189,9 +153,6 @@ type
 
     modeEventHandler: EventHandler
     currentMode*: string
-    leaders: seq[string]
-
-    editorDefaults: seq[DocumentEditor]
 
     scriptActions: Table[string, ScriptAction]
 
@@ -208,88 +169,30 @@ type
 var gEditor* {.exportc.}: App = nil
 
 proc handleLog(self: App, level: Level, args: openArray[string])
-proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
-proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void]
-proc getRegisterTextAsync*(self: App, register: string = ""): Future[string]
-proc setRegisterAsync*(self: App, register: string, value: sink Register): Future[void]
-proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[bool]
 proc recordCommand*(self: App, command: string, args: string)
 proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[DocumentEditor]
-proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentEditor]
-proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string)
-proc invokeCallback*(self: App, context: string, args: JsonNode): bool
-proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode
-proc registerEditor*(self: App, editor: DocumentEditor): void
-proc unregisterEditor*(self: App, editor: DocumentEditor): void
-proc tryActivateEditor*(self: App, editor: DocumentEditor): void
 proc getActiveEditor*(self: App): Option[DocumentEditor]
-proc getActiveViewEditor*(self: App): Option[DocumentEditor]
-proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
-proc getEditorForPath*(self: App, path: string): Option[DocumentEditor]
-proc getPopupForId*(self: App, id: EditorId): Option[Popup]
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup
-proc pushPopup*(self: App, popup: Popup)
-proc popPopup*(self: App, popup: Popup)
 proc help*(self: App, about: string = "")
-proc getAllDocuments*(self: App): seq[Document]
 proc setHandleInputs*(self: App, context: string, value: bool)
 proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none)
-proc getDocument*(self: App, path: string, appFile = false): Option[Document]
-proc getOrOpenDocument*(self: App, path: string, appFile = false, load = true): Option[Document]
-proc tryCloseDocument*(self: App, document: Document, force: bool): bool
 proc closeUnusedDocuments*(self: App)
-proc tryOpenExisting*(self: App, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor]
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
-proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor]
-proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.none)
 proc getServices*(self: App): Services
-proc getService*(self: App, name: string): Option[Service]
-proc addService*(self: App, name: string, service: Service)
-proc createAndAddView*(self: App, document: Document, append: bool = false): DocumentEditor
-
-proc createView(self: App, editorState: OpenEditor): View
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
 
-  getEventHandlerConfig(EventHandlerConfig, App, string)
-
-  setRegisterTextAsync(Future[void], App, string, string)
-  getRegisterTextAsync(Future[string], App, string)
-  setRegisterAsync(Future[void], App, string, sink Register)
-  getRegisterAsync(Future[bool], App, string, ptr Register)
   recordCommand(void, App, string, string)
 
   proc configProvider*(self: App): ConfigProvider = self.config.asConfigProvider
-  proc onEditorRegisteredEvent*(self: App): ptr Event[DocumentEditor] = self.onEditorRegistered.addr
-  proc onEditorDeregisteredEvent*(self: App): ptr Event[DocumentEditor] = self.onEditorDeregistered.addr
 
   openWorkspaceFile(Option[DocumentEditor], App, string, bool)
-  openFile(Option[DocumentEditor], App, string)
-  handleModeChanged(void, App, DocumentEditor, string, string)
-  invokeCallback(bool, App, string, JsonNode)
-  invokeAnyCallback(JsonNode, App, string, JsonNode)
-  registerEditor(void, App, DocumentEditor)
-  tryActivateEditor(void, App, DocumentEditor)
   getActiveEditor(Option[DocumentEditor], App)
-  getActiveViewEditor(Option[DocumentEditor], App)
-  unregisterEditor(void, App, DocumentEditor)
-  getEditorForId(Option[DocumentEditor], App, EditorId)
-  getEditorForPath(Option[DocumentEditor], App, string)
-  getPopupForId(Option[Popup], App, EditorId)
   pushSelectorPopup(ISelectorPopup, App, SelectorPopupBuilder)
-  pushPopup(void, App, Popup)
-  popPopup(void, App, Popup)
-  getAllDocuments(seq[Document], App)
   setLocationList(void, App, seq[FinderItem], Option[Previewer])
-  getDocument(Option[Document], App, string, bool)
-  getOrOpenDocument(Option[Document], App, string, bool, bool)
-  tryCloseDocument(bool, App, Document, bool)
   getServices(Services, App)
-  getService(Option[Service], App, string)
-  addService(void, App, string, Service)
-  createAndAddView(DocumentEditor, App, Document, bool)
 
 type
   AppLogger* = ref object of Logger
@@ -307,213 +210,7 @@ proc handleDropFile*(self: App, path, content: string)
 proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind
 proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool]
 
-template withScriptContext(self: App, scriptContext: untyped, body: untyped): untyped =
-  if scriptContext.isNotNil:
-    let oldScriptContext = self.currentScriptContext
-    {.push hint[ConvFromXtoItselfNotNeeded]:off.}
-    self.currentScriptContext = scriptContext.ScriptContext.some
-    {.pop.}
-    defer:
-      self.currentScriptContext = oldScriptContext
-    body
-
-proc registerEditor*(self: App, editor: DocumentEditor): void =
-  let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
-  log lvlInfo, fmt"registerEditor {editor.id} '{filename}'"
-  self.editors[editor.id] = editor
-  self.onEditorRegistered.invoke editor
-
-proc unregisterEditor*(self: App, editor: DocumentEditor): void =
-  let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
-  log lvlInfo, fmt"unregisterEditor {editor.id} '{filename}'"
-  self.editors.del(editor.id)
-  self.onEditorDeregistered.invoke editor
-
-proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
-  try:
-    if not self.callbacks.contains(context):
-      return false
-    let id = self.callbacks[context]
-
-    withScriptContext self, self.wasmScriptContext:
-      if self.wasmScriptContext.handleCallback(id, args):
-        return true
-    return false
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleCallback {context}: {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-    return false
-
-proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
-  # debugf"invokeAnyCallback {context}: {args}"
-  if self.callbacks.contains(context):
-    try:
-      let id = self.callbacks[context]
-
-      withScriptContext self, self.wasmScriptContext:
-        let res = self.wasmScriptContext.handleAnyCallback(id, args)
-        if res.isNotNil:
-          return res
-      return nil
-    except CatchableError:
-      log(lvlError, fmt"Failed to run script handleAnyCallback {context}: {getCurrentExceptionMsg()}")
-      log(lvlError, getCurrentException().getStackTrace())
-      return nil
-
-  else:
-    try:
-      withScriptContext self, self.wasmScriptContext:
-        let res = self.wasmScriptContext.handleScriptAction(context, args)
-        if res.isNotNil:
-          return res
-      return nil
-    except CatchableError:
-      log(lvlError, fmt"Failed to run script handleScriptAction {context}: {getCurrentExceptionMsg()}")
-      log(lvlError, getCurrentException().getStackTrace())
-      return nil
-
-proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
-  try:
-    withScriptContext self, self.wasmScriptContext:
-      self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode]
-
-proc createEditorForDocument(self: App, document: Document): DocumentEditor =
-  for editor in self.editorDefaults:
-    if editor.canEdit document:
-      result = editor.createWithDocument(document, self.config.asConfigProvider)
-      result.injectDependencies self.asAppInterface, self.fs
-      discard result.onMarkedDirty.subscribe () => self.platform.requestRender()
-      return
-
-  log(lvlError, "No editor found which can edit " & $document)
-  return nil
-
-proc currentView*(self: App): int = self.currentViewInternal
-
-proc tryGetCurrentView(self: App): Option[View] =
-  if self.currentView >= 0 and self.currentView < self.views.len:
-    self.views[self.currentView].some
-  else:
-    View.none
-
-proc tryGetCurrentEditorView(self: App): Option[EditorView] =
-  if self.tryGetCurrentView().getSome(view) and view of EditorView:
-    view.EditorView.some
-  else:
-    EditorView.none
-
-proc updateActiveEditor*(self: App, addToHistory = true) =
-  if self.tryGetCurrentEditorView().getSome(view):
-    if addToHistory and self.activeEditorInternal.getSome(id) and id != view.editor.id:
-      self.editorHistory.addLast id
-    self.activeEditorInternal = view.editor.id.some
-
-proc `currentView=`(self: App, newIndex: int, addToHistory = true) =
-  self.currentViewInternal = newIndex
-  self.updateActiveEditor(addToHistory)
-
-proc addView*(self: App, view: View, addToHistory = true, append = false) =
-  let maxViews = self.config.getOption[:int]("editor.maxViews", int.high)
-
-  while maxViews > 0 and self.views.len > maxViews:
-    self.views[self.views.high].deactivate()
-    self.hiddenViews.add self.views.pop()
-
-  if append:
-    self.currentView = self.views.high
-
-  if self.views.len == maxViews:
-    self.views[self.currentView].deactivate()
-    self.hiddenViews.add self.views[self.currentView]
-    self.views[self.currentView] = view
-  elif append:
-    self.views.add view
-  else:
-    if self.currentView < 0:
-      self.currentView = 0
-    self.views.insert(view, self.currentView)
-
-  if self.currentView < 0:
-    self.currentView = 0
-
-  view.markDirty()
-
-  self.updateActiveEditor(addToHistory)
-  self.platform.requestRender()
-
-proc createView*(self: App, document: Document): View =
-  var editor = self.createEditorForDocument document
-  return EditorView(document: document, editor: editor)
-
-proc createAndAddView*(self: App, document: Document, append: bool = false): DocumentEditor =
-  var editor = self.createEditorForDocument document
-  var view = EditorView(document: document, editor: editor)
-  self.addView(view, append=append)
-  return editor
-
-proc tryActivateEditor*(self: App, editor: DocumentEditor): void =
-  if self.popups.len > 0:
-    return
-  for i, view in self.views:
-    if view of EditorView and view.EditorView.editor == editor:
-      self.currentView = i
-
-proc pushPopup*(self: App, popup: Popup) =
-  popup.init()
-  self.popups.add popup
-  discard popup.onMarkedDirty.subscribe () => self.platform.requestRender()
-  self.platform.requestRender()
-
-proc popPopup*(self: App, popup: Popup) =
-  if self.popups.len > 0 and self.popups[self.popups.high] == popup:
-    popup.deinit()
-    discard self.popups.pop
-  self.platform.requestRender()
-
-proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig =
-  if not self.eventHandlerConfigs.contains(context):
-    let parentConfig = if context != "":
-      let index = context.rfind(".")
-      if index >= 0:
-        self.getEventHandlerConfig(context[0..<index])
-      else:
-        self.getEventHandlerConfig("")
-    else:
-      nil
-
-    self.eventHandlerConfigs[context] = newEventHandlerConfig(context, parentConfig)
-    self.eventHandlerConfigs[context].setLeaders(self.leaders)
-
-  return self.eventHandlerConfigs[context].catch(EventHandlerConfig())
-
-proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor] =
-  self.editors.withValue(id, editor):
-    return editor[].some
-
-  if self.commandLineTextEditor.id == id:
-    return self.commandLineTextEditor.some
-
-  return DocumentEditor.none
-
-proc getEditorForPath*(self: App, path: string): Option[DocumentEditor] =
-  let path = self.workspace.getAbsolutePath(path)
-  return self.tryOpenExisting(path)
-
-proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
-  for popup in self.popups:
-    if popup.id == id:
-      return popup.some
-
-  return Popup.none
-
-proc getAllDocuments*(self: App): seq[Document] =
-  for it in self.editors.values:
-    result.incl it.getDocument
 
 import text/[text_editor, text_document]
 import text/language/debugger
@@ -567,10 +264,11 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
     try:
       log(lvlInfo, fmt"load wasm configs")
       self.wasmScriptContext = new ScriptContextWasm
+      self.plugins.scriptContexts.add self.wasmScriptContext
       self.wasmScriptContext.vfs = VFSWasmContext()
       self.vfs.mount("plugs://", self.wasmScriptContext.vfs)
 
-      withScriptContext self, self.wasmScriptContext:
+      withScriptContext self.plugins, self.wasmScriptContext:
         let t1 = startTimer()
         await self.wasmScriptContext.init("./config", self.fs)
         log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
@@ -589,11 +287,11 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 proc setupDefaultKeybindings(self: App) =
   log lvlInfo, fmt"Applying default builtin keybindings"
 
-  let editorConfig = self.getEventHandlerConfig("editor")
-  let textConfig = self.getEventHandlerConfig("editor.text")
-  let textCompletionConfig = self.getEventHandlerConfig("editor.text.completion")
-  let commandLineConfig = self.getEventHandlerConfig("command-line-high")
-  let selectorPopupConfig = self.getEventHandlerConfig("popup.selector")
+  let editorConfig = self.events.getEventHandlerConfig("editor")
+  let textConfig = self.events.getEventHandlerConfig("editor.text")
+  let textCompletionConfig = self.events.getEventHandlerConfig("editor.text.completion")
+  let commandLineConfig = self.events.getEventHandlerConfig("command-line-high")
+  let selectorPopupConfig = self.events.getEventHandlerConfig("popup.selector")
 
   self.setHandleInputs("editor.text", true)
   self.config.setOption[:string]("editor.text.cursor.movement.", "both")
@@ -695,7 +393,7 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
 
     self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
 
-    self.sessionData = state.sessionData
+    self.session.restoreSession(state.sessionData)
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
@@ -939,7 +637,7 @@ proc loadOptionsFromWorkspace*(self: App) {.async.} =
 #             log lvlInfo, &"Set {setting}"
 #             self.config.setOption(path, value)
 #           else:
-#             discard self.openFile(message)
+#             discard self.layout.openFile(message)
 
 #         except:
 #           log lvlError, &"Failed to run ipc command: {getCurrentExceptionMsg()}"
@@ -1016,8 +714,11 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
 
   self.layout = services.getService(LayoutService).get
   self.config = services.getService(ConfigService).get
-
-  self.registers = initTable[string, Register]()
+  self.editors = services.getService(DocumentEditorService).get
+  self.session = services.getService(SessionService).get
+  self.events = services.getService(EventHandlerService).get
+  self.plugins = services.getService(PluginService).get
+  self.registers = services.getService(Registers).get
 
   self.platform.fontSize = 16
   self.platform.lineDistance = 4
@@ -1029,11 +730,10 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
   self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
   self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
 
-  self.commandInfos = CommandInfos()
-
-  self.editorDefaults.add TextDocumentEditor()
+  # todo: refactor this
+  self.editors.editorDefaults.add TextDocumentEditor()
   when enableAst:
-    self.editorDefaults.add ModelDocumentEditor()
+    self.editors.editorDefaults.add ModelDocumentEditor()
 
   self.setupDefaultKeybindings()
 
@@ -1043,16 +743,15 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
 
   self.applySettingsFromAppOptions()
 
-  self.logDocument = newTextDocument(self.config.asConfigProvider, self.fs, "log", load=false, createLanguageServer=false)
-  self.documents.add self.logDocument
+  self.logDocument = newTextDocument(self.services, self.fs, "log", load=false, createLanguageServer=false)
+  self.editors.documents.add self.logDocument
+  self.layout.pinnedDocuments.incl(self.logDocument)
 
   self.theme = defaultTheme()
   {.gcsafe.}:
     gTheme = self.theme
 
-  self.currentView = 0
-
-  assignEventHandler(self.eventHandler, self.getEventHandlerConfig("editor")):
+  assignEventHandler(self.eventHandler, self.events.getEventHandlerConfig("editor")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
         Handled
@@ -1061,7 +760,7 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
     onInput:
       Ignored
 
-  assignEventHandler(self.commandLineEventHandlerHigh, self.getEventHandlerConfig("command-line-high")):
+  assignEventHandler(self.commandLineEventHandlerHigh, self.events.getEventHandlerConfig("command-line-high")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
         Handled
@@ -1070,7 +769,7 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
     onInput:
       Ignored
 
-  assignEventHandler(self.commandLineEventHandlerLow, self.getEventHandlerConfig("command-line-low")):
+  assignEventHandler(self.commandLineEventHandlerLow, self.events.getEventHandlerConfig("command-line-low")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
         Handled
@@ -1081,10 +780,10 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
 
   self.commandLineMode = false
 
-  self.languageServerCommandLine = newLanguageServerCommandLine(self.asAppInterface, self.commandInfos)
-  let commandLineTextDocument = newTextDocument(self.config.asConfigProvider, self.fs, language="command-line".some, languageServer=self.languageServerCommandLine.some)
-  self.documents.add commandLineTextDocument
-  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.fs, self.config.asConfigProvider)
+  self.languageServerCommandLine = newLanguageServerCommandLine(self.services)
+  let commandLineTextDocument = newTextDocument(self.services, self.fs, language="command-line".some, languageServer=self.languageServerCommandLine.some)
+  self.editors.documents.add commandLineTextDocument
+  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.fs, self.services)
   self.commandLineTextEditor.renderHeader = false
   self.getCommandLineTextEditor.usage = "command-line"
   self.getCommandLineTextEditor.disableScrolling = true
@@ -1107,16 +806,11 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
     else:
       log lvlInfo, &"Don't restore session file."
 
-  if self.sessionData.isNil:
-    self.sessionData = newJObject()
-
   self.commandHistory = state.commandHistory
 
   let closeUnusedDocumentsTimerS = self.config.getOption("editor.close-unused-documents-timer", 10)
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
-
-  createDebugger(self.asAppInterface, state.debuggerState.get(newJObject()))
 
   self.runEarlyCommandsFromAppOptions()
 
@@ -1152,30 +846,30 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
 
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
-    discard self.openFile(filePath)
+    discard self.layout.openFile(filePath)
 
   elif self.config.getFlag("editor.restore-open-editors", true):
     for editorState in state.openEditors:
-      let view = self.createView(editorState)
+      let view = self.layout.createView(editorState.filename)
       if view.isNil:
         continue
 
-      self.addView(view, append=true)
+      self.layout.addView(view, append=true)
       if editorState.customOptions.isNotNil and view of EditorView:
         view.EditorView.editor.restoreStateJson(editorState.customOptions)
 
     for editorState in state.hiddenEditors:
-      let view = self.createView(editorState)
+      let view = self.layout.createView(editorState.filename)
       if view.isNil:
         continue
 
-      self.hiddenViews.add view
+      self.layout.hiddenViews.add view
       if editorState.customOptions.isNotNil and view of EditorView:
         view.EditorView.editor.restoreStateJson(editorState.customOptions)
 
-  if self.views.len == 0:
-    if self.hiddenViews.len > 0:
-      self.addView self.hiddenViews.pop
+  if self.layout.views.len == 0:
+    if self.layout.hiddenViews.len > 0:
+      self.layout.addView self.layout.hiddenViews.pop
     else:
       self.help()
 
@@ -1200,14 +894,14 @@ proc shutdown*(self: App) =
 
   self.logDocument = nil
 
-  for popup in self.popups:
+  for popup in self.layout.popups:
     popup.deinit()
 
-  let editors = collect(for e in self.editors.values: e)
+  let editors = collect(for e in self.editors.editors.values: e)
   for editor in editors:
     editor.deinit()
 
-  for document in self.documents:
+  for document in self.editors.documents:
     document.deinit()
 
   if self.wasmScriptContext.isNotNil:
@@ -1225,7 +919,7 @@ proc shutdown*(self: App) =
 proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
   if self.logDocument.isNotNil:
-    for view in self.views:
+    for view in self.layout.views:
       if view of EditorView and view.EditorView.document == self.logDocument:
         let editor = view.EditorView.editor.TextDocumentEditor
         editor.bScrollToEndOnInsert = true
@@ -1259,13 +953,6 @@ proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false,
     {.expose("editor").} =
   asyncSpawn self.reapplyConfigKeybindingsAsync(app, home, workspace)
 
-proc splitView*(self: App) {.expose("editor").} =
-  defer:
-    self.platform.requestRender()
-
-  if self.tryGetCurrentEditorView().getSome(view):
-    discard self.createAndAddView(view.document, append = true)
-
 proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], workingDir: string = "") {.expose("editor").} =
   proc handleOutput(line: string) {.gcsafe.} =
     {.gcsafe.}:
@@ -1283,23 +970,23 @@ proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("ed
     debugPrintAsyncAwaitStackTrace = enable
 
 proc showDebuggerView*(self: App) {.expose("editor").} =
-  for view in self.views:
+  for view in self.layout.views:
     if view of DebuggerView:
       return
 
-  for i, view in self.hiddenViews:
+  for i, view in self.layout.hiddenViews:
     if view of DebuggerView:
-      self.hiddenViews.delete i
-      self.addView(view, false)
+      self.layout.hiddenViews.delete i
+      self.layout.addView(view, false)
       return
 
-  self.addView(DebuggerView(), false)
+  self.layout.addView(DebuggerView(), false)
 
 proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
-  if self.popups.len == 0:
+  if self.layout.popups.len == 0:
     return
 
-  let popup = self.popups[self.popups.high]
+  let popup = self.layout.popups[self.layout.popups.high]
   if not (popup of SelectorPopup):
     log lvlError, &"Not a selector popup"
     return
@@ -1333,69 +1020,6 @@ proc loadApplicationFile*(self: App, path: string): Option[string] {.expose("edi
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 
-proc openDocument*(self: App, path: string, appFile = false, load = true): Option[Document] =
-
-  try:
-    log lvlInfo, &"Open new document '{path}'"
-    let document: Document = when enableAst:
-      if path.endsWith(".ast-model"):
-        newModelDocument(path, app=appFile, workspaceFolder=self.workspace.some)
-      else:
-        newTextDocument(self.config.asConfigProvider, self.fs, path,
-          app=appFile, workspaceFolder=self.workspace.some, load=load)
-    else:
-      newTextDocument(self.config.asConfigProvider, self.fs, path,
-        app=appFile, workspaceFolder=self.workspace.some, load=load)
-
-    log lvlInfo, &"Opened new document '{path}'"
-    self.documents.add document
-    return document.some
-
-  except CatchableError:
-    log(lvlError, fmt"[getOrOpenDocument] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-    return Document.none
-
-proc getDocument*(self: App, path: string, appFile = false): Option[Document] =
-  for document in self.documents:
-    if document.workspace == self.workspace.some and document.appFile == appFile and document.filename == path:
-      return document.some
-
-  return Document.none
-
-proc getOrOpenDocument*(self: App, path: string, appFile = false, load = true): Option[Document] =
-  result = self.getDocument(path, appFile)
-  if result.isSome:
-    return
-
-  return self.openDocument(path, appFile, load)
-
-# todo: change return type to Option[View]
-proc createView(self: App, editorState: OpenEditor): View =
-  let document = self.getOrOpenDocument(editorState.filename, editorState.appFile).getOr:
-    log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session")
-    return
-
-  return self.createView(document)
-
-proc setMaxViews*(self: App, maxViews: int, openExisting: bool = false) {.expose("editor").} =
-  ## Set the maximum number of views that can be open at the same time
-  ## Closes any views that exceed the new limit
-
-  log lvlInfo, fmt"[setMaxViews] {maxViews}"
-  self.config.setOption[:int]("editor.maxViews", maxViews)
-  while maxViews > 0 and self.views.len > maxViews:
-    self.views[self.views.high].deactivate()
-    self.hiddenViews.add self.views.pop()
-
-  while openExisting and self.views.len < maxViews and self.hiddenViews.len > 0:
-    self.views.add self.hiddenViews.pop()
-
-  self.currentView = self.currentView.clamp(0, self.views.high)
-
-  self.updateActiveEditor(false)
-  self.platform.requestRender()
-
 proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind =
   if workspaceFolder of WorkspaceFolderLocal:
     return OpenWorkspaceKind.Local
@@ -1422,7 +1046,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fallbackFonts = self.fallbackFonts
 
   state.commandHistory = self.commandHistory
-  state.sessionData = self.sessionData
+  state.sessionData = self.session.sessionData
 
   if getDebugger().getSome(debugger):
     state.debuggerState = debugger.getStateJson().some
@@ -1476,11 +1100,11 @@ proc saveAppState*(self: App) {.expose("editor").} =
       log lvlError, fmt"Failed to get editor state for {view.document.filename}: {getCurrentExceptionMsg()}"
       return OpenEditor.none
 
-  for view in self.views:
+  for view in self.layout.views:
     if view of EditorView and view.EditorView.getEditorState().getSome(editorState):
       state.openEditors.add editorState
 
-  for view in self.hiddenViews:
+  for view in self.layout.hiddenViews:
     if view of EditorView and view.EditorView.getEditorState().getSome(editorState):
       state.hiddenEditors.add editorState
 
@@ -1499,16 +1123,16 @@ proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor"
   self.platform.requestRender(redrawEverything)
 
 proc setHandleInputs*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.getEventHandlerConfig(context).setHandleInputs(value)
+  self.events.getEventHandlerConfig(context).setHandleInputs(value)
 
 proc setHandleActions*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.getEventHandlerConfig(context).setHandleActions(value)
+  self.events.getEventHandlerConfig(context).setHandleActions(value)
 
 proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.getEventHandlerConfig(context).setConsumeAllActions(value)
+  self.events.getEventHandlerConfig(context).setConsumeAllActions(value)
 
 proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.getEventHandlerConfig(context).setConsumeAllInput(value)
+  self.events.getEventHandlerConfig(context).setConsumeAllInput(value)
 
 proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool] {.async.} =
   log(lvlInfo, fmt"Opening workspace {workspace.name}")
@@ -1538,7 +1162,7 @@ proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.e
     return nil
   let action = self.scriptActions[context]
   try:
-    withScriptContext self, action.scriptContext:
+    withScriptContext self.plugins, action.scriptContext:
       return action.scriptContext.handleScriptAction(context, args)
     log lvlError, fmt"No script context for action '{context}'"
     return nil
@@ -1572,12 +1196,6 @@ proc addScriptAction*(self: App, name: string, docs: string = "",
     else:
       extendGlobalDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
 
-proc invalidateCommandToKeysMap*(self: App) =
-  self.commandInfos.invalidate()
-
-proc rebuildCommandToKeysMap*(self: App) =
-  self.commandInfos.rebuild(self.eventHandlerConfigs)
-
 proc openLocalWorkspaceAsync(self: App, path: string) {.async.} =
   discard await self.setWorkspaceFolder newWorkspaceFolderLocal(path)
 
@@ -1594,10 +1212,10 @@ proc quitImmediately*(self: App, exitCode: int = 0) {.expose("editor").} =
 proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/getting_started.md"
   let docsPath = "docs/getting_started.md"
-  let textDocument = newTextDocument(self.config.asConfigProvider, self.fs, docsPath, introductionMd, app=true, load=true)
-  self.documents.add textDocument
+  let textDocument = newTextDocument(self.services, self.fs, docsPath, introductionMd, app=true, load=true)
+  self.editors.documents.add textDocument
   textDocument.load()
-  discard self.createAndAddView(textDocument)
+  discard self.layout.createAndAddView(textDocument)
 
 proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async.} =
   let content = await self.workspace.loadFile(path)
@@ -1635,12 +1253,12 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.platform.requestRender(true)
 
 proc logs*(self: App, scrollToBottom: bool = false) {.expose("editor").} =
-  let editors = self.getEditorsForDocument(self.logDocument)
+  let editors = self.editors.getEditorsForDocument(self.logDocument)
   let editor = if editors.len > 0:
-    self.showEditor(editors[0].id)
+    self.layout.showEditor(editors[0].id)
     editors[0]
   else:
-    self.createAndAddView(self.logDocument)
+    self.layout.createAndAddView(self.logDocument).get
 
   if scrollToBottom and editor of TextDocumentEditor:
     let editor = editor.TextDocumentEditor
@@ -1651,283 +1269,23 @@ proc toggleConsoleLogger*(self: App) {.expose("editor").} =
   {.gcsafe.}:
     logger.toggleConsoleLogger()
 
-proc getViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
-  ## Returns the index of the view for the given editor.
-  for i, view in self.views:
-    if view of EditorView and view.EditorView.editor == editor:
-      return i.some
-
-  return int.none
-
-proc getHiddenViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
-  ## Returns the index of the hidden view for the given editor.
-  for i, view in self.hiddenViews:
-    if view of EditorView and view.EditorView.editor == editor:
-      return i.some
-
-  return int.none
-
-proc getHiddenViewForEditor*(self: App, editorId: EditorId): Option[int] =
-  ## Returns the index of the hidden view for the given editor.
-  for i, view in self.hiddenViews:
-    if view of EditorView and view.EditorView.editor.id == editorId:
-      return i.some
-
-  return int.none
-
-proc showEditor*(self: App, editorId: EditorId, viewIndex: Option[int] = int.none) {.expose("editor").} =
-  ## Make the given editor visible
-  ## If viewIndex is none, the editor will be opened in the currentView,
-  ## Otherwise the editor will be opened in the view with the given index.
-
-  let editor = self.getEditorForId(editorId).getOr:
-    log lvlError, &"No editor with id {editorId} exists"
-    return
-
-  assert editor.getDocument().isNotNil
-
-  log lvlInfo, &"showEditor editorId={editorId}, viewIndex={viewIndex}, filename={editor.getDocument().filename}"
-
-  for i, view in self.views:
-    if view of EditorView and view.EditorView.editor == editor:
-      self.currentView = i
-      return
-
-  let hiddenView = self.getHiddenViewForEditor(editor)
-  let view: View = if hiddenView.getSome(index):
-    let view = self.hiddenViews[index]
-    self.hiddenViews.removeSwap(index)
-    view
-  else:
-    EditorView(document: editor.getDocument(), editor: editor)
-
-  if viewIndex.getSome(_):
-    # todo
-    log lvlError, &"Not implemented: showEditor({editorId}, {viewIndex})"
-  else:
-    let oldView = self.views[self.currentView]
-    oldView.deactivate()
-    self.hiddenViews.add oldView
-
-    self.views[self.currentView] = view
-    view.activate()
-
-proc getVisibleEditors*(self: App): seq[EditorId] {.expose("editor").} =
-  ## Returns a list of all editors which are currently shown
-  for view in self.views:
-    if view of EditorView:
-      result.add view.EditorView.editor.id
-
-proc getHiddenEditors*(self: App): seq[EditorId] {.expose("editor").} =
-  ## Returns a list of all editors which are currently hidden
-  for view in self.hiddenViews:
-    if view of EditorView:
-      result.add view.EditorView.editor.id
-
-proc getExistingEditor*(self: App, path: string): Option[EditorId] {.expose("editor").} =
-  ## Returns an existing editor for the given file if one exists,
-  ## or none otherwise.
-  defer:
-    log lvlInfo, &"getExistingEditor {path} -> {result}"
-
-  if path.len == 0:
-    return EditorId.none
-
-  for id, editor in self.editors.pairs:
-    if editor.getDocument() == nil:
-      continue
-    if editor.getDocument().filename != path:
-      continue
-    return id.some
-
-  return EditorId.none
-
-proc getOrOpenEditor*(self: App, path: string): Option[EditorId] {.expose("editor").} =
-  ## Returns an existing editor for the given file if one exists,
-  ## otherwise a new editor is created for the file.
-  ## The returned editor will not be shown automatically.
-  defer:
-    log lvlInfo, &"getOrOpenEditor {path} -> {result}"
-
-  if path.len == 0:
-    return EditorId.none
-
-  if self.getExistingEditor(path).getSome(id):
-    return id.some
-
-  let path = self.workspace.getAbsolutePath(path)
-  let document = self.openDocument(path).getOr:
-    return EditorId.none
-
-  let editor = self.createEditorForDocument document
-  return editor.id.some
-
-proc closeEditor*(self: App, editor: DocumentEditor, removeFromViews: bool = true) =
-  let document = editor.getDocument()
-  log lvlInfo, fmt"closeEditor: '{editor.getDocument().filename}'"
-
-  editor.deinit()
-
-  if removeFromViews:
-    for i, view in self.hiddenViews:
-      if view of EditorView and view.EditorView.editor == editor:
-        self.hiddenViews.removeShift(i)
-        break
-
-    for i, view in self.views:
-      if view of EditorView and view.EditorView.editor == editor:
-        self.views.removeShift(i)
-        break
-
-  if document == self.logDocument:
-    return
-
-  var hasAnotherEditor = false
-  for id, editor in self.editors.pairs:
-    if editor.getDocument() == document:
-      hasAnotherEditor = true
-      break
-
-  if not hasAnotherEditor:
-    log lvlInfo, fmt"Document has no other editors, closing it."
-    document.deinit()
-    self.documents.del(document)
-
-proc closeView*(self: App, index: int, keepHidden: bool = true, restoreHidden: bool = true) {.expose("editor").} =
-  ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
-  let view = self.views[index]
-  self.views.delete index
-
-  if restoreHidden and self.hiddenViews.len > 0:
-    let viewToRestore = self.hiddenViews.pop
-    self.views.insert(viewToRestore, index)
-
-  if self.views.len == 0:
-    if self.hiddenViews.len > 0:
-      let view = self.hiddenViews.pop
-      self.addView view
-    else:
-      self.help()
-
-  if keepHidden:
-    self.hiddenViews.add view
-  else:
-    if view of EditorView:
-      self.closeEditor(view.EditorView.editor)
-
-  self.platform.requestRender()
-
-proc closeCurrentView*(self: App, keepHidden: bool = true, restoreHidden: bool = true) {.expose("editor").} =
-  self.closeView(self.currentView, keepHidden, restoreHidden)
-  self.currentView = self.currentView.clamp(0, self.views.len - 1)
-
-proc closeOtherViews*(self: App, keepHidden: bool = true) {.expose("editor").} =
-  ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
-
-  let view = self.views[self.currentView]
-
-  for i, view in self.views:
-    if i != self.currentView:
-      if keepHidden:
-        self.hiddenViews.add view
-      else:
-        if view of EditorView:
-          self.closeEditor(view.EditorView.editor, removeFromViews = false)
-
-  self.views.setLen 1
-  self.views[0] = view
-  self.currentView = 0
-  self.platform.requestRender()
-
-proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor] =
-  for id, editor in self.editors.pairs:
-    if editor.getDocument() == document:
-      result.add editor
-
 proc closeUnusedDocuments*(self: App) =
-  let documents = self.documents
+  let documents = self.editors.documents
   for document in documents:
     if document == self.logDocument:
       continue
 
-    let editors = self.getEditorsForDocument(document)
+    let editors = self.editors.getEditorsForDocument(document)
     if editors.len > 0:
       continue
 
-    discard self.tryCloseDocument(document, true)
+    discard self.layout.tryCloseDocument(document, true)
 
     # Only close one document on each iteration so we don't create spikes
     break
 
-proc tryCloseDocument*(self: App, document: Document, force: bool): bool =
-  if document == self.logDocument:
-    return false
-
-  logScope lvlInfo, &"tryCloseDocument: '{document.filename}', force: {force}"
-
-  let editorsToClose = self.getEditorsForDocument(document)
-
-  if editorsToClose.len > 0 and not force:
-    log lvlInfo, &"Don't close document because there are still {editorsToClose.len} editors using it"
-    return false
-
-  for editor in editorsToClose:
-    log lvlInfo, &"Force close editor for '{document.filename}'"
-    if self.getViewForEditor(editor).getSome(index):
-      self.closeView(index, keepHidden = false, restoreHidden = true)
-    elif self.getHiddenViewForEditor(editor).getSome(index):
-      self.hiddenViews.removeShift(index)
-    else:
-      editor.deinit()
-
-  self.documents.del(document)
-
-  document.deinit()
-
-  return true
-
 proc getServices*(self: App): Services =
   self.services
-
-proc getService*(self: App, name: string): Option[Service] =
-  self.services.getService(name)
-
-proc addService*(self: App, name: string, service: Service) =
-  self.services.addService(name, service)
-
-proc moveCurrentViewToTop*(self: App) {.expose("editor").} =
-  if self.views.len > 0:
-    let view = self.views[self.currentView]
-    self.views.delete(self.currentView)
-    self.views.insert(view, 0)
-  self.currentView = 0
-  self.platform.requestRender()
-
-proc nextView*(self: App) {.expose("editor").} =
-  self.currentView = if self.views.len == 0: 0 else: (self.currentView + 1) mod self.views.len
-  self.platform.requestRender()
-
-proc prevView*(self: App) {.expose("editor").} =
-  self.currentView = if self.views.len == 0: 0 else: (self.currentView + self.views.len - 1) mod self.views.len
-  self.platform.requestRender()
-
-proc moveCurrentViewPrev*(self: App) {.expose("editor").} =
-  if self.views.len > 0:
-    let view = self.views[self.currentView]
-    let index = (self.currentView + self.views.len - 1) mod self.views.len
-    self.views.delete(self.currentView)
-    self.views.insert(view, index)
-    self.currentView = index
-  self.platform.requestRender()
-
-proc moveCurrentViewNext*(self: App) {.expose("editor").} =
-  if self.views.len > 0:
-    let view = self.views[self.currentView]
-    let index = (self.currentView + 1) mod self.views.len
-    self.views.delete(self.currentView)
-    self.views.insert(view, index)
-    self.currentView = index
-  self.platform.requestRender()
 
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = initialValue
@@ -1937,7 +1295,7 @@ proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.currentHistoryEntry = 0
   self.commandLineMode = true
   self.getCommandLineTextEditor.setMode("insert")
-  self.rebuildCommandToKeysMap()
+  self.events.rebuildCommandToKeysMap()
   self.platform.requestRender()
 
 proc exitCommandLine*(self: App) {.expose("editor").} =
@@ -2030,7 +1388,7 @@ proc loadFile*(self: App, path: string = "") {.expose("editor").} =
       log(lvlError, getCurrentException().getStackTrace())
 
 proc loadWorkspaceFile*(self: App, path: string) =
-  if self.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
+  if self.layout.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
     defer:
       self.platform.requestRender()
     try:
@@ -2041,59 +1399,6 @@ proc loadWorkspaceFile*(self: App, path: string) =
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
-proc tryOpenExisting*(self: App, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor] =
-  for i, view in self.views:
-    if view of EditorView and view.EditorView.document.filename == path and
-        (view.EditorView.document.workspace == self.workspace.some or
-        view.EditorView.document.appFile == appFile):
-      log(lvlInfo, fmt"Reusing open editor in view {i}")
-      self.currentView = i
-      return view.EditorView.editor.some
-
-  for i, view in self.hiddenViews:
-    if view of EditorView and view.EditorView.document.filename == path and
-        (view.EditorView.document.workspace == self.workspace.some or
-        view.EditorView.document.appFile == appFile):
-      log(lvlInfo, fmt"Reusing hidden view")
-      self.hiddenViews.delete i
-      self.addView(view, append=append)
-      return view.EditorView.editor.some
-
-  return DocumentEditor.none
-
-proc tryOpenExisting*(self: App, editor: EditorId, addToHistory = true): Option[DocumentEditor] =
-  for i, view in self.views:
-    if view of EditorView and view.EditorView.editor.id == editor:
-      log(lvlInfo, fmt"Reusing open editor in view {i}")
-      `currentView=`(self, i, addToHistory)
-      return view.EditorView.editor.some
-
-  for i, view in self.hiddenViews:
-    if view of EditorView and view.EditorView.editor.id == editor:
-      log(lvlInfo, fmt"Reusing hidden view")
-      self.hiddenViews.delete i
-      self.addView(view, addToHistory)
-      return view.EditorView.editor.some
-
-  return DocumentEditor.none
-
-proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentEditor] =
-  defer:
-    self.platform.requestRender()
-
-  log lvlInfo, fmt"[openFile] Open file '{path}' (appFile = {appFile})"
-  if self.tryOpenExisting(path, appFile, append = false).getSome(ed):
-    log lvlInfo, fmt"[openFile] found existing editor"
-    return ed.some
-
-  log lvlInfo, fmt"Open file '{path}'"
-
-  let document = self.getOrOpenDocument(path, appFile=appFile).getOr:
-    log(lvlError, fmt"Failed to load file {path}")
-    return DocumentEditor.none
-
-  return self.createAndAddView(document).some
-
 proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
@@ -2101,15 +1406,15 @@ proc openWorkspaceFile*(self: App, path: string, append: bool = false): Option[D
   let path = self.workspace.getAbsolutePath(path)
 
   log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
-  if self.tryOpenExisting(path, append = append).getSome(editor):
+  if self.layout.tryOpenExisting(path, append = append).getSome(editor):
     log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
     return editor.some
 
-  let document = self.getOrOpenDocument(path).getOr:
+  let document = self.editors.getOrOpenDocument(path).getOr:
     log(lvlError, fmt"Failed to load file {path}")
     return DocumentEditor.none
 
-  return self.createAndAddView(document, append = append).some
+  return self.layout.createAndAddView(document, append = append)
 
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
   self.setTheme(fmt"themes/{name}.json")
@@ -2167,7 +1472,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
         gTheme = theme
       self.platform.requestRender(true)
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isAbsolute:
@@ -2177,11 +1482,11 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
 
   log lvlInfo, fmt"createFile: '{path}'"
 
-  let document = self.openDocument(fullPath, load=false).getOr:
+  let document = self.editors.openDocument(fullPath, load=false).getOr:
     log(lvlError, fmt"Failed to create file {path}")
     return
 
-  discard self.createAndAddView(document)
+  discard self.layout.createAndAddView(document)
 
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup =
   var popup = newSelectorPopup(self.asAppInterface, self.fs, builder.scope, builder.finder, builder.previewer.toDisposableRef)
@@ -2210,7 +1515,7 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
       popup.addCustomCommand command, proc(popup: SelectorPopup, args: JsonNode): bool =
         return handler(popup.asISelectorPopup, args)
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 type
   WorkspaceFilesDataSource* = ref object of DataSource
@@ -2299,14 +1604,14 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
-    for (context, c) in self.eventHandlerConfigs.pairs:
+    for (context, c) in self.events.eventHandlerConfigs.pairs:
       if not c.commands.contains(""):
         continue
       for (keys, commandInfo) in c.commands[""].pairs:
         var name = commandInfo.command
 
         let key = context & keys
-        self.commandDescriptions.withValue(key, val):
+        self.events.commandDescriptions.withValue(key, val):
           name = val[]
 
         items.add(FinderItem(
@@ -2323,7 +1628,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     return items
 
   let previewer = if preview:
-    newWorkspaceFilePreviewer(self.workspace, self.vfs, self.fs, self.config.asConfigProvider, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newWorkspaceFilePreviewer(self.workspace, self.vfs, self.fs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -2352,7 +1657,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
       editor.TextDocumentEditor.centerCursor()
     return true
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces
@@ -2365,7 +1670,7 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   let workspace = self.workspace
 
   let previewer = if preview:
-    newWorkspaceFilePreviewer(workspace, self.fs, self.config.asConfigProvider).Previewer.toDisposableRef.some
+    newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -2379,12 +1684,12 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     discard self.openWorkspaceFile(item.data)
     return true
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc openLastEditor*(self: App) {.expose("editor").} =
-  if self.hiddenViews.len > 0:
-    let view = self.hiddenViews.pop()
-    self.addView(view, addToHistory=false, append=false)
+  if self.layout.hiddenViews.len > 0:
+    let view = self.layout.hiddenViews.pop()
+    self.layout.addView(view, addToHistory=false, append=false)
 
 proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("editor").} =
   defer:
@@ -2392,19 +1697,19 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
-    let allViews = self.views & self.hiddenViews
+    let allViews = self.layout.views & self.layout.hiddenViews
     for i in countdown(allViews.high, 0):
-      let view = allViews[i]
-      if not (view of EditorView):
+      if not (allViews[i] of EditorView):
         continue
 
-      let document = view.EditorView.editor.getDocument
-      let path = view.EditorView.document.filename
-      let isDirty = view.EditorView.document.lastSavedRevision != view.EditorView.document.revision
+      let view = allViews[i].EditorView
+      let document = view.editor.getDocument
+      let path = document.filename
+      let isDirty = document.lastSavedRevision != document.revision
       let dirtyMarker = if isDirty: "*" else: " "
-      let activeMarker = if i == self.currentView:
+      let activeMarker = if i == self.layout.currentView:
         "#"
-      elif i < self.views.len:
+      elif i < self.layout.views.len:
         "👁"
       else:
         " "
@@ -2422,7 +1727,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
       items.add FinderItem(
         displayName: activeMarker & dirtyMarker & name,
         filterText: name,
-        data: $view.EditorView.editor.id,
+        data: $view.editor.id,
         detail: relativeDirectory,
       )
 
@@ -2433,7 +1738,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   finder.filterThreshold = float.low
 
   let previewer = if preview:
-    newOpenEditorPreviewer(self.config.asConfigProvider).Previewer.toDisposableRef.some
+    newOpenEditorPreviewer(self.services).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -2447,7 +1752,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
       log lvlError, fmt"Failed to parse editor id from data '{item}'"
       return true
 
-    discard self.tryOpenExisting(editorId)
+    discard self.layout.tryOpenExisting(editorId)
     return true
 
   popup.addCustomCommand "close-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2461,13 +1766,16 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
       log lvlError, fmt"Failed to parse editor id from data '{item}'"
       return true
 
-    if self.getEditorForId(editorId).getSome(editor):
-      self.closeEditor(editor)
+    if self.editors.getEditorForId(editorId).getSome(editor):
+      if self.layout.getViewForEditor(editor).getSome(view):
+        self.layout.closeView(view)
+      else:
+        self.editors.closeEditor(editor)
 
     source.retrigger()
     return true
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc chooseOpenDocument*(self: App) {.expose("editor").} =
   defer:
@@ -2475,7 +1783,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
-    for document in self.documents:
+    for document in self.editors.documents:
       if document == self.logDocument or document == self.commandLineTextEditor.getDocument():
         continue
 
@@ -2518,11 +1826,11 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     if item.data.WorkspacePath.decodePath().getSome(path):
-      if self.getDocument(path.path).getSome(document):
-        discard self.createAndAddView(document)
+      if self.editors.getDocument(path.path).getSome(document):
+        discard self.layout.createAndAddView(document)
     else:
-      if self.getDocument(item.data).getSome(document):
-        discard self.createAndAddView(document)
+      if self.editors.getDocument(item.data).getSome(document):
+        discard self.layout.createAndAddView(document)
       else:
         log lvlError, fmt"Failed to open location {item}"
 
@@ -2534,17 +1842,17 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
 
     if popup.getSelectedItem().getSome(item):
       if item.data.WorkspacePath.decodePath().getSome(path):
-        if self.getDocument(path.path).getSome(document):
-          discard self.tryCloseDocument(document, force=true)
+        if self.editors.getDocument(path.path).getSome(document):
+          discard self.layout.tryCloseDocument(document, force=true)
           source.retrigger()
       else:
-        if self.getDocument(item.data).getSome(document):
-          discard self.tryCloseDocument(document, force=true)
+        if self.editors.getDocument(item.data).getSome(document):
+          discard self.layout.tryCloseDocument(document, force=true)
           source.retrigger()
 
     return true
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc gotoNextLocation*(self: App) {.expose("editor").} =
   if self.finderItems.len == 0:
@@ -2615,7 +1923,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
 
     return true
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int): Future[ItemList] {.async.} =
   let searchResults = workspace.searchWorkspace(query, maxResults).await
@@ -2685,7 +1993,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.asAppInterface, self.fs, "search".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.fs, self.config.asConfigProvider).Previewer.toDisposableRef.some)
+    newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2705,7 +2013,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
       editor.TextDocumentEditor.centerCursor()
     return true
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
@@ -2718,7 +2026,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.asAppInterface, self.fs, "search".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.fs, self.config.asConfigProvider).Previewer.toDisposableRef.some)
+    newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2738,7 +2046,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
       editor.TextDocumentEditor.centerCursor()
     return true
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc installTreesitterParserAsync*(self: App, language: string, host: string) {.async.} =
   try:
@@ -2887,7 +2195,7 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
   finder.filterThreshold = float.low
 
   var popup = newSelectorPopup(self.asAppInterface, self.fs, "file-explorer".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.fs, self.config.asConfigProvider).Previewer.toDisposableRef.some)
+    newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2917,7 +2225,7 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
     source.retrigger()
     return true
 
-  self.pushPopup popup
+  self.layout.pushPopup popup
 
 proc exploreUserConfigDir*(self: App) {.expose("editor").} =
   if self.homeDir.len == 0:
@@ -2936,31 +2244,31 @@ proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
   self.exploreFiles(self.workspace.getWorkspacePath())
 
 proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
-  if self.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
+  if self.layout.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
     self.exploreFiles(view.document.filename.splitPath.head)
 
 proc openPreviousEditor*(self: App) {.expose("editor").} =
-  if self.editorHistory.len == 0:
+  if self.layout.editorHistory.len == 0:
     return
 
-  let editor = self.editorHistory.popLast
+  let editor = self.layout.editorHistory.popLast
 
-  if self.tryGetCurrentEditorView().getSome(view):
-    self.editorHistory.addFirst view.editor.id
+  if self.layout.tryGetCurrentEditorView().getSome(view):
+    self.layout.editorHistory.addFirst view.editor.id
 
-  discard self.tryOpenExisting(editor, addToHistory=false)
+  discard self.layout.tryOpenExisting(editor, addToHistory=false)
   self.platform.requestRender()
 
 proc openNextEditor*(self: App) {.expose("editor").} =
-  if self.editorHistory.len == 0:
+  if self.layout.editorHistory.len == 0:
     return
 
-  let editor = self.editorHistory.popFirst
+  let editor = self.layout.editorHistory.popFirst
 
-  if self.tryGetCurrentEditorView().getSome(view):
-    self.editorHistory.addLast view.editor.id
+  if self.layout.tryGetCurrentEditorView().getSome(view):
+    self.layout.editorHistory.addLast view.editor.id
 
-  discard self.tryOpenExisting(editor, addToHistory=false)
+  discard self.layout.tryOpenExisting(editor, addToHistory=false)
   self.platform.requestRender()
 
 proc setGithubAccessToken*(self: App, token: string) {.expose("editor").} =
@@ -2983,11 +2291,11 @@ proc reloadPluginAsync*(self: App) {.async.} =
       self.clearScriptActionsFor(self.wasmScriptContext)
 
       let t1 = startTimer()
-      withScriptContext self, self.wasmScriptContext:
+      withScriptContext self.plugins, self.wasmScriptContext:
         await self.wasmScriptContext.reload()
       log(lvlInfo, fmt"Reload wasm plugins ({t1.elapsed.ms}ms)")
 
-      withScriptContext self, self.wasmScriptContext:
+      withScriptContext self.plugins, self.wasmScriptContext:
         let t2 = startTimer()
         discard self.wasmScriptContext.postInitialize()
         log(lvlInfo, fmt"Post init wasm plugins ({t2.elapsed.ms}ms)")
@@ -3031,17 +2339,8 @@ proc dumpKeymapGraphViz*(self: App, context: string = "") {.expose("editor").} =
     if context == "" or handler.config.context == context:
       self.fs.saveApplicationFile(handler.config.context & ".dot", handler.dfa.dumpGraphViz)
 
-proc clearCommands*(self: App, context: string) {.expose("editor").} =
-  log(lvlInfo, fmt"Clearing keybindings for {context}")
-  self.getEventHandlerConfig(context).clearCommands()
-  self.invalidateCommandToKeysMap()
-
-proc getAllEditors*(self: App): seq[EditorId] {.expose("editor").} =
-  for id in self.editors.keys:
-    result.add id
-
 proc getModeConfig(self: App, mode: string): EventHandlerConfig =
-  return self.getEventHandlerConfig("editor." & mode)
+  return self.events.getEventHandlerConfig("editor." & mode)
 
 proc setMode*(self: App, mode: string) {.expose("editor").} =
   defer:
@@ -3077,9 +2376,9 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
   if self.commandLineMode:
     result.add self.getCommandLineTextEditor.getEventHandlers({"above-mode": self.commandLineEventHandlerLow}.toTable)
     result.add self.commandLineEventHandlerHigh
-  elif self.popups.len > 0:
-    result.add self.popups[self.popups.high].getEventHandlers()
-  elif self.tryGetCurrentView().getSome(view):
+  elif self.layout.popups.len > 0:
+    result.add self.layout.popups[self.layout.popups.high].getEventHandlers()
+  elif self.layout.tryGetCurrentView().getSome(view):
       result.add view.getEventHandlers(initTable[string, EventHandler]())
 
   if not self.modeEventHandler.isNil and modeOnTop:
@@ -3110,9 +2409,9 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   self.logNextFrameTime = true
 
   for register in self.recordingKeys:
-    if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
-      self.registers[register] = Register(kind: RegisterKind.Text, text: "")
-    self.registers[register].text.add inputToString(input, modifiers)
+    if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
+      self.registers.registers[register] = Register(kind: RegisterKind.Text, text: "")
+    self.registers.registers[register].text.add inputToString(input, modifiers)
 
   try:
     case self.currentEventHandlers.handleEvent(input, modifiers)
@@ -3156,9 +2455,9 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
     discard
 
 proc handleDropFile*(self: App, path, content: string) =
-  let document = newTextDocument(self.config.asConfigProvider, self.fs, path, content)
-  self.documents.add document
-  discard self.createAndAddView(document)
+  let document = newTextDocument(self.services, self.fs, path, content)
+  self.editors.documents.add document
+  discard self.layout.createAndAddView(document)
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   {.gcsafe.}:
@@ -3172,21 +2471,6 @@ proc scriptLog*(message: string) {.expose("editor").} =
 proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
   self.platform.builder.animationSpeedModifier *= factor
   log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
-
-proc setLeader*(self: App, leader: string) {.expose("editor").} =
-  self.leaders = @[leader]
-  for config in self.eventHandlerConfigs.values:
-    config.setLeaders self.leaders
-
-proc setLeaders*(self: App, leaders: seq[string]) {.expose("editor").} =
-  self.leaders = leaders
-  for config in self.eventHandlerConfigs.values:
-    config.setLeaders self.leaders
-
-proc addLeader*(self: App, leader: string) {.expose("editor").} =
-  self.leaders.add leader
-  for config in self.eventHandlerConfigs.values:
-    config.setLeaders self.leaders
 
 proc registerPluginSourceCode*(self: App, path: string, content: string) {.expose("editor").} =
   if self.currentScriptContext.getSome(scriptContext):
@@ -3202,29 +2486,25 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
     (context, subContext)
 
   if description.len > 0:
-    self.commandDescriptions[context & subContext & keys] = description
+    self.events.commandDescriptions[context & subContext & keys] = description
 
   var source = source
   if self.currentScriptContext.getSome(scriptContext):
     source.filename = scriptContext.getCurrentContext() & source.filename
 
-  self.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
-  self.invalidateCommandToKeysMap()
-
-proc removeCommand*(self: App, context: string, keys: string) {.expose("editor").} =
-  # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
-  self.getEventHandlerConfig(context).removeCommand(keys)
-  self.invalidateCommandToKeysMap()
+  self.events.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
+  self.events.invalidateCommandToKeysMap()
 
 proc getActivePopup*(): EditorId {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
       return EditorId(-1)
-    if gEditor.popups.len > 0:
-      return gEditor.popups[gEditor.popups.high].id
+    if gEditor.layout.popups.len > 0:
+      return gEditor.layout.popups[gEditor.layout.popups.high].id
 
   return EditorId(-1)
 
+# todo: move to layout
 proc getActiveEditor*(): EditorId {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
@@ -3232,10 +2512,10 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
     if gEditor.commandLineMode:
       return gEditor.commandLineTextEditor.id
 
-    if gEditor.popups.len > 0 and gEditor.popups[gEditor.popups.high].getActiveEditor().getSome(editor):
+    if gEditor.layout.popups.len > 0 and gEditor.layout.popups[gEditor.layout.popups.high].getActiveEditor().getSome(editor):
       return editor.id
 
-    if gEditor.tryGetCurrentView().getSome(view) and view.getActiveEditor().getSome(editor):
+    if gEditor.layout.tryGetCurrentView().getSome(view) and view.getActiveEditor().getSome(editor):
       return editor.id
 
   return EditorId(-1)
@@ -3244,38 +2524,24 @@ proc getActiveEditor*(self: App): Option[DocumentEditor] =
   if self.commandLineMode:
     return self.commandLineTextEditor.some
 
-  if self.popups.len > 0 and self.popups[self.popups.high].getActiveEditor().getSome(editor):
+  if self.layout.popups.len > 0 and self.layout.popups[self.layout.popups.high].getActiveEditor().getSome(editor):
     return editor.some
 
-  if self.tryGetCurrentEditorView().getSome(view):
+  if self.layout.tryGetCurrentEditorView().getSome(view):
     return view.editor.some
 
   return DocumentEditor.none
 
-proc getActiveViewEditor*(self: App): Option[DocumentEditor] =
-  if self.tryGetCurrentEditorView().getSome(view):
-    return view.editor.some
-
-  return DocumentEditor.none
-
+# todo move to layout
 proc logRootNode*(self: App) {.expose("editor").} =
   let str = self.platform.builder.root.dump(true)
   debug "logRootNode: ", str
-
-proc getEditorInView*(index: int): EditorId {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return EditorId(-1)
-    if index >= 0 and index < gEditor.views.len and gEditor.views[index] of EditorView:
-      return gEditor.views[index].EditorView.editor.id
-
-  return EditorId(-1)
 
 proc scriptIsSelectorPopup*(editorId: EditorId): bool {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
       return false
-    if gEditor.getPopupForId(editorId).getSome(popup):
+    if gEditor.layout.getPopupForId(editorId).getSome(popup):
       return popup of SelectorPopup
   return false
 
@@ -3283,11 +2549,8 @@ proc scriptIsTextEditor*(editorId: EditorId): bool {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
       return false
-    if gEditor.getEditorForId(editorId).getSome(editor):
+    if gEditor.editors.getEditorForId(editorId).getSome(editor):
       return editor of TextDocumentEditor
-  return false
-
-proc scriptIsAstEditor*(editorId: EditorId): bool {.expose("editor").} =
   return false
 
 proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
@@ -3295,7 +2558,7 @@ proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
     if gEditor.isNil:
       return false
     when enableAst:
-      if gEditor.getEditorForId(editorId).getSome(editor):
+      if gEditor.editors.getEditorForId(editorId).getSome(editor):
         return editor of ModelDocumentEditor
   return false
 
@@ -3305,9 +2568,9 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expo
       return
     defer:
       gEditor.platform.requestRender()
-    if gEditor.getEditorForId(editorId).getSome(editor):
+    if gEditor.editors.getEditorForId(editorId).getSome(editor):
       discard editor.handleAction(action, arg, record=false)
-    elif gEditor.getPopupForId(editorId).getSome(popup):
+    elif gEditor.layout.getPopupForId(editorId).getSome(popup):
       discard popup.eventHandler.handleAction(action, arg)
 
 proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").} =
@@ -3316,104 +2579,14 @@ proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").
       return
     defer:
       gEditor.platform.requestRender()
-    if gEditor.getEditorForId(editorId).getSome(editor):
+    if gEditor.editors.getEditorForId(editorId).getSome(editor):
       discard editor.eventHandler.handleInput(text)
-
-proc setSessionDataJson*(self: App, path: string, value: JsonNode, override: bool = true) {.expose("editor").} =
-  if self.isNil or path.len == 0:
-    return
-
-  try:
-    let pathItems = path.split(".")
-    var node = self.sessionData
-    for key in pathItems[0..^2]:
-      if node.kind != JObject:
-        return
-      if not node.contains(key):
-        node[key] = newJObject()
-      node = node[key]
-    if node.isNil or node.kind != JObject:
-      return
-
-    let key = pathItems[^1]
-    if not override and node.hasKey(key):
-      node.fields[key].extendJson(value, true)
-    else:
-      node[key] = value
-
-    self.config.onConfigChanged.invoke()
-  except:
-    discard
-
-proc getSessionDataJson*(self: App, path: string, default: JsonNode): JsonNode {.expose("editor").} =
-  if self.isNil:
-    return default
-  let node = self.sessionData{path.split(".")}
-  if node.isNil:
-    return default
-  return node
 
 proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
       return
     gEditor.callbacks[path] = id
-
-proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.} =
-  self.registers[register] = Register(kind: RegisterKind.Text, text: text)
-  if register.len == 0:
-    setSystemClipboardText(text)
-
-proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.} =
-  if register.len == 0:
-    let text = getSystemClipboardText().await
-    if text.isSome:
-      return text.get
-
-  if self.registers.contains(register):
-    return self.registers[register].getText()
-
-  return ""
-
-proc setRegisterAsync*(self: App, register: string, value: sink Register): Future[void] {.async.} =
-  if register.len == 0:
-    setSystemClipboardText(value.getText())
-  self.registers[register] = value.move
-
-proc getRegisterAsync*(self: App, register: string, res: ptr Register): Future[bool] {.async.} =
-  if register.len == 0:
-    var text = getSystemClipboardText().await
-    if text.isSome:
-      if text.get.len > 1024:
-        var rope: Rope
-        if createRopeAsync(text.get.addr, rope.addr).await.getSome(errorIndex):
-          log lvlWarn, &"Large clipboard contains invalid utf8 at index {errorIndex}, can't use rope"
-          res[] = Register(kind: Text, text: text.get.move)
-        else:
-          res[] = Register(kind: Rope, rope: rope.move)
-
-      else:
-        res[] = Register(kind: Text, text: text.get.move)
-      return true
-
-  if self.registers.contains(register):
-    res[] = self.registers[register].clone()
-    return true
-
-  return false
-
-proc setRegisterText*(self: App, text: string, register: string = "") {.expose("editor").} =
-  self.registers[register] = Register(kind: RegisterKind.Text, text: text)
-
-proc getRegisterText*(self: App, register: string): string {.expose("editor").} =
-  if register.len == 0:
-    log lvlError, fmt"getRegisterText: Register name must not be empty. Use getRegisterTextAsync() instead."
-    return ""
-
-  if self.registers.contains(register):
-    return self.registers[register].getText()
-
-  return ""
 
 proc startRecordingKeys*(self: App, register: string) {.expose("editor").} =
   log lvlInfo, &"Start recording keys into '{register}'"
@@ -3436,7 +2609,7 @@ proc isReplayingKeys*(self: App): bool {.expose("editor").} = self.bIsReplayingK
 proc isRecordingCommands*(self: App, registry: string): bool {.expose("editor").} = self.recordingCommands.contains(registry)
 
 proc replayCommands*(self: App, register: string) {.expose("editor").} =
-  if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+  if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
     log lvlError, fmt"No commands recorded in register '{register}'"
     return
 
@@ -3444,17 +2617,17 @@ proc replayCommands*(self: App, register: string) {.expose("editor").} =
     log lvlError, fmt"replayCommands '{register}': Already replaying commands"
     return
 
-  log lvlInfo, &"replayCommands '{register}':\n{self.registers[register].text}"
+  log lvlInfo, &"replayCommands '{register}':\n{self.registers.registers[register].text}"
   self.bIsReplayingCommands = true
   defer:
     self.bIsReplayingCommands = false
 
-  for command in self.registers[register].text.splitLines:
+  for command in self.registers.registers[register].text.splitLines:
     let (action, arg) = parseAction(command)
     discard self.handleAction(action, arg, record=false)
 
 proc replayKeys*(self: App, register: string) {.expose("editor").} =
-  if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+  if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
     log lvlError, fmt"No commands recorded in register '{register}'"
     return
 
@@ -3462,12 +2635,12 @@ proc replayKeys*(self: App, register: string) {.expose("editor").} =
     log lvlError, fmt"replayKeys '{register}': Already replaying keys"
     return
 
-  log lvlInfo, &"replayKeys '{register}': {self.registers[register].text}"
+  log lvlInfo, &"replayKeys '{register}': {self.registers.registers[register].text}"
   self.bIsReplayingKeys = true
   defer:
     self.bIsReplayingKeys = false
 
-  for (inputCode, mods, _) in parseInputs(self.registers[register].text):
+  for (inputCode, mods, _) in parseInputs(self.registers.registers[register].text):
     self.handleKeyPress(inputCode.a, mods)
 
 proc inputKeys*(self: App, input: string) {.expose("editor").} =
@@ -3488,7 +2661,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Backend: {self.backend}\n"
 
       result.add &"Registers:\n"
-      for (key, value) in self.registers.mpairs:
+      for (key, value) in self.registers.registers.mpairs:
         result.add &"    {key}: {value}\n"
 
       result.add &"RecordingKeys:\n"
@@ -3499,15 +2672,15 @@ proc printStatistics*(self: App) {.expose("editor").} =
       for key in self.recordingKeys:
         result.add &"    {key}"
 
-      result.add &"Event Handlers: {self.eventHandlerConfigs.len}\n"
-        # eventHandlerConfigs: Table[string, EventHandlerConfig]
+      result.add &"Event Handlers: {self.events.eventHandlerConfigs.len}\n"
+        # events.eventHandlerConfigs: Table[string, EventHandlerConfig]
 
       result.add &"Options: {self.config.settings.pretty.len}\n"
       result.add &"Callbacks: {self.callbacks.len}\n"
       result.add &"Script Actions: {self.scriptActions.len}\n"
 
       result.add &"Input History: {self.inputHistory}\n"
-      result.add &"Editor History: {self.editorHistory}\n"
+      result.add &"Editor History: {self.layout.editorHistory}\n"
 
       result.add &"Command History: {self.commandHistory.len}\n"
       # for command in self.commandHistory:
@@ -3548,11 +2721,11 @@ addGlobalDispatchTable "editor", genDispatchTable("editor")
 
 proc recordCommand*(self: App, command: string, args: string) =
   for register in self.recordingCommands:
-    if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
-      self.registers[register] = Register(kind: RegisterKind.Text, text: "")
-    if self.registers[register].text.len > 0:
-      self.registers[register].text.add "\n"
-    self.registers[register].text.add command & " " & args
+    if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
+      self.registers.registers[register] = Register(kind: RegisterKind.Text, text: "")
+    if self.registers.registers[register].text.len > 0:
+      self.registers.registers[register].text.add "\n"
+    self.registers.registers[register].text.add command & " " & args
 
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
   let t = startTimer()
@@ -3595,10 +2768,11 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
             log lvlError, &"Failed to dispatch '{action} {args}': {e.msg}"
 
     try:
-      withScriptContext self, self.wasmScriptContext:
-        let res = self.wasmScriptContext.handleScriptAction(action, args)
-        if res.isNotNil:
-          return res.some
+      for sc in self.plugins.scriptContexts:
+        withScriptContext self.plugins, sc:
+          let res = sc.handleScriptAction(action, args)
+          if res.isNotNil:
+            return res.some
     except CatchableError:
       log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())

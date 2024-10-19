@@ -1,4 +1,4 @@
-import std/[json, tables, options, macros, genasts, macrocache, typetraits]
+import std/[json, tables, options, macros, genasts, macrocache, typetraits, sets]
 import misc/[util, custom_logger, custom_async]
 
 const builtinServices = CacheSeq"builtinServices"
@@ -29,6 +29,21 @@ var gServices*: Services
 
 method init*(self: Service): Future[Result[void, ref CatchableError]] {.base, async: (raises: []).} = discard
 
+proc waitForServices*(self: Services) =
+  while true:
+    var servicesToWaitFor = initHashSet[string]()
+    for s in self.registered.keys:
+      if s notin self.running:
+        servicesToWaitFor.incl(s)
+
+    if servicesToWaitFor.len == 0:
+      break
+
+    log lvlInfo, &"Waiting for services {servicesToWaitFor}"
+    poll()
+
+  log lvlInfo, &"Finished initializing services"
+
 proc getService*(self: Services, name: string, state: Option[ServiceState] = ServiceState.none): Option[Service] =
   if state.get(Running) == Running:
     self.running.withValue(name, service):
@@ -58,7 +73,6 @@ proc initService(self: Services, name: string) {.async.} =
       deps.removeSwap(idx)
       if deps.len == 0:
         await self.initService(s)
-        break
 
   else:
     log lvlError, &"Failed to initialize service '{name}'"

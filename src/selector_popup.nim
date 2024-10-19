@@ -1,13 +1,14 @@
 import std/[sugar, options, json, streams, tables]
 import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
-import app_interface, text/text_editor, popup, events, scripting/expose,
-  selector_popup_builder, dispatch_tables
+import scripting/[expose, scripting_base]
+import app_interface, text/text_editor, popup, events,
+  selector_popup_builder, dispatch_tables, layout, service
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 import platform/filesystem
 
-export popup, selector_popup_builder
+export popup, selector_popup_builder, service
 
 {.push gcsafe.}
 
@@ -16,6 +17,10 @@ logCategory "selector"
 type
   SelectorPopup* = ref object of Popup
     app*: AppInterface
+    services*: Services
+    layout*: LayoutService
+    events*: EventHandlerService
+    plugins: PluginService
     textEditor*: TextDocumentEditor
     previewEditor*: TextDocumentEditor
     selected*: int
@@ -118,8 +123,9 @@ method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] {.gcsafe, raises: [].} =
   {.gcsafe.}:
-    if gAppInterface.isNil: return SelectorPopup.none
-    if gAppInterface.getPopupForId(wrapper.id).getSome(editor):
+    if gServices.isNil: return SelectorPopup.none
+    let layout = gServices.getService(LayoutService).get
+    if layout.getPopupForId(wrapper.id).getSome(editor):
       if editor of SelectorPopup:
         return editor.SelectorPopup.some
     return SelectorPopup.none
@@ -187,7 +193,7 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
     assert self.selected < list.filteredLen
     let handled = self.handleItemConfirmed list[self.selected]
     if handled:
-      self.app.popPopup(self)
+      self.layout.popPopup(self)
 
 proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
@@ -195,7 +201,7 @@ proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
 
   if self.handleCanceled != nil:
     self.handleCanceled()
-  self.app.popPopup(self)
+  self.layout.popPopup(self)
 
 proc sort*(self: SelectorPopup, sort: ToggleBool) {.expose("popup.selector").} =
   if self.textEditor.isNil:
@@ -296,7 +302,7 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.app.invokeAnyCallback(action, args).isNotNil:
+    if self.plugins.invokeAnyCallback(action, args).isNotNil:
       return Handled
 
     if dispatch(action, args).isSome:
@@ -358,10 +364,16 @@ proc newSelectorPopup*(app: AppInterface, fs: Filesystem, scopeName = string.non
   assert finder.isSome
   assert finder.get.isNotNil
 
+  let services = app.getServices()
+
   var popup = SelectorPopup(app: app)
+  popup.services = services
+  popup.layout = services.getService(LayoutService).get
+  popup.events = services.getService(EventHandlerService).get
+  popup.plugins = services.getService(PluginService).get
   popup.scale = vec2(0.5, 0.5)
-  let document = newTextDocument(app.configProvider, fs, createLanguageServer=false)
-  popup.textEditor = newTextEditor(document, app, fs, app.configProvider)
+  let document = newTextDocument(services, fs, createLanguageServer=false)
+  popup.textEditor = newTextEditor(document, app, fs, services)
   popup.textEditor.usage = "search-bar"
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
@@ -382,10 +394,10 @@ proc newSelectorPopup*(app: AppInterface, fs: Filesystem, scopeName = string.non
 
     # todo: make sure this previewDocument is destroyed, we're overriding it right now
     # in the previewer with a temp document or an existing one
-    let previewDocument = newTextDocument(app.configProvider, fs, createLanguageServer=false)
+    let previewDocument = newTextDocument(services, fs, createLanguageServer=false)
     previewDocument.readOnly = true
 
-    popup.previewEditor = newTextEditor(previewDocument, app, fs, app.configProvider)
+    popup.previewEditor = newTextEditor(previewDocument, app, fs, services)
     popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
     popup.previewEditor.lineNumbers = api.LineNumbers.None.some
@@ -399,20 +411,20 @@ proc newSelectorPopup*(app: AppInterface, fs: Filesystem, scopeName = string.non
     discard popup.finder.onItemsChanged.subscribe () => popup.handleItemsUpdated()
     popup.finder.setQuery("")
 
-  assignEventHandler(popup.eventHandler, app.getEventHandlerConfig("popup.selector")):
+  assignEventHandler(popup.eventHandler, popup.events.getEventHandlerConfig("popup.selector")):
     onAction:
       popup.handleAction action, arg
     onInput:
       Ignored
 
-  assignEventHandler(popup.previewEventHandler, app.getEventHandlerConfig("popup.selector.preview")):
+  assignEventHandler(popup.previewEventHandler, popup.events.getEventHandlerConfig("popup.selector.preview")):
     onAction:
       popup.handleAction action, arg
     onInput:
       Ignored
 
   if scopeName.isSome:
-     assignEventHandler(popup.customEventHandler, app.getEventHandlerConfig("popup.selector." & scopeName.get)):
+     assignEventHandler(popup.customEventHandler, popup.events.getEventHandlerConfig("popup.selector." & scopeName.get)):
       onAction:
         popup.handleAction action, arg
       onInput:

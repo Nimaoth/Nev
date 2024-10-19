@@ -6,8 +6,8 @@ import scripting/expose
 import workspaces/workspace
 import finder/[finder, previewer, workspace_file_previewer]
 import platform/[platform, filesystem]
-import service, dispatch_tables, config_provider, platform_service, app_interface
-import selector_popup, vcs
+import service, dispatch_tables, platform_service, app_interface
+import selector_popup, vcs, layout
 
 logCategory "vcs_api"
 
@@ -128,13 +128,14 @@ proc revertSelectedFileAsync(popup: SelectorPopup, self: VCSService,
 proc diffStagedFileAsync(self: VCSService, workspace: Workspace, path: string): Future[void] {.async.} =
   log lvlInfo, fmt"Diff staged '({path})'"
 
-  let stagedDocument = newTextDocument(self.config.asConfigProvider, self.fs, path, load = false,
+  let stagedDocument = newTextDocument(self.services, self.fs, path, load = false,
     workspaceFolder = workspace.some, createLanguageServer = false)
   stagedDocument.staged = true
   stagedDocument.readOnly = true
 
-  let editor = ({.gcsafe.}: gAppInterface).createAndAddView(stagedDocument).TextDocumentEditor
-  editor.updateDiff()
+  let layout = self.services.getService(LayoutService).get
+  if layout.createAndAddView(stagedDocument).getSome(editor):
+    editor.TextDocumentEditor.updateDiff()
 
 proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").} =
   defer:
@@ -146,7 +147,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   let source = newAsyncCallbackDataSource () => self.getChangedFilesFromGitAsync(workspace, all)
   var finder = newFinder(source, filterAndSort=true)
 
-  let previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.config.asConfigProvider,
+  let previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services,
     openNewDocuments=true)
 
   var popup = newSelectorPopup(({.gcsafe.}: gAppInterface), self.fs, "git".some, finder.some,
@@ -211,6 +212,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
     asyncSpawn self.diffStagedFileAsync(workspace, fileInfo.path)
     return true
 
-  ({.gcsafe.}: gAppInterface).pushPopup popup
+  let layout = self.services.getService(LayoutService).get
+  layout.pushPopup popup
 
 addGlobalDispatchTable "vcs", genDispatchTable("vcs")

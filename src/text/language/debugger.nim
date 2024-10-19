@@ -1,7 +1,7 @@
 import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
-import scripting/expose
-import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view
+import scripting/[expose, scripting_base]
+import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view, session, document_editor, layout, platform_service
 import text/text_editor
 import platform/platform
 import finder/[previewer, finder, data_previewer]
@@ -34,16 +34,22 @@ type
     enabled: bool = true
     breakpoint: SourceBreakpoint
 
-  Debugger* = ref object
+  Debugger* = ref object of Service
     app: AppInterface
+    platform: Platform
+    events: EventHandlerService
+    config: ConfigService
+    plugins: PluginService
     workspace: Workspace
+    editors: DocumentEditorService
+    layout: LayoutService
     client: Option[DapClient]
     lastConfiguration*: Option[string]
     activeView*: ActiveView = ActiveView.Variables
     currentThreadIndex*: int
     currentFrameIndex*: int
     maxVariablesScrollOffset*: float
-    state*: DebuggerState = DebuggerState.None
+    debuggerState*: DebuggerState = DebuggerState.None
     eventHandler: EventHandler
     threadsEventHandler: EventHandler
     stackTraceEventHandler: EventHandler
@@ -68,15 +74,8 @@ type
     scopes*: Table[(ThreadId, FrameId), Scopes]
     variables*: Table[(ThreadId, FrameId, VariablesReference), Variables]
 
-type
-  DebuggerService = ref object of Service
-
-func serviceName*(_: typedesc[DebuggerService]): string = "DebuggerService"
-addBuiltinService(DebuggerService)
-
-method init*(self: DebuggerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"DebuggerService.init"
-  return ok()
+func serviceName*(_: typedesc[Debugger]): string = "Debugger"
+addBuiltinService(Debugger, SessionService, DocumentEditorService, LayoutService, EventHandlerService, ConfigService)
 
 proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor)
 proc handleAction(self: Debugger, action: string, arg: string): EventResponse
@@ -116,7 +115,7 @@ proc getStateJson*(self: Debugger): JsonNode =
   }
 
 proc updateBreakpointsForFile(self: Debugger, path: string) =
-  if self.app.getEditorForPath(path).getSome(editor) and editor of TextDocumentEditor:
+  if self.layout.tryOpenExisting(path).getSome(editor) and editor of TextDocumentEditor:
     self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
 
   if self.client.getSome(client):
@@ -145,65 +144,84 @@ proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
   else:
     self.applyBreakpointSignsToEditor(editor)
 
-proc createDebugger*(app: AppInterface, state: JsonNode) =
-  var debugger = Debugger(
-    app: app,
-    collapsedVariables: initHashSet[(ThreadId, FrameId, VariablesReference)](),
-  )
-
-  {.gcsafe.}:
-    gDebugger = debugger
-    debugger.workspace = gWorkspace
-
-  let document = newTextDocument(app.configProvider, fs=nil, createLanguageServer=false)
-  debugger.outputEditor = newTextEditor(document, app, fs=nil, app.configProvider)
-  debugger.outputEditor.usage = "debugger-output"
-  debugger.outputEditor.renderHeader = false
-  debugger.outputEditor.disableCompletions = true
-
-  discard app.onEditorRegisteredEvent[].subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
-
-    debugger.handleEditorRegistered(e)
-
+proc handleSessionRestored(self: Debugger, session: SessionService) =
   try:
-    if state.isNotNil and state.kind == JObject:
-      if state.fields.contains("breakpoints"):
-        debugger.breakpoints = state["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
+    if session.sessionData.isNotNil and session.sessionData.kind == JObject:
+      if session.sessionData.fields.contains("breakpoints"):
+        self.breakpoints = session.sessionData["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
   except:
     discard
 
-  discard debugger.outputEditor.onMarkedDirty.subscribe () =>
-    debugger.app.platform.requestRender()
+proc waitForApp(self: Debugger) {.async: (raises: []).} =
+  while ({.gcsafe.}: gAppInterface).isNil:
+    try:
+      await sleepAsync(10.milliseconds)
+    except CancelledError:
+      discard
 
-  assignEventHandler(debugger.eventHandler, app.getEventHandlerConfig("debugger")):
-    onAction:
-      debugger.handleAction action, arg
-    # onInput:
-    #   debugger.handleInput input
+  self.app = ({.gcsafe.}: gAppInterface)
 
-  assignEventHandler(debugger.threadsEventHandler, app.getEventHandlerConfig("debugger.threads")):
-    onAction:
-      debugger.handleAction action, arg
-    # onInput:
-    #   debugger.handleInput input
+  let document = newTextDocument(self.services, fs=nil, createLanguageServer=false)
+  self.outputEditor = newTextEditor(document, self.app, fs=nil, self.services)
+  self.outputEditor.usage = "debugger-output"
+  self.outputEditor.renderHeader = false
+  self.outputEditor.disableCompletions = true
 
-  assignEventHandler(debugger.stackTraceEventHandler, app.getEventHandlerConfig("debugger.stacktrace")):
-    onAction:
-      debugger.handleAction action, arg
-    # onInput:
-    #   debugger.handleInput input
+  discard self.outputEditor.onMarkedDirty.subscribe () =>
+    self.platform.requestRender()
 
-  assignEventHandler(debugger.variablesEventHandler, app.getEventHandlerConfig("debugger.variables")):
+  assignEventHandler(self.eventHandler, self.events.getEventHandlerConfig("debugger")):
     onAction:
-      debugger.handleAction action, arg
+      self.handleAction action, arg
     # onInput:
-    #   debugger.handleInput input
+    #   self.handleInput input
 
-  assignEventHandler(debugger.outputEventHandler, app.getEventHandlerConfig("debugger.output")):
+  assignEventHandler(self.threadsEventHandler, self.events.getEventHandlerConfig("debugger.threads")):
     onAction:
-      debugger.handleAction action, arg
+      self.handleAction action, arg
     # onInput:
-    #   debugger.handleInput input
+    #   self.handleInput input
+
+  assignEventHandler(self.stackTraceEventHandler, self.events.getEventHandlerConfig("debugger.stacktrace")):
+    onAction:
+      self.handleAction action, arg
+    # onInput:
+    #   self.handleInput input
+
+  assignEventHandler(self.variablesEventHandler, self.events.getEventHandlerConfig("debugger.variables")):
+    onAction:
+      self.handleAction action, arg
+    # onInput:
+    #   self.handleInput input
+
+  assignEventHandler(self.outputEventHandler, self.events.getEventHandlerConfig("debugger.output")):
+    onAction:
+      self.handleAction action, arg
+    # onInput:
+    #   self.handleInput input
+
+method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"Debugger.init"
+  {.gcsafe.}:
+    gDebugger = self
+    self.workspace = gWorkspace
+
+  self.collapsedVariables = initHashSet[(ThreadId, FrameId, VariablesReference)]()
+  self.editors = self.services.getService(DocumentEditorService).get
+  self.layout = self.services.getService(LayoutService).get
+  self.events = self.services.getService(EventHandlerService).get
+  self.config = self.services.getService(ConfigService).get
+  self.plugins = self.services.getService(PluginService).get
+  self.platform = self.services.getService(PlatformService).get.platform
+
+  discard self.services.getService(SessionService).get.onSessionRestored.subscribe (session: SessionService) => self.handleSessionRestored(session)
+
+  discard self.editors.onEditorRegistered.subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
+    self.handleEditorRegistered(e)
+
+  asyncSpawn self.waitForApp()
+
+  return ok()
 
 proc currentThread*(self: Debugger): Option[ThreadInfo] =
   if self.currentThreadIndex >= 0 and self.currentThreadIndex < self.threads.len:
@@ -490,7 +508,7 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
     if self.variablesCursor.scope > 0:
       self.variablesCursor = self.lastChild(VariableCursor(scope: self.variablesCursor.scope - 1))
       if self.variablesScrollOffset > 0:
-        self.variablesScrollOffset -= self.app.platform.totalLineHeight
+        self.variablesScrollOffset -= self.platform.totalLineHeight
       return
 
   else:
@@ -500,7 +518,7 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
         path: @[(int.high, scopes[].scopes[self.variablesCursor.scope - 1].variablesReference)],
       ))
       if self.variablesScrollOffset > 0:
-        self.variablesScrollOffset -= self.app.platform.totalLineHeight
+        self.variablesScrollOffset -= self.platform.totalLineHeight
       return
 
     let (index, currentRef) = self.variablesCursor.path[self.variablesCursor.path.high]
@@ -511,12 +529,12 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
       dec self.variablesCursor.path[self.variablesCursor.path.high].index
       self.variablesCursor = self.lastChild(self.variablesCursor)
       if self.variablesScrollOffset > 0:
-        self.variablesScrollOffset -= self.app.platform.totalLineHeight
+        self.variablesScrollOffset -= self.platform.totalLineHeight
       return
 
     discard self.variablesCursor.path.pop
     if self.variablesScrollOffset > 0:
-      self.variablesScrollOffset -= self.app.platform.totalLineHeight
+      self.variablesScrollOffset -= self.platform.totalLineHeight
 
 proc nextVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
@@ -538,13 +556,13 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
         not collapsed:
       self.variablesCursor.path.add (0, scope.variablesReference)
       if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-        self.variablesScrollOffset += self.app.platform.totalLineHeight
+        self.variablesScrollOffset += self.platform.totalLineHeight
       return
 
     if self.variablesCursor.scope + 1 < scopes[].scopes.len:
       self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
       if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-        self.variablesScrollOffset += self.app.platform.totalLineHeight
+        self.variablesScrollOffset += self.platform.totalLineHeight
       return
 
   else:
@@ -565,13 +583,13 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
             not collapsed:
           self.variablesCursor.path.add (0, childrenRef)
           if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-            self.variablesScrollOffset += self.app.platform.totalLineHeight
+            self.variablesScrollOffset += self.platform.totalLineHeight
           return
 
         if index < variables.variables.high:
           inc self.variablesCursor.path[self.variablesCursor.path.high].index
           if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-            self.variablesScrollOffset += self.app.platform.totalLineHeight
+            self.variablesScrollOffset += self.platform.totalLineHeight
           return
 
       descending = false
@@ -580,7 +598,7 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
     if self.variablesCursor.scope + 1 < scopes[].scopes.len:
       self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
       if self.variablesScrollOffset < self.maxVariablesScrollOffset:
-        self.variablesScrollOffset += self.app.platform.totalLineHeight
+        self.variablesScrollOffset += self.platform.totalLineHeight
       return
 
     self.variablesCursor = self.lastChild(VariableCursor(
@@ -650,7 +668,7 @@ proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   self.client.get.deinit()
   self.client = DapClient.none
 
-  self.state = DebuggerState.None
+  self.debuggerState = DebuggerState.None
   self.threads.setLen 0
   self.stackTraces.clear()
   self.variables.clear()
@@ -685,7 +703,7 @@ template tryGet(json: untyped, field: untyped, T: untyped, default: untyped, els
 proc createConnectionWithType(self: Debugger, name: string): Future[Option[Connection]] {.async.} =
   log lvlInfo, &"Try create debugger connection '{name}'"
 
-  let config = self.app.configProvider.getValue[:JsonNode]("debugger.type." & name, newJNull())
+  let config = self.config.getOption[:JsonNode]("debugger.type." & name, newJNull())
   if config.isNil or config.kind != JObject:
     log lvlError, &"No/invalid debugger type configuration with name '{name}' found: {config}"
     return Connection.none
@@ -845,12 +863,12 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
       await self.tryOpenFileInWorkspace(path, (frame.line - 1, frame.column - 1))
 
 proc handleStopped(self: Debugger, data: OnStoppedData) =
-  self.state = DebuggerState.Paused
+  self.debuggerState = DebuggerState.Paused
   asyncSpawn self.handleStoppedAsync(data)
 
 proc handleContinued(self: Debugger, data: OnContinuedData) =
   log(lvlInfo, &"onContinued {data}")
-  self.state = DebuggerState.Running
+  self.debuggerState = DebuggerState.Running
   self.scopes.clear()
   self.variables.clear()
   if self.lastEditor.isSome:
@@ -920,31 +938,31 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   if self.client.isSome:
     self.stopDebugSession()
 
-  self.state = DebuggerState.Starting
+  self.debuggerState = DebuggerState.Starting
 
   assert self.client.isNone
   log lvlInfo, &"[runConfigurationAsync] Launch '{name}'"
 
-  let config = self.app.configProvider.getValue[:JsonNode]("debugger.configuration." & name, newJNull())
+  let config = self.config.getOption[:JsonNode]("debugger.configuration." & name, newJNull())
   if config.isNil or config.kind != JObject:
     log lvlError, &"No/invalid configuration with name '{name}' found: {config}"
-    self.state = DebuggerState.None
+    self.debuggerState = DebuggerState.None
     return
 
   let request = config.tryGet("request", string, "launch".newJString):
     log lvlError, &"No/invalid debugger request in {config.pretty}"
-    self.state = DebuggerState.None
+    self.debuggerState = DebuggerState.None
     return
 
   let typ = config.tryGet("type", string, newJNull()):
     log lvlError, &"No/invalid debugger type in {config.pretty}"
-    self.state = DebuggerState.None
+    self.debuggerState = DebuggerState.None
     return
 
   let connection = await self.createConnectionWithType(typ)
   if connection.isNone:
     log lvlError, &"Failed to create connection for typ '{typ}'"
-    self.state = DebuggerState.None
+    self.debuggerState = DebuggerState.None
     return
 
   self.lastConfiguration = name.some
@@ -956,7 +974,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
     log lvlError, &"Client failed to initialized"
     client.deinit()
     self.client = DAPClient.none
-    self.state = DebuggerState.None
+    self.debuggerState = DebuggerState.None
     return
 
   case request
@@ -970,7 +988,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
     log lvlError, &"Invalid request type '{request}', expected 'launch' or 'attach'"
     self.client = DAPClient.none
     client.deinit()
-    self.state = DebuggerState.None
+    self.debuggerState = DebuggerState.None
     return
 
   let setBreakpointFutures = collect:
@@ -983,13 +1001,13 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   let threads = await client.getThreads
   if threads.isError:
     log lvlError, &"Failed to get threads: {threads}"
-    self.state = DebuggerState.None
+    self.debuggerState = DebuggerState.None
     return
 
   self.threads = threads.result.threads
 
   await client.configurationDone()
-  self.state = DebuggerState.Running
+  self.debuggerState = DebuggerState.Running
 
 proc runConfiguration*(self: Debugger, name: string) {.expose("debugger").} =
   asyncSpawn self.runConfigurationAsync(name)
@@ -1001,7 +1019,7 @@ proc chooseRunConfiguration(self: Debugger) {.expose("debugger").} =
   builder.scaleX = 0.5
   builder.scaleY = 0.5
 
-  let config = self.app.configProvider.getValue[:JsonNode]("debugger.configuration", newJObject())
+  let config = self.config.getOption[:JsonNode]("debugger.configuration", newJObject())
   if config.kind != JObject:
     log lvlError, &"No/invalid debugger configuration: {config}"
     return
@@ -1013,7 +1031,7 @@ proc chooseRunConfiguration(self: Debugger) {.expose("debugger").} =
       data: config.pretty,
     )
 
-  builder.previewer = newDataPreviewer(self.app.configProvider, language="javascript".some).Previewer.some
+  builder.previewer = newDataPreviewer(self.services, language="javascript".some).Previewer.some
 
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
@@ -1049,7 +1067,7 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
 
 proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
   ## Line is 0-based
-  if self.app.getEditorForId(editorId).getSome(editor) and editor of TextDocumentEditor:
+  if self.editors.getEditorForId(editorId).getSome(editor) and editor of TextDocumentEditor:
     let path = editor.TextDocumentEditor.document.filename
     if not self.breakpoints.contains(path):
       self.breakpoints[path] = @[]
@@ -1125,12 +1143,12 @@ type
     tempDocument: TextDocument
     getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].}
 
-proc newBreakpointPreviewer*(configProvider: ConfigProvider, language = string.none,
+proc newBreakpointPreviewer*(services: Services, language = string.none,
     getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].} = nil): BreakpointPreviewer =
 
   new result
 
-  result.tempDocument = newTextDocument(configProvider, fs=nil, language=language,
+  result.tempDocument = newTextDocument(services, fs=nil, language=language,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
   result.getPreviewTextImpl = getPreviewTextImpl
@@ -1178,7 +1196,7 @@ proc editBreakpoints(self: Debugger) {.expose("debugger").} =
         )
     res
 
-  builder.previewer = newBreakpointPreviewer(self.app.configProvider, language="javascript".some).Previewer.some
+  builder.previewer = newBreakpointPreviewer(self.services, language="javascript".some).Previewer.some
 
   let source = newSyncDataSource(getBreakpointFinderItems)
   let finder = newFinder(source, filterAndSort=true)
@@ -1240,7 +1258,7 @@ proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.app.invokeAnyCallback(action, args).isNotNil:
+    if self.plugins.invokeAnyCallback(action, args).isNotNil:
       return Handled
 
     # debugf"dispatch {action}, {args}"

@@ -241,13 +241,10 @@ when enableAst:
 import text/text_editor
 import text/language/lsp_client
 import text/language/debugger
-import selector_popup
-import collab
 import scripting/scripting_base
-import layout
-import config_provider
 import vcs/vcs_api
 import wasm3, wasm3/[wasm3c, wasmconversions]
+import selector_popup, collab, layout, config_provider, document_editor, session, events, register
 
 generatePluginBindings()
 static:
@@ -405,6 +402,7 @@ import service
 gServices = Services()
 gServices.addBuiltinServices()
 gServices.getService(PlatformService).get.setPlatform(plat)
+gServices.waitForServices()
 
 proc main() =
   let app = waitFor newApp(backend.get, plat, fs, gServices, opts)

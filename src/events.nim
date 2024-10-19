@@ -1,45 +1,70 @@
-import std/[tables, sequtils]
-import misc/[custom_logger, util]
+import std/[tables, sequtils, strutils]
+import misc/[custom_logger, util, custom_async]
 import platform/[filesystem]
-import input
+import scripting/expose
+import input, service, dispatch_tables
 
 logCategory "events"
 
 var debugEventHandlers = false
 
-type EventResponse* = enum
-  Failed,
-  Ignored,
-  Canceled,
-  Handled,
-  Progress,
+type
+  EventResponse* = enum
+    Failed,
+    Ignored,
+    Canceled,
+    Handled,
+    Progress,
 
-type CommandSource* = tuple[filename: string, line: int, column: int]
+  CommandSource* = tuple[filename: string, line: int, column: int]
 
-type Command* = object
-  command*: string
-  source*: CommandSource
+  Command* = object
+    command*: string
+    source*: CommandSource
 
-type EventHandlerConfig* = ref object
-  parent*: EventHandlerConfig
-  context*: string
-  commands: Table[string, Table[string, Command]]
-  handleActions*: bool
-  handleInputs*: bool
-  consumeAllActions*: bool
-  consumeAllInput*: bool
-  revision: int
-  leaders: seq[string]
+  EventHandlerConfig* = ref object
+    parent*: EventHandlerConfig
+    context*: string
+    commands: Table[string, Table[string, Command]]
+    handleActions*: bool
+    handleInputs*: bool
+    consumeAllActions*: bool
+    consumeAllInput*: bool
+    revision: int
+    leaders: seq[string]
 
-type EventHandler* = ref object
-  states: seq[CommandState]
-  config: EventHandlerConfig
-  revision: int
-  dfaInternal: CommandDFA
-  handleAction*: proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].}
-  handleInput*: proc(input: string): EventResponse {.gcsafe, raises: [].}
-  handleProgress*: proc(input: int64) {.gcsafe, raises: [].}
-  handleCanceled*: proc(input: int64) {.gcsafe, raises: [].}
+  EventHandler* = ref object
+    states: seq[CommandState]
+    config: EventHandlerConfig
+    revision: int
+    dfaInternal: CommandDFA
+    handleAction*: proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].}
+    handleInput*: proc(input: string): EventResponse {.gcsafe, raises: [].}
+    handleProgress*: proc(input: int64) {.gcsafe, raises: [].}
+    handleCanceled*: proc(input: int64) {.gcsafe, raises: [].}
+
+  CommandKeyInfo* = object
+    keys*: string
+    command*: string
+    context*: string
+    source*: CommandSource
+
+  CommandInfos* = ref object
+    built: bool = false
+    commandToKeys*: Table[string, seq[CommandKeyInfo]]
+
+  EventHandlerService* = ref object of Service
+    eventHandlerConfigs*: Table[string, EventHandlerConfig]
+    leaders*: seq[string]
+    commandInfos*: CommandInfos
+    commandDescriptions*: Table[string, string]
+
+func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerService"
+addBuiltinService(EventHandlerService)
+
+method init*(self: EventHandlerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  self.commandInfos = CommandInfos()
+  return ok()
 
 func newEventHandlerConfig*(context: string, parent: EventHandlerConfig = nil): EventHandlerConfig =
   new result
@@ -328,3 +353,90 @@ proc commands*(config {.byref.}: EventHandlerConfig): lent Table[string, Table[s
   config.commands
 
 proc config*(handler: EventHandler): EventHandlerConfig = handler.config
+
+proc invalidate*(self: CommandInfos) =
+  self.built = false
+  self.commandToKeys.clear()
+
+proc rebuild*(self: CommandInfos, eventHandlerConfigs {.byref.}: Table[string, EventHandlerConfig]) =
+  if self.built:
+    return
+
+  self.built = true
+  self.commandToKeys.clear()
+  for (context, c) in eventHandlerConfigs.pairs:
+    if not c.commands.contains(""):
+      continue
+    for (keys, commandInfo) in c.commands[""].pairs:
+      let (action, _) = commandInfo.command.parseAction
+      self.commandToKeys.mgetOrPut(action, @[]).add(CommandKeyInfo(
+        keys: keys,
+        command: commandInfo.command,
+        context: context,
+        source: commandInfo.source,
+      ))
+
+proc getInfos*(self: CommandInfos, command: string): Option[seq[CommandKeyInfo]] =
+  if self.commandToKeys.contains(command):
+    return self.commandToKeys[command].some
+
+proc wasBuilt*(self: CommandInfos): bool = self.built
+
+proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHandlerConfig =
+  if not self.eventHandlerConfigs.contains(context):
+    let parentConfig = if context != "":
+      let index = context.rfind(".")
+      if index >= 0:
+        self.getEventHandlerConfig(context[0..<index])
+      else:
+        self.getEventHandlerConfig("")
+    else:
+      nil
+
+    self.eventHandlerConfigs[context] = newEventHandlerConfig(context, parentConfig)
+    self.eventHandlerConfigs[context].setLeaders(self.leaders)
+
+  return self.eventHandlerConfigs[context].catch(EventHandlerConfig())
+
+proc invalidateCommandToKeysMap*(self: EventHandlerService) =
+  self.commandInfos.invalidate()
+
+proc rebuildCommandToKeysMap*(self: EventHandlerService) =
+  self.commandInfos.rebuild(self.eventHandlerConfigs)
+
+###########################################################################
+
+proc getEventHandlerService(): Option[EventHandlerService] =
+  {.gcsafe.}:
+    if gServices.isNil: return EventHandlerService.none
+    return gServices.getService(EventHandlerService)
+
+static:
+  addInjector(EventHandlerService, getEventHandlerService)
+
+proc setLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
+  self.leaders = @[leader]
+  for config in self.eventHandlerConfigs.values:
+    config.setLeaders self.leaders
+
+proc setLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
+  self.leaders = leaders
+  for config in self.eventHandlerConfigs.values:
+    config.setLeaders self.leaders
+
+proc addLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
+  self.leaders.add leader
+  for config in self.eventHandlerConfigs.values:
+    config.setLeaders self.leaders
+
+proc clearCommands*(self: EventHandlerService, context: string) {.expose("events").} =
+  log(lvlInfo, fmt"Clearing keybindings for {context}")
+  self.getEventHandlerConfig(context).clearCommands()
+  self.invalidateCommandToKeysMap()
+
+proc removeCommand*(self: EventHandlerService, context: string, keys: string) {.expose("events").} =
+  # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
+  self.getEventHandlerConfig(context).removeCommand(keys)
+  self.invalidateCommandToKeysMap()
+
+addGlobalDispatchTable "events", genDispatchTable("events")

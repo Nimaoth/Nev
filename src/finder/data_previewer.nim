@@ -3,7 +3,7 @@ import misc/[util, custom_logger]
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
-import config_provider
+import service
 
 logCategory "data-previewer"
 
@@ -13,12 +13,12 @@ type
     tempDocument: TextDocument
     getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].}
 
-proc newDataPreviewer*(configProvider: ConfigProvider, language = string.none,
+proc newDataPreviewer*(services: Services, language = string.none,
     getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].} = nil): DataPreviewer =
 
   new result
 
-  result.tempDocument = newTextDocument(configProvider, fs=nil, language=language,
+  result.tempDocument = newTextDocument(services, fs=nil, language=language,
     createLanguageServer=false)
   result.tempDocument.readOnly = true
   result.getPreviewTextImpl = getPreviewTextImpl

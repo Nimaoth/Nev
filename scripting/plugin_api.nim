@@ -13,12 +13,20 @@ import editor_api_wasm
 export editor_api_wasm
 import editor_text_api_wasm
 export editor_text_api_wasm
+import editors_api_wasm
+export editors_api_wasm
+import events_api_wasm
+export events_api_wasm
 import layout_api_wasm
 export layout_api_wasm
 import lsp_api_wasm
 export lsp_api_wasm
 import popup_selector_api_wasm
 export popup_selector_api_wasm
+import registers_api_wasm
+export registers_api_wasm
+import session_api_wasm
+export session_api_wasm
 import vcs_api_wasm
 export vcs_api_wasm
 
