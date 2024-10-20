@@ -403,17 +403,13 @@ proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.exp
 
 proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor] =
   for i, view in self.views:
-    if view of EditorView and view.EditorView.document.filename == path and
-        (view.EditorView.document.workspace == self.workspace.some or
-        view.EditorView.document.appFile == appFile):
+    if view of EditorView and view.EditorView.document.filename == path:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.currentView = i
       return view.EditorView.editor.some
 
   for i, view in self.hiddenViews:
-    if view of EditorView and view.EditorView.document.filename == path and
-        (view.EditorView.document.workspace == self.workspace.some or
-        view.EditorView.document.appFile == appFile):
+    if view of EditorView and view.EditorView.document.filename == path:
       log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
       self.addView(view, append=append)

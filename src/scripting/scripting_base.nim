@@ -1,8 +1,6 @@
 import std/[macros, macrocache, json, strutils, tables, options]
 import misc/[custom_logger, custom_async, util]
-import expose, document_editor, compilation_config, service
-import platform/filesystem
-import workspaces/workspace
+import expose, document_editor, compilation_config, service, vfs
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -11,14 +9,13 @@ logCategory "plugins"
 
 type
   ScriptContext* = ref object of RootObj
-    fs*: Filesystem
 
   PluginService* = ref object of Service
     scriptContexts*: seq[ScriptContext]
     callbacks*: Table[string, int]
     currentScriptContext*: Option[ScriptContext] = ScriptContext.none
 
-method init*(self: ScriptContext, path: string, fs: Filesystem): Future[void] {.base.} = discard
+method init*(self: ScriptContext, path: string, vfs: VFS): Future[void] {.base.} = discard
 method deinit*(self: ScriptContext) {.base.} = discard
 method reload*(self: ScriptContext): Future[void] {.base.} = discard
 
@@ -31,20 +28,9 @@ method getCurrentContext*(self: ScriptContext): string {.base.} = ""
 
 func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
-addBuiltinService(PluginService, WorkspaceService)
-
-proc waitForWorkspace(self: PluginService) {.async: (raises: []).} =
-  let ws = self.services.getService(WorkspaceService).get
-  while ws.workspace.isNil:
-    try:
-      await sleepAsync(10.milliseconds)
-    except CancelledError:
-      discard
-
-  # self.workspace = ws.workspace
+addBuiltinService(PluginService)
 
 method init*(self: PluginService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  asyncSpawn self.waitForWorkspace()
   return ok()
 
 {.pop.} # raises

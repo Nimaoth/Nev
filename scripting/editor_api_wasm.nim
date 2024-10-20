@@ -457,19 +457,6 @@ proc createFile*(path: string) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_mountVfs_void_App_string_string_JsonNode_wasm(arg: cstring): cstring {.
-    importc.}
-proc mountVfs*(parentPath: string; prefix: string; config: JsonNode) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add parentPath.toJson()
-  argsJson.add prefix.toJson()
-  argsJson.add config.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_mountVfs_void_App_string_string_JsonNode_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_browseKeybinds_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
     importc.}
 proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
@@ -644,16 +631,6 @@ proc openNextEditor*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_openNextEditor_void_App_wasm(argsJsonString.cstring)
-
-
-proc editor_setGithubAccessToken_void_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc setGithubAccessToken*(token: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add token.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setGithubAccessToken_void_App_string_wasm(
-      argsJsonString.cstring)
 
 
 proc editor_reloadConfig_void_App_bool_wasm(arg: cstring): cstring {.importc.}

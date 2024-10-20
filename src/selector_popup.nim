@@ -6,7 +6,6 @@ import app_interface, text/text_editor, popup, events,
   selector_popup_builder, dispatch_tables, layout, service
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
-import platform/filesystem
 
 export popup, selector_popup_builder, service
 
@@ -354,7 +353,7 @@ proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].} =
 
   self.markDirty()
 
-proc newSelectorPopup*(services: Services, fs: Filesystem, scopeName = string.none, finder = Finder.none,
+proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Finder.none,
     previewer: sink Option[DisposableRef[Previewer]] = DisposableRef[Previewer].none): SelectorPopup =
 
   log lvlInfo, "[newSelectorPopup] " & $scopeName
@@ -369,8 +368,8 @@ proc newSelectorPopup*(services: Services, fs: Filesystem, scopeName = string.no
   popup.events = services.getService(EventHandlerService).get
   popup.plugins = services.getService(PluginService).get
   popup.scale = vec2(0.5, 0.5)
-  let document = newTextDocument(services, fs, createLanguageServer=false)
-  popup.textEditor = newTextEditor(document, fs, services)
+  let document = newTextDocument(services, createLanguageServer=false)
+  popup.textEditor = newTextEditor(document, services)
   popup.textEditor.usage = "search-bar"
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
@@ -391,10 +390,10 @@ proc newSelectorPopup*(services: Services, fs: Filesystem, scopeName = string.no
 
     # todo: make sure this previewDocument is destroyed, we're overriding it right now
     # in the previewer with a temp document or an existing one
-    let previewDocument = newTextDocument(services, fs, createLanguageServer=false)
+    let previewDocument = newTextDocument(services, createLanguageServer=false)
     previewDocument.readOnly = true
 
-    popup.previewEditor = newTextEditor(previewDocument, fs, services)
+    popup.previewEditor = newTextEditor(previewDocument, services)
     popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
     popup.previewEditor.lineNumbers = api.LineNumbers.None.some

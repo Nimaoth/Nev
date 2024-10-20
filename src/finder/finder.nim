@@ -1,6 +1,5 @@
 import std/[algorithm, sugar]
 import misc/[regex, timer, fuzzy_matching, util, custom_async, event, id, custom_logger]
-import platform/[filesystem]
 
 logCategory "finder"
 

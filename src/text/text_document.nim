@@ -3,10 +3,9 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import patty, bumpy
 import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, bench, rope_utils]
-import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
-import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme, service
+import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme, service, vfs, vfs_service
 import pkg/[chroma, results]
 
 {.push warning[Deprecated]:off.}
@@ -61,6 +60,8 @@ type
     buffer*: Buffer
     mLanguageId: string
     services: Services
+    vfs: VFS
+    workspace: Workspace
 
     nextLineIdCounter: int32 = 0
 
@@ -1041,7 +1042,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
   let prevLanguageId = self.languageId
   let config = self.configProvider.getValue("treesitter." & self.languageId, newJObject())
-  var language = await getTreesitterLanguage(self.languageId, config)
+  var language = await getTreesitterLanguage(self.vfs, self.languageId, config)
 
   if prevLanguageId != self.languageId:
     log lvlWarn, &"loadTreesitterLanguage {prevLanguageId}: ignore, newer language was set"
@@ -1057,24 +1058,22 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.currentTree.delete()
 
   # todo: this awaits, check if still current request afterwards
-  let highlightQueryPath = self.fs.getApplicationFilePath(&"languages/{self.languageId}/queries/highlights.scm")
-  if language.get.queryFile("highlight", highlightQueryPath).await.getSome(query):
+  let highlightQueryPath = &"app://languages/{self.languageId}/queries/highlights.scm"
+  if language.get.queryFile(self.vfs, "highlight", highlightQueryPath).await.getSome(query):
     if prevLanguageId != self.languageId:
       return
 
     self.highlightQuery = query
   else:
-    log(lvlError, fmt"No highlight queries found for '{self.languageId}'")
+    log lvlWarn, fmt"No highlight queries found for '{self.languageId}'"
 
-  let errorQueryPath = self.fs.getApplicationFilePath(&"languages/{self.languageId}/queries/errors.scm")
-  if language.get.queryFile("error", errorQueryPath, cacheOnFail = false).await.getSome(query):
+  let errorQueryPath = &"app://languages/{self.languageId}/queries/errors.scm"
+  if language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await.getSome(query):
     if prevLanguageId != self.languageId:
       return
     self.errorQuery = query
   elif language.get.query("error", "(ERROR) @error").await.getSome(query):
     self.errorQuery = query
-  else:
-    log(lvlError, fmt"No error queries found for '{self.languageId}'")
 
   if prevLanguageId != self.languageId:
     return
@@ -1087,11 +1086,9 @@ proc reloadTreesitterLanguage*(self: TextDocument) =
 
 proc newTextDocument*(
     services: Services,
-    fs: Filesystem,
     filename: string = "",
     content: string = "",
     app: bool = false,
-    workspaceFolder: Option[Workspace] = Workspace.none,
     language: Option[string] = string.none,
     languageServer: Option[LanguageServer] = LanguageServer.none,
     load: bool = false,
@@ -1104,13 +1101,13 @@ proc newTextDocument*(
     allTextDocuments.add result
 
   var self = result
-  self.fs = fs
   self.filename = filename.normalizePathUnix
   self.currentTree = TSTree()
   self.appFile = app
-  self.workspace = workspaceFolder
+  self.workspace = services.getService(WorkspaceService).get.workspace
   self.services = services
   self.configProvider = services.getService(ConfigService).get.asConfigProvider
+  self.vfs = services.getService(VFSService).get.vfs
   self.createLanguageServer = createLanguageServer
   self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
 
@@ -1182,8 +1179,8 @@ method deinit*(self: TextDocument) =
 method `$`*(self: TextDocument): string =
   return self.filename
 
-proc saveAsync(self:  TextDocument, ws: Workspace) {.async.} =
-  await ws.saveFile(self.filename, self.rope.clone())
+proc saveAsync(self:  TextDocument) {.async.} =
+  await self.vfs.write(self.filename, self.rope.slice())
   self.onSaved.invoke()
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
@@ -1202,16 +1199,7 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
   # Todo: make optional
   self.trimTrailingWhitespace()
 
-  if self.workspace.getSome(ws):
-    asyncSpawn self.saveAsync(ws)
-
-  elif self.appFile:
-    self.fs.saveApplicationFile(self.filename, self.contentString)
-    self.onSaved.invoke()
-
-  else:
-    self.fs.saveFile(self.filename, self.contentString)
-    self.onSaved.invoke()
+  asyncSpawn self.saveAsync()
 
   self.isBackedByFile = true
   self.lastSavedRevision = self.undoableRevision
@@ -1259,7 +1247,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
-proc loadAsync*(self: TextDocument, ws: Workspace, isReload: bool): Future[void] {.async.} =
+proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   logScope lvlInfo, &"loadAsync '{self.filename}', reload = {isReload}"
 
   self.isBackedByFile = true
@@ -1267,8 +1255,10 @@ proc loadAsync*(self: TextDocument, ws: Workspace, isReload: bool): Future[void]
   self.readOnly = true
 
   var data = ""
-  catch ws.loadFile(self.filename, data.addr).await:
-    log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+  try:
+    data = await self.vfs.read(self.filename)
+  except IOError as e:
+    log lvlError, &"[loadAsync] Failed to load file {self.filename}: {e.msg}\n{e.getStackTrace()}"
 
   self.onPreLoaded.invoke self
 
@@ -1280,7 +1270,7 @@ proc loadAsync*(self: TextDocument, ws: Workspace, isReload: bool): Future[void]
       rope = Rope.new(&"Invalid utf-8 byte at {errorIndex}")
     self.content = rope.move
 
-  if not ws.isFileReadOnly(self.filename).await:
+  if self.vfs.getFileAttributes(self.filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
 
   self.autoDetectIndentStyle()
@@ -1318,10 +1308,10 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
 
 proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.async.} =
   ## Tries to set the underlying file permissions
-  if self.workspace.getSome(workspace):
-    if workspace.setFileReadOnly(self.filename, readOnly).await:
-      self.readOnly = readOnly
-      return true
+  # todo
+  #   if self.vfs.setFileReadOnly(self.filename, readOnly).await:
+  #     self.readOnly = readOnly
+  #     return true
 
   return false
 
@@ -1360,34 +1350,7 @@ method load*(self: TextDocument, filename: string = "") =
   self.filename = filename
   self.isBackedByFile = true
 
-  if self.workspace.getSome(ws):
-    asyncSpawn self.loadAsync(ws, isReload)
-  elif self.appFile:
-    self.onPreLoaded.invoke self
-    var content = catch self.fs.loadApplicationFile(self.filename):
-      log lvlError, fmt"Failed to load application file {filename}"
-      ""
-    if isReload:
-      self.replaceAll(content.move)
-    else:
-      self.content = content.move
-
-    self.lastSavedRevision = self.undoableRevision
-    self.autoDetectIndentStyle()
-    self.onLoaded.invoke self
-  else:
-    self.onPreLoaded.invoke self
-    var content = catch self.fs.loadFile(self.filename):
-      log lvlError, fmt"Failed to load file {filename}"
-      ""
-    if isReload:
-      self.replaceAll(content.move)
-    else:
-      self.content = content.move
-
-    self.lastSavedRevision = self.undoableRevision
-    self.autoDetectIndentStyle()
-    self.onLoaded.invoke self
+  asyncSpawn self.loadAsync(isReload)
 
 proc resolveDiagnosticAnchors*(self: TextDocument) =
   if self.currentDiagnostics.len == 0:
@@ -1496,19 +1459,9 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   else:
     (string, int).none
 
-  let workspaces = if self.workspace.getSome(ws):
-    @[ws.getWorkspacePath()]
-  else:
-    when declared(getCurrentDir):
-      try:
-        @[getCurrentDir()]
-      except:
-        @[]
-    else:
-      @[]
-
+  let workspaces = @[self.workspace.getWorkspacePath()]
   {.gcsafe.}:
-    let languageServerFuture = getOrCreateLanguageServer(self.languageId, self.filename, workspaces, config, self.workspace)
+    let languageServerFuture = getOrCreateLanguageServer(self.languageId, self.filename, workspaces, config, self.workspace.some)
 
   self.languageServerFuture = languageServerFuture.some
   try:

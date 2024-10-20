@@ -230,3 +230,9 @@ func indentExtraLines*(s: string, count: Natural, padding: string = " "): string
         result.add(padding)
     result.add(line)
     i.inc
+
+func find*[T](arr: openArray[T], val: T, start: int = 0): int =
+  result = -1
+  for i in start..<arr.len:
+    if arr[i] == val:
+      return i

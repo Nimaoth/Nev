@@ -2,8 +2,8 @@ import std/[tables, strutils, options, sets]
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 import misc/[custom_logger, util, event, id, rect_utils]
 import ui/node
-import platform, platform/filesystem
-import input, monitors, lrucache, theme, compilation_config
+import platform
+import input, monitors, lrucache, theme, compilation_config, vfs
 
 export platform
 
@@ -108,16 +108,16 @@ method init*(self: GuiPlatform) =
     self.ctx = newContext(1, 1)
     self.ctx.fillStyle = rgb(255, 255, 255)
     self.ctx.strokeStyle = rgb(255, 255, 255)
-    self.ctx.font = "fonts/DejaVuSansMono.ttf"
+    self.ctx.font = "app://fonts/DejaVuSansMono.ttf"
     self.ctx.textBaseline = TopBaseline
 
-    self.fontRegular = "fonts/DejaVuSansMono.ttf"
-    self.fontBold = "fonts/DejaVuSansMono-Bold.ttf"
-    self.fontItalic = "fonts/DejaVuSansMono-Oblique.ttf"
-    self.fontBoldItalic = "fonts/DejaVuSansMono-BoldOblique.ttf"
+    self.fontRegular = "app://fonts/DejaVuSansMono.ttf"
+    self.fontBold = "app://fonts/DejaVuSansMono-Bold.ttf"
+    self.fontItalic = "app://fonts/DejaVuSansMono-Oblique.ttf"
+    self.fontBoldItalic = "app://fonts/DejaVuSansMono-BoldOblique.ttf"
 
-    self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
-    self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
+    self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
+    self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
 
     self.boxy.setTargetFramebuffer self.framebufferId
 
@@ -246,18 +246,19 @@ method requestRender*(self: GuiPlatform, redrawEverything = false) =
   self.redrawEverything = self.redrawEverything or redrawEverything
 
 proc getTypeface*(self: GuiPlatform, font: string): Typeface =
-  let fs = ({.gcsafe.}: fs)
   if font notin self.typefaces:
     var typeface: Typeface = nil
     try:
-      log lvlInfo, &"Reading font '{font}'"
-      typeface = readTypeface(fs.getApplicationFilePath(font))
+      let path = self.vfs.normalize(font)
+      log lvlInfo, &"Reading font '{path}'"
+      typeface = readTypeface(path)
       self.typefaces[font] = typeface
 
       for fallbackFont in self.fallbackFonts:
         try:
-          log lvlInfo, &"Reading fallback font '{fallbackFont}'"
-          let fallback = readTypeface(fs.getApplicationFilePath(fallbackFont))
+          let fallbackPath = self.vfs.normalize(fallbackFont)
+          log lvlInfo, &"Reading fallback font '{fallbackPath}'"
+          let fallback = readTypeface(fallbackPath)
           if fallback.isNotNil:
             typeface.fallbacks.add fallback
         except:

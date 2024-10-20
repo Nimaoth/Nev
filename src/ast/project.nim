@@ -29,7 +29,7 @@ proc loadModelAsync*(self: AstProjectService, path: string): Future[Option[Model
 
 method init*(self: AstProjectService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"AstProjectService.init"
-  let workspaceService = self.services.getServiceAsync(WorkspaceService).await.get
+  let workspaceService = self.services.getService(WorkspaceService).get
 
   while workspaceService.workspace.isNil:
     try:

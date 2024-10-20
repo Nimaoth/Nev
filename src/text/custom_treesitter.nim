@@ -1,6 +1,6 @@
 import std/[options, json, tables]
 import misc/[custom_logger, custom_async, util, custom_unicode]
-import platform/filesystem
+import vfs
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
 
@@ -153,18 +153,23 @@ proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
 
   query.some
 
-proc queryFileImpl(self: TSLanguage, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
-  {.gcsafe.}:
-    let queryString = await fs.loadFileAsync(path)
+proc queryFileImpl(self: TSLanguage, vfs: VFS, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
+  try:
+    let queryString = await vfs.read(path)
     return await self.query(id, queryString, cacheOnFail)
+  except FileNotFoundError:
+    return TSQuery.none
+  except IOError as e:
+    log lvlError, &"Failed to load query file: {e.msg}"
+    return TSQuery.none
 
-proc queryFile*(self: TSLanguage, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
+proc queryFile*(self: TSLanguage, vfs: VFS, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
   if self.queries.contains(id):
     return self.queries[id]
   if self.queryFutures.contains(id):
     return await self.queryFutures[id]
 
-  let queryFuture = self.queryFileImpl(id, path, cacheOnFail)
+  let queryFuture = self.queryFileImpl(vfs, id, path, cacheOnFail)
   self.queryFutures[id] = queryFuture
 
   let query = await queryFuture
@@ -411,7 +416,7 @@ proc getLanguageWasmStore(): ptr TSWasmStore =
 
   return wasmStore
 
-proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
   try:
     const fileExtension = when defined(windows):
       "dll"
@@ -420,10 +425,9 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
 
     var candidates: seq[tuple[path: string, ctor: string]] = @[]
 
-    proc addCandidate(path: string) {.gcsafe, raises: [].} =
-      {.gcsafe.}:
-        let path = fs.getApplicationFilePath(path)
-      if fileExists(path):
+    proc addCandidate(path: string) {.gcsafe, async: (raises: []).} =
+      let path = "app://" & path
+      if vfs.getFileKind(path).await.mapIt(it == FileKind.File).get(false):
         let ctor = if path.endsWith(".wasm"):
           languageId
         else:
@@ -431,12 +435,12 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
         candidates.add (path, ctor)
 
     if config.hasKey("path"):
-      addCandidate config["path"].getStr
+      await addCandidate config["path"].getStr
     else:
-      addCandidate &"./languages/tree-sitter-{languageId}.wasm"
-      addCandidate &"./languages/{languageId}.wasm"
-      addCandidate &"./languages/tree-sitter-{languageId}.{fileExtension}"
-      addCandidate &"./languages/{languageId}.{fileExtension}"
+      await addCandidate &"languages/tree-sitter-{languageId}.wasm"
+      await addCandidate &"languages/{languageId}.wasm"
+      await addCandidate &"languages/tree-sitter-{languageId}.{fileExtension}"
+      await addCandidate &"languages/{languageId}.{fileExtension}"
 
     for (path, ctorSymbolName) in candidates:
       log lvlInfo, &"Trying to load treesitter from '{path}' using function '{ctorSymbolName}'"
@@ -446,11 +450,15 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
         if wasmStore == nil:
           continue
 
-        {.gcsafe.}:
-          let wasmBytes = await fs.loadFileAsync(path)
+        let wasmBytes = try:
+          let wasmBytes = await vfs.read(path, {Binary})
           if wasmBytes.len == 0:
             log lvlError, &"Failed to load wasm file {path}"
             continue
+          wasmBytes
+        except IOError as e:
+          log lvlError, &"Failed to load wasm file {path}: {e.msg}"
+          continue
 
         logScope lvlInfo, &"Create wasm language from module for {languageId}"
 
@@ -509,8 +517,8 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
 var loadedLanguages: Table[string, TSLanguage]
 var loadingLanguages: Table[string, Future[Option[TSLanguage]]]
 
-proc loadLanguage(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
-  let language = await loadLanguageDynamically(languageId, config)
+proc loadLanguage(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+  let language = await loadLanguageDynamically(vfs, languageId, config)
   if language.isSome:
     return language
 
@@ -555,7 +563,7 @@ proc unloadTreesitterLanguage*(languageId: string) {.gcsafe, raises: [].} =
     loadedLanguages.del(languageId)
     loadingLanguages.del(languageId)
 
-proc getTreesitterLanguage*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
   log lvlInfo, &"getTreesitterLanguage {languageId}: {config}"
   let loadingLanguages = ({.gcsafe.}: loadingLanguages.addr)
   let loadedLanguages = ({.gcsafe.}: loadedLanguages.addr)
@@ -567,7 +575,7 @@ proc getTreesitterLanguage*(languageId: string, config: JsonNode): Future[Option
     return loadedLanguages[][languageId].some
 
   else:
-    loadingLanguages[][languageId] = loadLanguage(languageId, config)
+    loadingLanguages[][languageId] = loadLanguage(vfs, languageId, config)
     let language = await loadingLanguages[][languageId]
     if language.getSome(language):
       loadedLanguages[][languageId] = language

@@ -2,8 +2,7 @@ import std/[options, strutils, os]
 import misc/[custom_async, custom_logger, util]
 import text/diff
 import workspaces/workspace
-import platform/[filesystem]
-import service, config_provider
+import service, config_provider, vfs, vfs_service
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -25,10 +24,10 @@ type
     config*: ConfigService
     workspace*: Workspace
     versionControlSystems*: seq[VersionControlSystem]
-    fs*: Filesystem
+    vfs*: VFS
 
 func serviceName*(_: typedesc[VCSService]): string = "VCSService"
-addBuiltinService(VCSService, WorkspaceService, ConfigService)
+addBuiltinService(VCSService, WorkspaceService, ConfigService, VFSService)
 
 func isUntracked*(fileInfo: VCSFileInfo): bool = fileInfo.unstagedStatus == Untracked
 
@@ -90,7 +89,7 @@ proc waitForWorkspace(self: VCSService) {.async: (raises: []).} =
 method init*(self: VCSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"VCSService.init"
   self.config = self.services.getService(ConfigService).get
-  self.fs = ({.gcsafe.}: fs)
+  self.vfs = self.services.getService(VFSService).get.vfs
   asyncSpawn self.waitForWorkspace()
 
   return ok()

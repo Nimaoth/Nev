@@ -1,6 +1,5 @@
 import std/[tables, sequtils, strutils]
 import misc/[custom_logger, util, custom_async]
-import platform/[filesystem]
 import scripting/expose
 import input, service, dispatch_tables
 

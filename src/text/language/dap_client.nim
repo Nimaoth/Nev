@@ -1,6 +1,5 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, hashes]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection, async_process]
-import platform/filesystem
 
 {.push gcsafe.}
 {.push raises: [].}

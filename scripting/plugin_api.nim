@@ -29,5 +29,7 @@ import session_api_wasm
 export session_api_wasm
 import vcs_api_wasm
 export vcs_api_wasm
+import vfs_api_wasm
+export vfs_api_wasm
 
 const enableAst* = false
