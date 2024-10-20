@@ -5,7 +5,7 @@ import text/[text_document, text_editor]
 import scripting/expose
 import workspaces/workspace
 import finder/[finder, previewer, workspace_file_previewer]
-import platform/[platform, filesystem]
+import platform/[platform]
 import service, dispatch_tables, platform_service
 import selector_popup, vcs, layout
 
@@ -128,8 +128,7 @@ proc revertSelectedFileAsync(popup: SelectorPopup, self: VCSService,
 proc diffStagedFileAsync(self: VCSService, workspace: Workspace, path: string): Future[void] {.async.} =
   log lvlInfo, fmt"Diff staged '({path})'"
 
-  let stagedDocument = newTextDocument(self.services, self.fs, path, load = false,
-    workspaceFolder = workspace.some, createLanguageServer = false)
+  let stagedDocument = newTextDocument(self.services, path, load = false, createLanguageServer = false)
   stagedDocument.staged = true
   stagedDocument.readOnly = true
 
@@ -147,11 +146,10 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   let source = newAsyncCallbackDataSource () => self.getChangedFilesFromGitAsync(workspace, all)
   var finder = newFinder(source, filterAndSort=true)
 
-  let previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services,
+  let previewer = newWorkspaceFilePreviewer(self.vfs, self.services,
     openNewDocuments=true)
 
-  var popup = newSelectorPopup(self.services, self.fs, "git".some, finder.some,
-    previewer.Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup(self.services, "git".some, finder.some, previewer.Previewer.toDisposableRef.some)
 
   popup.scale.x = 1
   popup.scale.y = 0.9

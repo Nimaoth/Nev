@@ -54,17 +54,7 @@ var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
-addBuiltinService(LayoutService, PlatformService, ConfigService, DocumentEditorService, WorkspaceService)
-
-proc waitForWorkspace(self: LayoutService) {.async: (raises: []).} =
-  let ws = self.services.getService(WorkspaceService).get
-  while ws.workspace.isNil:
-    try:
-      await sleepAsync(10.milliseconds)
-    except CancelledError:
-      discard
-
-  self.workspace = ws.workspace
+addBuiltinService(LayoutService, PlatformService, ConfigService, DocumentEditorService, Workspace)
 
 method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"LayoutService.init"
@@ -75,7 +65,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   self.layout = HorizontalLayout()
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
   self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
-  asyncSpawn self.waitForWorkspace()
+  self.workspace = self.services.getService(Workspace).get
   return ok()
 
 method activate*(view: EditorView) =
@@ -403,17 +393,13 @@ proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.exp
 
 proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor] =
   for i, view in self.views:
-    if view of EditorView and view.EditorView.document.filename == path and
-        (view.EditorView.document.workspace == self.workspace.some or
-        view.EditorView.document.appFile == appFile):
+    if view of EditorView and view.EditorView.document.filename == path:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.currentView = i
       return view.EditorView.editor.some
 
   for i, view in self.hiddenViews:
-    if view of EditorView and view.EditorView.document.filename == path and
-        (view.EditorView.document.workspace == self.workspace.some or
-        view.EditorView.document.appFile == appFile):
+    if view of EditorView and view.EditorView.document.filename == path:
       log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
       self.addView(view, append=append)

@@ -2,7 +2,7 @@ import std/[strformat, strutils, sugar, tables, options, json, streams, algorith
 import fusion/matching, bumpy, vmath
 import misc/[util, custom_logger, timer, array_buffer, id, event, custom_async, myjsonutils, custom_unicode, delayed_task, rect_utils]
 from scripting_api as api import nil
-import platform/[filesystem, platform]
+import platform/[platform]
 import workspaces/[workspace]
 import ui/node
 import lang/[lang_language, lang_builder, cell_language, property_validator_language, scope_language]
@@ -214,6 +214,43 @@ type
     errorColor*: Color
     isThickCursor*: bool
     ctx*: ModelComputationContext
+
+  ModelDocumentEditorService* = ref object of Service
+  ModelDocumentFactory* = ref object of DocumentFactory
+  ModelDocumentEditorFactory* = ref object of DocumentEditorFactory
+
+# proc newModelEditor*(document: ModelDocument, app: AppInterface, fs: Filesystem, services: Services): ModelDocumentEditor
+proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[Workspace]): ModelDocument
+
+func serviceName*(_: typedesc[ModelDocumentEditorService]): string = "ModelDocumentEditorService"
+
+addBuiltinService(ModelDocumentEditorService, DocumentEditorService)
+
+method init*(self: ModelDocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"ModelDocumentEditorService.init"
+  let editors = self.services.getService(DocumentEditorService).get
+  editors.addDocumentFactory(ModelDocumentFactory())
+  editors.addDocumentEditorFactory(ModelDocumentEditorFactory())
+  return ok()
+
+method canOpenFile*(self: ModelDocumentFactory, path: string): bool =
+  return path.endsWith(".ast-model"):
+
+method createDocument*(self: ModelDocumentFactory, services: Services, path: string): Document =
+  let fs = ({.gcsafe.}: fs)
+  let workspace = ({.gcsafe.}: gWorkspace)
+
+  return newModelDocument(path, app=false, workspaceFolder=workspace.some)
+
+method canEditDocument*(self: DocumentEditorFactory, document: Document): bool =
+  return document of ModelDocument
+
+method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor =
+  let app = ({.gcsafe.}: gAppInterface)
+  let fs = ({.gcsafe.}: fs)
+  # todo
+  # result = newModelEditor(document.ModelDocument, app, fs, services)
+
 
 proc `==`*(a, b: ModelCompletion): bool =
   if a.parent != b.parent: return false
@@ -3373,6 +3410,7 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   let workspace: Workspace = self.document.workspace.get
 
   proc getModelsAsync(): Future[ItemList] {.async.} =
+    # todo: directory listing refactor
     let files = await workspace.getDirectoryListingRec("")
 
     var items = newItemList(files.len)

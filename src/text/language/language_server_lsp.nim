@@ -1,8 +1,7 @@
 import std/[strutils, options, json, tables, uri, strformat, sequtils, typedthreads]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process]
-import platform/filesystem
-import language_server_base, app_interface, config_provider, lsp_client, document, service
+import language_server_base, app_interface, config_provider, lsp_client, document, service, vfs
 import workspaces/workspace as ws
 
 import nimsumtree/buffer
@@ -132,7 +131,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
     let workspaceInfo = if workspace.getSome(workspace):
-      workspace.info.await.some
+      workspace.info.some
     else:
       ws.WorkspaceInfo.none
 
