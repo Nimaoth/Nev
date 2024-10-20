@@ -105,13 +105,12 @@ type
     registers: Registers
     vfsService*: VFSService
 
+    workspace*: Workspace
     vfs*: VFS
 
     logNextFrameTime*: bool = false
     disableLogFrameTime*: bool = true
     logBuffer = ""
-
-    workspace*: Workspace
 
     wasmScriptContext*: ScriptContextWasm
     initializeCalled: bool
@@ -181,8 +180,6 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
-
-proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool]
 
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode]
 
@@ -683,6 +680,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.plugins = services.getService(PluginService).get
   self.registers = services.getService(Registers).get
   self.vfsService = services.getService(VFSService).get
+  self.workspace = services.getService(Workspace).get
   self.vfs = self.vfsService.vfs
 
   self.platform.fontSize = 16
@@ -759,9 +757,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   var state = EditorState()
   if not options.dontRestoreConfig:
     if options.sessionOverride.getSome(session):
-      self.sessionFile = os.absolutePath(session)
+      self.sessionFile = os.absolutePath(session).normalizePathUnix
     elif options.fileToOpen.getSome(file):
-      let path = os.absolutePath(file)
+      let path = os.absolutePath(file).normalizePathUnix
       if self.vfs.getFileKind(path).await.getSome(kind):
         case kind
         of FileKind.File:
@@ -774,7 +772,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
             self.sessionFile = path // defaultSessionName
 
     elif fileExists(defaultSessionName):
-      self.sessionFile = os.absolutePath(defaultSessionName)
+      self.sessionFile = os.absolutePath(defaultSessionName).normalizePathUnix
 
     if self.sessionFile != "":
       await self.restoreStateFromConfig(state.addr)
@@ -804,21 +802,22 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
 
   if self.config.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
-      var workspace: Workspace = newWorkspace(wf.settings)
-
-      workspace.id = wf.id.parseId
-      workspace.name = wf.name
-      if self.setWorkspaceFolder(workspace).await:
-        log(lvlInfo, fmt"Restoring workspace {workspace.name} ({workspace.id})")
+      log(lvlInfo, fmt"Restoring workspace")
+      self.workspace.restore(wf.settings)
+      await self.loadOptionsFromWorkspace()
 
   # Open current working dir as local workspace if no workspace exists yet
-  if self.workspace.isNil:
+  if self.workspace.path == "":
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
-    discard await self.setWorkspaceFolder newWorkspace(".")
+    self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
+    await self.loadOptionsFromWorkspace()
 
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
-    discard self.layout.openFile(filePath)
+    try:
+      discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+    except CatchableError as e:
+      log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
   elif self.config.getFlag("editor.restore-open-editors", true):
     for editorState in state.openEditors:
@@ -1094,20 +1093,6 @@ proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("ed
 proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
   self.events.getEventHandlerConfig(context).setConsumeAllInput(value)
 
-proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool] {.async.} =
-  log(lvlInfo, fmt"Opening workspace {workspace.name}")
-
-  if workspace.id == idNone():
-    workspace.id = newId()
-
-  self.workspace = workspace
-
-  self.services.getService(WorkspaceService).get.workspace = workspace
-
-  await self.loadOptionsFromWorkspace()
-
-  return true
-
 proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
   self.workspace.clearDirectoryCache()
 
@@ -1150,13 +1135,6 @@ proc addScriptAction*(self: App, name: string, docs: string = "",
       extendActiveDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
     else:
       extendGlobalDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
-
-proc openLocalWorkspaceAsync(self: App, path: string) {.async.} =
-  discard await self.setWorkspaceFolder newWorkspace(path)
-
-proc openLocalWorkspace*(self: App, path: string) {.expose("editor").} =
-  let path = if path.isAbsolute: path else: path.absolutePath.catch().valueOr(path)
-  asyncSpawn self.openLocalWorkspaceAsync(path)
 
 proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
@@ -1423,7 +1401,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isAbsolute:
-    path.normalizePathUnix
+    path.normalizeNativePath
   else:
     path.absolutePath.catch().valueOr(path).normalizePathUnix
 
@@ -1542,14 +1520,12 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   defer:
     self.platform.requestRender()
 
-  let workspace = self.workspace
-
   let previewer = if preview:
     newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
-  let finder = newFinder(newWorkspaceFilesDataSource(workspace), filterAndSort=true)
+  let finder = newFinder(newWorkspaceFilesDataSource(self.workspace), filterAndSort=true)
   var popup = newSelectorPopup(self.services, "file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
@@ -1868,10 +1844,8 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  let workspace = self.workspace
-
   let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
-  let source = newAsyncCallbackDataSource () => workspace.searchWorkspaceItemList(query, maxResults)
+  let source = newAsyncCallbackDataSource () => self.workspace.searchWorkspaceItemList(query, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
@@ -1941,6 +1915,7 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
     block:
       log lvlInfo, &"Copy highlight queries"
 
+      # todo: don't use VFSLocal directly, move copyFile to VFS
       let vfsLocal = self.vfs.getVFS("").vfs.VFSLocal
 
       let queryDirs = if queriesSubDir != "":
@@ -1955,7 +1930,7 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
           if f.endsWith(".scm"):
             let fileName = f.splitPath.tail
             log lvlInfo, &"Copy '{f}' to '{queryDir}'"
-            discard await vfsLocal.copyFile(f, queryDir // fileName)
+            discard await vfsLocal.copyFile(path // f, queryDir // fileName)
 
     block:
       let (output, err) = await runProcessAsyncOutput("tree-sitter", @["build", "--wasm", grammarPath],
@@ -2181,7 +2156,7 @@ proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
   let sessionFile = if sessionFile == "": defaultSessionName else: sessionFile
   try:
-    self.sessionFile = os.absolutePath(sessionFile)
+    self.sessionFile = os.absolutePath(sessionFile).normalizePathUnix
     self.saveAppState()
     self.requestRender()
   except Exception as e:

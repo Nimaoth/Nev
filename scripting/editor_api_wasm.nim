@@ -229,16 +229,6 @@ proc addScriptAction*(name: string; docs: string = "";
       argsJsonString.cstring)
 
 
-proc editor_openLocalWorkspace_void_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc openLocalWorkspace*(path: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openLocalWorkspace_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_quit_void_App_wasm(arg: cstring): cstring {.importc.}
 proc quit*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()

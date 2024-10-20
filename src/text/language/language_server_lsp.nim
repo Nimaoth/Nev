@@ -131,7 +131,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
     let workspaceInfo = if workspace.getSome(workspace):
-      workspace.info.await.some
+      workspace.info.some
     else:
       ws.WorkspaceInfo.none
 

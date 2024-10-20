@@ -54,17 +54,7 @@ var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
-addBuiltinService(LayoutService, PlatformService, ConfigService, DocumentEditorService, WorkspaceService)
-
-proc waitForWorkspace(self: LayoutService) {.async: (raises: []).} =
-  let ws = self.services.getService(WorkspaceService).get
-  while ws.workspace.isNil:
-    try:
-      await sleepAsync(10.milliseconds)
-    except CancelledError:
-      discard
-
-  self.workspace = ws.workspace
+addBuiltinService(LayoutService, PlatformService, ConfigService, DocumentEditorService, Workspace)
 
 method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"LayoutService.init"
@@ -75,7 +65,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   self.layout = HorizontalLayout()
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
   self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
-  asyncSpawn self.waitForWorkspace()
+  self.workspace = self.services.getService(Workspace).get
   return ok()
 
 method activate*(view: EditorView) =

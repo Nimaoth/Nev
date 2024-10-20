@@ -1101,10 +1101,10 @@ proc newTextDocument*(
     allTextDocuments.add result
 
   var self = result
-  self.filename = filename.normalizePathUnix
+  self.filename = filename
   self.currentTree = TSTree()
   self.appFile = app
-  self.workspace = services.getService(WorkspaceService).get.workspace
+  self.workspace = services.getService(Workspace).get
   self.services = services
   self.configProvider = services.getService(ConfigService).get.asConfigProvider
   self.vfs = services.getService(VFSService).get.vfs
@@ -1184,7 +1184,7 @@ proc saveAsync(self:  TextDocument) {.async.} =
   self.onSaved.invoke()
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
-  self.filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
+  self.filename = if filename.len > 0: filename else: self.filename
   logScope lvlInfo, &"[save] '{self.filename}'"
 
   if self.filename.len == 0:
@@ -1316,7 +1316,7 @@ proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.a
   return false
 
 proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S) =
-  let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
+  let filename = if filename.len > 0: filename else: self.filename
   if filename.len == 0:
     log lvlError, &"save: Missing filename"
     return
@@ -1341,7 +1341,7 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.onLoaded.invoke self
 
 method load*(self: TextDocument, filename: string = "") =
-  let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
+  let filename = if filename.len > 0: filename else: self.filename
   if filename.len == 0:
     log lvlError, &"save: Missing filename"
     return

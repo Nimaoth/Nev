@@ -53,7 +53,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   plugins: PluginService
   registers: Registers
   workspace: Workspace
-  workspaceService: WorkspaceService
 
   vfs: VFS
 
@@ -3594,8 +3593,7 @@ proc newTextEditor*(document: TextDocument, services: Services):
   self.events = self.services.getService(EventHandlerService).get
   self.plugins = self.services.getService(PluginService).get
   self.registers = self.services.getService(Registers).get
-  self.workspaceService = self.services.getService(WorkspaceService).get
-  self.workspace = self.workspaceService.workspace
+  self.workspace = self.services.getService(Workspace).get
   self.vfs = self.services.getService(VFSService).get.vfs
 
   self.setDocument(document)

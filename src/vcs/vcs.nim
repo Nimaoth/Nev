@@ -1,5 +1,5 @@
-import std/[options, strutils, os]
-import misc/[custom_async, custom_logger, util]
+import std/[options, strutils, os, sugar]
+import misc/[custom_async, custom_logger, util, event]
 import text/diff
 import workspaces/workspace
 import service, config_provider, vfs, vfs_service
@@ -27,7 +27,7 @@ type
     vfs*: VFS
 
 func serviceName*(_: typedesc[VCSService]): string = "VCSService"
-addBuiltinService(VCSService, WorkspaceService, ConfigService, VFSService)
+addBuiltinService(VCSService, Workspace, ConfigService, VFSService)
 
 func isUntracked*(fileInfo: VCSFileInfo): bool = fileInfo.unstagedStatus == Untracked
 
@@ -66,31 +66,19 @@ proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
     let vcs = newVersionControlSystemPerforce(path)
     return vcs.VersionControlSystem.some
 
-proc waitForWorkspace(self: VCSService) {.async: (raises: []).} =
-  let workspaceService = self.services.getService(WorkspaceService).get
-  while workspaceService.workspace.isNil:
-    try:
-      sleepAsync(10.milliseconds).await
-    except CancelledError:
-      discard
-
-  self.workspace = workspaceService.workspace
-
+proc handleWorkspaceFolderAdded(self: VCSService, path: string) {.async: (raises: []).} =
   try:
-    let info = self.workspace.info.await
-
-    for (path, _) in info.folders:
-      if detectVersionControlSystemIn(path).getSome(vcs):
-        self.versionControlSystems.add vcs
+    if detectVersionControlSystemIn(path).getSome(vcs):
+      self.versionControlSystems.add vcs
   except CatchableError as e:
     log lvlError, &"Failed to detect version control systems: {e.msg}\n{e.getStackTrace()}"
-
 
 method init*(self: VCSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"VCSService.init"
   self.config = self.services.getService(ConfigService).get
   self.vfs = self.services.getService(VFSService).get.vfs
-  asyncSpawn self.waitForWorkspace()
+  self.workspace = self.services.getService(Workspace).get
+  discard self.workspace.onWorkspaceFolderAdded.subscribe (path: string) => asyncSpawn(self.handleWorkspaceFolderAdded(path))
 
   return ok()
 

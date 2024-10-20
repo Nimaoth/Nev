@@ -12,18 +12,6 @@ type
     name*: string
     folders*: seq[tuple[path: string, name: Option[string]]]
 
-  Workspace* = ref object
-    name*: string
-    path*: string
-    additionalPaths*: seq[string]
-    info*: Future[WorkspaceInfo]
-    id*: Id
-    ignore*: Globs
-    cachedFiles*: seq[string]
-    onCachedFilesUpdated*: Event[void]
-    isCacheUpdateInProgress: bool = false
-    vfs*: VFS
-
   DirectoryListing* = object
     files*: seq[string]
     folders*: seq[string]
@@ -34,19 +22,26 @@ type
     column*: int
     text*: string
 
-  WorkspacePath* = distinct string
-
-  WorkspaceService* = ref object of Service
-    workspace*: Workspace
+  Workspace* = ref object of Service
+    name*: string
+    path*: string
+    additionalPaths*: seq[string]
+    id*: Id
+    ignore*: Globs
+    cachedFiles*: seq[string]
+    onCachedFilesUpdated*: Event[void]
+    onWorkspaceFolderAdded*: Event[string]
+    isCacheUpdateInProgress: bool = false
     vfs*: VFS
 
-func serviceName*(_: typedesc[WorkspaceService]): string = "WorkspaceService"
+func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 
-addBuiltinService(WorkspaceService, VFSService)
+addBuiltinService(Workspace, VFSService)
 
-method init*(self: WorkspaceService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"WorkspaceService.init"
+method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"Workspace.init"
   self.vfs = self.services.getService(VFSService).get.vfs
+
   return ok()
 
 proc ignorePath*(workspace: Workspace, path: string): bool =
@@ -102,7 +97,7 @@ proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
     let t = startTimer()
 
     for path in args.roots:
-      collectFiles(path.normalizePathUnix, args.ignore, result.files)
+      collectFiles(path, args.ignore, result.files)
 
     result.time = t.elapsed.ms
   except:
@@ -190,9 +185,9 @@ proc searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[s
 
 proc getAbsolutePath*(self: Workspace, path: string): string =
   if path.isAbsolute:
-    return path.normalizePathUnix
+    return path.normalizeNativePath
   else:
-    (self.getWorkspacePath() / path).normalizePathUnix
+    self.getWorkspacePath() // path
 
 proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] =
   try:
@@ -223,33 +218,37 @@ proc loadIgnoreFile(self: Workspace, path: string): Option[Globs] =
 proc loadDefaultIgnoreFile(self: Workspace) =
   if self.loadIgnoreFile(&".{appName}-ignore").getSome(ignore):
     self.ignore = ignore
-    log lvlInfo, &"Using ignore file '.{appName}-ignore' for workpace {self.name}"
+    log lvlInfo, &"Using ignore file '.{appName}-ignore' for workspace {self.name}"
   elif self.loadIgnoreFile(".gitignore").getSome(ignore):
     self.ignore = ignore
-    log lvlInfo, &"Using ignore file '.gitignore' for workpace {self.name}"
+    log lvlInfo, &"Using ignore file '.gitignore' for workspace {self.name}"
   else:
-    log lvlInfo, &"No ignore file for workpace {self.name}"
+    log lvlInfo, &"No ignore file for workspace {self.name}"
 
-proc createInfo(path: string, additionalPaths: seq[string]): Future[WorkspaceInfo] {.async.} =
-  let additionalPaths = additionalPaths.mapIt((it.absolutePath, it.some))
-  return WorkspaceInfo(name: path, folders: @[(path.absolutePath, path.some)] & additionalPaths)
+proc info*(self: Workspace): WorkspaceInfo =
+  let additionalPaths = self.additionalPaths.mapIt((it.absolutePath, it.some))
+  return WorkspaceInfo(name: self.path, folders: @[(self.path.absolutePath, self.path.some)] & additionalPaths)
 
-proc newWorkspace*(path: string, additionalPaths: seq[string] = @[]): Workspace =
-  new result
-  result.path = path # path.absolutePath.catch(path).normalizePathUnix
-  result.name = fmt"Local:{result.path}"
-  result.additionalPaths = additionalPaths # additionalPaths.mapIt(it.absolutePath.catch(path).normalizePathUnix)
-  result.info = createInfo(path, result.additionalPaths)
+proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
+  if self.path.len == 0:
+    self.path = path
+    self.loadDefaultIgnoreFile()
+  else:
+    self.additionalPaths.add path
+  self.onWorkspaceFolderAdded.invoke(path)
+  if recomputeFileCache:
+    self.recomputeFileCache()
 
-  result.loadDefaultIgnoreFile()
-
-  result.recomputeFileCache()
-
-proc newWorkspace*(settings: JsonNode): Workspace =
+proc restore*(self: Workspace, settings: JsonNode) =
   try:
     let path = settings["path"].getStr
     let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
-    return newWorkspace(path, additionalPaths)
-  except:
-    return nil
+    self.addWorkspaceFolder(path, recomputeFileCache = false)
+    for path in additionalPaths:
+      self.addWorkspaceFolder(path, recomputeFileCache = false)
 
+    self.name = fmt"Local:{path}"
+    self.recomputeFileCache()
+
+  except CatchableError as e:
+    log lvlError, &"Failed to restore workspace from settings: {e.msg}\n{settings.pretty}"

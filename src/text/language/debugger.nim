@@ -209,7 +209,7 @@ method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: 
   self.config = self.services.getService(ConfigService).get
   self.plugins = self.services.getService(PluginService).get
   self.platform = self.services.getService(PlatformService).get.platform
-  self.workspace = self.services.getService(WorkspaceService).get.workspace # todo
+  self.workspace = self.services.getService(Workspace).get
 
   discard self.services.getService(SessionService).get.onSessionRestored.subscribe (session: SessionService) => self.handleSessionRestored(session)
 
