@@ -1,8 +1,7 @@
 import std/[strutils, options, json, tables, uri, strformat, sequtils, typedthreads]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process]
-import platform/filesystem
-import language_server_base, app_interface, config_provider, lsp_client, document, service
+import language_server_base, app_interface, config_provider, lsp_client, document, service, vfs
 import workspaces/workspace as ws
 
 import nimsumtree/buffer
@@ -132,7 +131,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
     let workspaceInfo = if workspace.getSome(workspace):
-      workspace.info.await.some
+      workspace.info.some
     else:
       ws.WorkspaceInfo.none
 
@@ -573,19 +572,19 @@ method connect*(self: LanguageServerLSP, document: Document) =
     var handle = new Id
     handle[] = document.onLoaded.subscribe proc(document: TextDocument): void =
       document.onLoaded.unsubscribe handle[]
-      asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
+      asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.normalizedPath, document.contentString)
   else:
-    asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
+    asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.normalizedPath, document.contentString)
 
   let onEditHandle = document.onEdit.subscribe proc(args: auto): void {.gcsafe, raises: [].} =
-    # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
+    # debugf"TEXT INSERTED {args.document.normalizedPath}:{args.location}: {args.text}"
     # todo: we should batch these, as onEdit can be called multiple times per frame
     # especially for full document sync
     let version = args.document.buffer.history.versions.high
-    let fullPath = args.document.fullPath
+    let normalizedPath = args.document.normalizedPath
 
     if self.fullDocumentSync:
-      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (fullPath, version, @[], args.document.contentString)
+      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (normalizedPath, version, @[], args.document.contentString)
     else:
       var c = args.document.buffer.visibleText.cursorT(Point)
       # todo: currently relies on edits being sorted
@@ -594,7 +593,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
         let text = c.slice(Point.init(it.new.last.line, it.new.last.column))
         TextDocumentContentChangeEvent(range: language_server_base.toLspRange(it.old), text: $text)
       )
-      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (fullPath, version, changes, "")
+      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (normalizedPath, version, changes, "")
 
   self.documentHandles.add (document.Document, onEditHandle)
 
@@ -614,8 +613,8 @@ method disconnect*(self: LanguageServerLSP, document: Document) {.gcsafe, raises
     self.documentHandles.removeSwap i
     break
 
-  # asyncSpawn self.client.notifyClosedTextDocument(document.fullPath)
-  asyncSpawn self.client.notifyTextDocumentClosedChannel.send(document.fullPath)
+  # asyncSpawn self.client.notifyClosedTextDocument(document.normalizedPath)
+  asyncSpawn self.client.notifyTextDocumentClosedChannel.send(document.normalizedPath)
 
   if self.documentHandles.len == 0:
     self.stop()

@@ -2,7 +2,7 @@ import std/[tables, strutils, options, sets]
 import chroma, vmath, pixie/[contexts, fonts]
 import misc/[custom_logger, util, event, id, rect_utils]
 import ui/node
-import platform, platform/filesystem
+import platform
 import input, theme
 
 export platform

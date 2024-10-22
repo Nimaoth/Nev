@@ -109,11 +109,13 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gl", "choose-location"
   addCommand "editor", "<LEADER>gg", "choose-git-active-files", false
   addCommand "editor", "<LEADER>GG", "choose-git-active-files", true
-  addCommand "editor", "<LEADER>ge", "explore-files"
-  addCommand "editor", "<LEADER>gw", "explore-workspace-primary"
-  addCommand "editor", "<LEADER>gu", "explore-user-config-dir"
-  addCommand "editor", "<LEADER>ga", "explore-app-config-dir"
-  addCommand "editor", "<LEADER>gh", "explore-help"
+  addCommand "editor", "<LEADER>ge", "explore-files", ""
+  addCommand "editor", "<LEADER>gv", "explore-files", "", showVFS=true
+  addCommand "editor", "<LEADER>gw", "explore-files", "ws0://"
+  addCommand "editor", "<LEADER>gW", "explore-files", "ws0://".normalizePath
+  addCommand "editor", "<LEADER>gu", "explore-files", "home://.nev"
+  addCommand "editor", "<LEADER>ga", "explore-files", "app://config"
+  addCommand "editor", "<LEADER>gh", "explore-files", "app://docs"
   addCommand "editor", "<LEADER>gp", "explore-current-file-directory"
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommand "editor", "<LEADER>gk", "browse-keybinds"
@@ -183,6 +185,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "popup.selector.git", "<C-r>", "revert-selected"
   addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
   addCommand "popup.selector.file-explorer", "<C-r>", "go-up"
+  addCommand "popup.selector.file-explorer", "<CS-y>", "enter-normalized"
 
   addCommandBlock "editor", "<LEADER>al":
     runLastConfiguration()

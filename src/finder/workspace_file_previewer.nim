@@ -1,7 +1,5 @@
-import std/[tables, json, options, strformat, strutils, os]
+import std/[tables, json, options, strformat, strutils]
 import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, rope_utils]
-import workspaces/workspace
-import platform/filesystem
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
@@ -10,15 +8,13 @@ import app_interface, vfs, service, document_editor
 
 import nimsumtree/[rope]
 
-logCategory "workspace-file-previewer"
+logCategory "file-previewer"
 
 type
   WorkspaceFilePreviewer* = ref object of Previewer
-    workspace: Workspace
     services*: Services
     editors*: DocumentEditorService
-    fs: Filesystem
-    vfs: Option[VFS]
+    vfs: VFS
     editor: TextDocumentEditor
     tempDocument: TextDocument
     reuseExistingDocuments: bool
@@ -31,37 +27,20 @@ type
     currentStaged: bool
     currentDiff: bool
 
-proc newWorkspaceFilePreviewer*(workspace: Workspace, fs: Filesystem, services: Services,
+proc newWorkspaceFilePreviewer*(vfs: VFS, services: Services,
     openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
   new result
-  result.workspace = workspace
   result.services = services
   result.editors = services.getService(DocumentEditorService).get
-  result.fs = fs
+  result.vfs = vfs
 
   result.openNewDocuments = openNewDocuments
   result.reuseExistingDocuments = reuseExistingDocuments
-  result.tempDocument = newTextDocument(services, fs, workspaceFolder=workspace.some,
-    createLanguageServer=false)
-  result.tempDocument.readOnly = true
-
-proc newWorkspaceFilePreviewer*(workspace: Workspace, vfs: VFS, fs: Filesystem, services: Services,
-    openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
-  new result
-  result.workspace = workspace
-  result.services = services
-  result.editors = services.getService(DocumentEditorService).get
-  result.fs = fs
-  result.vfs = vfs.some
-
-  result.openNewDocuments = openNewDocuments
-  result.reuseExistingDocuments = reuseExistingDocuments
-  result.tempDocument = newTextDocument(services, fs, workspaceFolder=workspace.some,
-    createLanguageServer=false)
+  result.tempDocument = newTextDocument(services, createLanguageServer=false)
   result.tempDocument.readOnly = true
 
 method deinit*(self: WorkspaceFilePreviewer) =
-  logScope lvlInfo, &"[deinit] Destroying workspace file previewer"
+  logScope lvlInfo, &"[deinit] Destroying file previewer"
   if self.triggerLoadTask.isNotNil:
     self.triggerLoadTask.deinit()
   if self.tempDocument.isNotNil:
@@ -72,9 +51,6 @@ method deinit*(self: WorkspaceFilePreviewer) =
 proc parsePathAndLocationFromItemData*(item: FinderItem):
     Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool]]] {.gcsafe, raises: [].} =
   try:
-    if item.data.WorkspacePath.decodePath().getSome(ws):
-      return (ws.path, Cursor.none, bool.none).some
-
     if not item.data.startsWith("{"):
       return (item.data, Cursor.none, bool.none).some
 
@@ -116,7 +92,7 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   let location = self.currentLocation
   let editor = self.editor
 
-  logScope lvlDebug, &"loadAsync {path}"
+  logScope lvlDebug, &"loadAsync '{path}'"
 
   let document = if self.currentStaged or not self.reuseExistingDocuments:
     Document.none
@@ -137,29 +113,33 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
     logScope lvlInfo, &"[loadAsync] Show preview using temp document for '{path}'"
     var content = ""
 
-    if self.currentIsFile.getSome(isFile):
+    var fileKind = if self.currentIsFile.getSome(isFile):
       if isFile:
-        if self.vfs.getSome(vfs):
-          content = vfs.read(path).await.get("")
-        else:
-          await self.workspace.loadFile(path, content.addr)
+        FileKind.File
       else:
-        let listing = await self.workspace.getDirectoryListing(path)
-
-        for dir in listing.folders:
-          let name = dir.extractFilename
-          content.add &"🗀 {name}\n"
-
-        for file in listing.files:
-          let name = file.extractFilename
-          content.add &"🗎  {name}\n"
-
+        FileKind.Directory
+    elif self.vfs.getFileKind(path).await.getSome(kind):
+      kind
     else:
-      # Just assume it's a file, returns empty string when it's a directory which is fine
-      if self.vfs.getSome(vfs):
-        content = vfs.read(path).await.get("")
-      else:
-        await self.workspace.loadFile(path, content.addr)
+      log lvlError, &"Unknown file or directory '{path}'"
+      return
+
+    case fileKind
+    of FileKind.File:
+      try:
+        content = self.vfs.read(path).await
+      except IOError as e:
+        log lvlError, &"Failed to load file: {e.msg}"
+        content = e.msg
+
+    of FileKind.Directory:
+      let listing = await self.vfs.getDirectoryListing(path)
+
+      for name in listing.folders:
+        content.add &"🗀 {name}\n"
+
+      for name in listing.files:
+        content.add &"🗎  {name}\n"
 
     if editor.document.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
@@ -182,7 +162,6 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
       log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
       return
 
-    self.tempDocument.workspace = self.workspace.some
     self.tempDocument.setFileAndContent(path, rope.move)
     editor.setDocument(self.tempDocument)
 

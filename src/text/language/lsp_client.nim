@@ -1,9 +1,8 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, genasts]
 import misc/[custom_logger, websocket, util, myjsonutils, custom_async, response]
 import scripting/expose
-import platform/filesystem
 from workspaces/workspace as ws import nil
-import lsp_types, dispatch_tables
+import lsp_types, dispatch_tables, vfs
 from std/logging import nil
 
 import misc/async_process
@@ -488,7 +487,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
 
 proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.} =
   var workspacePath = if client.workspaceFolders.len > 0:
-    client.workspaceFolders[0].normalizePathUnix.some
+    client.workspaceFolders[0].some
   else:
     string.none
 

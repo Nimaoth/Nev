@@ -1,7 +1,7 @@
 import std/[json, tables, strutils, options]
 import chroma, results
-import misc/[custom_logger, myjsonutils, util]
-import platform/[filesystem]
+import misc/[custom_logger, myjsonutils, util, custom_async]
+import vfs
 
 logCategory "theme"
 
@@ -188,15 +188,14 @@ proc loadFromString*(input: string, path: string = "string"): Option[Theme] =
     debugf"{getCurrentException().getStackTrace()}"
     return Theme.none
 
-proc loadFromFile*(fs: Filesystem, path: string): Option[Theme] =
+proc loadFromFile*(vfs: VFS, path: string): Future[Option[Theme]] {.async: (raises: []).} =
   try:
-    let jsonText = fs.loadApplicationFile(path)
+    let jsonText = await vfs.read(path)
     return loadFromString(jsonText, path)
   except CatchableError:
     debugf"Failed to load theme from {path}: {getCurrentExceptionMsg()}"
     debugf"{getCurrentException().getStackTrace()}"
     return Theme.none
-
 
 # let theme = loadFromFile("themes/Monokai Pro.json")
 # print theme
