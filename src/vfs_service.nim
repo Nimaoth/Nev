@@ -20,10 +20,18 @@ addBuiltinService(VFSService)
 method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"VFSService.init"
 
+
   self.vfs = VFS()
   self.vfs.mount("", VFSLocal())
   self.vfs.mount("app://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: getAppDir().normalizeNativePath & "/"))
   self.vfs.mount("plugs://", VFSNull())
+  self.vfs.mount("ws://", VFS())
+
+  let homeDir = getHomeDir().normalizePathUnix.catch:
+    log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
+    ""
+  if homeDir != "":
+    self.vfs.mount("home://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: homeDir & "/"))
 
   return ok()
 
@@ -80,6 +88,9 @@ proc mountVfs*(self: VFSService, parentPath: string, prefix: string, config: Jso
   let (vfs, _) = self.vfs.getVFS(parentPath)
   if self.createVfs(config).getSome(newVFS):
     vfs.mount(prefix, newVFS)
+
+proc normalizePath*(self: VFSService, path: string): string {.expose("vfs").} =
+  return self.vfs.normalize(path)
 
 proc dumpVfsHierarchy*(self: VFSService) {.expose("vfs").} =
   log lvlInfo, "\n" & self.vfs.prettyHierarchy()

@@ -60,7 +60,6 @@ type
     buffer*: Buffer
     mLanguageId: string
     services: Services
-    vfs: VFS
     workspace: Workspace
 
     nextLineIdCounter: int32 = 0

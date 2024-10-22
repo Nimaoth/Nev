@@ -54,7 +54,7 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
       let module = await newWasmModule(file, @[editorImports], self.vfs)
 
       if module.getSome(module):
-        self.moduleVfs.mount(file.splitFile.name & "/", newInMemoryVFS())
+        self.moduleVfs.mount(file.splitFile.name, newInMemoryVFS())
         self.stack.add module
         defer: discard self.stack.pop
 

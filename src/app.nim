@@ -1,6 +1,6 @@
 import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref]
+  array_set, delayed_task, disposable_ref, regex]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform]
@@ -32,6 +32,9 @@ logCategory "app"
 
 const configDirName = "." & appName
 const defaultSessionName = &".{appName}-session"
+const appConfigDir = "app://config"
+const homeConfigDir = "home://" & configDirName
+const workspaceConfigDir = "ws0://" & configDirName
 
 let platformName = when defined(windows):
   "windows"
@@ -150,8 +153,6 @@ type
     previewer: Option[DisposableRef[Previewer]]
 
     closeUnusedDocumentsTask: DelayedTask
-
-    homeDir: string
 
 var gEditor* {.exportc.}: App = nil
 
@@ -447,67 +448,23 @@ proc loadKeybindings*(self: App, directory: string,
       except CatchableError:
         log(lvlError, fmt"Failed to load keybindings from {filenames[i]}: {getCurrentExceptionMsg()}")
 
-proc loadConfigFileFromAppDir(self: App, context: string, path: string):
+proc loadConfigFileFrom(self: App, context: string, path: string):
     Future[Option[string]] {.async.} =
   try:
-    let content = await self.vfs.read("app://" & path)
-    log lvlInfo, &"Loaded {context} from app:{path}"
+    let content = await self.vfs.read(path)
+    log lvlInfo, &"Loaded {context} from '{path}'"
     return content.some
   except FileNotFoundError:
     return string.none
   except CatchableError:
-    log(lvlError, fmt"Failed to load {context} from app dir: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to load {context} from '{path}': {getCurrentExceptionMsg()}")
 
   return string.none
 
-proc loadConfigFileFromHomeDir(self: App, context: string, path: string):
-    Future[Option[string]] {.async.} =
-  try:
-    if self.homeDir.len == 0:
-      log lvlInfo, &"No home directory"
-      return
-
-    let content = await self.vfs.read(self.homeDir // path)
-    log lvlInfo, &"Loaded {context} from {self.homeDir}/{path}"
-    return content.some
-  except FileNotFoundError:
-    return string.none
-  except CatchableError:
-    log(lvlError, fmt"Failed to load {context} from home {self.homeDir}: {getCurrentExceptionMsg()}")
-
-  return string.none
-
-proc loadConfigFileFromWorkspaceDir(self: App, context: string, path: string):
-    Future[Option[string]] {.async.} =
-  try:
-    let absolutePath = self.workspace.getAbsolutePath(path)
-    let content = await self.vfs.read(absolutePath)
-    log lvlInfo, &"Loaded {context} from {self.workspace.name}/{path}"
-    return content.some
-  except FileNotFoundError:
-    return string.none
-  except CatchableError:
-    log(lvlError,
-      fmt"Failed to load {context} from workspace {self.workspace.name}: {getCurrentExceptionMsg()}")
-
-  return string.none
-
-proc loadOptionsFromAppDir*(self: App) {.async.} =
+proc loadConfigFrom*(self: App, root: string) {.async.} =
   await allFutures(
-    self.loadSettingsFrom("config", loadConfigFileFromAppDir),
-    self.loadKeybindings("config", loadConfigFileFromAppDir)
-  )
-
-proc loadOptionsFromHomeDir*(self: App) {.async.} =
-  await allFutures(
-    self.loadSettingsFrom(configDirName, loadConfigFileFromHomeDir),
-    self.loadKeybindings(configDirName, loadConfigFileFromHomeDir)
-  )
-
-proc loadOptionsFromWorkspace*(self: App) {.async.} =
-  await allFutures(
-    self.loadSettingsFrom(configDirName, loadConfigFileFromWorkspaceDir),
-    self.loadKeybindings(configDirName, loadConfigFileFromWorkspaceDir)
+    self.loadSettingsFrom(root, loadConfigFileFrom),
+    self.loadKeybindings(root, loadConfigFileFrom)
   )
 
 # import asynchttpserver, asyncnet
@@ -668,10 +625,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.timer = startTimer()
   self.frameTimer = startTimer()
 
-  self.homeDir = getHomeDir().normalizePathUnix.catch:
-    log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
-    ""
-
   self.layout = services.getService(LayoutService).get
   self.config = services.getService(ConfigService).get
   self.editors = services.getService(DocumentEditorService).get
@@ -700,8 +653,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.setupDefaultKeybindings()
 
-  await self.loadOptionsFromAppDir()
-  await self.loadOptionsFromHomeDir()
+  await self.loadConfigFrom(appConfigDir)
+  await self.loadConfigFrom(homeConfigDir)
   log lvlInfo, &"Finished loading app and user settings"
 
   self.applySettingsFromAppOptions()
@@ -804,13 +757,13 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
     for wf in state.workspaceFolders:
       log(lvlInfo, fmt"Restoring workspace")
       self.workspace.restore(wf.settings)
-      await self.loadOptionsFromWorkspace()
+      await self.loadConfigFrom(workspaceConfigDir)
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.path == "":
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
     self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
-    await self.loadOptionsFromWorkspace()
+    await self.loadConfigFrom(workspaceConfigDir)
 
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
@@ -914,11 +867,11 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
     {.async.} =
   log lvlInfo, &"reapplyConfigKeybindingsAsync app={app}, home={home}, workspace={workspace}"
   if app:
-    await self.loadKeybindings("config", loadConfigFileFromAppDir)
+    await self.loadKeybindings(appConfigDir, loadConfigFileFrom)
   if home:
-    await self.loadKeybindings(configDirName, loadConfigFileFromHomeDir)
+    await self.loadKeybindings(homeConfigDir, loadConfigFileFrom)
   if workspace:
-    await self.loadKeybindings(configDirName, loadConfigFileFromWorkspaceDir)
+    await self.loadKeybindings(workspaceConfigDir, loadConfigFileFrom)
 
 proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false)
     {.expose("editor").} =
@@ -1350,24 +1303,25 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   let originalTheme = self.theme.path
 
-  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     var items = newSeq[FinderItem]()
     let themesDir = "app://themes"
     try:
-      for file in walkDirRec(themesDir, relative=true):
-        if file.endsWith ".json":
+      let files = self.vfs.getDirectoryListingRec(Globs(), themesDir).await
+      for file in files:
+        if file.endsWith(".json"):
           let (relativeDirectory, name, _) = file.splitFile
           items.add FinderItem(
             displayName: name,
-            data: fmt"{themesDir}/{file}",
-            detail: "themes" / relativeDirectory,
+            data: file,
+            detail: relativeDirectory,
           )
     except:
       discard
 
-    return items
+    return newItemList(items)
 
-  let source = newSyncDataSource(getItems)
+  let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
@@ -1504,7 +1458,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
     let pathNorm = self.vfs.normalize(path)
 
-    let editor = self.layout.openWorkspaceFile(pathNorm)
+    let editor = self.layout.openFile(pathNorm)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1532,7 +1486,7 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    discard self.layout.openWorkspaceFile(item.data)
+    discard self.layout.openFile(item.data)
     return true
 
   self.layout.pushPopup popup
@@ -1693,7 +1647,7 @@ proc gotoNextLocation*(self: App) {.expose("editor").} =
 
   log lvlInfo, &"[gotoNextLocation] Found {path}:{location}"
 
-  let editor = self.layout.openWorkspaceFile(path)
+  let editor = self.layout.openFile(path)
   if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
@@ -1712,7 +1666,7 @@ proc gotoPrevLocation*(self: App) {.expose("editor").} =
 
   log lvlInfo, &"[gotoPrevLocation] Found {path}:{location}"
 
-  let editor = self.layout.openWorkspaceFile(path)
+  let editor = self.layout.openFile(path)
   if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
@@ -1741,7 +1695,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.layout.openWorkspaceFile(path)
+    let editor = self.layout.openFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1750,7 +1704,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
-proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int): Future[ItemList] {.async.} =
+proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int): Future[ItemList] {.async: (raises: []).} =
   let searchResults = workspace.searchWorkspace(query, maxResults).await
   log lvlInfo, fmt"Found {searchResults.len} results"
 
@@ -1832,7 +1786,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.layout.openWorkspaceFile(path)
+    let editor = self.layout.openFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1844,8 +1798,11 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
-  let source = newAsyncCallbackDataSource () => self.workspace.searchWorkspaceItemList(query, maxResults)
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
+    let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
+    return self.workspace.searchWorkspaceItemList(query, maxResults).await
+
+  let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
@@ -1863,7 +1820,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.layout.openWorkspaceFile(path)
+    let editor = self.layout.openFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1969,7 +1926,7 @@ proc installTreesitterParser*(self: App, language: string, host: string = "githu
 
   asyncSpawn self.installTreesitterParserAsync(language, host)
 
-proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string): Future[ItemList] {.async.} =
+proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string, showVFS: bool = false): Future[ItemList] {.async: (raises: []).} =
 
   let listing = await vfs.getDirectoryListing(directory)
 
@@ -1986,6 +1943,14 @@ proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string): F
     if relativeDirectory == ".":
       relativeDirectory = ""
 
+    var detail = directory // name
+    if showVFS:
+      let (vfs, rel) = vfs.getVFS(detail)
+      detail.add "\t"
+      detail.add vfs.name
+      detail.add "/"
+      detail.add rel
+
     let icon = if isFile: fileIcon else: folderIcon
     list[i] = FinderItem(
       displayName: icon & " " & name,
@@ -1994,7 +1959,7 @@ proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string): F
         "path": directory // name,
         "isFile": isFile,
       },
-      detail: directory // name,
+      detail: detail,
     )
     inc i
 
@@ -2006,7 +1971,7 @@ proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string): F
 
   return list
 
-proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
+proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
@@ -2015,7 +1980,10 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
   let currentDirectory = new string
   currentDirectory[] = root
 
-  let source = newAsyncCallbackDataSource () => getItemsFromDirectory(self.vfs, self.workspace, currentDirectory[])
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
+    return getItemsFromDirectory(self.vfs, self.workspace, currentDirectory[], showVFS).await
+
+  let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
@@ -2029,14 +1997,38 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
       log lvlError, fmt"Failed to parse file info from item: {item}"
       return true
 
+    var path = fileInfo.path
+    if normalize:
+      path = self.vfs.normalize(path)
+
     if fileInfo.isFile:
-      if self.layout.openWorkspaceFile(fileInfo.path).getSome(editor):
+      if self.layout.openFile(path).getSome(editor):
         if editor of TextDocumentEditor and popup.getPreviewSelection().getSome(selection):
           editor.TextDocumentEditor.selection = selection
           editor.TextDocumentEditor.centerCursor()
       return true
     else:
       currentDirectory[] = fileInfo.path
+      popup.textEditor.document.content = ""
+      source.retrigger()
+      return false
+
+  popup.addCustomCommand "enter-normalized", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      let path = self.vfs.normalize(fileInfo.path)
+
+      if fileInfo.isFile:
+        if self.layout.openFile(path).getSome(editor):
+          if editor of TextDocumentEditor and popup.getPreviewSelection().getSome(selection):
+            editor.TextDocumentEditor.selection = selection
+            editor.TextDocumentEditor.centerCursor()
+        return true
+      else:
+        currentDirectory[] = path
       popup.textEditor.document.content = ""
       source.retrigger()
       return false
@@ -2051,19 +2043,6 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
     return true
 
   self.layout.pushPopup popup
-
-proc exploreUserConfigDir*(self: App) {.expose("editor").} =
-  if self.homeDir.len == 0:
-    log lvlInfo, &"No home directory"
-    return
-
-  self.exploreFiles(self.homeDir // configDirName)
-
-proc exploreAppConfigDir*(self: App) {.expose("editor").} =
-  self.exploreFiles("app://config")
-
-proc exploreHelp*(self: App) {.expose("editor").} =
-  self.exploreFiles("app://docs")
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
   self.exploreFiles(self.workspace.getWorkspacePath())
@@ -2126,9 +2105,9 @@ proc reloadPluginAsync*(self: App) {.async.} =
       log lvlError, &"Failed to reload wasm plugins: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 proc reloadConfigAsync*(self: App) {.async.} =
-  await self.loadOptionsFromAppDir()
-  await self.loadOptionsFromHomeDir()
-  await self.loadOptionsFromWorkspace()
+  await self.loadConfigFrom(appConfigDir)
+  await self.loadConfigFrom(homeConfigDir)
+  await self.loadConfigFrom(workspaceConfigDir)
 
 proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace

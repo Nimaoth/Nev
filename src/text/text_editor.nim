@@ -2519,7 +2519,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     # todo: absolute paths
-    let locations = await ls.getDefinition(self.document.fullPath, self.selection.last)
+    let locations = await ls.getDefinition(self.document.normalizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2528,7 +2528,7 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getDeclaration(self.document.fullPath, self.selection.last)
+    let locations = await ls.getDeclaration(self.document.normalizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2537,7 +2537,7 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getTypeDefinition(self.document.fullPath, self.selection.last)
+    let locations = await ls.getTypeDefinition(self.document.normalizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2546,7 +2546,7 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getImplementation(self.document.fullPath, self.selection.last)
+    let locations = await ls.getImplementation(self.document.normalizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2555,7 +2555,7 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getReferences(self.document.fullPath, self.selection.last)
+    let locations = await ls.getReferences(self.document.normalizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2564,7 +2564,7 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let filename = await ls.switchSourceHeader(self.document.fullPath)
+    let filename = await ls.switchSourceHeader(self.document.normalizedPath)
     if filename.getSome(filename):
       discard self.layout.openFile(filename)
 
@@ -2689,7 +2689,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.getLanguageServer().await.getSome(ls):
     if self.document.isNil:
       return
-    let symbols = await ls.getSymbols(self.document.fullPath)
+    let symbols = await ls.getSymbols(self.document.normalizedPath)
     if symbols.len == 0:
       return
 
@@ -3000,7 +3000,7 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
     return
 
   if languageServer.getSome(ls):
-    let hoverInfo = await ls.getHover(self.document.fullPath, cursor)
+    let hoverInfo = await ls.getHover(self.document.normalizedPath, cursor)
     if hoverInfo.getSome(hoverInfo):
       self.showHover = true
       self.hoverScrollOffset = 0
@@ -3070,7 +3070,7 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
     let visibleRange = self.visibleTextRange(self.screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
-    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.fullPath, visibleRange)
+    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.normalizedPath, visibleRange)
     # todo: detect if canceled instead
     if inlayHints.isSuccess:
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"

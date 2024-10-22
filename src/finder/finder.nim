@@ -320,7 +320,7 @@ type
 
   AsyncCallbackDataSource* = ref object of DataSource
     wasQueried: bool = false
-    callback: proc(): Future[ItemList] {.gcsafe, raises: [].}
+    callback: proc(): Future[ItemList] {.gcsafe, async: (raises: []).}
 
   SyncDataSource* = ref object of DataSource
     wasQueried: bool = false
@@ -339,7 +339,7 @@ proc newAsyncFutureDataSource*(future: Future[ItemList]): AsyncFutureDataSource 
   new result
   result.future = future
 
-proc newAsyncCallbackDataSource*(callback: proc(): Future[ItemList] {.gcsafe, raises: [].}): AsyncCallbackDataSource =
+proc newAsyncCallbackDataSource*(callback: proc(): Future[ItemList] {.gcsafe, async: (raises: []).}): AsyncCallbackDataSource =
   new result
   result.callback = callback
 

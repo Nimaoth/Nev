@@ -558,36 +558,17 @@ proc installTreesitterParser*(language: string; host: string = "github.com") {.
       argsJsonString.cstring)
 
 
-proc editor_exploreFiles_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc exploreFiles*(root: string = "") {.gcsafe, raises: [].} =
+proc editor_exploreFiles_void_App_string_bool_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc exploreFiles*(root: string = ""; showVFS: bool = false;
+                   normalize: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add root.toJson()
+  argsJson.add showVFS.toJson()
+  argsJson.add normalize.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreFiles_void_App_string_wasm(
+  let res {.used.} = editor_exploreFiles_void_App_string_bool_bool_wasm(
       argsJsonString.cstring)
-
-
-proc editor_exploreUserConfigDir_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exploreUserConfigDir*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreUserConfigDir_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_exploreAppConfigDir_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exploreAppConfigDir*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreAppConfigDir_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_exploreHelp_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exploreHelp*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreHelp_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_exploreWorkspacePrimary_void_App_wasm(arg: cstring): cstring {.

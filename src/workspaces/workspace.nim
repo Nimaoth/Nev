@@ -131,45 +131,48 @@ proc getWorkspacePath*(self: Workspace): string =
     return ""
 
 proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int):
-    Future[seq[SearchResult]] {.async.} =
-  let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root],
-    maxLines=maxResults).await
-  var res: seq[SearchResult]
+    Future[seq[SearchResult]] {.async: (raises: []).} =
+  try:
+    let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root],
+      maxLines=maxResults).await
+    var res: seq[SearchResult]
 
-  var currentFile = ""
-  for line in output:
-    if currentFile == "":
-      if line.isAbsolute:
-        currentFile = line.normalizePathUnix
-      else:
-        currentFile = root // line
-      continue
+    var currentFile = ""
+    for line in output:
+      if currentFile == "":
+        if line.isAbsolute:
+          currentFile = line.normalizePathUnix
+        else:
+          currentFile = root // line
+        continue
 
-    if line == "":
-      currentFile = ""
-      continue
+      if line == "":
+        currentFile = ""
+        continue
 
-    var separatorIndex1 = line.find(':')
-    if separatorIndex1 == -1:
-      continue
+      var separatorIndex1 = line.find(':')
+      if separatorIndex1 == -1:
+        continue
 
-    let lineNumber = line[0..<separatorIndex1].parseInt.catch(0)
+      let lineNumber = line[0..<separatorIndex1].parseInt.catch(0)
 
-    let separatorIndex2 = line.find(':', separatorIndex1 + 1)
-    if separatorIndex2 == -1:
-      continue
+      let separatorIndex2 = line.find(':', separatorIndex1 + 1)
+      if separatorIndex2 == -1:
+        continue
 
-    let column = line[(separatorIndex1 + 1)..<separatorIndex2].parseInt.catch(0)
-    let text = line[(separatorIndex2 + 1)..^1]
-    res.add SearchResult(path: currentFile, line: lineNumber, column: column, text: text)
+      let column = line[(separatorIndex1 + 1)..<separatorIndex2].parseInt.catch(0)
+      let text = line[(separatorIndex2 + 1)..^1]
+      res.add SearchResult(path: currentFile, line: lineNumber, column: column, text: text)
 
-    if res.len == maxResults:
-      break
+      if res.len == maxResults:
+        break
 
-  return res
+    return res
+  except CatchableError:
+    return @[]
 
-proc searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[seq[SearchResult]] {.async.} =
-  var futs: seq[Future[seq[SearchResult]]]
+proc searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[seq[SearchResult]] {.async: (raises: []).} =
+  var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
   futs.add self.searchWorkspaceFolder(query, self.path, maxResults)
   for path in self.additionalPaths:
     futs.add self.searchWorkspaceFolder(query, path, maxResults)
@@ -235,6 +238,12 @@ proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool
     self.loadDefaultIgnoreFile()
   else:
     self.additionalPaths.add path
+
+  self.vfs.mount(&"ws{self.additionalPaths.len}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+
+  let (wsVfs, _) = self.vfs.getVFS("ws://")
+  wsVfs.mount($self.additionalPaths.len, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+
   self.onWorkspaceFolderAdded.invoke(path)
   if recomputeFileCache:
     self.recomputeFileCache()

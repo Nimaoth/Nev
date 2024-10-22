@@ -17,6 +17,20 @@ proc mountVfs*(parentPath: string; prefix: string; config: JsonNode) {.gcsafe,
       argsJsonString.cstring)
 
 
+proc vfs_normalizePath_string_VFSService_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc normalizePath*(path: string): string {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add path.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = vfs_normalizePath_string_VFSService_string_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc vfs_dumpVfsHierarchy_void_VFSService_wasm(arg: cstring): cstring {.importc.}
 proc dumpVfsHierarchy*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()

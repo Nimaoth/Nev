@@ -98,9 +98,9 @@ method normalizeImpl*(self: VFSLocal, path: string): string =
   except:
     return path
 
-proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string) =
+proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string, relative: bool = true) =
   try:
-    for (kind, name) in walkDir(path, relative=true):
+    for (kind, name) in walkDir(path, relative=relative):
       case kind
       of pcFile:
         directoryListing.files.add name
@@ -136,9 +136,14 @@ method getDirectoryListingImpl*(self: VFSLocal, path: string): Future[DirectoryL
           index = nextIndex + 1
 
     else:
-      result.fillDirectoryListing("/")
+      result.fillDirectoryListing("/", relative = false)
 
   else:
+    when defined(posix):
+      if path == "/":
+        result.fillDirectoryListing("/", relative = false)
+        return
+
     result.fillDirectoryListing(path)
 
 

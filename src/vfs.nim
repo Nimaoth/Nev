@@ -38,7 +38,7 @@ type
     target*: VFS
     targetPrefix*: string
 
-proc getVFS*(self: VFS, path: string, maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string]
+proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string]
 proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {.async: (raises: [IOError]).}
 proc write*(self: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).}
 proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).}
@@ -49,21 +49,33 @@ proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.a
 
 proc normalizePathUnix*(path: string): string =
   var stripLeading = false
+  var stripTrailing = true
   if path.startsWith("/") and path.len >= 3 and path[2] == ':':
     # Windows path: /C:/...
     stripLeading = true
-  result = path.normalizedPath.replace('\\', '/').strip(leading=stripLeading, chars={'/'})
+
+  if path.endsWith("://"):
+    stripTrailing = false
+
+  result = path.normalizedPath.replace('\\', '/').strip(leading=stripLeading, trailing=stripTrailing, chars={'/'})
   if result.len >= 2 and result[1] == ':':
     result[0] = result[0].toUpperAscii
 
 proc normalizeNativePath*(path: string): string =
   var stripLeading = false
+  var stripTrailing = true
   when defined(windows):
     if path.startsWith("/") and path.len >= 3 and path[2] == ':':
       # Windows path: /C:/...
       stripLeading = true
     result = path.replace('\\', '/')
-  result = result.strip(leading=stripLeading, chars={'/'})
+  else:
+    result = path
+
+  if path.endsWith("://"):
+    stripTrailing = false
+
+  result = result.strip(leading=stripLeading, trailing=stripTrailing, chars={'/'})
   when defined(windows):
     if result.len >= 2 and result[1] == ':':
       result[0] = result[0].toUpperAscii
@@ -124,7 +136,7 @@ method getFileKindImpl*(self: VFS, path: string): Future[Option[FileKind]] {.bas
 method getFileAttributesImpl*(self: VFS, path: string): Future[Option[FileAttributes]] {.base, async: (raises: []).} =
   return FileAttributes.none
 
-method getVFSImpl*(self: VFS, path: string, maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] {.base.} =
+method getVFSImpl*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] {.base.} =
   (nil, "")
 
 method normalizeImpl*(self: VFS, path: string): string {.base.} =
@@ -164,13 +176,13 @@ method getDirectoryListingImpl*(self: VFSNull, path: string): Future[DirectoryLi
 method name*(self: VFSLink): string = &"VFSLink({self.prefix}, {self.target.name}/{self.targetPrefix})"
 
 method readImpl*(self: VFSLink, path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
-  return self.target.read(self.targetPrefix & path, flags).await
+  return self.target.read(self.targetPrefix // path, flags).await
 
 method writeImpl*(self: VFSLink, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
-  await self.target.write(self.targetPrefix & path, content)
+  await self.target.write(self.targetPrefix // path, content)
 
 method writeImpl*(self: VFSLink, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
-  await self.target.write(self.targetPrefix & path, content.move)
+  await self.target.write(self.targetPrefix // path, content.move)
 
 method getFileKindImpl*(self: VFSLink, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   return self.target.getFileKind(path).await
@@ -179,19 +191,19 @@ method getFileAttributesImpl*(self: VFSLink, path: string): Future[Option[FileAt
   return self.target.getFileAttributes(path).await
 
 method normalizeImpl*(self: VFSLink, path: string): string =
-  return self.target.normalize(self.targetPrefix & path)
+  return self.target.normalize(self.targetPrefix // path)
 
 method getDirectoryListingImpl*(self: VFSLink, path: string): Future[DirectoryListing] {.async: (raises: []).} =
-  return self.target.getDirectoryListing(self.targetPrefix & path).await
+  return self.target.getDirectoryListing(self.targetPrefix // path).await
 
-method getVFSImpl*(self: VFSLink, path: string, maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] =
+method getVFSImpl*(self: VFSLink, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] =
   when debugLogVfs:
-    debugf"[{self.name}] '{self.prefix}' getVFSImpl({path}) -> ({self.target.name}, {self.target.prefix}), '{self.targetPrefix & path}'"
+    debugf"[{self.name}] '{self.prefix}' getVFSImpl({path.join()}) -> ({self.target.name}, {self.target.prefix}), '{self.targetPrefix // path.join()}'"
 
   if maxDepth == 0:
-    return (self, path)
+    return (self, path.join())
 
-  return self.target.getVFS(self.targetPrefix & path)
+  return self.target.getVFS(self.targetPrefix // path.join(), maxDepth - 1)
 
 method name*(self: VFSInMemory): string = &"VFSInMemory({self.prefix})"
 
@@ -227,25 +239,32 @@ method getDirectoryListingImpl*(self: VFSInMemory, path: string): Future[Directo
     if file.startsWith(path):
       result.files.add file
 
-proc getVFS*(self: VFS, path: string, maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] =
-  # echo &"getVFS {self.name} '{path}'"
-  # defer:
-  #   echo &"  -> getVFS {self.name} '{path}' -> {result.vfs.name} '{result.relativePath}'"
+proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] =
+  # when debugLogVfs:
+  #   echo &"getVFS {self.name} '{path.join()}'"
+  #   defer:
+  #     echo &"  -> getVFS {self.name} '{path.join()}' -> {result.vfs.name} '{result.relativePath}'"
 
   if maxDepth == 0:
-    return (self, path)
+    return (self, path.join())
 
   for i in countdown(self.mounts.high, 0):
-    if path.startsWith(self.mounts[i].prefix):
+    template pref(): untyped = self.mounts[i].prefix
+
+    if path.startsWith(pref.toOpenArray()) and (pref.len == 0 or path.len == pref.len or pref.endsWith(['/']) or path[pref.len] == '/'):
+      var prefixLen = pref.len
+      if pref.len > 0 and not pref.endsWith(['/']) and path.len > pref.len:
+        inc prefixLen
+
       when debugLogVfs:
-        debugf"[{self.name}] '{self.prefix}' foward({path}) to ({self.mounts[i].vfs.name}, {self.mounts[i].vfs.prefix})"
-      return self.mounts[i].vfs.getVFS(path[self.mounts[i].prefix.len..^1], maxDepth - 1)
+        debugf"[{self.name}] '{self.prefix}' foward({path.join()}) to ({self.mounts[i].vfs.name}, {self.mounts[i].vfs.prefix})"
+      return self.mounts[i].vfs.getVFS(path[prefixLen..^1], maxDepth - 1)
 
   when debugLogVfs:
-    debugf"[{self.name}] '{self.prefix}' getVFSImpl({path})"
+    debugf"[{self.name}] '{self.prefix}' getVFSImpl({path.join()})"
   result = self.getVFSImpl(path, maxDepth) # todo: maxDepth - 1?
   if result.vfs.isNil:
-    result = (self, path)
+    result = (self, path.join(""))
 
 proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {.async: (raises: [IOError]).} =
   when debugLogVfs:
@@ -294,10 +313,10 @@ proc normalize*(self: VFS, path: string): string =
 
   var (vfs, path) = self.getVFS(path)
   while vfs.parent.getSome(parent):
-    path = vfs.prefix & path
+    path = vfs.prefix // path
     vfs = parent
 
-  return path
+  return path.normalizeNativePath
 
 proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).} =
   # defer:
@@ -314,6 +333,7 @@ proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.a
 
 proc mount*(self: VFS, prefix: string, vfs: VFS) =
   assert vfs.parent.isNone
+  log lvlInfo, &"{self.name}: mount {vfs.name} under '{prefix}'"
   for i in 0..self.mounts.high:
     if self.mounts[i].prefix == prefix:
       self.mounts[i].vfs.parent = VFS.none
