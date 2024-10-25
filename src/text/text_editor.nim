@@ -1904,8 +1904,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
 
   log lvlInfo, &"Checkout result: {res}"
 
-  # todo
-  # self.document.setReadOnly(self.workspace.isFileReadOnly(path).await)
+  self.document.setReadOnly(self.vfs.getFileAttributes(path).await.mapIt(not it.writable).get(false))
   self.markDirty()
 
 proc checkoutFile*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -2501,7 +2500,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
-    builder.previewer = newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.some
+    builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
@@ -2651,7 +2650,7 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
         data: encodeFileLocationForFinderItem(self.document.filename, (i, 0).some),
       )
 
-  builder.previewer = newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.some
+  builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true, minScore=minScore, sort=sort)
   builder.finder = finder.some
 
@@ -2675,7 +2674,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
 
-  builder.previewer = newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.some
+  builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
@@ -2756,7 +2755,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scaleX = 0.85
     builder.scaleY = 0.8
 
-    builder.previewer = newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.some
+    builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, self.workspace), filterAndSort=true)
     builder.finder = finder.some
 

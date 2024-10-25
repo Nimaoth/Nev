@@ -10,7 +10,7 @@ import text/language/language_server_base, language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text/[custom_treesitter]
 import finder/[finder, previewer]
-import compilation_config, vfs, vfs_service, vfs_local
+import compilation_config, vfs, vfs_service
 import service, layout, session
 
 import nimsumtree/[rope]
@@ -937,12 +937,6 @@ proc getHostOs*(self: App): string {.expose("editor").} =
   else:
     return "unknown"
 
-proc loadApplicationFile*(self: App, path: string): Option[string] {.expose("editor").} =
-  ## Load a file from the application directory (path is relative to the executable)
-  # return self.vfs.read("app://" & path).some
-  # todo
-  return string.none
-
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 
@@ -1435,7 +1429,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     return items
 
   let previewer = if preview:
-    newWorkspaceFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -1475,7 +1469,7 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     self.platform.requestRender()
 
   let previewer = if preview:
-    newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
@@ -1588,19 +1582,14 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
       let path = document.filename
       let isDirty = document.lastSavedRevision != document.revision
       let dirtyMarker = if isDirty: "*" else: " "
-
       let (directory, name) = path.splitPath
       let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
-      let data = path
-
-      # todo
-      let infoText = "workspace"
 
       items.add FinderItem(
         displayName: dirtyMarker & name,
         filterText: name,
-        data: data,
-        detail: &"{relativeDirectory}\t{infoText}",
+        data: path,
+        detail: relativeDirectory,
       )
 
     return items
@@ -1772,7 +1761,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
-    newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
+    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -1806,7 +1795,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
-    newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
+    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -1872,14 +1861,11 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
     block:
       log lvlInfo, &"Copy highlight queries"
 
-      # todo: don't use VFSLocal directly, move copyFile to VFS
-      let vfsLocal = self.vfs.getVFS("").vfs.VFSLocal
-
       let queryDirs = if queriesSubDir != "":
         @[repoPath // queriesSubDir]
       else:
-        let highlightQueries = await vfsLocal.findFile(repoPath, r"highlights.scm$")
-        highlightQueries.mapIt(it.splitPath.head)
+        let highlightQueries = await self.vfs.findFiles(repoPath, r"highlights.scm$")
+        highlightQueries.mapIt(repoPath // it.splitPath.head)
 
       for path in queryDirs:
         let list = await self.vfs.getDirectoryListing(path)
@@ -1887,7 +1873,7 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
           if f.endsWith(".scm"):
             let fileName = f.splitPath.tail
             log lvlInfo, &"Copy '{f}' to '{queryDir}'"
-            discard await vfsLocal.copyFile(path // f, queryDir // fileName)
+            await self.vfs.copyFile(path // f, queryDir // fileName)
 
     block:
       let (output, err) = await runProcessAsyncOutput("tree-sitter", @["build", "--wasm", grammarPath],
@@ -1988,7 +1974,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
   finder.filterThreshold = float.low
 
   var popup = newSelectorPopup(self.services, "file-explorer".some, finder.some,
-    newWorkspaceFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
+    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2145,7 +2131,7 @@ proc dumpKeymapGraphViz*(self: App, context: string = "") {.expose("editor").} =
   for handler in self.currentEventHandlers():
     if context == "" or handler.config.context == context:
       try:
-        waitFor self.vfs.write(handler.config.context & ".dot", handler.dfa.dumpGraphViz)
+        waitFor self.vfs.write("app://input_dots" // handler.config.context & ".dot", handler.dfa.dumpGraphViz)
       except IOError as e:
         log lvlError, &"Failed to dump keymap graph: {e.msg}\n{e.getStackTrace()}"
 

@@ -44,8 +44,11 @@ proc write*(self: VFS, path: string, content: string): Future[void] {.async: (ra
 proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).}
 proc getFileKind*(self: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).}
 proc getFileAttributes*(self: VFS, path: string): Future[Option[FileAttributes]] {.async: (raises: []).}
+proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).}
 proc normalize*(self: VFS, path: string): string
 proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).}
+proc copyFile*(self: VFS, src: string, dest: string): Future[void] {.async: (raises: [IOError]).}
+proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).}
 
 proc normalizePathUnix*(path: string): string =
   var stripLeading = false
@@ -136,6 +139,9 @@ method getFileKindImpl*(self: VFS, path: string): Future[Option[FileKind]] {.bas
 method getFileAttributesImpl*(self: VFS, path: string): Future[Option[FileAttributes]] {.base, async: (raises: []).} =
   return FileAttributes.none
 
+method setFileAttributesImpl*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.base, async: (raises: [IOError]).} =
+  discard
+
 method getVFSImpl*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] {.base.} =
   (nil, "")
 
@@ -144,6 +150,12 @@ method normalizeImpl*(self: VFS, path: string): string {.base.} =
 
 method getDirectoryListingImpl*(self: VFS, path: string): Future[DirectoryListing] {.base, async: (raises: []).} =
   discard
+
+method copyFileImpl*(self: VFS, src: string, dest: string): Future[void] {.base, async: (raises: [IOError]).} =
+  discard
+
+method findFilesImpl*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.base, async: (raises: []).} =
+  return @[]
 
 proc prettyHierarchy*(self: VFS): string =
   result.add self.name
@@ -190,6 +202,9 @@ method getFileKindImpl*(self: VFSLink, path: string): Future[Option[FileKind]] {
 method getFileAttributesImpl*(self: VFSLink, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
   return self.target.getFileAttributes(path).await
 
+method setFileAttributesImpl*(self: VFSLink, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).} =
+  await self.target.setFileAttributes(path, attributes)
+
 method normalizeImpl*(self: VFSLink, path: string): string =
   return self.target.normalize(self.targetPrefix // path)
 
@@ -204,6 +219,9 @@ method getVFSImpl*(self: VFSLink, path: openArray[char], maxDepth: int = int.hig
     return (self, path.join())
 
   return self.target.getVFS(self.targetPrefix // path.join(), maxDepth - 1)
+
+method copyFileImpl*(self: VFSLink, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
+  await self.target.copyFile(src, dest)
 
 method name*(self: VFSInMemory): string = &"VFSInMemory({self.prefix})"
 
@@ -239,6 +257,12 @@ method getDirectoryListingImpl*(self: VFSInMemory, path: string): Future[Directo
     if file.startsWith(path):
       result.files.add file
 
+method copyFileImpl*(self: VFSInMemory, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
+  if src in self.files:
+    self.files[dest] = self.files[src]
+  else:
+    raise newException(IOError, &"Failed to copy non-existing file '{src}' to '{dest}'")
+
 proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] =
   # when debugLogVfs:
   #   echo &"getVFS {self.name} '{path.join()}'"
@@ -270,42 +294,37 @@ proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {
   when debugLogVfs:
     debugf"[{self.name}] '{self.prefix}' read({path})"
   let (vfs, path) = self.getVFS(path)
-  if vfs == self:
-    result = await self.readImpl(path, flags)
-  else:
-    result = await vfs.read(path, flags)
+  return await vfs.readImpl(path, flags)
 
 proc write*(self: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
   when debugLogVfs:
     debugf"[{self.name}] '{self.prefix}' write({path})"
   let (vfs, path) = self.getVFS(path)
-  if vfs == self:
-    await self.writeImpl(path, content)
-  else:
-    await vfs.write(path, content)
+  await vfs.writeImpl(path, content)
 
 proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
   when debugLogVfs:
     debugf"[{self.name}] '{self.prefix}' write({path})"
   let (vfs, path) = self.getVFS(path)
-  if vfs == self:
-    await self.writeImpl(path, content.move)
-  else:
-    await vfs.write(path, content.move)
+  await vfs.writeImpl(path, content.move)
 
 proc getFileKind*(self: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   let (vfs, path) = self.getVFS(path)
-  if vfs == self:
-    return await self.getFileKindImpl(path)
-  else:
-    return await vfs.getFileKind(path)
+  return await vfs.getFileKindImpl(path)
 
 proc getFileAttributes*(self: VFS, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
   let (vfs, path) = self.getVFS(path)
-  if vfs == self:
-    return await self.getFileAttributesImpl(path)
-  else:
-    return await vfs.getFileAttributes(path)
+  return await vfs.getFileAttributesImpl(path)
+
+proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).} =
+  let (vfs, path) = self.getVFS(path)
+  await vfs.setFileAttributesImpl(path, attributes)
+
+proc fullPrefix*(self: VFS): string =
+  var vfs = self
+  while vfs.parent.getSome(parent):
+    result = vfs.prefix // result
+    vfs = parent
 
 proc normalize*(self: VFS, path: string): string =
   # defer:
@@ -322,14 +341,32 @@ proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.a
   # defer:
   #   echo &"getDirectoryListing '{path}': '{self.prefix}' -> {self.name}\n{result}"
   let (vfs, relativePath) = self.getVFS(path)
-  if vfs == self:
-    result = await self.getDirectoryListingImpl(relativePath)
-  else:
-    result = await vfs.getDirectoryListing(relativePath)
+  result = await vfs.getDirectoryListingImpl(relativePath)
 
   if path.len == 0:
     for m in self.mounts:
       result.folders.add m.prefix
+
+proc copyFile*(self: VFS, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
+  when debugLogVfs:
+    debugf"[{self.name}] '{self.prefix}' copyFile('{src}', '{dest}')"
+  let (srcVfs, srcRelativePath) = self.getVFS(src)
+  let (destVfs, destRelativePath) = self.getVFS(dest)
+  if srcVfs == destVfs:
+    await srcVfs.copyFileImpl(src, dest)
+  else:
+    # todo: this could be done better with streams
+    log lvlWarn, &"Copy file using slow method: '{src}' to '{dest}'"
+    let content = srcVfs.read(srcRelativePath, {Binary}).await
+    await destVfs.write(destRelativePath, content)
+
+proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).} =
+  ## Recursively searches for files in all sub directories of `root` (including `root`).
+  ## Returned paths are relative to `root`
+
+  # todo: support root which contains other VFSs
+  let (vfs, relativePath) = self.getVFS(root)
+  return await vfs.findFilesImpl(relativePath, filenameRegex, maxResults)
 
 proc mount*(self: VFS, prefix: string, vfs: VFS) =
   assert vfs.parent.isNone

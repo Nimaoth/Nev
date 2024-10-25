@@ -1307,12 +1307,13 @@ proc enableAutoReload*(self: TextDocument, enabled: bool) =
 
 proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.async.} =
   ## Tries to set the underlying file permissions
-  # todo
-  #   if self.vfs.setFileReadOnly(self.filename, readOnly).await:
-  #     self.readOnly = readOnly
-  #     return true
-
-  return false
+  try:
+    await self.vfs.setFileAttributes(self.filename, FileAttributes(writable: not readOnly, readable: true))
+    self.readOnly = readOnly
+    return true
+  except IOError as e:
+    log lvlError, &"Failed to change file permissions of '{self.filename}': {e.msg}"
+    return false
 
 proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, content: sink S) =
   let filename = if filename.len > 0: filename else: self.filename

@@ -11,7 +11,7 @@ import nimsumtree/[rope]
 logCategory "file-previewer"
 
 type
-  WorkspaceFilePreviewer* = ref object of Previewer
+  FilePreviewer* = ref object of Previewer
     services*: Services
     editors*: DocumentEditorService
     vfs: VFS
@@ -27,8 +27,8 @@ type
     currentStaged: bool
     currentDiff: bool
 
-proc newWorkspaceFilePreviewer*(vfs: VFS, services: Services,
-    openNewDocuments: bool = false, reuseExistingDocuments: bool = true): WorkspaceFilePreviewer =
+proc newFilePreviewer*(vfs: VFS, services: Services,
+    openNewDocuments: bool = false, reuseExistingDocuments: bool = true): FilePreviewer =
   new result
   result.services = services
   result.editors = services.getService(DocumentEditorService).get
@@ -39,7 +39,7 @@ proc newWorkspaceFilePreviewer*(vfs: VFS, services: Services,
   result.tempDocument = newTextDocument(services, createLanguageServer=false)
   result.tempDocument.readOnly = true
 
-method deinit*(self: WorkspaceFilePreviewer) =
+method deinit*(self: FilePreviewer) =
   logScope lvlInfo, &"[deinit] Destroying file previewer"
   if self.triggerLoadTask.isNotNil:
     self.triggerLoadTask.deinit()
@@ -86,7 +86,7 @@ proc parsePathAndLocationFromItemData*(item: FinderItem):
   except:
     return
 
-proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
+proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
   let revision = self.revision
   let path = self.currentPath
   let location = self.currentLocation
@@ -181,11 +181,11 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
 
   editor.markDirty()
 
-method delayPreview*(self: WorkspaceFilePreviewer) =
+method delayPreview*(self: FilePreviewer) =
   if self.triggerLoadTask.isNotNil and self.triggerLoadTask.isActive:
     self.triggerLoadTask.reschedule()
 
-method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: DocumentEditor) =
+method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEditor) =
   if not (editor of TextDocumentEditor):
     return
 

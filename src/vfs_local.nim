@@ -57,6 +57,8 @@ method writeImpl*(self: VFSLocal, path: string, content: string): Future[void] {
   try:
     logScope lvlInfo, &"[saveFile] '{path}'"
     # todo: reimplement async
+    let dir = path.splitPath.head
+    createDir(dir)
     writeFile(path, content)
     # var file = openAsync(path, fmWrite)
     # await file.write(content)
@@ -71,6 +73,8 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
   try:
     logScope lvlInfo, &"[saveFile] '{path}'"
     # todo: reimplement async
+    let dir = path.splitPath.head
+    createDir(dir)
     writeFile(path, $content)
     # var file = openAsync(path, fmWrite)
     # for chunk in content.iterateChunks:
@@ -94,6 +98,26 @@ method getFileAttributesImpl*(self: VFSLocal, path: string): Future[Option[FileA
     return FileAttributes(writable: fpUserWrite in permissions, readable: fpUserRead in permissions).some
   except:
     return FileAttributes.none
+
+method setFileAttributesImpl*(self: VFSLocal, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).} =
+  try:
+    var permissions = path.getFilePermissions()
+
+    if attributes.writable:
+      permissions.incl {fpUserWrite}
+    else:
+      permissions.excl {fpUserWrite}
+
+    if attributes.readable:
+      permissions.incl {fpUserRead}
+    else:
+      permissions.excl {fpUserRead}
+
+    log lvlInfo, fmt"Try to change file permissions of '{path}' to {permissions}"
+    path.setFilePermissions(permissions)
+
+  except:
+    raise newException(IOError, fmt"Failed to change file permissions of '{path}': " & getCurrentExceptionMsg(), getCurrentException())
 
 method normalizeImpl*(self: VFSLocal, path: string): string =
   try:
@@ -146,40 +170,26 @@ method getDirectoryListingImpl*(self: VFSLocal, path: string): Future[DirectoryL
 
     result.fillDirectoryListing(path)
 
-
-# method setFileReadOnly*(self: WorkspaceFolderLocal, relativePath: string, readOnly: bool): Future[bool] {.
-#     async.} =
-
-#   let path = self.getAbsolutePath(relativePath)
-#   try:
-#     var permissions = path.getFilePermissions()
-
-#     if readOnly:
-#       permissions.excl {fpUserWrite, fpGroupWrite, fpOthersWrite}
-#     else:
-#       permissions.incl {fpUserWrite, fpGroupWrite, fpOthersWrite}
-
-#     log lvlInfo, fmt"Try to change file permissions of '{path}' to {permissions}"
-#     path.setFilePermissions(permissions)
-#     return true
-
-#   except:
-#     log lvlError, fmt"Failed to change file permissions of '{path}'"
-#     return false
-
-
-proc findFilesRec(dir: string, filename: Regex, maxResults: int, res: var seq[string]) =
+method copyFileImpl*(self: VFSLocal, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
   try:
-    for (kind, path) in walkDir(dir, relative=false):
+    let dir = dest.splitPath.head
+    createDir(dir)
+    copyFileWithPermissions(src, dest)
+  except Exception as e:
+    raise newException(IOError, &"Failed to copy file '{src}' to '{dest}': {e.msg}", e)
+
+proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int, res: var seq[string]) =
+  try:
+    for (kind, name) in walkDir(dir, relative=true):
       case kind
       of pcFile:
-        if path.contains(filename):
-          res.add path
+        if name.contains(filename):
+          res.add relDir // name
           if res.len >= maxResults:
             return
 
       of pcDir:
-        findFilesRec(path, filename, maxResults, res)
+        findFilesRec(dir // name, relDir // name, filename, maxResults, res)
         if res.len >= maxResults:
           return
       else:
@@ -191,21 +201,14 @@ proc findFilesRec(dir: string, filename: Regex, maxResults: int, res: var seq[st
 proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string]]) =
   try:
     let filenameRegex = re(args.filename)
-    findFilesRec(args.root, filenameRegex, args.maxResults, args.res[])
+    findFilesRec(args.root, "", filenameRegex, args.maxResults, args.res[])
   except RegexError:
     discard
 
-proc findFile*(self: VFSLocal, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async.} =
+method findFilesImpl*(self: VFSLocal, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).} =
   var res = newSeq[string]()
-  await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr))
-  return res
-
-proc copyFile*(self: VFSLocal, source: string, dest: string): Future[bool] {.async.} =
   try:
-    let dir = dest.splitPath.head
-    createDir(dir)
-    copyFileWithPermissions(source, dest)
-    return true
-  except:
-    log lvlError, &"Failed to copy file '{source}' to '{dest}': {getCurrentExceptionMsg()}"
-    return false
+    await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr))
+  except Exception as e:
+    log lvlError, &"Failed to find files in {self.name}/{root}"
+  return res

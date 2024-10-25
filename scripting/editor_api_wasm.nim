@@ -105,20 +105,6 @@ proc getHostOs*(): string {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_loadApplicationFile_Option_string_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc loadApplicationFile*(path: string): Option[string] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_loadApplicationFile_Option_string_App_string_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_toggleShowDrawnNodes_void_App_wasm(arg: cstring): cstring {.importc.}
 proc toggleShowDrawnNodes*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
