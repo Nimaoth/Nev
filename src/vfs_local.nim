@@ -2,6 +2,9 @@ import std/[os, options, unicode, strutils]
 import misc/[custom_async, custom_logger, util, timer, regex]
 import vfs
 
+when defined(windows):
+  import winim/lean
+
 import nimsumtree/[rope]
 
 {.push gcsafe.}
@@ -111,9 +114,6 @@ proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string, 
 
   except OSError:
     discard
-
-when defined(windows):
-  import winim
 
 method getDirectoryListingImpl*(self: VFSLocal, path: string): Future[DirectoryListing] {.async: (raises: []).} =
   if path.len == 0:

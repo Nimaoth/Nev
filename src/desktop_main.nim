@@ -29,7 +29,7 @@ when enableTerminal:
 logCategory "main"
 
 when defined(windows):
-  import winim
+  import winim/lean
 
 proc ownsConsole*(): bool =
   when defined(windows):
