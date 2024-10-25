@@ -1929,7 +1929,7 @@ proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string, sh
 
     var detail = directory
     if showVFS:
-      let (vfs, rel) = vfs.getVFS(directory // name, 1)
+      let (vfs, _) = vfs.getVFS(directory // name, 1)
       detail.add "\t"
       detail.add vfs.name
 

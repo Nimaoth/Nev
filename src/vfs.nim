@@ -340,6 +340,8 @@ proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.a
 
   if path.len == 0:
     for m in self.mounts:
+      if m.prefix == path:
+        continue
       result.folders.add m.prefix
 
 proc copyFile*(self: VFS, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =

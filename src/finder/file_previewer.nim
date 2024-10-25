@@ -94,7 +94,8 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
 
   logScope lvlInfo, &"loadAsync '{path}'"
 
-  let document = if self.currentStaged or not self.reuseExistingDocuments:
+  let isFile = self.currentIsFile.get(true)
+  let document = if self.currentStaged or not self.reuseExistingDocuments or not isFile:
     Document.none
   elif self.openNewDocuments:
     self.editors.getOrOpenDocument(path)
