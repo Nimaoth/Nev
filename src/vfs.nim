@@ -158,7 +158,7 @@ proc prettyHierarchy*(self: VFS): string =
   result.add self.name
   for m in self.mounts:
     result.add "\n"
-    result.add (m.prefix & " -> " & m.vfs.prettyHierarchy()).indent(2)
+    result.add ("'" & m.prefix & "' -> " & m.vfs.prettyHierarchy()).indent(2)
 
 ########################################################
 

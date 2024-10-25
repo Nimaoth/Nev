@@ -17,5 +17,8 @@ To open this document at any time run the command `help` or `explore-help`.
 ## Sessions
 [Go here](sessions.md) to learn how to create sessions to persist editor state when closing (e.g. open files, workspace folders, breakpoints)
 
+## Virtual file system
+[Go here](virtual_file_system.md) to learn about the virtual file systems used by Nev.
+
 ## Workspaces
 [Go here](workspaces.md) to learn about workspaces.
