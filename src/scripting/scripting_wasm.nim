@@ -47,7 +47,7 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
     if not file2.endsWith(".wasm"):
       continue
 
-    let file = self.vfs.normalize(path // file2)
+    let file = path // file2
 
     try:
       log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"

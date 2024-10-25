@@ -1830,13 +1830,14 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   inc self.diffRevision
   let revision = self.diffRevision
 
-  let vcs = self.vcs.getVcsForFile(self.document.filename).getOr:
-    log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{self.document.filename}'"
+  let localizedPath = self.document.localizedPath
+  let vcs = self.vcs.getVcsForFile(localizedPath).getOr:
+    log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{localizedPath}'"
     return
 
-  log lvlInfo, fmt"Diff document '{self.document.filename}'"
+  log lvlInfo, fmt"Diff document '{localizedPath}'"
 
-  let relPath = self.workspace.getRelativePathSync(self.document.filename).get(self.document.filename)
+  let relPath = self.workspace.getRelativePathSync(localizedPath).get(localizedPath)
   if self.document.isNil or self.diffRevision > revision:
     return
 
@@ -1893,7 +1894,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
   if self.document.isNil:
     return
 
-  let path = self.document.filename
+  let path = self.document.localizedPath
   let vcs = self.vcs.getVcsForFile(path).getOr:
     log lvlError, fmt"No vcs assigned to document '{path}'"
     return
@@ -2518,7 +2519,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     # todo: absolute paths
-    let locations = await ls.getDefinition(self.document.normalizedPath, self.selection.last)
+    let locations = await ls.getDefinition(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2527,7 +2528,7 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getDeclaration(self.document.normalizedPath, self.selection.last)
+    let locations = await ls.getDeclaration(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2536,7 +2537,7 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getTypeDefinition(self.document.normalizedPath, self.selection.last)
+    let locations = await ls.getTypeDefinition(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2545,7 +2546,7 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getImplementation(self.document.normalizedPath, self.selection.last)
+    let locations = await ls.getImplementation(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2554,7 +2555,7 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getReferences(self.document.normalizedPath, self.selection.last)
+    let locations = await ls.getReferences(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2563,7 +2564,7 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let filename = await ls.switchSourceHeader(self.document.normalizedPath)
+    let filename = await ls.switchSourceHeader(self.document.localizedPath)
     if filename.getSome(filename):
       discard self.layout.openFile(filename)
 
@@ -2688,7 +2689,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.getLanguageServer().await.getSome(ls):
     if self.document.isNil:
       return
-    let symbols = await ls.getSymbols(self.document.normalizedPath)
+    let symbols = await ls.getSymbols(self.document.localizedPath)
     if symbols.len == 0:
       return
 
@@ -2916,7 +2917,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
       let variables = toTable {
         "TM_FILENAME": filenameParts.name & filenameParts.ext,
         "TM_FILENAME_BASE": filenameParts.name,
-        "TM_FILETPATH": self.document.filename,
+        "TM_FILETPATH": self.document.localizedPath,
         "TM_DIRECTORY": filenameParts.dir,
         "TM_LINE_INDEX": $editSelection.last.line,
         "TM_LINE_NUMBER": $(editSelection.last.line + 1),
@@ -2999,7 +3000,7 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
     return
 
   if languageServer.getSome(ls):
-    let hoverInfo = await ls.getHover(self.document.normalizedPath, cursor)
+    let hoverInfo = await ls.getHover(self.document.localizedPath, cursor)
     if hoverInfo.getSome(hoverInfo):
       self.showHover = true
       self.hoverScrollOffset = 0
@@ -3069,7 +3070,7 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
     let visibleRange = self.visibleTextRange(self.screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
-    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.normalizedPath, visibleRange)
+    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.localizedPath, visibleRange)
     # todo: detect if canceled instead
     if inlayHints.isSuccess:
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"

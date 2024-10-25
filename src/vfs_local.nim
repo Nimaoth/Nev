@@ -119,12 +119,6 @@ method setFileAttributesImpl*(self: VFSLocal, path: string, attributes: FileAttr
   except:
     raise newException(IOError, fmt"Failed to change file permissions of '{path}': " & getCurrentExceptionMsg(), getCurrentException())
 
-method normalizeImpl*(self: VFSLocal, path: string): string =
-  try:
-    return path.absolutePath
-  except:
-    return path
-
 proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string, relative: bool = true) =
   try:
     for (kind, name) in walkDir(path, relative=relative):
@@ -210,5 +204,5 @@ method findFilesImpl*(self: VFSLocal, root: string, filenameRegex: string, maxRe
   try:
     await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr))
   except Exception as e:
-    log lvlError, &"Failed to find files in {self.name}/{root}"
+    log lvlError, &"Failed to find files in {self.name}/{root}: {e.msg}"
   return res

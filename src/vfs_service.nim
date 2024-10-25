@@ -20,10 +20,13 @@ addBuiltinService(VFSService)
 method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"VFSService.init"
 
+  let localVfs = VFSLocal()
 
   self.vfs = VFS()
-  self.vfs.mount("", VFSLocal())
-  self.vfs.mount("app://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: getAppDir().normalizeNativePath & "/"))
+  self.vfs.mount("", VFS())
+  self.vfs.mount("local://", localVfs)
+  self.vfs.mount("", VFSLink(target: localVfs, targetPrefix: ""))
+  self.vfs.mount("app://", VFSLink(target: localVfs, targetPrefix: getAppDir().normalizeNativePath & "/"))
   self.vfs.mount("plugs://", VFSNull())
   self.vfs.mount("ws://", VFS())
 
@@ -31,7 +34,7 @@ method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async
     log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
     ""
   if homeDir != "":
-    self.vfs.mount("home://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: homeDir & "/"))
+    self.vfs.mount("home://", VFSLink(target: localVfs, targetPrefix: homeDir & "/"))
 
   return ok()
 

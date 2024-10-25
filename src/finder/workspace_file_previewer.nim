@@ -92,7 +92,7 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
   let location = self.currentLocation
   let editor = self.editor
 
-  logScope lvlDebug, &"loadAsync '{path}'"
+  logScope lvlInfo, &"loadAsync '{path}'"
 
   let document = if self.currentStaged or not self.reuseExistingDocuments:
     Document.none
@@ -189,7 +189,7 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
   if not (editor of TextDocumentEditor):
     return
 
-  logScope lvlDebug, &"previewItem {item}"
+  logScope lvlInfo, &"previewItem {item}"
 
   inc self.revision
   self.editor = editor.TextDocumentEditor

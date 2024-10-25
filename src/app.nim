@@ -1450,9 +1450,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let pathNorm = self.vfs.normalize(path)
-
-    let editor = self.layout.openFile(pathNorm)
+    let editor = self.layout.openFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1839,7 +1837,7 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
       log lvlError, &"Invalid value for languages.{language}.treesitter: '{repo}'. Expected 'user/repo'"
       return
 
-    let languagesRoot = self.vfs.normalize("app://languages")
+    let languagesRoot = self.vfs.localize("app://languages")
     let userName = parts[0]
     let repoName = parts[1]
     let subFolder = parts[2..^1].join("/")

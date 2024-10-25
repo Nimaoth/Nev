@@ -145,9 +145,6 @@ method setFileAttributesImpl*(self: VFS, path: string, attributes: FileAttribute
 method getVFSImpl*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] {.base.} =
   (nil, "")
 
-method normalizeImpl*(self: VFS, path: string): string {.base.} =
-  path
-
 method getDirectoryListingImpl*(self: VFS, path: string): Future[DirectoryListing] {.base, async: (raises: []).} =
   discard
 
@@ -204,9 +201,6 @@ method getFileAttributesImpl*(self: VFSLink, path: string): Future[Option[FileAt
 
 method setFileAttributesImpl*(self: VFSLink, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).} =
   await self.target.setFileAttributes(path, attributes)
-
-method normalizeImpl*(self: VFSLink, path: string): string =
-  return self.target.normalize(self.targetPrefix // path)
 
 method getDirectoryListingImpl*(self: VFSLink, path: string): Future[DirectoryListing] {.async: (raises: []).} =
   return self.target.getDirectoryListing(self.targetPrefix // path).await
@@ -326,10 +320,10 @@ proc fullPrefix*(self: VFS): string =
     result = vfs.prefix // result
     vfs = parent
 
-proc normalize*(self: VFS, path: string): string =
-  # defer:
-  #   echo &"normalize '{path}' -> '{result}'"
+proc localize*(self: VFS, path: string): string =
+  return self.getVFS(path).relativePath
 
+proc normalize*(self: VFS, path: string): string =
   var (vfs, path) = self.getVFS(path)
   while vfs.parent.getSome(parent):
     path = vfs.prefix // path
@@ -338,8 +332,6 @@ proc normalize*(self: VFS, path: string): string =
   return path.normalizeNativePath
 
 proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).} =
-  # defer:
-  #   echo &"getDirectoryListing '{path}': '{self.prefix}' -> {self.name}\n{result}"
   let (vfs, relativePath) = self.getVFS(path)
   result = await vfs.getDirectoryListingImpl(relativePath)
 

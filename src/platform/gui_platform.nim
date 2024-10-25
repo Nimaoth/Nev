@@ -1,6 +1,6 @@
-import std/[tables, strutils, options, sets]
+import std/[tables, strutils, options, sets, os]
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
-import misc/[custom_logger, util, event, id, rect_utils]
+import misc/[custom_logger, util, event, id, rect_utils, custom_async]
 import ui/node
 import platform
 import input, monitors, lrucache, theme, compilation_config, vfs
@@ -245,27 +245,42 @@ method requestRender*(self: GuiPlatform, redrawEverything = false) =
   self.requestedRender = true
   self.redrawEverything = self.redrawEverything or redrawEverything
 
+proc readTypeface(vfs: VFS, filePath: string): Typeface {.raises: [IOError].} =
+  try:
+    result =
+      case splitFile(filePath).ext.toLowerAscii():
+        of ".ttf":
+          parseTtf(vfs.read(filePath, {Binary}).waitFor)
+        of ".otf":
+          parseOtf(vfs.read(filePath, {Binary}).waitFor)
+        of ".svg":
+          parseSvgFont(vfs.read(filePath, {Binary}).waitFor)
+        else:
+          raise newException(IOError, "Unsupported font format")
+  except Exception as e:
+    raise newException(IOError, &"Failed to load typeface '{filePath}': " & e.msg, e)
+
+  result.filePath = filePath
+
 proc getTypeface*(self: GuiPlatform, font: string): Typeface =
   if font notin self.typefaces:
     var typeface: Typeface = nil
     try:
-      let path = self.vfs.normalize(font)
-      log lvlInfo, &"Reading font '{path}'"
-      typeface = readTypeface(path)
+      log lvlInfo, &"Reading font '{font}'"
+      typeface = self.vfs.readTypeface(font)
       self.typefaces[font] = typeface
 
       for fallbackFont in self.fallbackFonts:
         try:
-          let fallbackPath = self.vfs.normalize(fallbackFont)
-          log lvlInfo, &"Reading fallback font '{fallbackPath}'"
-          let fallback = readTypeface(fallbackPath)
+          log lvlInfo, &"Reading fallback font '{fallbackFont}'"
+          let fallback = self.vfs.readTypeface(fallbackFont)
           if fallback.isNotNil:
             typeface.fallbacks.add fallback
-        except:
-          log lvlError, &"Failed to load fallback font '{fallbackFont}'"
+        except IOError as e:
+          log lvlError, &"Failed to load fallback font '{fallbackFont}': {e.msg}"
 
-    except:
-      log lvlError, &"Failed to load font '{font}'"
+    except IOError as e:
+      log lvlError, &"Failed to load typeface '{font}': {e.msg}"
       return nil
 
   result = self.typefaces[font]

@@ -17,6 +17,7 @@ method deinit*(self: Document) {.base, gcsafe, raises: [].} = discard
 method getStatisticsString*(self: Document): string {.base, gcsafe, raises: [].} = discard
 
 proc normalizedPath*(self: Document): string {.gcsafe, raises: [].} =
-  if self.vfs.isNotNil:
-    return self.vfs.normalize(self.filename)
-  return self.filename
+  return self.vfs.normalize(self.filename)
+
+proc localizedPath*(self: Document): string {.gcsafe, raises: [].} =
+  return self.vfs.localize(self.filename)
