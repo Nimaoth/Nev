@@ -4,7 +4,7 @@ import misc/[custom_async, custom_logger, util, myjsonutils, disposable_ref]
 import text/[text_document, text_editor]
 import scripting/expose
 import workspaces/workspace
-import finder/[finder, previewer, workspace_file_previewer]
+import finder/[finder, previewer, file_previewer]
 import platform/[platform]
 import service, dispatch_tables, platform_service
 import selector_popup, vcs, layout

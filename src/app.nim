@@ -189,7 +189,7 @@ import text/language/debugger
 when enableAst:
   import ast/[model_document]
 import selector_popup
-import finder/[workspace_file_previewer, open_editor_previewer]
+import finder/[file_previewer, open_editor_previewer]
 
 # todo: remove this function
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =

@@ -2460,7 +2460,7 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
   else:
     log lvlError, fmt"Failed to open file '{filename}' at {location}"
 
-import finder/[workspace_file_previewer]
+import finder/[file_previewer]
 
 proc openLocationFromFinderItem(self: TextDocumentEditor, item: FinderItem) =
   try:
