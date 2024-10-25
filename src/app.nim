@@ -1927,13 +1927,11 @@ proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string, sh
     if relativeDirectory == ".":
       relativeDirectory = ""
 
-    var detail = directory // name
+    var detail = directory
     if showVFS:
-      let (vfs, rel) = vfs.getVFS(detail)
+      let (vfs, rel) = vfs.getVFS(directory // name, 1)
       detail.add "\t"
       detail.add vfs.name
-      detail.add "/"
-      detail.add rel
 
     let icon = if isFile: fileIcon else: folderIcon
     list[i] = FinderItem(
@@ -2024,6 +2022,32 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
     popup.textEditor.document.content = ""
     source.retrigger()
+    return true
+
+  popup.addCustomCommand "add-workspace-folder", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      let path = self.vfs.localize(fileInfo.path)
+
+      log lvlInfo, fmt"Add workspace folder: {currentDirectory[]} -> {path}"
+      self.workspace.addWorkspaceFolder(path)
+      source.retrigger()
+
+  popup.addCustomCommand "remove-workspace-folder", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      let path = self.vfs.localize(fileInfo.path)
+
+      log lvlInfo, fmt"Remove workspace folder: {currentDirectory[]} -> {path}"
+      self.workspace.removeWorkspaceFolder(path)
+      source.retrigger()
+
     return true
 
   self.layout.pushPopup popup

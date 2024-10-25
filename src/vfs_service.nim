@@ -58,8 +58,14 @@ proc createVfs*(self: VFSService, config: JsonNode): Option[VFS] =
   case typ
   of "link":
     let targetMaxDepth = config.fields.getOrDefault("targetMaxDepth", newJInt(1)).getInt.expect("int 'targetMaxDepth'", $config)
-    let targetName = config.fields.getOrDefault("target", newJNull()).getStr.expect("string 'target'", $config)
-    let (target, sub) = self.vfs.getVFS(targetName, targetMaxDepth)
+    let targetName = config.fields.getOrDefault("target", newJNull()).jsonTo(Option[string]).catch:
+      log lvlError, "Invalid config, target must be string or null: " & config.pretty
+      return
+    let (target, sub) = if targetName.getSome(t):
+      self.vfs.getVFS(t, targetMaxDepth)
+    else:
+      (self.vfs, "")
+
     if sub != "":
       log lvlError, &"Unknown target '{targetName}', unmatched: '{sub}'"
       return VFS.none
@@ -86,9 +92,13 @@ proc getVfsService(): Option[VFSService] =
 static:
   addInjector(VFSService, getVfsService)
 
-proc mountVfs*(self: VFSService, parentPath: string, prefix: string, config: JsonNode) {.expose("vfs").} =
+proc mountVfs*(self: VFSService, parentPath: Option[string], prefix: string, config: JsonNode) {.expose("vfs").} =
   log lvlInfo, &"Mount VFS '{parentPath}', '{prefix}', {config}"
-  let (vfs, _) = self.vfs.getVFS(parentPath)
+  let vfs = if parentPath.getSome(p):
+    self.vfs.getVFS(p).vfs
+  else:
+    self.vfs
+
   if self.createVfs(config).getSome(newVFS):
     vfs.mount(prefix, newVFS)
 

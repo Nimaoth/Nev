@@ -284,6 +284,23 @@ proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[
   if result.vfs.isNil:
     result = (self, path.join(""))
 
+proc fullPrefix*(self: VFS): string =
+  var vfs = self
+  while vfs.parent.getSome(parent):
+    result = vfs.prefix // result
+    vfs = parent
+
+proc localize*(self: VFS, path: string): string =
+  return self.getVFS(path).relativePath.normalizeNativePath
+
+proc normalize*(self: VFS, path: string): string =
+  var (vfs, path) = self.getVFS(path)
+  while vfs.parent.getSome(parent):
+    path = vfs.prefix // path
+    vfs = parent
+
+  return path.normalizeNativePath
+
 proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {.async: (raises: [IOError]).} =
   when debugLogVfs:
     debugf"[{self.name}] '{self.prefix}' read({path})"
@@ -314,26 +331,12 @@ proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Fu
   let (vfs, path) = self.getVFS(path)
   await vfs.setFileAttributesImpl(path, attributes)
 
-proc fullPrefix*(self: VFS): string =
-  var vfs = self
-  while vfs.parent.getSome(parent):
-    result = vfs.prefix // result
-    vfs = parent
-
-proc localize*(self: VFS, path: string): string =
-  return self.getVFS(path).relativePath
-
-proc normalize*(self: VFS, path: string): string =
-  var (vfs, path) = self.getVFS(path)
-  while vfs.parent.getSome(parent):
-    path = vfs.prefix // path
-    vfs = parent
-
-  return path.normalizeNativePath
-
 proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).} =
   let (vfs, relativePath) = self.getVFS(path)
-  result = await vfs.getDirectoryListingImpl(relativePath)
+  if vfs == self:
+    result = await self.getDirectoryListingImpl(relativePath)
+  else:
+    result = await vfs.getDirectoryListing(relativePath)
 
   if path.len == 0:
     for m in self.mounts:
@@ -359,6 +362,15 @@ proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int 
   # todo: support root which contains other VFSs
   let (vfs, relativePath) = self.getVFS(root)
   return await vfs.findFilesImpl(relativePath, filenameRegex, maxResults)
+
+proc unmount*(self: VFS, prefix: string) =
+  log lvlInfo, &"{self.name}: unmount '{prefix}'"
+  for i in 0..self.mounts.high:
+    if self.mounts[i].prefix == prefix:
+      self.mounts[i].vfs.prefix = ""
+      self.mounts[i].vfs.parent = VFS.none
+      self.mounts.removeShift(i)
+      return
 
 proc mount*(self: VFS, prefix: string, vfs: VFS) =
   assert vfs.parent.isNone

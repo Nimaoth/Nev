@@ -31,6 +31,7 @@ type
     cachedFiles*: seq[string]
     onCachedFilesUpdated*: Event[void]
     onWorkspaceFolderAdded*: Event[string]
+    onWorkspaceFolderRemoved*: Event[string]
     isCacheUpdateInProgress: bool = false
     vfs*: VFS
 
@@ -231,6 +232,39 @@ proc loadDefaultIgnoreFile(self: Workspace) =
 proc info*(self: Workspace): WorkspaceInfo =
   let additionalPaths = self.additionalPaths.mapIt((it.absolutePath, it.some))
   return WorkspaceInfo(name: self.path, folders: @[(self.path.absolutePath, self.path.some)] & additionalPaths)
+
+proc removeWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
+  let idx = if path == self.path:
+    -1
+  else:
+    let idx = self.additionalPaths.find(path)
+    if idx == -1:
+      log lvlError, &"Can't remove unknown workspace folder '{path}'"
+      return
+    idx
+
+  if idx != -1:
+    self.additionalPaths.removeShift(idx)
+  elif self.additionalPaths.len > 0:
+    self.path = self.additionalPaths[0]
+    self.additionalPaths.removeShift(0)
+  else:
+    log lvlError, &"Can't remove last workspace folder '{path}'"
+    return
+
+  let (wsVfs, _) = self.vfs.getVFS("ws://")
+  self.vfs.unmount(&"ws{self.additionalPaths.len + 1}://")
+  wsVfs.unmount(&"{self.additionalPaths.len + 1}")
+
+  # rebuild vfs
+  for i, path in @[self.path] & self.additionalPaths:
+    self.vfs.mount(&"ws{i}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+    wsVfs.mount($i, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+
+  self.onWorkspaceFolderRemoved.invoke(path)
+
+  if recomputeFileCache:
+    self.recomputeFileCache()
 
 proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
   if self.path.len == 0:

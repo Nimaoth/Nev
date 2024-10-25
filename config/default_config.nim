@@ -186,6 +186,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
   addCommand "popup.selector.file-explorer", "<C-r>", "go-up"
   addCommand "popup.selector.file-explorer", "<CS-y>", "enter-normalized"
+  addCommand "popup.selector.file-explorer", "<C-a>", "add-workspace-folder"
+  addCommand "popup.selector.file-explorer", "<C-x>", "remove-workspace-folder"
 
   addCommandBlock "editor", "<LEADER>al":
     runLastConfiguration()
