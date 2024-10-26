@@ -9,7 +9,7 @@ Here are the types of file systems that are supported:
 - `VFSLink` - This file system can link into a subfolder of another file systems. Cycles are not allowed.
 
 By default Nev creates a VFS hierarchy which contains the local file system under `local://`, and some links into that for convenience:
-- `app://` links to the directory when Nev is installed under `local://`
+- `app://` links to the directory where Nev is installed under `local://`
 - `home://` links to the user home directory under `local://`
 - `ws0://`, `ws1://` etc. link to the workspace folders.
 - `ws://0`, `ws://1` etc. link to the workspace folders.
@@ -19,7 +19,7 @@ To explore the entire VFS in the builtin file explorer you can run the command `
 
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/vfs.png)
 
-You can see the also VFS hierarchy by running the command `dump-vfs-hierarchy`, which will output something like this:
+You can also see the VFS hierarchy by running the command `dump-vfs-hierarchy`, which will output something like this to the log file:
 ```
 VFS()
   '' -> VFSLink(, VFSLocal(local://)/)
@@ -33,8 +33,8 @@ VFS()
   'home://' -> VFSLink(home://, VFSLocal(local://)//home/xyz)
   'ws0://' -> VFSLink(ws0://, VFSLocal(local://)//home/xyz/my project)
 ```
-Here is a visual representation.
 
+Here is a visual representation of what the above VFS hierarchy:
 ![VFS graph](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/graph.png)
 
 With the given VFS, the following paths would refer to these files:
