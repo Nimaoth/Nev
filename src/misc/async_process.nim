@@ -417,14 +417,19 @@ type RunProcessThreadArgs = tuple
   workingDir: string
   captureOut: bool = true
   captureErr: bool = true
+  evalCommand: bool = false
 
 proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[string], ref Exception) {.gcsafe.} =
   try:
     when debugAsyncProcess:
       asyncProcessDebugOutput.send(fmt"Start process {args}")
 
+    var options: set[ProcessOption] = {poUsePath, poDaemon}
+    if args.evalCommand:
+      options.incl poEvalCommand
+
     let process = startProcess(args.processName, workingDir=args.workingDir, args=args.args,
-      options={poUsePath, poDaemon})
+      options=options)
 
     if args.captureOut:
       var outp = process.outputStream
@@ -457,21 +462,21 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
     result[2] = getCurrentException()
 
 proc runProcessAsync*(name: string, args: seq[string] = @[], workingDir: string = "",
-    maxLines: int = int.high): Future[seq[string]] {.async.} =
+    maxLines: int = int.high, eval: bool = false): Future[seq[string]] {.async.} =
 
   log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
-  let (lines, _, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, false))
+  let (lines, _, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, false, eval))
   if err != nil:
-    raise newException(IOError, "", err)
+    raise newException(IOError, err.msg, err)
   return lines
 
 proc runProcessAsyncOutput*(name: string, args: seq[string] = @[], workingDir: string = "",
-    maxLines: int = int.high): Future[tuple[output: string, err: string]] {.async.} =
+    maxLines: int = int.high, eval: bool = false): Future[tuple[output: string, err: string]] {.async.} =
 
   log lvlInfo, fmt"[runProcessAsync] {name}, {args}, '{workingDir}', {maxLines}"
-  let (outLines, errLines, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, true))
+  let (outLines, errLines, err) = await spawnAsync(readProcessOutputThread, (name, args, maxLines, workingDir, true, true, eval))
   if err != nil:
-    raise newException(IOError, "", err)
+    raise newException(IOError, err.msg, err)
   return (outLines.join("\n"), errLines.join("\n"))
 
 proc readProcessOutputCallback(process: AsyncProcess,

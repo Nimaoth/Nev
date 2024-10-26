@@ -25,6 +25,8 @@ import plugins_api_wasm
 export plugins_api_wasm
 import popup_selector_api_wasm
 export popup_selector_api_wasm
+import process_api_wasm
+export process_api_wasm
 import registers_api_wasm
 export registers_api_wasm
 import session_api_wasm
