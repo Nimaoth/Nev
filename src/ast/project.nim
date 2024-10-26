@@ -23,22 +23,13 @@ type
 
 func serviceName*(_: typedesc[AstProjectService]): string = "AstProjectService"
 
-addBuiltinService(AstProjectService, WorkspaceService)
+addBuiltinService(AstProjectService, Workspace)
 
 proc loadModelAsync*(self: AstProjectService, path: string): Future[Option[Model]] {.async: (raises: []).}
 
 method init*(self: AstProjectService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"AstProjectService.init"
-  let workspaceService = self.services.getServiceAsync(WorkspaceService).await.get
-
-  while workspaceService.workspace.isNil:
-    try:
-      sleepAsync(10.milliseconds).await
-    except CancelledError:
-      discard
-
-  log lvlInfo, &"AstProjectService.init 2"
-  self.workspace = workspaceService.workspace
+  self.workspace = self.services.getService(Workspace).get
 
   let projectPath = self.workspace.getAbsolutePath("./model/playground.ast-project")
   log lvlInfo, fmt"[getGlobalProject] Loading project source file '{projectPath}'"

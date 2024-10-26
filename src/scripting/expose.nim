@@ -77,6 +77,7 @@ proc removePragmas(node: var NimNode) =
       param[0] = name
 
 macro expose*(moduleName: static string, def: untyped): untyped =
+  # echo moduleName, "::", def.name.repr
   if not exposeScriptingApi:
     return def
 

@@ -1,6 +1,5 @@
 import std/[macros, macrocache, genasts, json, strutils, os]
 import misc/[custom_logger, custom_async, util]
-import platform/filesystem
 import scripting_base, document_editor, expose, vfs
 import wasm
 import wasm3, wasm3/wasmconversions
@@ -23,13 +22,8 @@ type
 
     stack: seq[WasmModule]
 
-    vfs*: VFSWasmContext
-
-  VFSWasmContext* = ref object of VFS
-
-method readImpl*(self: VFSWasmContext, path: string): Future[Option[string]] {.async.} =
-  log lvlError, &"[VFSWasmContext] read({path}): not found"
-  return string.none
+    moduleVfs*: VFS
+    vfs*: VFS
 
 var createEditorWasmImports: proc(): WasmImports {.raises: [].}
 
@@ -44,21 +38,23 @@ macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; ret
     default(`returnType`)
 
 proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} =
-  let (files, _) = await self.fs.getApplicationDirectoryListing(path)
+  let listing = await self.vfs.getDirectoryListing(path)
 
   {.gcsafe.}:
     var editorImports = createEditorWasmImports()
 
-  for file in files:
-    if not file.endsWith(".wasm"):
+  for file2 in listing.files:
+    if not file2.endsWith(".wasm"):
       continue
+
+    let file = path // file2
 
     try:
       log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"
-      let module = await newWasmModule(file, @[editorImports], self.fs)
+      let module = await newWasmModule(file, @[editorImports], self.vfs)
 
       if module.getSome(module):
-        self.vfs.mount(file.splitFile.name & "/", newInMemoryVFS())
+        self.moduleVfs.mount(file.splitFile.name, newInMemoryVFS())
         self.stack.add module
         defer: discard self.stack.pop
 
@@ -95,9 +91,9 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
 
 {.push raises: [].}
 
-method init*(self: ScriptContextWasm, path: string, fs: Filesystem): Future[void] {.async.} =
-  self.fs = fs
-  await self.loadModules("./config/wasm")
+method init*(self: ScriptContextWasm, path: string, vfs: VFS): Future[void] {.async.} =
+  self.vfs = vfs
+  await self.loadModules("app://config/wasm")
 
 method deinit*(self: ScriptContextWasm) = discard
 
@@ -110,7 +106,7 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
 
   self.modules.setLen 0
 
-  await self.loadModules("./config/wasm")
+  await self.loadModules("app://config/wasm")
 
 method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:

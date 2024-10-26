@@ -3,7 +3,6 @@ import fusion/matching
 import chroma, regex
 import misc/[util, array_table, myjsonutils, id, macro_utils, custom_logger, event, custom_async]
 import workspaces/[workspace]
-import platform/filesystem
 import results
 
 export id

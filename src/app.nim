@@ -1,16 +1,16 @@
 import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref]
+  array_set, delayed_task, disposable_ref, regex]
 import ui/node
 import scripting/[expose, scripting_base]
-import platform/[platform, filesystem]
+import platform/[platform]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text/[custom_treesitter]
 import finder/[finder, previewer]
-import compilation_config, vfs
+import compilation_config, vfs, vfs_service
 import service, layout, session
 
 import nimsumtree/[rope]
@@ -32,6 +32,9 @@ logCategory "app"
 
 const configDirName = "." & appName
 const defaultSessionName = &".{appName}-session"
+const appConfigDir = "app://config"
+const homeConfigDir = "home://" & configDirName
+const workspaceConfigDir = "ws0://" & configDirName
 
 let platformName = when defined(windows):
   "windows"
@@ -46,14 +49,11 @@ type OpenEditor = object
   filename: string
   languageID: string
   appFile: bool
-  workspaceId: string
   customOptions: JsonNode
 
 type
   # todo: this isn't necessary anymore
-  OpenWorkspaceKind {.pure.} = enum Local
   OpenWorkspace = object
-    kind*: OpenWorkspaceKind
     id*: string
     name*: string
     settings*: JsonNode
@@ -100,21 +100,20 @@ type
     closeRequested*: bool
     appOptions: AppOptions
 
-    fs*: Filesystem
-    vfs*: VFS
-
     services: Services
     config*: ConfigService
     session*: SessionService
     events*: EventHandlerService
     plugins*: PluginService
     registers: Registers
+    vfsService*: VFSService
+
+    workspace*: Workspace
+    vfs*: VFS
 
     logNextFrameTime*: bool = false
     disableLogFrameTime*: bool = true
     logBuffer = ""
-
-    workspace*: Workspace
 
     wasmScriptContext*: ScriptContextWasm
     initializeCalled: bool
@@ -155,8 +154,6 @@ type
 
     closeUnusedDocumentsTask: DelayedTask
 
-    homeDir: string
-
 var gEditor* {.exportc.}: App = nil
 
 proc handleLog(self: App, level: Level, args: openArray[string])
@@ -185,9 +182,6 @@ proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
-proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind
-proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool]
-
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode]
 
 import text/[text_editor, text_document]
@@ -195,7 +189,7 @@ import text/language/debugger
 when enableAst:
   import ast/[model_document]
 import selector_popup
-import finder/[workspace_file_previewer, open_editor_previewer]
+import finder/[file_previewer, open_editor_previewer]
 
 # todo: remove this function
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =
@@ -209,9 +203,9 @@ proc setLocationList(self: App, list: seq[FinderItem],
   self.finderItems = list
   self.previewer = previewer.move
 
-proc setTheme*(self: App, path: string) =
+proc setTheme*(self: App, path: string) {.async: (raises: []).} =
   log(lvlInfo, fmt"Loading theme {path}")
-  if theme.loadFromFile(self.fs, path).getSome(theme):
+  if theme.loadFromFile(self.vfs, path).await.getSome(theme):
     self.theme = theme
     {.gcsafe.}:
       gTheme = theme
@@ -243,12 +237,13 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
       log(lvlInfo, fmt"load wasm configs")
       self.wasmScriptContext = new ScriptContextWasm
       self.plugins.scriptContexts.add self.wasmScriptContext
-      self.wasmScriptContext.vfs = VFSWasmContext()
-      self.vfs.mount("plugs://", self.wasmScriptContext.vfs)
+      self.wasmScriptContext.moduleVfs = VFS()
+      self.wasmScriptContext.vfs = self.vfs
+      self.vfs.mount("plugs://", self.wasmScriptContext.moduleVfs)
 
       withScriptContext self.plugins, self.wasmScriptContext:
         let t1 = startTimer()
-        await self.wasmScriptContext.init("./config", self.fs)
+        await self.wasmScriptContext.init("app://config", self.vfs)
         log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
 
         let t2 = startTimer()
@@ -331,47 +326,36 @@ proc setupDefaultKeybindings(self: App) =
   selectorPopupConfig.addCommand("", "<C-u>", "prev-x")
   selectorPopupConfig.addCommand("", "<C-d>", "next-x")
 
-proc testApplicationPath*(path: string): (bool, string) =
-  ## Returns true as the first value if the path starts with 'app:'
-  ## The second return value is the path without the 'app:'.
-  result = (false, path)
-  if path.startsWith "app:":
-    return (true, path[4..^1])
-
-proc restoreStateFromConfig*(self: App, state: var EditorState) =
+proc restoreStateFromConfig*(self: App, state: ptr EditorState) {.async: (raises: []).} =
   try:
-    let (isAppFile, path) = self.sessionFile.testApplicationPath()
-    let stateJson = if isAppFile:
-      self.fs.loadApplicationFile(path).parseJson
-    else:
-      self.fs.loadFile(path).parseJson
+    let stateJson = self.vfs.read(self.sessionFile).await.parseJson
 
-    state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+    state[] = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
     log(lvlInfo, fmt"Restoring session {self.sessionFile}")
 
-    if not state.theme.isEmptyOrWhitespace:
+    if not state[].theme.isEmptyOrWhitespace:
       try:
-        self.setTheme(state.theme)
+        await self.setTheme(state[].theme)
       except CatchableError:
         log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
 
-    if not state.layout.isEmptyOrWhitespace:
-      self.layout.setLayout(state.layout)
+    if not state[].layout.isEmptyOrWhitespace:
+      self.layout.setLayout(state[].layout)
 
-    let fontSize = max(state.fontSize.float, 10.0)
+    let fontSize = max(state[].fontSize.float, 10.0)
     self.loadedFontSize = fontSize
     self.platform.fontSize = fontSize
-    self.loadedLineDistance = state.lineDistance.float
-    self.platform.lineDistance = state.lineDistance.float
-    if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
-    if state.fontBold.len > 0: self.fontBold = state.fontBold
-    if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
-    if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
-    if state.fallbackFonts.len > 0: self.fallbackFonts = state.fallbackFonts
+    self.loadedLineDistance = state[].lineDistance.float
+    self.platform.lineDistance = state[].lineDistance.float
+    if state[].fontRegular.len > 0: self.fontRegular = state[].fontRegular
+    if state[].fontBold.len > 0: self.fontBold = state[].fontBold
+    if state[].fontItalic.len > 0: self.fontItalic = state[].fontItalic
+    if state[].fontBoldItalic.len > 0: self.fontBoldItalic = state[].fontBoldItalic
+    if state[].fallbackFonts.len > 0: self.fallbackFonts = state[].fallbackFonts
 
     self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
 
-    self.session.restoreSession(state.sessionData)
+    self.session.restoreSession(state[].sessionData)
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
@@ -464,63 +448,23 @@ proc loadKeybindings*(self: App, directory: string,
       except CatchableError:
         log(lvlError, fmt"Failed to load keybindings from {filenames[i]}: {getCurrentExceptionMsg()}")
 
-proc loadConfigFileFromAppDir(self: App, context: string, path: string):
+proc loadConfigFileFrom(self: App, context: string, path: string):
     Future[Option[string]] {.async.} =
   try:
-    log lvlInfo, &"Try load {context} from app:{path}"
-    let content = await self.fs.loadApplicationFileAsync(path)
-    if content.len > 0:
-      return content.some
+    let content = await self.vfs.read(path)
+    log lvlInfo, &"Loaded {context} from '{path}'"
+    return content.some
+  except FileNotFoundError:
+    return string.none
   except CatchableError:
-    log(lvlError, fmt"Failed to load {context} from app dir: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to load {context} from '{path}': {getCurrentExceptionMsg()}")
 
   return string.none
 
-proc loadConfigFileFromHomeDir(self: App, context: string, path: string):
-    Future[Option[string]] {.async.} =
-  try:
-    if self.homeDir.len == 0:
-      log lvlInfo, &"No home directory"
-      return
-
-    log lvlInfo, &"Try load {context} from {self.homeDir}/{path}"
-    let content = await self.fs.loadFileAsync(self.homeDir // path)
-    if content.len > 0:
-      return content.some
-  except CatchableError:
-    log(lvlError, fmt"Failed to load {context} from home {self.homeDir}: {getCurrentExceptionMsg()}")
-
-  return string.none
-
-proc loadConfigFileFromWorkspaceDir(self: App, context: string, path: string):
-    Future[Option[string]] {.async.} =
-  try:
-    log lvlInfo, &"Try load {context} from {self.workspace.name}/{path}"
-    let content = await self.workspace.loadFile(path)
-    if content.len > 0:
-      return content.some
-  except CatchableError:
-    log(lvlError,
-      fmt"Failed to load {context} from workspace {self.workspace.name}: {getCurrentExceptionMsg()}")
-
-  return string.none
-
-proc loadOptionsFromAppDir*(self: App) {.async.} =
+proc loadConfigFrom*(self: App, root: string) {.async.} =
   await allFutures(
-    self.loadSettingsFrom("config", loadConfigFileFromAppDir),
-    self.loadKeybindings("config", loadConfigFileFromAppDir)
-  )
-
-proc loadOptionsFromHomeDir*(self: App) {.async.} =
-  await allFutures(
-    self.loadSettingsFrom(configDirName, loadConfigFileFromHomeDir),
-    self.loadKeybindings(configDirName, loadConfigFileFromHomeDir)
-  )
-
-proc loadOptionsFromWorkspace*(self: App) {.async.} =
-  await allFutures(
-    self.loadSettingsFrom(configDirName, loadConfigFileFromWorkspaceDir),
-    self.loadKeybindings(configDirName, loadConfigFileFromWorkspaceDir)
+    self.loadSettingsFrom(root, loadConfigFileFrom),
+    self.loadKeybindings(root, loadConfigFileFrom)
   )
 
 # import asynchttpserver, asyncnet
@@ -560,7 +504,7 @@ proc loadOptionsFromWorkspace*(self: App) {.async.} =
 #     if savePort:
 #       let fileName = getTempDir() / (appName & "_port_" & $os.getCurrentProcessId())
 #       log lvlInfo, &"Write port to {fileName}"
-#       self.fs.saveFile(fileName, $actualPort.int)
+#       self.vfs.write(fileName, $actualPort.int)
 #   except:
 #     log lvlError, &"Failed to create server on port {port.int}: {getCurrentExceptionMsg()}"
 #     return
@@ -655,13 +599,12 @@ proc runLateCommandsFromAppOptions(self: App) =
 
 proc finishInitialization*(self: App, state: EditorState): Future[void]
 
-proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services: Services, options = AppOptions()): Future[App] {.async.} =
+proc newApp*(backend: api.Backend, platform: Platform, services: Services, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
   {.gcsafe.}:
     gEditor = self
     gAppInterface = self.asAppInterface
-    self.fs = fs
     self.platform = platform
 
     logger.addLogger AppLogger(app: self, fmtStr: "")
@@ -673,10 +616,6 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
   self.appOptions = options
   self.services = services
 
-  self.vfs = VFS()
-  self.vfs.mount("", VFSNull())
-  self.vfs.mount("plugs://", VFSNull())
-
   discard platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
   discard platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
   discard platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
@@ -686,10 +625,6 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
   self.timer = startTimer()
   self.frameTimer = startTimer()
 
-  self.homeDir = getHomeDir().normalizePathUnix.catch:
-    log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
-    ""
-
   self.layout = services.getService(LayoutService).get
   self.config = services.getService(ConfigService).get
   self.editors = services.getService(DocumentEditorService).get
@@ -697,16 +632,19 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
   self.events = services.getService(EventHandlerService).get
   self.plugins = services.getService(PluginService).get
   self.registers = services.getService(Registers).get
+  self.vfsService = services.getService(VFSService).get
+  self.workspace = services.getService(Workspace).get
+  self.vfs = self.vfsService.vfs
 
   self.platform.fontSize = 16
   self.platform.lineDistance = 4
 
-  self.fontRegular = "./fonts/DejaVuSansMono.ttf"
-  self.fontBold = "./fonts/DejaVuSansMono-Bold.ttf"
-  self.fontItalic = "./fonts/DejaVuSansMono-Oblique.ttf"
-  self.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
-  self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
-  self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
+  self.fontRegular = "app://fonts/DejaVuSansMono.ttf"
+  self.fontBold = "app://fonts/DejaVuSansMono-Bold.ttf"
+  self.fontItalic = "app://fonts/DejaVuSansMono-Oblique.ttf"
+  self.fontBoldItalic = "app://fonts/DejaVuSansMono-BoldOblique.ttf"
+  self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
+  self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
 
   # todo: refactor this
   self.editors.editorDefaults.add TextDocumentEditor()
@@ -715,13 +653,13 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
 
   self.setupDefaultKeybindings()
 
-  await self.loadOptionsFromAppDir()
-  await self.loadOptionsFromHomeDir()
+  await self.loadConfigFrom(appConfigDir)
+  await self.loadConfigFrom(homeConfigDir)
   log lvlInfo, &"Finished loading app and user settings"
 
   self.applySettingsFromAppOptions()
 
-  self.logDocument = newTextDocument(self.services, self.fs, "log", load=false, createLanguageServer=false)
+  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false)
   self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 
@@ -759,9 +697,9 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
   self.commandLineMode = false
 
   self.languageServerCommandLine = newLanguageServerCommandLine(self.services)
-  let commandLineTextDocument = newTextDocument(self.services, self.fs, language="command-line".some, languageServer=self.languageServerCommandLine.some)
+  let commandLineTextDocument = newTextDocument(self.services, language="command-line".some, languageServer=self.languageServerCommandLine.some)
   self.editors.documents.add commandLineTextDocument
-  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.fs, self.services)
+  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.services)
   self.commandLineTextEditor.renderHeader = false
   self.getCommandLineTextEditor.usage = "command-line"
   self.getCommandLineTextEditor.disableScrolling = true
@@ -772,15 +710,25 @@ proc newApp*(backend: api.Backend, platform: Platform, fs: Filesystem, services:
   var state = EditorState()
   if not options.dontRestoreConfig:
     if options.sessionOverride.getSome(session):
-      self.sessionFile = session
-    elif options.fileToOpen.isSome:
-      # Don't restore a session when opening a specific file.
-      discard
+      self.sessionFile = os.absolutePath(session).normalizePathUnix
+    elif options.fileToOpen.getSome(file):
+      let path = os.absolutePath(file).normalizePathUnix
+      if self.vfs.getFileKind(path).await.getSome(kind):
+        case kind
+        of FileKind.File:
+          # Don't restore a session when opening a specific file.
+          discard
+        of FileKind.Directory:
+          log lvlInfo, &"Set current dir: '{path}'"
+          setCurrentDir(path)
+          if fileExists(path // defaultSessionName):
+            self.sessionFile = path // defaultSessionName
+
     elif fileExists(defaultSessionName):
-      self.sessionFile = defaultSessionName
+      self.sessionFile = os.absolutePath(defaultSessionName).normalizePathUnix
 
     if self.sessionFile != "":
-      self.restoreStateFromConfig(state)
+      await self.restoreStateFromConfig(state.addr)
     else:
       log lvlInfo, &"Don't restore session file."
 
@@ -807,24 +755,22 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
 
   if self.config.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
-      var workspace: Workspace = nil
-      case wf.kind
-      of OpenWorkspaceKind.Local:
-        workspace = newWorkspaceFolderLocal(wf.settings)
-
-      workspace.id = wf.id.parseId
-      workspace.name = wf.name
-      if self.setWorkspaceFolder(workspace).await:
-        log(lvlInfo, fmt"Restoring workspace {workspace.name} ({workspace.id})")
+      log(lvlInfo, fmt"Restoring workspace")
+      self.workspace.restore(wf.settings)
+      await self.loadConfigFrom(workspaceConfigDir)
 
   # Open current working dir as local workspace if no workspace exists yet
-  if self.workspace.isNil:
+  if self.workspace.path == "":
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
-    discard await self.setWorkspaceFolder newWorkspaceFolderLocal(".")
+    self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
+    await self.loadConfigFrom(workspaceConfigDir)
 
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
-    discard self.layout.openFile(filePath)
+    try:
+      discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+    except CatchableError as e:
+      log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
   elif self.config.getFlag("editor.restore-open-editors", true):
     for editorState in state.openEditors:
@@ -921,11 +867,11 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
     {.async.} =
   log lvlInfo, &"reapplyConfigKeybindingsAsync app={app}, home={home}, workspace={workspace}"
   if app:
-    await self.loadKeybindings("config", loadConfigFileFromAppDir)
+    await self.loadKeybindings(appConfigDir, loadConfigFileFrom)
   if home:
-    await self.loadKeybindings(configDirName, loadConfigFileFromHomeDir)
+    await self.loadKeybindings(homeConfigDir, loadConfigFileFrom)
   if workspace:
-    await self.loadKeybindings(configDirName, loadConfigFileFromWorkspaceDir)
+    await self.loadKeybindings(workspaceConfigDir, loadConfigFileFrom)
 
 proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false)
     {.expose("editor").} =
@@ -991,17 +937,8 @@ proc getHostOs*(self: App): string {.expose("editor").} =
   else:
     return "unknown"
 
-proc loadApplicationFile*(self: App, path: string): Option[string] {.expose("editor").} =
-  ## Load a file from the application directory (path is relative to the executable)
-  return self.fs.loadApplicationFile(path).some
-
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
-
-proc openWorkspaceKind(workspaceFolder: Workspace): OpenWorkspaceKind =
-  if workspaceFolder of WorkspaceFolderLocal:
-    return OpenWorkspaceKind.Local
-  assert false
 
 proc saveAppState*(self: App) {.expose("editor").} =
   # Save some state
@@ -1038,10 +975,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   #   state.layout = "fibonacci"
 
   # Save open workspace folders
-  let kind = self.workspace.openWorkspaceKind()
-
   state.workspaceFolders.add OpenWorkspace(
-    kind: kind,
     id: $self.workspace.id,
     name: self.workspace.name,
     settings: self.workspace.settings
@@ -1062,7 +996,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
         let document = TextDocument(view.document)
         return OpenEditor(
           filename: document.filename, languageId: document.languageId, appFile: document.appFile,
-          workspaceId: document.workspace.map(wf => $wf.id).get(""),
           customOptions: customOptions ?? newJObject()
           ).some
       else:
@@ -1071,7 +1004,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
             let document = ModelDocument(view.document)
             return OpenEditor(
               filename: document.filename, languageId: "am", appFile: document.appFile,
-              workspaceId: document.workspace.map(wf => $wf.id).get(""),
               customOptions: customOptions ?? newJObject()
               ).some
     except CatchableError:
@@ -1089,13 +1021,9 @@ proc saveAppState*(self: App) {.expose("editor").} =
   if self.sessionFile != "":
     try:
       let serialized = state.toJson
-      let (isAppFile, path) = self.sessionFile.testApplicationPath()
-      if isAppFile:
-        self.fs.saveApplicationFile(path, serialized.pretty)
-      else:
-        self.fs.saveFile(path, serialized.pretty)
-    except:
-      discard
+      waitFor self.vfs.write(self.sessionFile, serialized.pretty)
+    except IOError as e:
+      log lvlError, &"Failed to save app state: {e.msg}\n{e.getStackTrace()}"
 
 proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =
   self.platform.requestRender(redrawEverything)
@@ -1111,25 +1039,6 @@ proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("ed
 
 proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
   self.events.getEventHandlerConfig(context).setConsumeAllInput(value)
-
-proc setWorkspaceFolder(self: App, workspace: Workspace): Future[bool] {.async.} =
-  log(lvlInfo, fmt"Opening workspace {workspace.name}")
-
-  if workspace.id == idNone():
-    workspace.id = newId()
-
-  self.workspace = workspace
-  self.vfs.mount "", VFSWorkspace(workspace: workspace)
-
-  self.services.getService(WorkspaceService).get.workspace = workspace
-
-  {.gcsafe.}:
-    if gWorkspace.isNil:
-      setGlobalWorkspace(workspace)
-
-  await self.loadOptionsFromWorkspace()
-
-  return true
 
 proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
   self.workspace.clearDirectoryCache()
@@ -1174,13 +1083,6 @@ proc addScriptAction*(self: App, name: string, docs: string = "",
     else:
       extendGlobalDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
 
-proc openLocalWorkspaceAsync(self: App, path: string) {.async.} =
-  discard await self.setWorkspaceFolder newWorkspaceFolderLocal(path)
-
-proc openLocalWorkspace*(self: App, path: string) {.expose("editor").} =
-  let path = if path.isAbsolute: path else: path.absolutePath.catch().valueOr(path)
-  asyncSpawn self.openLocalWorkspaceAsync(path)
-
 proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
 
@@ -1189,23 +1091,36 @@ proc quitImmediately*(self: App, exitCode: int = 0) {.expose("editor").} =
 
 proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/getting_started.md"
-  let docsPath = "docs/getting_started.md"
-  let textDocument = newTextDocument(self.services, self.fs, docsPath, introductionMd, app=true, load=true)
+  let docsPath = "app://docs/getting_started.md"
+  let textDocument = newTextDocument(self.services, docsPath, introductionMd, load=true)
   self.editors.documents.add textDocument
   textDocument.load()
   discard self.layout.createAndAddView(textDocument)
 
-proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async.} =
-  let content = await self.workspace.loadFile(path)
-
-  discard self.callScriptAction(callback, content.some.toJson)
+proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async: (raises: []).} =
+  let path = self.workspace.getAbsolutePath(path)
+  try:
+    let content = await self.vfs.read(path)
+    discard self.callScriptAction(callback, content.some.toJson)
+  except FileNotFoundError:
+    discard self.callScriptAction(callback, string.none.toJson)
+  except IOError as e:
+    log lvlError, &"Failed to load workspace file: {e.msg}"
+    discard self.callScriptAction(callback, string.none.toJson)
 
 proc loadWorkspaceFile*(self: App, path: string, callback: string) {.expose("editor").} =
   asyncSpawn self.loadWorkspaceFileImpl(path, callback)
 
-proc writeWorkspaceFile*(self: App, path: string, content: string) {.expose("editor").} =
+proc writeWorkspaceFileImpl(self: App, path: string, content: string) {.async: (raises: []).} =
+  let path = self.workspace.getAbsolutePath(path)
   log lvlInfo, &"[writeWorkspaceFile] {path}"
-  asyncSpawn self.workspace.saveFile(path, content)
+  try:
+    await self.vfs.write(path, content)
+  except IOError as e:
+    log lvlError, &"Failed to load workspace file: {e.msg}"
+
+proc writeWorkspaceFile*(self: App, path: string, content: string) {.expose("editor").} =
+  asyncSpawn self.writeWorkspaceFileImpl(path, content)
 
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
@@ -1367,7 +1282,6 @@ proc loadWorkspaceFile*(self: App, path: string) =
     defer:
       self.platform.requestRender()
     try:
-      view.document.workspace = self.workspace.some
       view.document.load(path)
       view.editor.handleDocumentChanged()
     except CatchableError:
@@ -1375,7 +1289,7 @@ proc loadWorkspaceFile*(self: App, path: string) =
       log(lvlError, getCurrentException().getStackTrace())
 
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
-  self.setTheme(fmt"themes/{name}.json")
+  asyncSpawn self.setTheme(fmt"app://themes/{name}.json")
 
 proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
@@ -1383,32 +1297,33 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   let originalTheme = self.theme.path
 
-  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     var items = newSeq[FinderItem]()
-    let themesDir = self.fs.getApplicationFilePath("./themes")
+    let themesDir = "app://themes"
     try:
-      for file in walkDirRec(themesDir, relative=true):
-        if file.endsWith ".json":
+      let files = self.vfs.getDirectoryListingRec(Globs(), themesDir).await
+      for file in files:
+        if file.endsWith(".json"):
           let (relativeDirectory, name, _) = file.splitFile
           items.add FinderItem(
             displayName: name,
-            data: fmt"{themesDir}/{file}",
-            detail: "themes" / relativeDirectory,
+            data: file,
+            detail: relativeDirectory,
           )
     except:
       discard
 
-    return items
+    return newItemList(items)
 
-  let source = newSyncDataSource(getItems)
+  let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.services, self.fs, "theme".some, finder.some)
+  var popup = newSelectorPopup(self.services, "theme".some, finder.some)
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    if theme.loadFromFile(self.fs, item.data).getSome(theme):
+    if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
       self.theme = theme
       {.gcsafe.}:
         gTheme = theme
@@ -1417,14 +1332,14 @@ proc chooseTheme*(self: App) {.expose("editor").} =
       return true
 
   popup.handleItemSelected = proc(item: FinderItem) =
-    if theme.loadFromFile(self.fs, item.data).getSome(theme):
+    if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
       self.theme = theme
       {.gcsafe.}:
         gTheme = theme
       self.platform.requestRender(true)
 
   popup.handleCanceled = proc() =
-    if theme.loadFromFile(self.fs, originalTheme).getSome(theme):
+    if theme.loadFromFile(self.vfs, originalTheme).waitFor.getSome(theme):
       self.theme = theme
       {.gcsafe.}:
         gTheme = theme
@@ -1434,7 +1349,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isAbsolute:
-    path.normalizePathUnix
+    path.normalizeNativePath
   else:
     path.absolutePath.catch().valueOr(path).normalizePathUnix
 
@@ -1484,49 +1399,6 @@ method setQuery*(self: WorkspaceFilesDataSource, query: string) =
 
   self.onWorkspaceFileCacheUpdatedHandle = some(self.workspace.onCachedFilesUpdated.subscribe () => self.handleCachedFilesUpdated())
 
-proc createVfs*(self: App, config: JsonNode): Option[VFS] =
-  result = VFS.none
-  if config.kind != JObject:
-    log lvlError, &"Invalid config, expected object, got {config}"
-    return
-
-  let typ = config.fields.getOrDefault("type", newJNull()).getStr.catch:
-    log lvlError, &"Invalid config, expected string property 'type', got {config}"
-    return
-
-  template expect(value: untyped, msg: untyped, got: untyped): untyped =
-    try:
-      value
-    except:
-      log lvlError, "Invalid config, expected " & msg & ", got " & got
-      return
-
-  case typ
-  of "link":
-    let targetName = config.fields.getOrDefault("target", newJNull()).getStr.expect("string 'target'", $config)
-    let (target, sub) = self.vfs.getVFS(targetName)
-    if sub != "":
-      log lvlError, &"Unknown target '{targetName}', unmatched: '{sub}'"
-      return VFS.none
-
-    let targetPrefix = config.fields.getOrDefault("targetPrefix", newJString("")).getStr.expect("string 'targetPrefix'", $config)
-
-    log lvlInfo, &"create VFSLink {target.name}, {target.prefix}, {targetPrefix}"
-    result = VFSLink(
-      target: target,
-      targetPrefix: targetPrefix,
-    ).VFS.some
-
-  else:
-    log lvlError, &"Invalid VFS config, unknown type '{typ}'"
-    return VFS.none
-
-proc mountVfs*(self: App, parentPath: string, prefix: string, config: JsonNode) {.expose("editor").} =
-  log lvlInfo, &"Mount VFS '{parentPath}', '{prefix}', {config}"
-  let (vfs, _) = self.vfs.getVFS(parentPath)
-  if self.createVfs(config).getSome(newVFS):
-    vfs.mount(prefix, newVFS)
-
 proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
   defer:
     self.platform.requestRender()
@@ -1557,13 +1429,13 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     return items
 
   let previewer = if preview:
-    newWorkspaceFilePreviewer(self.workspace, self.vfs, self.fs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
   let source = newSyncDataSource(getItems)
   let finder = newFinder(source, filterAndSort=true)
-  var popup = newSelectorPopup(self.services, self.fs, "file".some, finder.some, previewer)
+  var popup = newSelectorPopup(self.services, "file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1578,9 +1450,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let pathNorm = self.vfs.normalize(path)
-
-    let editor = self.layout.openWorkspaceFile(pathNorm)
+    let editor = self.layout.openFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1596,21 +1466,19 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   defer:
     self.platform.requestRender()
 
-  let workspace = self.workspace
-
   let previewer = if preview:
-    newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some
+    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some
   else:
     DisposableRef[Previewer].none
 
-  let finder = newFinder(newWorkspaceFilesDataSource(workspace), filterAndSort=true)
-  var popup = newSelectorPopup(self.services, self.fs, "file".some, finder.some, previewer)
+  let finder = newFinder(newWorkspaceFilesDataSource(self.workspace), filterAndSort=true)
+  var popup = newSelectorPopup(self.services, "file".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    discard self.layout.openWorkspaceFile(item.data)
+    discard self.layout.openFile(item.data)
     return true
 
   self.layout.pushPopup popup
@@ -1644,14 +1512,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
         " "
 
       let (directory, name) = path.splitPath
-      var relativeDirectory = directory
-      var data = path
-      if document.workspace.getSome(workspace):
-        relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
-        data = workspace.encodePath(path).string
-
-      if relativeDirectory == ".":
-        relativeDirectory = ""
+      let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
 
       items.add FinderItem(
         displayName: activeMarker & dirtyMarker & name,
@@ -1671,7 +1532,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
   else:
     DisposableRef[Previewer].none
 
-  var popup = newSelectorPopup(self.services, self.fs, "open".some, finder.some, previewer)
+  var popup = newSelectorPopup(self.services, "open".some, finder.some, previewer)
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
@@ -1719,29 +1580,14 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
       let path = document.filename
       let isDirty = document.lastSavedRevision != document.revision
       let dirtyMarker = if isDirty: "*" else: " "
-
       let (directory, name) = path.splitPath
-      var relativeDirectory = directory
-      var data = path
-      if document.workspace.getSome(workspace):
-        relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
-        data = workspace.encodePath(path).string
-
-      if relativeDirectory == ".":
-        relativeDirectory = ""
-
-      let infoText = if document.appFile:
-        "app"
-      elif document.workspace.isSome:
-        "workspace"
-      else:
-        "unknown"
+      let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
 
       items.add FinderItem(
         displayName: dirtyMarker & name,
         filterText: name,
-        data: data,
-        detail: &"{relativeDirectory}\t{infoText}",
+        data: path,
+        detail: relativeDirectory,
       )
 
     return items
@@ -1750,18 +1596,14 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.services, self.fs, "open".some, finder.some)
+  var popup = newSelectorPopup(self.services, "open".some, finder.some)
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    if item.data.WorkspacePath.decodePath().getSome(path):
-      if self.editors.getDocument(path.path).getSome(document):
-        discard self.layout.createAndAddView(document)
+    if self.editors.getDocument(item.data).getSome(document):
+      discard self.layout.createAndAddView(document)
     else:
-      if self.editors.getDocument(item.data).getSome(document):
-        discard self.layout.createAndAddView(document)
-      else:
-        log lvlError, fmt"Failed to open location {item}"
+      log lvlError, fmt"Failed to open location {item}"
 
     return true
 
@@ -1770,14 +1612,9 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
       return false
 
     if popup.getSelectedItem().getSome(item):
-      if item.data.WorkspacePath.decodePath().getSome(path):
-        if self.editors.getDocument(path.path).getSome(document):
-          discard self.layout.tryCloseDocument(document, force=true)
-          source.retrigger()
-      else:
-        if self.editors.getDocument(item.data).getSome(document):
-          discard self.layout.tryCloseDocument(document, force=true)
-          source.retrigger()
+      if self.editors.getDocument(item.data).getSome(document):
+        discard self.layout.tryCloseDocument(document, force=true)
+        source.retrigger()
 
     return true
 
@@ -1797,7 +1634,7 @@ proc gotoNextLocation*(self: App) {.expose("editor").} =
 
   log lvlInfo, &"[gotoNextLocation] Found {path}:{location}"
 
-  let editor = self.layout.openWorkspaceFile(path)
+  let editor = self.layout.openFile(path)
   if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
@@ -1816,7 +1653,7 @@ proc gotoPrevLocation*(self: App) {.expose("editor").} =
 
   log lvlInfo, &"[gotoPrevLocation] Found {path}:{location}"
 
-  let editor = self.layout.openWorkspaceFile(path)
+  let editor = self.layout.openFile(path)
   if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
     editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
@@ -1831,7 +1668,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
   let source = newSyncDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.services, self.fs, "open".some, finder.some, self.previewer.clone())
+  var popup = newSelectorPopup(self.services, "open".some, finder.some, self.previewer.clone())
 
   popup.scale.x = if self.previewer.isSome: 0.8 else: 0.4
 
@@ -1845,7 +1682,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.layout.openWorkspaceFile(path)
+    let editor = self.layout.openFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1854,7 +1691,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
-proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int): Future[ItemList] {.async.} =
+proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int): Future[ItemList] {.async: (raises: []).} =
   let searchResults = workspace.searchWorkspace(query, maxResults).await
   log lvlInfo, fmt"Found {searchResults.len} results"
 
@@ -1921,8 +1758,8 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   let source = newWorkspaceSearchDataSource(workspace, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.services, self.fs, "search".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup(self.services, "search".some, finder.some,
+    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -1936,7 +1773,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.layout.openWorkspaceFile(path)
+    let editor = self.layout.openFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1948,14 +1785,15 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  let workspace = self.workspace
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
+    let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
+    return self.workspace.searchWorkspaceItemList(query, maxResults).await
 
-  let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
-  let source = newAsyncCallbackDataSource () => workspace.searchWorkspaceItemList(query, maxResults)
+  let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.services, self.fs, "search".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup(self.services, "search".some, finder.some,
+    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -1969,7 +1807,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     if popup.getPreviewSelection().getSome(selection):
       targetSelection = selection.some
 
-    let editor = self.layout.openWorkspaceFile(path)
+    let editor = self.layout.openFile(path)
     if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
@@ -1999,7 +1837,7 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
       log lvlError, &"Invalid value for languages.{language}.treesitter: '{repo}'. Expected 'user/repo'"
       return
 
-    let languagesRoot = self.fs.getApplicationFilePath("languages")
+    let languagesRoot = self.vfs.localize("app://languages")
     let userName = parts[0]
     let repoName = parts[1]
     let subFolder = parts[2..^1].join("/")
@@ -2024,16 +1862,16 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
       let queryDirs = if queriesSubDir != "":
         @[repoPath // queriesSubDir]
       else:
-        let highlightQueries = await self.fs.findFile(repoPath, r"highlights.scm$")
-        highlightQueries.mapIt(it.splitPath.head)
+        let highlightQueries = await self.vfs.findFiles(repoPath, r"highlights.scm$")
+        highlightQueries.mapIt(repoPath // it.splitPath.head)
 
       for path in queryDirs:
-        let list = await self.fs.getApplicationDirectoryListing(path)
+        let list = await self.vfs.getDirectoryListing(path)
         for f in list.files:
           if f.endsWith(".scm"):
             let fileName = f.splitPath.tail
             log lvlInfo, &"Copy '{f}' to '{queryDir}'"
-            discard await self.fs.copyFile(f, queryDir // fileName)
+            await self.vfs.copyFile(path // f, queryDir // fileName)
 
     block:
       let (output, err) = await runProcessAsyncOutput("tree-sitter", @["build", "--wasm", grammarPath],
@@ -2072,9 +1910,9 @@ proc installTreesitterParser*(self: App, language: string, host: string = "githu
 
   asyncSpawn self.installTreesitterParserAsync(language, host)
 
-proc getItemsFromDirectory(workspace: Workspace, directory: string): Future[ItemList] {.async.} =
+proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string, showVFS: bool = false): Future[ItemList] {.async: (raises: []).} =
 
-  let listing = await workspace.getDirectoryListing(directory)
+  let listing = await vfs.getDirectoryListing(directory)
 
   var list = newItemList(listing.files.len + listing.folders.len)
 
@@ -2083,22 +1921,27 @@ proc getItemsFromDirectory(workspace: Workspace, directory: string): Future[Item
   const folderIcon = "🗀"
 
   var i = 0
-  proc addItem(path: string, isFile: bool) =
-    let (directory, name) = path.splitPath
+  proc addItem(name: string, isFile: bool) =
     var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
 
     if relativeDirectory == ".":
       relativeDirectory = ""
+
+    var detail = directory
+    if showVFS:
+      let (vfs, _) = vfs.getVFS(directory // name, 1)
+      detail.add "\t"
+      detail.add vfs.name
 
     let icon = if isFile: fileIcon else: folderIcon
     list[i] = FinderItem(
       displayName: icon & " " & name,
       filterText: name,
       data: $ %*{
-        "path": path,
+        "path": directory // name,
         "isFile": isFile,
       },
-      detail: path,
+      detail: detail,
     )
     inc i
 
@@ -2110,21 +1953,24 @@ proc getItemsFromDirectory(workspace: Workspace, directory: string): Future[Item
 
   return list
 
-proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
+proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normalize: bool = true) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  let workspace = self.workspace
+  log lvlInfo, &"exploreFiles '{root}'"
 
   let currentDirectory = new string
   currentDirectory[] = root
 
-  let source = newAsyncCallbackDataSource () => workspace.getItemsFromDirectory(currentDirectory[])
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
+    return getItemsFromDirectory(self.vfs, self.workspace, currentDirectory[], showVFS).await
+
+  let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
-  var popup = newSelectorPopup(self.services, self.fs, "file-explorer".some, finder.some,
-    newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup(self.services, "file-explorer".some, finder.some,
+    newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2133,8 +1979,12 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
       log lvlError, fmt"Failed to parse file info from item: {item}"
       return true
 
+    var path = fileInfo.path
+    if normalize:
+      path = self.vfs.normalize(path)
+
     if fileInfo.isFile:
-      if self.layout.openWorkspaceFile(fileInfo.path).getSome(editor):
+      if self.layout.openFile(path).getSome(editor):
         if editor of TextDocumentEditor and popup.getPreviewSelection().getSome(selection):
           editor.TextDocumentEditor.selection = selection
           editor.TextDocumentEditor.centerCursor()
@@ -2145,8 +1995,28 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
       source.retrigger()
       return false
 
+  popup.addCustomCommand "enter-normalized", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      let path = self.vfs.normalize(fileInfo.path)
+
+      if fileInfo.isFile:
+        if self.layout.openFile(path).getSome(editor):
+          if editor of TextDocumentEditor and popup.getPreviewSelection().getSome(selection):
+            editor.TextDocumentEditor.selection = selection
+            editor.TextDocumentEditor.centerCursor()
+        return true
+      else:
+        currentDirectory[] = path
+      popup.textEditor.document.content = ""
+      source.retrigger()
+      return false
+
   popup.addCustomCommand "go-up", proc(popup: SelectorPopup, args: JsonNode): bool =
-    let parent = currentDirectory[].parentDir
+    let parent = currentDirectory[].parentDirectory
     log lvlInfo, fmt"go up: {currentDirectory[]} -> {parent}"
     currentDirectory[] = parent
 
@@ -2154,20 +2024,33 @@ proc exploreFiles*(self: App, root: string = "") {.expose("editor").} =
     source.retrigger()
     return true
 
+  popup.addCustomCommand "add-workspace-folder", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      let path = self.vfs.localize(fileInfo.path)
+
+      log lvlInfo, fmt"Add workspace folder: {currentDirectory[]} -> {path}"
+      self.workspace.addWorkspaceFolder(path)
+      source.retrigger()
+
+  popup.addCustomCommand "remove-workspace-folder", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      let path = self.vfs.localize(fileInfo.path)
+
+      log lvlInfo, fmt"Remove workspace folder: {currentDirectory[]} -> {path}"
+      self.workspace.removeWorkspaceFolder(path)
+      source.retrigger()
+
+    return true
+
   self.layout.pushPopup popup
-
-proc exploreUserConfigDir*(self: App) {.expose("editor").} =
-  if self.homeDir.len == 0:
-    log lvlInfo, &"No home directory"
-    return
-
-  self.exploreFiles(self.homeDir // configDirName)
-
-proc exploreAppConfigDir*(self: App) {.expose("editor").} =
-  self.exploreFiles(self.fs.getApplicationFilePath("config"))
-
-proc exploreHelp*(self: App) {.expose("editor").} =
-  self.exploreFiles(self.fs.getApplicationFilePath("docs"))
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
   self.exploreFiles(self.workspace.getWorkspacePath())
@@ -2200,10 +2083,6 @@ proc openNextEditor*(self: App) {.expose("editor").} =
   discard self.layout.tryOpenExisting(editor, addToHistory=false)
   self.platform.requestRender()
 
-proc setGithubAccessToken*(self: App, token: string) {.expose("editor").} =
-  ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
-  self.fs.saveApplicationFile("GithubAccessToken", token)
-
 proc clearScriptActionsFor(self: App, scriptContext: ScriptContext) =
   var keysToRemove: seq[string]
   for (key, value) in self.scriptActions.pairs:
@@ -2234,9 +2113,9 @@ proc reloadPluginAsync*(self: App) {.async.} =
       log lvlError, &"Failed to reload wasm plugins: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 proc reloadConfigAsync*(self: App) {.async.} =
-  await self.loadOptionsFromAppDir()
-  await self.loadOptionsFromHomeDir()
-  await self.loadOptionsFromWorkspace()
+  await self.loadConfigFrom(appConfigDir)
+  await self.loadConfigFrom(homeConfigDir)
+  await self.loadConfigFrom(workspaceConfigDir)
 
 proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
@@ -2253,20 +2132,30 @@ proc reloadState*(self: App) {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
   var state = EditorState()
   if self.sessionFile != "":
-    self.restoreStateFromConfig(state)
+    try:
+      waitFor self.restoreStateFromConfig(state.addr)
+    except CatchableError as e:
+      log lvlError, &"Failed to reload state: {e.msg}\n{e.getStackTrace()}"
+
   self.requestRender()
 
 proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
   let sessionFile = if sessionFile == "": defaultSessionName else: sessionFile
-  self.sessionFile = sessionFile
-  self.saveAppState()
-  self.requestRender()
+  try:
+    self.sessionFile = os.absolutePath(sessionFile).normalizePathUnix
+    self.saveAppState()
+    self.requestRender()
+  except Exception as e:
+    log lvlError, &"Failed to save session: {e.msg}\n{e.getStackTrace()}"
 
 proc dumpKeymapGraphViz*(self: App, context: string = "") {.expose("editor").} =
   for handler in self.currentEventHandlers():
     if context == "" or handler.config.context == context:
-      self.fs.saveApplicationFile(handler.config.context & ".dot", handler.dfa.dumpGraphViz)
+      try:
+        waitFor self.vfs.write("app://input_dots" // handler.config.context & ".dot", handler.dfa.dumpGraphViz)
+      except IOError as e:
+        log lvlError, &"Failed to dump keymap graph: {e.msg}\n{e.getStackTrace()}"
 
 proc getModeConfig(self: App, mode: string): EventHandlerConfig =
   return self.events.getEventHandlerConfig("editor." & mode)
@@ -2384,7 +2273,7 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
     discard
 
 proc handleDropFile*(self: App, path, content: string) =
-  let document = newTextDocument(self.services, self.fs, path, content)
+  let document = newTextDocument(self.services, path, content)
   self.editors.documents.add document
   discard self.layout.createAndAddView(document)
 

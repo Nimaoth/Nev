@@ -6,13 +6,13 @@ from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
   custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils]
 import scripting/[expose, scripting_base]
-import platform/[platform, filesystem]
+import platform/[platform]
 import language/[language_server_base]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent,
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
-import config_provider, service, layout, platform_service
+import config_provider, service, layout, platform_service, vfs, vfs_service
 import diff
 import workspaces/workspace
 import finder/[previewer, finder]
@@ -52,6 +52,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
   events: EventHandlerService
   plugins: PluginService
   registers: Registers
+  workspace: Workspace
+
+  vfs: VFS
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -171,7 +174,7 @@ type
   TextDocumentFactory* = ref object of DocumentFactory
   TextDocumentEditorFactory* = ref object of DocumentEditorFactory
 
-proc newTextEditor*(document: TextDocument, fs: Filesystem, services: Services): TextDocumentEditor
+proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor
 
 func serviceName*(_: typedesc[TextDocumentEditorService]): string = "TextDocumentEditorService"
 
@@ -188,17 +191,13 @@ method canOpenFile*(self: TextDocumentFactory, path: string): bool =
   return true
 
 method createDocument*(self: TextDocumentFactory, services: Services, path: string): Document =
-  let fs = ({.gcsafe.}: fs)
-  let workspace = ({.gcsafe.}: gWorkspace)
-
-  return newTextDocument(services, fs, path, app=false, workspaceFolder=workspace.some, load=true)
+  return newTextDocument(services, path, app=false, load=true)
 
 method canEditDocument*(self: TextDocumentEditorFactory, document: Document): bool =
   return document of TextDocument
 
 method createEditor*(self: TextDocumentEditorFactory, services: Services, document: Document): DocumentEditor =
-  let fs = ({.gcsafe.}: fs)
-  result = newTextEditor(document.TextDocument, fs, services)
+  result = newTextEditor(document.TextDocument, services)
 
 var allTextEditors*: seq[TextDocumentEditor] = @[]
 
@@ -1828,22 +1827,17 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   if self.document.isNil:
     return
 
-  if self.document.workspace.isNone:
-    log lvlWarn, &"Can't diff file '{self.document.filename}' without workspace."
-    return
-
   inc self.diffRevision
   let revision = self.diffRevision
 
-  let vcs = self.vcs.getVcsForFile(self.document.filename).getOr:
-    log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{self.document.filename}'"
+  let localizedPath = self.document.localizedPath
+  let vcs = self.vcs.getVcsForFile(localizedPath).getOr:
+    log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{localizedPath}'"
     return
 
-  log lvlInfo, fmt"Diff document '{self.document.filename}'"
+  log lvlInfo, fmt"Diff document '{localizedPath}'"
 
-  let relPath = self.document.workspace.mapIt(
-    it.getRelativePathSync(self.document.filename)
-  ).flatten.get(self.document.filename)
+  let relPath = self.workspace.getRelativePathSync(localizedPath).get(localizedPath)
   if self.document.isNil or self.diffRevision > revision:
     return
 
@@ -1861,8 +1855,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
       return
 
     if self.diffDocument.isNil:
-      self.diffDocument = newTextDocument(self.services, self.fs,
-        language=self.document.languageId.some, createLanguageServer = false)
+      self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
 
     self.diffDocument.languageId = self.document.languageId
     self.diffDocument.readOnly = true
@@ -1880,8 +1873,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
       return
 
     if self.diffDocument.isNil:
-      self.diffDocument = newTextDocument(self.services, self.fs,
-        language=self.document.languageId.some, createLanguageServer = false)
+      self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
 
     self.diffDocument.languageId = self.document.languageId
     self.diffDocument.readOnly = true
@@ -1902,11 +1894,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
   if self.document.isNil:
     return
 
-  if self.document.workspace.isNone:
-    return
-
-  let ws = self.document.workspace.get
-  let path = self.document.filename
+  let path = self.document.localizedPath
   let vcs = self.vcs.getVcsForFile(path).getOr:
     log lvlError, fmt"No vcs assigned to document '{path}'"
     return
@@ -1917,7 +1905,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
 
   log lvlInfo, &"Checkout result: {res}"
 
-  self.document.setReadOnly(ws.isFileReadOnly(path).await)
+  self.document.setReadOnly(self.vfs.getFileAttributes(path).await.mapIt(not it.writable).get(false))
   self.markDirty()
 
 proc checkoutFile*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -2455,10 +2443,7 @@ proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
 
 proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Selection]) =
-  let editor = if self.document.workspace.isSome:
-    self.layout.openWorkspaceFile(filename)
-  else:
-    self.layout.openFile(filename)
+  let editor = self.layout.openFile(filename)
 
   if editor.getSome(editor):
     if location.getSome(location):
@@ -2475,7 +2460,7 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
   else:
     log lvlError, fmt"Failed to open file '{filename}' at {location}"
 
-import finder/[workspace_file_previewer]
+import finder/[file_previewer]
 
 proc openLocationFromFinderItem(self: TextDocumentEditor, item: FinderItem) =
   try:
@@ -2500,7 +2485,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
     let d = definitions[0]
     self.openFileAt(d.filename, d.location.toSelection.some)
 
-  elif self.document.workspace.getSome(workspace):
+  else:
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.85
@@ -2508,7 +2493,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
 
     var res = newSeq[FinderItem]()
     for i, definition in definitions:
-      let relPath = workspace.getRelativePathSync(definition.filename).get(definition.filename)
+      let relPath = self.workspace.getRelativePathSync(definition.filename).get(definition.filename)
       let (_, name) = definition.filename.splitPath
       res.add FinderItem(
         displayName: name,
@@ -2516,7 +2501,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.some
+    builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
@@ -2534,7 +2519,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     # todo: absolute paths
-    let locations = await ls.getDefinition(self.document.fullPath, self.selection.last)
+    let locations = await ls.getDefinition(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2543,7 +2528,7 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getDeclaration(self.document.fullPath, self.selection.last)
+    let locations = await ls.getDeclaration(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2552,7 +2537,7 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getTypeDefinition(self.document.fullPath, self.selection.last)
+    let locations = await ls.getTypeDefinition(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2561,7 +2546,7 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getImplementation(self.document.fullPath, self.selection.last)
+    let locations = await ls.getImplementation(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2570,7 +2555,7 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getReferences(self.document.fullPath, self.selection.last)
+    let locations = await ls.getReferences(self.document.localizedPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2579,12 +2564,9 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let filename = await ls.switchSourceHeader(self.document.fullPath)
+    let filename = await ls.switchSourceHeader(self.document.localizedPath)
     if filename.getSome(filename):
-      if self.document.workspace.isSome:
-        discard self.layout.openWorkspaceFile(filename)
-      else:
-        discard self.layout.openFile(filename)
+      discard self.layout.openFile(filename)
 
 proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Future[seq[int]] {.async.} =
   let revision = self.completionEngine.revision
@@ -2669,8 +2651,7 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
         data: encodeFileLocationForFinderItem(self.document.filename, (i, 0).some),
       )
 
-  if self.document.workspace.getSome(workspace):
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.some
+  builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true, minScore=minScore, sort=sort)
   builder.finder = finder.some
 
@@ -2694,8 +2675,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
 
-  if self.document.workspace.getSome(workspace):
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.some
+  builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
@@ -2709,7 +2689,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.getLanguageServer().await.getSome(ls):
     if self.document.isNil:
       return
-    let symbols = await ls.getSymbols(self.document.fullPath)
+    let symbols = await ls.getSymbols(self.document.localizedPath)
     if symbols.len == 0:
       return
 
@@ -2767,8 +2747,7 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
     self.delayedTask.reschedule()
 
 proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
-  if self.document.workspace.getSome(workspace) and
-      self.document.getLanguageServer().await.getSome(ls):
+  if self.document.getLanguageServer().await.getSome(ls):
     if self.document.isNil:
       return
 
@@ -2777,8 +2756,8 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scaleX = 0.85
     builder.scaleY = 0.8
 
-    builder.previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services).Previewer.some
-    let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)
+    builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
+    let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, self.workspace), filterAndSort=true)
     builder.finder = finder.some
 
     builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
@@ -2938,7 +2917,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
       let variables = toTable {
         "TM_FILENAME": filenameParts.name & filenameParts.ext,
         "TM_FILENAME_BASE": filenameParts.name,
-        "TM_FILETPATH": self.document.filename,
+        "TM_FILETPATH": self.document.localizedPath,
         "TM_DIRECTORY": filenameParts.dir,
         "TM_LINE_INDEX": $editSelection.last.line,
         "TM_LINE_NUMBER": $(editSelection.last.line + 1),
@@ -3021,7 +3000,7 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
     return
 
   if languageServer.getSome(ls):
-    let hoverInfo = await ls.getHover(self.document.fullPath, cursor)
+    let hoverInfo = await ls.getHover(self.document.localizedPath, cursor)
     if hoverInfo.getSome(hoverInfo):
       self.showHover = true
       self.hoverScrollOffset = 0
@@ -3091,7 +3070,7 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
     let visibleRange = self.visibleTextRange(self.screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
-    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.fullPath, visibleRange)
+    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.localizedPath, visibleRange)
     # todo: detect if canceled instead
     if inlayHints.isSuccess:
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
@@ -3601,11 +3580,10 @@ proc createTextEditorInstance(): TextDocumentEditor =
     allTextEditors.add editor
   return editor
 
-proc newTextEditor*(document: TextDocument, fs: Filesystem, services: Services):
+proc newTextEditor*(document: TextDocument, services: Services):
     TextDocumentEditor =
 
   var self = createTextEditorInstance()
-  self.fs = fs
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
   self.configProvider = services.getService(ConfigService).get.asConfigProvider
@@ -3615,6 +3593,8 @@ proc newTextEditor*(document: TextDocument, fs: Filesystem, services: Services):
   self.events = self.services.getService(EventHandlerService).get
   self.plugins = self.services.getService(PluginService).get
   self.registers = self.services.getService(Registers).get
+  self.workspace = self.services.getService(Workspace).get
+  self.vfs = self.services.getService(VFSService).get.vfs
 
   self.setDocument(document)
 

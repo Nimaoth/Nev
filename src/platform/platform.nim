@@ -1,7 +1,7 @@
 import vmath
 import ui/node
 import misc/[event]
-import input
+import input, vfs
 
 export input, event
 
@@ -26,6 +26,8 @@ type
     onDropFile*: Event[tuple[path: string, content: string]]
     onFocusChanged*: Event[bool]
     layoutOptions*: WLayoutOptions
+
+    vfs*: VFS
 
 method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, raises: [].} = discard
 method render*(self: Platform) {.base, gcsafe, raises: [].} = discard

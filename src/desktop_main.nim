@@ -29,7 +29,7 @@ when enableTerminal:
 logCategory "main"
 
 when defined(windows):
-  import winim
+  import winim/lean
 
 proc ownsConsole*(): bool =
   when defined(windows):
@@ -179,7 +179,7 @@ if not disableLogging: ## Enable loggers
       logger.enableConsoleLogger()
 
 import misc/[timer, custom_async]
-import platform/[platform, filesystem]
+import platform/[platform]
 import ui/widget_builders
 import text/language/language_server
 import app, platform_service
@@ -244,7 +244,7 @@ import text/language/debugger
 import scripting/scripting_base
 import vcs/vcs_api
 import wasm3, wasm3/[wasm3c, wasmconversions]
-import selector_popup, collab, layout, config_provider, document_editor, session, events, register, selector_popup_builder_impl
+import selector_popup, collab, layout, config_provider, document_editor, session, events, register, selector_popup_builder_impl, vfs_service
 
 generatePluginBindings()
 static:
@@ -272,8 +272,6 @@ of Gui:
 else:
     echo "[error] This should not happen"
     quit(1)
-
-plat.init()
 
 import ui/node
 
@@ -401,11 +399,14 @@ proc run(app: App, plat: Platform, backend: Backend) =
 import service
 gServices = Services()
 gServices.addBuiltinServices()
+
+plat.vfs = gServices.getService(VFSService).get.vfs
+plat.init()
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
 
 proc main() =
-  let app = waitFor newApp(backend.get, plat, fs, gServices, opts)
+  let app = waitFor newApp(backend.get, plat, gServices, opts)
   run(app, plat, backend.get)
 
   try:

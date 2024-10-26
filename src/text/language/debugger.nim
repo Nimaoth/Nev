@@ -35,7 +35,6 @@ type
     breakpoint: SourceBreakpoint
 
   Debugger* = ref object of Service
-    app: AppInterface
     platform: Platform
     events: EventHandlerService
     config: ConfigService
@@ -88,8 +87,8 @@ var gDebugger: Debugger = nil
 
 proc getDebugger*(): Option[Debugger] =
   {.gcsafe.}:
-    if gDebugger.isNil: return Debugger.none
-    return gDebugger.some
+    if gServices.isNil: return Debugger.none
+    return gServices.getService(Debugger)
 
 static:
   addInjector(Debugger, getDebugger)
@@ -159,10 +158,8 @@ proc waitForApp(self: Debugger) {.async: (raises: []).} =
     except CancelledError:
       discard
 
-  self.app = ({.gcsafe.}: gAppInterface)
-
-  let document = newTextDocument(self.services, fs=nil, createLanguageServer=false)
-  self.outputEditor = newTextEditor(document, fs=nil, self.services)
+  let document = newTextDocument(self.services, createLanguageServer=false)
+  self.outputEditor = newTextEditor(document, self.services)
   self.outputEditor.usage = "debugger-output"
   self.outputEditor.renderHeader = false
   self.outputEditor.disableCompletions = true
@@ -204,7 +201,6 @@ method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: 
   log lvlInfo, &"Debugger.init"
   {.gcsafe.}:
     gDebugger = self
-    self.workspace = gWorkspace
 
   self.collapsedVariables = initHashSet[(ThreadId, FrameId, VariablesReference)]()
   self.editors = self.services.getService(DocumentEditorService).get
@@ -213,6 +209,7 @@ method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: 
   self.config = self.services.getService(ConfigService).get
   self.plugins = self.services.getService(PluginService).get
   self.platform = self.services.getService(PlatformService).get.platform
+  self.workspace = self.services.getService(Workspace).get
 
   discard self.services.getService(SessionService).get.onSessionRestored.subscribe (session: SessionService) => self.handleSessionRestored(session)
 
@@ -294,11 +291,6 @@ proc currentVariablesContext*(self: Debugger, varRef: VariablesReference):
     return (t.id, frame[].id, varRef).some
 
 proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.async.} =
-  if self.workspace.isNil or not self.workspace.fileExists(path).await:
-    # todo: maybe we can remap some files to local file system?
-    log lvlError, &"Failed to find file '{path}'"
-    return
-
   let editor = self.layout.openWorkspaceFile(path, append = true)
 
   if editor.getSome(editor) and editor of TextDocumentEditor:
@@ -1148,8 +1140,7 @@ proc newBreakpointPreviewer*(services: Services, language = string.none,
 
   new result
 
-  result.tempDocument = newTextDocument(services, fs=nil, language=language,
-    createLanguageServer=false)
+  result.tempDocument = newTextDocument(services, language=language, createLanguageServer=false)
   result.tempDocument.readOnly = true
   result.getPreviewTextImpl = getPreviewTextImpl
 

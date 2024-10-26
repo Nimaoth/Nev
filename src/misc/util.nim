@@ -230,3 +230,28 @@ func indentExtraLines*(s: string, count: Natural, padding: string = " "): string
         result.add(padding)
     result.add(line)
     i.inc
+
+func find*[T](arr: openArray[T], val: T, start: int = 0): int =
+  result = -1
+  for i in start..<arr.len:
+    if arr[i] == val:
+      return i
+
+func startsWith*[T](s, prefix: openArray[T]): bool =
+  let prefixLen = prefix.len
+  let sLen = s.len
+  var i = 0
+  while true:
+    if i >= prefixLen: return true
+    if i >= sLen or s[i] != prefix[i]: return false
+    inc(i)
+
+func endsWith*[T](s, suffix: openArray[T]): bool =
+  let suffixLen = suffix.len
+  let sLen = s.len
+  var i = 0
+  var j = sLen - suffixLen
+  while i+j >= 0 and i+j < sLen:
+    if s[i+j] != suffix[i]: return false
+    inc(i)
+  if i >= suffixLen: return true

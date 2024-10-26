@@ -37,10 +37,9 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
         let isDirty = inDocument.lastSavedRevision != inDocument.revision
         let dirtyMarker = if isDirty: "*" else: ""
 
-        let workspaceName = inDocument.workspace.map(wf => " - " & wf.name).get("")
         let modeText = if inMode.len == 0: "-" else: inMode
         let (directory, filename) = inDocument.filename.splitPath
-        let text = (" $# - $#$# - $#$# " % [modeText, dirtyMarker, filename, directory, workspaceName]).catch("")
+        let text = (" $# - $#$# - $# " % [modeText, dirtyMarker, filename, directory]).catch("")
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = inTextColor, text = text)
 
         if leftFunc.isNotNil:

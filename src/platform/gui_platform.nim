@@ -1,9 +1,9 @@
-import std/[tables, strutils, options, sets]
+import std/[tables, strutils, options, sets, os]
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
-import misc/[custom_logger, util, event, id, rect_utils]
+import misc/[custom_logger, util, event, id, rect_utils, custom_async]
 import ui/node
-import platform, platform/filesystem
-import input, monitors, lrucache, theme, compilation_config
+import platform
+import input, monitors, lrucache, theme, compilation_config, vfs
 
 export platform
 
@@ -108,16 +108,16 @@ method init*(self: GuiPlatform) =
     self.ctx = newContext(1, 1)
     self.ctx.fillStyle = rgb(255, 255, 255)
     self.ctx.strokeStyle = rgb(255, 255, 255)
-    self.ctx.font = "fonts/DejaVuSansMono.ttf"
+    self.ctx.font = "app://fonts/DejaVuSansMono.ttf"
     self.ctx.textBaseline = TopBaseline
 
-    self.fontRegular = "fonts/DejaVuSansMono.ttf"
-    self.fontBold = "fonts/DejaVuSansMono-Bold.ttf"
-    self.fontItalic = "fonts/DejaVuSansMono-Oblique.ttf"
-    self.fontBoldItalic = "fonts/DejaVuSansMono-BoldOblique.ttf"
+    self.fontRegular = "app://fonts/DejaVuSansMono.ttf"
+    self.fontBold = "app://fonts/DejaVuSansMono-Bold.ttf"
+    self.fontItalic = "app://fonts/DejaVuSansMono-Oblique.ttf"
+    self.fontBoldItalic = "app://fonts/DejaVuSansMono-BoldOblique.ttf"
 
-    self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
-    self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
+    self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
+    self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
 
     self.boxy.setTargetFramebuffer self.framebufferId
 
@@ -245,26 +245,42 @@ method requestRender*(self: GuiPlatform, redrawEverything = false) =
   self.requestedRender = true
   self.redrawEverything = self.redrawEverything or redrawEverything
 
+proc readTypeface(vfs: VFS, filePath: string): Typeface {.raises: [IOError].} =
+  try:
+    result =
+      case splitFile(filePath).ext.toLowerAscii():
+        of ".ttf":
+          parseTtf(vfs.read(filePath, {Binary}).waitFor)
+        of ".otf":
+          parseOtf(vfs.read(filePath, {Binary}).waitFor)
+        of ".svg":
+          parseSvgFont(vfs.read(filePath, {Binary}).waitFor)
+        else:
+          raise newException(IOError, "Unsupported font format")
+  except Exception as e:
+    raise newException(IOError, &"Failed to load typeface '{filePath}': " & e.msg, e)
+
+  result.filePath = filePath
+
 proc getTypeface*(self: GuiPlatform, font: string): Typeface =
-  let fs = ({.gcsafe.}: fs)
   if font notin self.typefaces:
     var typeface: Typeface = nil
     try:
       log lvlInfo, &"Reading font '{font}'"
-      typeface = readTypeface(fs.getApplicationFilePath(font))
+      typeface = self.vfs.readTypeface(font)
       self.typefaces[font] = typeface
 
       for fallbackFont in self.fallbackFonts:
         try:
           log lvlInfo, &"Reading fallback font '{fallbackFont}'"
-          let fallback = readTypeface(fs.getApplicationFilePath(fallbackFont))
+          let fallback = self.vfs.readTypeface(fallbackFont)
           if fallback.isNotNil:
             typeface.fallbacks.add fallback
-        except:
-          log lvlError, &"Failed to load fallback font '{fallbackFont}'"
+        except IOError as e:
+          log lvlError, &"Failed to load fallback font '{fallbackFont}': {e.msg}"
 
-    except:
-      log lvlError, &"Failed to load font '{font}'"
+    except IOError as e:
+      log lvlError, &"Failed to load typeface '{font}': {e.msg}"
       return nil
 
   result = self.typefaces[font]

@@ -1,10 +1,6 @@
-import std/[json, options, os, strutils]
-import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger, event]
-import platform/filesystem
-import vfs
-import service
-
-import nimsumtree/rope
+import std/[json, options, os, strutils, sequtils]
+import misc/[custom_async, id, util, regex, custom_logger, event, timer, async_process]
+import vfs, vfs_service, service, compilation_config
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -16,14 +12,6 @@ type
     name*: string
     folders*: seq[tuple[path: string, name: Option[string]]]
 
-  Workspace* = ref object of RootObj
-    name*: string
-    info*: Future[WorkspaceInfo]
-    id*: Id
-    ignore*: Globs
-    cachedFiles*: seq[string]
-    onCachedFilesUpdated*: Event[void]
-
   DirectoryListing* = object
     files*: seq[string]
     folders*: seq[string]
@@ -34,35 +22,28 @@ type
     column*: int
     text*: string
 
-  VFSWorkspace* = ref object of VFS
-    workspace*: Workspace
+  Workspace* = ref object of Service
+    name*: string
+    path*: string
+    additionalPaths*: seq[string]
+    id*: Id
+    ignore*: Globs
+    cachedFiles*: seq[string]
+    onCachedFilesUpdated*: Event[void]
+    onWorkspaceFolderAdded*: Event[string]
+    onWorkspaceFolderRemoved*: Event[string]
+    isCacheUpdateInProgress: bool = false
+    vfs*: VFS
 
-  WorkspacePath* = distinct string
+func serviceName*(_: typedesc[Workspace]): string = "Workspace"
 
-  WorkspaceService* = ref object of Service
-    workspace*: Workspace
+addBuiltinService(Workspace, VFSService)
 
-func serviceName*(_: typedesc[WorkspaceService]): string = "WorkspaceService"
+method init*(self: Workspace): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"Workspace.init"
+  self.vfs = self.services.getService(VFSService).get.vfs
 
-addBuiltinService(WorkspaceService)
-
-method init*(self: WorkspaceService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"WorkspaceService.init"
   return ok()
-
-proc encodePath*(workspace: Workspace, path: string): WorkspacePath =
-  return WorkspacePath(fmt"ws://{workspace.id}/{path}")
-
-proc decodePath*(path: WorkspacePath): Option[tuple[id: Id, path: string]] =
-  let path = path.string
-  if not path.startsWith("ws://"):
-    return
-
-  let slashIndex = path.find('/', 5)
-  assert slashIndex > 0
-
-  let id = path[5..<slashIndex].parseId
-  return (id, path[(slashIndex + 1)..^1]).some
 
 proc ignorePath*(workspace: Workspace, path: string): bool =
   if workspace.ignore.excludePath(path) or workspace.ignore.excludePath(path.extractFilename):
@@ -72,176 +53,245 @@ proc ignorePath*(workspace: Workspace, path: string): bool =
     return true
   return false
 
-method isReadOnly*(self: Workspace): bool {.base.} = true
-method settings*(self: Workspace): JsonNode {.base.} = discard
-
-method clearDirectoryCache*(self: Workspace) {.base.} = discard
-method recomputeFileCache*(self: Workspace) {.base.} = discard
-
-method setFileReadOnly*(self: Workspace, relativePath: string, readOnly: bool): Future[bool] {.
-  base.} = false.toFuture
-
-method isFileReadOnly*(self: Workspace, relativePath: string): Future[bool] {.base.} =
-  false.toFuture
-
-method fileExists*(self: Workspace, path: string): Future[bool] {.base.} =
-  false.toFuture
-
-method loadFile*(self: Workspace, relativePath: string): Future[string] {.base.} =
-  discard
-
-method loadFile*(self: Workspace, relativePath: string, data: ptr string): Future[void] {.base.} =
-  discard
-
-method saveFile*(self: Workspace, relativePath: string, content: string): Future[void] {.base.} =
-  discard
-
-method saveFile*(self: Workspace, relativePath: string, content: ArrayBuffer): Future[void] {.base.} =
-  discard
-
-method saveFile*(self: Workspace, relativePath: string, content: sink Rope): Future[void] {.base.} =
-  doneFuture()
-
-method getWorkspacePath*(self: Workspace): string {.base.} = discard
-
-method getDirectoryListing*(self: Workspace, relativePath: string): Future[DirectoryListing] {.base.} = discard
-method searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[seq[SearchResult]] {.base.} = discard
-
-proc getAbsolutePath*(self: Workspace, path: string): string =
-  if path.isAbsolute:
-    return path.normalizePathUnix
-  else:
-    (self.getWorkspacePath() / path).normalizePathUnix
-
-proc getRelativePathEmpty(): Future[Option[string]] {.async.} =
-  return string.none
-
-method getRelativePath*(self: Workspace, absolutePath: string): Future[Option[string]] {.base.} =
-  return getRelativePathEmpty()
-
-method getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] {.base.} =
-  return string.none
-
-proc shouldIgnore(folder: Workspace, path: string): bool =
-  if folder.ignore.excludePath(path) or folder.ignore.excludePath(path.extractFilename):
-    if folder.ignore.includePath(path) or folder.ignore.includePath(path.extractFilename):
+proc ignorePath*(ignore: Globs, path: string): bool =
+  if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
+    if ignore.includePath(path) or ignore.includePath(path.extractFilename):
       return false
 
     return true
   return false
 
-proc getDirectoryListingRec*(folder: Workspace, path: string): Future[seq[string]] {.async.} =
-  var resultItems: seq[string]
+proc settings*(self: Workspace): JsonNode =
+  try:
+    result = newJObject()
+    result["path"] = newJString(self.path.absolutePath)
+    result["additionalPaths"] = %self.additionalPaths
+  except ValueError, OSError:
+    discard
 
-  let items = await folder.getDirectoryListing(path)
-  for file in items.files:
-    let fullPath = if file.isAbsolute:
-      file
-    else:
-      path // file
+proc clearDirectoryCache*(self: Workspace) = discard
 
-    if folder.shouldIgnore(fullPath):
-      continue
-
-    resultItems.add(fullPath)
-
-  var futs: seq[Future[seq[string]]]
-
-  for dir in items.folders:
-    let fullPath = if dir.isAbsolute:
-      dir
-    else:
-      path // dir
-
-    if folder.shouldIgnore(fullPath):
-      continue
-
-    futs.add getDirectoryListingRec(folder, fullPath)
-
-  for fut in futs:
-    let children = await fut
-    resultItems.add children
-
-  return resultItems
-
-proc iterateDirectoryRec*(folder: Workspace, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void] {.raises: [CancelledError]}): Future[void] {.async.} =
-  let path = path
-  var resultItems: seq[string]
-  var folders: seq[string]
-
-  if cancellationToken.canceled:
+proc collectFiles(dir: string, ignore: Globs, files: var seq[string]) =
+  if ignore.ignorePath(dir):
     return
 
   try:
-    let items = await folder.getDirectoryListing(path)
+    for (kind, path) in walkDir(dir, relative=false):
+      let pathNorm = path.normalizePathUnix
+      case kind
+      of pcFile:
+        if ignore.ignorePath(pathNorm):
+          continue
 
-    if cancellationToken.canceled:
-      return
-
-    for file in items.files:
-      let fullPath = if file.isAbsolute:
-        file
+        files.add pathNorm
+      of pcDir:
+        collectFiles(pathNorm, ignore, files)
       else:
-        path // file
-      if folder.shouldIgnore(fullPath):
-        continue
-      resultItems.add(fullPath)
+        discard
 
-    for dir in items.folders:
-      let fullPath = if dir.isAbsolute:
-        dir
-      else:
-        path // dir
-      if folder.shouldIgnore(fullPath):
-        continue
-      folders.add(fullPath)
-  except CatchableError:
+  except OSError:
     discard
 
-  await sleepAsync(10.milliseconds)
-
+proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
+    tuple[files: seq[string], time: float] =
   try:
-    await callback(resultItems)
-  except CatchableError:
+    let t = startTimer()
+
+    for path in args.roots:
+      collectFiles(path, args.ignore, result.files)
+
+    result.time = t.elapsed.ms
+  except:
     discard
 
-  if cancellationToken.canceled:
+proc recomputeFileCacheAsync(self: Workspace): Future[void] {.async.} =
+  if self.isCacheUpdateInProgress:
     return
+  self.isCacheUpdateInProgress = true
+  defer:
+    self.isCacheUpdateInProgress = false
 
-  var futs: seq[Future[void]]
+  log lvlInfo, "[recomputeFileCacheAsync] Start"
+  let args = (@[self.path] & self.additionalPaths, self.ignore)
+  try:
+    let res = spawnAsync(collectFilesThread, args).await
+    log lvlInfo, fmt"[recomputeFileCacheAsync] Found {res.files.len} files in {res.time}ms"
 
-  for dir in folders:
-    futs.add iterateDirectoryRec(folder, dir, cancellationToken, callback)
+    self.cachedFiles = res.files
+    self.onCachedFilesUpdated.invoke()
+  except CancelledError:
+    discard
 
+proc recomputeFileCache*(self: Workspace) =
+  asyncSpawn self.recomputeFileCacheAsync()
+
+proc getWorkspacePath*(self: Workspace): string =
+  try:
+    self.path.absolutePath
+  except ValueError, OSError:
+    return ""
+
+proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int):
+    Future[seq[SearchResult]] {.async: (raises: []).} =
+  try:
+    let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root],
+      maxLines=maxResults).await
+    var res: seq[SearchResult]
+
+    var currentFile = ""
+    for line in output:
+      if currentFile == "":
+        if line.isAbsolute:
+          currentFile = line.normalizePathUnix
+        else:
+          currentFile = root // line
+        continue
+
+      if line == "":
+        currentFile = ""
+        continue
+
+      var separatorIndex1 = line.find(':')
+      if separatorIndex1 == -1:
+        continue
+
+      let lineNumber = line[0..<separatorIndex1].parseInt.catch(0)
+
+      let separatorIndex2 = line.find(':', separatorIndex1 + 1)
+      if separatorIndex2 == -1:
+        continue
+
+      let column = line[(separatorIndex1 + 1)..<separatorIndex2].parseInt.catch(0)
+      let text = line[(separatorIndex2 + 1)..^1]
+      res.add SearchResult(path: currentFile, line: lineNumber, column: column, text: text)
+
+      if res.len == maxResults:
+        break
+
+    return res
+  except CatchableError:
+    return @[]
+
+proc searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[seq[SearchResult]] {.async: (raises: []).} =
+  var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
+  futs.add self.searchWorkspaceFolder(query, self.path, maxResults)
+  for path in self.additionalPaths:
+    futs.add self.searchWorkspaceFolder(query, path, maxResults)
+
+  var res: seq[SearchResult]
   for fut in futs:
-    try:
-      await fut
-    except CatchableError:
-      discard
+    res.add fut.await
 
-  return
+    if res.len >= maxResults:
+      break
 
-method name*(self: VFSWorkspace): string = "VFSWorkspace"
+  return res
 
-method readImpl*(self: VFSWorkspace, path: string): Future[Option[string]] {.async.} =
-  return self.workspace.loadFile(path).await.some
+proc getAbsolutePath*(self: Workspace, path: string): string =
+  if path.isAbsolute:
+    return path.normalizeNativePath
+  else:
+    self.getWorkspacePath() // path
 
-method normalizeImpl*(self: VFSWorkspace, path: string): string =
-  return self.workspace.getAbsolutePath(path)
+proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string] =
+  try:
+    if absolutePath.startsWith(self.path):
+      return absolutePath.relativePath(self.path, '/').normalizePathUnix.some
 
-var gWorkspace*: Workspace = nil
-var gWorkspaceFuture = newFuture[Workspace]("gWorkspace")
+    for path in self.additionalPaths:
+      if absolutePath.startsWith(path):
+        return absolutePath.relativePath(path, '/').normalizePathUnix.some
+
+    return string.none
+  except:
+    return string.none
+
+proc getRelativePath*(self: Workspace, absolutePath: string): Future[Option[string]] {.async.} =
+  return self.getRelativePathSync(absolutePath)
 
 {.pop.} # raises: []
 {.pop.} # gcsafe
 
-proc getGlobalWorkspace*(): Future[Workspace] = gWorkspaceFuture
-proc setGlobalWorkspace*(w: Workspace) =
-  gWorkspace = w
-  gWorkspaceFuture.complete(w)
+proc loadIgnoreFile(self: Workspace, path: string): Option[Globs] =
+  try:
+    let globLines = readFile(self.getAbsolutePath(path))
+    return globLines.parseGlobs.some
+  except:
+    return Globs.none
 
-import workspace_local
-export workspace_local
+proc loadDefaultIgnoreFile(self: Workspace) =
+  if self.loadIgnoreFile(&".{appName}-ignore").getSome(ignore):
+    self.ignore = ignore
+    log lvlInfo, &"Using ignore file '.{appName}-ignore' for workspace {self.name}"
+  elif self.loadIgnoreFile(".gitignore").getSome(ignore):
+    self.ignore = ignore
+    log lvlInfo, &"Using ignore file '.gitignore' for workspace {self.name}"
+  else:
+    log lvlInfo, &"No ignore file for workspace {self.name}"
 
-import workspace_null
-export workspace_null
+proc info*(self: Workspace): WorkspaceInfo =
+  let additionalPaths = self.additionalPaths.mapIt((it.absolutePath, it.some))
+  return WorkspaceInfo(name: self.path, folders: @[(self.path.absolutePath, self.path.some)] & additionalPaths)
+
+proc removeWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
+  let idx = if path == self.path:
+    -1
+  else:
+    let idx = self.additionalPaths.find(path)
+    if idx == -1:
+      log lvlError, &"Can't remove unknown workspace folder '{path}'"
+      return
+    idx
+
+  if idx != -1:
+    self.additionalPaths.removeShift(idx)
+  elif self.additionalPaths.len > 0:
+    self.path = self.additionalPaths[0]
+    self.additionalPaths.removeShift(0)
+  else:
+    log lvlError, &"Can't remove last workspace folder '{path}'"
+    return
+
+  let (wsVfs, _) = self.vfs.getVFS("ws://")
+  self.vfs.unmount(&"ws{self.additionalPaths.len + 1}://")
+  wsVfs.unmount(&"{self.additionalPaths.len + 1}")
+
+  # rebuild vfs
+  for i, path in @[self.path] & self.additionalPaths:
+    self.vfs.mount(&"ws{i}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+    wsVfs.mount($i, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+
+  self.onWorkspaceFolderRemoved.invoke(path)
+
+  if recomputeFileCache:
+    self.recomputeFileCache()
+
+proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool = true) =
+  if self.path.len == 0:
+    self.path = path
+    self.loadDefaultIgnoreFile()
+  else:
+    self.additionalPaths.add path
+
+  self.vfs.mount(&"ws{self.additionalPaths.len}://", VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+
+  let (wsVfs, _) = self.vfs.getVFS("ws://")
+  wsVfs.mount($self.additionalPaths.len, VFSLink(target: self.vfs.getVFS("").vfs, targetPrefix: path & "/"))
+
+  self.onWorkspaceFolderAdded.invoke(path)
+  if recomputeFileCache:
+    self.recomputeFileCache()
+
+proc restore*(self: Workspace, settings: JsonNode) =
+  try:
+    let path = settings["path"].getStr
+    let additionalPaths = settings["additionalPaths"].elems.mapIt(it.getStr)
+    self.addWorkspaceFolder(path, recomputeFileCache = false)
+    for path in additionalPaths:
+      self.addWorkspaceFolder(path, recomputeFileCache = false)
+
+    self.name = fmt"Local:{path}"
+    self.recomputeFileCache()
+
+  except CatchableError as e:
+    log lvlError, &"Failed to restore workspace from settings: {e.msg}\n{settings.pretty}"

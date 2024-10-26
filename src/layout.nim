@@ -5,7 +5,7 @@ import platform/platform
 import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util]
 import scripting/expose
 import workspaces/workspace
-import service, platform_service, dispatch_tables, document, document_editor, view, events, config_provider, popup, selector_popup_builder
+import service, platform_service, dispatch_tables, document, document_editor, view, events, config_provider, popup, selector_popup_builder, vfs, vfs_service
 from scripting_api import EditorId
 
 {.push gcsafe.}
@@ -33,6 +33,7 @@ type
     workspace: Workspace
     config: ConfigService
     editors: DocumentEditorService
+    vfs: VFS
     popups*: seq[Popup]
     layout*: Layout
     layoutProps*: LayoutProperties
@@ -54,17 +55,7 @@ var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
-addBuiltinService(LayoutService, PlatformService, ConfigService, DocumentEditorService, WorkspaceService)
-
-proc waitForWorkspace(self: LayoutService) {.async: (raises: []).} =
-  let ws = self.services.getService(WorkspaceService).get
-  while ws.workspace.isNil:
-    try:
-      await sleepAsync(10.milliseconds)
-    except CancelledError:
-      discard
-
-  self.workspace = ws.workspace
+addBuiltinService(LayoutService, PlatformService, ConfigService, DocumentEditorService, Workspace, VFSService)
 
 method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"LayoutService.init"
@@ -72,10 +63,11 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   assert self.platform != nil
   self.config = self.services.getService(ConfigService).get
   self.editors = self.services.getService(DocumentEditorService).get
+  self.vfs = self.services.getService(VFSService).get.vfs
   self.layout = HorizontalLayout()
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
   self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
-  asyncSpawn self.waitForWorkspace()
+  self.workspace = self.services.getService(Workspace).get
   return ok()
 
 method activate*(view: EditorView) =
@@ -403,17 +395,13 @@ proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.exp
 
 proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor] =
   for i, view in self.views:
-    if view of EditorView and view.EditorView.document.filename == path and
-        (view.EditorView.document.workspace == self.workspace.some or
-        view.EditorView.document.appFile == appFile):
+    if view of EditorView and view.EditorView.document.filename == path:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.currentView = i
       return view.EditorView.editor.some
 
   for i, view in self.hiddenViews:
-    if view of EditorView and view.EditorView.document.filename == path and
-        (view.EditorView.document.workspace == self.workspace.some or
-        view.EditorView.document.appFile == appFile):
+    if view of EditorView and view.EditorView.document.filename == path:
       log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
       self.addView(view, append=append)
@@ -457,6 +445,8 @@ proc openWorkspaceFile*(self: LayoutService, path: string, append: bool = false)
 proc openFile*(self: LayoutService, path: string, appFile: bool = false): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
+
+  let path = self.vfs.normalize(path)
 
   log lvlInfo, fmt"[openFile] Open file '{path}' (appFile = {appFile})"
   if self.tryOpenExisting(path, appFile, append = false).getSome(ed):

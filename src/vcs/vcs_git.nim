@@ -2,7 +2,7 @@ import std/[strutils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
 import scripting_api
 import text/diff
-import platform/filesystem
+import vfs
 import vcs
 
 {.push gcsafe.}
