@@ -300,9 +300,9 @@
             }
         },
 
-        "^\\+?nims-plugin-post-load-commands$": {
+        "^\\+?wasm-plugin-post-reload-commands$": {
             "type": "array",
-            "description": "Array of commands which are executed after loading nimscript plugins",
+            "description": "Array of commands which are executed after reloading wasm plugins",
             "items": {
                 "type": "string"
             }

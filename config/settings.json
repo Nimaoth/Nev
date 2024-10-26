@@ -514,5 +514,9 @@
     "wasm-plugin-post-load-commands": [
         "load-theme \"tokyo-night-color-theme\"",
         "load-configured-keybindings"
+    ],
+
+    "wasm-plugin-post-reload-commands": [
+        "load-configured-keybindings"
     ]
 }
