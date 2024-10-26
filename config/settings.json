@@ -103,6 +103,7 @@
         "\\.lock$": "json",
         "\\.yml$": "yaml",
         "\\.nix$": "nix",
+        "\\.wit$": "wit",
         "\\.ocaml$": "ocaml",
         "\\.php$": "php",
         "\\.(py|pyi)$": "python",
@@ -459,6 +460,23 @@
                 "["
             ],
             "lineComment": "#"
+        },
+        "wit": {
+            "treesitter": "liamwh/tree-sitter-wit",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "//",
+            "blockComment": [
+                "/*",
+                "*/"
+            ]
         }
     },
 
