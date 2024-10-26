@@ -2058,6 +2058,9 @@ proc reloadPluginAsync*(self: App) {.async.} =
     except CatchableError:
       log lvlError, &"Failed to reload wasm plugins: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
+    self.runConfigCommands("wasm-plugin-post-reload-commands")
+    self.runConfigCommands("plugin-post-reload-commands")
+
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadConfigFrom(appConfigDir)
   await self.loadConfigFrom(homeConfigDir)
