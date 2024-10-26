@@ -79,10 +79,6 @@ type EditorState = object
   debuggerState: Option[JsonNode]
   sessionData: JsonNode
 
-type ScriptAction = object
-  name: string
-  scriptContext: ScriptContext
-
 type
   App* = ref AppObject
   AppObject* = object
@@ -143,8 +139,6 @@ type
 
     modeEventHandler: EventHandler
     currentMode*: string
-
-    scriptActions: Table[string, ScriptAction]
 
     sessionFile*: string
 
@@ -1043,46 +1037,6 @@ proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("edit
 proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
   self.workspace.clearDirectoryCache()
 
-proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.expose("editor").} =
-  if not self.scriptActions.contains(context):
-    log lvlError, fmt"Unknown script action '{context}'"
-    return nil
-  let action = self.scriptActions[context]
-  try:
-    withScriptContext self.plugins, action.scriptContext:
-      return action.scriptContext.handleScriptAction(context, args)
-    log lvlError, fmt"No script context for action '{context}'"
-    return nil
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script action {context}: {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-    return nil
-
-proc addScriptAction*(self: App, name: string, docs: string = "",
-    params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "", active: bool = false,
-    context: string = "script")
-    {.expose("editor").} =
-
-  if self.scriptActions.contains(name):
-    log lvlError, fmt"Duplicate script action {name}"
-    return
-
-  if self.plugins.currentScriptContext.isNone:
-    log lvlError, fmt"addScriptAction({name}) should only be called from a script"
-    return
-
-  self.scriptActions[name] = ScriptAction(name: name, scriptContext: self.plugins.currentScriptContext.get)
-
-  proc dispatch(arg: JsonNode): JsonNode =
-    return self.callScriptAction(name, arg)
-
-  let signature = "(" & params.mapIt(it[0] & ": " & it[1]).join(", ") & ")" & returnType
-  {.gcsafe.}:
-    if active:
-      extendActiveDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
-    else:
-      extendGlobalDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
-
 proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
 
@@ -1101,12 +1055,12 @@ proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async: (
   let path = self.workspace.getAbsolutePath(path)
   try:
     let content = await self.vfs.read(path)
-    discard self.callScriptAction(callback, content.some.toJson)
+    discard self.plugins.callScriptAction(callback, content.some.toJson)
   except FileNotFoundError:
-    discard self.callScriptAction(callback, string.none.toJson)
+    discard self.plugins.callScriptAction(callback, string.none.toJson)
   except IOError as e:
     log lvlError, &"Failed to load workspace file: {e.msg}"
-    discard self.callScriptAction(callback, string.none.toJson)
+    discard self.plugins.callScriptAction(callback, string.none.toJson)
 
 proc loadWorkspaceFile*(self: App, path: string, callback: string) {.expose("editor").} =
   asyncSpawn self.loadWorkspaceFileImpl(path, callback)
@@ -2083,20 +2037,12 @@ proc openNextEditor*(self: App) {.expose("editor").} =
   discard self.layout.tryOpenExisting(editor, addToHistory=false)
   self.platform.requestRender()
 
-proc clearScriptActionsFor(self: App, scriptContext: ScriptContext) =
-  var keysToRemove: seq[string]
-  for (key, value) in self.scriptActions.pairs:
-    if value.scriptContext == scriptContext:
-      keysToRemove.add key
-
-  for key in keysToRemove:
-    self.scriptActions.del key
-
+# todo: move to scripting_base
 proc reloadPluginAsync*(self: App) {.async.} =
   if self.wasmScriptContext.isNotNil:
     log lvlInfo, "Reload wasm plugins"
     try:
-      self.clearScriptActionsFor(self.wasmScriptContext)
+      self.plugins.clearScriptActionsFor(self.wasmScriptContext)
 
       let t1 = startTimer()
       withScriptContext self.plugins, self.wasmScriptContext:
@@ -2475,7 +2421,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
 
       result.add &"Options: {self.config.settings.pretty.len}\n"
       result.add &"Callbacks: {self.plugins.callbacks.len}\n"
-      result.add &"Script Actions: {self.scriptActions.len}\n"
+      result.add &"Script Actions: {self.plugins.scriptActions.len}\n"
 
       result.add &"Input History: {self.inputHistory}\n"
       result.add &"Editor History: {self.layout.editorHistory}\n"
