@@ -42,6 +42,7 @@ proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[
 proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {.async: (raises: [IOError]).}
 proc write*(self: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).}
 proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).}
+proc delete*(self: VFS, path: string): Future[bool] {.async: (raises: []).}
 proc getFileKind*(self: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).}
 proc getFileAttributes*(self: VFS, path: string): Future[Option[FileAttributes]] {.async: (raises: []).}
 proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).}
@@ -133,6 +134,9 @@ method writeImpl*(self: VFS, path: string, content: string): Future[void] {.base
 method writeImpl*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.base, async: (raises: [IOError]).} =
   discard
 
+method deleteImpl*(self: VFS, path: string): Future[bool] {.base, async: (raises: []).} =
+  return false
+
 method getFileKindImpl*(self: VFS, path: string): Future[Option[FileKind]] {.base, async: (raises: []).} =
   return FileKind.none
 
@@ -193,6 +197,9 @@ method writeImpl*(self: VFSLink, path: string, content: string): Future[void] {.
 method writeImpl*(self: VFSLink, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
   await self.target.write(self.targetPrefix // path, content.move)
 
+method deleteImpl*(self: VFSLink, path: string): Future[bool] {.async: (raises: []).} =
+  await self.target.delete(self.targetPrefix // path)
+
 method getFileKindImpl*(self: VFSLink, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   return self.target.getFileKind(path).await
 
@@ -235,6 +242,11 @@ method writeImpl*(self: VFSInMemory, path: string, content: sink RopeSlice[int])
   when debugLogVfs:
     debugf"VFSInMemory.write({path})"
   self.files[path] = $content
+
+method deleteImpl*(self: VFSInMemory, path: string): Future[bool] {.async: (raises: []).} =
+  if path in self.files:
+    self.files.del(path)
+    return true
 
 method getFileKindImpl*(self: VFSInMemory, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   if path in self.files:
@@ -318,6 +330,12 @@ proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void]
     debugf"[{self.name}] '{self.prefix}' write({path})"
   let (vfs, path) = self.getVFS(path)
   await vfs.writeImpl(path, content.move)
+
+proc delete*(self: VFS, path: string): Future[bool] {.async: (raises: []).} =
+  when debugLogVfs:
+    debugf"[{self.name}] '{self.prefix}' delete({path})"
+  let (vfs, path) = self.getVFS(path)
+  await vfs.deleteImpl(path)
 
 proc getFileKind*(self: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   let (vfs, path) = self.getVFS(path)
