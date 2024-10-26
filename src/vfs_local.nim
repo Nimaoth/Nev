@@ -83,6 +83,13 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
+method deleteImpl*(self: VFSLocal, path: string): Future[bool] {.async: (raises: []).} =
+  if not path.isAbsolute:
+    return false
+
+  logScope lvlInfo, &"[deleteFile] '{path}'"
+  return tryRemoveFile(path)
+
 method getFileKindImpl*(self: VFSLocal, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   if fileExists(path):
     return FileKind.File.some
