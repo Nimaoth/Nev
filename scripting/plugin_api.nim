@@ -21,6 +21,8 @@ import layout_api_wasm
 export layout_api_wasm
 import lsp_api_wasm
 export lsp_api_wasm
+import plugins_api_wasm
+export plugins_api_wasm
 import popup_selector_api_wasm
 export popup_selector_api_wasm
 import registers_api_wasm

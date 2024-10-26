@@ -181,40 +181,6 @@ proc clearWorkspaceCaches*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_callScriptAction_JsonNode_App_string_JsonNode_wasm(arg: cstring): cstring {.
-    importc.}
-proc callScriptAction*(context: string; args: JsonNode): JsonNode {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add context.toJson()
-  argsJson.add args.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_callScriptAction_JsonNode_App_string_JsonNode_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_bool_string_wasm(
-    arg: cstring): cstring {.importc.}
-proc addScriptAction*(name: string; docs: string = "";
-                      params: seq[tuple[name: string, typ: string]] = @[];
-                      returnType: string = ""; active: bool = false;
-                      context: string = "script") {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add name.toJson()
-  argsJson.add docs.toJson()
-  argsJson.add params.toJson()
-  argsJson.add returnType.toJson()
-  argsJson.add active.toJson()
-  argsJson.add context.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_bool_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_quit_void_App_wasm(arg: cstring): cstring {.importc.}
 proc quit*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
