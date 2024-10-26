@@ -184,6 +184,18 @@ proc loadWorkspaceFile*(path: string, action: proc(content: Option[string]): voi
   addScriptAction(key, "", @[("path", "string"), ("callback", "proc(content: Option[string])")], "", false)
   loadWorkspaceFile(path, key)
 
+proc runProcess*(process: string, args: seq[string], workingDir: Option[string] = string.none, eval: bool = false, callback: proc(output: string, err: string): void {.closure, gcsafe.} = nil) =
+  let key = "$runProcess" & $callbackId
+  callbackId += 1
+  scriptActions[key] = proc(args: JsonNode): JsonNode =
+    let args = args.jsonTo(Option[tuple[output: string, err: string]])
+    if callback != nil and args.isSome:
+      callback(args.get.output, args.get.err)
+    scriptActions.del(key)
+    return newJNull()
+  addScriptAction(key, "", @[("process", "string"), ("args", "seq[string]"), ("workingDir", "Option[string]"), ("callback", "proc(content: Option[string])")], "", false)
+  runProcess(process, args, key.some, workingDir, eval)
+
 macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
   let (stmts, str) = bindArgs(args)
   return genAst(stmts, context, keys, action, str):
