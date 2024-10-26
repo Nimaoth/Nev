@@ -4,13 +4,6 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
-proc plugins_uiae_void_PluginService_wasm(arg: cstring): cstring {.importc.}
-proc uiae*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = plugins_uiae_void_PluginService_wasm(argsJsonString.cstring)
-
-
 proc plugins_callScriptAction_JsonNode_PluginService_string_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
 proc callScriptAction*(context: string; args: JsonNode): JsonNode {.gcsafe,
