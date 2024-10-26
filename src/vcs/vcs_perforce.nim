@@ -1,6 +1,6 @@
 import std/[strutils, strformat]
 import misc/[async_process, custom_async, util, custom_logger]
-import platform/filesystem
+import vfs
 import vcs
 
 {.push gcsafe.}

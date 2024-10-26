@@ -1,6 +1,6 @@
 import std/[macros, macrocache, json, options, tables, genasts]
 import misc/[custom_logger, custom_async, util, array_buffer, id]
-import platform/filesystem
+import vfs
 
 logCategory "wasi"
 
@@ -241,7 +241,7 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
     log lvlError, &"Failed to load wasm binary from array buffer: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return WasmModule.none
 
-proc newWasmModule*(path: string, importsOld: seq[WasmImports], fs: Filesystem): Future[Option[WasmModule]] {.async.} =
+proc newWasmModule*(path: string, importsOld: seq[WasmImports], vfs: VFS): Future[Option[WasmModule]] {.async.} =
   try:
     var allFunctions: seq[WasmHostProc] = @[]
     for imp in importsOld:
@@ -251,7 +251,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports], fs: Filesystem):
 
     var content: string
     try:
-      content = await fs.loadFileAsync(path)
+      content = await vfs.read(path, {Binary})
 
       if content.len == 0:
         log lvlError, &"Failed to load wasm module file {path}"

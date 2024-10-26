@@ -4,13 +4,11 @@ import misc/[util, rect_utils, myjsonutils, disposable_ref]
 import selector_popup_builder, layout, selector_popup
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
-import platform/filesystem
 
 {.push gcsafe.}
 
 proc pushSelectorPopupImpl(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
-  let fs = ({.gcsafe.}: fs)
-  var popup = newSelectorPopup(self.services, fs, builder.scope, builder.finder, builder.previewer.toDisposableRef)
+  var popup = newSelectorPopup(self.services, builder.scope, builder.finder, builder.previewer.toDisposableRef)
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
   popup.previewScale = builder.previewScale

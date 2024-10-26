@@ -4,8 +4,8 @@ import misc/[custom_async, custom_logger, util, myjsonutils, disposable_ref]
 import text/[text_document, text_editor]
 import scripting/expose
 import workspaces/workspace
-import finder/[finder, previewer, workspace_file_previewer]
-import platform/[platform, filesystem]
+import finder/[finder, previewer, file_previewer]
+import platform/[platform]
 import service, dispatch_tables, platform_service
 import selector_popup, vcs, layout
 
@@ -19,46 +19,50 @@ proc getVCSService(): Option[VCSService] =
 static:
   addInjector(VCSService, getVCSService)
 
-proc getChangedFilesFromGitAsync(self: VCSService, workspace: Workspace, all: bool): Future[ItemList] {.async.} =
+proc getChangedFilesFromGitAsync(self: VCSService, workspace: Workspace, all: bool): Future[ItemList] {.async: (raises: []).} =
   let vcsList = self.getAllVersionControlSystems()
   var items = newSeq[FinderItem]()
 
   for vcs in vcsList:
-    let fileInfos = await vcs.getChangedFiles()
+    try:
+      let fileInfos = await vcs.getChangedFiles()
 
-    for info in fileInfos:
-      let (directory, name) = info.path.splitPath
-      var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
+      for info in fileInfos:
+        let (directory, name) = info.path.splitPath
+        var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
 
-      if relativeDirectory == ".":
-        relativeDirectory = ""
+        if relativeDirectory == ".":
+          relativeDirectory = ""
 
-      if info.stagedStatus != None and info.stagedStatus != Untracked:
-        var info1 = info
-        info1.unstagedStatus = None
+        if info.stagedStatus != None and info.stagedStatus != Untracked:
+          var info1 = info
+          info1.unstagedStatus = None
 
-        var info2 = info
-        info2.stagedStatus = None
+          var info2 = info
+          info2.stagedStatus = None
 
-        items.add FinderItem(
-          displayName: $info1.stagedStatus & $info1.unstagedStatus & " " & name,
-          data: $ %info1,
-          detail: relativeDirectory & "\t" & vcs.root,
-        )
-        items.add FinderItem(
-          displayName: $info2.stagedStatus & $info2.unstagedStatus & " " & name,
-          data: $ %info2,
-          detail: relativeDirectory & "\t" & vcs.root,
-        )
-      else:
-        items.add FinderItem(
-          displayName: $info.stagedStatus & $info.unstagedStatus & " " & name,
-          data: $ %info,
-          detail: relativeDirectory & "\t" & vcs.root,
-        )
+          items.add FinderItem(
+            displayName: $info1.stagedStatus & $info1.unstagedStatus & " " & name,
+            data: $ %info1,
+            detail: relativeDirectory & "\t" & vcs.root,
+          )
+          items.add FinderItem(
+            displayName: $info2.stagedStatus & $info2.unstagedStatus & " " & name,
+            data: $ %info2,
+            detail: relativeDirectory & "\t" & vcs.root,
+          )
+        else:
+          items.add FinderItem(
+            displayName: $info.stagedStatus & $info.unstagedStatus & " " & name,
+            data: $ %info,
+            detail: relativeDirectory & "\t" & vcs.root,
+          )
 
-    if not all:
-      break
+      if not all:
+        break
+
+    except CatchableError:
+      log lvlError, &"Failed to get changed files from {vcs.root}"
 
   return newItemList(items)
 
@@ -128,8 +132,7 @@ proc revertSelectedFileAsync(popup: SelectorPopup, self: VCSService,
 proc diffStagedFileAsync(self: VCSService, workspace: Workspace, path: string): Future[void] {.async.} =
   log lvlInfo, fmt"Diff staged '({path})'"
 
-  let stagedDocument = newTextDocument(self.services, self.fs, path, load = false,
-    workspaceFolder = workspace.some, createLanguageServer = false)
+  let stagedDocument = newTextDocument(self.services, path, load = false, createLanguageServer = false)
   stagedDocument.staged = true
   stagedDocument.readOnly = true
 
@@ -147,11 +150,10 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   let source = newAsyncCallbackDataSource () => self.getChangedFilesFromGitAsync(workspace, all)
   var finder = newFinder(source, filterAndSort=true)
 
-  let previewer = newWorkspaceFilePreviewer(workspace, self.fs, self.services,
+  let previewer = newFilePreviewer(self.vfs, self.services,
     openNewDocuments=true)
 
-  var popup = newSelectorPopup(self.services, self.fs, "git".some, finder.some,
-    previewer.Previewer.toDisposableRef.some)
+  var popup = newSelectorPopup(self.services, "git".some, finder.some, previewer.Previewer.toDisposableRef.some)
 
   popup.scale.x = 1
   popup.scale.y = 0.9

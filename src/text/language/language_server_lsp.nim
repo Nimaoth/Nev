@@ -1,8 +1,7 @@
 import std/[strutils, options, json, tables, uri, strformat, sequtils, typedthreads]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process]
-import platform/filesystem
-import language_server_base, app_interface, config_provider, lsp_client, document, service
+import language_server_base, app_interface, config_provider, lsp_client, document, service, vfs, vfs_service
 import workspaces/workspace as ws
 
 import nimsumtree/buffer
@@ -20,6 +19,9 @@ type LanguageServerLSP* = ref object of LanguageServer
   thread: Thread[LSPClient]
   serverCapabilities*: ServerCapabilities
   fullDocumentSync: bool = false
+
+  vfs: VFS
+  localVfs: VFS
 
 var languageServers = initTable[string, LanguageServerLSP]()
 
@@ -109,7 +111,9 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
         return lsp.LanguageServer.some
 
     {.gcsafe.}:
-      let configs = gServices.getService(ConfigService).get
+      let services = gServices
+
+    let configs = services.getService(ConfigService).get
 
     let config = configs.getOption("lsp." & languageId, newJObject())
     if config.isNil:
@@ -132,7 +136,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
     let workspaceInfo = if workspace.getSome(workspace):
-      workspace.info.await.some
+      workspace.info.some
     else:
       ws.WorkspaceInfo.none
 
@@ -143,6 +147,8 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     lsp.initializedFuture = newFuture[bool]("lsp.initializedFuture")
     {.gcsafe.}:
       languageServers[languageId] = lsp
+    lsp.vfs = services.getService(VFSService).get.vfs
+    lsp.localVfs = lsp.vfs.getVFS("local://").vfs # todo
 
     asyncSpawn lsp.handleWorkspaceConfigurationRequests()
     asyncSpawn lsp.handleMessages()
@@ -179,6 +185,10 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
   except:
     return LanguageServer.none
 
+proc toVfsPath(self: LanguageServerLSP, lspPath: string): string =
+  let localPath = lspPath.decodeUrl.parseUri.path.normalizePathUnix
+  return self.localVfs.normalize(localPath)
+
 method start*(self: LanguageServerLSP): Future[void] = discard
 method stop*(self: LanguageServerLSP) {.gcsafe, raises: [].} =
   log lvlInfo, fmt"Stopping language server for '{self.languageId}'"
@@ -196,7 +206,7 @@ template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
   block:
     if parsedResponse.asLocation().getSome(loc):
       @[Definition(
-        filename: loc.uri.decodeUrl.parseUri.path.normalizePathUnix,
+        filename: self.toVfsPath(loc.uri),
         location: (line: loc.`range`.start.line, column: loc.`range`.start.character)
       )]
 
@@ -204,7 +214,7 @@ template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
       var res = newSeq[Definition]()
       for location in locations:
         res.add Definition(
-          filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix,
+          filename: self.toVfsPath(location.uri),
           location: (line: location.`range`.start.line, column: location.`range`.start.character)
         )
       res
@@ -213,7 +223,7 @@ template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
       var res = newSeq[Definition]()
       for location in locations:
         res.add Definition(
-          filename: location.targetUri.decodeUrl.parseUri.path.normalizePathUnix,
+          filename: self.toVfsPath(location.targetUri),
           location: (
             line: location.targetSelectionRange.start.line,
             column: location.targetSelectionRange.start.character
@@ -313,7 +323,7 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
     var res = newSeq[Definition]()
     for location in locations:
       res.add Definition(
-        filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix,
+        filename: self.toVfsPath(location.uri),
         location: (line: location.`range`.start.line, column: location.`range`.start.character)
       )
     return res
@@ -456,7 +466,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
         location: (line: r.range.start.line, column: r.range.start.character),
         name: r.name,
         symbolType: r.kind.toInternalSymbolKind,
-        filename: filename,
+        filename: self.localVfs.normalize(filename),
       )
 
       for child in r.children:
@@ -464,7 +474,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
           location: (line: child.range.start.line, column: child.range.start.character),
           name: child.name,
           symbolType: child.kind.toInternalSymbolKind,
-          filename: filename,
+          filename: self.localVfs.normalize(filename),
         )
 
 
@@ -476,7 +486,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
         location: (line: r.location.range.start.line, column: r.location.range.start.character),
         name: r.name,
         symbolType: symbolKind,
-        filename: r.location.uri.decodeUrl.parseUri.path.normalizePathUnix,
+        filename: self.toVfsPath(r.location.uri),
       )
 
   return completions
@@ -499,9 +509,9 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
     for r in symbols:
       let (path, location) = if r.location.asLocation().getSome(location):
         let cursor = (line: location.range.start.line, column: location.range.start.character)
-        (location.uri.parseUri.path.decodeUrl.normalizePathUnix, cursor.some)
+        (self.toVfsPath(location.uri), cursor.some)
       elif r.location.asUriObject().getSome(uri):
-        (uri.uri.parseUri.path.decodeUrl.normalizePathUnix, Cursor.none)
+        (self.toVfsPath(uri.uri), Cursor.none)
       else:
         log lvlError, fmt"Failed to parse workspace symbol location: {r.location}"
         continue
@@ -523,7 +533,7 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
         location: (line: r.location.range.start.line, column: r.location.range.start.character),
         name: r.name,
         symbolType: symbolKind,
-        filename: r.location.uri.parseUri.path.decodeUrl.normalizePathUnix,
+        filename: self.toVfsPath(r.location.uri),
       )
 
   else:
@@ -573,19 +583,19 @@ method connect*(self: LanguageServerLSP, document: Document) =
     var handle = new Id
     handle[] = document.onLoaded.subscribe proc(document: TextDocument): void =
       document.onLoaded.unsubscribe handle[]
-      asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
+      asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.localizedPath, document.contentString)
   else:
-    asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.fullPath, document.contentString)
+    asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.localizedPath, document.contentString)
 
   let onEditHandle = document.onEdit.subscribe proc(args: auto): void {.gcsafe, raises: [].} =
-    # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
+    # debugf"TEXT INSERTED {args.document.localizedPath}:{args.location}: {args.text}"
     # todo: we should batch these, as onEdit can be called multiple times per frame
     # especially for full document sync
     let version = args.document.buffer.history.versions.high
-    let fullPath = args.document.fullPath
+    let localizedPath = args.document.localizedPath
 
     if self.fullDocumentSync:
-      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (fullPath, version, @[], args.document.contentString)
+      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (localizedPath, version, @[], args.document.contentString)
     else:
       var c = args.document.buffer.visibleText.cursorT(Point)
       # todo: currently relies on edits being sorted
@@ -594,7 +604,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
         let text = c.slice(Point.init(it.new.last.line, it.new.last.column))
         TextDocumentContentChangeEvent(range: language_server_base.toLspRange(it.old), text: $text)
       )
-      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (fullPath, version, changes, "")
+      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (localizedPath, version, changes, "")
 
   self.documentHandles.add (document.Document, onEditHandle)
 
@@ -614,8 +624,8 @@ method disconnect*(self: LanguageServerLSP, document: Document) {.gcsafe, raises
     self.documentHandles.removeSwap i
     break
 
-  # asyncSpawn self.client.notifyClosedTextDocument(document.fullPath)
-  asyncSpawn self.client.notifyTextDocumentClosedChannel.send(document.fullPath)
+  # asyncSpawn self.client.notifyClosedTextDocument(document.localizedPath)
+  asyncSpawn self.client.notifyTextDocumentClosedChannel.send(document.localizedPath)
 
   if self.documentHandles.len == 0:
     self.stop()

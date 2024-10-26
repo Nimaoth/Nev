@@ -44,6 +44,7 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Configuration](docs/configuration.md)
 - [Finders](docs/finders.md)
 - [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
+- [Virtual file system](docs/virtual_file_system.md)
 
 ## Screenshots
 

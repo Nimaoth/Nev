@@ -18,8 +18,7 @@ proc newDataPreviewer*(services: Services, language = string.none,
 
   new result
 
-  result.tempDocument = newTextDocument(services, fs=nil, language=language,
-    createLanguageServer=false)
+  result.tempDocument = newTextDocument(services, language=language, createLanguageServer=false)
   result.tempDocument.readOnly = true
   result.getPreviewTextImpl = getPreviewTextImpl
 

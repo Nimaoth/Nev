@@ -46,7 +46,7 @@ import ui/widget_builders
 import text/language/language_server
 import app
 
-import platform/[platform_externc, filesystem]
+import platform/[platform_externc]
 
 # Do this after every import
 # Don't remove those imports, they are needed by generatePluginBindings

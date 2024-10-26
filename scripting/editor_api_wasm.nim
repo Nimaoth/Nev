@@ -105,20 +105,6 @@ proc getHostOs*(): string {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_loadApplicationFile_Option_string_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc loadApplicationFile*(path: string): Option[string] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_loadApplicationFile_Option_string_App_string_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_toggleShowDrawnNodes_void_App_wasm(arg: cstring): cstring {.importc.}
 proc toggleShowDrawnNodes*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
@@ -226,16 +212,6 @@ proc addScriptAction*(name: string; docs: string = "";
   argsJson.add context.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_bool_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_openLocalWorkspace_void_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc openLocalWorkspace*(path: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add path.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openLocalWorkspace_void_App_string_wasm(
       argsJsonString.cstring)
 
 
@@ -457,19 +433,6 @@ proc createFile*(path: string) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_mountVfs_void_App_string_string_JsonNode_wasm(arg: cstring): cstring {.
-    importc.}
-proc mountVfs*(parentPath: string; prefix: string; config: JsonNode) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add parentPath.toJson()
-  argsJson.add prefix.toJson()
-  argsJson.add config.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_mountVfs_void_App_string_string_JsonNode_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_browseKeybinds_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
     importc.}
 proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
@@ -581,36 +544,17 @@ proc installTreesitterParser*(language: string; host: string = "github.com") {.
       argsJsonString.cstring)
 
 
-proc editor_exploreFiles_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc exploreFiles*(root: string = "") {.gcsafe, raises: [].} =
+proc editor_exploreFiles_void_App_string_bool_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc exploreFiles*(root: string = ""; showVFS: bool = false;
+                   normalize: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add root.toJson()
+  argsJson.add showVFS.toJson()
+  argsJson.add normalize.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreFiles_void_App_string_wasm(
+  let res {.used.} = editor_exploreFiles_void_App_string_bool_bool_wasm(
       argsJsonString.cstring)
-
-
-proc editor_exploreUserConfigDir_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exploreUserConfigDir*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreUserConfigDir_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_exploreAppConfigDir_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exploreAppConfigDir*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreAppConfigDir_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_exploreHelp_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exploreHelp*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_exploreHelp_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_exploreWorkspacePrimary_void_App_wasm(arg: cstring): cstring {.
@@ -644,16 +588,6 @@ proc openNextEditor*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_openNextEditor_void_App_wasm(argsJsonString.cstring)
-
-
-proc editor_setGithubAccessToken_void_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc setGithubAccessToken*(token: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add token.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setGithubAccessToken_void_App_string_wasm(
-      argsJsonString.cstring)
 
 
 proc editor_reloadConfig_void_App_bool_wasm(arg: cstring): cstring {.importc.}

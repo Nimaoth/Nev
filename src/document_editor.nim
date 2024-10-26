@@ -1,7 +1,7 @@
 import std/[json, tables, options, sugar, sets]
 import vmath, bumpy
 import misc/[event, custom_logger, id, custom_async, util, array_set]
-import platform/[platform, filesystem]
+import platform/[platform]
 import scripting/expose
 import document, events, input, service, platform_service, dispatch_tables
 
@@ -23,7 +23,6 @@ type
     onMarkedDirty*: Event[void]
     mDirty: bool ## Set to true to trigger rerender
     active: bool
-    fs*: Filesystem
 
   DocumentFactory* = ref object of RootObj
   DocumentEditorFactory* = ref object of RootObj

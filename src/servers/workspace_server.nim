@@ -2,7 +2,6 @@ import std/[os, asynchttpserver, strutils, strformat, uri, asyncfile, json, suga
 import glob
 import misc/[custom_async, util, myjsonutils, custom_logger]
 import router, server_utils
-import platform/filesystem
 import compilation_config
 
 logCategory "workspace"
