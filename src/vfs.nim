@@ -40,6 +40,7 @@ type
 
 proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string]
 proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {.async: (raises: [IOError]).}
+proc readRope*(self: VFS, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).}
 proc write*(self: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).}
 proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).}
 proc delete*(self: VFS, path: string): Future[bool] {.async: (raises: []).}
@@ -128,6 +129,9 @@ method name*(self: VFS): string {.base.} = &"VFS({self.prefix})"
 method readImpl*(self: VFS, path: string, flags: set[ReadFlag]): Future[string] {.base, async: (raises: [IOError]).} =
   raise newException(IOError, "Not implemented")
 
+method readRopeImpl*(self: VFS, path: string, rope: ptr Rope): Future[void] {.base, async: (raises: [IOError]).} =
+  raise newException(IOError, "Not implemented")
+
 method writeImpl*(self: VFS, path: string, content: string): Future[void] {.base, async: (raises: [IOError]).} =
   discard
 
@@ -191,6 +195,9 @@ method name*(self: VFSLink): string = &"VFSLink({self.prefix}, {self.target.name
 method readImpl*(self: VFSLink, path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
   return self.target.read(self.targetPrefix // path, flags).await
 
+method readRopeImpl*(self: VFSLink, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
+  self.target.readRope(self.targetPrefix // path, rope).await
+
 method writeImpl*(self: VFSLink, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
   await self.target.write(self.targetPrefix // path, content)
 
@@ -231,6 +238,13 @@ method readImpl*(self: VFSInMemory, path: string, flags: set[ReadFlag]): Future[
     debugf"VFSInMemory.read({path})"
   self.files.withValue(path, file):
     return file[]
+  raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
+
+method readRopeImpl*(self: VFSInMemory, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
+  when debugLogVfs:
+    debugf"VFSInMemory.read({path})"
+  self.files.withValue(path, file):
+    rope[] = Rope.new(file[])
   raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
 
 method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
@@ -318,6 +332,12 @@ proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {
     debugf"[{self.name}] '{self.prefix}' read({path})"
   let (vfs, path) = self.getVFS(path)
   return await vfs.readImpl(path, flags)
+
+proc readRope*(self: VFS, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
+  when debugLogVfs:
+    debugf"[{self.name}] '{self.prefix}' readRope({path})"
+  let (vfs, path) = self.getVFS(path)
+  await vfs.readRopeImpl(path, rope)
 
 proc write*(self: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
   when debugLogVfs:

@@ -1,5 +1,5 @@
 import std/[tables, json, options, strformat, strutils]
-import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, rope_utils]
+import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils]
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
@@ -26,6 +26,7 @@ type
     currentLocation: Option[Cursor]
     currentStaged: bool
     currentDiff: bool
+    currentLoadTask: Future[void]
 
 proc newFilePreviewer*(vfs: VFS, services: Services,
     openNewDocuments: bool = false, reuseExistingDocuments: bool = true): FilePreviewer =
@@ -112,7 +113,7 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
 
   elif self.tempDocument.isNotNil:
     logScope lvlInfo, &"[loadAsync] Show preview using temp document for '{path}'"
-    var content = ""
+    var content = Rope.new()
 
     var fileKind = if self.currentIsFile.getSome(isFile):
       if isFile:
@@ -128,10 +129,10 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
     case fileKind
     of FileKind.File:
       try:
-        content = self.vfs.read(path).await
+        self.vfs.readRope(path, content.addr).await
       except IOError as e:
         log lvlError, &"Failed to load file: {e.msg}"
-        content = e.msg
+        content = Rope.new(e.msg)
 
     of FileKind.Directory:
       let listing = await self.vfs.getDirectoryListing(path)
@@ -150,11 +151,6 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
       log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
       return
 
-    var rope: Rope
-    if createRopeAsync(content.addr, rope.addr).await.getSome(errorIndex):
-      rope = Rope.new(&"Invalid utf-8 byte at {errorIndex}")
-      return
-
     if editor.document.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
       return
@@ -163,7 +159,7 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
       log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
       return
 
-    self.tempDocument.setFileAndContent(path, rope.move)
+    self.tempDocument.setFileAndContent(path, content.move)
     editor.setDocument(self.tempDocument)
 
   if location.getSome(location):
@@ -247,6 +243,9 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
   else:
     if self.triggerLoadTask.isNil:
       self.triggerLoadTask = startDelayed(100, repeat=false):
-        asyncSpawn self.loadAsync()
+        if self.currentLoadTask != nil:
+          self.currentLoadTask.cancelSoon()
+          self.currentLoadTask = nil
+        self.currentLoadTask = self.loadAsync()
     else:
       self.triggerLoadTask.reschedule()
