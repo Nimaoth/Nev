@@ -1,4 +1,4 @@
-import std/[tables, options, json, os, tempfiles, random]
+import std/[tables, options, json, os, random]
 import results
 import misc/[custom_async, custom_logger, myjsonutils, util]
 import scripting/expose
@@ -123,7 +123,7 @@ proc readFileSync*(self: VFSService, path: string): string {.expose("vfs").} =
 
 proc deleteFileSync*(self: VFSService, path: string) {.expose("vfs").} =
   try:
-    let deleted = waitFor self.vfs.delete(path)
+    discard waitFor self.vfs.delete(path)
   except IOError as e:
     log lvlError, &"Failed to delete file '{path}': {e.msg}"
 

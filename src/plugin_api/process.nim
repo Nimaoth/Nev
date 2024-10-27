@@ -1,9 +1,9 @@
-import std/[tables, options, json, os, strutils]
+import std/[options, json, strutils]
 import results
 import misc/[custom_async, custom_logger, myjsonutils, util, async_process]
 import scripting/[expose, scripting_base]
 import workspaces/workspace
-import service, dispatch_tables, vfs, vfs_local, vfs_service
+import service, dispatch_tables, vfs, vfs_service
 
 {.push gcsafe.}
 {.push raises: [].}

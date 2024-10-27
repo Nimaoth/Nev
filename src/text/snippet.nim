@@ -1,4 +1,4 @@
-import std/[strutils, sequtils, os, tables, options, unicode]
+import std/[strutils, sequtils, tables, options, unicode]
 import npeg
 import npeg/codegen
 import scripting_api

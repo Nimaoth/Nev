@@ -1,11 +1,10 @@
-import std/[os, options, unicode, strutils]
+import std/[os, options, unicode, strutils, streams, atomics]
+import nimsumtree/[rope, static_array]
 import misc/[custom_async, custom_logger, util, timer, regex]
 import vfs
 
 when defined(windows):
   import winim/lean
-
-import nimsumtree/[rope]
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -50,6 +49,66 @@ method readImpl*(self: VFSLocal, path: string, flags: set[ReadFlag]): Future[str
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
+proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref CatchableError, cancel: ptr Atomic[bool], threadDone: ptr Atomic[bool]]) =
+  try:
+    let s = newFileStream(args.path, fmRead, 1024)
+    defer:
+      s.close()
+
+    proc readImpl(buffer: var string, bytesToRead: int) {.gcsafe, raises: [].} =
+      if args.cancel[].load:
+        return
+
+      let len = buffer.len
+      buffer.setLen(len + bytesToRead)
+      try:
+        let bytesRead = s.readData(buffer[len].addr, bytesToRead)
+        buffer.setLen(len + bytesRead)
+      except CatchableError as e:
+        args.err[] = e
+        buffer.setLen(len)
+
+    var errorIndex = -1
+    var res = Rope.new(readImpl, errorIndex)
+    if res.isSome:
+      args.data[] = res.take
+    else:
+      args.err[] = newException(IOError, &"Invalid utf-8 byte at {errorIndex}")
+
+    args.threadDone[].store(true)
+
+  except CatchableError as e:
+    args.err[] = e
+
+method readRopeImpl*(self: VFSLocal, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+  if not fileExists(path):
+    raise newException(FileNotFoundError, &"Not found '{path}'")
+
+  try:
+    logScope lvlInfo, &"[loadFileRope] '{path}'"
+
+    var err: ref CatchableError = nil
+    var cancel: Atomic[bool]
+    var threadDone: Atomic[bool]
+    try:
+      await spawnAsync(loadFileRopeThread, (path, rope, err.addr, cancel.addr, threadDone.addr))
+    except CancelledError:
+      cancel.store(true)
+
+      while not threadDone.load:
+        try:
+          await sleepAsync(10.milliseconds)
+        except CancelledError:
+          discard
+
+    if err != nil:
+      raise newException(IOError, err.msg, err)
+
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
+
 method writeImpl*(self: VFSLocal, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
   if not path.isAbsolute:
     raise newException(IOError, &"Path not absolute '{path}'")
@@ -75,10 +134,20 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
     # todo: reimplement async
     let dir = path.splitPath.head
     createDir(dir)
-    writeFile(path, $content)
+
+    let s = openFileStream(path, fmWrite, 1024)
+    defer:
+      s.close()
+
     # var file = openAsync(path, fmWrite)
-    # for chunk in content.iterateChunks:
-    #   await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
+    var t = startTimer()
+    for chunk in content.iterateChunks:
+      # await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
+      s.writeData(chunk.startPtr, chunk.chars.len)
+      if t.elapsed.ms > 5:
+        await sleepAsync(10.milliseconds)
+        t = startTimer()
+
     # file.close()
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())

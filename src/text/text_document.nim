@@ -1064,7 +1064,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
     self.highlightQuery = query
   else:
-    log lvlWarn, fmt"No highlight queries found for '{self.languageId}'"
+    log lvlWarn, fmt"No highlight queries found for language '{self.languageId}' in '{self.filename}'"
 
   let errorQueryPath = &"app://languages/{self.languageId}/queries/errors.scm"
   if language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await.getSome(query):
@@ -1179,12 +1179,15 @@ method `$`*(self: TextDocument): string =
   return self.filename
 
 proc saveAsync(self:  TextDocument) {.async.} =
-  await self.vfs.write(self.filename, self.rope.slice())
-  self.onSaved.invoke()
+  try:
+    await self.vfs.write(self.filename, self.rope.slice())
+    self.onSaved.invoke()
+  except IOError as e:
+    log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
-  logScope lvlInfo, &"[save] '{self.filename}'"
+  log lvlInfo, &"[save] '{self.filename}'"
 
   if self.filename.len == 0:
     log lvlError, &"save: Missing filename"
@@ -1195,8 +1198,13 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
   self.appFile = app
 
-  # Todo: make optional
-  self.trimTrailingWhitespace()
+  let trimTrailingWhitespace = self.configProvider.getValue("text.trim-trailing-whitespace.enabled", true)
+  let maxFileSizeForTrim = self.configProvider.getValue("text.trim-trailing-whitespace.max-size", 1000000)
+  if trimTrailingWhitespace:
+    if self.rope.len <= maxFileSizeForTrim:
+      self.trimTrailingWhitespace()
+    else:
+      log lvlWarn, &"File is bigger than max size: {self.rope.len} > {maxFileSizeForTrim}"
 
   asyncSpawn self.saveAsync()
 
@@ -1253,20 +1261,18 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   self.isLoadingAsync = true
   self.readOnly = true
 
-  var data = ""
+  var rope: Rope = Rope.new()
   try:
-    data = await self.vfs.read(self.filename)
+    await self.vfs.readRope(self.filename, rope.addr)
   except IOError as e:
     log lvlError, &"[loadAsync] Failed to load file {self.filename}: {e.msg}\n{e.getStackTrace()}"
+    return
 
   self.onPreLoaded.invoke self
 
   if isReload:
-    self.replaceAll(data.move)
+    self.replaceAll(rope.move)
   else:
-    var rope: Rope
-    if createRopeAsync(data.addr, rope.addr).await.getSome(errorIndex):
-      rope = Rope.new(&"Invalid utf-8 byte at {errorIndex}")
     self.content = rope.move
 
   if self.vfs.getFileAttributes(self.filename).await.mapIt(it.writable).get(true):
