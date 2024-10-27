@@ -57,9 +57,9 @@ so e.g. `<C-w>x` and `<LEADER>wx` both work
 - [`choose-open`](finders.md#choose-open): Search for a file in open files.
 - [`choose-git-active-files`](finders.md#choose-git-active-files): Shows changed/added/deleted/untracked git files with a diff preview.
 - [`explore-files`](finders.md#explore-files): Open a file explorer for all workspace folders.
-- [`explore-workspace-primary`](finders.md#explore-workspace-primary): Open a file explorer for the primary workspace folder.
-- [`explore-user-config-dir`](finders.md#explore-user-config-dir): Search for config files in the user directory.
-- [`explore-app-config-dir`](finders.md#explore-app-config-dir): Search for config files that are installed with the editor.
+- [`explore-workspace`](finders.md#explore-workspace): Open a file explorer for the primary workspace folder.
+- [`explore-user-config`](finders.md#explore-user-config): Search for config files in the user directory.
+- [`explore-app-config`](finders.md#explore-app-config): Search for config files that are installed with the editor.
 - [`browse-keybinds`](finders.md#browse-keybinds): Search through current keybindings.
 - `logs`: show the log file
 - `load-normal-keybindings`: load "normal" keybindings (like vs code)
