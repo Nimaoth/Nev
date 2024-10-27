@@ -4,6 +4,30 @@ import misc/[timer]
 
 embedSource()
 
+proc exploreRoot*() {.expose("explore-root").} =
+  ## Open file explorer in the root of the VFS
+  exploreFiles("")
+
+proc exploreWorkspace*(index: int = 0) {.expose("explore-workspace").} =
+  ## Open file explorer in the root of the first (nth) workspace (ws<index>://)
+  exploreFiles(&"ws{index}://")
+
+proc exploreUserConfig*() {.expose("explore-user-config").} =
+  ## Open file explorer in the user config directory (home://.nev)
+  exploreFiles("home://.nev")
+
+proc exploreAppConfig*() {.expose("explore-app-config").} =
+  ## Open file explorer in the app config directory (app://config)
+  exploreFiles("app://config")
+
+proc exploreWorkspaceConfig*() {.expose("explore-workspace-config").} =
+  ## Open file explorer in the workspace config directory (ws0://.nev)
+  exploreFiles("ws0://.nev")
+
+proc exploreHelp*() {.expose("explore-help").} =
+  ## Open file explorer in the documentation directory (app://docs)
+  exploreFiles("app://docs")
+
 proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default-keybindings").} =
   let t = startTimer()
   defer:
@@ -109,13 +133,15 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gl", "choose-location"
   addCommand "editor", "<LEADER>gg", "choose-git-active-files", false
   addCommand "editor", "<LEADER>GG", "choose-git-active-files", true
-  addCommand "editor", "<LEADER>ge", "explore-files", ""
+
+  addCommand "editor", "<LEADER>ge", "explore-root"
   addCommand "editor", "<LEADER>gv", "explore-files", "", showVFS=true
-  addCommand "editor", "<LEADER>gw", "explore-files", "ws0://"
+  addCommand "editor", "<LEADER>gw", "explore-workspace"
   addCommand "editor", "<LEADER>gW", "explore-files", "ws0://".normalizePath
-  addCommand "editor", "<LEADER>gu", "explore-files", "home://.nev"
-  addCommand "editor", "<LEADER>ga", "explore-files", "app://config"
-  addCommand "editor", "<LEADER>gh", "explore-files", "app://docs"
+  addCommand "editor", "<LEADER>gu", "explore-user-config"
+  addCommand "editor", "<LEADER>ga", "explore-app-config"
+  addCommand "editor", "<LEADER>gh", "explore-help"
+
   addCommand "editor", "<LEADER>gp", "explore-current-file-directory"
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommand "editor", "<LEADER>gk", "browse-keybinds"

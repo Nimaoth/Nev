@@ -74,31 +74,44 @@ The following GIF shows an example of using this command after making some modif
 
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git.gif)
 
-## `explore-files`
+## `explore-files <path>`
 ### Custom context: `popup.selector.file-explorer`
-Open a file explorer for all workspace folders.
+Open a file explorer in the selected directory. The path is a path in the virtual file system.
+
+Examples:
+- `explore-files "app://config"` - Explore config files that are installed with the editor.
+- `explore-files "home://.nev"` - Explore config files in the user home directory.
+- `explore-files "ws0://"` - Explore files in first workspace folder.
+- `explore-files ""` - Explore the root of the VFS.
 
 Custom commands:
 - `go-up` (default: `<C-UP>` or `<C-r>`): Go to parent directory
+- `add-workspace-folder` (default: `<C-a>`): Add to selected folder to the workspace
+- `remove-workspace-folder` (default: `<C-x>`): Remove the selected folder from the workspace
 
 The default confirm behaviour is to enter folders and open files.
 The preview shows the file content for files and the list of sub files/folders for folders.
 
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/explore-files.png)
 
-## `explore-workspace-primary`
+## `explore-workspace`
 ### Custom context: `popup.selector.file-explorer`
 Open a file explorer for the primary workspace folder.
 Same usage as `explore-files`
 
-## `explore-user-config-dir`
+## `explore-user-config`
 ### Custom context: `popup.selector.file-explorer`
-Search for config files in the user directory.
+Explore config files in the user directory.
 Same usage as `explore-files`
 
-## `explore-app-config-dir`
+## `explore-app-config`
 ### Custom context: `popup.selector.file-explorer`
-Search for config files that are installed with the editor.
+Explore config files that are installed with the editor.
+Same usage as `explore-files`
+
+## `explore-workspace-config`
+### Custom context: `popup.selector.file-explorer`
+Explore config files in the workspace primary workspace folder.
 Same usage as `explore-files`
 
 ## `explore-help`
