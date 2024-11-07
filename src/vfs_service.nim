@@ -28,6 +28,7 @@ method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async
   self.vfs.mount("", VFSLink(target: localVfs, targetPrefix: ""))
   self.vfs.mount("app://", VFSLink(target: localVfs, targetPrefix: getAppDir().normalizeNativePath))
   self.vfs.mount("temp://", VFSLink(target: localVfs, targetPrefix: getTempDir().normalizeNativePath))
+  self.vfs.mount("ed://", VFSInMemory())
   self.vfs.mount("plugs://", VFSNull())
   self.vfs.mount("ws://", VFS())
 

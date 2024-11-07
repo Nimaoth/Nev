@@ -236,6 +236,20 @@ proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) =
     document.deinit()
     self.documents.del(document)
 
+proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
+  log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"
+
+  var hasAnotherEditor = false
+  for id, editor in self.editors.pairs:
+    if editor.getDocument() == document:
+      hasAnotherEditor = true
+      break
+
+  if not hasAnotherEditor:
+    log lvlInfo, fmt"Document has no other editors, closing it."
+    document.deinit()
+    self.documents.del(document)
+
 ###########################################################################
 
 proc getDocumentEditorService(): Option[DocumentEditorService] =

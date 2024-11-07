@@ -577,7 +577,8 @@ proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool
             else:
               continue
 
-          if editor.getLine(selection.first.line)[selection.first.column] notin Whitespace:
+          let line = editor.getLine(selection.first.line)
+          if selection.first.column >= line.len or line[selection.first.column] notin Whitespace:
             res = cursor
             break
       # echo res, ", ", it, ", ", which
@@ -1165,16 +1166,16 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   addTextCommandBlock "normal", "o":
     editor.moveLast "line", Both
+    editor.addNextCheckpoint "insert"
     editor.insertText "\n"
     editor.setMode "insert"
-    editor.addNextCheckpoint "insert"
 
   addTextCommandBlock "normal", "O":
     editor.moveFirst "line", Both
+    editor.addNextCheckpoint "insert"
     editor.insertText "\n", autoIndent=false
     editor.vimMoveCursorLine -1
     editor.setMode "insert"
-    editor.addNextCheckpoint "insert"
 
   # Text object motions
   addSubCommandWithCount "", "move", "w", "move-selection-next", "vim-word", false, true
