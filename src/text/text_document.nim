@@ -1181,6 +1181,8 @@ method `$`*(self: TextDocument): string =
 proc saveAsync(self:  TextDocument) {.async.} =
   try:
     await self.vfs.write(self.filename, self.rope.slice())
+    self.isBackedByFile = true
+    self.lastSavedRevision = self.undoableRevision
     self.onSaved.invoke()
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
@@ -1205,11 +1207,10 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
       self.trimTrailingWhitespace()
     else:
       log lvlWarn, &"File is bigger than max size: {self.rope.len} > {maxFileSizeForTrim}"
+  else:
+    log lvlWarn, &"Don't trim whitespace"
 
   asyncSpawn self.saveAsync()
-
-  self.isBackedByFile = true
-  self.lastSavedRevision = self.undoableRevision
 
 proc autoDetectIndentStyle(self: TextDocument) =
   let maxSamples = self.configProvider.getValue("text.auto-detect-indent.samples", 50)

@@ -45,7 +45,9 @@ proc newAsyncProcessConnection*(path: string, args: seq[string]):
 
   var fut = newFuture[void]("newAsyncProcessConnection")
   process.onRestarted = proc(): Future[void] =
-    fut.complete()
+    if fut != nil:
+      fut.complete()
+    fut = nil
     return asyncVoid()
 
   await fut

@@ -342,6 +342,10 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.document.onSaved.unsubscribe(self.savedHandle)
     self.document.onLanguageServerAttached.unsubscribe(self.languageServerAttachedHandle)
 
+    let document = self.document
+    self.document = nil
+    self.editors.tryCloseDocument(document)
+
     self.selectionHistory.clear()
     self.styledTextOverrides.clear()
     self.customHighlights.clear()
@@ -352,8 +356,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.previousBaseIndex = 0
     self.lastRenderedLines.setLen 0
     self.currentSnippetData = SnippetData.none
-
-  self.document = nil
 
 proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   assert document.isNotNil

@@ -52,6 +52,15 @@ proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.a
 proc copyFile*(self: VFS, src: string, dest: string): Future[void] {.async: (raises: [IOError]).}
 proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).}
 
+proc isVfsPath*(path: string): bool =
+  let index = path.find("://")
+  if index == -1:
+    return false
+  let index2 = path.find(":")
+  if index2 != index:
+    return
+  return true
+
 proc normalizePathUnix*(path: string): string =
   var stripLeading = false
   var stripTrailing = true

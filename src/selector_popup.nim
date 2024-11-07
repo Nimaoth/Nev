@@ -19,6 +19,7 @@ type
     layout*: LayoutService
     events*: EventHandlerService
     plugins: PluginService
+    editors: DocumentEditorService
     textEditor*: TextDocumentEditor
     previewEditor*: TextDocumentEditor
     selected*: int
@@ -76,12 +77,10 @@ method deinit*(self: SelectorPopup) {.gcsafe, raises: [].} =
   if self.finder.isNotNil:
     self.finder.deinit()
 
-  let document = self.textEditor.document
-  self.textEditor.deinit()
-  document.deinit()
+  self.editors.closeEditor(self.textEditor)
 
   if self.previewEditor.isNotNil:
-    self.previewEditor.deinit()
+    self.editors.closeEditor(self.previewEditor)
 
   self[] = default(typeof(self[]))
 
@@ -367,8 +366,9 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.layout = services.getService(LayoutService).get
   popup.events = services.getService(EventHandlerService).get
   popup.plugins = services.getService(PluginService).get
+  popup.editors = services.getService(DocumentEditorService).get
   popup.scale = vec2(0.5, 0.5)
-  let document = newTextDocument(services, createLanguageServer=false)
+  let document = newTextDocument(services, createLanguageServer=false, filename="ed://selector_popup_search_bar")
   popup.textEditor = newTextEditor(document, services)
   popup.textEditor.usage = "search-bar"
   popup.textEditor.setMode("insert")
@@ -390,7 +390,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
 
     # todo: make sure this previewDocument is destroyed, we're overriding it right now
     # in the previewer with a temp document or an existing one
-    let previewDocument = newTextDocument(services, createLanguageServer=false)
+    let previewDocument = newTextDocument(services, createLanguageServer=false, filename="ed://selector_popup_preview")
     previewDocument.readOnly = true
 
     popup.previewEditor = newTextEditor(previewDocument, services)

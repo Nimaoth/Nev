@@ -52,6 +52,11 @@ method readImpl*(self: VFSLocal, path: string, flags: set[ReadFlag]): Future[str
 proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref CatchableError, cancel: ptr Atomic[bool], threadDone: ptr Atomic[bool]]) =
   try:
     let s = newFileStream(args.path, fmRead, 1024)
+    if s.isNil:
+      args.err[] = newException(IOError, &"Failed to open file for reading: {args.path}")
+      args.threadDone[].store(true)
+      return
+
     defer:
       s.close()
 

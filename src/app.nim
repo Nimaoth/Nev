@@ -1302,12 +1302,14 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   self.layout.pushPopup popup
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
-  let fullPath = if path.isAbsolute:
+  let fullPath = if path.isVfsPath:
+    path
+  elif path.isAbsolute:
     path.normalizeNativePath
   else:
     path.absolutePath.catch().valueOr(path).normalizePathUnix
 
-  log lvlInfo, fmt"createFile: '{path}'"
+  log lvlInfo, fmt"createFile: '{fullPath}'"
 
   let document = self.editors.openDocument(fullPath, load=false).getOr:
     log(lvlError, fmt"Failed to create file {path}")
@@ -1949,6 +1951,10 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
       source.retrigger()
       return false
 
+  popup.addCustomCommand "refresh", proc(popup: SelectorPopup, args: JsonNode): bool =
+    source.retrigger()
+    return false
+
   popup.addCustomCommand "enter-normalized", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
@@ -2003,6 +2009,14 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
       source.retrigger()
 
     return true
+
+  popup.addCustomCommand "create-file", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      self.commandLine("create-file \\" & currentDirectory[])
 
   self.layout.pushPopup popup
 
