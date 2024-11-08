@@ -94,7 +94,7 @@ method init*(self: ScriptContextWasmComp, path: string, vfs: VFS): Future[void] 
 
   block:
     proc cb(ctx: pointer, params: openArray[ComponentValT], results: var openArray[ComponentValT]) =
-      results[0] = Selection().toVal
+      results[0] = Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9)).toVal
       echo &"[host][get-selection]:\n     {params}\n  -> {results}"
 
     echo "func new"
