@@ -46,6 +46,12 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
   for file2 in listing.files:
     if not file2.endsWith(".wasm"):
       continue
+    if file2.endsWith(".m.wasm"):
+      continue
+    if file2.endsWith(".me.wasm"):
+      continue
+    if file2.endsWith(".c.wasm"):
+      continue
 
     let file = path // file2
 

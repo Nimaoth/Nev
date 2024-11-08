@@ -20,7 +20,7 @@ import misc/async_process
 when enableAst:
   import ast/[model, project]
 
-import scripting/scripting_wasm
+import scripting/[scripting_wasm, scripting_wasm_components]
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
@@ -112,6 +112,7 @@ type
     logBuffer = ""
 
     wasmScriptContext*: ScriptContextWasm
+    wasmCompScriptContext*: ScriptContextWasmComp
     initializeCalled: bool
 
     statusBarOnTop*: bool
@@ -245,6 +246,25 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
         log(lvlInfo, fmt"post init wasm configs ({t2.elapsed.ms}ms)")
     except CatchableError:
       log lvlError, &"Failed to load wasm configs: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
+    try:
+      log(lvlInfo, fmt"load wasm components")
+      self.wasmCompScriptContext = new ScriptContextWasmComp
+      # self.plugins.scriptContexts.add self.wasmCompScriptContext
+      self.wasmCompScriptContext.moduleVfs = VFS()
+      self.wasmCompScriptContext.vfs = self.vfs
+      self.vfs.mount("plugs://", self.wasmCompScriptContext.moduleVfs)
+
+      withScriptContext self.plugins, self.wasmCompScriptContext:
+        let t1 = startTimer()
+        await self.wasmCompScriptContext.init("app://config", self.vfs)
+        log(lvlInfo, fmt"init wasm components ({t1.elapsed.ms}ms)")
+
+        let t2 = startTimer()
+        # discard self.wasmCompScriptContext.postInitialize()
+        log(lvlInfo, fmt"post init wasm components ({t2.elapsed.ms}ms)")
+    except CatchableError:
+      log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
   self.runConfigCommands("wasm-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")

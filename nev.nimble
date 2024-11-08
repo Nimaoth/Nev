@@ -36,8 +36,8 @@ requires "https://github.com/Nimaoth/windy >= 0.0.2"
 requires "https://github.com/Nimaoth/wasm3 >= 0.1.15"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
-requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.16"
-requires "https://github.com/Nimaoth/nimwasmtime >= 0.1.8"
+requires "https://github.com/Nimaoth/nimtreesitter-api#498d284"
+requires "https://github.com/Nimaoth/nimwasmtime#c12a100"
 requires "https://github.com/Nimaoth/nimsumtree >= 0.3.7"
 
 # Use this to include all treesitter languages (takes longer to download)
@@ -152,6 +152,14 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm keybindings_plugin.nim"
   exec fmt"nimble buildNimConfigWasm harpoon.nim"
   exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
+
+task buildWasmComponent, "":
+  let name = "comp_test"
+  withDir "config":
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/{name}.m.wasm\" {getCommandLineParams()} ./{name}.nim"
+
+    exec &"wasm-tools component embed ../scripting/plugin_api.wit --world plugin ./wasm/{name}.m.wasm -o ./wasm/{name}.me.wasm"
+    exec &"wasm-tools component new ./wasm/{name}.me.wasm -o ./wasm/{name}.c.wasm --adapt ../scripting/wasi_snapshot_preview1.reactor.wasm"
 
 task flamegraph, "Perf/flamegraph":
   exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"

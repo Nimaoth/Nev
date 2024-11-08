@@ -1,0 +1,27 @@
+package nev:plugins;
+
+interface types {
+  record cursor {
+    line: s32,
+    column: s32,
+  }
+
+  record selection {
+    first: cursor,
+    last: cursor,
+  }
+}
+
+interface text-editor {
+  use types.{cursor, selection};
+  // set-selection: func(s: selection);
+  get-selection: func() -> selection;
+}
+
+world plugin {
+  use types.{cursor, selection};
+
+  import text-editor;
+
+  export init-plugin: func();
+}
