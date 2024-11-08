@@ -100,6 +100,7 @@
         "\\.java$": "java",
         "\\.(js|jsx)$": "javascript",
         "\\.json$": "json",
+        "\\.nev-session$": "json",
         "\\.lock$": "json",
         "\\.yml$": "yaml",
         "\\.nix$": "nix",
@@ -118,6 +119,7 @@
         "\\.scm$": "query",
         "\\.toml$": "toml",
         "\\.ps1$": "powershell",
+        "\\.wat$": "elisp",
         "\\.talon$": "talon",
         "/(vector|string|thread|iostream)$": "cpp",
         ".+/MSVC/.+/include(/.+?)*/[a-z0-9_]+$": "cpp",
@@ -460,6 +462,32 @@
                 "["
             ],
             "lineComment": "#"
+        },
+        "commonlisp": {
+            "treesitter": "tree-sitter-grammars/tree-sitter-commonlisp",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": ";",
+            "blockComment": [
+                "(;",
+                ";)"
+            ]
+        },
+        "elisp": {
+            "treesitter": "Wilfred/tree-sitter-elisp",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": ";"
         },
         "wit": {
             "treesitter": "liamwh/tree-sitter-wit",

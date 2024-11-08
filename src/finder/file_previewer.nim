@@ -1,5 +1,5 @@
 import std/[tables, json, options, strformat, strutils]
-import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils]
+import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils, array_set]
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
@@ -40,8 +40,13 @@ proc newFilePreviewer*(vfs: VFS, services: Services,
   result.tempDocument = newTextDocument(services, createLanguageServer=false)
   result.tempDocument.readOnly = true
 
+  result.editors.pinnedDocuments.incl result.tempDocument
+
 method deinit*(self: FilePreviewer) =
   logScope lvlInfo, &"[deinit] Destroying file previewer"
+
+  self.editors.pinnedDocuments.excl self.tempDocument
+
   if self.triggerLoadTask.isNotNil:
     self.triggerLoadTask.deinit()
   if self.tempDocument.isNotNil:
