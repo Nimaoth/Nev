@@ -31,6 +31,7 @@ type
     platform: Platform
     editors*: Table[EditorId, DocumentEditor]
     pinnedEditors*: HashSet[EditorId]
+    pinnedDocuments*: seq[Document]
     documents*: seq[Document]
     editorDefaults*: seq[DocumentEditor]
     onEditorRegistered*: Event[DocumentEditor]
@@ -47,6 +48,7 @@ method init*(self: DocumentEditorService): Future[Result[void, ref CatchableErro
   log lvlInfo, &"DocumentEditorService.init"
   self.platform = self.services.getService(PlatformService).get.platform
   assert self.platform != nil
+  self.pinnedEditors = initHashSet[EditorId]()
   return ok()
 
 method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
@@ -215,6 +217,24 @@ proc createEditorForDocument*(self: DocumentEditorService, document: Document): 
 
   discard result.get.onMarkedDirty.subscribe () => self.platform.requestRender()
 
+proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
+  log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"
+
+  if document in self.pinnedDocuments:
+    log lvlInfo, &"Document '{document.filename}' is pinned, don't close"
+    return
+
+  var hasAnotherEditor = false
+  for id, editor in self.editors.pairs:
+    if editor.getDocument() == document:
+      hasAnotherEditor = true
+      break
+
+  if not hasAnotherEditor:
+    log lvlInfo, fmt"Document has no other editors, closing it."
+    document.deinit()
+    self.documents.del(document)
+
 proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) =
   let document = editor.getDocument()
   log lvlInfo, fmt"closeEditor: '{editor.getDocument().filename}'"
@@ -225,30 +245,7 @@ proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) =
 
   editor.deinit()
 
-  var hasAnotherEditor = false
-  for id, editor in self.editors.pairs:
-    if editor.getDocument() == document:
-      hasAnotherEditor = true
-      break
-
-  if not hasAnotherEditor:
-    log lvlInfo, fmt"Document has no other editors, closing it."
-    document.deinit()
-    self.documents.del(document)
-
-proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
-  log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"
-
-  var hasAnotherEditor = false
-  for id, editor in self.editors.pairs:
-    if editor.getDocument() == document:
-      hasAnotherEditor = true
-      break
-
-  if not hasAnotherEditor:
-    log lvlInfo, fmt"Document has no other editors, closing it."
-    document.deinit()
-    self.documents.del(document)
+  self.tryCloseDocument(document)
 
 ###########################################################################
 
