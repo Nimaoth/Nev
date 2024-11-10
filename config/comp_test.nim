@@ -22,3 +22,12 @@ proc initPlugin() =
 
   echo "[guest] initPlugin"
   echo getSelection()
+
+  let r = newRope(ws"hello, what is going on today?")
+  echo r.slice(4, 14).debug()
+  echo r.slice(4, 14).text()
+
+  let r2 = getCurrentEditorRope()
+  let s = getSelection()
+  echo r2.slice(s.first.column, s.last.column).debug()
+  echo r2.slice(s.first.column, s.last.column).text()

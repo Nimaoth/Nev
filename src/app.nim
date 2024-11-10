@@ -251,6 +251,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
       log(lvlInfo, fmt"load wasm components")
       self.wasmCompScriptContext = new ScriptContextWasmComp
       # self.plugins.scriptContexts.add self.wasmCompScriptContext
+      self.wasmCompScriptContext.services = self.services
       self.wasmCompScriptContext.moduleVfs = VFS()
       self.wasmCompScriptContext.vfs = self.vfs
       self.vfs.mount("plugs://", self.wasmCompScriptContext.moduleVfs)

@@ -18,10 +18,25 @@ interface text-editor {
   get-selection: func() -> selection;
 }
 
+interface text {
+  use types.{cursor};
+
+  resource rope {
+    constructor(content: string);
+    clone: func() -> rope;
+    text: func() -> string;
+    debug: func() -> string;
+    slice: func(a: s64, b: s64) -> rope;
+    slice-points: func(a: cursor, b: cursor) -> rope;
+    get-current-editor-rope: static func() -> rope;
+  }
+}
+
 world plugin {
   use types.{cursor, selection};
 
   import text-editor;
+  import text;
 
   export init-plugin: func();
 }
