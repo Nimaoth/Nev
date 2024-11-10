@@ -327,13 +327,13 @@
       }
     },
     "nimsumtree": {
-      "version": "0.3.7",
-      "vcsRevision": "562c3439bf2dd6014dd6ad6d8eb5eb59379b25e7",
+      "version": "0.3.8",
+      "vcsRevision": "31dc2233f9f55158d5329753603bf2dceb74f454",
       "url": "https://github.com/Nimaoth/nimsumtree",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "85bd249d22b1b090a1586fbcd1d0cd5d080de333"
+        "sha1": "55d796c5682a3f288689d59bad3c672645b18545"
       }
     },
     "nimtreesitter": {
@@ -348,14 +348,14 @@
     },
     "nimwasmtime": {
       "version": "0.1.9",
-      "vcsRevision": "c12a10047ef493ac5b3a979df54dd116a94fb3dc",
+      "vcsRevision": "d70a21b32166a0541ab608fdde40ade37fd451f8",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
       "dependencies": [
         "nimgen"
       ],
       "checksums": {
-        "sha1": "ab46f90865e6f1bf401b66d3efefc5635243b2af"
+        "sha1": "c44be8471514f518cadc4aac135e34696024454f"
       }
     },
     "npeg": {
