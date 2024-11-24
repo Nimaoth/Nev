@@ -156,6 +156,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   onBufferChangedHandle: Id
   textChangedHandle: Id
   onRequestRerenderHandle: Id
+  onRequestRerenderDiffHandle: Id
   loadedHandle: Id
   preLoadedHandle: Id
   savedHandle: Id
@@ -426,6 +427,7 @@ method deinit*(self: TextDocumentEditor) =
   self.unregister()
 
   if self.diffDocument.isNotNil:
+    self.diffDocument.onRequestRerender.unsubscribe(self.onRequestRerenderDiffHandle)
     self.diffDocument.deinit()
     self.diffDocument = nil
 
@@ -1801,6 +1803,7 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 proc closeDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.diffDocument.isNil:
     return
+  self.diffDocument.onRequestRerender.unsubscribe(self.onRequestRerenderDiffHandle)
   self.diffDocument.deinit()
   self.diffDocument = nil
   self.markDirty()
@@ -1858,6 +1861,8 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
+      self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
+        self.markDirty()
 
     self.diffDocument.languageId = self.document.languageId
     self.diffDocument.readOnly = true
@@ -1876,6 +1881,8 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
+      self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
+        self.markDirty()
 
     self.diffDocument.languageId = self.document.languageId
     self.diffDocument.readOnly = true

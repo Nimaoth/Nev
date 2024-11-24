@@ -57,6 +57,7 @@ type
     newEndPoint: Point
 
   TextDocument* = ref object of Document
+    isInitialized: bool
     buffer*: Buffer
     mLanguageId: string
     services: Services
@@ -105,7 +106,6 @@ type
 
     languageServer*: Option[LanguageServer]
     languageServerFuture*: Option[Future[Option[LanguageServer]]]
-    onRequestSaveHandle*: OnRequestSaveHandle
 
     styledTextCache: Table[int, StyledLine]
 
@@ -1027,7 +1027,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine {.stacktrace: off, l
     echo &"getStyledText({i}): {b}"
 
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
-  logScope lvlInfo, &"loadTreesitterLanguage {self.filename}"
+  logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
 
   self.highlightQuery = nil
   self.errorQuery = nil
@@ -1100,6 +1100,7 @@ proc newTextDocument*(
     allTextDocuments.add result
 
   var self = result
+  self.isInitialized = true
   self.currentTree = TSTree()
   self.appFile = app
   self.workspace = services.getService(Workspace).get
@@ -1144,15 +1145,7 @@ proc newTextDocument*(
   if load:
     self.load()
 
-  if self.languageServer.getSome(ls):
-    # debugf"register save handler '{self.filename}'"
-    let callback = proc (targetFilename: string): Future[void] {.async.} =
-      # debugf"save temp file '{targetFilename}'"
-      if self.languageServer.getSome(ls):
-        await ls.saveTempFile(targetFilename, self.contentString)
-    self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
-
-  elif createLanguageServer and autoStartServer:
+  if self.languageServer.isNone and createLanguageServer and autoStartServer:
     asyncSpawn self.connectLanguageServer()
 
 method deinit*(self: TextDocument) =
@@ -1164,7 +1157,6 @@ method deinit*(self: TextDocument) =
 
   if self.languageServer.getSome(ls):
     ls.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
-    ls.removeOnRequestSaveHandler(self.onRequestSaveHandle)
     ls.disconnect(self)
     self.languageServer = LanguageServer.none
 
@@ -1267,6 +1259,9 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
     await self.vfs.readRope(self.filename, rope.addr)
   except IOError as e:
     log lvlError, &"[loadAsync] Failed to load file {self.filename}: {e.msg}\n{e.getStackTrace()}"
+    return
+
+  if not self.isInitialized:
     return
 
   self.onPreLoaded.invoke self
@@ -1476,15 +1471,14 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   except CatchableError:
     self.languageServer = LanguageServer.none
 
+  if not self.isInitialized:
+    self.languageServer = LanguageServer.none
+    return LanguageServer.none
+
   if self.languageServer.getSome(ls):
     self.completionTriggerCharacters = ls.getCompletionTriggerChars()
 
     ls.connect(self)
-    let callback = proc (targetFilename: string): Future[void] {.async.} =
-      if self.languageServer.getSome(ls):
-        await ls.saveTempFile(targetFilename, self.contentString)
-
-    self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
 
     self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       let uri = diagnostics.uri.decodeUrl.parseUri
@@ -1900,3 +1894,5 @@ proc trimTrailingWhitespace*(self: TextDocument) =
 
   if selections.len > 0:
     discard self.edit(selections, selections, [""])
+
+func isInitialized*(self: TextDocument): bool = self.isInitialized

@@ -26,8 +26,6 @@ method saveTempFile*(self: LanguageServerCommandLine, filename: string, content:
   self.files[filename] = content
 
 method getCompletions*(self: LanguageServerCommandLine, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
-  await self.requestSave(filename, filename)
-
   let layout = self.services.getService(LayoutService).get
 
   var useActive = false
