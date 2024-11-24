@@ -1,6 +1,6 @@
 import std/[macros, macrocache, json, strutils, tables, options, sequtils]
 import misc/[custom_logger, custom_async, util, myjsonutils]
-import expose, document_editor, compilation_config, service, vfs, dispatch_tables
+import expose, document_editor, compilation_config, service, vfs, dispatch_tables, events
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -20,6 +20,7 @@ type
     currentScriptContext*: Option[ScriptContext] = ScriptContext.none
 
     scriptActions*: Table[string, ScriptAction]
+    events: EventHandlerService
 
 method init*(self: ScriptContext, path: string, vfs: VFS): Future[void] {.base.} = discard
 method deinit*(self: ScriptContext) {.base.} = discard
@@ -34,9 +35,10 @@ method getCurrentContext*(self: ScriptContext): string {.base.} = ""
 
 func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
-addBuiltinService(PluginService)
+addBuiltinService(PluginService, EventHandlerService)
 
 method init*(self: PluginService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  self.events = self.services.getService(EventHandlerService).get
   return ok()
 
 {.pop.} # raises
@@ -159,6 +161,25 @@ proc getPluginService(): Option[PluginService] =
 
 static:
   addInjector(PluginService, getPluginService)
+
+proc bindKeys*(self: PluginService, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("plugins").} =
+  let command = if arg.len == 0: action else: action & " " & arg
+  log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
+
+  let (context, subContext) = if (let i = context.find('#'); i != -1):
+    (context[0..<i], context[i+1..^1] & subContext)
+  else:
+    (context, subContext)
+
+  if description.len > 0:
+    self.events.commandDescriptions[context & subContext & keys] = description
+
+  var source = source
+  if self.currentScriptContext.getSome(scriptContext):
+    source.filename = scriptContext.getCurrentContext() & source.filename
+
+  self.events.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
+  self.events.invalidateCommandToKeysMap()
 
 proc callScriptAction*(self: PluginService, context: string, args: JsonNode): JsonNode {.expose("plugins").} =
   if not self.scriptActions.contains(context):

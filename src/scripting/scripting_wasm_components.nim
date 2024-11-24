@@ -1,4 +1,4 @@
-import std/[macros, macrocache, genasts, json, strutils, os]
+import std/[macros, macrocache, genasts, json, strutils, os, strformat]
 import misc/[custom_logger, custom_async, util]
 import scripting_base, document_editor, expose, vfs, service
 import nimsumtree/[rope, sumtree]
@@ -16,6 +16,7 @@ logCategory "scripting-wasm-comp"
 type WasmContext = ref object
   counter: int
   layout: LayoutService
+  plugins: PluginService
 
 func createRope(str: string): Rope =
   Rope.new(str)
@@ -49,7 +50,10 @@ type
     vfs*: VFS
     services*: Services
 
-proc call(instance: ptr ComponentInstanceT, context: ptr ComponentContextT, name: string, parameters: openArray[ComponentValT], nresults: static[int]) =
+    context: WasmContext
+    components: seq[ptr ComponentInstanceT]
+
+proc call[T](instance: ptr ComponentInstanceT, context: ptr ComponentContextT, name: string, parameters: openArray[ComponentValT], nresults: static[int]): T =
   var f: ptr ComponentFuncT = nil
   if not instance.getFunc(context, cast[ptr uint8](name[0].addr), name.len.csize_t, f.addr):
     log lvlError, &"[host] Failed to get func '{name}'"
@@ -60,19 +64,24 @@ proc call(instance: ptr ComponentInstanceT, context: ptr ComponentContextT, name
     return
 
   var res: array[max(nresults, 1), ComponentValT]
-  echo &"[host] ------------------------------- call {name}, {parameters} -------------------------------------"
+  # echo &"[host] ------------------------------- call {name}, {parameters} -------------------------------------"
   f.call(context, parameters, res.toOpenArray(0, nresults - 1)).okOr(e):
     log lvlError, &"[host] Failed to call func '{name}': {e.msg}"
     return
 
-  if nresults > 0:
-    echo &"[host] call func {name} -> {res}"
+  # if nresults > 0:
+  #   echo &"[host] call func {name} -> {res}"
+
+  when T isnot void:
+    res[0].to(T)
 
 proc loadModules(self: ScriptContextWasmComp, path: string): Future[void] {.async.} =
   let listing = await self.vfs.getDirectoryListing(path)
 
   # {.gcsafe.}:
   #   var editorImports = createEditorWasmImports()
+
+  await sleepAsync(1.seconds)
 
   for file2 in listing.files:
     if not file2.endsWith(".c.wasm"):
@@ -97,7 +106,9 @@ proc loadModules(self: ScriptContextWasmComp, path: string): Future[void] {.asyn
 
     assert instance != nil
 
-    instance.call(self.store.context, "init-plugin", [], 0)
+    self.components.add instance
+
+    instance.call[:void](self.store.context, "init-plugin", [], 0)
 
 proc textEditorGetSelection(host: WasmContext; store: ptr ComponentContextT): Selection =
   if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
@@ -133,6 +144,20 @@ proc textGetCurrentEditorRope(host: WasmContext, store: ptr ComponentContextT): 
   else:
     RopeResource(rope: createRope("no editor").slice().suffix(Point()))
 
+proc coreBindKeys(host: WasmContext, store: ptr ComponentContextT, context: string, subContext: string, keys: string,
+                  action: string, arg: string, description: string, source: (string, int32, int32)): void =
+  host.plugins.bindKeys(context, subContext, keys, action, arg, description, (source[0], source[1].int, source[2].int))
+
+proc coreDefineCommand(host: WasmContext, store: ptr ComponentContextT, name: string, active: bool, docs: string,
+                       params: seq[(string, string)], returnType: string, context: string): void =
+  host.plugins.addScriptAction(name, docs, params, returnType, active, context)
+
+var scriptRunActionImpl*: proc(action: string, arg: string) = nil
+
+proc coreRunCommand(host: WasmContext, store: ptr ComponentContextT, name: string, args: string): void =
+  {.gcsafe.}:
+    scriptRunActionImpl(name, args)
+
 method init*(self: ScriptContextWasmComp, path: string, vfs: VFS): Future[void] {.async.} =
   self.vfs = vfs
 
@@ -151,7 +176,9 @@ method init*(self: ScriptContextWasmComp, path: string, vfs: VFS): Future[void] 
     return
 
   var ctx = WasmContext(counter: 1)
+  self.context = ctx
   ctx.layout = self.services.getService(LayoutService).get
+  ctx.plugins = self.services.getService(PluginService).get
 
   self.linker.defineComponent(ctx).okOr(err):
     echo "[host] Failed to define component: ", err.msg
@@ -163,3 +190,20 @@ method deinit*(self: ScriptContextWasmComp) = discard
 
 method reload*(self: ScriptContextWasmComp): Future[void] {.async.} =
   await self.loadModules("app://config/wasm")
+
+method handleScriptAction*(self: ScriptContextWasmComp, name: string, arg: JsonNode): JsonNode =
+  echo &"handleScriptAction {name}, {arg}"
+  try:
+    result = nil
+    let argStr = $arg
+    for instance in self.components:
+      # self.stack.add m
+      # defer: discard self.stack.pop
+      try:
+        let str = instance.call[:string](self.store.context, "handle-command", [name.toVal, argStr.toVal], 1)
+        return str.parseJson
+      except:
+        # log lvlError, &"Failed to parse json from callback {id}({arg}): '{str}' is not valid json.\n{getCurrentExceptionMsg()}"
+        continue
+  except:
+    log lvlError, &"Failed to run handleScriptAction: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"

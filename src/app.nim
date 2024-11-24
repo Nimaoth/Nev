@@ -159,6 +159,7 @@ proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previe
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
+proc scriptRunAction*(action: string, arg: string)
 
 implTrait AppInterface, App:
   getActiveEditor(Option[DocumentEditor], App)
@@ -247,10 +248,14 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
     except CatchableError:
       log lvlError, &"Failed to load wasm configs: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
+  self.runConfigCommands("wasm-plugin-post-load-commands")
+  self.runConfigCommands("plugin-post-load-commands")
+
+  if not options.disableWasmPlugins:
     try:
       log(lvlInfo, fmt"load wasm components")
       self.wasmCompScriptContext = new ScriptContextWasmComp
-      # self.plugins.scriptContexts.add self.wasmCompScriptContext
+      self.plugins.scriptContexts.add self.wasmCompScriptContext
       self.wasmCompScriptContext.services = self.services
       self.wasmCompScriptContext.moduleVfs = VFS()
       self.wasmCompScriptContext.vfs = self.vfs
@@ -266,9 +271,6 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
         log(lvlInfo, fmt"post init wasm components ({t2.elapsed.ms}ms)")
     except CatchableError:
       log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
-  self.runConfigCommands("wasm-plugin-post-load-commands")
-  self.runConfigCommands("plugin-post-load-commands")
 
   log lvlInfo, &"Finished loading plugins"
 
@@ -639,6 +641,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.timer = startTimer()
   self.frameTimer = startTimer()
+
+  {.gcsafe.}:
+    scriptRunActionImpl = scriptRunAction
 
   self.layout = services.getService(LayoutService).get
   self.config = services.getService(ConfigService).get

@@ -18,6 +18,11 @@ interface text-editor {
   get-selection: func() -> selection;
 }
 
+interface core {
+  bind-keys: func(context: string, sub-context: string, keys: string, action: string, arg: string, description: string, source: tuple<string, s32, s32>);
+  define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, return-type: string, context: string);
+  run-command: func(name: string, args: string);
+}
 interface text {
   use types.{cursor};
 
@@ -37,6 +42,8 @@ world plugin {
 
   import text-editor;
   import text;
+  import core;
 
   export init-plugin: func();
+  export handle-command: func(name: string, arg: string) -> string;
 }

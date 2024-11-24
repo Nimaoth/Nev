@@ -116,6 +116,156 @@ proc getCurrentEditorRope*(): Rope {.nodestroy.} =
   let res = textGetCurrentEditorRopeImported()
   result.handle = res + 1
 
+proc coreBindKeysImported(a0: int32; a1: int32; a2: int32; a3: int32; a4: int32;
+                          a5: int32; a6: int32; a7: int32; a8: int32; a9: int32;
+                          a10: int32; a11: int32; a12: int32; a13: int32;
+                          a14: int32; a15: int32): void {.
+    wasmimport("bind-keys", "nev:plugins/core").}
+proc bindKeys*(context: WitString; subContext: WitString; keys: WitString;
+               action: WitString; arg: WitString; description: WitString;
+               source: (WitString, int32, int32)): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+    arg5: int32
+    arg6: int32
+    arg7: int32
+    arg8: int32
+    arg9: int32
+    arg10: int32
+    arg11: int32
+    arg12: int32
+    arg13: int32
+    arg14: int32
+    arg15: int32
+  if context.len > 0:
+    arg0 = cast[int32](context[0].addr)
+  else:
+    arg0 = 0
+  arg1 = context.len
+  if subContext.len > 0:
+    arg2 = cast[int32](subContext[0].addr)
+  else:
+    arg2 = 0
+  arg3 = subContext.len
+  if keys.len > 0:
+    arg4 = cast[int32](keys[0].addr)
+  else:
+    arg4 = 0
+  arg5 = keys.len
+  if action.len > 0:
+    arg6 = cast[int32](action[0].addr)
+  else:
+    arg6 = 0
+  arg7 = action.len
+  if arg.len > 0:
+    arg8 = cast[int32](arg[0].addr)
+  else:
+    arg8 = 0
+  arg9 = arg.len
+  if description.len > 0:
+    arg10 = cast[int32](description[0].addr)
+  else:
+    arg10 = 0
+  arg11 = description.len
+  if source[0].len > 0:
+    arg12 = cast[int32](source[0][0].addr)
+  else:
+    arg12 = 0
+  arg13 = source[0].len
+  arg14 = cast[int32](source[1])
+  arg15 = cast[int32](source[2])
+  coreBindKeysImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
+                       arg9, arg10, arg11, arg12, arg13, arg14, arg15)
+
+proc coreDefineCommandImported(a0: int32; a1: int32; a2: int32; a3: int32;
+                               a4: int32; a5: int32; a6: int32; a7: int32;
+                               a8: int32; a9: int32; a10: int32): void {.
+    wasmimport("define-command", "nev:plugins/core").}
+proc defineCommand*(name: WitString; active: bool; docs: WitString;
+                    params: WitList[(WitString, WitString)];
+                    returnType: WitString; context: WitString): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+    arg5: int32
+    arg6: int32
+    arg7: int32
+    arg8: int32
+    arg9: int32
+    arg10: int32
+  if name.len > 0:
+    arg0 = cast[int32](name[0].addr)
+  else:
+    arg0 = 0
+  arg1 = name.len
+  arg2 = cast[int32](active)
+  if docs.len > 0:
+    arg3 = cast[int32](docs[0].addr)
+  else:
+    arg3 = 0
+  arg4 = docs.len
+  if params.len > 0:
+    arg5 = cast[int32](params[0].addr)
+  else:
+    arg5 = 0
+  arg6 = params.len
+  if returnType.len > 0:
+    arg7 = cast[int32](returnType[0].addr)
+  else:
+    arg7 = 0
+  arg8 = returnType.len
+  if context.len > 0:
+    arg9 = cast[int32](context[0].addr)
+  else:
+    arg9 = 0
+  arg10 = context.len
+  coreDefineCommandImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7,
+                            arg8, arg9, arg10)
+
+proc coreRunCommandImported(a0: int32; a1: int32; a2: int32; a3: int32): void {.
+    wasmimport("run-command", "nev:plugins/core").}
+proc runCommand*(name: WitString; args: WitString): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: int32
+  if name.len > 0:
+    arg0 = cast[int32](name[0].addr)
+  else:
+    arg0 = 0
+  arg1 = name.len
+  if args.len > 0:
+    arg2 = cast[int32](args[0].addr)
+  else:
+    arg2 = 0
+  arg3 = args.len
+  coreRunCommandImported(arg0, arg1, arg2, arg3)
+
 proc initPlugin(): void
 proc initPluginExported(): void {.wasmexport("init-plugin").} =
   initPlugin()
+
+proc handleCommand(name: WitString; arg: WitString): WitString
+var handleCommandRetArea: array[16, uint8]
+proc handleCommandExported(a0: int32; a1: int32; a2: int32; a3: int32): int32 {.
+    wasmexport("handle-command").} =
+  var
+    name: WitString
+    arg: WitString
+  name = ws(cast[ptr char](a0), a1)
+  arg = ws(cast[ptr char](a2), a3)
+  let res = handleCommand(name, arg)
+  if res.len > 0:
+    cast[ptr int32](handleCommandRetArea[0].addr)[] = cast[int32](res[0].addr)
+  else:
+    cast[ptr int32](handleCommandRetArea[0].addr)[] = 0
+  cast[ptr int32](handleCommandRetArea[4].addr)[] = res.len
+  cast[int32](handleCommandRetArea[0].addr)

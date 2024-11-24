@@ -31,3 +31,17 @@ proc initPlugin() =
   let s = getSelection()
   echo r2.slice(s.first.column, s.last.column).debug()
   echo r2.slice(s.first.column, s.last.column).text()
+
+  bindKeys(ws"editor.text", ws"", ws"<C-a>", ws"uiaeuiae", ws"1", ws"MOVE THE CURSOR", (ws"comp_test.nim", 0.int32, 0.int32))
+
+proc handleCommand(name: WitString; arg: WitString): WitString =
+  echo "handleCommand ", name, ", ", arg
+
+  case $name:
+  of "uiaeuiae":
+    runCommand(ws"next-view", ws"")
+
+  else:
+    discard
+
+  return ws""

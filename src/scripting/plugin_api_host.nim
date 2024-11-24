@@ -33,6 +33,16 @@ proc textSlice(host: WasmContext; store: ptr ComponentContextT;
 proc textSlicePoints(host: WasmContext; store: ptr ComponentContextT;
                      self: var RopeResource; a: Cursor; b: Cursor): RopeResource
 proc textGetCurrentEditorRope(host: WasmContext; store: ptr ComponentContextT): RopeResource
+proc coreBindKeys(host: WasmContext; store: ptr ComponentContextT;
+                  context: string; subContext: string; keys: string;
+                  action: string; arg: string; description: string;
+                  source: (string, int32, int32)): void
+proc coreDefineCommand(host: WasmContext; store: ptr ComponentContextT;
+                       name: string; active: bool; docs: string;
+                       params: seq[(string, string)]; returnType: string;
+                       context: string): void
+proc coreRunCommand(host: WasmContext; store: ptr ComponentContextT;
+                    name: string; args: string): void
 proc defineComponent*(linker: ptr ComponentLinkerT; host: WasmContext): WasmtimeResult[
     void] =
   ?linker.defineResource("nev:plugins/text", "rope", RopeResource)
@@ -75,3 +85,26 @@ proc defineComponent*(linker: ptr ComponentLinkerT; host: WasmContext): Wasmtime
   linker.defineFunc("nev:plugins/text", "[static]rope.get-current-editor-rope"):
     let res = textGetCurrentEditorRope(host, store)
     results[0] = ?store.resourceNew(res)
+  linker.defineFunc("nev:plugins/core", "bind-keys"):
+    let context = parameters[0].to(string)
+    let subContext = parameters[1].to(string)
+    let keys = parameters[2].to(string)
+    let action = parameters[3].to(string)
+    let arg = parameters[4].to(string)
+    let description = parameters[5].to(string)
+    let source = parameters[6].to((string, int32, int32))
+    coreBindKeys(host, store, context, subContext, keys, action, arg,
+                 description, source)
+  linker.defineFunc("nev:plugins/core", "define-command"):
+    let name = parameters[0].to(string)
+    let active = parameters[1].to(bool)
+    let docs = parameters[2].to(string)
+    let params = parameters[3].to(seq[(string, string)])
+    let returnType = parameters[4].to(string)
+    let context = parameters[5].to(string)
+    coreDefineCommand(host, store, name, active, docs, params, returnType,
+                      context)
+  linker.defineFunc("nev:plugins/core", "run-command"):
+    let name = parameters[0].to(string)
+    let args = parameters[1].to(string)
+    coreRunCommand(host, store, name, args)
