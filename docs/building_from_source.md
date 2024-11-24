@@ -3,7 +3,7 @@
 ## Setup
 - Requires OpenGL 4.1 for the GUI version
 - Install Rust and cargo (required for wasmtime)
-- Install Nim version 2.0.6
+- Install Nim version 2.2.0
 - Clone the repository
 - Run `nimble setup`
 
