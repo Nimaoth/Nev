@@ -2452,28 +2452,36 @@ proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
 
 proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Selection]) =
-  let editor = self.layout.openFile(filename)
-
-  if editor.getSome(editor):
+  if self.document.filename == filename:
     if location.getSome(location):
-      if editor == self:
-        self.selection = location
-        self.updateTargetColumn(Last)
-        self.centerCursor()
-
-      elif editor of TextDocumentEditor:
-        let textEditor = editor.TextDocumentEditor
-        textEditor.targetSelection = location
-        textEditor.centerCursor()
+      self.selection = location
+      self.updateTargetColumn(Last)
+      self.centerCursor()
+      self.layout.showEditor(self.id)
 
   else:
-    log lvlError, fmt"Failed to open file '{filename}' at {location}"
+    let editor = self.layout.openFile(filename)
+
+    if editor.getSome(editor):
+      if location.getSome(location):
+        if editor == self:
+          self.selection = location
+          self.updateTargetColumn(Last)
+          self.centerCursor()
+
+        elif editor of TextDocumentEditor:
+          let textEditor = editor.TextDocumentEditor
+          textEditor.targetSelection = location
+          textEditor.centerCursor()
+
+    else:
+      log lvlError, fmt"Failed to open file '{filename}' at {location}"
 
 import finder/[file_previewer]
 
 proc openLocationFromFinderItem(self: TextDocumentEditor, item: FinderItem) =
   try:
-    let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
+    let (path, location, _, _) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
       return

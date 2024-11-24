@@ -284,6 +284,9 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
         while not flowVar.isReady:
           await sleepAsync(1.milliseconds)
 
+        if not self.isInitialized:
+          return
+
         let newTree = ^flowVar
 
         oldTree.delete()
@@ -1066,6 +1069,9 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   else:
     log lvlWarn, fmt"No highlight queries found for language '{self.languageId}' in '{self.filename}'"
 
+  if not self.isInitialized:
+    return
+
   let errorQueryPath = &"app://languages/{self.languageId}/queries/errors.scm"
   if language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await.getSome(query):
     if prevLanguageId != self.languageId:
@@ -1073,6 +1079,9 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     self.errorQuery = query
   elif language.get.query("error", "(ERROR) @error").await.getSome(query):
     self.errorQuery = query
+
+  if not self.isInitialized:
+    return
 
   if prevLanguageId != self.languageId:
     return
@@ -1173,6 +1182,10 @@ method `$`*(self: TextDocument): string =
 proc saveAsync(self:  TextDocument) {.async.} =
   try:
     await self.vfs.write(self.filename, self.rope.slice())
+
+    if not self.isInitialized:
+      return
+
     self.isBackedByFile = true
     self.lastSavedRevision = self.undoableRevision
     self.onSaved.invoke()
@@ -1257,11 +1270,11 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   var rope: Rope = Rope.new()
   try:
     await self.vfs.readRope(self.filename, rope.addr)
+
+    if not self.isInitialized:
+      return
   except IOError as e:
     log lvlError, &"[loadAsync] Failed to load file {self.filename}: {e.msg}\n{e.getStackTrace()}"
-    return
-
-  if not self.isInitialized:
     return
 
   self.onPreLoaded.invoke self
@@ -1427,6 +1440,9 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
   if languageServer.getSome(ls):
     let snapshot = self.buffer.snapshot.clone()
     let diagnostics = await ls.getDiagnostics(self.filename)
+
+    if not self.isInitialized:
+      return
 
     if not diagnostics.isSuccess:
       return

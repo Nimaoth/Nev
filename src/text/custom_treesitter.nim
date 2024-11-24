@@ -595,6 +595,9 @@ proc createTsParser*(): TSParser =
     nil
 
   let parser = ts.tsParserNew()
+  if parser.isNil:
+    log lvlError, &"Failed to create treesitter parser"
+    return
 
   if wasmStore != nil:
     log lvlInfo, &"Use wasm store"
@@ -628,14 +631,17 @@ var parsers: seq[TSParser]
 template withParser*(p: untyped, body: untyped): untyped =
   var parsers = ({.gcsafe.}: parsers.addr)
   if parsers[].len == 0:
-    parsers[].add createTsParser()
+    let parser = createTsParser()
+    if parser.isNotNil:
+      parsers[].add parser
 
-  let p = parsers[].pop()
-  defer:
-    parsers[].add p
+  if parsers[].len > 0:
+    let p = parsers[].pop()
+    defer:
+      parsers[].add p
 
-  block:
-    body
+    block:
+      body
 
 proc deinit*(self: TSParser) =
   self.impl.tsParserDelete()

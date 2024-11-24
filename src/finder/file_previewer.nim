@@ -55,10 +55,10 @@ method deinit*(self: FilePreviewer) =
   self[] = default(typeof(self[]))
 
 proc parsePathAndLocationFromItemData*(item: FinderItem):
-    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool]]] {.gcsafe, raises: [].} =
+    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool], editorId: Option[EditorId]]] {.gcsafe, raises: [].} =
   try:
     if not item.data.startsWith("{"):
-      return (item.data, Cursor.none, bool.none).some
+      return (item.data, Cursor.none, bool.none, EditorId.none).some
 
     let jsonData = item.data.parseJson.catch:
       return
@@ -68,6 +68,11 @@ proc parsePathAndLocationFromItemData*(item: FinderItem):
 
     if not jsonData.hasKey "path":
       return
+
+    let editorId = if jsonData.hasKey "editorId":
+      jsonData["editorId"].jsonTo(Option[EditorId])
+    else:
+      EditorId.none
 
     let path = jsonData.fields["path"]
     if path.kind != JString:
@@ -87,7 +92,7 @@ proc parsePathAndLocationFromItemData*(item: FinderItem):
     else:
       Cursor.none
 
-    return (path.getStr, cursor, isFile).some
+    return (path.getStr, cursor, isFile, editorId).some
 
   except:
     return
