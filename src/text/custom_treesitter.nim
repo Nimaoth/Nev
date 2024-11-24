@@ -14,7 +14,7 @@ import treesitter/api as ts
 
 import compilation_config
 
-import nimwasmtime
+import wasmtime
 
 when useBuiltinTreesitterLanguage("nim"):
   import treesitter_nim/treesitter_nim/nim
@@ -401,7 +401,7 @@ proc predicatesForPattern*(self: TSQuery, patternIndex: int): seq[TSPredicateRes
 import std/[os, strutils]
 var treesitterDllCache = initTable[string, LibHandle]()
 
-var wasmEngine = WasmEngine.new(WasmConfig.new())
+var wasmEngine = newEngine(newConfig())
 var wasmStore: ptr TSWasmStore = nil
 
 import std/macros
@@ -409,7 +409,7 @@ import std/macros
 proc getLanguageWasmStore(): ptr TSWasmStore =
   if wasmStore == nil:
     var err: TSWasmError
-    wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine.it), err.addr)
+    wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine), err.addr)
     if err.kind != TSWasmErrorKindNone:
       log lvlError, &"Failed to create wasm store: {err}"
       return nil
@@ -462,7 +462,7 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): F
 
         logScope lvlInfo, &"Create wasm language from module for {languageId}"
 
-        # proc loadLanguageThread(args: (ptr TSWasmStore, cstring, cstring, uint32, ptr TSWasmError)): ptr ts.TSLanguage {.thread.} =
+        # proc loadLanguageThread(args: (ptr WasmStoreT, cstring, cstring, uint32, ptr TSWasmError)): ptr ts.TSLanguage {.thread.} =
         #   tsWasmStoreLoadLanguage(args[0], args[1], args[2], args[3], args[4])
 
         var err: TSWasmError
@@ -584,9 +584,9 @@ proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNode): Fut
     return language
 
 proc createTsParser*(): TSParser =
-  let wasmStore: ptr TSWasmStore = if wasmEngine.it != nil:
+  let wasmStore: ptr TSWasmStore = if wasmEngine != nil:
     var err: TSWasmError
-    let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine.it), err.addr)
+    let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine), err.addr)
     if err.kind != TSWasmErrorKindNone:
       log lvlError, &"Failed to create wasm store: {err}"
     wasmStore
@@ -604,9 +604,9 @@ proc createTsParser*(): TSParser =
 
 proc createTsParser*(language: TSLanguage): Option[TSParser] =
   let wasmStore: ptr TSWasmStore = if language.impl.tsLanguageIsWasm():
-    assert wasmEngine.it != nil
+    assert wasmEngine != nil
     var err: TSWasmError
-    let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine.it), err.addr)
+    let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine), err.addr)
     if err.kind != TSWasmErrorKindNone:
       log lvlError, &"Failed to create wasm store: {err}"
       return TSParser.none

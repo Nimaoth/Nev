@@ -21,12 +21,17 @@ else:
 --noMain:on
 --threads:off # 1.7.1 defaults this on
 
+--noNimblePath
+when withDir(thisDir(), fileExists("../nimble-win.paths")):
+  include "../nimble-win.paths"
+
 switch("path", "$nim")
 switch("path", "../scripting")
 switch("path", "../src")
 switch("d", "release")
 switch("d", "wasm")
 switch("nimcache", "./nimcache")
+# switch("d", "useMalloc")
 
 switch("stackTrace", "on")
 switch("lineTrace", "on")
@@ -34,5 +39,6 @@ switch("lineTrace", "on")
 let outputName = projectName() & ".wasm"
 # Pass this to Emscripten linker to generate html file scaffold for us.
 # No need for main, it's standalone wasm, and we dont need to error on undefined as we're probably importing
-switch("passL", "--no-entry -sSTANDALONE_WASM=1 -sERROR_ON_UNDEFINED_SYMBOLS=0 -g")
-switch("passL", "-o wasm/" & outputName)
+# switch("passL", "--no-entry -sSTANDALONE_WASM=1 -sERROR_ON_UNDEFINED_SYMBOLS=0 -g")
+switch("passL", "--no-entry -sSTANDALONE_WASM=1 -sERROR_ON_UNDEFINED_SYMBOLS=0 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4294967296 -g")
+# switch("passL", "-o wasm/" & outputName)

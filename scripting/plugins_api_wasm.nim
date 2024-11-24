@@ -4,6 +4,25 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc plugins_bindKeys_void_PluginService_string_string_string_string_string_string_tuple_filename_string_line_int_column_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc bindKeys*(context: string; subContext: string; keys: string;
+               action: string; arg: string = ""; description: string = "";
+    source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add context.toJson()
+  argsJson.add subContext.toJson()
+  argsJson.add keys.toJson()
+  argsJson.add action.toJson()
+  argsJson.add arg.toJson()
+  argsJson.add description.toJson()
+  argsJson.add source.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = plugins_bindKeys_void_PluginService_string_string_string_string_string_string_tuple_filename_string_line_int_column_int_wasm(
+      argsJsonString.cstring)
+
+
 proc plugins_callScriptAction_JsonNode_PluginService_string_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
 proc callScriptAction*(context: string; args: JsonNode): JsonNode {.gcsafe,
