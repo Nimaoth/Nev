@@ -110,31 +110,6 @@ method getInlayHints*(self: LanguageServer, filename: string, selection: Selecti
 method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = discard
 method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base, gcsafe, raises: [].} = {}
 
-var handleIdCounter = 1
-
-proc requestSave*(self: LanguageServer, filename: string, targetFilename: string): Future[void] {.async.} =
-  if self.onRequestSaveIndex.contains(filename):
-    for handle in self.onRequestSaveIndex[filename]:
-      await self.onRequestSave[handle](targetFilename)
-
-proc addOnRequestSaveHandler*(self: LanguageServer, filename: string, handler: proc(targetFilename: string): Future[void] {.gcsafe, raises: [].}): OnRequestSaveHandle =
-  result = handleIdCounter.OnRequestSaveHandle
-  handleIdCounter.inc
-  self.onRequestSave[result] = handler
-
-  self.onRequestSaveIndex.withValue(filename, index):
-    index[].add result
-  do:
-    self.onRequestSaveIndex[filename] = @[result]
-
-proc removeOnRequestSaveHandler*(self: LanguageServer, handle: OnRequestSaveHandle) =
-  if self.onRequestSave.contains(handle):
-    self.onRequestSave.del(handle)
-    for (_, list) in self.onRequestSaveIndex.mpairs:
-      let index = list.find(handle)
-      if index >= 0:
-        list.delete index
-
 proc toLspPosition*(cursor: Cursor): lsp_types.Position = lsp_types.Position(line: cursor.line, character: cursor.column)
 proc toLspRange*(selection: Selection): lsp_types.Range = lsp_types.Range(start: selection.first.toLspPosition, `end`: selection.last.toLspPosition)
 proc toCursor*(position: lsp_types.Position): Cursor = (position.line, position.character)
