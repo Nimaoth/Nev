@@ -491,6 +491,11 @@ proc preRender*(self: TextDocumentEditor) =
   if self.configProvider.isNil or self.document.isNil:
     return
 
+  if self.document.requiresLoad:
+    self.document.load()
+    self.document.reloadTreesitterLanguage()
+    self.document.requiresLoad = false
+
   self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
     let errorNodes = self.document.getErrorNodesInRange(

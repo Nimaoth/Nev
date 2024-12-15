@@ -4,6 +4,7 @@ import vfs
 type Document* = ref object of RootObj
   appFile*: bool                        ## Whether this is an application file (e.g. stored in local storage on the browser)
   isBackedByFile*: bool = false
+  requiresLoad*: bool = false           ## Whether the document content has not been scheduled for loading yet.
   filename*: string
   revision*: int
   undoableRevision*: int
