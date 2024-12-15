@@ -54,9 +54,9 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
   await sleepAsync(2.milliseconds)
 
   # debugf"[getLspCompletionsAsync] start"
-  let completions = await self.languageServer.getCompletions(self.document.localizedPath, location)
+  let completions = await self.languageServer.getCompletions(self.document.filename, location)
   if completions.isSuccess:
-    log lvlInfo, fmt"[getLspCompletionsAsync] at {location}: got {completions.result.items.len} completions"
+    # log lvlInfo, fmt"[getLspCompletionsAsync] at {location}: got {completions.result.items.len} completions"
     self.unfilteredCompletions = completions.result.items
     self.refilterCompletions()
   elif completions.isCanceled:

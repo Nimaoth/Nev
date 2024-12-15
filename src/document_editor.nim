@@ -143,13 +143,13 @@ proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEdi
 
 proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
   let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
-  log lvlInfo, fmt"registerEditor {editor.id} '{filename}'"
+  # log lvlInfo, fmt"registerEditor {editor.id} '{filename}'"
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
 
 proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
   let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
-  log lvlInfo, fmt"unregisterEditor {editor.id} '{filename}'"
+  # log lvlInfo, fmt"unregisterEditor {editor.id} '{filename}'"
   self.editors.del(editor.id)
   self.onEditorDeregistered.invoke editor
 
@@ -188,7 +188,7 @@ proc openDocument*(self: DocumentEditorService, path: string, appFile = false, l
     if document == nil:
       log lvlError, &"Failed to create document for '{path}'"
 
-    log lvlInfo, &"Opened new document '{path}'"
+    # log lvlInfo, &"Opened new document '{path}'"
     self.documents.add document
     return document.some
 
@@ -217,10 +217,10 @@ proc createEditorForDocument*(self: DocumentEditorService, document: Document): 
   discard result.get.onMarkedDirty.subscribe () => self.platform.requestRender()
 
 proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
-  log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"
+  # log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"
 
   if document in self.pinnedDocuments:
-    log lvlInfo, &"Document '{document.filename}' is pinned, don't close"
+    # log lvlInfo, &"Document '{document.filename}' is pinned, don't close"
     return
 
   var hasAnotherEditor = false
@@ -230,7 +230,7 @@ proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
       break
 
   if not hasAnotherEditor:
-    log lvlInfo, fmt"Document has no other editors, closing it."
+    # log lvlInfo, fmt"Document has no other editors, closing it."
     document.deinit()
     self.documents.del(document)
 
