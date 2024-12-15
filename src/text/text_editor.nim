@@ -340,7 +340,7 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
 
 proc clearDocument*(self: TextDocumentEditor) =
   if self.document.isNotNil:
-    log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
+    # log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
     self.document.onBufferChanged.unsubscribe(self.onBufferChangedHandle)
     self.document.textChanged.unsubscribe(self.textChangedHandle)
     self.document.onRequestRerender.unsubscribe(self.onRequestRerenderHandle)
@@ -370,7 +370,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   if document == self.document:
     return
 
-  logScope lvlInfo, &"[setDocument] ({self.id}): '{document.filename}'"
+  # logScope lvlInfo, &"[setDocument] ({self.id}): '{document.filename}'"
 
   if self.completionEngine.isNotNil:
     self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
@@ -426,7 +426,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
 method deinit*(self: TextDocumentEditor) =
   let filename = if self.document.isNotNil: self.document.filename else: ""
-  logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
+  # logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
 
   self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
 
@@ -3574,7 +3574,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   if self.document.isNil:
     return
 
-  log lvlInfo, &"handleTextDocumentLoaded {self.document.filename}: targetSelectionsInternal: {self.targetSelectionsInternal}, selectionsBeforeReload: {self.selectionsBeforeReload}"
+  # log lvlInfo, &"handleTextDocumentLoaded {self.document.filename}: targetSelectionsInternal: {self.targetSelectionsInternal}, selectionsBeforeReload: {self.selectionsBeforeReload}"
 
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s

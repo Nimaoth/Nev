@@ -128,32 +128,8 @@ proc deleteFileSync*(self: VFSService, path: string) {.expose("vfs").} =
   except IOError as e:
     log lvlError, &"Failed to delete file '{path}': {e.msg}"
 
-type
-  NimTempPathState = object
-    state: Rand
-    isInit: bool
-
-var nimTempPathState {.threadvar.}: NimTempPathState
-
-const
-  maxRetry = 10000
-  letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-template randomPathName(length: Natural): string =
-  var res = newString(length)
-  if not nimTempPathState.isInit:
-    nimTempPathState.isInit = true
-    nimTempPathState.state = initRand()
-
-  for i in 0 ..< length:
-    res[i] = nimTempPathState.state.sample(letters)
-  res
-
 proc genTempPath*(self: VFSService, prefix: string, suffix: string, dir: string = "temp://", randLen: int = 8, checkExists: bool = true): string {.expose("vfs").} =
-  for i in 0..maxRetry:
-    result = dir // (prefix & randomPathName(randLen) & suffix)
-    if not checkExists or self.vfs.getFileKind(result).waitFor.isNone:
-      break
+  self.vfs.genTempPath(prefix, suffix, dir, randLen, checkExists)
 
 proc dumpVfsHierarchy*(self: VFSService) {.expose("vfs").} =
   log lvlInfo, "\n" & self.vfs.prettyHierarchy()

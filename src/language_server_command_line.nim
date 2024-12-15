@@ -1,13 +1,16 @@
 import std/[options, tables, strutils]
+import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import dispatch_tables, document_editor, service, layout, events
+import text/text_document
 
 logCategory "language-server-command-line"
 
 type LanguageServerCommandLine* = ref object of LanguageServer
   services: Services
+  documents: DocumentEditorService
   events: EventHandlerService
   files: Table[string, string]
 
@@ -15,23 +18,19 @@ proc newLanguageServerCommandLine*(services: Services): LanguageServer =
   var server = new LanguageServerCommandLine
   server.services = services
   server.events = services.getService(EventHandlerService).get
+  server.documents = services.getService(DocumentEditorService).get
   return server
 
 method getDefinition*(self: LanguageServerCommandLine, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
   return newSeq[Definition]()
 
-method saveTempFile*(self: LanguageServerCommandLine, filename: string, content: string): Future[void] {.async.} =
-  # debugf"LanguageServerCommandLine.saveTempFile '{filename}' '{content}'"
-  self.files[filename] = content
-
 method getCompletions*(self: LanguageServerCommandLine, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   let layout = self.services.getService(LayoutService).get
 
   var useActive = false
-  if self.files.contains(filename):
-    let commandName = self.files[filename]
-    if commandName.startsWith("."):
+  if self.documents.getDocument(filename).getSome(document) and document of TextDocument:
+    if document.TextDocument.rope.startsWith("."):
       useActive = true
 
   var completions: seq[CompletionItem]

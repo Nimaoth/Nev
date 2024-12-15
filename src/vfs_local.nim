@@ -39,7 +39,7 @@ method readImpl*(self: VFSLocal, path: string, flags: set[ReadFlag]): Future[str
     raise newException(FileNotFoundError, &"Not found '{path}'")
 
   try:
-    logScope lvlInfo, &"[loadFile] '{path}'"
+    # logScope lvlInfo, &"[loadFile] '{path}'"
     var data = ""
     let ok = await spawnAsync(loadFileThread, (path, data.addr, flags))
     if not ok:
@@ -92,7 +92,7 @@ method readRopeImpl*(self: VFSLocal, path: string, rope: ptr Rope): Future[void]
     raise newException(FileNotFoundError, &"Not found '{path}'")
 
   try:
-    logScope lvlInfo, &"[loadFileRope] '{path}'"
+    # logScope lvlInfo, &"[loadFileRope] '{path}'"
 
     var err: ref CatchableError = nil
     var cancel: Atomic[bool]
@@ -175,7 +175,7 @@ method getFileKindImpl*(self: VFSLocal, path: string): Future[Option[FileKind]] 
 method getFileAttributesImpl*(self: VFSLocal, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
   try:
     let permissions = path.getFilePermissions()
-    log lvlInfo, &"[isFileReadOnly] Permissions for '{path}': {permissions}"
+    # log lvlInfo, &"[isFileReadOnly] Permissions for '{path}': {permissions}"
     return FileAttributes(writable: fpUserWrite in permissions, readable: fpUserRead in permissions).some
   except:
     return FileAttributes.none

@@ -567,7 +567,8 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
 
 method getCompletions*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Response[CompletionList]] {.async.} =
-  return await self.client.getCompletions(filename, location.line, location.column)
+  let localizedPath = self.vfs.localize(filename)
+  return await self.client.getCompletions(localizedPath, location.line, location.column)
 
 import text/[text_editor, text_document]
 

@@ -102,7 +102,6 @@ method getTypeDefinition*(self: LanguageServer, filename: string, location: Curs
 method getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
 method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base, gcsafe, raises: [].} = discard
 method getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base, gcsafe, raises: [].} = discard
-method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base, gcsafe, raises: [].} = discard
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = discard
 method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = discard
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base, gcsafe, raises: [].} = discard

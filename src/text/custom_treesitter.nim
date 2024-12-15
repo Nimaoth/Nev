@@ -564,7 +564,7 @@ proc unloadTreesitterLanguage*(languageId: string) {.gcsafe, raises: [].} =
     loadingLanguages.del(languageId)
 
 proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
-  log lvlInfo, &"getTreesitterLanguage {languageId}: {config}"
+  # log lvlInfo, &"getTreesitterLanguage {languageId}: {config}"
   let loadingLanguages = ({.gcsafe.}: loadingLanguages.addr)
   let loadedLanguages = ({.gcsafe.}: loadedLanguages.addr)
   if loadingLanguages[].contains(languageId):

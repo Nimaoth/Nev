@@ -1031,7 +1031,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine {.stacktrace: off, l
     echo &"getStyledText({i}): {b}"
 
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
-  logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
+  # logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
 
   self.highlightQuery = nil
   self.errorQuery = nil
@@ -1055,7 +1055,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     log lvlWarn, &"Treesitter language is not available for '{self.languageId}'"
     return
 
-  log lvlInfo, &"loadTreesitterLanguage {prevLanguageId}: Loaded language, apply"
+  # log lvlInfo, &"loadTreesitterLanguage {prevLanguageId}: Loaded language, apply"
   self.currentContentFailedToParse = false
   self.tsLanguage = language.get
   self.currentTree.delete()
@@ -1103,7 +1103,7 @@ proc newTextDocument*(
     load: bool = false,
     createLanguageServer: bool = true): TextDocument =
 
-  log lvlInfo, &"Creating new text document '{filename}', (lang: {language}, app: {app}, ls: {createLanguageServer})"
+  # log lvlInfo, &"Creating new text document '{filename}', (lang: {language}, app: {app}, ls: {createLanguageServer})"
   new(result)
 
   {.gcsafe.}:
@@ -1159,7 +1159,7 @@ proc newTextDocument*(
     asyncSpawn self.connectLanguageServer()
 
 method deinit*(self: TextDocument) =
-  logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
+  # logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
   if self.currentTree.isNotNil:
     self.currentTree.delete()
   self.highlightQuery = nil

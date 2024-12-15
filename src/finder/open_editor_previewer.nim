@@ -17,7 +17,7 @@ proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
   result.editors = services.getService(DocumentEditorService).get
 
 method deinit*(self: OpenEditorPreviewer) =
-  logScope lvlInfo, &"[deinit] Destroying open editor previewer"
+  # logScope lvlInfo, &"[deinit] Destroying open editor previewer"
 
   self[] = default(typeof(self[]))
 
@@ -25,7 +25,7 @@ method delayPreview*(self: OpenEditorPreviewer) =
   discard
 
 method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: DocumentEditor) =
-  logScope lvlInfo, &"previewItem {item}"
+  # logScope lvlInfo, &"previewItem {item}"
 
   if not (editor of TextDocumentEditor):
     return
