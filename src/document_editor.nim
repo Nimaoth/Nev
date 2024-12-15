@@ -16,7 +16,6 @@ type
   DocumentEditor* = ref object of RootObj
     id*: EditorId
     userId*: Id
-    eventHandler*: EventHandler
     renderHeader*: bool
     fillAvailableSpace*: bool
     lastContentBounds*: Rect

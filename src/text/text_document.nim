@@ -243,8 +243,9 @@ proc parseTreesitterThread(parser: ptr TSParser, oldTree: TSTree, text: sink Rop
   let newTree = parser[].parseCallback(oldTree):
     proc(byteIndex: int, cursor: Cursor): (ptr char, int) =
       if byteIndex < ropeCursor.offset:
-        ropeCursor.reset()
+        ropeCursor.resetCursor()
 
+      assert not ropeCursor.rope.tree.isNil
       ropeCursor.seekForward(byteIndex)
       if ropeCursor.chunk.getSome(chunk):
         let byteIndexRel = byteIndex - ropeCursor.chunkStartPos

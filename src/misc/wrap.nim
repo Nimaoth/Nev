@@ -76,12 +76,12 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
     quote do:
       return `callScriptFuncFromJson`.toJson
 
-  result = genAst(functionName = newName, call, argName = jsonArg):
+  result = genAst(functionName = newName, functionNameStr = newName.repr, call, argName = jsonArg):
     proc functionName*(argName: JsonNode): JsonNode {.nimcall, used, raises: [JsonCallError].} =
       try:
         call
-      except:
-        raise newException(JsonCallError, "", getCurrentException())
+      except Exception as e:
+        raise newException(JsonCallError, "Failed to call json wrapped function " & functionNameStr & ": " & e.msg, e)
 
 proc serializeArgumentsToJson*(def: NimNode, targetUiae: NimNode): (NimNode, NimNode) =
   let argsName = genSym(nskVar)

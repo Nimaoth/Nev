@@ -1109,6 +1109,26 @@ proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) {.
       argsJsonString.cstring)
 
 
+proc editor_text_stageFile_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc stageFile*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_stageFile_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_format_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc format*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_format_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_checkoutFile_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc checkoutFile*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
@@ -2232,13 +2252,15 @@ proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) {.gcsafe,
       argsJsonString.cstring)
 
 
-proc editor_text_recordCurrentCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
-    importc.}
-proc recordCurrentCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+proc editor_text_recordCurrentCommand_void_TextDocumentEditor_seq_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc recordCurrentCommand*(self: TextDocumentEditor;
+                           registers: seq[string] = @[]) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
+  argsJson.add registers.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_recordCurrentCommand_void_TextDocumentEditor_wasm(
+  let res {.used.} = editor_text_recordCurrentCommand_void_TextDocumentEditor_seq_string_wasm(
       argsJsonString.cstring)
 
 
@@ -2279,5 +2301,56 @@ proc runDragCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runDragCommand_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_addEventHandler_void_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc addEventHandler*(self: TextDocumentEditor; name: string) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add name.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_addEventHandler_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_removeEventHandler_void_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc removeEventHandler*(self: TextDocumentEditor; name: string) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add name.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_removeEventHandler_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_getCurrentEventHandlers_seq_string_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getCurrentEventHandlers_seq_string_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_setCustomHeader_void_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc setCustomHeader*(self: TextDocumentEditor; text: string) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add text.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setCustomHeader_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
 

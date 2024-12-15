@@ -71,4 +71,5 @@ proc handleScriptActionWasm(name: cstring, args: cstring): cstring {.wasmexport.
     return handleScriptActionWasmResult.cstring
   except:
     info &"handleScriptActionWasm failed: {name} '{args}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-    return cstring("error: " & getCurrentExceptionMsg())
+    handleScriptActionWasmResult = "error: " & getCurrentExceptionMsg()
+    return handleScriptActionWasmResult.cstring

@@ -805,11 +805,12 @@ proc saveAppState*(self: App)
 proc printStatistics*(self: App)
 
 proc shutdown*(self: App) =
-  # Clear log document so we don't log to it as it will be destroyed.
-  self.printStatistics()
+  if self.config.getOption("editor.print-statistics-on-shutdown", false):
+    self.printStatistics()
 
   self.saveAppState()
 
+  # Clear log document so we don't log to it as it will be destroyed.
   self.logDocument = nil
 
   for popup in self.layout.popups:
@@ -2259,21 +2260,27 @@ proc registerPluginSourceCode*(self: App, path: string, content: string) {.expos
 
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
+
+  let context = if context.endsWith("."):
+    context[0..^2]
+  else:
+    context
+
   # log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
 
-  let (context, subContext) = if (let i = context.find('#'); i != -1):
+  let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
     (context[0..<i], context[i+1..^1] & subContext)
   else:
     (context, subContext)
 
   if description.len > 0:
-    self.events.commandDescriptions[context & subContext & keys] = description
+    self.events.commandDescriptions[baseContext & subContext & keys] = description
 
   var source = source
   if self.plugins.currentScriptContext.getSome(scriptContext):
     source.filename = scriptContext.getCurrentContext() & source.filename
 
-  self.events.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
+  self.events.getEventHandlerConfig(baseContext).addCommand(subContext, keys, command, source)
   self.events.invalidateCommandToKeysMap()
 
 proc getActivePopup*(): EditorId {.expose("editor").} =
@@ -2354,15 +2361,6 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expo
     elif gEditor.layout.getPopupForId(editorId).getSome(popup):
       discard popup.eventHandler.handleAction(action, arg)
 
-proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return
-    defer:
-      gEditor.platform.requestRender()
-    if gEditor.editors.getEditorForId(editorId).getSome(editor):
-      discard editor.eventHandler.handleInput(text)
-
 proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
@@ -2423,7 +2421,11 @@ proc printStatistics*(self: App) {.expose("editor").} =
 
       result.add &"Registers:\n"
       for (key, value) in self.registers.registers.mpairs:
-        result.add &"    {key}: {value}\n"
+        case value.kind
+        of RegisterKind.Text:
+          result.add &"    {key}: {value.text[0..<min(value.text.len, 150)]}\n"
+        of RegisterKind.Rope:
+          result.add &"    {key}: {value.rope[0...min(value.rope.len, 150)]}\n"
 
       result.add &"RecordingKeys:\n"
       for key in self.registers.recordingKeys:

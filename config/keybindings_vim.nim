@@ -1,7 +1,8 @@
 import std/[strutils, macros, genasts, sequtils, sets, algorithm]
 import plugin_runtime, keybindings_normal
-import misc/[timer, util, myjsonutils, custom_unicode]
+import misc/[timer, util, myjsonutils, custom_unicode, id]
 import input_api
+import keybindings_helix
 
 embedSource()
 
@@ -22,6 +23,11 @@ var vimMotionNextMode = initTable[EditorId, string]()
 
 const editorContext = "editor.text"
 
+proc vimState(editor: TextDocumentEditor): var EditorVimState =
+  if not editorStates.contains(editor.id):
+    editorStates[editor.id] = EditorVimState()
+  return editorStates[editor.id]
+
 proc shouldRecortImplicitPeriodMacro(editor: TextDocumentEditor): bool =
   case editor.getUsage()
   of "command-line", "search-bar":
@@ -29,10 +35,17 @@ proc shouldRecortImplicitPeriodMacro(editor: TextDocumentEditor): bool =
   else:
     return true
 
-proc vimState(editor: TextDocumentEditor): var EditorVimState =
-  if not editorStates.contains(editor.id):
-    editorStates[editor.id] = EditorVimState()
-  return editorStates[editor.id]
+proc recordCurrentCommandInPeriodMacro(editor: TextDocumentEditor) =
+  if not isReplayingCommands() and editor.shouldRecortImplicitPeriodMacro():
+    setRegisterText("", ".")
+    editor.recordCurrentCommand(@["."])
+
+proc startRecordingCurrentCommandInPeriodMacro(editor: TextDocumentEditor) =
+  if not isReplayingCommands() and editor.shouldRecortImplicitPeriodMacro():
+    startRecordingCommands(".-temp")
+    setRegisterText("", ".-temp")
+    editor.recordCurrentCommand(@[".-temp"])
+    editor.vimState.revisionBeforeImplicitInsertMacro = editor.getRevision
 
 type VimTextObjectRange* = enum Inner, Outer, CurrentToEnd
 
@@ -240,6 +253,8 @@ proc vimDeleteMove(editor: TextDocumentEditor, move: string, count: int = 1) {.e
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
   editor.vimDeleteSelection(false, oldSelections=oldSelections.some)
+
+  editor.recordCurrentCommandInPeriodMacro()
 
 proc vimChangeMove(editor: TextDocumentEditor, move: string, count: int = 1) {.exposeActive(editorContext, "vim-change-move").} =
   # infof"vimChangeMove '{move}' {count}"
@@ -485,7 +500,7 @@ addCustomTextMove "vim-surround-\"-outer", vimMotionSurroundDoubleQuotesOuter
 addCustomTextMove "vim-surround-'-inner", vimMotionSurroundSingleQuotesInner
 addCustomTextMove "vim-surround-'-outer", vimMotionSurroundSingleQuotesOuter
 
-iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
+iterator iterateTextObjects*(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
   var selection = editor.getSelectionForMove(cursor, move, 0)
   # infof"iterateTextObjects({cursor}, {move}, {backwards}), selection: {selection}"
   yield selection
@@ -512,7 +527,7 @@ iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: st
     selection = newSelection
     yield selection
 
-iterator enumerateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): (int, Selection) =
+iterator enumerateTextObjects*(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): (int, Selection) =
   var i = 0
   for selection in iterateTextObjects(editor, cursor, move, backwards):
     yield (i, selection)
@@ -662,8 +677,7 @@ proc vimDeleteRight*(editor: TextDocumentEditor) =
 exposeActive editorContext, "vim-delete-left", vimDeleteLeft
 
 proc vimMoveCursorColumn(editor: TextDocumentEditor, direction: int, count: int = 1) {.exposeActive(editorContext, "vim-move-cursor-column").} =
-  editor.moveCursorColumn(direction * max(count, 1), wrap=false,
-    includeAfter=editor.vimState.cursorIncludeEol)
+  editor.moveCursorColumn(direction * max(count, 1), wrap=false, includeAfter=editor.vimState.cursorIncludeEol)
   if editor.vimState.selectLines:
     editor.vimSelectLine()
   editor.updateTargetColumn()
@@ -787,6 +801,8 @@ proc vimUnindent(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-
   editor.addNextCheckpoint "insert"
   editor.unindent()
 
+var onModeChangedHandle: Id
+
 proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   let t = startTimer()
   defer:
@@ -799,6 +815,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   for id in getAllEditors():
     if id.isTextEditor(editor):
       editor.setMode("normal")
+      editor.setCustomHeader("vim")
 
   setHandleInputs "editor.text", false
   setOption "editor.text.vim-motion-action", "vim-select-last-cursor"
@@ -822,7 +839,12 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   setOption "editor.text.cursor.wide.visual-line", true
   setOption "editor.text.cursor.movement.visual-line", "last"
 
-  setModeChangedHandler proc(editor, oldMode, newMode: auto) {.gcsafe, raises: [].} =
+  addModeChangedHandler onModeChangedHandle, proc(editor, oldMode, newMode: auto) {.gcsafe, raises: [].} =
+    echo editor.getCurrentEventHandlers()
+    if not editor.getCurrentEventHandlers().contains("editor.text"):
+      return
+
+    echo "vim handle mode changed"
     if newMode == "":
       editor.setMode "normal"
       return
@@ -845,15 +867,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
         else:
           infof"Don't record implicit macro because nothing was modified"
     else:
-      if oldMode == "normal" and
-          not isReplayingCommands() and
-          newMode in recordModes and
-          editor.shouldRecortImplicitPeriodMacro():
-
-        editor.recordCurrentCommand()
-        setRegisterText("", ".-temp")
-        startRecordingCommands(".-temp")
-        editor.vimState.revisionBeforeImplicitInsertMacro = editor.getRevision
+      if oldMode == "normal" and newMode in recordModes:
+        editor.startRecordingCurrentCommandInPeriodMacro()
 
       editor.clearCurrentCommandHistory(retainLast=true)
 
@@ -1501,7 +1516,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   addTextCommandBlock "visual", "L":
     if editor.selections.len == 1:
-      editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true))
+      editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
 
     let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
     editor.selections = editor.selections & next
@@ -1531,6 +1546,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.addNextCheckpoint "insert"
     editor.toggleLineComment()
 
+  addTextCommand "", "<C-k><C-f>", "format"
+  addTextCommand "", "<C-k><C-s>", "stage-file"
   addTextCommand "", "<C-k><C-a>", "clear-diagnostics"
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-k><C-d>", "print-treesitter-tree-under-cursor"
@@ -1565,3 +1582,18 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "", "<LEADER>gc", "update-diff"
   addTextCommand "", "<LEADER>gl", "fuzzy-search-lines"
   addTextCommand "", "<LEADER>gL", "fuzzy-search-lines", minScore = 0.4, sort = false
+
+  addCommandBlock "editor", "<LEADER>h":
+    if getActiveEditor().isTextEditor(editor):
+      if editor.getCurrentEventHandlers().contains("helix"):
+        infof"Activate vim keybindings for current editor"
+        loadVimKeybindings()
+        editor.removeEventHandler("helix")
+        editor.addEventHandler("editor.text")
+        editor.setCustomHeader("vim")
+      else:
+        infof"Activate helix keybindings for current editor"
+        loadHelixKeybindings()
+        editor.removeEventHandler("editor.text")
+        editor.addEventHandler("helix")
+        editor.setCustomHeader("helix")
