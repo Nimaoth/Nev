@@ -53,7 +53,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   plugins: PluginService
   registers: Registers
   workspace: Workspace
-
+  vfsService: VFSService
   vfs: VFS
 
   document*: TextDocument
@@ -1894,6 +1894,20 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
+
+proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  if self.vcs.getVcsForFile(self.document.filename).getSome(vcs):
+    let res = await vcs.stageFile(self.document.localizedPath)
+    debugf"add finished: {res}"
+
+    if self.diffDocument.isNotNil:
+      self.updateDiff()
+
+proc stageFile*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.stageFileAsync()
+
+proc format*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.document.format(runOnTempFile = true)
 
 proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
   if self.document.isNil:

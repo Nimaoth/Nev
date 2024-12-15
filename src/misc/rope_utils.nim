@@ -1,8 +1,9 @@
-import std/[options, strutils]
+import std/[options, strutils, atomics]
 import nimsumtree/[rope, sumtree]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import custom_async, custom_unicode, util
+import text/diff
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -37,6 +38,61 @@ proc createRopeAsync*(str: ptr string, rope: ptr Rope): Future[Option[int]] {.as
   if errorIndex != -1:
     return errorIndex.some
   return int.none
+
+type DiffRopesData = object
+  rc: Atomic[int]
+  a: Rope
+  b: Rope
+  diff: ptr RopeDiff[int]
+  cancel: Atomic[bool]
+  threadDone: Atomic[bool]
+
+proc diffRopeThread(data: ptr DiffRopesData) =
+  defer:
+    if data[].rc.fetchSub(1, moRelease) == 1:
+      fence(moAcquire)
+      try:
+        `=destroy`(data[])
+        `=wasMoved`(data[])
+      except:
+        discard
+      freeShared(data)
+
+  discard data[].rc.fetchAdd(1, moRelaxed)
+
+  var a = data.a.clone()
+  var b = data.b.clone()
+  var d = diff(a, b, data.cancel.addr)
+  if not data.cancel.load:
+    data.diff[] = d.ensureMove
+  data.threadDone.store(true)
+
+proc diffRopeAsync*(a, b: sink Rope, res: ptr RopeDiff[int]): Future[void] {.async.} =
+  ## Returns `some(index)` if the string contains invalid utf8 at `index`
+  let data = createShared(DiffRopesData)
+  data.rc.store(1)
+  data.a = a.clone()
+  data.b = b.clone()
+  data.diff = res
+  data.cancel.store(false)
+  data.threadDone.store(false)
+
+  defer:
+    if data[].rc.fetchSub(1, moRelease) == 1:
+      fence(moAcquire)
+      try:
+        {.gcsafe.}:
+          `=destroy`(data[])
+          `=wasMoved`(data[])
+      except:
+        discard
+      freeShared(data)
+
+  try:
+    await spawnAsync(diffRopeThread, data)
+  except CancelledError as e:
+    data.cancel.store(true)
+    raise e
 
 ######################################################################### Rope api only, maybe move to rope library later
 

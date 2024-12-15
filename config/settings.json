@@ -151,6 +151,7 @@
         },
         "nim": {
             "treesitter": "alaviss/tree-sitter-nim",
+            "formatter": "nph",
             "tabWidth": 2,
             "indent": "spaces",
             "indentAfter": [
@@ -526,6 +527,12 @@
         "frame-time-smoothing": 0.8,
         "close-unused-documents-timer": 10,
         "maxViews": 2
+    },
+
+    "text": {
+        "reload-diff": true,
+        "reload-diff-timeout": 250,
+        "format-on-save": false,
     },
 
     "debugger": {

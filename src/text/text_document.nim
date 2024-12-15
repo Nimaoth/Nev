@@ -2,11 +2,13 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, bench, rope_utils]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, bench, rope_utils, async_process]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme, service, vfs, vfs_service
 import pkg/[chroma, results]
+
+import diff
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -131,6 +133,7 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
 proc resolveDiagnosticAnchors*(self: TextDocument)
 proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
+proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
 
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
@@ -1190,6 +1193,9 @@ proc saveAsync(self:  TextDocument) {.async.} =
     self.isBackedByFile = true
     self.lastSavedRevision = self.undoableRevision
     self.onSaved.invoke()
+
+    if self.configProvider.getValue("text.format-on-save", false):
+      asyncSpawn self.format(runOnTempFile = false)
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
 
@@ -1261,6 +1267,40 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   # log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
+proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.} =
+  if self.configProvider.getValue("text.reload-diff", true):
+    let diffTimeout = self.configProvider.getValue("text.reload-diff-timeout", 250)
+    let t = startTimer()
+
+    try:
+      let oldRope = self.rope.clone()
+      var diff = RopeDiff[int]()
+      await diffRopeAsync(oldRope.clone(), rope.clone(), diff.addr).wait(diffTimeout.milliseconds)
+      log lvlDebug, &"Diff took {t.elapsed.ms} ms"
+
+      if diff.edits.len > 0:
+        var selections = newSeq[Selection]()
+        var texts = newSeq[RopeSlice[int]]()
+        for edit in diff.edits:
+          let a = oldRope.convert(edit.range.a, Point)
+          let b = oldRope.convert(edit.range.b, Point)
+          selections.add (a.toCursor, b.toCursor)
+          texts.add edit.text.clone()
+
+        discard self.edit(selections, [], texts)
+
+      if self.configProvider.getValue("text.reload-diff-check", false):
+        if $self.rope != $rope:
+          log lvlError, &"Failed diff: {self.rope.len} != {rope.len}"
+          self.replaceAll(rope.move)
+
+    except AsyncTimeoutError:
+      log lvlDebug, &"Timeout after {t.elapsed.ms} ms"
+      self.replaceAll(rope.move)
+
+  else:
+    self.replaceAll(rope.move)
+
 proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   logScope lvlInfo, &"loadAsync '{self.filename}', reload = {isReload}"
 
@@ -1281,9 +1321,9 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   self.onPreLoaded.invoke self
 
   if isReload:
-    self.replaceAll(rope.move)
+    await self.reloadFromRope(rope.clone())
   else:
-    self.content = rope.move
+    self.content = rope.clone()
 
   if self.vfs.getFileAttributes(self.filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
@@ -1367,6 +1407,47 @@ method load*(self: TextDocument, filename: string = "") =
   self.isBackedByFile = true
 
   asyncSpawn self.loadAsync(isReload)
+
+proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
+  try:
+    let formatterConfig = self.configProvider.getValue(&"languages.{self.languageId}.formatter", newJNull())
+    let (formatterPath, formatterArgs) = if formatterConfig.kind == JString:
+      (formatterConfig.getStr, @[])
+    else:
+      (formatterConfig["path"].jsonTo(string), formatterConfig.fields.getOrDefault("args", newJArray()).jsonTo(seq[string]))
+
+    log lvlInfo, &"Format document '{self.filename}' with '{formatterPath} {formatterArgs}'"
+
+    if runOnTempFile:
+      let ext = self.filename.splitFile.ext
+      let tempFile = self.vfs.genTempPath(prefix = "format/", suffix = ext)
+      try:
+        var rope = self.rope.clone()
+        await self.vfs.write(tempFile, self.rope)
+      except IOError as e:
+        log lvlError, &"[format] Failed to write file {tempFile}: {e.msg}\n{e.getStackTrace()}"
+        return
+
+      defer:
+        asyncSpawn asyncDiscard self.vfs.delete(tempFile)
+
+      discard await runProcessAsync(formatterPath, formatterArgs & @[self.vfs.localize(tempFile)])
+
+      var rope: Rope = Rope.new()
+      try:
+        await self.vfs.readRope(tempFile, rope.addr)
+      except IOError as e:
+        log lvlError, &"[format] Failed to load file {tempFile}: {e.msg}\n{e.getStackTrace()}"
+        return
+
+      await self.reloadFromRope(rope.clone())
+
+    else:
+      discard await runProcessAsync(formatterPath, formatterArgs & @[self.localizedPath])
+      await self.loadAsync(isReload = true)
+
+  except Exception as e:
+    log lvlError, &"Failed to format document '{self.filename}': {e.msg}\n{e.getStackTrace()}"
 
 proc resolveDiagnosticAnchors*(self: TextDocument) =
   if self.currentDiagnostics.len == 0:
