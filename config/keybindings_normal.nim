@@ -13,6 +13,13 @@ proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: s
       handler(editor, arg.oldMode, arg.newMode)
   setOption("editor.text.mode-changed-handler", $id)
 
+proc addModeChangedHandler*(id: var Id, handler: proc(editor: TextDocumentEditor, oldMode: string, newMode: string) {.gcsafe, raises: [].}) =
+  if id != idNone():
+    onEditorModeChanged.unsubscribe(id)
+  id = onEditorModeChanged.subscribe proc(arg: auto) {.gcsafe, raises: [].} =
+    # infof"onEditorModeChanged: {arg.editor}, {arg.oldMode}, {arg.newMode}"
+    if arg.editor.isTextEditor(editor) and not editor.isRunningSavedCommands:
+      handler(editor, arg.oldMode, arg.newMode)
 
 proc loadStandardKeybindings() =
   addCommand "editor", "<C-s>", "write-file"

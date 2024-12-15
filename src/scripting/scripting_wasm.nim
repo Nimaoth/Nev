@@ -165,7 +165,7 @@ method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode
       self.stack.add m
       defer: discard self.stack.pop
       let res = $f(m, p, name.cstring, argStr.cstring)
-      if res.len == 0:
+      if res.len == 0 or res.startsWith("error: "):
         continue
 
       try:

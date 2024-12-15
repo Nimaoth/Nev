@@ -246,6 +246,8 @@ template addCommandBlockDesc*(context: string, keys: string, desc: string, body:
     addCommandDesc context, keys, desc, p, currentSourceLocation(-2)
 
 func getContextWithMode*(context: string, mode: string): string =
+  if mode.contains("."):
+    return mode
   if mode.len == 0 or mode[0] == '#':
     return context & mode
   else:

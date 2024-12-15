@@ -775,18 +775,6 @@ proc scriptRunActionFor*(editorId: EditorId; action: string; arg: string) {.
       argsJsonString.cstring)
 
 
-proc editor_scriptInsertTextInto_void_EditorId_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptInsertTextInto*(editorId: EditorId; text: string) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add editorId.toJson()
-  argsJson.add text.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptInsertTextInto_void_EditorId_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_scriptSetCallback_void_string_int_wasm(arg: cstring): cstring {.
     importc.}
 proc scriptSetCallback*(path: string; id: int) {.gcsafe, raises: [].} =

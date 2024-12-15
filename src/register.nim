@@ -97,13 +97,19 @@ proc getRegisterAsync*(self: Registers, register: string, res: ptr Register): Fu
 
   return false
 
-proc recordCommand*(self: Registers, command: string, args: string) =
-  for register in self.recordingCommands:
-    if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
-      self.registers[register] = Register(kind: RegisterKind.Text, text: "")
-    if self.registers[register].text.len > 0:
-      self.registers[register].text.add "\n"
-    self.registers[register].text.add command & " " & args
+proc recordCommand*(self: Registers, command: string, args: string, registers: openArray[string] = []) =
+  template iterate(commands: untyped) =
+    for register in commands:
+      if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+        self.registers[register] = Register(kind: RegisterKind.Text, text: "")
+      if self.registers[register].text.len > 0:
+        self.registers[register].text.add "\n"
+      self.registers[register].text.add command & " " & args
+
+  if registers.len > 0:
+    iterate(registers)
+  else:
+    iterate(self.recordingCommands)
 
 ###########################################################################
 

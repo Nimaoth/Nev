@@ -1174,7 +1174,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             if currentRuneHexText.len == 0:
               currentRuneHexText = "0"
 
-            let text = fmt"| {readOnlyText}{stagedText}{diffText}{self.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+            let text = fmt"{self.customHeader} | {readOnlyText}{stagedText}{diffText}{self.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
 
         builder.panel(sizeFlags + &{FillBackground}, backgroundColor = backgroundColor):
