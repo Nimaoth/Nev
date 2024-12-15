@@ -331,7 +331,8 @@ proc languageId*(self: TextDocument): string =
 proc `languageId=`*(self: TextDocument, languageId: string) =
   if self.mLanguageId != languageId:
     self.mLanguageId = languageId
-    self.reloadTreesitterLanguage()
+    if not self.requiresLoad:
+      self.reloadTreesitterLanguage()
 
 func contentString*(self: TextDocument): string =
   if self.rope.tree.isNil:
@@ -1120,6 +1121,8 @@ proc newTextDocument*(
   self.createLanguageServer = createLanguageServer
   self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
   self.filename = self.vfs.normalize(filename)
+  self.isBackedByFile = load
+  self.requiresLoad = load
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
@@ -1151,9 +1154,6 @@ proc newTextDocument*(
 
   self.content = content
   self.languageServer = languageServer.mapIt(it)
-
-  if load:
-    self.load()
 
   if self.languageServer.isNone and createLanguageServer and autoStartServer:
     asyncSpawn self.connectLanguageServer()
@@ -1259,7 +1259,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
     self.languageConfig.get.tabWidth = minIndent
     self.indentStyle = IndentStyle(kind: Spaces, spaces: minIndent)
 
-  log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
+  # log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
 proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   logScope lvlInfo, &"loadAsync '{self.filename}', reload = {isReload}"
@@ -1362,7 +1362,7 @@ method load*(self: TextDocument, filename: string = "") =
     log lvlError, &"save: Missing filename"
     return
 
-  let isReload = self.isBackedByFile and filename == self.filename
+  let isReload = self.isBackedByFile and filename == self.filename and not self.requiresLoad
   self.filename = filename
   self.isBackedByFile = true
 

@@ -1459,7 +1459,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
       let view = allViews[i].EditorView
       let document = view.editor.getDocument
       let path = document.filename
-      let isDirty = document.lastSavedRevision != document.revision
+      let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
       let dirtyMarker = if isDirty: "*" else: " "
       let activeMarker = if i == self.layout.currentView:
         "#"
@@ -1535,7 +1535,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
         continue
 
       let path = document.filename
-      let isDirty = document.lastSavedRevision != document.revision
+      let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
       let dirtyMarker = if isDirty: "*" else: " "
       let (directory, name) = path.splitPath
       let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
