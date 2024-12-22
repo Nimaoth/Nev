@@ -1580,7 +1580,7 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
 
     self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       let uri = diagnostics.uri.decodeUrl.parseUri
-      if uri.path.normalizePathUnix == self.filename:
+      if uri.path.normalizePathUnix == self.localizedPath:
         let version = diagnostics.version.mapIt(self.buffer.history.versions.get(it)).flatten
         if version.getSome(version) and not version.observedAll(self.lastDiagnosticVersion):
           log lvlWarn, &"Got diagnostics older that the current. Current {self.lastDiagnosticVersion}, received {version}"
