@@ -111,11 +111,25 @@ proc anyColor*(theme: Theme, color: string, default: Color = Color(r: 0, g: 0, b
 {.pop.} # gcsafe
 
 proc fromJsonHook*(color: var Color, jsonNode: JsonNode) =
-  if jsonNode.kind == JNull:
+  case jsonNode.kind
+  of JNull:
     color = Color()
     return
 
-  color = parseHexVar(jsonNode.str).valueOr(Color())
+  of JString:
+    color = parseHexVar(jsonNode.str).valueOr(Color())
+
+  of JObject:
+    color.r = jsonNode["r"].getFloat
+    color.g = jsonNode["g"].getFloat
+    color.b = jsonNode["b"].getFloat
+    if jsonNode.hasKey("a"):
+      color.a = jsonNode["a"].getFloat
+    else:
+      color.a = 1
+
+  else:
+    assert false, "Can't convert json " & $jsonNode & " to Color"
 
 proc fromJsonHook*(style: var set[FontStyle], jsonNode: JsonNode) =
   style = {}
