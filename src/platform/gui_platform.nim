@@ -532,6 +532,55 @@ method render*(self: GuiPlatform) =
   except:
     discard
 
+proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1)) =
+  let font = platform.getFont(platform.ctx.fontSize, flags)
+
+  let wrap = TextWrap in flags
+  let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
+    vec2(bounds.w, bounds.h)
+  else:
+    vec2(0, 0)
+
+  let hAlign = if TextAlignHorizontalLeft in flags:
+    HorizontalAlignment.LeftAlign
+  elif TextAlignHorizontalCenter in flags:
+    HorizontalAlignment.CenterAlign
+  elif TextAlignHorizontalRight in flags:
+    HorizontalAlignment.RightAlign
+  else:
+    HorizontalAlignment.LeftAlign
+
+  let vAlign = if TextAlignVerticalTop in flags:
+    VerticalAlignment.TopAlign
+  elif TextAlignVerticalCenter in flags:
+    VerticalAlignment.MiddleAlign
+  elif TextAlignVerticalBottom in flags:
+    VerticalAlignment.BottomAlign
+  else:
+    VerticalAlignment.TopAlign
+
+  let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
+  try:
+    for i, rune in arrangement.runes:
+      if not platform.glyphCache.contains(rune):
+        var path = font.typeface.getGlyphPath(rune)
+        let rect = arrangement.selectionRects[i]
+        path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+        var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+        for paint in font.paints:
+          image.fillPath(path, paint)
+        platform.boxy.addImage($rune, image, genMipmaps=false)
+        platform.glyphCache[rune] = $rune
+
+      let pos = vec2(pos.x.floor, pos.y.floor) + arrangement.selectionRects[i].xy
+      platform.boxy.drawImage($rune, pos, color)
+
+    if TextUndercurl in flags:
+      platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
+
+  except GLerror, Exception:
+    discard
+
 proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
   try:
     var nodePos = offset
@@ -571,54 +620,22 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
         platform.boxy.popLayer()
 
     if DrawText in node.flags:
-      let font = platform.getFont(platform.ctx.fontSize, node.flags)
-
-      let wrap = TextWrap in node.flags
-      let wrapBounds = if node.flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
-        vec2(node.w, node.h)
-      else:
-        vec2(0, 0)
-
-      let hAlign = if TextAlignHorizontalLeft in node.flags:
-        HorizontalAlignment.LeftAlign
-      elif TextAlignHorizontalCenter in node.flags:
-        HorizontalAlignment.CenterAlign
-      elif TextAlignHorizontalRight in node.flags:
-        HorizontalAlignment.RightAlign
-      else:
-        HorizontalAlignment.LeftAlign
-
-      let vAlign = if TextAlignVerticalTop in node.flags:
-        VerticalAlignment.TopAlign
-      elif TextAlignVerticalCenter in node.flags:
-        VerticalAlignment.MiddleAlign
-      elif TextAlignVerticalBottom in node.flags:
-        VerticalAlignment.BottomAlign
-      else:
-        VerticalAlignment.TopAlign
-
-      let arrangement = font.typeset(node.text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
-      for i, rune in arrangement.runes:
-        if not platform.glyphCache.contains(rune):
-          var path = font.typeface.getGlyphPath(rune)
-          let rect = arrangement.selectionRects[i]
-          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
-          for paint in font.paints:
-            image.fillPath(path, paint)
-          platform.boxy.addImage($rune, image, genMipmaps=false)
-          platform.glyphCache[rune] = $rune
-
-        let pos = vec2(nodePos.x.floor, nodePos.y.floor) + arrangement.selectionRects[i].xy
-        platform.boxy.drawImage($rune, pos, node.textColor)
-
-      if TextUndercurl in node.flags:
-        platform.boxy.drawRect(rect(bounds.x, bounds.yh - 2, bounds.w, 2), node.underlineColor)
+      platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.flags, node.underlineColor)
 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
 
     if DrawBorder in node.flags:
       platform.boxy.strokeRect(bounds, node.borderColor)
+
+    for command in node.renderCommands:
+      case command.kind
+      of RenderCommandKind.Rect:
+        platform.boxy.strokeRect(command.bounds + offset, command.color)
+      of RenderCommandKind.FilledRect:
+        platform.boxy.drawRect(command.bounds + offset, command.color)
+      of RenderCommandKind.Text:
+        platform.drawText(command.text, command.bounds.xy + offset, command.bounds + offset, command.color, command.flags)
+
   except GLerror, Exception:
     discard

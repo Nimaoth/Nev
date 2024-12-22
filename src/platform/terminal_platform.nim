@@ -548,5 +548,16 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
 
+    for command in node.renderCommands:
+      case command.kind
+      of RenderCommandKind.Rect:
+        platform.fillRect(command.bounds + offset, command.color)
+      of RenderCommandKind.FilledRect:
+        platform.fillRect(command.bounds + offset, command.color)
+      of RenderCommandKind.Text:
+        platform.buffer.setBackgroundColor(bgNone)
+        platform.setForegroundColor(command.color)
+        platform.writeText(command.bounds.xy + offset, command.text, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags)
+
     # if DrawBorder in node.flags:
     #   platform.drawRect(bounds, node.borderColor)

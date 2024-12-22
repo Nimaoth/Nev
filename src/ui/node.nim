@@ -2,9 +2,10 @@ import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, 
 import fusion/matching
 import chroma, vmath
 import misc/[macro_utils, util, id, custom_unicode, array_set, rect_utils, custom_logger]
-import input
+import input, render_command
 
 export util, id, input, chroma, vmath, rect_utils
+export render_command
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -16,41 +17,6 @@ logCategory "ui-node"
 const logInvalidationRects* = false
 const logPanel* = false
 var totalNodes = 0
-
-defineBitFlagSized(uint64):
-  type UINodeFlag* = enum
-    SizeToContentX = 0
-    SizeToContentY
-    FillX
-    FillY
-    DrawBorder
-    FillBackground
-    LogLayout
-    AllowAlpha
-    MaskContent
-    DrawText
-    TextItalic
-    TextBold
-    TextWrap
-    TextUndercurl
-    TextAlignHorizontalLeft
-    TextAlignHorizontalCenter
-    TextAlignHorizontalRight
-    TextAlignVerticalTop
-    TextAlignVerticalCenter
-    TextAlignVerticalBottom
-    LayoutVertical
-    LayoutVerticalReverse
-    LayoutHorizontal
-    LayoutHorizontalReverse
-    OverlappingChildren
-    MouseHover
-    AnimateBounds
-    AnimatePosition
-    AnimateSize
-    SnapInitialBounds
-    AutoPivotChildren
-    IgnoreBoundsForSizeToContent
 
 when defined(uiNodeDebugData):
   import std/json
@@ -124,6 +90,7 @@ type
     mHandleEndHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleScroll: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].}
+    renderCommands*: seq[RenderCommand]
 
   UINodeBuilder* = ref object
     nodes: seq[UINode]
@@ -565,6 +532,11 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.mHandleScroll = nil
 
   node.clearRect = Rect.none
+
+  if node.renderCommands.len > 50:
+    node.renderCommands = @[]
+  else:
+    node.renderCommands.setLen(0)
 
 proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
   if last.isNil:
