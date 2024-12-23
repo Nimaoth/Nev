@@ -2354,3 +2354,43 @@ proc setCustomHeader*(self: TextDocumentEditor; text: string) {.gcsafe,
   let res {.used.} = editor_text_setCustomHeader_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
 
+
+proc editor_text_addCustomRenderer_void_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc addCustomRenderer*(self: TextDocumentEditor; name: string) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add name.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_addCustomRenderer_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_removeCustomRenderer_void_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc removeCustomRenderer*(self: TextDocumentEditor; name: string) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add name.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_removeCustomRenderer_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_hasCustomRenderer_bool_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc hasCustomRenderer*(self: TextDocumentEditor; name: string): bool {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add name.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_hasCustomRenderer_bool_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+

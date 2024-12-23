@@ -7,8 +7,9 @@ proc postInitialize*(): bool {.wasmexport.} =
 
 import default_config
 
-import keybindings_vim
 import keybindings_normal
+import keybindings_vim
+import keybindings_helix
 
 proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
   let keybindings = getOption("keybindings.preset", "")
@@ -20,6 +21,9 @@ proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
   of "vim":
     loadDefaultKeybindings(true)
     loadVimKeybindings()
+  of "helix":
+    loadDefaultKeybindings(true)
+    loadHelixKeybindings()
   of "vscode":
     loadDefaultKeybindings(true)
     loadVSCodeKeybindings()

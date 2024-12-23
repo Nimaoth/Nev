@@ -4,7 +4,7 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, array_set]
 import scripting/[expose, scripting_base]
 import platform/[platform]
 import language/[language_server_base]
@@ -17,6 +17,7 @@ import diff
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
+import ui/render_command
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Range, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
@@ -173,6 +174,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
   searchResultsDirty: bool
 
   customHeader*: string
+
+  renderCommands*: seq[RenderCommand]
+  pluginRenderFuncs: seq[string]
 
 type
   TextDocumentEditorService* = ref object of Service
@@ -516,6 +520,61 @@ proc preRender*(self: TextDocumentEditor) =
 
   if self.showCompletions:
     self.updateCompletionsFromEngine()
+
+proc prePostRender*(self: TextDocumentEditor) =
+  if self.configProvider.isNil or self.document.isNil:
+    return
+
+  self.renderCommands.setLen(0)
+  for render in self.pluginRenderFuncs:
+    try:
+      let t = startTimer()
+      let renderCommandsJson = self.plugins.invokeAnyCallback(render, %*{
+        "editor": self.id,
+        "bounds": self.lastTextAreaBounds,
+        "scrollOffset": self.scrollOffset,
+        "previousBaseIndex": self.previousBaseIndex,
+        "lastLines": self.lastRenderedLines.mapIt(it.index),
+        "lastCursorLocationBounds": self.lastCursorLocationBounds
+      })
+      let renderCommands = renderCommandsJson.jsonTo(seq[RenderCommand])
+      let e = t.elapsed.ms
+      self.renderCommands.add renderCommands
+
+      if self.configProvider.getValue("text.log-plugin-render-times", false):
+        debugf"render took {e} ms"
+    except:
+      discard
+
+proc handleMouseEvent*(self: TextDocumentEditor, button: MouseButton, pos: Vec2, down: bool) =
+  self.markDirty()
+  try:
+    let t = startTimer()
+    discard self.plugins.invokeAnyCallback("handle-click", %*{
+      "editor": self.id,
+      "button": button,
+      "pos": pos,
+      "down": down,
+    })
+
+    let e = t.elapsed.ms
+    # debugf"handle click took {e} ms"
+  except:
+    log lvlError, &"Failed to run handle-click"
+
+proc handleScroll*(self: TextDocumentEditor, delta: Vec2) =
+  self.markDirty()
+  try:
+    let t = startTimer()
+    discard self.plugins.invokeAnyCallback("handle-scroll", %*{
+      "editor": self.id,
+      "delta": delta,
+    })
+
+    let e = t.elapsed.ms
+    # debugf"handle scroll took {e} ms"
+  except:
+    discard
 
 iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection,
     includeAfter: bool = true): Selection =
@@ -3388,6 +3447,17 @@ proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] {.expose("e
 proc setCustomHeader*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   self.customHeader = text
   self.markDirty()
+
+proc addCustomRenderer*(self: TextDocumentEditor, name: string) {.expose("editor.text").} =
+  self.pluginRenderFuncs.incl name
+  self.markDirty()
+
+proc removeCustomRenderer*(self: TextDocumentEditor, name: string) {.expose("editor.text").} =
+  self.pluginRenderFuncs.excl name
+  self.markDirty()
+
+proc hasCustomRenderer*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
+  return name in self.pluginRenderFuncs
 
 genDispatcher("editor.text")
 addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
