@@ -665,6 +665,7 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
 
 proc translatePath(client: LSPClient, path: string): string =
   if path.startsWith("@") and client.workspaceInfo.getSome info:
+    assert false
     try:
       let endOffset = path.find("/")
       let index = path[1..<endOffset].parseInt

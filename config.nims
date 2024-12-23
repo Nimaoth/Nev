@@ -53,7 +53,7 @@ switch("d", "wasm3VerboseErrorMessages")
 
 # Configure which treesitter languages are compiled into the editor (ignored on js backend)
 # switch("d", "treesitterBuiltins=cpp,nim,agda,bash,c,css,go,html,java,javascript,python,ruby,rust,scala,csharp,zig,haskell")
-switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript,json")
+switch("d", "treesitterBuiltins=nim,json")
 
 # Automatically build wasmtime when compiling the editor
 const appBuildWasmtime {.booldefine.} = false
@@ -88,6 +88,7 @@ else:
 
 # results prints a ton of hints, silence them
 switch("d", "resultsGenericsOpenSymWorkaroundHint=false")
+switch("exceptions", "goto")
 
 when defined(musl):
   var muslGcc = findExe("musl-gcc")

@@ -1146,8 +1146,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
-    onClickAny btn:
-      self.layout.tryActivateEditor(self)
 
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode
@@ -1221,6 +1219,36 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
           if infos.hover.getSome(info):
             self.lastHoverLocationBounds = info.bounds.transformRect(info.node, builder.root).some
+
+    self.lastTextAreaBounds = currentNode.boundsAbsolute
+    self.prePostRender()
+    currentNode.renderCommands = self.renderCommands
+
+    builder.panel(&{UINodeFlag.FillX, FillY, MouseHover}):
+      onClickAny btn:
+        self.layout.tryActivateEditor(self)
+        self.handleMouseEvent(btn, pos, true)
+        return false
+
+      onReleased:
+        self.handleMouseEvent(btn, pos, false)
+        return false
+
+      onDrag Left:
+        self.handleMouseEvent(Left, pos, true)
+        return false
+
+      # onBeginHover:
+      #   if handleBeginHover.isNotNil:
+      #     handleBeginHover(partNode, pos, line.index, partIndex)
+
+      onHover:
+        self.handleMouseEvent(Left, pos, false)
+        return false
+
+      onScroll:
+        self.handleScroll(delta)
+        return false
 
   if self.showCompletions and self.active:
     result.add proc() =

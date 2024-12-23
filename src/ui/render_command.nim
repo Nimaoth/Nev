@@ -46,6 +46,8 @@ type
     Rect
     FilledRect
     Text
+    ScissorStart
+    ScissorEnd
 
   RenderCommand* = object
     bounds*: Rect
@@ -66,5 +68,9 @@ template buildCommands*(body: untyped): seq[RenderCommand] =
       commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor))
     template drawText(inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped =
       commands.add(RenderCommand(kind: RenderCommandKind.Text, text: inText, bounds: inBounds, color: inColor, flags: inFlags))
+    template startScissor(inBounds: Rect): untyped =
+      commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
+    template endScissor(): untyped =
+      commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd))
     body
     commands

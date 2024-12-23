@@ -628,6 +628,7 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
     if DrawBorder in node.flags:
       platform.boxy.strokeRect(bounds, node.borderColor)
 
+    var maskBounds: seq[Rect]
     for command in node.renderCommands:
       case command.kind
       of RenderCommandKind.Rect:
@@ -636,6 +637,18 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
         platform.boxy.drawRect(command.bounds + offset, command.color)
       of RenderCommandKind.Text:
         platform.drawText(command.text, command.bounds.xy + offset, command.bounds + offset, command.color, command.flags)
+      of RenderCommandKind.ScissorStart:
+        platform.boxy.pushLayer()
+        maskBounds.add(command.bounds + offset)
+      of RenderCommandKind.ScissorEnd:
+        if maskBounds.len == 0:
+          log lvlError, &"Unbalanced ScisscorStart/End pairs"
+          break
+        let bounds = maskBounds.pop()
+        platform.boxy.pushLayer()
+        platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+        platform.boxy.popLayer(blendMode = MaskBlend)
+        platform.boxy.popLayer()
 
   except GLerror, Exception:
     discard

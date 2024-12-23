@@ -558,6 +558,10 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
         platform.buffer.setBackgroundColor(bgNone)
         platform.setForegroundColor(command.color)
         platform.writeText(command.bounds.xy + offset, command.text, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags)
+      of RenderCommandKind.ScissorStart:
+        platform.pushMask(command.bounds + offset)
+      of RenderCommandKind.ScissorEnd:
+        platform.popMask()
 
     # if DrawBorder in node.flags:
     #   platform.drawRect(bounds, node.borderColor)
