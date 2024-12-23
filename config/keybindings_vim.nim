@@ -2,7 +2,6 @@ import std/[strutils, macros, genasts, sequtils, sets, algorithm]
 import plugin_runtime, keybindings_normal
 import misc/[timer, util, myjsonutils, custom_unicode, id]
 import input_api
-import keybindings_helix
 
 embedSource()
 
@@ -1580,18 +1579,3 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "", "<LEADER>gc", "update-diff"
   addTextCommand "", "<LEADER>gl", "fuzzy-search-lines"
   addTextCommand "", "<LEADER>gL", "fuzzy-search-lines", minScore = 0.4, sort = false
-
-  addCommandBlock "editor", "<LEADER>h":
-    if getActiveEditor().isTextEditor(editor):
-      if editor.getCurrentEventHandlers().contains("helix"):
-        infof"Activate vim keybindings for current editor"
-        loadVimKeybindings()
-        editor.removeEventHandler("helix")
-        editor.addEventHandler("editor.text")
-        editor.setCustomHeader("vim")
-      else:
-        infof"Activate helix keybindings for current editor"
-        loadHelixKeybindings()
-        editor.removeEventHandler("editor.text")
-        editor.addEventHandler("helix")
-        editor.setCustomHeader("helix")
