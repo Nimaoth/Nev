@@ -840,11 +840,9 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   setOption "editor.text.cursor.movement.visual-line", "last"
 
   addModeChangedHandler onModeChangedHandle, proc(editor, oldMode, newMode: auto) {.gcsafe, raises: [].} =
-    echo editor.getCurrentEventHandlers()
     if not editor.getCurrentEventHandlers().contains("editor.text"):
       return
 
-    echo "vim handle mode changed"
     if newMode == "":
       editor.setMode "normal"
       return
