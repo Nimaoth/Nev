@@ -61,6 +61,9 @@ proc getInt32*(module: WasmModule, dest: WasmPtr): int32 =
 proc getString*(module: WasmModule, pos: WasmPtr): cstring =
   return module.env.getString(pos)
 
+proc getMemory*(module: WasmModule, pos: WasmPtr, size: int): ptr UncheckedArray[uint8] =
+  return module.env.toUncheckedArray(pos, size)
+
 proc replace(node: NimNode, target: string, newNodes: openArray[NimNode]): bool =
   for i, c in node:
     if c.kind == nnkAccQuoted and c[0].strVal == target:

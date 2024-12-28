@@ -6,6 +6,34 @@ import ui/render_command
 
 import clay
 
+let isTerminal = getBackend() == Terminal
+let scale = if isTerminal: 1.0/16.0 else: 1
+
+template em(f: untyped): untyped =
+  f
+  # when typeof(f) is float:
+  #   if isTerminal:
+  #     f.floor
+  #   else:
+  #     f * 10 # * fontSize
+  # else:
+  #   if isTerminal:
+  #     f
+  #   else:
+  #     f * 10 # * fontSize
+
+proc stackAlloc(size: int32): int32 {.wasmexport.} =
+  discard
+  echo "stackAlloc"
+
+proc stackSave(): int32 {.wasmexport.} =
+  discard
+  echo "stackSave"
+
+proc stackRestore(p: int32) {.wasmexport.} =
+  discard
+  echo "stackSave"
+
 proc foo() {.expose("foo").} =
   ## Saves app state and quits the editor with exit code 123.
   ## You need to run the editor with tools/run.ps1 which restarts the editor when it exits with code 123.
@@ -56,13 +84,25 @@ proc c2nim(editor: TextDocumentEditor) {.expose("c2nim").} =
       editor.selections = editor.edit(@[editor.selection], @[newText])
 
 proc measureClayText(str: ptr ClayString, config: ptr ClayTextElementConfig): ClayDimensions {.cdecl.} =
-  return ClayDimensions(width: str.length.float * 10, height: 20)
+  if isTerminal:
+    return ClayDimensions(width: round(str.length.float / scale), height: round(1 / scale))
+  else:
+    return ClayDimensions(width: str.length.float * 10, height: 16)
 
 proc initClay() =
   let totalMemorySize = minMemorySize()
   var memory = ClayArena(label: cs"my memory arena", capacity: totalMemorySize, memory: cast[cstring](allocShared0(totalMemorySize)))
   # echo &"totalMemorySize: {totalMemorySize shr 10} kb"
-  clay.initialize(memory, ClayDimensions(width: 1024, height: 768))
+  # let dims = if isTerminal:
+  #   # clay.uiScale = 1
+  #   # clay.debugViewFontSize = 1
+  #   ClayDimensions(width: 160, height: 50)
+  # else:
+  #   # clay.uiScale = 10
+  #   # clay.debugViewFontSize = 16
+  #   ClayDimensions(width: 1024, height: 768)
+  let dims = ClayDimensions(width: 1024, height: 768)
+  clay.initialize(memory, dims)
   setMeasureTextFunction(measureClayText)
 
 initClay()
@@ -78,38 +118,39 @@ proc printf(frmt: cstring) {.varargs, header: "<stdio.h>", cdecl.}
 var lastMouse: Vec2
 var lastMouseDown = false
 var lastScroll: Vec2
-proc drawClay(): seq[RenderCommand] =
+proc drawClay(): RenderCommands =
   setPointerState(ClayVector2(x: lastMouse.x, y: lastMouse.y), lastMouseDown)
   updateScrollContainers(false, ClayVector2(x: lastScroll.x, y: lastScroll.y), 0.5)
-  var layoutElement = ClayLayoutConfig(padding: ClayPadding(x: 5, y: 10))
+  var layoutElement = ClayLayoutConfig(padding: ClayPadding(x: 1.em, y: 2.em), layoutDirection: TopToBottom)
   var textConfig = ClayTextElementConfig(textColor: clayColor(1, 1, 1))
   clay.beginLayout()
   UI(rectangle(color = clayColor(1, 0, 0)), layout(layoutElement)):
-    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1, 2, 3, 4)), layout(padding = ClayPadding(x: 20, y: 30))):
+    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 2.em, y: 3.em))):
       clayText($lastMouse, textColor = clayColor(0, 0, 1))
       clayText($lastMouseDown, textConfig)
       clayText($lastScroll, textColor = clayColor(0, 1, 0))
-    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1, 2, 3, 4)), layout(padding = ClayPadding(x: 20, y: 30))):
+    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 2.em, y: 3.em))):
       clayText("hello", textColor = clayColor(0, 0, 1))
       clayText("world", textConfig)
-    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1, 2, 3, 4)), layout(padding = ClayPadding(x: 20, y: 30))):
+    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 2.em, y: 3.em))):
       clayText("hello", textColor = clayColor(0, 0, 1))
       clayText("world", textConfig)
-    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1, 2, 3, 4)), layout(padding = ClayPadding(x: 20, y: 30))):
+    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 2.em, y: 3.em))):
       clayText("hello", textColor = clayColor(0, 0, 1))
       clayText("world", textConfig)
   let renderCommands = clay.endLayout()
   let arr = cast[ptr UncheckedArray[ClayRenderCommand]](renderCommands.internalArray)
 
+
   buildCommands:
     for i in 0..<renderCommands.length.int:
       case arr[i].commandType
       of Rectangle:
-        fillRect(arr[i].boundingBox.toRect, arr[i].config.rectangleElementConfig.color.toColor)
+        fillRect(arr[i].boundingBox.toRect * scale, arr[i].config.rectangleElementConfig.color.toColor)
       of Text:
-        drawText($arr[i].text, arr[i].boundingBox.toRect, arr[i].config.rectangleElementConfig.color.toColor, 0.UINodeFlags)
+        drawText($arr[i].text, arr[i].boundingBox.toRect * scale, arr[i].config.rectangleElementConfig.color.toColor, 0.UINodeFlags)
       of ScissorStart:
-        startScissor(arr[i].boundingBox.toRect)
+        startScissor(arr[i].boundingBox.toRect * scale)
         # echo arr[i].commandType
         # echo arr[i]
       of ScissorEnd:
@@ -117,6 +158,8 @@ proc drawClay(): seq[RenderCommand] =
         # echo arr[i].commandType
         # echo arr[i]
       else: discard
+
+var renderCommandsGlobal: RenderCommands
 
 block: # Custom render
   let id = addCallback proc(args: JsonNode): JsonNode =
@@ -129,8 +172,24 @@ block: # Custom render
       lastLines: seq[int]
 
     let commands = drawClay()
-    # echo commands.len
-    return commands.toJson
+    renderCommandsGlobal = commands
+
+    type Result = object
+      address: uint32
+      len: uint32
+      stride: uint32
+      strings: uint32
+      stringsLen: uint32
+
+    return Result(
+      address: cast[uint32](renderCommandsGlobal.commands[0].addr),
+      len: uint32(renderCommandsGlobal.commands.len),
+      stride: uint32(sizeof(RenderCommand)),
+      strings: cast[uint32](renderCommandsGlobal.strings[0].addr),
+      stringsLen: cast[uint32](renderCommandsGlobal.strings.len),
+    ).toJson
+
+    # return commands.toJson
 
     # let input = args.jsonTo(Payload)
     # let cursorBounds = input.lastCursorLocationBounds.get(rect(300, 300, 10, 10)) - input.bounds.xy
@@ -151,7 +210,10 @@ block: # handle-click
       down: bool
 
     let input = args.jsonTo(Payload)
-    lastMouse = input.pos
+    if isTerminal:
+      lastMouse = ((input.pos + 0.5) / scale).floor
+    else:
+      lastMouse = (input.pos / scale).floor
     lastMouseDown = input.down
     # setPointerState(ClayVector2(x: input.pos.x, y: input.pos.y), input.down)
     return newJNull()

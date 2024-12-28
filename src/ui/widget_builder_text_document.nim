@@ -1220,9 +1220,12 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
           if infos.hover.getSome(info):
             self.lastHoverLocationBounds = info.bounds.transformRect(info.node, builder.root).some
 
-    self.lastTextAreaBounds = currentNode.boundsAbsolute
-    self.prePostRender()
-    currentNode.renderCommands = self.renderCommands
+      self.lastTextAreaBounds = currentNode.boundsAbsolute
+      self.prePostRender()
+      # todo: don't copy renderCommands???
+      currentNode.renderCommands = self.renderCommands
+      if currentNode.renderCommands.commands.len > 0:
+        currentNode.markDirty(builder)
 
     builder.panel(&{UINodeFlag.FillX, FillY, MouseHover}):
       onClickAny btn:
