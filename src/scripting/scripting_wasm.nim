@@ -27,11 +27,15 @@ type
 
 var createEditorWasmImports: proc(): WasmImports {.raises: [].}
 
+proc getVfsPath*(self: WasmModule): string =
+  result = "plugs://"
+  result.add self.path.splitFile.name
+  result.add "/"
+
 method getCurrentContext*(self: ScriptContextWasm): string =
   result = "plugs://"
   if self.stack.len > 0:
-    result.add self.stack[^1].path.splitFile.name
-    result.add "/"
+    result = self.stack[^1].getVfsPath()
 
 macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; returnType: typedesc): untyped =
   result = quote do:
@@ -108,6 +112,18 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
 
   await self.loadModules("app://config/wasm")
 
+method getMemory*(self: ScriptContextWasm, path: string, address: int, size: int): ptr UncheckedArray[uint8] =
+  for module in self.modules:
+    if path != module.getVfsPath():
+      continue
+
+    try:
+      return module.getMemory(address.WasmPtr, size)
+    except WasmError as e:
+      log lvlError, &"Failed to get wasm memory {address}..{address + size}: {e.msg}"
+
+  return nil
+
 method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
     for (m, p, f) in self.editorModeChangedCallbacks:
@@ -142,10 +158,17 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
     result = nil
     let argStr = $arg
     for (m, p, f) in self.handleAnyCallbackCallbacks:
+      let path = m.path
       self.stack.add m
       defer: discard self.stack.pop
-      let str = $f(m, p, id.int32, argStr.cstring)
-      if str.len == 0:
+
+      let str = try:
+        let str = $f(m, p, id.int32, argStr.cstring)
+        if str.len == 0:
+          continue
+        str
+      except:
+        log lvlError, &"Failed to run handleAnyCallback {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         continue
 
       try:

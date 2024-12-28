@@ -50,27 +50,36 @@ type
     ScissorEnd
 
   RenderCommand* = object
-    bounds*: Rect
-    color*: Color
-    flags*: UINodeFlags
-    case kind*: RenderCommandKind
+    bounds*: Rect # 16
+    color*: Color # 16
+    flags*: UINodeFlags # 8
+    case kind*: RenderCommandKind # 1
     of RenderCommandKind.Text:
-      text*: string
+      # text*: string #
+      textOffset*: uint32
+      textLen*: uint32
     else:
       discard
 
-template buildCommands*(body: untyped): seq[RenderCommand] =
+  RenderCommands* = object
+    strings*: string
+    commands*: seq[RenderCommand]
+
+template buildCommands*(body: untyped): RenderCommands =
   block:
-    var commands = newSeq[RenderCommand]()
+    var commands = RenderCommands()
     template drawRect(inBounds: Rect, inColor: Color): untyped =
-      commands.add(RenderCommand(kind: RenderCommandKind.Rect, bounds: inBounds, color: inColor))
+      commands.commands.add(RenderCommand(kind: RenderCommandKind.Rect, bounds: inBounds, color: inColor))
     template fillRect(inBounds: Rect, inColor: Color): untyped =
-      commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor))
+      commands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor))
     template drawText(inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped =
-      commands.add(RenderCommand(kind: RenderCommandKind.Text, text: inText, bounds: inBounds, color: inColor, flags: inFlags))
+      let txt = inText
+      let offset = commands.strings.len.uint32
+      commands.strings.add txt
+      commands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: txt.len.uint32, bounds: inBounds, color: inColor, flags: inFlags))
     template startScissor(inBounds: Rect): untyped =
-      commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
+      commands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
     template endScissor(): untyped =
-      commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd))
+      commands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd))
     body
     commands

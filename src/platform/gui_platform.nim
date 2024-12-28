@@ -559,6 +559,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
   else:
     VerticalAlignment.TopAlign
 
+  # todo: convert typeset to not use strings to avoid copying
   let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
   try:
     for i, rune in arrangement.runes:
@@ -629,14 +630,16 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       platform.boxy.strokeRect(bounds, node.borderColor)
 
     var maskBounds: seq[Rect]
-    for command in node.renderCommands:
+    for command in node.renderCommands.commands:
       case command.kind
       of RenderCommandKind.Rect:
         platform.boxy.strokeRect(command.bounds + offset, command.color)
       of RenderCommandKind.FilledRect:
         platform.boxy.drawRect(command.bounds + offset, command.color)
       of RenderCommandKind.Text:
-        platform.drawText(command.text, command.bounds.xy + offset, command.bounds + offset, command.color, command.flags)
+        # todo: don't copy string data
+        let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
+        platform.drawText(text, command.bounds.xy + offset, command.bounds + offset, command.color, command.flags)
       of RenderCommandKind.ScissorStart:
         platform.boxy.pushLayer()
         maskBounds.add(command.bounds + offset)

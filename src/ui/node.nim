@@ -90,7 +90,7 @@ type
     mHandleEndHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleScroll: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].}
-    renderCommands*: seq[RenderCommand]
+    renderCommands*: RenderCommands
 
   UINodeBuilder* = ref object
     nodes: seq[UINode]
@@ -152,6 +152,9 @@ func textColor*(node: UINode): Color {.inline.} = node.mTextColor
 func underlineColor*(node: UINode): Color {.inline.} = node.mUnderlineColor
 
 func flags*(node: UINode): UINodeFlags {.inline.} = node.flags
+
+func markDirty*(node: UINode, builder: UINodeBuilder) =
+  node.mLastContentChange = builder.frameIndex
 
 func lastChange*(node: UINode): int {.inline.} = max(node.mLastContentChange, max(node.mLastPositionChange, max(node.mLastSizeChange, max(node.mLastClearInvalidation, node.mLastDrawInvalidation))))
 func lastSizeChange*(node: UINode): int {.inline.} = node.mLastSizeChange
@@ -553,10 +556,11 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
 
   node.clearRect = Rect.none
 
-  if node.renderCommands.len > 50:
-    node.renderCommands = @[]
+  if node.renderCommands.commands.len > 50:
+    node.renderCommands = RenderCommands.default
   else:
-    node.renderCommands.setLen(0)
+    node.renderCommands.commands.setLen(0)
+    node.renderCommands.strings.setLen(0)
 
 proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
   if last.isNil:

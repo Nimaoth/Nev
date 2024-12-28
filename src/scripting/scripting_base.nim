@@ -32,6 +32,8 @@ method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode
 method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base.} = discard
 method getCurrentContext*(self: ScriptContext): string {.base.} = ""
 
+method getMemory*(self: ScriptContext, path: string, address: int, size: int): ptr UncheckedArray[uint8] {.base.} = discard
+
 func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
 addBuiltinService(PluginService)

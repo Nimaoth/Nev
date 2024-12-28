@@ -175,8 +175,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   customHeader*: string
 
-  renderCommands*: seq[RenderCommand]
-  pluginRenderFuncs: seq[string]
+  renderCommands*: RenderCommands
+  pluginRenderFuncs: seq[tuple[ctx: ScriptContext, path: string, id: string]]
 
 type
   TextDocumentEditorService* = ref object of Service
@@ -525,8 +525,8 @@ proc prePostRender*(self: TextDocumentEditor) =
   if self.configProvider.isNil or self.document.isNil:
     return
 
-  self.renderCommands.setLen(0)
-  for render in self.pluginRenderFuncs:
+  self.renderCommands = RenderCommands.default
+  for (ctx, path, render) in self.pluginRenderFuncs:
     try:
       let t = startTimer()
       let renderCommandsJson = self.plugins.invokeAnyCallback(render, %*{
@@ -537,12 +537,36 @@ proc prePostRender*(self: TextDocumentEditor) =
         "lastLines": self.lastRenderedLines.mapIt(it.index),
         "lastCursorLocationBounds": self.lastCursorLocationBounds
       })
-      let renderCommands = renderCommandsJson.jsonTo(seq[RenderCommand])
-      let e = t.elapsed.ms
-      self.renderCommands.add renderCommands
+      # let renderCommands = renderCommandsJson.jsonTo(RenderCommands)
+      # let e1 = t.elapsed.ms
+      # self.renderCommands = renderCommands
+
+      type Result = object
+        address: uint32
+        len: uint32
+        stride: uint32
+        strings: uint32
+        stringsLen: uint32
+
+      let renderCommandsInfo = renderCommandsJson.jsonTo(Result)
+      let e1 = t.elapsed.ms
+
+      assert renderCommandsInfo.stride.int == sizeof(RenderCommand)
+      let commandsArray = cast[ptr UncheckedArray[RenderCommand]](ctx.getMemory(path, renderCommandsInfo.address.int, renderCommandsInfo.len.int * sizeof(RenderCommand)))
+      let strings = cast[ptr UncheckedArray[char]](ctx.getMemory(path, renderCommandsInfo.strings.int, renderCommandsInfo.stringsLen.int))
+
+      self.renderCommands.strings.setLen(renderCommandsInfo.stringsLen.int)
+      for i in 0..<renderCommandsInfo.stringsLen:
+        self.renderCommands.strings[i] = strings[i]
+
+      self.renderCommands.commands.setLen(renderCommandsInfo.len.int)
+      for i in 0..<renderCommandsInfo.len:
+        self.renderCommands.commands[i] = commandsArray[i]
+
+      let e2 = t.elapsed.ms
 
       if self.configProvider.getValue("text.log-plugin-render-times", false):
-        debugf"render took {e} ms"
+        debugf"render took {e1} ms + {e2 - e1} ms = {e2} ms"
     except:
       discard
 
@@ -3449,15 +3473,25 @@ proc setCustomHeader*(self: TextDocumentEditor, text: string) {.expose("editor.t
   self.markDirty()
 
 proc addCustomRenderer*(self: TextDocumentEditor, name: string) {.expose("editor.text").} =
-  self.pluginRenderFuncs.incl name
-  self.markDirty()
+  if self.plugins.currentScriptContext.getSome(ctx):
+    self.pluginRenderFuncs.incl (ctx, ctx.getCurrentContext(), name)
+    self.markDirty()
+  else:
+    log lvlError, &"Only call addCustomRenderer from plugins"
 
 proc removeCustomRenderer*(self: TextDocumentEditor, name: string) {.expose("editor.text").} =
-  self.pluginRenderFuncs.excl name
-  self.markDirty()
+  if self.plugins.currentScriptContext.getSome(ctx):
+    self.pluginRenderFuncs.excl (ctx, ctx.getCurrentContext(), name)
+    self.markDirty()
+  else:
+    log lvlError, &"Only call addCustomRenderer from plugins"
 
 proc hasCustomRenderer*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
-  return name in self.pluginRenderFuncs
+  if self.plugins.currentScriptContext.getSome(ctx):
+    return (ctx, ctx.getCurrentContext(), name) in self.pluginRenderFuncs
+    self.markDirty()
+  else:
+    log lvlError, &"Only call addCustomRenderer from plugins"
 
 genDispatcher("editor.text")
 addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
