@@ -1011,6 +1011,38 @@ proc getNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_createAnchors_seq_Anchor_Anchor_TextDocumentEditor_Selections_wasm(
+    arg: cstring): cstring {.importc.}
+proc createAnchors*(self: TextDocumentEditor; selections: Selections): seq[
+    (Anchor, Anchor)] {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add selections.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_createAnchors_seq_Anchor_Anchor_TextDocumentEditor_Selections_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_resolveAnchors_Selections_TextDocumentEditor_seq_Anchor_Anchor_wasm(
+    arg: cstring): cstring {.importc.}
+proc resolveAnchors*(self: TextDocumentEditor; anchors: seq[(Anchor, Anchor)]): Selections {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add anchors.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_resolveAnchors_Selections_TextDocumentEditor_seq_Anchor_Anchor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_getPrevDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getPrevDiagnostic*(self: TextDocumentEditor; cursor: Cursor;

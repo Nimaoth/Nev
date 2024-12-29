@@ -1601,7 +1601,6 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
     return
 
   let numLines = register.numLines()
-  debugf"paste {numLines} lines"
 
   let newSelections = if numLines == self.selections.len and numLines > 1:
     case register.kind
@@ -1610,7 +1609,6 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
       self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
     of RegisterKind.Rope:
       let lines = register.rope.splitLines()
-      echo lines
       self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
   else:
     case register.kind
@@ -1720,6 +1718,13 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
     if not wrapped.isEmpty:
       return wrapped
   return cursor.toSelection
+
+proc createAnchors*(self: TextDocumentEditor, selections: Selections): seq[(Anchor, Anchor)] {.expose("editor.text").} =
+  let snapshot {.cursor.} = self.document.buffer.snapshot
+  return selections.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
+
+proc resolveAnchors*(self: TextDocumentEditor, anchors: seq[(Anchor, Anchor)]): Selections {.expose("editor.text").} =
+  return anchors.mapIt (it[0].summaryOpt(Point, self.snapshot).get(Point()), it[1].summaryOpt(Point, self.snapshot).get(Point())).toSelection
 
 proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0,
     offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
@@ -1898,7 +1903,6 @@ proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose
 proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.vcs.getVcsForFile(self.document.filename).getSome(vcs):
     let res = await vcs.stageFile(self.document.localizedPath)
-    debugf"add finished: {res}"
 
     if self.diffDocument.isNotNil:
       self.updateDiff()
@@ -2920,7 +2924,6 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         cursorInsertTexts.add edit.newText
 
     elif edit.asInsertReplaceEdit().getSome(edit):
-      debugf"text edit: {edit.insert}, {edit.replace} -> '{edit.newText}'"
       return
 
     else:
