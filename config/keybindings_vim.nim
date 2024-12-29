@@ -16,6 +16,7 @@ type EditorVimState = object
   cursorIncludeEol: bool = false ## Whether the cursor can be after the last character in a line (e.g. in insert mode)
   currentUndoCheckpoint: string = "insert" ## Which checkpoint to undo to (depends on mode)
   revisionBeforeImplicitInsertMacro: int
+  marks: Table[string, seq[(Anchor, Anchor)]]
 
 var editorStates: Table[EditorId, EditorVimState]
 var vimMotionNextMode = initTable[EditorId, string]()
@@ -800,6 +801,14 @@ proc vimUnindent(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-
   editor.addNextCheckpoint "insert"
   editor.unindent()
 
+proc vimAddCursorAbove(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-add-cursor-above").} =
+  editor.addCursorAbove()
+  editor.scrollToCursor(Last)
+
+proc vimAddCursorBelow(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-add-cursor-below").} =
+  editor.addCursorBelow()
+  editor.scrollToCursor(Last)
+
 var onModeChangedHandle: Id
 
 proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
@@ -1229,6 +1238,28 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextObjectCommand "", "\"", "vim-surround-\""
   addTextObjectCommand "", "'", "vim-surround-'"
 
+  # marks
+  addCommand "editor.text", "m<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
+    editor.vimState.marks[c] = editor.createAnchors(editor.selections)
+
+  addCommand "editor.text", "'<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
+    if c in editor.vimState.marks:
+      let newSelections = editor.resolveAnchors(editor.vimState.marks[c])
+      case editor.mode
+      of "visual", "visual-line":
+        let oldSelections = editor.selections
+        if newSelections.len == oldSelections.len:
+          editor.selections = collect:
+            for i in 0..newSelections.high:
+              oldSelections[i] or newSelections[i]
+        else:
+          editor.selections = newSelections
+      else:
+        editor.selections = newSelections
+
+      editor.updateTargetColumn()
+      editor.scrollToCursor Last
+
   addTextCommandBlock "", "dd":
     editor.vimState.selectLines = true
     let oldSelections = editor.selections
@@ -1416,10 +1447,10 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "insert", "<C-z>", "vim-undo", enterNormalModeBefore=false
   addTextCommand "insert", "<C-r>", "vim-redo", enterNormalModeBefore=false
 
-  addTextCommand "", "<CA-UP>", "add-cursor-above"
-  addTextCommand "", "<CA-DOWN>", "add-cursor-below"
-  addTextCommand "", "<C-h>", "add-cursor-above"
-  addTextCommand "", "<C-f>", "add-cursor-below"
+  addTextCommand "", "<CA-UP>", "vim-add-cursor-above"
+  addTextCommand "", "<CA-DOWN>", "vim-add-cursor-below"
+  addTextCommand "", "<C-h>", "vim-add-cursor-above"
+  addTextCommand "", "<C-f>", "vim-add-cursor-below"
 
   addTextCommandBlock "", "L":
     if editor.selections.len == 1:
