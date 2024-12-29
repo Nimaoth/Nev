@@ -1146,6 +1146,8 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
+    onClickAny btn:
+      self.layout.tryActivateEditor(self)
 
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode
