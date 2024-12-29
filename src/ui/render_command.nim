@@ -68,18 +68,24 @@ type
 template buildCommands*(body: untyped): RenderCommands =
   block:
     var commands = RenderCommands()
-    template drawRect(inBounds: Rect, inColor: Color): untyped =
+    template drawRect(inBounds: Rect, inColor: Color): untyped {.used.} =
       commands.commands.add(RenderCommand(kind: RenderCommandKind.Rect, bounds: inBounds, color: inColor))
-    template fillRect(inBounds: Rect, inColor: Color): untyped =
+    template fillRect(inBounds: Rect, inColor: Color): untyped {.used.} =
       commands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor))
-    template drawText(inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped =
+    template drawText(inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
       let txt = inText
       let offset = commands.strings.len.uint32
       commands.strings.add txt
       commands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: txt.len.uint32, bounds: inBounds, color: inColor, flags: inFlags))
-    template startScissor(inBounds: Rect): untyped =
+    template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
+      let offset = commands.strings.len.uint32
+      for c in inText:
+        commands.strings.add c
+      let len = commands.strings.len.uint32 - offset
+      commands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags))
+    template startScissor(inBounds: Rect): untyped {.used.} =
       commands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
-    template endScissor(): untyped =
+    template endScissor(): untyped {.used.} =
       commands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorEnd))
     body
     commands

@@ -1,4 +1,4 @@
-import std/[options, strutils, atomics]
+import std/[options, strutils, atomics, strformat]
 import nimsumtree/[rope, sumtree]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
@@ -206,3 +206,91 @@ proc lineStartsWith*(self: Rope, line: int, text: string, ignoreWhitespace: bool
 
   let lineSlice = self.slice(lineRange)
   return lineSlice.startsWith(text)
+
+
+type
+  IteratorChunk* = object
+    data*: ptr UncheckedArray[char]
+    len*: int
+    point*: Point
+
+  ChunkIterator* = object
+    rope: RopeSlice[int]
+    cursor: sumtree.Cursor[rope.Chunk, (Point, int)]
+    range: Range[int]
+    localOffset*: int
+    point*: Point
+
+func `$`*(chunk: IteratorChunk): string =
+  result = newString(chunk.len)
+  for i in 0..<chunk.len:
+    result[i] = chunk.data[i]
+
+template toOpenArray*(self: IteratorChunk): openArray[char] = self.data.toOpenArray(0, self.len - 1)
+
+proc init*(_: typedesc[ChunkIterator], rope: var RopeSlice[int]): ChunkIterator =
+  result.rope = rope.clone()
+  result.range = rope.rope.toOffset(rope.range.a)...rope.rope.toOffset(rope.range.b)
+  result.cursor = rope.rope.tree.initCursor((Point, int))
+  discard result.cursor.seekForward(result.range.a, Bias.Right, ())
+  result.point = rope.rope.offsetToPoint(rope.range.a)
+
+proc seekLine*(self: var ChunkIterator, line: int) =
+  let point = Point(row: line.uint32)
+  discard self.cursor.seekForward(point, Bias.Right, ())
+  self.point = point
+  self.localOffset = self.rope.rope.pointToOffset(point) - self.cursor.startPos[1]
+  # echo &"seekLine {line} -> {self.point}, {self.localOffset}"
+
+proc next*(self: var ChunkIterator): Option[IteratorChunk] =
+  while true:
+    if self.cursor.atEnd:
+      return
+
+    if self.cursor.item.isNone or self.localOffset >= self.cursor.item.get.chars.len:
+      self.cursor.next(())
+      self.localOffset = 0
+
+    if self.cursor.item.isSome and self.cursor.startPos[1] < self.range.b:
+      let chunk: ptr Chunk = self.cursor.item.get
+      while self.localOffset < chunk.chars.len and chunk.chars[self.localOffset] == '\n':
+        # result = IteratorChunk(
+        #   data: cast[ptr UncheckedArray[char]](chunk.chars[self.localOffset].addr),
+        #   len: 0,
+        #   point: self.point,
+        # ).some
+        self.point.row += 1
+        self.point.column = 0
+        self.localOffset += 1
+        # return
+
+      assert self.localOffset <= chunk.chars.len
+      if self.localOffset == chunk.chars.len:
+        continue
+
+      let nextNewLine = chunk.chars(self.localOffset, chunk.chars.len - 1).find('\n')
+      let maxEndIndex = if nextNewLine == -1:
+        chunk.chars.len
+      else:
+        self.localOffset + nextNewLine
+
+      assert maxEndIndex >= self.localOffset
+
+      let point = self.point
+
+      var sliceRange = max(self.range.a - self.cursor.startPos[1], 0)...(min(self.range.b, self.cursor.endPos(())[1]) - self.cursor.startPos[1])
+      sliceRange.a = max(sliceRange.a, self.localOffset)
+      sliceRange.b = min(sliceRange.b, maxEndIndex)
+      self.localOffset = sliceRange.b
+      self.point.column += sliceRange.len.uint32
+
+      assert sliceRange.a in 0..chunk.chars.len
+      assert sliceRange.b in 0..chunk.chars.len
+      assert sliceRange.len >= 0
+      if sliceRange.len > 0:
+        result = IteratorChunk(
+          data: cast[ptr UncheckedArray[char]](chunk.chars[sliceRange.a].addr),
+          len: sliceRange.len,
+          point: point,
+        ).some
+        return
