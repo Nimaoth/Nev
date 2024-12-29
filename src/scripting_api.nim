@@ -249,6 +249,7 @@ proc getChangedSelection*(selection: Selection, text: string): Selection =
   return (selection.last, newLast).normalized
 
 when defined(wasm):
+  # todo: this should use the types from the nimsumtree library so it doesn't go out of sync
   type
     ReplicaId* = distinct uint16
     SeqNumber* = uint32

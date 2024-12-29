@@ -1245,7 +1245,6 @@ proc autoDetectIndentStyle(self: TextDocument) =
         break
 
     if t.elapsed.ms >= maxTime:
-      log lvlWarn, &"Indent style detection timeout"
       break
 
     linePos.row += 1
@@ -1263,7 +1262,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
     self.languageConfig.get.tabWidth = minIndent
     self.indentStyle = IndentStyle(kind: Spaces, spaces: minIndent)
 
-  log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}\n\tLanguage config: {self.languageConfig.get(TextLanguageConfig())[]}"
+  # log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
 proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.} =
   if self.configProvider.getValue("text.reload-diff", true):

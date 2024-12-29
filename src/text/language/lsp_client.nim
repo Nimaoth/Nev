@@ -663,22 +663,7 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
 
   client.connection = connection
 
-proc translatePath(client: LSPClient, path: string): string =
-  if path.startsWith("@") and client.workspaceInfo.getSome info:
-    assert false
-    try:
-      let endOffset = path.find("/")
-      let index = path[1..<endOffset].parseInt
-      if index < info.folders.len:
-        return info.folders[index].path / path[endOffset + 1..^1]
-    except:
-      log lvlError, &"Failed to translate path '{path}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-      discard
-
-  return path
-
 proc notifyOpenedTextDocument(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
-  let path = client.translatePath(path)
   let params = %*{
     "textDocument": %*{
       "uri": $path.toUri,
@@ -692,7 +677,6 @@ proc notifyOpenedTextDocument(client: LSPClient, languageId: string, path: strin
   await client.sendNotification("textDocument/didOpen", params)
 
 proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.} =
-  let path = client.translatePath(path)
   let params = %*{
     "textDocument": %*{
       "uri": $path.toUri,
@@ -704,7 +688,6 @@ proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.} =
 
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int,
     changes: seq[TextDocumentContentChangeEvent]) {.async.} =
-  let path = client.translatePath(path)
   let params = %*{
     "textDocument": %*{
       "uri": $path.toUri,
@@ -720,7 +703,6 @@ proc notifyConfigurationChanged(client: LSPClient, settings: JsonNode) {.gcsafe,
   await client.sendNotification("workspace/didChangeConfiguration", %{"settings": settings})
 
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, content: string) {.async.} =
-  let path = client.translatePath(path)
   let params = %*{
     "textDocument": %*{
       "uri": $path.toUri,
@@ -739,12 +721,11 @@ proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, co
 
 proc getDefinition*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DefinitionResponse]] {.async.} =
   debugf"[getDefinition] {filename.absolutePath}:{line}:{column}"
-  let path = client.translatePath(filename)
 
   client.cancelAllOf("textDocument/definition")
 
   let params = DefinitionParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
     position: Position(
       line: line,
       character: column
@@ -755,12 +736,11 @@ proc getDefinition*(client: LSPClient, filename: string, line: int, column: int)
 
 proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DeclarationResponse]] {.async.} =
   debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
-  let path = client.translatePath(filename)
 
   client.cancelAllOf("textDocument/declaration")
 
   let params = DeclarationParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
     position: Position(
       line: line,
       character: column
@@ -771,12 +751,11 @@ proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int
 
 proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[TypeDefinitionResponse]] {.async.} =
   debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
-  let path = client.translatePath(filename)
 
   client.cancelAllOf("textDocument/typeDefinition")
 
   let params = TypeDefinitionParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
     position: Position(
       line: line,
       character: column
@@ -787,12 +766,11 @@ proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column:
 
 proc getImplementation*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ImplementationResponse]] {.async.} =
   debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
-  let path = client.translatePath(filename)
 
   client.cancelAllOf("textDocument/implementation")
 
   let params = ImplementationParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
     position: Position(
       line: line,
       character: column
@@ -803,12 +781,11 @@ proc getImplementation*(client: LSPClient, filename: string, line: int, column: 
 
 proc getReferences*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ReferenceResponse]] {.async.} =
   debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
-  let path = client.translatePath(filename)
 
   client.cancelAllOf("textDocument/references")
 
   let params = ReferenceParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
     position: Position(
       line: line,
       character: column
@@ -819,21 +796,17 @@ proc getReferences*(client: LSPClient, filename: string, line: int, column: int)
   return await client.sendRequest(client.activeReferencesRequests.addr, "textDocument/references", params)
 
 proc switchSourceHeader*(client: LSPClient, filename: string): Future[Response[string]] {.async.} =
-  let path = client.translatePath(filename)
-
   client.cancelAllOf("textDocument/switchSourceHeader")
 
-  let params = TextDocumentIdentifier(uri: $path.toUri).toJson
+  let params = TextDocumentIdentifier(uri: $filename.toUri).toJson
 
   return await client.sendRequest(client.activeSwitchSourceHeaderRequests.addr, "textDocument/switchSourceHeader", params)
 
 proc getHover*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DocumentHoverResponse]] {.async.} =
-  let path = client.translatePath(filename)
-
   client.cancelAllOf("textDocument/hover")
 
   let params = DocumentHoverParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
     position: Position(
       line: line,
       character: column
@@ -843,12 +816,10 @@ proc getHover*(client: LSPClient, filename: string, line: int, column: int): Fut
   return await client.sendRequest(client.activeHoverRequests.addr, "textDocument/hover", params)
 
 proc getInlayHints*(client: LSPClient, filename: string, selection: ((int, int), (int, int))): Future[Response[InlayHintResponse]] {.async.} =
-  let path = client.translatePath(filename)
-
   client.cancelAllOf("textDocument/inlayHint")
 
   let params = InlayHintParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
     `range`: Range(
       start: Position(
         line: selection[0][0],
@@ -867,12 +838,10 @@ proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentS
   assert isMainThread()
 
   debugf"[getSymbols] {filename.absolutePath}"
-  let path = client.translatePath(filename)
-
   client.cancelAllOf("textDocument/documentSymbol")
 
   let params = DocumentSymbolParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
   ).toJson
 
   return await client.sendRequest(client.activeSymbolsRequests.addr, "textDocument/documentSymbol", params)
@@ -889,25 +858,21 @@ proc getWorkspaceSymbols*(client: LSPClient, query: string): Future[Response[Wor
 
 proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[DocumentDiagnosticResponse]] {.async.} =
   # debugf"[getDiagnostics] {filename.absolutePath}"
-  let path = client.translatePath(filename)
-
   client.cancelAllOf("textDocument/diagnostic")
 
   let params = DocumentSymbolParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
   ).toJson
 
   return await client.sendRequest(client.activeDiagnosticsRequests.addr, "textDocument/diagnostic", params)
 
 proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
   debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
-  let path = client.translatePath(filename)
-
   client.cancelAllOf("textDocument/completion")
 
   # todo
   let params = %*{
-    "textDocument": TextDocumentIdentifier(uri: $path.toUri),
+    "textDocument": TextDocumentIdentifier(uri: $filename.toUri),
     "position": Position(
       line: line,
       character: column

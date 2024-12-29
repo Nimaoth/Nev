@@ -162,14 +162,8 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
       path = m.path
       self.stack.add m
       defer: discard self.stack.pop
-
-      let str = try:
-        let str = $f(m, p, id.int32, argStr.cstring)
-        if str.len == 0:
-          continue
-        str
-      except:
-        log lvlError, &"Failed to run handleAnyCallback {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+      let str = $f(m, p, id.int32, argStr.cstring)
+      if str.len == 0:
         continue
 
       try:
