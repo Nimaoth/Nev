@@ -95,3 +95,15 @@ config/rust_plugin
 wasm
 languages/tree-sitter-*
 languages/**/*.scm
+jstest.wasm
+.nev-session2
+collect_highlight_captures.nims
+config/custom.nim
+big.txt
+bigger.txt
+callback_test_plugin.wasm
+final.txt
+linux.absytree-session
+paper.json
+test
+editing-trace.js
