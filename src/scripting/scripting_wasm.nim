@@ -27,11 +27,15 @@ type
 
 var createEditorWasmImports: proc(): WasmImports {.raises: [].}
 
+proc getVfsPath*(self: WasmModule): string =
+  result = "plugs://"
+  result.add self.path.splitFile.name
+  result.add "/"
+
 method getCurrentContext*(self: ScriptContextWasm): string =
   result = "plugs://"
   if self.stack.len > 0:
-    result.add self.stack[^1].path.splitFile.name
-    result.add "/"
+    result = self.stack[^1].getVfsPath()
 
 macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; returnType: typedesc): untyped =
   result = quote do:
@@ -138,10 +142,12 @@ method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool =
     log lvlError, &"Failed to run callback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): JsonNode =
+  var path = ""
   try:
     result = nil
     let argStr = $arg
     for (m, p, f) in self.handleAnyCallbackCallbacks:
+      path = m.path
       self.stack.add m
       defer: discard self.stack.pop
       let str = $f(m, p, id.int32, argStr.cstring)
@@ -154,7 +160,7 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
         log lvlError, &"Failed to parse json from callback {id}({arg}): '{str}' is not valid json.\n{getCurrentExceptionMsg()}"
         continue
   except:
-    log lvlError, &"Failed to run handleAnyCallback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+    log lvlError, &"Failed to run handleAnyCallback '{path}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 
 method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode =
