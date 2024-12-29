@@ -85,6 +85,7 @@ tools/uht.nim
 nev_linkerArgs.txt
 config/wasm/callback_test_plugin.wasm
 config/callback_test_plugin.nim
+config/rust_plugin
 
 #
 .nev/keybindings.json
