@@ -90,7 +90,7 @@ type
     mHandleEndHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleScroll: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].}
-    renderCommands*: seq[RenderCommand]
+    renderCommands*: RenderCommands
 
   UINodeBuilder* = ref object
     nodes: seq[UINode]
@@ -108,8 +108,8 @@ type
     lineHeight*: float32
     lineGap*: float32
 
-    draggedNode*: Option[UINode] = UINode.none
-    hoveredNode*: Option[UINode] = UINode.none
+    draggedNodes*: seq[UINode]
+    hoveredNodes*: seq[UINode]
 
     animatingNodes*: seq[Id]
     frameTime*: float32 = 0.1
@@ -152,6 +152,9 @@ func textColor*(node: UINode): Color {.inline.} = node.mTextColor
 func underlineColor*(node: UINode): Color {.inline.} = node.mUnderlineColor
 
 func flags*(node: UINode): UINodeFlags {.inline.} = node.flags
+
+func markDirty*(node: UINode, builder: UINodeBuilder) =
+  node.mLastContentChange = builder.frameIndex
 
 func lastChange*(node: UINode): int {.inline.} = max(node.mLastContentChange, max(node.mLastPositionChange, max(node.mLastSizeChange, max(node.mLastClearInvalidation, node.mLastDrawInvalidation))))
 func lastSizeChange*(node: UINode): int {.inline.} = node.mLastSizeChange
@@ -241,6 +244,7 @@ proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = roundPositive(bui
 
 proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): Option[UINode]
+proc findNodesContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): seq[UINode]
 
 template logi(node: UINode, msg: varargs[string, `$`]) =
   when logInvalidationRects:
@@ -263,78 +267,108 @@ proc newNodeBuilder*(): UINodeBuilder =
 
 proc currentParent*(builder: UINodeBuilder): UINode = builder.currentParent
 
-proc hovered*(builder: UINodeBuilder, node: UINode): bool = node.some == builder.hoveredNode
+proc hovered*(builder: UINodeBuilder, node: UINode): bool = node in builder.hoveredNodes
 
 proc handleKeyPressed*(builder: UINodeBuilder, button: int64, modifiers: set[Modifier]): bool = false
 proc handleKeyReleased*(builder: UINodeBuilder, button: int64, modifiers: set[Modifier]): bool = false
 
 proc handleMouseScroll*(builder: UINodeBuilder, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool =
-  let targetNode = builder.root.findNodeContaining(pos, (node) {.gcsafe, raises: [].} => node.handleScroll.isNotNil)
-  if targetNode.getSome(node):
-    return node.handleScroll()(node, pos, delta, modifiers)
+  let targetNodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => node.handleScroll.isNotNil)
+  for node in targetNodes:
+    if node.handleScroll()(node, pos, delta, modifiers):
+      return true
   return false
 
 proc handleMousePressed*(builder: UINodeBuilder, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
   builder.mousePosClick[button] = pos
 
-  let targetNode = builder.root.findNodeContaining(pos, (node) {.gcsafe, raises: [].} => node.handlePressed.isNotNil)
-  if targetNode.getSome(node):
-    return node.handlePressed()(node, button, modifiers, pos - node.boundsAbsolute.xy)
+  let targetNodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => node.handlePressed.isNotNil)
+  for node in targetNodes:
+    if node.handlePressed()(node, button, modifiers, pos - node.boundsAbsolute.xy):
+      return true
 
   return false
 
 proc handleMouseReleased*(builder: UINodeBuilder, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
-  if builder.draggedNode.isSome:
-    builder.draggedNode = UINode.none
-    return true
-  return false
+  if builder.draggedNodes.len > 0:
+    builder.draggedNodes.setLen 0
+    result = true
+
+  let targetNodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => node.handleReleased.isNotNil)
+  for node in targetNodes:
+    if node.handleReleased()(node, button, modifiers, pos - node.boundsAbsolute.xy):
+      return true
 
 proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButton]): bool =
   builder.mouseDelta = pos - builder.mousePos
   builder.mousePos = pos
 
-  var targetNode: Option[UINode] = builder.draggedNode
+  var targetNode: seq[UINode] = builder.draggedNodes
 
   if buttons.len > 0:
-    if builder.draggedNode.getSome(node):
+    for button in buttons:
+    # if builder.draggedNodes.getSome(node):
+      for node in builder.draggedNodes:
+        if node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta): # todo: modifiers
+          result = true
+          break
+    # else:
+    if builder.draggedNodes.len == 0:
+      let nodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => node.handleDrag.isNotNil)
       for button in buttons:
-        discard node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta) # todo: modifiers
-      result = true
+        for node in nodes:
+          if node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta): # todo: modifiers
+            result = true
+            break
+
+
+  if targetNode.len == 0:
+    targetNode = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => MouseHover in node.flags)
+
+  var handled = false
+  for node in builder.hoveredNodes:
+    if node in targetNode:
+      if node.handleHover.isNotNil:
+        if not handled:
+          result = node.handleHover()(node, pos - node.boundsAbsolute.xy) or result
+          handled = handled or result
     else:
-      let node = builder.root.findNodeContaining(pos, (node) {.gcsafe, raises: [].} => node.handleDrag.isNotNil)
-      if node.getSome(node):
-        for button in buttons:
-          discard node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta) # todo: modifiers
-        result = true
+      if node.handleEndHover.isNotNil:
+        result = node.handleEndHover()(node, pos - node.boundsAbsolute.xy) or result
+
+  handled = false
+  for node in targetNode:
+    if node notin builder.hoveredNodes:
+      if node.handleBeginHover.isNotNil:
+        if not handled:
+          result = node.handleBeginHover()(node, pos - node.boundsAbsolute.xy) or result
+          handled = handled or result
 
 
-  if targetNode.isNone:
-    targetNode = builder.root.findNodeContaining(pos, (node) {.gcsafe, raises: [].} => MouseHover in node.flags)
+  # case (builder.hoveredNodes, targetNode)
+  # of (Some(@a), Some(@b)):
+  #   if a == b:
+  #     if a.handleHover.isNotNil:
+  #       result = a.handleHover()(a, pos - a.boundsAbsolute.xy) or result
+  #   else:
+  #     if a.handleEndHover.isNotNil:
+  #       result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
+  #     if b.handleBeginHover.isNotNil:
+  #       result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
+  #     result = true
 
-  case (builder.hoveredNode, targetNode)
-  of (Some(@a), Some(@b)):
-    if a == b:
-      if a.handleHover.isNotNil:
-        result = a.handleHover()(a, pos - a.boundsAbsolute.xy) or result
-    else:
-      if a.handleEndHover.isNotNil:
-        result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
-      if b.handleBeginHover.isNotNil:
-        result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
-      result = true
+  # of (None(), Some(@b)):
+  #   if b.handleBeginHover.isNotNil:
+  #     result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
+  #   result = true
+  # of (Some(@a), None()):
+  #   if a.handleEndHover.isNotNil:
+  #     result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
+  #   result = true
+  # of (None(), None()):
+  #   discard
 
-  of (None(), Some(@b)):
-    if b.handleBeginHover.isNotNil:
-      result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
-    result = true
-  of (Some(@a), None()):
-    if a.handleEndHover.isNotNil:
-      result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
-    result = true
-  of (None(), None()):
-    discard
-
-  builder.hoveredNode = targetNode
+  builder.hoveredNodes = targetNode
 
 proc setBackgroundColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   if r != node.mBackgroundColor.r or g != node.mBackgroundColor.g or b != node.mBackgroundColor.b or node.mBackgroundColor.a != a:
@@ -449,11 +483,8 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   for _, c in node.children:
     builder.returnNode c
 
-  if builder.draggedNode == node.some:
-    builder.draggedNode = UINode.none
-
-  if builder.hoveredNode == node.some:
-    builder.hoveredNode = UINode.none
+  builder.draggedNodes.excl node
+  builder.hoveredNodes.excl node
 
   when defined(uiNodeDebugData):
     node.aDebugData.metaData = nil
@@ -533,10 +564,11 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
 
   node.clearRect = Rect.none
 
-  if node.renderCommands.len > 50:
-    node.renderCommands = @[]
+  if node.renderCommands.commands.len > 50:
+    node.renderCommands = RenderCommands.default
   else:
-    node.renderCommands.setLen(0)
+    node.renderCommands.commands.setLen(0)
+    node.renderCommands.strings.setLen(0)
 
 proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
   if last.isNil:
@@ -1278,31 +1310,38 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
         currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           if btn == button:
             onClickBody
+          return true
 
       template onClickAny(btn: untyped, onClickBody: untyped) {.used.} =
         currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onClickBody
+          return true
 
       template onReleased(onBody: untyped) {.used.} =
         currentNode.handleReleased = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody
+          return true
 
       template onDrag(button: MouseButton, onDragBody: untyped) {.used.} =
         currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, d: Vec2): bool {.gcsafe, raises: [].} =
           if btn == button:
             onDragBody
+          return true
 
       template onBeginHover(onBody: untyped) {.used.} =
         currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody
+          return true
 
       template onEndHover(onBody: untyped) {.used.} =
         currentNode.handleEndHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody
+          return true
 
       template onHover(onBody: untyped) {.used.} =
         currentNode.handleHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody
+          return true
 
       template onScroll(onBody: untyped) {.used.} =
         currentNode.handleScroll = proc(node: UINode, pos {.inject.}: Vec2, delta {.inject.}: Vec2, modifiers {.inject.}: set[Modifier]): bool {.gcsafe, raises: [].} =
@@ -1313,6 +1352,28 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
         builder.finishNode(currentNode)
 
       body
+
+proc findNodesContaining*(res: var seq[UINode], node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}) =
+  if pos.x < node.lx or pos.x >= node.lx + node.lw or pos.y < node.ly or pos.y >= node.ly + node.lh:
+    return
+
+  # debugf"findNodeContaining at {pos} with {(node.lx, node.ly, node.lw, node.lh)}: {node.dump}"
+
+  if node.first.isNil: # has no children
+    if predicate.isNotNil and not predicate(node):
+      return
+
+    res.add node
+
+  else: # has children
+    for c in node.rchildren:
+      findNodesContaining(res, c, pos, predicate)
+
+    if predicate.isNotNil and predicate(node):
+      res.add node
+
+proc findNodesContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): seq[UINode] =
+  findNodesContaining(result, node, pos, predicate)
 
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): Option[UINode] =
   result = UINode.none
