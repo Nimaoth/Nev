@@ -1220,38 +1220,34 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
           if infos.hover.getSome(info):
             self.lastHoverLocationBounds = info.bounds.transformRect(info.node, builder.root).some
 
-      self.lastTextAreaBounds = currentNode.boundsAbsolute
-      self.prePostRender()
-      # todo: don't copy renderCommands???
-      currentNode.renderCommands = self.renderCommands
-      if currentNode.renderCommands.commands.len > 0:
-        currentNode.markDirty(builder)
+          self.lastTextAreaBounds = currentNode.boundsAbsolute
 
-    builder.panel(&{UINodeFlag.FillX, FillY, MouseHover}):
-      onClickAny btn:
-        self.layout.tryActivateEditor(self)
-        self.handleMouseEvent(btn, pos, true)
-        return false
+          self.prePostRender()
+          # todo: don't copy renderCommands???
+          currentNode.renderCommands = self.renderCommands
+          if currentNode.renderCommands.commands.len > 0:
+            currentNode.markDirty(builder)
 
-      onReleased:
-        self.handleMouseEvent(btn, pos, false)
-        return false
+          builder.panel(&{UINodeFlag.FillX, FillY, MouseHover}):
+            onClickAny btn:
+              self.layout.tryActivateEditor(self)
+              return self.handleMouseEvent(btn, pos, true)
 
-      onDrag Left:
-        self.handleMouseEvent(Left, pos, true)
-        return false
+            onReleased:
+              return self.handleMouseEvent(btn, pos, false)
 
-      # onBeginHover:
-      #   if handleBeginHover.isNotNil:
-      #     handleBeginHover(partNode, pos, line.index, partIndex)
+            onDrag Left:
+              return self.handleMouseEvent(Left, pos, true)
 
-      onHover:
-        self.handleMouseEvent(Left, pos, false)
-        return false
+            # onBeginHover:
+            #   if handleBeginHover.isNotNil:
+            #     handleBeginHover(partNode, pos, line.index, partIndex)
 
-      onScroll:
-        self.handleScroll(delta)
-        return false
+            onHover:
+              return self.handleMouseEvent(Left, pos, false)
+
+            onScroll:
+              return self.handleScroll(delta)
 
   if self.showCompletions and self.active:
     result.add proc() =

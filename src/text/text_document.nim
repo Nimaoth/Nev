@@ -613,7 +613,7 @@ proc visualColumnToCursorColumn*(self: TextDocument, line: int, visualColumn: in
   let tabWidth = self.tabWidth
 
   var c = self.rope.cursorT(Point.init(line, 0))
-  while not c.atEnd:
+  while not c.atEnd and column < visualColumn:
     let r = c.currentRune
 
     if r == '\t'.Rune:
@@ -622,9 +622,6 @@ proc visualColumnToCursorColumn*(self: TextDocument, line: int, visualColumn: in
       column += 1
 
     result += r.size
-    if column >= visualColumn:
-      break
-
     c.seekNextRune()
 
 proc cursorToVisualColumn*(self: TextDocument, cursor: Cursor): int =
@@ -1248,6 +1245,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
         break
 
     if t.elapsed.ms >= maxTime:
+      log lvlWarn, &"Indent style detection timeout"
       break
 
     linePos.row += 1
@@ -1265,7 +1263,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
     self.languageConfig.get.tabWidth = minIndent
     self.indentStyle = IndentStyle(kind: Spaces, spaces: minIndent)
 
-  # log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
+  log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}\n\tLanguage config: {self.languageConfig.get(TextLanguageConfig())[]}"
 
 proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.} =
   if self.configProvider.getValue("text.reload-diff", true):
