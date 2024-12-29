@@ -7,7 +7,7 @@ import ui/render_command
 import clay
 
 let isTerminal = getBackend() == Terminal
-let scale = if isTerminal: 1.0/16.0 else: 1
+let scale = if isTerminal: 1.0 else: 1
 
 template em(f: untyped): untyped =
   f
@@ -22,17 +22,18 @@ template em(f: untyped): untyped =
   #   else:
   #     f * 10 # * fontSize
 
-proc stackAlloc(size: int32): int32 {.wasmexport.} =
-  discard
-  echo "stackAlloc"
+# proc stackAlloc(size: int32): int32 {.wasmexport.} =
+#   discard
+#   echo "stackAlloc"
 
-proc stackSave(): int32 {.wasmexport.} =
-  discard
-  echo "stackSave"
+# proc stackSave(): int32 {.wasmexport.} =
+#   discard
+#   echo "stackSave"
 
-proc stackRestore(p: int32) {.wasmexport.} =
-  discard
-  echo "stackSave"
+# proc stackRestore(p: int32) {.wasmexport.} =
+#   discard
+#   echo "stackSave"
+
 
 proc foo() {.expose("foo").} =
   ## Saves app state and quits the editor with exit code 123.
@@ -101,11 +102,77 @@ proc initClay() =
   #   # clay.uiScale = 10
   #   # clay.debugViewFontSize = 16
   #   ClayDimensions(width: 1024, height: 768)
+  if isTerminal:
+    clay.debugViewWidth = 40
+    clay.rowHeight = 1
+    clay.configHeaderRowHeight = 0
+    clay.closeButtonPadding = 1
+    clay.outerPadding = 0
+    clay.indentWidth = 2
+    clay.colorSizing = 1
+    clay.padding = 0
+    clay.paddingX = 0
+    clay.paddingY = 0
+    clay.colorPadding = 0
+    clay.childGap = 0
+    clay.collapseElementSize = 1
+    clay.fontSize = 1
+    clay.emptySquareSize = 1
+    clay.propertiesSize = 11
+    clay.titleRowHeight = 1
+    clay.separatorWidth = 0
+    clay.scrollSpeed = 1
+  else:
+    clay.debugViewWidth = 400
+    clay.rowHeight = 30
+    clay.configHeaderRowHeight = 30
+    clay.closeButtonPadding = 10
+    clay.outerPadding = 10
+    clay.indentWidth = 16
+    clay.colorSizing = 10
+    clay.padding = 8
+    clay.paddingX = 8
+    clay.paddingY = 2
+    clay.colorPadding = 8
+    clay.childGap = 6
+    clay.collapseElementSize = 16
+    clay.fontSize = 16
+    clay.emptySquareSize = 8
+    clay.propertiesSize = 300
+    clay.titleRowHeight = 8
+    clay.separatorWidth = 1
+    clay.scrollSpeed = 30
+
   let dims = ClayDimensions(width: 1024, height: 768)
   clay.initialize(memory, dims)
   setMeasureTextFunction(measureClayText)
 
-initClay()
+type ClayStateWrapper = ref object
+  data: seq[uint8]
+
+var clayStates: Table[EditorId, ClayStateWrapper]
+var currentState: ClayStateWrapper = nil
+
+proc new(_: typedesc[ClayStateWrapper]): ClayStateWrapper =
+  new(result)
+  result.data.setLen(clay.stateSize())
+
+proc save(state: ClayStateWrapper) =
+  clay.saveState(cast[ptr ClayState](state.data[0].addr))
+
+proc restore(state: ClayStateWrapper) =
+  clay.restoreState(cast[ptr ClayState](state.data[0].addr))
+  currentState = state
+
+proc clayState(editorId: EditorId): ClayStateWrapper =
+  clayStates.withValue(editorId, val):
+    return val[]
+
+  var state = ClayStateWrapper.new()
+  clayStates[editorId] = state
+  initClay()
+  state.save()
+  state
 
 proc toRect(bb: ClayBoundingBox): Rect =
   rect(bb.x, bb.y, bb.width, bb.height)
@@ -118,29 +185,26 @@ proc printf(frmt: cstring) {.varargs, header: "<stdio.h>", cdecl.}
 var lastMouse: Vec2
 var lastMouseDown = false
 var lastScroll: Vec2
-proc drawClay(): RenderCommands =
-  setPointerState(ClayVector2(x: lastMouse.x, y: lastMouse.y), lastMouseDown)
-  updateScrollContainers(false, ClayVector2(x: lastScroll.x, y: lastScroll.y), 0.5)
-  var layoutElement = ClayLayoutConfig(padding: ClayPadding(x: 1.em, y: 2.em), layoutDirection: TopToBottom)
-  var textConfig = ClayTextElementConfig(textColor: clayColor(1, 1, 1))
+proc drawClay(editor: EditorId, size: Vec2): RenderCommands =
+  var state = editor.clayState()
+  state.restore()
+  defer:
+    state.save()
+
+  setLayoutDimensions(ClayDimensions(width: size.x, height: size.y))
+  var layoutElement = ClayLayoutConfig(padding: ClayPadding(x: 0.em, y: 0.em), layoutDirection: TopToBottom)
+  var textConfig = ClayTextElementConfig(textColor: clayColor(0.8, 0.5, 0.5))
   clay.beginLayout()
-  UI(rectangle(color = clayColor(1, 0, 0)), layout(layoutElement)):
-    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 2.em, y: 3.em))):
-      clayText($lastMouse, textColor = clayColor(0, 0, 1))
-      clayText($lastMouseDown, textConfig)
-      clayText($lastScroll, textColor = clayColor(0, 1, 0))
-    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 2.em, y: 3.em))):
-      clayText("hello", textColor = clayColor(0, 0, 1))
-      clayText("world", textConfig)
-    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 2.em, y: 3.em))):
-      clayText("hello", textColor = clayColor(0, 0, 1))
-      clayText("world", textConfig)
-    UI(rectangle(color = clayColor(0, 1, 0), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 2.em, y: 3.em))):
-      clayText("hello", textColor = clayColor(0, 0, 1))
-      clayText("world", textConfig)
+  UI(rectangle(color = clayColor(0.5, 0.1, 0.1)), layout(layoutElement)):
+    UI(rectangle(color = clayColor(0.1, 0.5, 0.1), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 0.em, y: 0.em))):
+      clayText(&"{lastMouse}, {lastMouseDown}, {lastScroll}", textColor = clayColor(0, 0, 1))
+    for i in 0..4:
+      UI(rectangle(color = clayColor(0.1, 0.5, 0.1), cornerRadius = cornerRadius(1.em, 2.em, 3.em, 4.em)), layout(padding = ClayPadding(x: 0.em, y: 0.em))):
+        for k in 0..1:
+          clayText("hello ", textColor = clayColor(0.5, 0.1, 1))
+          clayText($i, textConfig)
   let renderCommands = clay.endLayout()
   let arr = cast[ptr UncheckedArray[ClayRenderCommand]](renderCommands.internalArray)
-
 
   buildCommands:
     for i in 0..<renderCommands.length.int:
@@ -151,12 +215,8 @@ proc drawClay(): RenderCommands =
         drawText($arr[i].text, arr[i].boundingBox.toRect * scale, arr[i].config.rectangleElementConfig.color.toColor, 0.UINodeFlags)
       of ScissorStart:
         startScissor(arr[i].boundingBox.toRect * scale)
-        # echo arr[i].commandType
-        # echo arr[i]
       of ScissorEnd:
         endScissor()
-        # echo arr[i].commandType
-        # echo arr[i]
       else: discard
 
 var renderCommandsGlobal: RenderCommands
@@ -171,8 +231,10 @@ block: # Custom render
       previousBaseIndex: int
       lastLines: seq[int]
 
-    let commands = drawClay()
-    renderCommandsGlobal = commands
+    let input = args.jsonTo(Payload)
+
+    # todo: don't recreate renderCommandsGlobal, reuse the existing memory instead
+    renderCommandsGlobal = drawClay(input.editor, input.bounds.wh)
 
     type Result = object
       address: uint32
@@ -181,23 +243,17 @@ block: # Custom render
       strings: uint32
       stringsLen: uint32
 
+    if renderCommandsGlobal.commands.len == 0:
+      return Result().toJson
+
+    # The caller will currently copy the data in the renderCommandsGlobal after this function returns
     return Result(
       address: cast[uint32](renderCommandsGlobal.commands[0].addr),
       len: uint32(renderCommandsGlobal.commands.len),
       stride: uint32(sizeof(RenderCommand)),
-      strings: cast[uint32](renderCommandsGlobal.strings[0].addr),
+      strings: cast[uint32](renderCommandsGlobal.strings.cstring),
       stringsLen: cast[uint32](renderCommandsGlobal.strings.len),
     ).toJson
-
-    # return commands.toJson
-
-    # let input = args.jsonTo(Payload)
-    # let cursorBounds = input.lastCursorLocationBounds.get(rect(300, 300, 10, 10)) - input.bounds.xy
-    # let commands2 = buildCommands:
-    #   if input.editor.isTextEditor editor:
-    #     fillRect(rect(cursorBounds.xyh, vec2(100, 50)), color(0.1, 0.1, 0.1))
-    #     drawText(editor.mode, rect(cursorBounds.xyh, vec2(200, 300)), color(1, 0.1, 0.1), 0.UINodeFlags)
-    # return commands2.toJson
 
   scriptSetCallback("custom-render", id)
 
@@ -210,13 +266,13 @@ block: # handle-click
       down: bool
 
     let input = args.jsonTo(Payload)
-    if isTerminal:
-      lastMouse = ((input.pos + 0.5) / scale).floor
-    else:
-      lastMouse = (input.pos / scale).floor
+    lastMouse = (input.pos / scale).floor
     lastMouseDown = input.down
-    # setPointerState(ClayVector2(x: input.pos.x, y: input.pos.y), input.down)
-    return newJNull()
+
+    input.editor.clayState().restore()
+    setPointerState(ClayVector2(x: input.pos.x, y: input.pos.y), input.down)
+    input.editor.clayState().save()
+    return clay.isAnyHovered().toJson
 
   scriptSetCallback("handle-click", id)
 
@@ -227,10 +283,12 @@ block: # handle-scroll
       delta: Vec2
 
     let input = args.jsonTo(Payload)
-    # echo input
     lastScroll = input.delta
-    # updateScrollContainers(true, ClayVector2(x: input.delta.x, y: input.delta.y), 0.016)
-    return newJNull()
+
+    input.editor.clayState().restore()
+    updateScrollContainers(true, ClayVector2(x: input.delta.x, y: input.delta.y), 0.016)
+    input.editor.clayState().save()
+    return clay.isAnyHovered().toJson
 
   scriptSetCallback("handle-scroll", id)
 

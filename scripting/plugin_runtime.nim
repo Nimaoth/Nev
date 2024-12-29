@@ -15,10 +15,8 @@ var anyCallbacks = initTable[int, proc(args: JsonNode): JsonNode]()
 var onEditorModeChanged* = initEvent[tuple[editor: EditorId, oldMode: string, newMode: string]]()
 var callbackId = 0
 
-when defined(wasm):
-  const env* = "wasm"
-else:
-  const env* = "nims"
+proc emscripten_notify_memory_growth*(a: int32) {.exportc.} = discard
+const env* = "wasm"
 
 proc info*(args: varargs[string, `$`]) =
   var msgLen = 0

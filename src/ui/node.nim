@@ -306,35 +306,43 @@ proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButt
   var targetNode: seq[UINode] = builder.draggedNodes
 
   if buttons.len > 0:
-    for node in builder.draggedNodes:
+    for button in buttons:
     # if builder.draggedNodes.getSome(node):
-      for button in buttons:
-        discard node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta) # todo: modifiers
-      result = true
+      for node in builder.draggedNodes:
+        if node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta): # todo: modifiers
+          result = true
+          break
     # else:
     if builder.draggedNodes.len == 0:
-      let node = builder.root.findNodeContaining(pos, (node) {.gcsafe, raises: [].} => node.handleDrag.isNotNil)
-      if node.getSome(node):
-        for button in buttons:
-          discard node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta) # todo: modifiers
-        result = true
+      let nodes = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => node.handleDrag.isNotNil)
+      for button in buttons:
+        for node in nodes:
+          if node.handleDrag()(node, button, {}, pos - node.boundsAbsolute.xy, builder.mouseDelta): # todo: modifiers
+            result = true
+            break
 
 
   if targetNode.len == 0:
     targetNode = builder.root.findNodesContaining(pos, (node) {.gcsafe, raises: [].} => MouseHover in node.flags)
 
+  var handled = false
   for node in builder.hoveredNodes:
     if node in targetNode:
       if node.handleHover.isNotNil:
-        result = node.handleHover()(node, pos - node.boundsAbsolute.xy) or result
+        if not handled:
+          result = node.handleHover()(node, pos - node.boundsAbsolute.xy) or result
+          handled = handled or result
     else:
       if node.handleEndHover.isNotNil:
         result = node.handleEndHover()(node, pos - node.boundsAbsolute.xy) or result
 
+  handled = false
   for node in targetNode:
     if node notin builder.hoveredNodes:
       if node.handleBeginHover.isNotNil:
-        result = node.handleBeginHover()(node, pos - node.boundsAbsolute.xy) or result
+        if not handled:
+          result = node.handleBeginHover()(node, pos - node.boundsAbsolute.xy) or result
+          handled = handled or result
 
 
   # case (builder.hoveredNodes, targetNode)

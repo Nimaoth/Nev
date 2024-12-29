@@ -247,3 +247,18 @@ proc getChangedSelection*(selection: Selection, text: string): Selection =
     (selection.first.line + lines - 1, lastLineLen)
 
   return (selection.last, newLast).normalized
+
+when defined(wasm):
+  type
+    ReplicaId* = distinct uint16
+    SeqNumber* = uint32
+    Lamport* = object
+      replicaId*: ReplicaId
+      value*: SeqNumber
+    Bias* = enum Left, Right
+    BufferId* = distinct range[1.uint64..uint64.high]
+    Anchor* = object
+      timestamp*: Lamport
+      offset*: int
+      bias: Bias
+      bufferId*: Option[BufferId]

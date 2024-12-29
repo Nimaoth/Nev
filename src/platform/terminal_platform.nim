@@ -548,18 +548,20 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
 
-    for command in node.renderCommands:
+    for command in node.renderCommands.commands:
       case command.kind
       of RenderCommandKind.Rect:
-        platform.fillRect(command.bounds + offset, command.color)
+        platform.fillRect(command.bounds + nodePos, command.color)
       of RenderCommandKind.FilledRect:
-        platform.fillRect(command.bounds + offset, command.color)
+        platform.fillRect(command.bounds + nodePos, command.color)
       of RenderCommandKind.Text:
+        # todo: don't copy string data
+        let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
         platform.buffer.setBackgroundColor(bgNone)
         platform.setForegroundColor(command.color)
-        platform.writeText(command.bounds.xy + offset, command.text, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags)
+        platform.writeText(command.bounds.xy + nodePos, text, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags)
       of RenderCommandKind.ScissorStart:
-        platform.pushMask(command.bounds + offset)
+        platform.pushMask(command.bounds + nodePos)
       of RenderCommandKind.ScissorEnd:
         platform.popMask()
 

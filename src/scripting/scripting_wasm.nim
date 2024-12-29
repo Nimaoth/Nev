@@ -154,11 +154,12 @@ method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool =
     log lvlError, &"Failed to run callback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): JsonNode =
+  var path = ""
   try:
     result = nil
     let argStr = $arg
     for (m, p, f) in self.handleAnyCallbackCallbacks:
-      let path = m.path
+      path = m.path
       self.stack.add m
       defer: discard self.stack.pop
 
@@ -177,7 +178,7 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
         log lvlError, &"Failed to parse json from callback {id}({arg}): '{str}' is not valid json.\n{getCurrentExceptionMsg()}"
         continue
   except:
-    log lvlError, &"Failed to run handleAnyCallback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+    log lvlError, &"Failed to run handleAnyCallback '{path}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 
 method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode =
