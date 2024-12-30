@@ -220,6 +220,8 @@ type
     range: Range[int]
     localOffset*: int
     point*: Point
+    maxChunkSize*: int = 128
+    returnedLastChunk: bool = false
 
 func `$`*(chunk: IteratorChunk): string =
   result = newString(chunk.len)
@@ -245,6 +247,9 @@ proc seekLine*(self: var ChunkIterator, line: int) =
 proc next*(self: var ChunkIterator): Option[IteratorChunk] =
   while true:
     if self.cursor.atEnd:
+      if not self.returnedLastChunk:
+        self.returnedLastChunk = true
+        return IteratorChunk(data: nil, len: 0, point: self.point).some
       return
 
     if self.cursor.item.isNone or self.localOffset >= self.cursor.item.get.chars.len:
@@ -254,25 +259,30 @@ proc next*(self: var ChunkIterator): Option[IteratorChunk] =
     if self.cursor.item.isSome and self.cursor.startPos[1] < self.range.b:
       let chunk: ptr Chunk = self.cursor.item.get
       while self.localOffset < chunk.chars.len and chunk.chars[self.localOffset] == '\n':
-        # result = IteratorChunk(
-        #   data: cast[ptr UncheckedArray[char]](chunk.chars[self.localOffset].addr),
-        #   len: 0,
-        #   point: self.point,
-        # ).some
+        if self.point.column == 0:
+          result = IteratorChunk(
+            data: cast[ptr UncheckedArray[char]](chunk.chars[self.localOffset].addr),
+            len: 0,
+            point: self.point,
+          ).some
         self.point.row += 1
         self.point.column = 0
         self.localOffset += 1
-        # return
+
+        if result.isSome:
+          return
 
       assert self.localOffset <= chunk.chars.len
       if self.localOffset == chunk.chars.len:
         continue
 
       let nextNewLine = chunk.chars(self.localOffset, chunk.chars.len - 1).find('\n')
-      let maxEndIndex = if nextNewLine == -1:
+      var maxEndIndex = if nextNewLine == -1:
         chunk.chars.len
       else:
         self.localOffset + nextNewLine
+
+      maxEndIndex = min(maxEndIndex, self.localOffset + self.maxChunkSize)
 
       assert maxEndIndex >= self.localOffset
 
