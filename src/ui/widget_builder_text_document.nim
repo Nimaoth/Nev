@@ -1110,6 +1110,223 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
 
+proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode, selectionsNode: UINode, textColor: Color, sizeToContentX: bool, sizeToContentY: bool) =
+  var flags = 0.UINodeFlags
+  if sizeToContentX:
+    flags.incl SizeToContentX
+  else:
+    flags.incl FillX
+
+  if sizeToContentY:
+    flags.incl SizeToContentY
+  else:
+    flags.incl FillY
+
+  let inclusive = app.config.getOption[:bool]("editor.text.inclusive-selection", false)
+
+  let charWidth = builder.charWidth
+  let isThickCursor = self.isThickCursor
+
+  let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
+
+  # ↲ ↩ ⤦ ⤶ ⤸ ⮠
+  let showContextLines = not renderDiff and app.config.getOption[:bool]("editor.text.context-lines", true)
+
+  let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
+  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
+  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
+  let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
+  let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
+  let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
+  let changedTextBackgroundColor = app.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
+
+  # line numbers
+  let lineNumbers = self.lineNumbers.get app.config.getOption[:LineNumbers]("editor.text.line-numbers", LineNumbers.Absolute)
+  let maxLineNumber = case lineNumbers
+    of LineNumbers.Absolute: self.document.numLines
+    of LineNumbers.Relative: 99
+    else: 0
+  let maxLineNumberLen = ($maxLineNumber).len + 1
+  let cursorLine = self.selection.last.line
+
+  let lineNumberPadding = builder.charWidth
+  let lineNumberBounds = if lineNumbers != LineNumbers.None:
+    vec2(maxLineNumberLen.float32 * builder.charWidth, 0)
+  else:
+    vec2()
+
+  let lineNumberWidth = if lineNumbers != LineNumbers.None:
+    (lineNumberBounds.x + lineNumberPadding).ceil
+  else:
+    0.0
+
+  var startLine = self.previousBaseIndex - (self.scrollOffset / builder.textHeight).int
+  let startLineOffsetFromScrollOffset = (self.previousBaseIndex - startLine).float * builder.textHeight
+  var offset = vec2(lineNumberWidth, self.scrollOffset - startLineOffsetFromScrollOffset)
+  if startLine < 0:
+    offset.y = -startLine.float * builder.textHeight
+    startLine = 0
+  if startLine > 0:
+    startLine -= 1
+    offset.y -= builder.textHeight
+
+  var slice = self.document.rope.slice()
+  var iter = ChunkIterator.init(slice)
+  iter.maxChunkSize = app.config.asConfigProvider.getValue("ui.max-chunk-size", 128)
+  iter.seekLine(startLine)
+
+  type ChunkBounds = object
+    range: rope.Range[Point]
+    bounds: Rect
+
+  var chunkBounds: seq[ChunkBounds]
+
+  let parentHeight = if sizeToContentY:
+    currentNode.h = builder.textHeight
+    min(self.document.rope.lines.float * builder.textHeight, 500.0) # todo: figure out max height
+  else:
+    currentNode.bounds.h
+
+  proc cmp(a: ChunkBounds, b: Point): int =
+    if b.row < a.range.a.row:
+      return 1
+    if b.row == a.range.a.row and b.column < a.range.a.column:
+      return 1
+    if b.row > a.range.b.row:
+      return -1
+    if b.row == a.range.b.row and b.column > a.range.b.column:
+      return -1
+    return 0
+
+  var lastPoint = iter.point
+  currentNode.renderCommands.clear()
+  buildCommands(currentNode.renderCommands):
+    while iter.next().getSome(chunk):
+      while lastPoint.row < chunk.point.row:
+        lastPoint.row += 1
+        lastPoint.column = 0
+        offset.y += builder.textHeight
+        offset.x = lineNumberWidth
+
+      if offset.y >= parentHeight:
+        break
+
+      lastPoint = chunk.point
+
+      if chunk.len > 0:
+        let width = builder.textWidth($chunk)
+        let bounds = rect(offset, vec2(width, builder.textHeight))
+        chunkBounds.add ChunkBounds(
+          range: chunk.point...Point(row: chunk.point.row, column: chunk.point.column + chunk.len.uint32),
+          bounds: bounds,
+        )
+        drawText(chunk.toOpenArray, bounds, textColor, 0.UINodeFlags)
+        offset.x += width
+        if sizeToContentY:
+          currentNode.h = max(currentNode.h, bounds.yh)
+
+      else:
+        chunkBounds.add ChunkBounds(
+          range: chunk.point...Point(row: chunk.point.row, column: chunk.point.column + chunk.len.uint32),
+          bounds: rect(offset, vec2(builder.charWidth, builder.textHeight)),
+        )
+
+    for s in self.selections:
+      let lastIndex = chunkBounds.binarySearch(s.last.toPoint, cmp)
+      if lastIndex != -1:
+        let bounds = chunkBounds[lastIndex]
+        # todo: correctly handle multi byte chars
+        let relativeOffset = s.last.column - bounds.range.a.column.int
+        var cursorBounds = rect(bounds.bounds.xy + vec2(relativeOffset.float * builder.charWidth, 0), vec2(builder.charWidth, builder.textHeight))
+
+        let charBounds = cursorBounds
+        if not isThickCursor:
+          cursorBounds.w *= 0.2
+
+        if self.cursorVisible:
+          fillRect(cursorBounds, cursorForegroundColor)
+          if isThickCursor:
+            let currentRune = self.document.runeAt(s.last)
+            drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
+
+        self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
+
+  if app.config.asConfigProvider.getValue("ui.log-chunks", false):
+    var str = ""
+    var last = Point()
+    for bounds in chunkBounds:
+      if bounds.range.a.row > last.row:
+        echo str
+        str = ""
+      str.add &"{bounds.range.a.row}:{bounds.range.a.column}-{bounds.range.b.column}, "
+      last = bounds.range.a
+
+    echo str
+
+  selectionsNode.renderCommands.clear()
+  buildCommands(selectionsNode.renderCommands):
+    for s in self.selections:
+      var sn = s.normalized
+      if isThickCursor:
+        sn.last.column += 1
+
+      # todo: binarySearchBy is defined in buffer, maybe move it into utils, otherwise update sumtree
+      let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchBy(sn.first.toPoint, cmp)
+      let (lastFound, lastIndexNormalized) = chunkBounds.binarySearchBy(sn.last.toPoint, cmp)
+      if chunkBounds.len > 0:
+        let firstIndexClamped = if firstIndexNormalized != -1:
+          firstIndexNormalized
+        elif sn.first.toPoint < chunkBounds[0].range.a:
+          0
+        elif sn.first.toPoint > chunkBounds[^1].range.b:
+          chunkBounds.high
+        else:
+          -1
+
+        let lastIndexClamped = if lastIndexNormalized != -1:
+          lastIndexNormalized
+        elif sn.last.toPoint < chunkBounds[0].range.a:
+          0
+        elif sn.last.toPoint > chunkBounds[^1].range.b:
+          chunkBounds.high
+        else:
+          -1
+
+        if firstIndexClamped != -1 and lastIndexClamped != -1:
+          for i in firstIndexClamped..lastIndexClamped:
+            if i >= chunkBounds.len:
+              break
+
+            let bounds = chunkBounds[i]
+            let lineLen = self.document.lineLength(bounds.range.a.row.int)
+
+            # todo: correctly handle multi byte chars
+            let firstOffset = if lineLen == 0:
+              0
+            elif sn.first.toPoint in bounds.range:
+              sn.first.column - bounds.range.a.column.int
+            elif sn.first.toPoint < bounds.range.a:
+              0
+            else:
+              bounds.range.len.column.int
+
+            let lastOffset = if lineLen == 0:
+              1
+            elif sn.last.toPoint in bounds.range:
+              sn.last.column - bounds.range.a.column.int
+            elif sn.last.toPoint < bounds.range.a:
+              0
+            else:
+              bounds.range.len.column.int
+
+            var selectionBounds = rect(
+              bounds.bounds.xy + vec2(firstOffset.float * builder.charWidth, 0),
+              vec2((lastOffset - firstOffset).float * builder.charWidth, builder.textHeight))
+            fillRect(selectionBounds, selectionColor)
+
+  selectionsNode.markDirty(builder)
+  currentNode.markDirty(builder)
+
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.preRender()
 
@@ -1120,8 +1337,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let logNewRenderer = app.config.getOption[:bool]("ui.new-log", true)
   let transparentBackground = app.config.getOption[:bool]("ui.background.transparent", false)
   let darkenInactive = app.config.getOption[:float]("text.background.inactive-darken", 0.025)
-  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
-  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
 
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
   var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(darkenInactive)
@@ -1220,145 +1435,25 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             self.targetLine = int.none
             self.nextScrollBehaviour = ScrollBehaviour.none
 
+          var selectionsNode: UINode
+          builder.panel(&{UINodeFlag.FillX, FillY}):
+            selectionsNode = currentNode
+            selectionsNode.renderCommands.clear()
+
           if useNewRenderer:
             onScroll:
               self.scrollText(delta.y * app.config.asConfigProvider.getValue("text.scroll-speed", 40.0))
 
-            # line numbers
-            let lineNumbers = self.lineNumbers.get app.config.getOption[:LineNumbers]("editor.text.line-numbers", LineNumbers.Absolute)
-            let maxLineNumber = case lineNumbers
-              of LineNumbers.Absolute: self.document.numLines
-              of LineNumbers.Relative: 99
-              else: 0
-            let maxLineNumberLen = ($maxLineNumber).len + 1
-            let cursorLine = self.selection.last.line
-
-            let lineNumberPadding = builder.charWidth
-            let lineNumberBounds = if lineNumbers != LineNumbers.None:
-              vec2(maxLineNumberLen.float32 * builder.charWidth, 0)
-            else:
-              vec2()
-
-            let lineNumberWidth = if lineNumbers != LineNumbers.None:
-              (lineNumberBounds.x + lineNumberPadding).ceil
-            else:
-              0.0
-
-            # options.lineNumberTotalWidth = lineNumberWidth
-            # options.lineNumberWidth = lineNumberBounds.x
-
-            # if self.signs.len > 0:
-            #   options.signWidth = 2 * charWidth
-
-
-            # let lineNumberWidth = 9.0 * builder.charWidth
-            var startLine = self.previousBaseIndex - (self.scrollOffset / builder.textHeight).int
-            let startLineOffsetFromScrollOffset = (self.previousBaseIndex - startLine).float * builder.textHeight
-            var offset = vec2(lineNumberWidth, self.scrollOffset - startLineOffsetFromScrollOffset)
-            # echo &"{self.previousBaseIndex}, {self.scrollOffset} -> {startLine}, {offset}"
-            if startLine < 0:
-              # echo "line < 0: ", startLine
-              offset.y = -startLine.float * builder.textHeight
-              startLine = 0
-            if startLine > 0:
-              startLine -= 1
-              offset.y -= builder.textHeight
-
             var t = startTimer()
-            var slice = self.document.rope.slice()
-            var iter = ChunkIterator.init(slice)
-            iter.seekLine(startLine)
 
-            type WordBounds = object
-              range: rope.Range[Point]
-              bounds: Rect
-
-            var wordBounds: seq[WordBounds]
-
-            if self.document.rope.len < 100:
-              echo &"{self.previousBaseIndex}, {self.scrollOffset} -> {startLine}, {offset}"
-
-            let parentHeight = if sizeToContentY:
-              currentNode.boundsRaw.h = builder.textHeight
-              min(self.document.rope.lines.float * builder.textHeight, 500.0) # todo: figure out max height
-            else:
-              currentNode.bounds.h
-
-            var lastPoint = iter.point
-            let commands = buildCommands:
-              while iter.next().getSome(chunk):
-                # echo &"{lastPoint} -> {chunk.point}: {chunk}"
-                while lastPoint.row < chunk.point.row:
-                  lastPoint.row += 1
-                  lastPoint.column = 0
-                  offset.y += builder.textHeight
-                  offset.x = lineNumberWidth
-                  if lastPoint.column == 0:
-                    wordBounds.add WordBounds(
-                      range: lastPoint...lastPoint,
-                      bounds: rect(offset, vec2(builder.textHeight, builder.charWidth)),
-                    )
-
-                if offset.y >= parentHeight:
-                  echo &"break at {offset} >= {parentHeight}"
-                  break
-
-                lastPoint = chunk.point
-
-                if chunk.len > 0:
-                  let width = builder.textWidth($chunk)
-                  let bounds = rect(offset, vec2(width, builder.textHeight))
-                  wordBounds.add WordBounds(
-                    range: chunk.point...Point(row: chunk.point.row, column: chunk.point.column + chunk.len.uint32),
-                    bounds: bounds,
-                  )
-                  if self.document.rope.len < 100:
-                    echo bounds
-                  drawText(chunk.toOpenArray, bounds, color(0.8, 0.8, 0.8), 0.UINodeFlags)
-                  offset.x += width
-                  if sizeToContentY:
-                    currentNode.boundsRaw.h = max(currentNode.boundsRaw.h, bounds.yh)
-
-              for s in self.selections:
-                proc cmp(a: WordBounds, b: Point): int =
-                  if b.row < a.range.a.row:
-                    return 1
-                  if b.row == a.range.a.row and b.column < a.range.a.column:
-                    return 1
-                  if b.row > a.range.b.row:
-                    return -1
-                  if b.row == a.range.b.row and b.column > a.range.b.column:
-                    return -1
-                  return 0
-
-                let index = wordBounds.binarySearch(s.last.toPoint, cmp)
-                if index != -1:
-                  let bounds = wordBounds[index]
-                  # todo: correctly handle multi byte chars
-                  let relativeOffset = s.last.column - bounds.range.a.column.int
-                  var cursorBounds = rect(bounds.bounds.xy + vec2(relativeOffset.float * builder.charWidth, 0), vec2(builder.charWidth, builder.textHeight))
-
-                  let charBounds = cursorBounds
-                  if not self.isThickCursor:
-                    cursorBounds.w *= 0.2
-
-                  if self.cursorVisible:
-                    fillRect(cursorBounds, cursorForegroundColor)
-                    if self.isThickCursor:
-                      let currentRune = self.document.runeAt(s.last)
-                      drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
-
-                  self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
+            self.createTextLinesNew(builder, app, currentNode, selectionsNode, textColor, sizeToContentX, sizeToContentY)
 
             let e = t.elapsed.ms
-
             if logNewRenderer:
               echo &"Render new took {e} ms"
-            currentNode.renderCommands = commands
-            currentNode.markDirty(builder)
 
           else:
-            currentNode.renderCommands = RenderCommands()
+            currentNode.renderCommands.clear()
             var t = startTimer()
             let infos = self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY)
             let e = t.elapsed.ms
