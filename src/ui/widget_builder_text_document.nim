@@ -1201,17 +1201,38 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   var lastPoint = iter.point
   currentNode.renderCommands.clear()
   buildCommands(currentNode.renderCommands):
+    var addedLineNumber = false
     while iter.next().getSome(chunk):
       while lastPoint.row < chunk.point.row:
         lastPoint.row += 1
         lastPoint.column = 0
         offset.y += builder.textHeight
         offset.x = lineNumberWidth
+        addedLineNumber = false
 
       if offset.y >= parentHeight:
         break
 
       lastPoint = chunk.point
+
+      # line numbers
+      if not addedLineNumber:
+        addedLineNumber = true
+        let lineNumber = chunk.point.row.int
+        var lineNumberText = ""
+        var lineNumberX = 0.float
+        if lineNumbers != LineNumbers.None and cursorLine == lineNumber:
+          lineNumberText = $(lineNumber + 1)
+        elif lineNumbers == LineNumbers.Absolute:
+          lineNumberText = $(lineNumber + 1)
+          lineNumberX = max(0.0, lineNumberBounds.x - lineNumberText.len.float * builder.charWidth)
+        elif lineNumbers == LineNumbers.Relative:
+          lineNumberText = $abs((lineNumber + 1) - cursorLine)
+          lineNumberX = max(0.0, lineNumberBounds.x - lineNumberText.len.float * builder.charWidth)
+
+        if lineNumberText.len > 0:
+          let width = builder.textWidth(lineNumberText)
+          drawText(lineNumberText, rect(lineNumberX, offset.y, width, builder.textHeight), textColor, 0.UINodeFlags)
 
       if chunk.len > 0:
         let width = builder.textWidth($chunk)
@@ -1269,6 +1290,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
       var sn = s.normalized
       if isThickCursor:
         sn.last.column += 1
+
 
       # todo: binarySearchBy is defined in buffer, maybe move it into utils, otherwise update sumtree
       let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchBy(sn.first.toPoint, cmp)
