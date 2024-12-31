@@ -103,7 +103,7 @@ type
     currentContentFailedToParse: bool
     tsLanguage: TSLanguage
     currentTree: TSTree
-    highlightQuery: TSQuery
+    highlightQuery*: TSQuery
     errorQuery: TSQuery
 
     languageServer*: Option[LanguageServer]

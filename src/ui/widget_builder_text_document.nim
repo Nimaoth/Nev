@@ -7,7 +7,7 @@ import platform/platform
 import ui/[widget_builders_base, widget_library]
 import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
-import text/diff
+import text/[diff, custom_treesitter]
 
 import ui/node
 
@@ -1171,8 +1171,11 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     offset.y -= builder.textHeight
 
   var slice = self.document.rope.slice()
-  var iter = ChunkIterator.init(slice)
-  iter.maxChunkSize = app.config.asConfigProvider.getValue("ui.max-chunk-size", 128)
+  var iter = StyledChunkIterator.init(slice)
+  iter.chunks.maxChunkSize = app.config.asConfigProvider.getValue("ui.max-chunk-size", 128)
+  iter.logHighlights = app.config.asConfigProvider.getValue("ui.log-highlight", false)
+  if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and app.config.asConfigProvider.getValue("ui.highlight", true):
+    iter.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
   iter.seekLine(startLine)
 
   type ChunkBounds = object
@@ -1241,6 +1244,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           range: chunk.point...Point(row: chunk.point.row, column: chunk.point.column + chunk.len.uint32),
           bounds: bounds,
         )
+        let textColor = if chunk.scope.len == 0: textColor else: app.theme.tokenColor(chunk.scope, textColor)
         drawText(chunk.toOpenArray, bounds, textColor, 0.UINodeFlags)
         offset.x += width
         if sizeToContentY:
@@ -1348,6 +1352,8 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)
+
+  # echo &"{iter.matchCount}, {iter.notMatchCount}, {iter.eqCount}, {iter.notEqCount}, {iter.noneCount}"
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.preRender()

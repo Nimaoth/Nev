@@ -128,7 +128,6 @@ type
 
     logDocument: Document
 
-    commandHistory: seq[string]
     currentHistoryEntry: int = 0
     languageServerCommandLine: LanguageServer
     commandLineTextEditor: DocumentEditor
@@ -726,7 +725,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     else:
       log lvlInfo, &"Don't restore session file."
 
-  self.commandHistory = state.commandHistory
+  # self.commandHistory = state.commandHistory
+  self.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
 
   let closeUnusedDocumentsTimerS = self.config.getOption("editor.close-unused-documents-timer", 10)
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
@@ -955,7 +955,8 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fontBoldItalic = self.fontBoldItalic
   state.fallbackFonts = self.fallbackFonts
 
-  state.commandHistory = self.commandHistory
+  # state.commandHistory = self.commandHistory
+  state.commandHistory = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory
   state.sessionData = self.session.sessionData
 
   if getDebugger().getSome(debugger):
@@ -1134,9 +1135,9 @@ proc closeUnusedDocuments*(self: App) =
 
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = initialValue
-  if self.commandHistory.len == 0:
-    self.commandHistory.add ""
-  self.commandHistory[0] = ""
+  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
+  self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = ""
   self.currentHistoryEntry = 0
   self.commandLineMode = true
   self.getCommandLineTextEditor.setMode("insert")
@@ -1150,36 +1151,36 @@ proc exitCommandLine*(self: App) {.expose("editor").} =
   self.platform.requestRender()
 
 proc selectPreviousCommandInHistory*(self: App) {.expose("editor").} =
-  if self.commandHistory.len == 0:
-    self.commandHistory.add ""
+  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
 
   let command = self.getCommandLineTextEditor.document.contentString
-  if command != self.commandHistory[self.currentHistoryEntry]:
+  if command != self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]:
     self.currentHistoryEntry = 0
-    self.commandHistory[0] = command
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = command
 
   self.currentHistoryEntry += 1
-  if self.currentHistoryEntry >= self.commandHistory.len:
+  if self.currentHistoryEntry >= self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len:
     self.currentHistoryEntry = 0
 
-  self.getCommandLineTextEditor.document.content = self.commandHistory[self.currentHistoryEntry]
+  self.getCommandLineTextEditor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
   self.getCommandLineTextEditor.moveLast("file", Both)
   self.platform.requestRender()
 
 proc selectNextCommandInHistory*(self: App) {.expose("editor").} =
-  if self.commandHistory.len == 0:
-    self.commandHistory.add ""
+  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
 
   let command = self.getCommandLineTextEditor.document.contentString
-  if command != self.commandHistory[self.currentHistoryEntry]:
+  if command != self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]:
     self.currentHistoryEntry = 0
-    self.commandHistory[0] = command
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = command
 
   self.currentHistoryEntry -= 1
   if self.currentHistoryEntry < 0:
-    self.currentHistoryEntry = self.commandHistory.high
+    self.currentHistoryEntry = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.high
 
-  self.getCommandLineTextEditor.document.content = self.commandHistory[self.currentHistoryEntry]
+  self.getCommandLineTextEditor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
   self.getCommandLineTextEditor.moveLast("file", Both)
   self.platform.requestRender()
 
@@ -1189,17 +1190,17 @@ proc executeCommandLine*(self: App): bool {.expose("editor").} =
   self.commandLineMode = false
   let command = self.getCommandLineTextEditor.document.contentString.replace("\n", "")
 
-  if (let i = self.commandHistory.find(command); i >= 0):
-    self.commandHistory.delete i
+  if (let i = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.find(command); i >= 0):
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.delete i
 
-  if self.commandHistory.len == 0:
-    self.commandHistory.add ""
+  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
 
-  self.commandHistory.insert command, 1
+  self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.insert command, 1
 
   let maxHistorySize = self.config.getOption("editor.command-line.history-size", 100)
-  if self.commandHistory.len > maxHistorySize:
-    self.commandHistory.setLen maxHistorySize
+  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len > maxHistorySize:
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.setLen maxHistorySize
 
   var (action, arg) = command.parseAction
   self.getCommandLineTextEditor.document.content = ""
@@ -2445,7 +2446,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Input History: {self.inputHistory}\n"
       result.add &"Editor History: {self.layout.editorHistory}\n"
 
-      result.add &"Command History: {self.commandHistory.len}\n"
+      result.add &"Command History: {self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len}\n"
       # for command in self.commandHistory:
       #   result.add &"    {command}\n"
 
