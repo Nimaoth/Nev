@@ -11,26 +11,18 @@
 ; Special
 (blank_identifier) @variable.builtin
 
-((identifier) @type
-  (#match? @type "^[A-Z].*$"))
-((identifier) @type
-  (#match? @type "^(openArray|typedesc)$"))
-
-; Calls
-(call
-  function: [
-    (identifier) @function.call
-    (dot_expression
-      right: (identifier) @function.call)
-  ])
-(generalized_string
-  function: [
-    (identifier) @function.call
-    (dot_expression
-      right: (identifier) @function.call)
-  ])
+; Currently #match? and friends on nodes which exist a lot (like identifiers) are quite expensive, so disable them for now.
+; ((identifier) @type
+;   (#match? @type "^([A-Z].*|openArray|typedesc)$"))
+; ((identifier) @type
+;   (#match? @type "^[A-Z].*$"))
+; ((identifier) @type
+;   (#match? @type "^(openArray|typedesc)$"))
 
 ; Declarations
+(parameter_declaration
+  (symbol_declaration_list
+    (symbol_declaration name: (_) @parameter)))
 (exported_symbol "*" @type.qualifier)
 (_ "=" @punctuation.delimiter [body: (_) value: (_)])
 (proc_declaration name: (_) @function)
@@ -40,9 +32,6 @@
 (template_declaration name: (_) @function.macro)
 (macro_declaration name: (_) @function.macro)
 (symbol_declaration name: (_) @variable)
-(parameter_declaration
-  (symbol_declaration_list
-    (symbol_declaration name: (_) @parameter)))
 (_
   [
     type: [
@@ -190,3 +179,17 @@
 ; Operators
 (infix_expression operator: _ @operator)
 (prefix_expression operator: _ @operator)
+
+; Calls
+(call
+  function: [
+    (identifier) @function.call
+    (dot_expression
+      right: (identifier) @function.call)
+  ])
+(generalized_string
+  function: [
+    (identifier) @function.call
+    (dot_expression
+      right: (identifier) @function.call)
+  ])
