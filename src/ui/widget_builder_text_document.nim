@@ -1172,8 +1172,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
   var slice = self.document.rope.slice()
   var iter = StyledChunkIterator.init(slice)
-  iter.chunks.maxChunkSize = app.config.asConfigProvider.getValue("ui.max-chunk-size", 128)
-  iter.logHighlights = app.config.asConfigProvider.getValue("ui.log-highlight", false)
   if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and app.config.asConfigProvider.getValue("ui.highlight", true):
     iter.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
   iter.seekLine(startLine)
@@ -1361,8 +1359,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)
-
-  # echo &"{iter.matchCount}, {iter.notMatchCount}, {iter.eqCount}, {iter.notEqCount}, {iter.noneCount}"
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.preRender()

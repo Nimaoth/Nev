@@ -220,7 +220,6 @@ type
     range: Range[int]
     localOffset*: int
     point*: Point
-    maxChunkSize*: int = 128
     returnedLastChunk: bool = false
 
 func `$`*(chunk: RopeChunk): string =
@@ -293,8 +292,6 @@ proc next*(self: var ChunkIterator): Option[RopeChunk] =
       else:
         self.localOffset + nextNewLine
 
-      maxEndIndex = min(maxEndIndex, self.localOffset + self.maxChunkSize)
-
       assert maxEndIndex >= self.localOffset
 
       let point = self.point
@@ -336,17 +333,6 @@ type
     highlights: seq[Highlight]
     highlightsIndex: int = -1
 
-    # debug stuff
-    fastContentString*: bool
-    logHighlights*: bool
-    matchCount*: int
-    notMatchCount*: int
-    eqCount*: int
-    notEqCount*: int
-    noneCount*: int
-    fastCount*: int
-    slowCount*: int
-
 proc init*(_: typedesc[StyledChunkIterator], rope: var RopeSlice[int]): StyledChunkIterator =
   result.chunks = ChunkIterator.init(rope)
 
@@ -363,14 +349,14 @@ proc seekLine*(self: var StyledChunkIterator, line: int) =
   self.highlightsIndex = -1
   self.chunk = RopeChunk.none
 
-func contentString(self: var StyledChunkIterator, selection: Selection, byteRange: Range[int]): string =
+func contentString(self: var StyledChunkIterator, selection: Range[Point], byteRange: Range[int]): string =
   let currentChunk {.cursor.} = self.chunk.get
-  if selection.first.column >= currentChunk.point.column.int and selection.last.column <= currentChunk.endPoint.column.int:
-    let startIndex = selection.first.column - currentChunk.point.column.int
-    let endIndex = selection.last.column - currentChunk.point.column.int
-    return $currentChunk[startIndex...endIndex]
+  if selection.a >= currentChunk.point and selection.b <= currentChunk.endPoint:
+    let startIndex = selection.a.column - currentChunk.point.column
+    let endIndex = selection.b.column - currentChunk.point.column
+    return $currentChunk[startIndex.int...endIndex.int]
   else:
-    result = newStringOfCap(selection.last.column - selection.first.column)
+    result = newStringOfCap(selection.b.column - selection.a.column)
     for slice in self.chunks.rope.rope.iterateChunks(byteRange):
       for c in slice.chars:
         result.add c
@@ -418,7 +404,8 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
     let currentChunk = self.chunk.get
     if self.highlighter.isSome:
       let point = currentChunk.point
-      let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(point.row.int, point.column.int + currentChunk.len))
+      let endPoint = currentChunk.endPoint
+      let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(endPoint.row.int, endPoint.column.int))
       var matches: seq[TSQueryMatch] = self.highlighter.get.query.matches(self.highlighter.get.tree.root, range)
 
       var requiresSort = false
@@ -426,20 +413,11 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
       for match in matches:
         let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern)
         for capture in match.captures:
-          let scope = capture.name
           let node = capture.node
           let byteRange = node.startByte...node.endByte
-          let nodeRange = node.getRange.toSelection
-          if nodeRange.last.toPoint <= currentChunk.point or nodeRange.first.toPoint >= currentChunk.endPoint:
+          let nodeRange = node.startPoint.toCursor.toPoint...node.endPoint.toCursor.toPoint
+          if nodeRange.b <= currentChunk.point or nodeRange.a >= currentChunk.endPoint:
             continue
-
-          if not (nodeRange.first.line == nodeRange.last.line):
-            echo node
-            echo nodeRange
-            echo currentChunk.point
-            echo currentChunk
-          assert nodeRange.first.line == nodeRange.last.line
-          assert nodeRange.first.line == self.point.row.int
 
           var matches = true
           for predicate in predicates:
@@ -447,13 +425,12 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
               break
 
             for operand in predicate.operands:
-              if operand.name != scope:
+              if operand.name != capture.name:
                 matches = false
                 break
 
               case predicate.operator
               of "match?":
-                self.matchCount.inc
                 if not regexes[].contains(operand.`type`):
                   try:
                     regexes[][operand.`type`] = re(operand.`type`)
@@ -468,7 +445,6 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
                   break
 
               of "not-match?":
-                self.notMatchCount.inc
                 if not regexes[].contains(operand.`type`):
                   try:
                     regexes[][operand.`type`] = re(operand.`type`)
@@ -483,7 +459,6 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
                   break
 
               of "eq?":
-                self.eqCount.inc
                 # @todo: second arg can be capture aswell
                 let nodeText = self.contentString(nodeRange, byteRange)
                 if nodeText != operand.`type`:
@@ -491,7 +466,6 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
                   break
 
               of "not-eq?":
-                self.notEqCount.inc
                 # @todo: second arg can be capture aswell
                 let nodeText = self.contentString(nodeRange, byteRange)
                 if nodeText == operand.`type`:
@@ -503,12 +477,20 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
               #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
 
               else:
-                self.noneCount.inc
                 discard
 
           if not matches:
             continue
-          var nextHighlight: Highlight = (nodeRange.first.toPoint...nodeRange.last.toPoint, scope, match.pattern)
+
+          var nodeRangeClamped = nodeRange
+          if nodeRangeClamped.a.row < currentChunk.point.row:
+            nodeRangeClamped.a.row = currentChunk.point.row
+            nodeRangeClamped.a.column = 0
+          if nodeRangeClamped.b.row > currentChunk.point.row:
+            nodeRangeClamped.b.row = currentChunk.point.row
+            nodeRangeClamped.b.column = uint32.high
+
+          var nextHighlight: Highlight = (nodeRangeClamped, capture.name, match.pattern)
           if self.highlights.len > 0 and nextHighlight.range.a < self.highlights[^1].range.a:
             requiresSort = true
             self.highlights.add(nextHighlight.ensureMove)
@@ -523,35 +505,38 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
           self.highlights.addHighlight(nextHighlight)
 
   assert self.chunk.isSome
-  var ropeChunk = self.chunk.get
-  if ropeChunk.len == 0:
-    return StyledChunk(chunk: ropeChunk).some
+  var currentChunk = self.chunk.get
+  if currentChunk.len == 0:
+    return StyledChunk(chunk: currentChunk).some
 
-  assert ropeChunk.data != nil
+  assert currentChunk.data != nil
   let startOffset = self.localOffset
-  let currentPoint = ropeChunk.point + Point(column: self.localOffset.uint32)
+  let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
 
   if self.highlights.len > 0:
     assert currentPoint.row == self.highlights[0].range.a.row
     while self.highlightsIndex + 1 < self.highlights.len:
-      if currentPoint < self.highlights[self.highlightsIndex + 1].range.a:
-        self.localOffset = min(ropeChunk.len, self.highlights[self.highlightsIndex + 1].range.a.column.int - ropeChunk.point.column.int)
-        ropeChunk.data = cast[ptr UncheckedArray[char]](ropeChunk.data[startOffset].addr)
-        ropeChunk.len = self.localOffset - startOffset
-        ropeChunk.point.column += startOffset.uint32
-        return StyledChunk(chunk: ropeChunk).some
-      elif currentPoint < self.highlights[self.highlightsIndex + 1].range.b:
-        self.localOffset = min(ropeChunk.len, self.highlights[self.highlightsIndex + 1].range.b.column.int - ropeChunk.point.column.int)
+      let nextHighlight {.cursor.} = self.highlights[self.highlightsIndex + 1]
+      assert nextHighlight.range.a.row == currentChunk.point.row
+      assert nextHighlight.range.a.row == nextHighlight.range.b.row
+      if currentPoint < nextHighlight.range.a:
+        self.localOffset = min(currentChunk.len, nextHighlight.range.a.column.int - currentChunk.point.column.int)
+        currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
+        currentChunk.len = self.localOffset - startOffset
+        currentChunk.point.column += startOffset.uint32
+        return StyledChunk(chunk: currentChunk).some
+      elif currentPoint < nextHighlight.range.b:
+        self.localOffset = min(currentChunk.len, nextHighlight.range.b.column.int - currentChunk.point.column.int)
         self.highlightsIndex = self.highlightsIndex + 1
-        ropeChunk.data = cast[ptr UncheckedArray[char]](ropeChunk.data[startOffset].addr)
-        ropeChunk.len = self.localOffset - startOffset
-        ropeChunk.point.column += startOffset.uint32
-        return StyledChunk(chunk: ropeChunk, scope: self.highlights[self.highlightsIndex].scope).some
+        currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
+        currentChunk.len = self.localOffset - startOffset
+        currentChunk.point.column += startOffset.uint32
+        return StyledChunk(chunk: currentChunk, scope: nextHighlight.scope).some
       else:
         self.highlightsIndex.inc
 
-  self.localOffset = ropeChunk.len
-  ropeChunk.data = cast[ptr UncheckedArray[char]](ropeChunk.data[startOffset].addr)
-  ropeChunk.len = self.localOffset - startOffset
-  ropeChunk.point.column += startOffset.uint32
-  return StyledChunk(chunk: ropeChunk).some
+  self.localOffset = currentChunk.len
+  currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
+  currentChunk.len = self.localOffset - startOffset
+  currentChunk.point.column += startOffset.uint32
+  return StyledChunk(chunk: currentChunk).some
