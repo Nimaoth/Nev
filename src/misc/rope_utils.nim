@@ -1,4 +1,4 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables]
+import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
 import nimsumtree/[rope, sumtree]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
@@ -228,6 +228,16 @@ func `$`*(chunk: RopeChunk): string =
   for i in 0..<chunk.len:
     result[i] = chunk.data[i]
 
+func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
+  assert range.a >= 0 and range.a <= self.len
+  assert range.b >= 0 and range.b <= self.len
+  assert range.b >= range.a
+  return RopeChunk(
+    data: cast[ptr UncheckedArray[char]](self.data[range.a].addr),
+    len: range.len,
+    point: Point(row: self.point.row, column: self.point.column + range.a.uint32)
+  )
+
 template toOpenArray*(self: RopeChunk): openArray[char] = self.data.toOpenArray(0, self.len - 1)
 func endPoint*(self: RopeChunk): Point = Point(row: self.point.row, column: self.point.column + self.len.uint32)
 
@@ -315,23 +325,27 @@ type
     query*: TSQuery
     tree*: TsTree
 
+  Highlight = tuple[range: Range[Point], scope: string, priority: int]
+
   StyledChunkIterator* = object
     chunks*: ChunkIterator
     chunk: Option[RopeChunk]
     localOffset: int
     atEnd: bool
     highlighter*: Option[Highlighter]
-    highlights: seq[tuple[range: Range[Point], scope: string]]
-    highlightsStack: seq[tuple[range: Range[Point], scope: string]]
+    highlights: seq[Highlight]
     highlightsIndex: int = -1
 
     # debug stuff
+    fastContentString*: bool
     logHighlights*: bool
     matchCount*: int
     notMatchCount*: int
     eqCount*: int
     notEqCount*: int
     noneCount*: int
+    fastCount*: int
+    slowCount*: int
 
 proc init*(_: typedesc[StyledChunkIterator], rope: var RopeSlice[int]): StyledChunkIterator =
   result.chunks = ChunkIterator.init(rope)
@@ -344,12 +358,43 @@ template toOpenArray*(self: StyledChunk): openArray[char] = self.chunk.toOpenArr
 
 proc seekLine*(self: var StyledChunkIterator, line: int) =
   self.chunks.seekLine(line)
+  self.localOffset = 0
+  self.highlights.setLen(0)
+  self.highlightsIndex = -1
+  self.chunk = RopeChunk.none
 
-func contentString(self: StyledChunkIterator, selection: Selection): string =
-  var c = self.chunks.rope.rope.cursorT(selection.first.toPoint)
-  return $c.slice(selection.last.toPoint, Bias.Right)
+func contentString(self: var StyledChunkIterator, selection: Selection, byteRange: Range[int]): string =
+  let currentChunk {.cursor.} = self.chunk.get
+  if selection.first.column >= currentChunk.point.column.int and selection.last.column <= currentChunk.endPoint.column.int:
+    let startIndex = selection.first.column - currentChunk.point.column.int
+    let endIndex = selection.last.column - currentChunk.point.column.int
+    return $currentChunk[startIndex...endIndex]
+  else:
+    result = newStringOfCap(selection.last.column - selection.first.column)
+    for slice in self.chunks.rope.rope.iterateChunks(byteRange):
+      for c in slice.chars:
+        result.add c
+
+proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight) =
+  if highlights.len > 0:
+    assert highlights[^1].range.a <= nextHighlight.range.a
+
+    if highlights[^1].range == nextHighlight.range.a...nextHighlight.range.b:
+      if nextHighlight.priority > highlights[^1].priority:
+        discard highlights.pop()
+        highlights.add nextHighlight
+      else:
+        # Lower priority, ignore
+        discard
+
+    else:
+      highlights.add nextHighlight
+
+  elif highlights.len == 0 or nextHighlight != highlights[^1]:
+    highlights.add nextHighlight
 
 var regexes = initTable[string, Regex]()
+
 proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   var regexes = ({.gcsafe.}: regexes.addr)
 
@@ -370,23 +415,31 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
       self.atEnd = true
       return
 
+    let currentChunk = self.chunk.get
     if self.highlighter.isSome:
-      let point = self.chunk.get.point
-      let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(point.row.int, point.column.int + self.chunk.get.len))
+      let point = currentChunk.point
+      let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(point.row.int, point.column.int + currentChunk.len))
       var matches: seq[TSQueryMatch] = self.highlighter.get.query.matches(self.highlighter.get.tree.root, range)
+
+      var requiresSort = false
 
       for match in matches:
         let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern)
         for capture in match.captures:
           let scope = capture.name
           let node = capture.node
+          let byteRange = node.startByte...node.endByte
           let nodeRange = node.getRange.toSelection
-          if nodeRange.last.toPoint <= self.chunk.get.point:
-            # echo &"skip1 {nodeRange}, {self.chunk.get.point}, {node}, '{self.chunk.get}'"
+          if nodeRange.last.toPoint <= currentChunk.point or nodeRange.first.toPoint >= currentChunk.endPoint:
             continue
-          if nodeRange.first.toPoint >= self.chunk.get.endPoint:
-            # echo &"skip2 {nodeRange}, {self.chunk.get.point}, {node}, '{self.chunk.get}'"
-            continue
+
+          if not (nodeRange.first.line == nodeRange.last.line):
+            echo node
+            echo nodeRange
+            echo currentChunk.point
+            echo currentChunk
+          assert nodeRange.first.line == nodeRange.last.line
+          assert nodeRange.first.line == self.point.row.int
 
           var matches = true
           for predicate in predicates:
@@ -394,8 +447,6 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
               break
 
             for operand in predicate.operands:
-              let value = operand.`type`
-
               if operand.name != scope:
                 matches = false
                 break
@@ -403,42 +454,30 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
               case predicate.operator
               of "match?":
                 self.matchCount.inc
-                if not regexes[].contains(value):
+                if not regexes[].contains(operand.`type`):
                   try:
-                    regexes[][value] = re(value)
+                    regexes[][operand.`type`] = re(operand.`type`)
                   except RegexError:
                     matches = false
                     break
-                let regex {.cursor.} = regexes[][value]
+                let regex {.cursor.} = regexes[][operand.`type`]
 
-                # if nodeRange.first.line == nodeRange.last.line:
-                #   if nodeRange.first.line == self.point.row.int:
-                #     if nodeRange.first.column >= self.point.column.int and nodeRange.last.column <= self.endPoint.column.int:
-                #       echo &"!!!! {nodeRange}, {self.point}"
-                #     else:
-                #       # echo &"???? {nodeRange}, {self.point}"
-                #       discard
-                #   else:
-                #     echo &"???? {nodeRange}, {self.point}"
-                # else:
-                #   echo &"??? {nodeRange}, {self.point}"
-                let nodeText = self.contentString(node.getRange.toSelection)
-                # echo &"match {value} {nodeText}"
+                let nodeText = self.contentString(nodeRange, byteRange)
                 if nodeText.matchLen(regex, 0) != nodeText.len:
                   matches = false
                   break
 
               of "not-match?":
                 self.notMatchCount.inc
-                if not regexes[].contains(value):
+                if not regexes[].contains(operand.`type`):
                   try:
-                    regexes[][value] = re(value)
+                    regexes[][operand.`type`] = re(operand.`type`)
                   except RegexError:
                     matches = false
                     break
-                let regex {.cursor.} = regexes[][value]
+                let regex {.cursor.} = regexes[][operand.`type`]
 
-                let nodeText = self.contentString(node.getRange.toSelection)
+                let nodeText = self.contentString(nodeRange, byteRange)
                 if nodeText.matchLen(regex, 0) == nodeText.len:
                   matches = false
                   break
@@ -446,50 +485,42 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
               of "eq?":
                 self.eqCount.inc
                 # @todo: second arg can be capture aswell
-                let nodeText = self.contentString(node.getRange.toSelection)
-                if nodeText != value:
+                let nodeText = self.contentString(nodeRange, byteRange)
+                if nodeText != operand.`type`:
                   matches = false
                   break
 
               of "not-eq?":
                 self.notEqCount.inc
                 # @todo: second arg can be capture aswell
-                let nodeText = self.contentString(node.getRange.toSelection)
-                if nodeText == value:
+                let nodeText = self.contentString(nodeRange, byteRange)
+                if nodeText == operand.`type`:
                   matches = false
                   break
 
               # of "any-of?":
+              #   # todo
               #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
 
               else:
                 self.noneCount.inc
-                # log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
                 discard
-
-            # if self.configProvider.getFlag("text.print-matches", false):
-            #   let nodeText = self.contentString(node.getRange.toSelection)
-            #   log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
 
           if not matches:
             continue
-          let nextHighlight = (nodeRange.first.toPoint...nodeRange.last.toPoint, scope)
-          # if self.highlights.len > 0 and self.highlights[^1].end # check overlapping?
-          # if self.highlights.len > 0:
-          #   if nodeRange.first.toPoint < self.highlights[^1].range.b:
-          #     self.highlights[^1].range.b = nodeRange.first.toPoint
-          #   if self.highlights[^1].range.len == Point():
-          #     discard self.highlights.pop()
+          var nextHighlight: Highlight = (nodeRange.first.toPoint...nodeRange.last.toPoint, scope, match.pattern)
+          if self.highlights.len > 0 and nextHighlight.range.a < self.highlights[^1].range.a:
+            requiresSort = true
+            self.highlights.add(nextHighlight.ensureMove)
+          else:
+            self.highlights.addHighlight(nextHighlight.ensureMove)
 
-          if self.highlights.len == 0 or nextHighlight != self.highlights[^1]:
-            self.highlights.add (nodeRange.first.toPoint...nodeRange.last.toPoint, scope)
-
-      log &"{self.highlights}"
-
-      if self.logHighlights:
-        echo &"matches for {point.row}:{point.column}-{point.column.int + self.chunk.get.len}:"
-        for m in matches:
-          echo &"  {m.pattern}, {m.captures.mapIt(it.name & $' ' & $it.node.getRange.toSelection)}"
+      if requiresSort:
+        var highlights = self.highlights
+        highlights.sort(proc(a, b: Highlight): int = cmp(a.range.a, b.range.a))
+        self.highlights.setLen(0)
+        for nextHighlight in highlights.mitems:
+          self.highlights.addHighlight(nextHighlight)
 
   assert self.chunk.isSome
   var ropeChunk = self.chunk.get

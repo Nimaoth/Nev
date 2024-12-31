@@ -1184,6 +1184,12 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
   var chunkBounds: seq[ChunkBounds]
 
+  let parentWidth = if sizeToContentX:
+    currentNode.w = builder.charWidth
+    min(self.document.rope.len.float * builder.charWidth, 500.0) # todo: figure out max height
+  else:
+    currentNode.bounds.w
+
   let parentHeight = if sizeToContentY:
     currentNode.h = builder.textHeight
     min(self.document.rope.lines.float * builder.textHeight, 500.0) # todo: figure out max height
@@ -1215,6 +1221,10 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
       if offset.y >= parentHeight:
         break
+
+      if offset.x >= parentWidth:
+        iter.seekLine(chunk.point.row.int + 1)
+        continue
 
       lastPoint = chunk.point
 
@@ -1294,7 +1304,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
       var sn = s.normalized
       if isThickCursor:
         sn.last.column += 1
-
 
       # todo: binarySearchBy is defined in buffer, maybe move it into utils, otherwise update sumtree
       let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchBy(sn.first.toPoint, cmp)
