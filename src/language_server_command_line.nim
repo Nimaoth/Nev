@@ -13,6 +13,7 @@ type LanguageServerCommandLine* = ref object of LanguageServer
   documents: DocumentEditorService
   events: EventHandlerService
   files: Table[string, string]
+  commandHistory*: seq[string]
 
 proc newLanguageServerCommandLine*(services: Services): LanguageServer =
   var server = new LanguageServerCommandLine
@@ -82,6 +83,13 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
             detail: value.signature.some,
             documentation: CompletionItemDocumentationVariant.init(docs).some,
           )
+
+  for h in self.commandHistory:
+    completions.add CompletionItem(
+      label: h,
+      # scope: table.scope,
+      kind: CompletionKind.Function,
+    )
 
   return CompletionList(items: completions).success
 
