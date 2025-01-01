@@ -194,9 +194,9 @@ proc renderLinePart(
         if handleClick.isNotNil:
           handleClick(btn, pos, line.index, partIndex.some)
 
-      onDrag Left:
+      onDrag MouseButton.Left:
         if handleDrag.isNotNil:
-          handleDrag(Left, pos, line.index, partIndex.some)
+          handleDrag(MouseButton.Left, pos, line.index, partIndex.some)
 
       onBeginHover:
         if handleBeginHover.isNotNil:
@@ -391,9 +391,9 @@ proc renderLine*(
               if options.handleClick.isNotNil:
                 options.handleClick(btn, pos, line.index, int.none)
 
-            onDrag Left:
+            onDrag MouseButton.Left:
               if options.handleDrag.isNotNil:
-                options.handleDrag(Left, pos, line.index, int.none)
+                options.handleDrag(MouseButton.Left, pos, line.index, int.none)
 
           if options.lineEndColor.getSome(color):
             builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color)
@@ -548,7 +548,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     self.dragStartSelection = self.selection
 
-    if btn == Left:
+    if btn == MouseButton.Left:
       self.runSingleClickCommand()
     elif btn == DoubleClick:
       self.runDoubleClickCommand()
@@ -1163,7 +1163,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   var startLine = max(self.previousBaseIndex - (self.scrollOffset / builder.textHeight).int - 1, 0)
   let startLineOffsetFromScrollOffset = (self.previousBaseIndex - startLine).float * builder.textHeight
   var offset = vec2(lineNumberWidth, self.scrollOffset - startLineOffsetFromScrollOffset)
-  # echo &"pbi: {self.previousBaseIndex}, so: {self.scrollOffset}, sl: {startLine}, {startLineOffsetFromScrollOffset}, {offset}"
   var slice = self.document.rope.slice()
   let displayEndPoint = self.wrapMap.toDisplayPoint(slice.summary.lines)
 
@@ -1177,6 +1176,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     iter.chunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
   iter.seekLine(startLine)
 
+  # echo &"pbi: {self.previousBaseIndex}, so: {self.scrollOffset}, sl: {startLine}, {startLineOffsetFromScrollOffset}, off: {offset}, point: {iter.point}, display point: {iter.displayPoint}"
   type ChunkBounds = object
     range: rope.Range[Point]
     bounds: Rect
@@ -1195,14 +1195,14 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   else:
     currentNode.bounds.h
 
-  proc cmp(a: ChunkBounds, b: Point): int =
-    if b.row < a.range.a.row:
+  proc cmp(r: ChunkBounds, point: Point): int =
+    if r.range.a.row > point.row:
       return 1
-    if b.row == a.range.a.row and b.column < a.range.a.column:
+    if point.row == r.range.a.row and r.range.a.column > point.column:
       return 1
-    if b.row > a.range.b.row:
+    if r.range.b.row < point.row:
       return -1
-    if b.row == a.range.b.row and b.column > a.range.b.column:
+    if point.row == r.range.b.row and r.range.b.column < point.column:
       return -1
     return 0
 
@@ -1277,9 +1277,12 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           bounds: rect(offset, vec2(builder.charWidth, builder.textHeight)),
         )
 
+    # echo "chunk bounds"
+    # echo chunkBounds.mapItIndex(&"{itIndex}: {it}").join("\n").indent(2)
+
     for s in self.selections:
-      let (found, lastIndex) = chunkBounds.binarySearchBy(s.last.toPoint, cmp)
-      if found and lastIndex in 0..<chunkBounds.len:
+      let (found, lastIndex) = chunkBounds.binarySearchRange(s.last.toPoint, Bias.Right, cmp)
+      if lastIndex in 0..<chunkBounds.len:
         let bounds = chunkBounds[lastIndex]
         # todo: correctly handle multi byte chars
         let relativeOffset = s.last.column - bounds.range.a.column.int
@@ -1309,21 +1312,15 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
     echo str
 
-  let point = self.selection.last.toPoint
-  let displayPoint = self.wrapMap.toDisplayPoint(point)
-  let point2 = self.wrapMap.toPoint(displayPoint)
-  # echo &"{point} | {point2} -> {displayPoint}"
-
   selectionsNode.renderCommands.clear()
   buildCommands(selectionsNode.renderCommands):
     for s in self.selections:
       var sn = s.normalized
-      if isThickCursor:
+      if isThickCursor and inclusive:
         sn.last.column += 1
 
-      # todo: binarySearchBy is defined in buffer, maybe move it into utils, otherwise update sumtree
-      let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchBy(sn.first.toPoint, cmp)
-      let (lastFound, lastIndexNormalized) = chunkBounds.binarySearchBy(sn.last.toPoint, cmp)
+      let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchRange(sn.first.toPoint, Bias.Right, cmp)
+      let (lastFound, lastIndexNormalized) = chunkBounds.binarySearchRange(sn.last.toPoint, Bias.Right, cmp)
       if chunkBounds.len > 0:
         let firstIndexClamped = if firstIndexNormalized != -1:
           firstIndexNormalized
@@ -1555,93 +1552,3 @@ proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine)
     document.buffer.visibleText.runeIndexInLine(selection.last)
   else:
     line.runeLen.RuneIndex
-
-# uiae
-# hellouiae
-# helluiaeuiaeuiaeuiae
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-when false:
-  proc uiae() =
-    builder.panel(&{LayoutVertical} + sizeFlags, self.renderHeader, self.currentMode, self.document, headerColor, textColor, if self.document.readOnly: "-readonly- " else: "", if self.document.readOnly: "-readonly- " else: ""):
-      header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor, if self.document.readOnly: "-readonly- " else: "", if self.document.readOnly: "-readonly- " else: ""):
-        onRight:
-          proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
-          let stagedText = if self.document.staged: "-staged- " else: ""
-          let diffText = if renderDiff: "-diff- " else: ""
-          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
-          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
-          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
-          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
-          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
-          aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
