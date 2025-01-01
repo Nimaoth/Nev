@@ -725,7 +725,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     else:
       log lvlInfo, &"Don't restore session file."
 
-  # self.commandHistory = state.commandHistory
   self.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
 
   let closeUnusedDocumentsTimerS = self.config.getOption("editor.close-unused-documents-timer", 10)
@@ -955,7 +954,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fontBoldItalic = self.fontBoldItalic
   state.fallbackFonts = self.fallbackFonts
 
-  # state.commandHistory = self.commandHistory
   state.commandHistory = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory
   state.sessionData = self.session.sessionData
 

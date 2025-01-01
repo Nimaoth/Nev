@@ -87,7 +87,6 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
   for h in self.commandHistory:
     completions.add CompletionItem(
       label: h,
-      # scope: table.scope,
       kind: CompletionKind.Function,
     )
 
