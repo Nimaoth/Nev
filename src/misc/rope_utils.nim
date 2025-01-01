@@ -5,6 +5,8 @@ from scripting_api as api import nil
 import custom_async, custom_unicode, util, text/custom_treesitter, regex, timer
 import text/diff
 
+export Bias
+
 {.push gcsafe.}
 {.push raises: [].}
 
@@ -207,6 +209,83 @@ proc lineStartsWith*(self: Rope, line: int, text: string, ignoreWhitespace: bool
   let lineSlice = self.slice(lineRange)
   return lineSlice.startsWith(text)
 
+proc binarySearchRange*[T, K](a: openArray[T], key: K, bias: Bias,
+                         cmp: proc (x: T, y: K): int {.closure.}): (bool, int) {.effectsOf: cmp.} =
+  ## Binary search for `key` in `a`. Return the index of `key` and whether is was found
+  ## Assumes that `a` is sorted according to `cmp`.
+  ##
+  ## `cmp` is the comparator function to use, the expected return values are
+  ## the same as those of system.cmp.
+  runnableExamples:
+    assert binarySearchRange(["a", "b", "c", "d"], "d", system.cmp[string]) == 3
+    assert binarySearchRange(["a", "b", "c", "d"], "c", system.cmp[string]) == 2
+  let len = a.len
+
+  if len == 0:
+    return (false, 0)
+
+  if len == 1:
+    if cmp(a[0], key) == 0:
+      return (true, 0)
+    else:
+      return (false, 0)
+
+  result = (true, 0)
+
+  var idx = 0
+  if (len and (len - 1)) == 0:
+    # when `len` is a power of 2, a faster shr can be used.
+    var step = len shr 1
+    var cmpRes: int
+    while step > 0:
+      let i = idx or step
+      cmpRes = cmp(a[i], key)
+      if cmpRes == 0:
+        if bias == Bias.Right and i + 1 < len and cmp(a[i + 1], key) == 0:
+          return (true, i + 1)
+        if bias == Bias.Left and i - 1 >= 0 and cmp(a[i - 1], key) == 0:
+          return (true, i - 1)
+        return (true, i)
+
+      if cmpRes < 0:
+        idx = i
+      step = step shr 1
+
+    let final = cmp(a[idx], key)
+    result[0] = final == 0
+    if final < 0 and bias == Bias.Right:
+      idx = min(idx + 1, len - 1)
+    elif final > 0 and bias == Bias.Left:
+      idx = max(idx - 1, 0)
+  else:
+    var b = len
+    var cmpRes: int
+    while idx < b:
+      var mid = (idx + b) shr 1
+      cmpRes = cmp(a[mid], key)
+      if cmpRes == 0:
+        if bias == Bias.Right and mid + 1 < len and cmp(a[mid + 1], key) == 0:
+          return (true, mid + 1)
+        if bias == Bias.Left and mid - 1 >= 0 and cmp(a[mid - 1], key) == 0:
+          return (true, mid - 1)
+        return (true, mid)
+
+      if cmpRes < 0:
+        idx = mid + 1
+      else:
+        b = mid
+    if idx >= len:
+      result[0] = false
+    else:
+      let final = cmp(a[idx], key)
+      result[0] = final == 0
+      if final < 0 and bias == Bias.Right:
+        idx = min(idx + 1, len - 1)
+      elif final > 0 and bias == Bias.Left:
+        idx = max(idx - 1, 0)
+
+  result[1] = idx
+
 
 type
   RopeChunk* = object
@@ -252,7 +331,6 @@ proc seekLine*(self: var ChunkIterator, line: int) =
   discard self.cursor.seekForward(point, Bias.Right, ())
   self.point = point
   self.localOffset = self.rope.rope.pointToOffset(point) - self.cursor.startPos[1]
-  # echo &"seekLine {line} -> {self.point}, {self.localOffset}"
 
 proc seek*(self: var ChunkIterator, point: Point) =
   discard self.cursor.seekForward(point, Bias.Right, ())
@@ -601,7 +679,7 @@ func `$`*(self: DisplayChunk): string = $self.chunk
 template toOpenArray*(self: DisplayChunk): openArray[char] = self.chunk.toOpenArray
 template scope*(self: DisplayChunk): string = self.chunk.scope
 
-proc findPoint*(self: WrapMap, point: Point): int =
+proc findPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): int =
   proc cmp(a: WrapMapRange, point: Point): int =
     if a.src.b <= point:
       return -1
@@ -609,7 +687,7 @@ proc findPoint*(self: WrapMap, point: Point): int =
       return 1
     return 0
 
-  let (found, index) = self.map.binarySearchBy(point, cmp)
+  let (found, index) = self.map.binarySearchRange(point, bias, cmp)
   return index
 
 proc toDisplayPoint*(self: WrapMap, point: Point, index: int): Point =
@@ -636,9 +714,7 @@ proc findDisplayPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): in
       return 1
     return 0
 
-  var (found, index) = self.map.binarySearchBy(point, cmp)
-  if bias == Right and not found and index < self.map.high:
-    index += 1
+  let (found, index) = self.map.binarySearchRange(point, bias, cmp)
   return index
 
 proc toPoint*(self: WrapMap, point: Point, index: int): Point =
@@ -698,7 +774,7 @@ proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
     let lineLen = rope.lineLen(currentRange.b.row.int)
 
     var i = 0
-    while i + wrapWidth <= lineLen:
+    while i + wrapWidth < lineLen:
       let endI = min(i + wrapWidth, lineLen)
       currentRange.b.column = endI.uint32
       currentDisplayRange.b.column = (endI - i + indent).uint32
@@ -714,6 +790,8 @@ proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
     indent = 0
 
   self.map.add (currentRange, currentDisplayRange)
+  # echo "wrap map"
+  # echo self.map.mapItIndex(&"{itIndex}: {it}").join("\n").indent(2)
 
 proc next*(self: var WrappedChunkIterator): Option[DisplayChunk] =
   if self.atEnd:
