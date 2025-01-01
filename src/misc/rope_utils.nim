@@ -1,8 +1,8 @@
 import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
-import nimsumtree/[rope, sumtree]
+import nimsumtree/[rope, sumtree, buffer]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_async, custom_unicode, util, text/custom_treesitter, regex
+import custom_async, custom_unicode, util, text/custom_treesitter, regex, timer
 import text/diff
 
 {.push gcsafe.}
@@ -254,6 +254,11 @@ proc seekLine*(self: var ChunkIterator, line: int) =
   self.localOffset = self.rope.rope.pointToOffset(point) - self.cursor.startPos[1]
   # echo &"seekLine {line} -> {self.point}, {self.localOffset}"
 
+proc seek*(self: var ChunkIterator, point: Point) =
+  discard self.cursor.seekForward(point, Bias.Right, ())
+  self.point = point
+  self.localOffset = self.rope.rope.pointToOffset(point) - self.cursor.startPos[1]
+
 proc next*(self: var ChunkIterator): Option[RopeChunk] =
   while true:
     if self.cursor.atEnd:
@@ -338,6 +343,7 @@ proc init*(_: typedesc[StyledChunkIterator], rope: var RopeSlice[int]): StyledCh
 
 func point*(self: StyledChunkIterator): Point = self.chunks.point
 func point*(self: StyledChunk): Point = self.chunk.point
+func endPoint*(self: StyledChunk): Point = self.chunk.endPoint
 func len*(self: StyledChunk): int = self.chunk.len
 func `$`*(self: StyledChunk): string = $self.chunk
 template toOpenArray*(self: StyledChunk): openArray[char] = self.chunk.toOpenArray
@@ -345,6 +351,13 @@ template toOpenArray*(self: StyledChunk): openArray[char] = self.chunk.toOpenArr
 proc seekLine*(self: var StyledChunkIterator, line: int) =
   self.chunks.seekLine(line)
   self.localOffset = 0
+  self.highlights.setLen(0)
+  self.highlightsIndex = -1
+  self.chunk = RopeChunk.none
+
+proc seek*(self: var StyledChunkIterator, point: Point) =
+  self.chunks.seek(point)
+  self.localOffset = 0 # todo: does this need to be != 0?
   self.highlights.setLen(0)
   self.highlightsIndex = -1
   self.chunk = RopeChunk.none
@@ -392,6 +405,7 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
       if self.chunk.get.point.row == 209:
         echo msg
 
+  # todo: escapes in nim strings might cause overlapping captures
   if self.chunk.isNone or self.localOffset >= self.chunk.get.len:
     self.chunk = self.chunks.next()
     self.localOffset = 0
@@ -540,3 +554,204 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   currentChunk.len = self.localOffset - startOffset
   currentChunk.point.column += startOffset.uint32
   return StyledChunk(chunk: currentChunk).some
+
+type
+  DisplayChunk* = object
+    chunk*: StyledChunk
+    displayPoint*: Point
+
+  #
+  # (0, 0)...(0, 10) -> (0, 0)...(0, 10)
+  # (0, 10)...(0, 15) -> (1, 0)...(1, 5)
+  # (1, 0)...(1, 10) -> (2, 0)...(2, 10)
+  # -------------------
+  # aaaaaaaaaabbbbb
+  # aaaaaaaaaa
+  # -------------------
+  # aaaaaaaaaa
+  # bbbbb
+  # aaaaaaaaaa
+  # -------------------
+  #
+  WrapMapRange = tuple[src: Range[Point], dst: Range[Point]]
+  WrapMap* = object
+    map*: seq[WrapMapRange] # todo: turn this into sumtree
+    wrapWidth*: int
+    buffer*: BufferSnapshot
+    wrappedIndent*: int = 4
+
+  WrappedChunkIterator* = object
+    chunks*: StyledChunkIterator
+    chunk: Option[StyledChunk]
+    wrapMap* {.cursor.}: WrapMap
+    wrapIndex: int
+    displayPoint*: Point
+    localOffset: int
+    atEnd: bool
+
+proc init*(_: typedesc[WrappedChunkIterator], rope: var RopeSlice[int], wrapMap: var WrapMap): WrappedChunkIterator =
+  result = WrappedChunkIterator(chunks: StyledChunkIterator.init(rope), wrapMap: wrapMap)
+
+func point*(self: WrappedChunkIterator): Point = self.chunks.point
+func point*(self: DisplayChunk): Point = self.chunk.point
+func endPoint*(self: DisplayChunk): Point = self.chunk.endPoint
+func displayEndPoint*(self: DisplayChunk): Point = Point(row: self.displayPoint.row, column: self.displayPoint.column + self.chunk.len.uint32)
+func len*(self: DisplayChunk): int = self.chunk.len
+func `$`*(self: DisplayChunk): string = $self.chunk
+template toOpenArray*(self: DisplayChunk): openArray[char] = self.chunk.toOpenArray
+template scope*(self: DisplayChunk): string = self.chunk.scope
+
+proc findPoint*(self: WrapMap, point: Point): int =
+  proc cmp(a: WrapMapRange, point: Point): int =
+    if a.src.b <= point:
+      return -1
+    if a.src.a > point:
+      return 1
+    return 0
+
+  let (found, index) = self.map.binarySearchBy(point, cmp)
+  return index
+
+proc toDisplayPoint*(self: WrapMap, point: Point, index: int): Point =
+  if index != -1:
+    assert index < self.map.len, &"toDisplayPoint {point}, {index}, {self.map}"
+    let offset = point - self.map[index].src.a
+    # offset is a PointDiff, which if we just add to dst will result in the wrong result
+    # because Point + PointDiff is used for cases where we insert text before Point and want too
+    # know how that affects Point, whereas here we want to adjust Point assuming...todo
+    return self.map[index].dst.a + offset.toPoint
+
+  assert false, "Failed to map point to display point"
+
+proc toDisplayPoint*(self: WrapMap, point: Point): Point =
+  assert self.map.len > 0
+  let index = self.findPoint(point)
+  return self.toDisplayPoint(point, index)
+
+proc findDisplayPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): int =
+  proc cmp(a: WrapMapRange, point: Point): int =
+    if a.dst.b <= point:
+      return -1
+    if a.dst.a > point:
+      return 1
+    return 0
+
+  var (found, index) = self.map.binarySearchBy(point, cmp)
+  if bias == Right and not found and index < self.map.high:
+    index += 1
+  return index
+
+proc toPoint*(self: WrapMap, point: Point, index: int): Point =
+  if index != -1:
+    let point = point.clamp(self.map[index].dst)
+    let offset = point - self.map[index].dst.a
+    assert offset.a >= offset.b, &"toPoint {point}, {index}, {self.map[index]}, {offset}\n{self.map}"
+    return self.map[index].src.a + offset.toPoint
+
+  assert false, "Failed to map display point to point"
+
+proc toPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): Point =
+  let index = self.findDisplayPoint(point, bias)
+  return self.toPoint(point, index)
+
+proc seekLine*(self: var WrappedChunkIterator, line: int) =
+  self.displayPoint = Point(row: line.uint32)
+  self.wrapIndex = self.wrapMap.findDisplayPoint(self.displayPoint)
+  assert self.wrapIndex != -1
+  let point = self.wrapMap.toPoint(self.displayPoint, self.wrapIndex)
+  self.chunks.seek(point)
+  self.localOffset = 0 # todo: does this need to be != 0?
+  self.chunk = StyledChunk.none
+
+proc setBuffer*(self: var WrapMap, buffer: sink BufferSnapshot) =
+  self.buffer = buffer.ensureMove
+  self.wrapWidth = 0
+  self.map.setLen(1)
+  self.map[0] = (Point()...self.buffer.visibleText.summary.lines, Point()...self.buffer.visibleText.summary.lines)
+
+proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
+  if self.buffer.remoteId == buffer.remoteId and self.buffer.version == buffer.version and self.wrapWidth == wrapWidth:
+    if self.map.len == 0:
+      self.map.setLen(1)
+      self.map[0] = (Point()...self.buffer.visibleText.summary.lines, Point()...self.buffer.visibleText.summary.lines)
+    return
+
+  # var t = startTimer()
+  # defer:
+  #   let e = t.elapsed.ms
+  #   echo &"update wrap map took {e} ms"
+
+  self.buffer = buffer.ensureMove
+  self.wrapWidth = wrapWidth
+
+  let rope {.cursor.} = self.buffer.visibleText
+
+  let wrapWidth = self.wrapWidth
+  let numLines = rope.lines
+
+  var currentRange = Point()...Point()
+  var currentDisplayRange = Point()...Point()
+  var indent = 0
+
+  self.map.setLen(0)
+  while currentRange.b.row.int < numLines:
+    let lineLen = rope.lineLen(currentRange.b.row.int)
+
+    var i = 0
+    while i + wrapWidth <= lineLen:
+      let endI = min(i + wrapWidth, lineLen)
+      currentRange.b.column = endI.uint32
+      currentDisplayRange.b.column = (endI - i + indent).uint32
+      self.map.add (currentRange, currentDisplayRange)
+
+      indent = self.wrappedIndent
+      currentRange = currentRange.b...currentRange.b
+      currentDisplayRange = Point(row: currentDisplayRange.b.row + 1, column: indent.uint32)...Point(row: currentDisplayRange.b.row + 1, column: indent.uint32)
+      i = endI
+
+    currentRange.b = Point(row: currentRange.b.row + 1)
+    currentDisplayRange.b = Point(row: currentDisplayRange.b.row + 1)
+    indent = 0
+
+  self.map.add (currentRange, currentDisplayRange)
+
+proc next*(self: var WrappedChunkIterator): Option[DisplayChunk] =
+  if self.atEnd:
+    return
+
+  template log(msg: untyped) =
+    when false:
+      if self.chunk.get.point.row == 209:
+        echo msg
+
+  if self.chunk.isNone or self.localOffset >= self.chunk.get.len:
+    self.chunk = self.chunks.next()
+    self.localOffset = 0
+    if self.chunk.isNone:
+      self.atEnd = true
+      return
+
+  assert self.chunk.isSome
+  var currentChunk = self.chunk.get
+
+  let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
+  while self.wrapIndex < self.wrapMap.map.high and self.wrapMap.map[self.wrapIndex].src.b <= currentPoint:
+    self.wrapIndex += 1
+
+  self.displayPoint = self.wrapMap.toDisplayPoint(currentPoint, self.wrapIndex)
+
+  let startOffset = self.localOffset
+  let map = self.wrapMap.map[self.wrapIndex]
+  if currentChunk.endPoint <= map.src.b:
+    self.localOffset = currentChunk.len
+    currentChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.chunk.data[startOffset].addr)
+    currentChunk.chunk.len = self.localOffset - startOffset
+    currentChunk.chunk.point = currentPoint
+    return DisplayChunk(chunk: currentChunk, displayPoint: self.displayPoint).some
+
+  else:
+    self.localOffset = map.src.b.column.int - currentChunk.point.column.int
+    currentChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.chunk.data[startOffset].addr)
+    currentChunk.chunk.len = self.localOffset - startOffset
+    currentChunk.chunk.point = currentPoint
+    return DisplayChunk(chunk: currentChunk, displayPoint: self.displayPoint).some

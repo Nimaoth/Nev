@@ -1160,20 +1160,21 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   else:
     0.0
 
-  var startLine = self.previousBaseIndex - (self.scrollOffset / builder.textHeight).int
+  var startLine = max(self.previousBaseIndex - (self.scrollOffset / builder.textHeight).int - 1, 0)
   let startLineOffsetFromScrollOffset = (self.previousBaseIndex - startLine).float * builder.textHeight
   var offset = vec2(lineNumberWidth, self.scrollOffset - startLineOffsetFromScrollOffset)
-  if startLine < 0:
-    offset.y = -startLine.float * builder.textHeight
-    startLine = 0
-  if startLine > 0:
-    startLine -= 1
-    offset.y -= builder.textHeight
-
+  # echo &"pbi: {self.previousBaseIndex}, so: {self.scrollOffset}, sl: {startLine}, {startLineOffsetFromScrollOffset}, {offset}"
   var slice = self.document.rope.slice()
-  var iter = StyledChunkIterator.init(slice)
+  let displayEndPoint = self.wrapMap.toDisplayPoint(slice.summary.lines)
+
+  if startLine > displayEndPoint.row.int:
+    currentNode.renderCommands.clear()
+    selectionsNode.renderCommands.clear()
+    return
+
+  var iter = WrappedChunkIterator.init(slice, self.wrapMap)
   if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and app.config.asConfigProvider.getValue("ui.highlight", true):
-    iter.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    iter.chunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
   iter.seekLine(startLine)
 
   type ChunkBounds = object
@@ -1205,26 +1206,37 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
       return -1
     return 0
 
+  var lastDisplayPoint = iter.displayPoint
+  var lastDisplayEndPoint = iter.displayPoint
   var lastPoint = iter.point
   currentNode.renderCommands.clear()
   buildCommands(currentNode.renderCommands):
     var addedLineNumber = false
     while iter.next().getSome(chunk):
-      while lastPoint.row < chunk.point.row:
-        lastPoint.row += 1
-        lastPoint.column = 0
+      while lastDisplayPoint.row < chunk.displayPoint.row:
+        lastDisplayPoint.row += 1
+        lastDisplayPoint.column = 0
+        lastDisplayEndPoint.row += 1
+        lastDisplayEndPoint.column = 0
         offset.y += builder.textHeight
         offset.x = lineNumberWidth
+
+      offset.x += (chunk.displayPoint.column - lastDisplayEndPoint.column).float * builder.charWidth
+
+      if lastPoint.row != chunk.point.row:
         addedLineNumber = false
+        lastDisplayPoint.column = 0
 
       if offset.y >= parentHeight:
         break
 
       if offset.x >= parentWidth:
-        iter.seekLine(chunk.point.row.int + 1)
+        iter.seekLine(chunk.displayPoint.row.int + 1)
         continue
 
       lastPoint = chunk.point
+      lastDisplayPoint = chunk.displayPoint
+      lastDisplayEndPoint = chunk.displayEndPoint
 
       # line numbers
       if not addedLineNumber:
@@ -1259,14 +1271,15 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           currentNode.h = max(currentNode.h, bounds.yh)
 
       else:
+        # todo: use display points for chunkBounds, or both?
         chunkBounds.add ChunkBounds(
           range: chunk.point...Point(row: chunk.point.row, column: chunk.point.column + chunk.len.uint32),
           bounds: rect(offset, vec2(builder.charWidth, builder.textHeight)),
         )
 
     for s in self.selections:
-      let lastIndex = chunkBounds.binarySearch(s.last.toPoint, cmp)
-      if lastIndex != -1:
+      let (found, lastIndex) = chunkBounds.binarySearchBy(s.last.toPoint, cmp)
+      if found and lastIndex in 0..<chunkBounds.len:
         let bounds = chunkBounds[lastIndex]
         # todo: correctly handle multi byte chars
         let relativeOffset = s.last.column - bounds.range.a.column.int
@@ -1295,6 +1308,11 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
       last = bounds.range.a
 
     echo str
+
+  let point = self.selection.last.toPoint
+  let displayPoint = self.wrapMap.toDisplayPoint(point)
+  let point2 = self.wrapMap.toPoint(displayPoint)
+  # echo &"{point} | {point2} -> {displayPoint}"
 
   selectionsNode.renderCommands.clear()
   buildCommands(selectionsNode.renderCommands):
@@ -1361,7 +1379,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   currentNode.markDirty(builder)
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
-  self.preRender()
+  self.preRender(builder.currentParent.bounds)
 
   let dirty = self.dirty
   self.resetDirty()
@@ -1434,7 +1452,8 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             let bounds = currentNode.bounds
 
             if self.targetLine.getSome(targetLine):
-              let targetLineY = (targetLine - self.previousBaseIndex).float32 * builder.textHeight + self.scrollOffset
+              let targetDisplayLine = self.wrapMap.toDisplayPoint(Point(row: targetLine.uint32)).row.int
+              let targetLineY = (targetDisplayLine - self.previousBaseIndex).float32 * builder.textHeight + self.scrollOffset
 
               let center = case self.nextScrollBehaviour.get(self.defaultScrollBehaviour):
                 of CenterAlways: true
@@ -1443,13 +1462,13 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
                 of TopOfScreen: false
 
               if center:
-                self.previousBaseIndex = targetLine
+                self.previousBaseIndex = targetDisplayLine
                 self.scrollOffset = bounds.h * 0.5 - builder.textHeight - 0.5
 
               else:
                 case self.nextScrollBehaviour.get(self.defaultScrollBehaviour)
                 of TopOfScreen:
-                  self.previousBaseIndex = targetLine
+                  self.previousBaseIndex = targetDisplayLine
                   self.scrollOffset = 0
                 else:
                   let configMarginRelative = app.config.getOption[:bool]("text.cursor-margin-relative", true)
@@ -1460,10 +1479,11 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
                     clamp(configMargin, 0.0, 1.0) * 0.5 * bounds.h
                   else:
                     clamp(configMargin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
-                  updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.numLines, builder.textHeight, targetLine=targetLine.some, margin=margin)
+
+                  updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.numDisplayLines, builder.textHeight, targetLine=targetDisplayLine.some, margin=margin)
 
             else:
-              updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.numLines, builder.textHeight, targetLine=int.none)
+              updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.numDisplayLines, builder.textHeight, targetLine=int.none)
 
             self.targetLine = int.none
             self.nextScrollBehaviour = ScrollBehaviour.none
@@ -1535,3 +1555,93 @@ proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine)
     document.buffer.visibleText.runeIndexInLine(selection.last)
   else:
     line.runeLen.RuneIndex
+
+# uiae
+# hellouiae
+# helluiaeuiaeuiaeuiae
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+when false:
+  proc uiae() =
+    builder.panel(&{LayoutVertical} + sizeFlags, self.renderHeader, self.currentMode, self.document, headerColor, textColor, if self.document.readOnly: "-readonly- " else: "", if self.document.readOnly: "-readonly- " else: ""):
+      header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor, if self.document.readOnly: "-readonly- " else: "", if self.document.readOnly: "-readonly- " else: ""):
+        onRight:
+          proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let readOnlyText = if self.document.readOnly: "-readonly- " else: self.document.runeAt(self.selection.last, self.document.runeAt(self.selection.last), self.document.runeAt(self.selection.last))
+          let stagedText = if self.document.staged: "-staged- " else: ""
+          let diffText = if renderDiff: "-diff- " else: ""
+          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+          aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          let text = fmt"{self.customHeader} | {readOnlyText       f.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)

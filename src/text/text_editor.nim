@@ -60,6 +60,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   snapshot: BufferSnapshot
   selectionAnchors: seq[(Anchor, Anchor)]
 
+  wrapMap*: WrapMap
+
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
   diffRevision: int = 0
@@ -378,6 +380,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.clearDocument()
   self.document = document
   self.snapshot = document.buffer.snapshot.clone()
+  self.wrapMap.setBuffer(self.snapshot.clone())
 
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
@@ -487,7 +490,7 @@ proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
       else:
         self.inlayHints.removeSwap(i)
 
-proc preRender*(self: TextDocumentEditor) =
+proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.configProvider.isNil or self.document.isNil:
     return
 
@@ -495,6 +498,9 @@ proc preRender*(self: TextDocumentEditor) =
     self.document.load()
     self.document.reloadTreesitterLanguage()
     self.document.requiresLoad = false
+
+  let wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 10, 10)
+  self.wrapMap.update(self.document.buffer.snapshot.clone(), self.configProvider.getValue("ui.wrap-width", wrapWidth))
 
   self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
@@ -790,6 +796,9 @@ proc lineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
 
 proc lineLength*(self: TextDocumentEditor, line: int): int {.expose: "editor.text".} =
   return self.document.lineLength(line)
+
+proc numDisplayLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
+  return self.wrapMap.toDisplayPoint(self.document.rope.summary.lines).row.int + 1
 
 proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## Returns the number of lines that can be shown on the screen
@@ -1651,7 +1660,8 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
     self.previousBaseIndex.inc
     self.scrollOffset += self.platform.totalLineHeight
 
-  while self.previousBaseIndex >= self.document.numLines - 1:
+  let numDisplayLines = self.numDisplayLines()
+  while self.previousBaseIndex >= numDisplayLines - 1:
     self.previousBaseIndex.dec
     self.scrollOffset -= self.platform.totalLineHeight
 
@@ -3553,6 +3563,7 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
     return
 
   self.snapshot = self.document.buffer.snapshot.clone()
+  self.wrapMap.setBuffer(self.snapshot.clone())
   self.selections = self.selections
   self.searchResultsDirty = true
   self.inlayHints.setLen(0)
