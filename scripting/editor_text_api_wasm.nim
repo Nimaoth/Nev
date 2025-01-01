@@ -59,6 +59,20 @@ proc lineLength*(self: TextDocumentEditor; line: int): int {.gcsafe, raises: [].
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_numDisplayLines_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc numDisplayLines*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_numDisplayLines_int_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_screenLineCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc screenLineCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =

@@ -1,9 +1,11 @@
-import std/[options, strutils, atomics]
-import nimsumtree/[rope, sumtree]
+import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
+import nimsumtree/[rope, sumtree, buffer]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_async, custom_unicode, util
+import custom_async, custom_unicode, util, text/custom_treesitter, regex, timer
 import text/diff
+
+export Bias
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -206,3 +208,628 @@ proc lineStartsWith*(self: Rope, line: int, text: string, ignoreWhitespace: bool
 
   let lineSlice = self.slice(lineRange)
   return lineSlice.startsWith(text)
+
+proc binarySearchRange*[T, K](a: openArray[T], key: K, bias: Bias,
+                         cmp: proc (x: T, y: K): int {.closure.}): (bool, int) {.effectsOf: cmp.} =
+  ## Binary search for `key` in `a`. Return the index of `key` and whether is was found
+  ## Assumes that `a` is sorted according to `cmp`.
+  ##
+  ## `cmp` is the comparator function to use, the expected return values are
+  ## the same as those of system.cmp.
+  runnableExamples:
+    assert binarySearchRange(["a", "b", "c", "d"], "d", system.cmp[string]) == 3
+    assert binarySearchRange(["a", "b", "c", "d"], "c", system.cmp[string]) == 2
+  let len = a.len
+
+  if len == 0:
+    return (false, 0)
+
+  if len == 1:
+    if cmp(a[0], key) == 0:
+      return (true, 0)
+    else:
+      return (false, 0)
+
+  result = (true, 0)
+
+  var idx = 0
+  if (len and (len - 1)) == 0:
+    # when `len` is a power of 2, a faster shr can be used.
+    var step = len shr 1
+    var cmpRes: int
+    while step > 0:
+      let i = idx or step
+      cmpRes = cmp(a[i], key)
+      if cmpRes == 0:
+        if bias == Bias.Right and i + 1 < len and cmp(a[i + 1], key) == 0:
+          return (true, i + 1)
+        if bias == Bias.Left and i - 1 >= 0 and cmp(a[i - 1], key) == 0:
+          return (true, i - 1)
+        return (true, i)
+
+      if cmpRes < 0:
+        idx = i
+      step = step shr 1
+
+    let final = cmp(a[idx], key)
+    result[0] = final == 0
+    if final < 0 and bias == Bias.Right:
+      idx = min(idx + 1, len - 1)
+    elif final > 0 and bias == Bias.Left:
+      idx = max(idx - 1, 0)
+  else:
+    var b = len
+    var cmpRes: int
+    while idx < b:
+      var mid = (idx + b) shr 1
+      cmpRes = cmp(a[mid], key)
+      if cmpRes == 0:
+        if bias == Bias.Right and mid + 1 < len and cmp(a[mid + 1], key) == 0:
+          return (true, mid + 1)
+        if bias == Bias.Left and mid - 1 >= 0 and cmp(a[mid - 1], key) == 0:
+          return (true, mid - 1)
+        return (true, mid)
+
+      if cmpRes < 0:
+        idx = mid + 1
+      else:
+        b = mid
+    if idx >= len:
+      result[0] = false
+    else:
+      let final = cmp(a[idx], key)
+      result[0] = final == 0
+      if final < 0 and bias == Bias.Right:
+        idx = min(idx + 1, len - 1)
+      elif final > 0 and bias == Bias.Left:
+        idx = max(idx - 1, 0)
+
+  result[1] = idx
+
+
+type
+  RopeChunk* = object
+    data*: ptr UncheckedArray[char]
+    len*: int
+    point*: Point
+
+  ChunkIterator* = object
+    rope: RopeSlice[int]
+    cursor: sumtree.Cursor[rope.Chunk, (Point, int)]
+    range: Range[int]
+    localOffset*: int
+    point*: Point
+    returnedLastChunk: bool = false
+
+func `$`*(chunk: RopeChunk): string =
+  result = newString(chunk.len)
+  for i in 0..<chunk.len:
+    result[i] = chunk.data[i]
+
+func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
+  assert range.a >= 0 and range.a <= self.len
+  assert range.b >= 0 and range.b <= self.len
+  assert range.b >= range.a
+  return RopeChunk(
+    data: cast[ptr UncheckedArray[char]](self.data[range.a].addr),
+    len: range.len,
+    point: Point(row: self.point.row, column: self.point.column + range.a.uint32)
+  )
+
+template toOpenArray*(self: RopeChunk): openArray[char] = self.data.toOpenArray(0, self.len - 1)
+func endPoint*(self: RopeChunk): Point = Point(row: self.point.row, column: self.point.column + self.len.uint32)
+
+proc init*(_: typedesc[ChunkIterator], rope: var RopeSlice[int]): ChunkIterator =
+  result.rope = rope.clone()
+  result.range = rope.rope.toOffset(rope.range.a)...rope.rope.toOffset(rope.range.b)
+  result.cursor = rope.rope.tree.initCursor((Point, int))
+  discard result.cursor.seekForward(result.range.a, Bias.Right, ())
+  result.point = rope.rope.offsetToPoint(rope.range.a)
+
+proc seekLine*(self: var ChunkIterator, line: int) =
+  let point = Point(row: line.uint32)
+  discard self.cursor.seekForward(point, Bias.Right, ())
+  self.point = point
+  self.localOffset = self.rope.rope.pointToOffset(point) - self.cursor.startPos[1]
+
+proc seek*(self: var ChunkIterator, point: Point) =
+  discard self.cursor.seekForward(point, Bias.Right, ())
+  self.point = point
+  self.localOffset = self.rope.rope.pointToOffset(point) - self.cursor.startPos[1]
+
+proc next*(self: var ChunkIterator): Option[RopeChunk] =
+  while true:
+    if self.cursor.atEnd:
+      if not self.returnedLastChunk:
+        self.returnedLastChunk = true
+        return RopeChunk(data: nil, len: 0, point: self.point).some
+      return
+
+    if self.cursor.item.isNone or self.localOffset >= self.cursor.item.get.chars.len:
+      self.cursor.next(())
+      self.localOffset = 0
+
+    if self.cursor.item.isSome and self.cursor.startPos[1] < self.range.b:
+      let chunk: ptr Chunk = self.cursor.item.get
+      while self.localOffset < chunk.chars.len and chunk.chars[self.localOffset] == '\n':
+        if self.point.column == 0:
+          result = RopeChunk(
+            data: cast[ptr UncheckedArray[char]](chunk.chars[self.localOffset].addr),
+            len: 0,
+            point: self.point,
+          ).some
+        self.point.row += 1
+        self.point.column = 0
+        self.localOffset += 1
+
+        if result.isSome:
+          return
+
+      assert self.localOffset <= chunk.chars.len
+      if self.localOffset == chunk.chars.len:
+        continue
+
+      let nextNewLine = chunk.chars(self.localOffset, chunk.chars.len - 1).find('\n')
+      var maxEndIndex = if nextNewLine == -1:
+        chunk.chars.len
+      else:
+        self.localOffset + nextNewLine
+
+      assert maxEndIndex >= self.localOffset
+
+      let point = self.point
+
+      var sliceRange = max(self.range.a - self.cursor.startPos[1], 0)...(min(self.range.b, self.cursor.endPos(())[1]) - self.cursor.startPos[1])
+      sliceRange.a = max(sliceRange.a, self.localOffset)
+      sliceRange.b = min(sliceRange.b, maxEndIndex)
+      self.localOffset = sliceRange.b
+      self.point.column += sliceRange.len.uint32
+
+      assert sliceRange.a in 0..chunk.chars.len
+      assert sliceRange.b in 0..chunk.chars.len
+      assert sliceRange.len >= 0
+      if sliceRange.len > 0:
+        result = RopeChunk(
+          data: cast[ptr UncheckedArray[char]](chunk.chars[sliceRange.a].addr),
+          len: sliceRange.len,
+          point: point,
+        ).some
+        return
+
+type
+  StyledChunk* = object
+    chunk*: RopeChunk
+    scope*: string
+
+  Highlighter* = object
+    query*: TSQuery
+    tree*: TsTree
+
+  Highlight = tuple[range: Range[Point], scope: string, priority: int]
+
+  StyledChunkIterator* = object
+    chunks*: ChunkIterator
+    chunk: Option[RopeChunk]
+    localOffset: int
+    atEnd: bool
+    highlighter*: Option[Highlighter]
+    highlights: seq[Highlight]
+    highlightsIndex: int = -1
+
+proc init*(_: typedesc[StyledChunkIterator], rope: var RopeSlice[int]): StyledChunkIterator =
+  result.chunks = ChunkIterator.init(rope)
+
+func point*(self: StyledChunkIterator): Point = self.chunks.point
+func point*(self: StyledChunk): Point = self.chunk.point
+func endPoint*(self: StyledChunk): Point = self.chunk.endPoint
+func len*(self: StyledChunk): int = self.chunk.len
+func `$`*(self: StyledChunk): string = $self.chunk
+template toOpenArray*(self: StyledChunk): openArray[char] = self.chunk.toOpenArray
+
+proc seekLine*(self: var StyledChunkIterator, line: int) =
+  self.chunks.seekLine(line)
+  self.localOffset = 0
+  self.highlights.setLen(0)
+  self.highlightsIndex = -1
+  self.chunk = RopeChunk.none
+
+proc seek*(self: var StyledChunkIterator, point: Point) =
+  self.chunks.seek(point)
+  self.localOffset = 0 # todo: does this need to be != 0?
+  self.highlights.setLen(0)
+  self.highlightsIndex = -1
+  self.chunk = RopeChunk.none
+
+func contentString(self: var StyledChunkIterator, selection: Range[Point], byteRange: Range[int]): string =
+  let currentChunk {.cursor.} = self.chunk.get
+  if selection.a >= currentChunk.point and selection.b <= currentChunk.endPoint:
+    let startIndex = selection.a.column - currentChunk.point.column
+    let endIndex = selection.b.column - currentChunk.point.column
+    return $currentChunk[startIndex.int...endIndex.int]
+  else:
+    result = newStringOfCap(selection.b.column - selection.a.column)
+    for slice in self.chunks.rope.rope.iterateChunks(byteRange):
+      for c in slice.chars:
+        result.add c
+
+proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight) =
+  if highlights.len > 0:
+    assert highlights[^1].range.a <= nextHighlight.range.a
+
+    if highlights[^1].range == nextHighlight.range.a...nextHighlight.range.b:
+      if nextHighlight.priority > highlights[^1].priority:
+        discard highlights.pop()
+        highlights.add nextHighlight
+      else:
+        # Lower priority, ignore
+        discard
+
+    else:
+      highlights.add nextHighlight
+
+  elif highlights.len == 0 or nextHighlight != highlights[^1]:
+    highlights.add nextHighlight
+
+var regexes = initTable[string, Regex]()
+
+proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
+  var regexes = ({.gcsafe.}: regexes.addr)
+
+  if self.atEnd:
+    return
+
+  template log(msg: untyped) =
+    when false:
+      if self.chunk.get.point.row == 209:
+        echo msg
+
+  # todo: escapes in nim strings might cause overlapping captures
+  if self.chunk.isNone or self.localOffset >= self.chunk.get.len:
+    self.chunk = self.chunks.next()
+    self.localOffset = 0
+    self.highlightsIndex = -1
+    self.highlights.setLen(0)
+    if self.chunk.isNone:
+      self.atEnd = true
+      return
+
+    let currentChunk = self.chunk.get
+    if self.highlighter.isSome:
+      let point = currentChunk.point
+      let endPoint = currentChunk.endPoint
+      let range = tsRange(tsPoint(point.row.int, point.column.int), tsPoint(endPoint.row.int, endPoint.column.int))
+      var matches: seq[TSQueryMatch] = self.highlighter.get.query.matches(self.highlighter.get.tree.root, range)
+
+      var requiresSort = false
+
+      for match in matches:
+        let predicates = self.highlighter.get.query.predicatesForPattern(match.pattern)
+        for capture in match.captures:
+          let node = capture.node
+          let byteRange = node.startByte...node.endByte
+          let nodeRange = node.startPoint.toCursor.toPoint...node.endPoint.toCursor.toPoint
+          if nodeRange.b <= currentChunk.point or nodeRange.a >= currentChunk.endPoint:
+            continue
+
+          var matches = true
+          for predicate in predicates:
+            if not matches:
+              break
+
+            for operand in predicate.operands:
+              if operand.name != capture.name:
+                matches = false
+                break
+
+              case predicate.operator
+              of "match?":
+                if not regexes[].contains(operand.`type`):
+                  try:
+                    regexes[][operand.`type`] = re(operand.`type`)
+                  except RegexError:
+                    matches = false
+                    break
+                let regex {.cursor.} = regexes[][operand.`type`]
+
+                let nodeText = self.contentString(nodeRange, byteRange)
+                if nodeText.matchLen(regex, 0) != nodeText.len:
+                  matches = false
+                  break
+
+              of "not-match?":
+                if not regexes[].contains(operand.`type`):
+                  try:
+                    regexes[][operand.`type`] = re(operand.`type`)
+                  except RegexError:
+                    matches = false
+                    break
+                let regex {.cursor.} = regexes[][operand.`type`]
+
+                let nodeText = self.contentString(nodeRange, byteRange)
+                if nodeText.matchLen(regex, 0) == nodeText.len:
+                  matches = false
+                  break
+
+              of "eq?":
+                # @todo: second arg can be capture aswell
+                let nodeText = self.contentString(nodeRange, byteRange)
+                if nodeText != operand.`type`:
+                  matches = false
+                  break
+
+              of "not-eq?":
+                # @todo: second arg can be capture aswell
+                let nodeText = self.contentString(nodeRange, byteRange)
+                if nodeText == operand.`type`:
+                  matches = false
+                  break
+
+              # of "any-of?":
+              #   # todo
+              #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+
+              else:
+                discard
+
+          if not matches:
+            continue
+
+          var nodeRangeClamped = nodeRange
+          if nodeRangeClamped.a.row < currentChunk.point.row:
+            nodeRangeClamped.a.row = currentChunk.point.row
+            nodeRangeClamped.a.column = 0
+          if nodeRangeClamped.b.row > currentChunk.point.row:
+            nodeRangeClamped.b.row = currentChunk.point.row
+            nodeRangeClamped.b.column = uint32.high
+
+          var nextHighlight: Highlight = (nodeRangeClamped, capture.name, match.pattern)
+          if self.highlights.len > 0 and nextHighlight.range.a < self.highlights[^1].range.a:
+            requiresSort = true
+            self.highlights.add(nextHighlight.ensureMove)
+          else:
+            self.highlights.addHighlight(nextHighlight.ensureMove)
+
+      if requiresSort:
+        var highlights = self.highlights
+        highlights.sort(proc(a, b: Highlight): int = cmp(a.range.a, b.range.a))
+        self.highlights.setLen(0)
+        for nextHighlight in highlights.mitems:
+          self.highlights.addHighlight(nextHighlight)
+
+  assert self.chunk.isSome
+  var currentChunk = self.chunk.get
+  if currentChunk.len == 0:
+    return StyledChunk(chunk: currentChunk).some
+
+  assert currentChunk.data != nil
+  let startOffset = self.localOffset
+  let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
+
+  if self.highlights.len > 0:
+    assert currentPoint.row == self.highlights[0].range.a.row
+    while self.highlightsIndex + 1 < self.highlights.len:
+      let nextHighlight {.cursor.} = self.highlights[self.highlightsIndex + 1]
+      assert nextHighlight.range.a.row == currentChunk.point.row
+      assert nextHighlight.range.a.row == nextHighlight.range.b.row
+      if currentPoint < nextHighlight.range.a:
+        self.localOffset = min(currentChunk.len, nextHighlight.range.a.column.int - currentChunk.point.column.int)
+        currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
+        currentChunk.len = self.localOffset - startOffset
+        currentChunk.point.column += startOffset.uint32
+        return StyledChunk(chunk: currentChunk).some
+      elif currentPoint < nextHighlight.range.b:
+        self.localOffset = min(currentChunk.len, nextHighlight.range.b.column.int - currentChunk.point.column.int)
+        self.highlightsIndex = self.highlightsIndex + 1
+        currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
+        currentChunk.len = self.localOffset - startOffset
+        currentChunk.point.column += startOffset.uint32
+        return StyledChunk(chunk: currentChunk, scope: nextHighlight.scope).some
+      else:
+        self.highlightsIndex.inc
+
+  self.localOffset = currentChunk.len
+  currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
+  currentChunk.len = self.localOffset - startOffset
+  currentChunk.point.column += startOffset.uint32
+  return StyledChunk(chunk: currentChunk).some
+
+type
+  DisplayChunk* = object
+    chunk*: StyledChunk
+    displayPoint*: Point
+
+  #
+  # (0, 0)...(0, 10) -> (0, 0)...(0, 10)
+  # (0, 10)...(0, 15) -> (1, 0)...(1, 5)
+  # (1, 0)...(1, 10) -> (2, 0)...(2, 10)
+  # -------------------
+  # aaaaaaaaaabbbbb
+  # aaaaaaaaaa
+  # -------------------
+  # aaaaaaaaaa
+  # bbbbb
+  # aaaaaaaaaa
+  # -------------------
+  #
+  WrapMapRange = tuple[src: Range[Point], dst: Range[Point]]
+  WrapMap* = object
+    map*: seq[WrapMapRange] # todo: turn this into sumtree
+    wrapWidth*: int
+    buffer*: BufferSnapshot
+    wrappedIndent*: int = 4
+
+  WrappedChunkIterator* = object
+    chunks*: StyledChunkIterator
+    chunk: Option[StyledChunk]
+    wrapMap* {.cursor.}: WrapMap
+    wrapIndex: int
+    displayPoint*: Point
+    localOffset: int
+    atEnd: bool
+
+proc init*(_: typedesc[WrappedChunkIterator], rope: var RopeSlice[int], wrapMap: var WrapMap): WrappedChunkIterator =
+  result = WrappedChunkIterator(chunks: StyledChunkIterator.init(rope), wrapMap: wrapMap)
+
+func point*(self: WrappedChunkIterator): Point = self.chunks.point
+func point*(self: DisplayChunk): Point = self.chunk.point
+func endPoint*(self: DisplayChunk): Point = self.chunk.endPoint
+func displayEndPoint*(self: DisplayChunk): Point = Point(row: self.displayPoint.row, column: self.displayPoint.column + self.chunk.len.uint32)
+func len*(self: DisplayChunk): int = self.chunk.len
+func `$`*(self: DisplayChunk): string = $self.chunk
+template toOpenArray*(self: DisplayChunk): openArray[char] = self.chunk.toOpenArray
+template scope*(self: DisplayChunk): string = self.chunk.scope
+
+proc findPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): int =
+  proc cmp(a: WrapMapRange, point: Point): int =
+    if a.src.b <= point:
+      return -1
+    if a.src.a > point:
+      return 1
+    return 0
+
+  let (found, index) = self.map.binarySearchRange(point, bias, cmp)
+  return index
+
+proc toDisplayPoint*(self: WrapMap, point: Point, index: int): Point =
+  if index != -1:
+    assert index < self.map.len, &"toDisplayPoint {point}, {index}, {self.map}"
+    let offset = point - self.map[index].src.a
+    # offset is a PointDiff, which if we just add to dst will result in the wrong result
+    # because Point + PointDiff is used for cases where we insert text before Point and want too
+    # know how that affects Point, whereas here we want to adjust Point assuming...todo
+    return self.map[index].dst.a + offset.toPoint
+
+  assert false, "Failed to map point to display point"
+
+proc toDisplayPoint*(self: WrapMap, point: Point): Point =
+  assert self.map.len > 0
+  let index = self.findPoint(point)
+  return self.toDisplayPoint(point, index)
+
+proc findDisplayPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): int =
+  proc cmp(a: WrapMapRange, point: Point): int =
+    if a.dst.b <= point:
+      return -1
+    if a.dst.a > point:
+      return 1
+    return 0
+
+  let (found, index) = self.map.binarySearchRange(point, bias, cmp)
+  return index
+
+proc toPoint*(self: WrapMap, point: Point, index: int): Point =
+  if index != -1:
+    let point = point.clamp(self.map[index].dst)
+    let offset = point - self.map[index].dst.a
+    assert offset.a >= offset.b, &"toPoint {point}, {index}, {self.map[index]}, {offset}\n{self.map}"
+    return self.map[index].src.a + offset.toPoint
+
+  assert false, "Failed to map display point to point"
+
+proc toPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): Point =
+  let index = self.findDisplayPoint(point, bias)
+  return self.toPoint(point, index)
+
+proc seekLine*(self: var WrappedChunkIterator, line: int) =
+  self.displayPoint = Point(row: line.uint32)
+  self.wrapIndex = self.wrapMap.findDisplayPoint(self.displayPoint)
+  assert self.wrapIndex != -1
+  let point = self.wrapMap.toPoint(self.displayPoint, self.wrapIndex)
+  self.chunks.seek(point)
+  self.localOffset = 0 # todo: does this need to be != 0?
+  self.chunk = StyledChunk.none
+
+proc setBuffer*(self: var WrapMap, buffer: sink BufferSnapshot) =
+  self.buffer = buffer.ensureMove
+  self.wrapWidth = 0
+  self.map.setLen(1)
+  self.map[0] = (Point()...self.buffer.visibleText.summary.lines, Point()...self.buffer.visibleText.summary.lines)
+
+proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
+  if self.buffer.remoteId == buffer.remoteId and self.buffer.version == buffer.version and self.wrapWidth == wrapWidth:
+    if self.map.len == 0:
+      self.map.setLen(1)
+      self.map[0] = (Point()...self.buffer.visibleText.summary.lines, Point()...self.buffer.visibleText.summary.lines)
+    return
+
+  # var t = startTimer()
+  # defer:
+  #   let e = t.elapsed.ms
+  #   echo &"update wrap map took {e} ms"
+
+  self.buffer = buffer.ensureMove
+  self.wrapWidth = wrapWidth
+
+  let rope {.cursor.} = self.buffer.visibleText
+
+  let wrapWidth = self.wrapWidth
+  let numLines = rope.lines
+
+  var currentRange = Point()...Point()
+  var currentDisplayRange = Point()...Point()
+  var indent = 0
+
+  self.map.setLen(0)
+  while currentRange.b.row.int < numLines:
+    let lineLen = rope.lineLen(currentRange.b.row.int)
+
+    var i = 0
+    while i + wrapWidth < lineLen:
+      let endI = min(i + wrapWidth, lineLen)
+      currentRange.b.column = endI.uint32
+      currentDisplayRange.b.column = (endI - i + indent).uint32
+      self.map.add (currentRange, currentDisplayRange)
+
+      indent = self.wrappedIndent
+      currentRange = currentRange.b...currentRange.b
+      currentDisplayRange = Point(row: currentDisplayRange.b.row + 1, column: indent.uint32)...Point(row: currentDisplayRange.b.row + 1, column: indent.uint32)
+      i = endI
+
+    currentRange.b = Point(row: currentRange.b.row + 1)
+    currentDisplayRange.b = Point(row: currentDisplayRange.b.row + 1)
+    indent = 0
+
+  self.map.add (currentRange, currentDisplayRange)
+  # echo "wrap map"
+  # echo self.map.mapItIndex(&"{itIndex}: {it}").join("\n").indent(2)
+
+proc next*(self: var WrappedChunkIterator): Option[DisplayChunk] =
+  if self.atEnd:
+    return
+
+  template log(msg: untyped) =
+    when false:
+      if self.chunk.get.point.row == 209:
+        echo msg
+
+  if self.chunk.isNone or self.localOffset >= self.chunk.get.len:
+    self.chunk = self.chunks.next()
+    self.localOffset = 0
+    if self.chunk.isNone:
+      self.atEnd = true
+      return
+
+  assert self.chunk.isSome
+  var currentChunk = self.chunk.get
+
+  let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
+  while self.wrapIndex < self.wrapMap.map.high and self.wrapMap.map[self.wrapIndex].src.b <= currentPoint:
+    self.wrapIndex += 1
+
+  self.displayPoint = self.wrapMap.toDisplayPoint(currentPoint, self.wrapIndex)
+
+  let startOffset = self.localOffset
+  let map = self.wrapMap.map[self.wrapIndex]
+  if currentChunk.endPoint <= map.src.b:
+    self.localOffset = currentChunk.len
+    currentChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.chunk.data[startOffset].addr)
+    currentChunk.chunk.len = self.localOffset - startOffset
+    currentChunk.chunk.point = currentPoint
+    return DisplayChunk(chunk: currentChunk, displayPoint: self.displayPoint).some
+
+  else:
+    self.localOffset = map.src.b.column.int - currentChunk.point.column.int
+    currentChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.chunk.data[startOffset].addr)
+    currentChunk.chunk.len = self.localOffset - startOffset
+    currentChunk.chunk.point = currentPoint
+    return DisplayChunk(chunk: currentChunk, displayPoint: self.displayPoint).some
