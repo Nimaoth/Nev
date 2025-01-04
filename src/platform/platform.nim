@@ -47,5 +47,12 @@ method charGap*(self: Platform): float {.base, gcsafe, raises: [].} = discard
 method measureText*(self: Platform, text: string): Vec2 {.base, gcsafe, raises: [].} = discard
 method preventDefault*(self: Platform) {.base, gcsafe, raises: [].} = discard
 method getStatisticsString*(self: Platform): string {.base, gcsafe, raises: [].} = discard
+method layoutText*(self: Platform, text: string): seq[Rect] {.base, gcsafe, raises: [].} = discard
 
 func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance
+
+proc totalBounds*(bounds: openArray[Rect]): Vec2 {.raises: [].} =
+  for i in 0 ..< bounds.len:
+    let rect = bounds[i]
+    result.x = max(result.x, rect.x + rect.w)
+    result.y = max(result.y, rect.y + rect.h)
