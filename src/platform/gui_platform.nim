@@ -372,6 +372,7 @@ method charWidth*(self: GuiPlatform): float = self.mCharWidth
 method charGap*(self: GuiPlatform): float = self.mCharGap
 
 method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
+method layoutText*(self: GuiPlatform, text: string): seq[Rect] = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).selectionRects
 
 method processEvents*(self: GuiPlatform): int =
   self.eventCounter = 0
