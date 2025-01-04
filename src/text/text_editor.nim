@@ -646,7 +646,8 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   if self.disableScrolling:
     return
 
-  self.targetLine = cursor.line.some
+  let displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
+  self.targetLine = displayPoint.row.int.some
   self.nextScrollBehaviour = CenterAlways.some
   self.targetLineMargin = float.none
 
@@ -658,7 +659,8 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   if self.disableScrolling:
     return
 
-  self.targetLine = cursor.line.some
+  let displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
+  self.targetLine = displayPoint.row.int.some
   self.nextScrollBehaviour = scrollBehaviour
   self.targetLineMargin = margin
 
@@ -799,6 +801,9 @@ proc lineLength*(self: TextDocumentEditor, line: int): int {.expose: "editor.tex
 
 proc numDisplayLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
   return self.wrapMap.toDisplayPoint(self.document.rope.summary.lines).row.int + 1
+
+proc displayEndPoint*(self: TextDocumentEditor): Point =
+  return self.wrapMap.toDisplayPoint(self.document.rope.summary.lines)
 
 proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## Returns the number of lines that can be shown on the screen
@@ -3694,6 +3699,7 @@ proc newTextEditor*(document: TextDocument, services: Services):
   self.workspace = self.services.getService(Workspace).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.eventHandlerNames = @["editor.text"]
+  self.wrapMap = WrapMap.new()
 
   self.setDocument(document)
 

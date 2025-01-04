@@ -274,8 +274,12 @@ proc binarySearchRange*[T, K](a: openArray[T], key: K, bias: Bias,
         idx = mid + 1
       else:
         b = mid
+
     if idx >= len:
       result[0] = false
+      if bias == Bias.Left:
+        idx = max(idx - 1, 0)
+
     else:
       let final = cmp(a[idx], key)
       result[0] = final == 0
@@ -406,6 +410,8 @@ type
     tree*: TsTree
 
   Highlight = tuple[range: Range[Point], scope: string, priority: int]
+
+  DisplayPoint* = distinct Point
 
   StyledChunkIterator* = object
     chunks*: ChunkIterator
@@ -634,6 +640,36 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   return StyledChunk(chunk: currentChunk).some
 
 type
+  WrapMapChunk = object
+    src: Point
+    dst: Point
+
+  WrapMapChunkSummary = object
+    src: Point
+    dst: Point
+
+  WrapMapChunkDst = distinct Point
+  WrapMapChunkSrc = distinct Point
+
+# Make WrapMapChunk an Item
+func clone*(self: WrapMapChunk): WrapMapChunk = self
+
+func summary*(self: WrapMapChunk): WrapMapChunkSummary = WrapMapChunkSummary(src: self.src, dst: self.dst)
+
+func fromSummary*[C](_: typedesc[WrapMapChunkSummary], self: WrapMapChunkSummary, cx: C): WrapMapChunkSummary = self
+
+# Make WrapMapChunkSummary a Summary
+func addSummary*[C](self: var WrapMapChunkSummary, b: WrapMapChunkSummary, cx: C) =
+  self.src += b.src
+  self.dst += b.dst
+
+# Make WrapMapChunkDst a Dimension
+func cmp*[C](a: WrapMapChunkDst, b: WrapMapChunkSummary, cx: C): int = cmp(a.Point, b.dst)
+
+# Make WrapMapChunkSrc a Dimension
+func cmp*[C](a: WrapMapChunkSrc, b: WrapMapChunkSummary, cx: C): int = cmp(a.Point, b.src)
+
+type
   DisplayChunk* = object
     chunk*: StyledChunk
     displayPoint*: Point
@@ -652,8 +688,11 @@ type
   # -------------------
   #
   WrapMapRange = tuple[src: Range[Point], dst: Range[Point]]
+
+  WrapMapChunkCursor = sumtree.Cursor[WrapMapChunk, WrapMapChunkSummary]
+
   WrapMap* = object
-    map*: seq[WrapMapRange] # todo: turn this into sumtree
+    map*: SumTree[WrapMapChunk]
     wrapWidth*: int
     buffer*: BufferSnapshot
     wrappedIndent*: int = 4
@@ -662,13 +701,20 @@ type
     chunks*: StyledChunkIterator
     chunk: Option[StyledChunk]
     wrapMap* {.cursor.}: WrapMap
-    wrapIndex: int
+    wrapMapCursor: WrapMapChunkCursor
     displayPoint*: Point
     localOffset: int
     atEnd: bool
 
+proc new*(_: typedesc[WrapMap]): WrapMap =
+  result.map = SumTree[WrapMapChunk].new()
+
 proc init*(_: typedesc[WrappedChunkIterator], rope: var RopeSlice[int], wrapMap: var WrapMap): WrappedChunkIterator =
-  result = WrappedChunkIterator(chunks: StyledChunkIterator.init(rope), wrapMap: wrapMap)
+  result = WrappedChunkIterator(
+    chunks: StyledChunkIterator.init(rope),
+    wrapMap: wrapMap,
+    wrapMapCursor: wrapMap.map.initCursor(WrapMapChunkSummary),
+  )
 
 func point*(self: WrappedChunkIterator): Point = self.chunks.point
 func point*(self: DisplayChunk): Point = self.chunk.point
@@ -679,77 +725,106 @@ func `$`*(self: DisplayChunk): string = $self.chunk
 template toOpenArray*(self: DisplayChunk): openArray[char] = self.chunk.toOpenArray
 template scope*(self: DisplayChunk): string = self.chunk.scope
 
-proc findPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): int =
-  proc cmp(a: WrapMapRange, point: Point): int =
-    if a.src.b <= point:
-      return -1
-    if a.src.a > point:
-      return 1
-    return 0
+proc `$`*(self: WrapMap): string =
+  result.add "wrap map\n"
+  var c = self.map.initCursor(WrapMapChunkSummary)
+  var i = 0
+  while not c.atEnd:
+    c.next()
+    if c.item.getSome(item):
+      let r = c.startPos.src...c.endPos.src
+      let rd = c.startPos.dst...c.endPos.dst
+      if item.src != Point():
+        result.add &"  {i}: {item.src} -> {item.dst}   |   {r} -> {rd}\n"
+        inc i
 
-  let (found, index) = self.map.binarySearchRange(point, bias, cmp)
-  return index
+proc toDisplayPoint*(self: WrapMapChunkCursor, point: Point): Point =
+  let point2 = point.clamp(self.startPos.src...self.endPos.src)
+  let offset = point2 - self.startPos.src
+  return self.startPos.dst + offset.toPoint
 
-proc toDisplayPoint*(self: WrapMap, point: Point, index: int): Point =
-  if index != -1:
-    assert index < self.map.len, &"toDisplayPoint {point}, {index}, {self.map}"
-    let offset = point - self.map[index].src.a
-    # offset is a PointDiff, which if we just add to dst will result in the wrong result
-    # because Point + PointDiff is used for cases where we insert text before Point and want too
-    # know how that affects Point, whereas here we want to adjust Point assuming...todo
-    return self.map[index].dst.a + offset.toPoint
+proc toDisplayPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): Point =
+  var c = self.map.initCursor(WrapMapChunkSummary)
+  discard c.seek(point.WrapMapChunkSrc, Bias.Right, ())
+  if c.item.getSome(item) and item.src == Point():
+    c.next()
 
-  assert false, "Failed to map point to display point"
+  return c.toDisplayPoint(point)
 
-proc toDisplayPoint*(self: WrapMap, point: Point): Point =
-  assert self.map.len > 0
-  let index = self.findPoint(point)
-  return self.toDisplayPoint(point, index)
-
-proc findDisplayPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): int =
-  proc cmp(a: WrapMapRange, point: Point): int =
-    if a.dst.b <= point:
-      return -1
-    if a.dst.a > point:
-      return 1
-    return 0
-
-  let (found, index) = self.map.binarySearchRange(point, bias, cmp)
-  return index
-
-proc toPoint*(self: WrapMap, point: Point, index: int): Point =
-  if index != -1:
-    let point = point.clamp(self.map[index].dst)
-    let offset = point - self.map[index].dst.a
-    assert offset.a >= offset.b, &"toPoint {point}, {index}, {self.map[index]}, {offset}\n{self.map}"
-    return self.map[index].src.a + offset.toPoint
-
-  assert false, "Failed to map display point to point"
+proc toPoint*(self: WrapMapChunkCursor, point: Point): Point =
+  let point = point.clamp(self.startPos.dst...self.endPos.dst)
+  let offset = point - self.startPos.dst
+  return self.startPos.src + offset.toPoint
 
 proc toPoint*(self: WrapMap, point: Point, bias: Bias = Bias.Right): Point =
-  let index = self.findDisplayPoint(point, bias)
-  return self.toPoint(point, index)
+  var c = self.map.initCursor(WrapMapChunkSummary)
+  discard c.seek(point.WrapMapChunkDst, Bias.Left, ())
+  if c.item.getSome(item) and item.src == Point():
+    c.next()
+
+  return c.toPoint(point)
 
 proc seekLine*(self: var WrappedChunkIterator, line: int) =
   self.displayPoint = Point(row: line.uint32)
-  self.wrapIndex = self.wrapMap.findDisplayPoint(self.displayPoint)
-  assert self.wrapIndex != -1
-  let point = self.wrapMap.toPoint(self.displayPoint, self.wrapIndex)
+  let point = self.wrapMap.toPoint(self.displayPoint)
   self.chunks.seek(point)
-  self.localOffset = 0 # todo: does this need to be != 0?
+  self.localOffset = 0
   self.chunk = StyledChunk.none
 
 proc setBuffer*(self: var WrapMap, buffer: sink BufferSnapshot) =
   self.buffer = buffer.ensureMove
   self.wrapWidth = 0
-  self.map.setLen(1)
-  self.map[0] = (Point()...self.buffer.visibleText.summary.lines, Point()...self.buffer.visibleText.summary.lines)
+  self.map = SumTree[WrapMapChunk].new([WrapMapChunk(src: self.buffer.visibleText.summary.lines, dst: self.buffer.visibleText.summary.lines)])
+
+proc edit*(self: var WrapMap, edits: openArray[tuple[old, new: Selection]]) =
+  discard
+  # echo &"============\nedit {edits}\n  {self.map}"
+  # var diff = Point()
+  # var i = 0
+  # for e in edits:
+  #   echo &"  - edit {e}"
+  #   while i < self.map.high and self.map[i].src.b <= e.old.first.toPoint:
+  #     echo &"    - skip {i}, {self.map[i].src.b} <= {e.old.first.toPoint}, add {diff}"
+  #     self.map[i].src.b += diff
+  #     self.map[i].dst.b += diff
+  #     i += 1
+  #   echo &"  - edit {e}, {i} -> {self.map[i]}"
+
+  #   assert self.map[i].src.a <= e.old.first.toPoint
+  #   if self.map[i].src.b < e.old.last.toPoint:
+  #     # overlapping
+  #     discard
+  #     assert false
+  #   else:
+  #     let srcDiff = (e.old.last.toPoint - e.old.first.toPoint).toPoint
+  #     let dstDiff = (e.new.last.toPoint - e.new.first.toPoint).toPoint
+  #     echo &"    {srcDiff} -> {dstDiff}"
+  #     if srcDiff < dstDiff:
+  #       let diffDiff = (dstDiff - srcDiff).toPoint
+  #       let d = (e.old.last.toPoint + diffDiff) - e.old.last.toPoint
+  #       # let d2 = (e.new.last.toPoint + diffDiff) - e.new.last.toPoint
+  #       echo &"      insert {(dstDiff - srcDiff).toPoint}, {diff}, {d}, {d2}"
+  #       # diff += dstDiff - srcDiff
+  #       # diff += dstDiff - srcDiff
+  #       self.map[i].src.b += d
+  #       # self.map[i].dst.b += d2
+
+  #     elif srcDiff > dstDiff:
+  #       echo &"      delete {(srcDiff - dstDiff).toPoint}"
+  #     else:
+  #       echo &"      replace"
+
+  # while i < self.map.high:
+  #   echo &"  - finish {i}, add {diff}"
+  #   self.map[i].src.b += diff
+  #   self.map[i].dst.b += diff
+  #   i += 1
+  # echo &"  {self.map}"
 
 proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
   if self.buffer.remoteId == buffer.remoteId and self.buffer.version == buffer.version and self.wrapWidth == wrapWidth:
-    if self.map.len == 0:
-      self.map.setLen(1)
-      self.map[0] = (Point()...self.buffer.visibleText.summary.lines, Point()...self.buffer.visibleText.summary.lines)
+    if self.map.isEmpty:
+      self.map = SumTree[WrapMapChunk].new()
     return
 
   # var t = startTimer()
@@ -769,7 +844,7 @@ proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
   var currentDisplayRange = Point()...Point()
   var indent = 0
 
-  self.map.setLen(0)
+  self.map = SumTree[WrapMapChunk].new()
   while currentRange.b.row.int < numLines:
     let lineLen = rope.lineLen(currentRange.b.row.int)
 
@@ -778,8 +853,15 @@ proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
       let endI = min(i + wrapWidth, lineLen)
       currentRange.b.column = endI.uint32
       currentDisplayRange.b.column = (endI - i + indent).uint32
-      self.map.add (currentRange, currentDisplayRange)
+      if indent > 0:
+        self.map.add(WrapMapChunk(src: Point(), dst: Point(column: indent.uint32)), ())
+      self.map.add(
+        WrapMapChunk(
+          src: (currentRange.b - currentRange.a).toPoint,
+          dst: (currentDisplayRange.b - currentDisplayRange.a).toPoint,
+        ), ())
 
+      self.map.add(WrapMapChunk(src: Point(), dst: Point(row: 1)), ())
       indent = self.wrappedIndent
       currentRange = currentRange.b...currentRange.b
       currentDisplayRange = Point(row: currentDisplayRange.b.row + 1, column: indent.uint32)...Point(row: currentDisplayRange.b.row + 1, column: indent.uint32)
@@ -789,9 +871,11 @@ proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
     currentDisplayRange.b = Point(row: currentDisplayRange.b.row + 1)
     indent = 0
 
-  self.map.add (currentRange, currentDisplayRange)
-  # echo "wrap map"
-  # echo self.map.mapItIndex(&"{itIndex}: {it}").join("\n").indent(2)
+  self.map.add(
+    WrapMapChunk(
+      src: (currentRange.b - currentRange.a).toPoint,
+      dst: (currentDisplayRange.b - currentDisplayRange.a).toPoint,
+    ), ())
 
 proc next*(self: var WrappedChunkIterator): Option[DisplayChunk] =
   if self.atEnd:
@@ -811,15 +895,18 @@ proc next*(self: var WrappedChunkIterator): Option[DisplayChunk] =
 
   assert self.chunk.isSome
   var currentChunk = self.chunk.get
-
   let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
-  while self.wrapIndex < self.wrapMap.map.high and self.wrapMap.map[self.wrapIndex].src.b <= currentPoint:
-    self.wrapIndex += 1
+  discard self.wrapMapCursor.seek(currentPoint.WrapMapChunkSrc, Bias.Right, ())
+  if self.wrapMapCursor.item.getSome(item) and item.src == Point():
+    self.wrapMapCursor.next()
 
-  self.displayPoint = self.wrapMap.toDisplayPoint(currentPoint, self.wrapIndex)
+  self.displayPoint = self.wrapMapCursor.toDisplayPoint(currentPoint)
 
   let startOffset = self.localOffset
-  let map = self.wrapMap.map[self.wrapIndex]
+  let map = (
+    src: self.wrapMapCursor.startPos.src...self.wrapMapCursor.endPos.src,
+    dst: self.wrapMapCursor.startPos.dst...self.wrapMapCursor.endPos.dst)
+
   if currentChunk.endPoint <= map.src.b:
     self.localOffset = currentChunk.len
     currentChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.chunk.data[startOffset].addr)
