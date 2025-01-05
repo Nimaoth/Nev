@@ -707,7 +707,7 @@ type
     atEnd: bool
 
 proc new*(_: typedesc[WrapMap]): WrapMap =
-  result.map = SumTree[WrapMapChunk].new()
+  result = WrapMap(map: SumTree[WrapMapChunk].new())
 
 proc init*(_: typedesc[WrappedChunkIterator], rope: var RopeSlice[int], wrapMap: var WrapMap): WrappedChunkIterator =
   result = WrappedChunkIterator(
@@ -853,15 +853,13 @@ proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int): bo
       let endI = min(i + wrapWidth, lineLen)
       currentRange.b.column = endI.uint32
       currentDisplayRange.b.column = (endI - i + indent).uint32
-      if indent > 0:
-        self.map.add(WrapMapChunk(src: Point(), dst: Point(column: indent.uint32)), ())
       self.map.add(
         WrapMapChunk(
           src: (currentRange.b - currentRange.a).toPoint,
           dst: (currentDisplayRange.b - currentDisplayRange.a).toPoint,
         ), ())
 
-      self.map.add(WrapMapChunk(src: Point(), dst: Point(row: 1)), ())
+      self.map.add(WrapMapChunk(src: Point(), dst: Point(row: 1, column: self.wrappedIndent.uint32)), ())
       indent = self.wrappedIndent
       currentRange = currentRange.b...currentRange.b
       currentDisplayRange = Point(row: currentDisplayRange.b.row + 1, column: indent.uint32)...Point(row: currentDisplayRange.b.row + 1, column: indent.uint32)
