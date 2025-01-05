@@ -103,6 +103,7 @@
         "\\.nev-session$": "json",
         "\\.lock$": "json",
         "\\.yml$": "yaml",
+        "\\.clangd$": "yaml",
         "\\.nix$": "nix",
         "\\.wit$": "wit",
         "\\.ocaml$": "ocaml",
