@@ -824,6 +824,7 @@ proc displayEndPoint*(self: TextDocumentEditor): Point =
 proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## Returns the number of lines that can be shown on the screen
   ## This value depends on the size of the view this editor is in and the font size
+  # todo
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
@@ -849,6 +850,7 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
   return self.clampCursor(cursor, includeAfter)
 
 proc getLastRenderedVisualLine(self: TextDocumentEditor, line: int): Option[StyledLine] =
+  # todo
   for l in self.lastRenderedLines:
     if l.index == line:
       return l.some
@@ -935,6 +937,7 @@ proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: in
 
 proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
+  # todo
   if self.lastRenderedLines.len == 0:
     return cursor
 
@@ -2048,6 +2051,7 @@ proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float,
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 {.expose("editor.text").} =
+  # todo
   return self.lastContentBounds.wh
 
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.
@@ -3165,6 +3169,7 @@ proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
   let pattern = catch(re"[_a-zA-Z0-9]+").expect("Invalid regex???")
 
   # todo: use RopeCursor
+  # todo
   for li, line in self.lastRenderedLines:
     for s in ($self.document.getLine(line.index)).findAllBounds(line.index, pattern):
       result.add s.first

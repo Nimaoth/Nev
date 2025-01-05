@@ -580,7 +580,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
 
   log lvlInfo, fmt"Connecting document (loadingAsync: {document.isLoadingAsync}) '{document.filename}'"
 
-  if document.isLoadingAsync:
+  if document.requiresLoad or document.isLoadingAsync:
     var handle = new Id
     handle[] = document.onLoaded.subscribe proc(document: TextDocument): void =
       document.onLoaded.unsubscribe handle[]
