@@ -989,7 +989,7 @@ proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) {.sta
         else:
           lineLen
 
-        overrideStyle(self, line, first, last, $scope, match.pattern)
+        overrideStyle(self, line, first, last, $scope, 100 - match.pattern)
 
   except CatchableError:
     discard
