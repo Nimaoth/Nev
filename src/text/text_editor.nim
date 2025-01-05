@@ -838,7 +838,8 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     cursor = (self.document.numLines - 1, cursor.column)
   else:
     cursor.line = line
-    cursor.column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
+    let displayPoint = self.wrapMap.toDisplayPoint(Point.init(line, 0))
+    cursor.column = self.wrapMap.toPoint(Point.init(displayPoint.row.int, self.targetColumn)).column.int
   return self.clampCursor(cursor, includeAfter)
 
 proc getLastRenderedVisualLine(self: TextDocumentEditor, line: int): Option[StyledLine] =
@@ -876,46 +877,14 @@ proc numSubLines(line: StyledLine): int =
       return r.subLine + 1
 
 proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
-  var cursor = cursor
-  let step = offset.sign
-  let targetVisualColumn = self.targetColumn
-  var currentNumSubLines = 1
-  var currentSubLine = 0
-
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line):
-    currentNumSubLines = line.numSubLines
-    if line.getPartContaining(cursor.column).getSome(part):
-      let r = part[].visualRange.get
-      currentSubLine = r.subLine
-
-  for i in 0..<offset.abs:
-    currentSubLine.inc step
-    if currentSubLine notin 0..<currentNumSubLines:
-      cursor.line.inc step
-      if step > 0:
-        currentNumSubLines = 1
-        currentSubLine = 0
-      elif self.getLastRenderedVisualLine(cursor.line).getSome(line):
-        currentNumSubLines = line.numSubLines
-        currentSubLine = line.numSubLines - 1
-      else:
-        currentNumSubLines = 1
-        currentSubLine = 0
-
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line):
-    if line.getPartContainingVisual(currentSubLine, targetVisualColumn).getSome(part):
-      let offset = targetVisualColumn - part[].visualRange.get.startColumn
-      cursor.column = clamp(
-        part[].textRange.get.startOffset + offset,
-        part[].textRange.get.startOffset,
-        part[].textRange.get.endOffset - 1)
-
-  if cursor.line < 0:
-    cursor = (0, cursor.column)
-  elif cursor.line >= self.document.numLines:
-    cursor = (self.document.numLines - 1, cursor.column)
-
-  return self.clampCursor(cursor, includeAfter)
+  var displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
+  displayPoint.row = max(displayPoint.row.int + offset, 0).uint32
+  displayPoint.column = self.targetColumn.uint32
+  displayPoint = displayPoint.clamp(Point()...self.displayEndPoint)
+  let newCursor = self.wrapMap.toPoint(displayPoint, Left).toCursor
+  if newCursor.line >= self.document.numLines:
+    return cursor
+  return self.clampCursor(newCursor, includeAfter)
 
 proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
@@ -927,13 +896,10 @@ proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap
 
 proc doMoveCursorVisualHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line) and line.getPartContaining(cursor.column).getSome(part):
-
-    let r = part[].visualRange.get
-    if line.getPartContainingVisual(r.subLine, 0).getSome(part):
-      return (cursor.line, part[].textRange.get.startOffset)
-
-  return (cursor.line, 0)
+  var displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
+  displayPoint.column = 0
+  let newCursor = self.wrapMap.toPoint(displayPoint).toCursor
+  return self.clampCursor(newCursor, includeAfter)
 
 proc doMoveCursorVisualEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
@@ -2203,13 +2169,14 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
 
   of "visual-line":
-    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
-    if not result.isEmpty and self.getLastRenderedVisualLine(cursor.line).getSome(line):
-      if line.getPartContaining(cursor.column).getSome(part):
-        let r = part[].visualRange.get
-        if line.getPartContainingVisual(r.subLine, 0).getSome(part1) and
-            line.getPartContainingVisual(r.subLine, int.high).getSome(part2):
-          result = ((cursor.line, part1[].textRange.get.startOffset), (cursor.line, part2[].textRange.get.endOffset))
+    let displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
+    let displayLineStart = Point(row: displayPoint.row)
+    let displayLineEnd = Point(row: displayPoint.row + 1)
+    result[0] = self.wrapMap.toPoint(displayLineStart, Right).toCursor
+    result[1] = self.wrapMap.toPoint(displayLineEnd, Right).toCursor
+    if result[1].column == 0:
+      result[1].line -= 1
+      result[1].column = self.document.lineLength(result[1].line)
 
   of "line-next":
     result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
