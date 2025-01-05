@@ -1065,7 +1065,7 @@ proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
   log lvlInfo, &"handleNotifiesConfigurationChanged: client gone"
 
 proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
-  logFileName = getAppDir() / &"lsp.{client.languageId}.log"
+  logFileName = getAppDir() / &"/logs/lsp.{client.languageId}.log"
   file = open(logFileName, fmWrite)
   fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
   defer:
