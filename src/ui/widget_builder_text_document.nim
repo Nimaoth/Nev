@@ -1483,6 +1483,22 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     onDrag MouseButton.Left:
       self.handleMouseEvent(MouseButton.Left, pos, drag = true)
 
+  # Get center line
+  # todo: move this to a function
+  let centerPos = currentNode.bounds.wh * 0.5 + vec2(0, builder.textHeight * -0.5)
+  var (found, index) = chunkBounds.binarySearchRange(centerPos, Bias.Left, cmp)
+  if index notin 0..chunkBounds.high:
+    echo &"no center point, {index} notin {0..chunkBounds.high}"
+    return
+
+  if index + 1 < chunkBounds.len and centerPos.y >= chunkBounds[index].bounds.yh and centerPos.y < chunkBounds[index + 1].bounds.yh:
+    index += 1
+
+  let chunk = chunkBounds[index]
+  let centerPoint = (chunk.range.a.row.int, (chunk.range.a.column + chunk.range.b.column).int div 2)
+  self.currentCenterCursor = centerPoint
+  self.currentCenterCursorRelativeYPos = (chunk.bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
+
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.preRender(builder.currentParent.bounds)
 
@@ -1568,7 +1584,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
 
               if center:
                 self.previousBaseIndex = targetDisplayLine
-                self.scrollOffset = bounds.h * 0.5 - builder.textHeight - 0.5
+                self.scrollOffset = bounds.h * self.targetLineRelativeY - builder.textHeight * 0.5
 
               else:
                 case self.nextScrollBehaviour.get(self.defaultScrollBehaviour)

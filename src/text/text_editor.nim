@@ -95,6 +95,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   defaultScrollBehaviour*: ScrollBehaviour = CenterOffscreen
   nextScrollBehaviour*: Option[ScrollBehaviour]
   targetLineMargin*: Option[float]
+  targetLineRelativeY*: float = 0.5
   targetLine*: Option[int]
   targetColumn: int
   hideCursorWhenInactive*: bool
@@ -133,6 +134,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
   scrollOffset*: float
   previousBaseIndex*: int
   lineNumbers*: Option[LineNumbers]
+
+  currentCenterCursor*: Cursor # Cursor representing the center of the screen
+  currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
 
   lastRenderedLines*: seq[StyledLine]
   lastTextAreaBounds*: Rect
@@ -243,7 +247,7 @@ proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection,
 proc clearCustomHighlights*(self: TextDocumentEditor, id: Id)
 proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5)
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 
@@ -500,7 +504,10 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     self.document.requiresLoad = false
 
   let wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 10, 10)
-  self.wrapMap.update(self.document.buffer.snapshot.clone(), self.configProvider.getValue("ui.wrap-width", wrapWidth))
+  if self.wrapMap.update(self.document.buffer.snapshot.clone(), self.configProvider.getValue("ui.wrap-width", wrapWidth)):
+    # When the wrap map changes the target column might be out of line bounds, so just update it so it's in a valid range.
+    self.updateTargetColumn()
+    self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
 
   self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
@@ -638,11 +645,12 @@ proc scrollToTop*(self: TextDocumentEditor) =
   self.targetLine = 0.some
   self.nextScrollBehaviour = TopOfScreen.some
   self.targetLineMargin = float.none
+  self.targetLineRelativeY = 0.5
 
   self.updateInlayHints()
   self.markDirty()
 
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5) =
   if self.disableScrolling:
     return
 
@@ -650,6 +658,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   self.targetLine = displayPoint.row.int.some
   self.nextScrollBehaviour = CenterAlways.some
   self.targetLineMargin = float.none
+  self.targetLineRelativeY = relativePosition
 
   self.updateInlayHints()
   self.markDirty()
@@ -663,6 +672,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   self.targetLine = displayPoint.row.int.some
   self.nextScrollBehaviour = scrollBehaviour
   self.targetLineMargin = margin
+  self.targetLineRelativeY = 0.5
 
   self.updateInlayHints()
   self.markDirty()
@@ -1107,20 +1117,11 @@ proc getContextWithMode(self: TextDocumentEditor, context: string): string {.exp
   ## Appends the current mode to context
   return context & "." & $self.currentMode
 
-proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last ) {.
+proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.
     expose("editor.text").} =
   let cursor = self.getCursor(cursor)
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line):
-    if line.getPartContaining(cursor.column).getSome(part):
-      let r = part[].visualRange.get
-      self.targetColumn = clamp(
-        r.startColumn + (cursor.column - part[].textRange.get.startOffset),
-        r.startColumn,
-        r.endColumn)
-    else:
-      self.targetColumn = self.document.cursorToVisualColumn(cursor)
-  else:
-    self.targetColumn = self.document.cursorToVisualColumn(cursor)
+  let displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
+  self.targetColumn = displayPoint.column.int
 
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Inverts the current selection. Discards all but the last cursor.

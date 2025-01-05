@@ -821,11 +821,11 @@ proc edit*(self: var WrapMap, edits: openArray[tuple[old, new: Selection]]) =
   #   i += 1
   # echo &"  {self.map}"
 
-proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
+proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int): bool =
   if self.buffer.remoteId == buffer.remoteId and self.buffer.version == buffer.version and self.wrapWidth == wrapWidth:
     if self.map.isEmpty:
       self.map = SumTree[WrapMapChunk].new()
-    return
+    return false
 
   # var t = startTimer()
   # defer:
@@ -876,6 +876,8 @@ proc update*(self: var WrapMap, buffer: sink BufferSnapshot, wrapWidth: int) =
       src: (currentRange.b - currentRange.a).toPoint,
       dst: (currentDisplayRange.b - currentDisplayRange.a).toPoint,
     ), ())
+
+  return true
 
 proc next*(self: var WrappedChunkIterator): Option[DisplayChunk] =
   if self.atEnd:
