@@ -1,4 +1,4 @@
-import std/[strformat, terminal, typetraits, enumutils, strutils, sets]
+import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate]
 import std/colors as stdcolors
 import vmath
 import chroma as chroma
@@ -201,6 +201,10 @@ method lineHeight*(self: TerminalPlatform): float = 1
 method charWidth*(self: TerminalPlatform): float = 1
 method charGap*(self: TerminalPlatform): float = 0
 method measureText*(self: TerminalPlatform, text: string): Vec2 = vec2(text.len.float, 1)
+method layoutText*(self: TerminalPlatform, text: string): seq[Rect] =
+  result = newSeqOfCap[Rect](text.len)
+  for i, c in enumerate(text.runes):
+    result.add rect(i.float, 0, 1, 1)
 
 proc pushMask(self: TerminalPlatform, mask: Rect) =
   let maskedMask = if self.masks.len > 0:
