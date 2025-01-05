@@ -116,6 +116,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
   inlayHintsTask: DelayedTask
 
+  updateWrapMapTask: DelayedTask
+
   eventHandlerNames: seq[string]
   eventHandlers: seq[EventHandler]
   modeEventHandlers: seq[EventHandler]
@@ -800,6 +802,12 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: [ValueError].} =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+proc updateWrapMap*(self: TextDocumentEditor) {.expose: "editor.text".} =
+  if self.wrapMap.update(self.document.buffer.snapshot.clone(), self.wrapMap.wrapWidth, force = true):
+    self.updateTargetColumn()
+    self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
+  self.markDirty()
 
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
   self.document.enableAutoReload(enabled)
@@ -3556,7 +3564,8 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   self.markDirty()
 
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
-  self.wrapMap.edit(edits)
+  self.wrapMap.edit(self.document.buffer.snapshot.clone(), edits)
+  self.updateWrapMapTask.schedule()
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
@@ -3682,6 +3691,9 @@ proc newTextEditor*(document: TextDocument, services: Services):
   self.vfs = self.services.getService(VFSService).get.vfs
   self.eventHandlerNames = @["editor.text"]
   self.wrapMap = WrapMap.new()
+
+  self.updateWrapMapTask = startDelayedPaused(100, repeat=false):
+    self.updateWrapMap()
 
   self.setDocument(document)
 
