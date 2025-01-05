@@ -25,7 +25,7 @@ proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.us
     {.gcsafe.}:
       if file == nil:
         try:
-          logFileName = getAppDir() / & "lsp.log"
+          logFileName = getAppDir() / & "logs/lsp.log"
           file = open(logFileName, fmWrite)
           fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
         except IOError:
