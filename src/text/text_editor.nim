@@ -163,6 +163,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   onBufferChangedHandle: Id
   textChangedHandle: Id
+  onEditHandle: Id
   onRequestRerenderHandle: Id
   onRequestRerenderDiffHandle: Id
   loadedHandle: Id
@@ -252,6 +253,7 @@ proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
+proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
 proc handleTextDocumentLoaded(self: TextDocumentEditor)
@@ -348,6 +350,7 @@ proc clearDocument*(self: TextDocumentEditor) =
   if self.document.isNotNil:
     # log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
     self.document.onBufferChanged.unsubscribe(self.onBufferChangedHandle)
+    self.document.onEdit.unsubscribe(self.onEditHandle)
     self.document.textChanged.unsubscribe(self.textChangedHandle)
     self.document.onRequestRerender.unsubscribe(self.onRequestRerenderHandle)
     self.document.onLoaded.unsubscribe(self.loadedHandle)
@@ -385,6 +388,9 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.document = document
   self.snapshot = document.buffer.snapshot.clone()
   self.wrapMap.setBuffer(self.snapshot.clone())
+
+  self.onEditHandle = document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =>
+    self.handleEdits(arg.edits)
 
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
@@ -3543,6 +3549,9 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   self.hideCompletions()
   self.updateInlayHints()
   self.markDirty()
+
+proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
+  self.wrapMap.edit(edits)
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
