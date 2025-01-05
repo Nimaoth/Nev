@@ -954,8 +954,35 @@ proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) {.sta
                 matches = false
                 break
 
-            # of "any-of?":
-            #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+            of "any-of?":
+              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+              # todo
+              matches = false
+              break
+
+            of "lua-match?":
+              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+              # todo
+              matches = false
+              break
+
+            of "not-lua-match?":
+              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+              # todo
+              matches = false
+              break
+
+            of "vim-match?":
+              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+              # todo
+              matches = false
+              break
+
+            of "not-vim-match?":
+              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+              # todo
+              matches = false
+              break
 
             else:
               # log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
