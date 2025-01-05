@@ -1065,8 +1065,13 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addSubCommandWithCountBlock "", "move", "G":
     let line = if count == 0: editor.lineCount - 1 else: count - 1
     let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
-    editor.selection = (line, 0).toSelection(editor.selection, which)
-    editor.moveFirst "line-no-indent"
+    var newSelection = (line, 0).toSelection(editor.selection, which)
+    if newSelection == editor.selection:
+      let lineLen = editor.lineLength(line)
+      editor.selection = (line, lineLen).toSelection(editor.selection, which)
+    else:
+      editor.selection = newSelection
+      editor.moveFirst "line-no-indent"
     editor.scrollToCursor Last
 
   addSubCommandWithCountBlock "", "move", "%":
@@ -1118,12 +1123,12 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   # Scrolling
   addTextCommand "", "<C-e>", "scroll-lines", 1
-  addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorLine(editor.screenLineCount div 2, count, center=true)
-  addSubCommandWithCountBlock "", "move", "<PAGE_DOWN>": editor.vimMoveCursorLine(editor.screenLineCount, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorVisualLine(editor.screenLineCount div 2, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<PAGE_DOWN>": editor.vimMoveCursorVisualLine(editor.screenLineCount, count, center=true)
 
   addTextCommand "", "<C-y>", "scroll-lines", -1
-  addSubCommandWithCountBlock "", "move", "<C-u>": editor.vimMoveCursorLine(-editor.screenLineCount div 2, count, center=true)
-  addSubCommandWithCountBlock "", "move", "<PAGE_UP>": editor.vimMoveCursorLine(-editor.screenLineCount, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<C-u>": editor.vimMoveCursorVisualLine(-editor.screenLineCount div 2, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<PAGE_UP>": editor.vimMoveCursorVisualLine(-editor.screenLineCount, count, center=true)
 
   addTextCommandBlockDesc "", "z<ENTER>", "scroll line to top":
     if editor.getCommandCount != 0:
@@ -1553,9 +1558,13 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   addTextCommandBlock "visual", "o":
     editor.selections = editor.selections.mapIt((it.last, it.first))
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
 
   addTextCommandBlock "", "<C-g>o":
     editor.selections = editor.selections.reversed()
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
 
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-UP>", "scroll-lines", -1
