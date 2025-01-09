@@ -25,10 +25,11 @@ proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.us
     {.gcsafe.}:
       if file == nil:
         try:
-          logFileName = getAppDir() / & "logs/lsp.log"
+          logFileName = getAppDir() / "logs/lsp.log"
+          createDir(getAppDir() / "logs")
           file = open(logFileName, fmWrite)
           fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
-        except IOError:
+        except IOError, OSError:
           discard
 
       try:
@@ -1066,8 +1067,13 @@ proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
 
 proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
   logFileName = getAppDir() / &"/logs/lsp.{client.languageId}.log"
-  file = open(logFileName, fmWrite)
-  fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+  try:
+    createDir(getAppDir() / "logs")
+    file = open(logFileName, fmWrite)
+    fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+  except OSError:
+    echo "Failed to create log file ", logFileName
+
   defer:
     file.close()
 

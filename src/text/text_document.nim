@@ -1073,7 +1073,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
 
   let prevLanguageId = self.languageId
   let config = self.configProvider.getValue("treesitter." & self.languageId, newJObject())
-  var language = await getTreesitterLanguage(self.vfs, self.languageId, config)
+  let treesitterLanguageName = self.configProvider.getValue(&"languages.{self.languageId}.treesitter-language-name", self.languageId)
+  var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, config)
 
   if prevLanguageId != self.languageId:
     log lvlWarn, &"loadTreesitterLanguage {prevLanguageId}: ignore, newer language was set"
@@ -1089,7 +1090,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.currentTree.delete()
 
   # todo: this awaits, check if still current request afterwards
-  let highlightQueryPath = &"app://languages/{self.languageId}/queries/highlights.scm"
+  let highlightQueryPath = &"app://languages/{treesitterLanguageName}/queries/highlights.scm"
   if language.get.queryFile(self.vfs, "highlight", highlightQueryPath).await.getSome(query):
     if prevLanguageId != self.languageId:
       return
@@ -1101,7 +1102,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   if not self.isInitialized:
     return
 
-  let errorQueryPath = &"app://languages/{self.languageId}/queries/errors.scm"
+  let errorQueryPath = &"app://languages/{treesitterLanguageName}/queries/errors.scm"
   if language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await.getSome(query):
     if prevLanguageId != self.languageId:
       return
