@@ -61,6 +61,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   selectionAnchors: seq[(Anchor, Anchor)]
 
   wrapMap*: WrapMap
+  lastWrapMapVersion: Global
 
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
@@ -115,8 +116,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   # inline hints
   inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
   inlayHintsTask: DelayedTask
-
-  updateWrapMapTask: DelayedTask
 
   eventHandlerNames: seq[string]
   eventHandlers: seq[EventHandler]
@@ -512,8 +511,15 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     self.document.requiresLoad = false
 
   let wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 10, 10)
-  if self.wrapMap.update(self.document.buffer.snapshot.clone(), self.configProvider.getValue("ui.wrap-width", wrapWidth)):
+  if self.wrapMap.snapshot.buffer.remoteId != self.document.buffer.remoteId:
+    self.wrapMap.setBuffer(self.document.buffer.snapshot.clone())
+
+  if self.document.rope.len > 1:
+    self.wrapMap.update(self.configProvider.getValue("ui.wrap-width", wrapWidth))
+
+  if self.lastWrapMapVersion != self.wrapMap.snapshot.buffer.version:
     # When the wrap map changes the target column might be out of line bounds, so just update it so it's in a valid range.
+    self.lastWrapMapVersion = self.wrapMap.snapshot.buffer.version
     self.updateTargetColumn()
     self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
 
@@ -804,9 +810,7 @@ proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: 
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc updateWrapMap*(self: TextDocumentEditor) {.expose: "editor.text".} =
-  if self.wrapMap.update(self.document.buffer.snapshot.clone(), self.wrapMap.wrapWidth, force = true):
-    self.updateTargetColumn()
-    self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
+  self.wrapMap.update(self.document.buffer.snapshot.clone(), force = true)
   self.markDirty()
 
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
@@ -984,6 +988,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
       cursor.column = currentLine.nextRuneStart(cursor.column)
 
   elif offset < 0:
+    # echo &"doMoveCursorColumn {cursor}, {offset}, wrap: {wrap}, includeAfter: {includeAfter}"
     for i in 0..<(-offset):
       if cursor.column == 0:
         if not wrap:
@@ -991,6 +996,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
         if cursor.line > 0:
           cursor.line = cursor.line - 1
           lastIndex = self.document.rope.lastValidIndex(cursor.line, includeAfter)
+          # echo &"line {cursor.line} -> {lastIndex}"
           currentLine = $self.document.getLine(cursor.line)
           cursor.column = lastIndex
           continue
@@ -2083,6 +2089,7 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
     if selection.isEmpty:
       selections[i] = (self.doMoveCursorColumn(selection.first, -1), selection.first)
 
+  # echo &"delete left {self.selections} -> {selections}"
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
 
@@ -3565,7 +3572,8 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
 
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
   self.wrapMap.edit(self.document.buffer.snapshot.clone(), edits)
-  self.updateWrapMapTask.schedule()
+  if self.configProvider.getValue("text.auto-wrap", true):
+    self.wrapMap.update(self.document.buffer.snapshot.clone(), force = true)
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
@@ -3691,9 +3699,7 @@ proc newTextEditor*(document: TextDocument, services: Services):
   self.vfs = self.services.getService(VFSService).get.vfs
   self.eventHandlerNames = @["editor.text"]
   self.wrapMap = WrapMap.new()
-
-  self.updateWrapMapTask = startDelayedPaused(100, repeat=false):
-    self.updateWrapMap()
+  discard self.wrapMap.onUpdated.subscribe () => self.markDirty()
 
   self.setDocument(document)
 

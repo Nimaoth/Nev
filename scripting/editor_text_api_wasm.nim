@@ -4,6 +4,16 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc editor_text_updateWrapMap_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc updateWrapMap*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_updateWrapMap_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_enableAutoReload_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc enableAutoReload*(self: TextDocumentEditor; enabled: bool) {.gcsafe,
