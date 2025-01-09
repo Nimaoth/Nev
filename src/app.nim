@@ -1647,7 +1647,7 @@ proc chooseLocation*(self: App) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
-proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int): Future[ItemList] {.async: (raises: []).} =
+proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: int, maxLen: int): Future[ItemList] {.async: (raises: []).} =
   let searchResults = workspace.searchWorkspace(query, maxResults).await
   log lvlInfo, fmt"Found {searchResults.len} results"
 
@@ -1658,7 +1658,7 @@ proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: in
       relativePath = ""
 
     list[i] = FinderItem(
-      displayName: info.text,
+      displayName: info.text[0..<min(info.text.len, maxLen)],
       data: $ %*{
         "path": info.path,
         "line": info.line - 1,
@@ -1676,13 +1676,14 @@ type
     delayedTask: DelayedTask
     minQueryLen: int = 2
     maxResults: int = 1000
+    maxLen: int = 1000
 
 proc getWorkspaceSearchResults(self: WorkspaceSearchDataSource): Future[void] {.async.} =
   if self.query.len < self.minQueryLen:
     return
 
   let t = startTimer()
-  let list = self.workspace.searchWorkspaceItemList(self.query, self.maxResults).await
+  let list = self.workspace.searchWorkspaceItemList(self.query, self.maxResults, self.maxLen).await
   debugf"[searchWorkspace] {t.elapsed.ms}ms"
   self.onItemsChanged.invoke list
 
@@ -1743,7 +1744,8 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
 
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
-    return self.workspace.searchWorkspaceItemList(query, maxResults).await
+    let maxLen = self.config.getOption[:int]("editor.max-search-result-display-len", 1000)
+    return self.workspace.searchWorkspaceItemList(query, maxResults, maxLen).await
 
   let source = newAsyncCallbackDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)

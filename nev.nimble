@@ -33,11 +33,11 @@ requires "results >= 0.5.0"
 requires "chronos >= 4.0.3"
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
 requires "https://github.com/Nimaoth/windy >= 0.0.2"
-requires "https://github.com/Nimaoth/wasm3 >= 0.1.15"
+requires "https://github.com/Nimaoth/wasm3 >= 0.1.17"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
-requires "https://github.com/Nimaoth/nimtreesitter-api#498d284"
-requires "https://github.com/Nimaoth/nimwasmtime >= 0.1.9"
+requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.17"
+requires "https://github.com/Nimaoth/nimwasmtime >= 0.2.1"
 requires "https://github.com/Nimaoth/nimsumtree >= 0.4.0"
 
 # Use this to include all treesitter languages (takes longer to download)
@@ -114,6 +114,12 @@ task buildDebug, "Build the debug version":
 
 task buildDebugVcc, "Build the debug version":
   selfExec fmt"c -o:nevd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
+
+task buildDesktopClang, "Build the desktop version":
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime --lineDir:on --nilChecks:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:off --linetrace:off --nimcache:nimcache/release_clang {getCommandLineParams()} ./src/desktop_main.nim"
+
+task buildDesktopDebugClang, "Build the desktop version (debug)":
+  selfExec fmt"c -o:nevd{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime -d:enableSysFatalStackTrace --debuginfo:on -g --lineDir:on --nilChecks:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:off --linetrace:off --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
   selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"

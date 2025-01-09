@@ -196,7 +196,7 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
   if not (editor of TextDocumentEditor):
     return
 
-  logScope lvlInfo, &"previewItem {item}"
+  # logScope lvlInfo, &"previewItem {item}"
 
   inc self.revision
   self.editor = editor.TextDocumentEditor
