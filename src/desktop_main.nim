@@ -433,7 +433,7 @@ when enableGui:
 
 when defined(windows) and copyWasmtimeDll:
   import std/[compilesettings]
-  import wasmh
+  import wasmtime
 
   static:
     const dllIn = wasmDir / "target/release/wasmtime.dll"
