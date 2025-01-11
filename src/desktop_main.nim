@@ -374,6 +374,7 @@ proc run(app: App, plat: Platform, backend: Backend) =
     var outlierTime = 20.0
 
     let frameSoFar = totalTimer.elapsed.ms
+    let terminalSleepThreshold = app.config.getOption("platform.terminal-sleep-threshold", 0)
     if lastEvent.elapsed.ms > app.config.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
       let time = app.config.getOption("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
@@ -382,9 +383,9 @@ proc run(app: App, plat: Platform, backend: Backend) =
       let time = app.config.getOption("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
-    elif backend == Terminal and frameSoFar < 5:
-      sleep(5 - frameSoFar.int)
-      outlierTime += 5
+    elif backend == Terminal and frameSoFar < terminalSleepThreshold.float:
+      sleep(terminalSleepThreshold - frameSoFar.int)
+      outlierTime += terminalSleepThreshold.float
 
     let totalTime = totalTimer.elapsed.ms
     if not app.disableLogFrameTime and
