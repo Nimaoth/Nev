@@ -533,7 +533,7 @@ method render*(self: GuiPlatform) =
   except:
     discard
 
-proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1)) =
+proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1)) =
   let font = platform.getFont(platform.ctx.fontSize, flags)
 
   let wrap = TextWrap in flags
@@ -563,7 +563,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
   # todo: convert typeset to not use strings to avoid copying
   let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
   try:
-    for i, rune in arrangement.runes:
+    template drawRune(i: int, rune: Rune, color: Color): untyped =
       if not platform.glyphCache.contains(rune):
         var path = font.typeface.getGlyphPath(rune)
         let rect = arrangement.selectionRects[i]
@@ -576,6 +576,15 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
 
       let pos = vec2(pos.x.floor, pos.y.floor) + arrangement.selectionRects[i].xy
       platform.boxy.drawImage($rune, pos, color)
+
+    if TextDrawSpaces in flags:
+      const spaceRune = "·".runeAt(0)
+      for i, rune in arrangement.runes:
+        let (rune, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
+        drawRune(i, rune, color)
+    else:
+      for i, rune in arrangement.runes:
+        drawRune(i, rune, color)
 
     if TextUndercurl in flags:
       platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
@@ -622,7 +631,7 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
         platform.boxy.popLayer()
 
     if DrawText in node.flags:
-      platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.flags, node.underlineColor)
+      platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor)
 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
@@ -640,7 +649,7 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       of RenderCommandKind.Text:
         # todo: don't copy string data
         let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-        platform.drawText(text, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, command.flags)
+        platform.drawText(text, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags)
       of RenderCommandKind.ScissorStart:
         platform.boxy.pushLayer()
         maskBounds.add(command.bounds + nodePos)

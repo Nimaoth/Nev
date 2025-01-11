@@ -1284,6 +1284,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and app.config.asConfigProvider.getValue("ui.highlight", true):
     iter.chunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
   iter.seekLine(startLine)
+  let commentColor = app.theme.tokenColor("comment", textColor)
 
   # echo &"pbi: {self.previousBaseIndex}, so: {self.scrollOffset}, sl: {startLine}, {startLineOffsetFromScrollOffset}, off: {offset}, point: {iter.point}, display point: {iter.displayPoint}"
 
@@ -1306,6 +1307,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   var lastDisplayEndPoint = iter.displayPoint
   var lastPoint = iter.point
   currentNode.renderCommands.clear()
+  currentNode.renderCommands.spacesColor = commentColor
   buildCommands(currentNode.renderCommands):
     var addedLineNumber = false
     while iter.next().getSome(chunk):
@@ -1367,7 +1369,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         charBounds.add layout
 
         let textColor = if chunk.scope.len == 0: textColor else: app.theme.tokenColor(chunk.scope, textColor)
-        drawText(chunk.toOpenArray, bounds, textColor, 0.UINodeFlags)
+        drawText(chunk.toOpenArray, bounds, textColor, &{UINodeFlag.TextDrawSpaces})
         offset.x += width
         if sizeToContentY:
           currentNode.h = max(currentNode.h, bounds.yh)

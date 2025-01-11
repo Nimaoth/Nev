@@ -28,6 +28,7 @@ defineBitFlagSized(uint64):
     TextAlignVerticalTop
     TextAlignVerticalCenter
     TextAlignVerticalBottom
+    TextDrawSpaces
     LayoutVertical
     LayoutVerticalReverse
     LayoutHorizontal
@@ -64,6 +65,7 @@ type
   RenderCommands* = object
     strings*: string
     commands*: seq[RenderCommand]
+    spacesColor*: Color
 
 proc clear*(self: var RenderCommands) =
   self.strings.setLen(0)
