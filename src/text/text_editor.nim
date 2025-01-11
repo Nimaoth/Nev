@@ -225,6 +225,7 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Current Command History: {self.currentCommandHistory.commands.len}\n"
   result.add &"Saved Command History: {self.savedCommandHistory.commands.len}\n"
   result.add &"Last Rendered Lines: {self.lastRenderedLines.len}\n"
+  result.add &"Wrap map: {st.stats(self.wrapMap.snapshot.map)}\n"
 
   var temp = 0
   for s in self.completionMatchPositions.values:
