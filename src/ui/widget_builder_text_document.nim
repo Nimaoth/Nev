@@ -1306,6 +1306,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   var lastDisplayPoint = iter.displayPoint
   var lastDisplayEndPoint = iter.displayPoint
   var lastPoint = iter.point
+  var cursorOnScreen = false
   currentNode.renderCommands.clear()
   currentNode.renderCommands.spacesColor = commentColor
   buildCommands(currentNode.renderCommands):
@@ -1383,13 +1384,13 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           charsRange: charBounds.len...charBounds.len,
         )
 
-    for s in self.selections:
+    for i, s in self.selections:
       let (found, lastIndex) = chunkBounds.binarySearchRange(s.last.toPoint, Bias.Right, cmp)
       if lastIndex in 0..<chunkBounds.len and s.last.toPoint in chunkBounds[lastIndex].range:
-        let bounds = chunkBounds[lastIndex]
+        let chunk = chunkBounds[lastIndex]
         # todo: correctly handle multi byte chars
-        let relativeOffset = s.last.column - bounds.range.a.column.int
-        var cursorBounds = rect(bounds.bounds.xy + vec2(relativeOffset.float * builder.charWidth, 0), vec2(builder.charWidth, builder.textHeight))
+        let relativeOffset = s.last.column - chunk.range.a.column.int
+        var cursorBounds = rect(chunk.bounds.xy + vec2(relativeOffset.float * builder.charWidth, 0), vec2(builder.charWidth, builder.textHeight))
 
         let charBounds = cursorBounds
         if not isThickCursor:
@@ -1402,6 +1403,13 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
             drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
 
         self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
+
+      if i == self.selections.high:
+        let (found, lastIndex) = chunkBounds.binarySearchRange(s.last.toPoint, Bias.Left, cmp)
+        if lastIndex in 0..<chunkBounds.len and s.last.toPoint >= chunkBounds[lastIndex].range.a:
+          cursorOnScreen = true
+          self.currentCenterCursor = s.last
+          self.currentCenterCursorRelativeYPos = (chunkBounds[lastIndex].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
 
   selectionsNode.renderCommands.clear()
 
@@ -1486,20 +1494,21 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
       self.handleMouseEvent(MouseButton.Left, pos, drag = true)
 
   # Get center line
-  # todo: move this to a function
-  let centerPos = currentNode.bounds.wh * 0.5 + vec2(0, builder.textHeight * -0.5)
-  var (found, index) = chunkBounds.binarySearchRange(centerPos, Bias.Left, cmp)
-  if index notin 0..chunkBounds.high:
-    echo &"no center point, {index} notin {0..chunkBounds.high}"
-    return
+  if not cursorOnScreen:
+      # todo: move this to a function
+    let centerPos = currentNode.bounds.wh * 0.5 + vec2(0, builder.textHeight * -0.5)
+    var (found, index) = chunkBounds.binarySearchRange(centerPos, Bias.Left, cmp)
+    if index notin 0..chunkBounds.high:
+      echo &"no center point, {index} notin {0..chunkBounds.high}"
+      return
 
-  if index + 1 < chunkBounds.len and centerPos.y >= chunkBounds[index].bounds.yh and centerPos.y < chunkBounds[index + 1].bounds.yh:
-    index += 1
+    if index + 1 < chunkBounds.len and centerPos.y >= chunkBounds[index].bounds.yh and centerPos.y < chunkBounds[index + 1].bounds.yh:
+      index += 1
 
-  let chunk = chunkBounds[index]
-  let centerPoint = (chunk.range.a.row.int, (chunk.range.a.column + chunk.range.b.column).int div 2)
-  self.currentCenterCursor = centerPoint
-  self.currentCenterCursorRelativeYPos = (chunk.bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
+    let chunk = chunkBounds[index]
+    let centerPoint = (chunk.range.a.row.int, (chunk.range.a.column + chunk.range.b.column).int div 2)
+    self.currentCenterCursor = centerPoint
+    self.currentCenterCursorRelativeYPos = (chunk.bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.preRender(builder.currentParent.bounds)
@@ -1574,8 +1583,9 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
           if not self.disableScrolling and not sizeToContentY:
             let bounds = currentNode.bounds
 
-            if self.targetLine.getSome(targetDisplayLine):
-              # let targetDisplayLine = self.wrapMap.toDisplayPoint(Point(row: targetLine.uint32)).row.int
+            if self.targetPoint.getSome(targetPoint):
+              let displayPoint = self.wrapMap.toDisplayPoint(targetPoint)
+              let targetDisplayLine = displayPoint.row.int
               let targetLineY = (targetDisplayLine - self.previousBaseIndex).float32 * builder.textHeight + self.scrollOffset
 
               let center = case self.nextScrollBehaviour.get(self.defaultScrollBehaviour):
@@ -1608,7 +1618,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             else:
               updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.numDisplayLines, builder.textHeight, targetLine=int.none)
 
-            self.targetLine = int.none
+            self.targetPoint = Point.none
             self.nextScrollBehaviour = ScrollBehaviour.none
 
           var selectionsNode: UINode

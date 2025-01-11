@@ -61,7 +61,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   selectionAnchors: seq[(Anchor, Anchor)]
 
   wrapMap*: WrapMap
-  lastWrapMapVersion: Global
 
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
@@ -97,7 +96,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   nextScrollBehaviour*: Option[ScrollBehaviour]
   targetLineMargin*: Option[float]
   targetLineRelativeY*: float = 0.5
-  targetLine*: Option[int]
+  targetPoint*: Option[Point]
   targetColumn: int
   hideCursorWhenInactive*: bool
   cursorVisible*: bool = true
@@ -518,12 +517,6 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.document.rope.len > 1:
     self.wrapMap.update(self.configProvider.getValue("ui.wrap-width", wrapWidth))
 
-  if self.lastWrapMapVersion != self.wrapMap.snapshot.buffer.version:
-    # When the wrap map changes the target column might be out of line bounds, so just update it so it's in a valid range.
-    self.lastWrapMapVersion = self.wrapMap.snapshot.buffer.version
-    self.updateTargetColumn()
-    self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
-
   self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
     let errorNodes = self.document.getErrorNodesInRange(
@@ -657,7 +650,7 @@ proc scrollToTop*(self: TextDocumentEditor) =
   if self.disableScrolling:
     return
 
-  self.targetLine = 0.some
+  self.targetPoint = Point.init(0, 0).some
   self.nextScrollBehaviour = TopOfScreen.some
   self.targetLineMargin = float.none
   self.targetLineRelativeY = 0.5
@@ -669,8 +662,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: f
   if self.disableScrolling:
     return
 
-  let displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
-  self.targetLine = displayPoint.row.int.some
+  self.targetPoint = cursor.toPoint.some
   self.nextScrollBehaviour = CenterAlways.some
   self.targetLineMargin = float.none
   self.targetLineRelativeY = relativePosition
@@ -683,8 +675,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   if self.disableScrolling:
     return
 
-  let displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
-  self.targetLine = displayPoint.row.int.some
+  self.targetPoint = cursor.toPoint.some
   self.nextScrollBehaviour = scrollBehaviour
   self.targetLineMargin = margin
   self.targetLineRelativeY = 0.5
@@ -3643,6 +3634,15 @@ proc handleCompletionsUpdated(self: TextDocumentEditor) =
   self.completionsDirty = true
   self.markDirty()
 
+proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot) =
+  if wrapMap.snapshot.buffer.remoteId != old.buffer.remoteId:
+    return
+
+  self.updateTargetColumn()
+  self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
+
+  self.markDirty()
+
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
   let editor = TextDocumentEditor(selectionsInternal: @[(0, 0).toSelection])
@@ -3700,7 +3700,7 @@ proc newTextEditor*(document: TextDocument, services: Services):
   self.vfs = self.services.getService(VFSService).get.vfs
   self.eventHandlerNames = @["editor.text"]
   self.wrapMap = WrapMap.new()
-  discard self.wrapMap.onUpdated.subscribe () => self.markDirty()
+  discard self.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
 
   self.setDocument(document)
 

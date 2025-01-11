@@ -712,7 +712,7 @@ type
     wrappedIndent*: int = 4
     pendingEdits: seq[tuple[buffer: BufferSnapshot, patch: Patch[Point]]]
     updatingAsync: bool
-    onUpdated*: Event[void]
+    onUpdated*: Event[tuple[map: WrapMap, old: WrapMapSnapshot]]
 
   WrappedChunkIterator* = object
     chunks*: StyledChunkIterator
@@ -1109,12 +1109,13 @@ proc updateAsync(self: WrapMap) {.async.} =
           snapshot.edit(self.pendingEdits[i].buffer.clone(), self.pendingEdits[i].patch)
     snapshot.validate()
 
+    let oldSnapshot = self.snapshot.clone()
     self.snapshot = snapshot.clone()
     # echo &"done {self.snapshot.interpolated}"
     if not self.snapshot.interpolated:
       # echo self.snapshot
       self.pendingEdits.setLen(0)
-      self.onUpdated.invoke()
+      self.onUpdated.invoke((self, oldSnapshot))
       return
 
     b = self.snapshot.buffer.clone()
