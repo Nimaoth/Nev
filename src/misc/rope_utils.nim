@@ -17,8 +17,9 @@ export Bias
 var debugWrapMap* = false
 
 template log(msg: untyped) =
-  if debugWrapMap:
-    echo msg
+  when false:
+    if debugWrapMap:
+      echo msg
 
 func toPoint*(cursor: api.Cursor): Point = Point.init(max(cursor.line, 0), max(cursor.column, 0))
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
@@ -978,7 +979,7 @@ proc edit*(self: var WrapMapSnapshot, buffer: sink BufferSnapshot, patch: Patch[
     newEdit.old.b = newEdit.old.a + (edit.old.b - edit.old.a).toPoint
     p.edits[0] = newEdit
     self.editImpl(buffer.clone(), p)
-  self.validate()
+  # self.validate()
 
 proc flushEdits(self: WrapMap) =
   # var t = startTimer()
@@ -1002,12 +1003,30 @@ proc edit*(self: WrapMap, buffer: sink BufferSnapshot, edits: openArray[tuple[ol
   self.flushEdits()
 
 proc update*(self: var WrapMapSnapshot, buffer: sink BufferSnapshot, wrapWidth: int, wrappedIndent: int) =
+  # todo: Take in a patch and only recalculate line wrapping for changed lines.
+  # Right now it takes around 30s to update the wrap map for a 1Gb file, with this change
+  # the initial update would still take this long but incremental updates would be way faster.
+  # To reduce the initial update time we could just not run the line wrapping for the entire file at first,
+  # and then only trigger line wrapping for lines being rendered by calling update with a patch which covers
+  # the lines to be rendered but doesn't change the length (so basically just a replace patch).
+
   # var t = startTimer()
   # defer:
   #   let e = t.elapsed.ms
-  #   echo &"+++++++ update wrap map took {e} ms for {b.remoteId} at {b.version}"
+  #   if e > 100:
+  #     echo &"update wrap map took {e} ms"
 
   # echo &"++++++++ start wrap map update for {b.remoteId} at {b.version}"
+
+  if wrapWidth == 0:
+    let endPoint = buffer.visibleText.summary.lines
+    self = WrapMapSnapshot(
+      map: SumTree[WrapMapChunk].new([WrapMapChunk(src: endPoint, dst: endPoint)]),
+      buffer: buffer.ensureMove)
+    log &"{self}"
+    return
+
+  let wrappedIndent = min(wrappedIndent, wrapWidth - 1)
 
   let b = buffer.clone()
   let numLines = buffer.visibleText.lines
@@ -1021,8 +1040,8 @@ proc update*(self: var WrapMapSnapshot, buffer: sink BufferSnapshot, wrapWidth: 
     let lineLen = buffer.visibleText.lineLen(currentRange.b.row.int)
 
     var i = 0
-    while i + wrapWidth < lineLen:
-      let endI = min(i + wrapWidth, lineLen)
+    while i + wrapWidth - indent < lineLen:
+      let endI = min(i + wrapWidth - indent, lineLen)
       currentRange.b.column = endI.uint32
       currentDisplayRange.b.column = (endI - i + indent).uint32
       newMap.add(WrapMapChunk(
@@ -1052,7 +1071,7 @@ proc update*(self: var WrapMapSnapshot, buffer: sink BufferSnapshot, wrapWidth: 
     ), ())
 
   self = WrapMapSnapshot(map: newMap.ensureMove, buffer: buffer.ensureMove, interpolated: false)
-  self.validate()
+  # self.validate()
 
 proc updateThread(self: ptr WrapMapSnapshot, buffer: ptr BufferSnapshot, wrapWidth: int, wrappedIndent: int): int =
   self[].update(buffer[].clone(), wrapWidth, wrappedIndent)
