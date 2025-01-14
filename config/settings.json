@@ -558,7 +558,8 @@
     "ui": {
         "background": {
             "transparent": false
-        }
+        },
+        "theme": "app://themes/tokyo-night-color-theme.json"
     },
 
     "keybindings": {
@@ -566,7 +567,6 @@
     },
 
     "wasm-plugin-post-load-commands": [
-        "load-theme \"tokyo-night-color-theme\"",
         "load-configured-keybindings"
     ],
 

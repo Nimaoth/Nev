@@ -59,7 +59,6 @@ type
     settings*: JsonNode
 
 type EditorState = object
-  theme: string
   fontSize: float32 = 16
   lineDistance: float32 = 4
   fontRegular: string
@@ -196,15 +195,17 @@ proc setLocationList(self: App, list: seq[FinderItem],
   self.finderItems = list
   self.previewer = previewer.move
 
-proc setTheme*(self: App, path: string) {.async: (raises: []).} =
-  log(lvlInfo, fmt"Loading theme {path}")
+proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: []).} =
+  if not force and self.theme.isNotNil and self.theme.path == path:
+    return
   if theme.loadFromFile(self.vfs, path).await.getSome(theme):
+    log(lvlInfo, fmt"Loaded theme {path}")
     self.theme = theme
     {.gcsafe.}:
       gTheme = theme
   else:
     log(lvlError, fmt"Failed to load theme {path}")
-  self.platform.requestRender()
+  self.platform.requestRender(redrawEverything=true)
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
@@ -325,12 +326,6 @@ proc restoreStateFromConfig*(self: App, state: ptr EditorState) {.async: (raises
 
     state[] = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
     log(lvlInfo, fmt"Restoring session {self.sessionFile}")
-
-    if not state[].theme.isEmptyOrWhitespace:
-      try:
-        await self.setTheme(state[].theme)
-      except CatchableError:
-        log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
 
     if not state[].layout.isEmptyOrWhitespace:
       self.layout.setLayout(state[].layout)
@@ -652,13 +647,13 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.applySettingsFromAppOptions()
 
-  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false)
-  self.editors.documents.add self.logDocument
-  self.layout.pinnedDocuments.incl(self.logDocument)
-
   self.theme = defaultTheme()
   {.gcsafe.}:
     gTheme = self.theme
+
+  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false)
+  self.editors.documents.add self.logDocument
+  self.layout.pinnedDocuments.incl(self.logDocument)
 
   assignEventHandler(self.eventHandler, self.events.getEventHandlerConfig("editor")):
     onAction:
@@ -732,15 +727,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     self.closeUnusedDocuments()
 
   self.runEarlyCommandsFromAppOptions()
-
-  log lvlInfo, &"Finished creating app"
-
-  asyncSpawn self.finishInitialization(state)
-
-  return self
-
-proc finishInitialization*(self: App, state: EditorState) {.async.} =
-
   self.runConfigCommands("startup-commands")
 
   # if self.getOption("command-server.port", Port.none).getSome(port):
@@ -757,6 +743,18 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
     self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
     await self.loadConfigFrom(workspaceConfigDir)
+
+  let themeName = self.config.getOption("ui.theme", "app://themes/tokyo-night-color-theme.json")
+  await self.setTheme(themeName)
+
+  asyncSpawn self.finishInitialization(state)
+
+  log lvlInfo, &"Finished creating app"
+
+  return self
+
+proc finishInitialization*(self: App, state: EditorState) {.async.} =
+  await sleepAsync(1.milliseconds)
 
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
@@ -937,7 +935,6 @@ proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
 proc saveAppState*(self: App) {.expose("editor").} =
   # Save some state
   var state = EditorState()
-  state.theme = self.theme.path
 
   # todo: save ast project state
 
@@ -1242,8 +1239,8 @@ proc loadWorkspaceFile*(self: App, path: string) =
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
-proc loadTheme*(self: App, name: string) {.expose("editor").} =
-  asyncSpawn self.setTheme(fmt"app://themes/{name}.json")
+proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor").} =
+  asyncSpawn self.setTheme(fmt"app://themes/{name}.json", force)
 
 proc chooseTheme*(self: App) {.expose("editor").} =
   defer:

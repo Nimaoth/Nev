@@ -315,6 +315,11 @@
                             "description": "If true then the background is transparent. Should only be set for the terminal version if you use a transparent background in the terminal."
                         }
                     }
+                },
+                "^theme$": {
+                    "type": "string",
+                    "description": "Path to theme to be used.",
+                    "default": "app://themes/tokyo-night-color-theme.json"
                 }
             }
         },

@@ -374,12 +374,13 @@ proc loadFile*(path: string = "") {.gcsafe, raises: [].} =
   let res {.used.} = editor_loadFile_void_App_string_wasm(argsJsonString.cstring)
 
 
-proc editor_loadTheme_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc loadTheme*(name: string) {.gcsafe, raises: [].} =
+proc editor_loadTheme_void_App_string_bool_wasm(arg: cstring): cstring {.importc.}
+proc loadTheme*(name: string; force: bool = false) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add name.toJson()
+  argsJson.add force.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_loadTheme_void_App_string_wasm(
+  let res {.used.} = editor_loadTheme_void_App_string_bool_wasm(
       argsJsonString.cstring)
 
 
