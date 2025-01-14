@@ -130,17 +130,17 @@ method init*(self: GuiPlatform) =
         let arrangement = font.typeset(" ")
         result = vec2(0, arrangement.layoutBounds().y)
       else:
-        let arrangement = font.typeset(text)
+        let arrangement = font.typeset(text, snapToPixel = false)
         result = arrangement.layoutBounds()
 
     self.builder.textWidthImpl = proc(node: UINode): float32 =
       let font = self.getFont(self.ctx.fontSize, node.flags)
-      let arrangement = font.typeset(node.text)
+      let arrangement = font.typeset(node.text, snapToPixel = false)
       result = arrangement.layoutBounds().x
 
     self.builder.textWidthStringImpl = proc(text: string): float32 =
       let font = self.getFont(self.ctx.fontSize, 0.UINodeFlags)
-      let arrangement = font.typeset(text)
+      let arrangement = font.typeset(text, snapToPixel = false)
       result = arrangement.layoutBounds().x
 
     self.window.onFocusChange = proc() =
@@ -324,8 +324,8 @@ method sizeChanged*(self: GuiPlatform): bool =
 
 proc updateCharWidth*(self: GuiPlatform) =
   let font = self.getFont(self.ctx.font, self.ctx.fontSize)
-  let bounds = font.typeset(repeat("#_", 50)).layoutBounds()
-  let boundsSingle = font.typeset("#_").layoutBounds()
+  let bounds = font.typeset(repeat("#_", 50), snapToPixel = false).layoutBounds()
+  let boundsSingle = font.typeset("#_", snapToPixel = false).layoutBounds()
   self.mCharWidth = bounds.x / 100
   self.mCharGap = (bounds.x / 100) - boundsSingle.x / 2
   self.mLineHeight = bounds.y
@@ -371,7 +371,7 @@ method lineHeight*(self: GuiPlatform): float = self.mLineHeight
 method charWidth*(self: GuiPlatform): float = self.mCharWidth
 method charGap*(self: GuiPlatform): float = self.mCharGap
 
-method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
+method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text, snapToPixel = false).layoutBounds()
 method layoutText*(self: GuiPlatform, text: string): seq[Rect] = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).selectionRects
 
 method processEvents*(self: GuiPlatform): int =
@@ -561,7 +561,7 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
     VerticalAlignment.TopAlign
 
   # todo: convert typeset to not use strings to avoid copying
-  let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
+  let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
   try:
     template drawRune(i: int, rune: Rune, color: Color): untyped =
       if not platform.glyphCache.contains(rune):

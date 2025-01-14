@@ -175,6 +175,7 @@ proc queryFile*(self: TSLanguage, vfs: VFS, id: string, path: string, cacheOnFai
   let query = await queryFuture
   self.queryFutures.del(id)
   self.queries[id] = query
+  log lvlInfo, fmt"Loaded {id} query '{path}' for {self.languageId}"
   return query
 
 proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
@@ -522,8 +523,6 @@ proc loadLanguage(vfs: VFS, languageId: string, config: JsonNode): Future[Option
   if language.isSome:
     return language
 
-  log(lvlInfo, fmt"No dll language for {languageId}, try builtin")
-
   template tryGetLanguage(constructor: untyped): untyped =
     block:
       var l: Option[TSLanguage] = TSLanguage.none
@@ -555,7 +554,6 @@ proc loadLanguage(vfs: VFS, languageId: string, config: JsonNode): Future[Option
   of "zig": tryGetLanguage(treeSitterZig)
   of "json": tryGetLanguage(treeSitterJson)
   else:
-    log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
     TSLanguage.none
 
 proc unloadTreesitterLanguage*(languageId: string) {.gcsafe, raises: [].} =

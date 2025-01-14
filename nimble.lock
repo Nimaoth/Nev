@@ -118,9 +118,9 @@
       }
     },
     "pixie": {
-      "version": "5.0.7",
-      "vcsRevision": "3b65ca5605a1156987041bf0295449e4c56128cf",
-      "url": "https://github.com/treeform/pixie",
+      "version": "5.0.8",
+      "vcsRevision": "710ea68f5a775dbf11242c5a6099a241af802e0d",
+      "url": "https://github.com/Nimaoth/pixie",
       "downloadMethod": "git",
       "dependencies": [
         "vmath",
@@ -132,7 +132,7 @@
         "crunchy"
       ],
       "checksums": {
-        "sha1": "64999611cd1093e28b62ed80e695783839441538"
+        "sha1": "2e787f1aa2457741c4453bc48952c1c61e741981"
       }
     },
     "shady": {
@@ -234,6 +234,28 @@
       ],
       "checksums": {
         "sha1": "ba179f34b0513ebd1615076f07b61e2e217bd228"
+      }
+    },
+    "xio": {
+      "version": "0.1.0",
+      "vcsRevision": "73321c2c163e7eebbee1b5774ccde8a74ef6fdbf",
+      "url": "https://github.com/ringabout/xio",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "dd17219a2b85085faa784bc0fc7d61bf37b60715"
+      }
+    },
+    "fsnotify": {
+      "version": "0.1.4",
+      "vcsRevision": "725614b59f1179fc739871594d959660e032c4eb",
+      "url": "https://github.com/planety/fsnotify",
+      "downloadMethod": "git",
+      "dependencies": [
+        "xio"
+      ],
+      "checksums": {
+        "sha1": "54d37680fbbaabf18913fe85686a8543e139ad63"
       }
     },
     "fusion": {
