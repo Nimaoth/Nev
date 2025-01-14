@@ -3,6 +3,7 @@ import results
 import misc/[custom_async, custom_logger, myjsonutils, util]
 import scripting/expose
 import service, dispatch_tables, vfs, vfs_local
+import fsnotify
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -20,7 +21,7 @@ addBuiltinService(VFSService)
 method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"VFSService.init"
 
-  let localVfs = VFSLocal()
+  let localVfs = VFSLocal.new()
 
   self.vfs = VFS()
   self.vfs.mount("", VFS())

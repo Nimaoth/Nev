@@ -747,6 +747,16 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   let themeName = self.config.getOption("ui.theme", "app://themes/tokyo-night-color-theme.json")
   await self.setTheme(themeName)
 
+  self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
+    for e in events:
+      case e.action
+      of Modify:
+        if "app://themes" // e.name == self.theme.path:
+          asyncSpawn self.setTheme(self.theme.path, force = true)
+
+      else:
+        discard
+
   asyncSpawn self.finishInitialization(state)
 
   log lvlInfo, &"Finished creating app"
