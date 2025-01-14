@@ -1,4 +1,5 @@
 *.exe
+*.rdi
 *.pdb
 *.ttf
 *.log
@@ -12,6 +13,7 @@
 *.otf
 *.png
 *.paths
+*.txt
 .git
 src/input_tests
 nimcache
@@ -42,6 +44,7 @@ perf.data*
 scripting/nim/lib
 casts
 nim_std
+dumps
 
 *.nev-session
 
