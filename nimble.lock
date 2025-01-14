@@ -118,9 +118,9 @@
       }
     },
     "pixie": {
-      "version": "5.0.7",
-      "vcsRevision": "3b65ca5605a1156987041bf0295449e4c56128cf",
-      "url": "https://github.com/treeform/pixie",
+      "version": "5.0.8",
+      "vcsRevision": "710ea68f5a775dbf11242c5a6099a241af802e0d",
+      "url": "https://github.com/Nimaoth/pixie",
       "downloadMethod": "git",
       "dependencies": [
         "vmath",
@@ -132,7 +132,7 @@
         "crunchy"
       ],
       "checksums": {
-        "sha1": "64999611cd1093e28b62ed80e695783839441538"
+        "sha1": "2e787f1aa2457741c4453bc48952c1c61e741981"
       }
     },
     "shady": {
