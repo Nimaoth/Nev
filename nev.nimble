@@ -17,7 +17,7 @@ bin           = @["nev"]
 requires "nim >= 2.0.0"
 requires "nimgen >= 0.5.4"
 requires "https://github.com/Nimaoth/vmath#661bdaa"
-requires "pixie >= 5.0.7"
+requires "https://github.com/Nimaoth/pixie >= 5.0.8"
 requires "chroma >= 0.2.7"
 requires "winim >= 3.9.4"
 requires "fusion >= 1.2"

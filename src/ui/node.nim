@@ -625,12 +625,12 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
   if LayoutHorizontal in parent.flags:
     if node.prev.isNotNil:
-      node.boundsRaw.x = node.prev.xw.roundPositive
+      node.boundsRaw.x = node.prev.xw
     else:
       node.boundsRaw.x = 0
   elif LayoutHorizontalReverse in parent.flags:
     if node.prev.isNotNil:
-      node.boundsRaw.x = node.prev.x.roundPositive
+      node.boundsRaw.x = node.prev.x
     else:
       node.boundsRaw.x = parent.w
 
@@ -647,17 +647,17 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
   if node.flags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
-      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node)).roundPositive
+      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node))
     else:
-      node.boundsRaw.w = (parent.w - node.x).roundPositive
+      node.boundsRaw.w = (parent.w - node.x)
   elif SizeToContentX in node.flags:
     if DrawText in node.flags:
-      node.boundsRaw.w = builder.textWidth(node).roundPositive
+      node.boundsRaw.w = builder.textWidth(node)
   elif FillX in node.flags:
     if LayoutHorizontalReverse in parent.flags:
-      node.boundsRaw.w = node.boundsRaw.x.roundPositive
+      node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = (parent.w - node.x).roundPositive
+      node.boundsRaw.w = (parent.w - node.x)
 
   if node.flags.all &{SizeToContentY, FillY}:
     if DrawText in node.flags:
@@ -684,7 +684,7 @@ proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
     return
 
   if SizeToContentX in node.flags and child.xw > node.w:
-    node.boundsRaw.w = child.xw.roundPositive
+    node.boundsRaw.w = child.xw
 
   if SizeToContentY in node.flags and child.yh > node.h:
     node.boundsRaw.h = child.yh.roundPositive
@@ -716,7 +716,7 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
       builder.textWidth(node)
     else: 0
 
-    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth)).roundPositive
+    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth))
 
   if SizeToContentY in node.flags:
     let childrenHeight = if node.first.isNotNil:
@@ -752,9 +752,9 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   if FillX in node.flags:
     assert node.parent.isNotNil
     if LayoutHorizontalReverse in node.parent.flags:
-      node.boundsRaw.w = node.boundsRaw.x.roundPositive
+      node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x).roundPositive)
+      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x))
 
   if node.flags.any &{SizeToContentX, SizeToContentY}:
     for _, c in node.children:
@@ -768,9 +768,9 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   if FillX in node.flags:
     assert node.parent.isNotNil
     if LayoutHorizontalReverse in node.parent.flags:
-      node.boundsRaw.w = node.boundsRaw.x.roundPositive
+      node.boundsRaw.w = node.boundsRaw.x
     else:
-      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x).roundPositive)
+      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x))
 
   if FillY in node.flags:
     assert node.parent.isNotNil
@@ -1027,9 +1027,9 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
 
   builder.preLayout(node)
 
-  if inX.isSome: node.boundsRaw.x = inX.get.roundPositive
+  if inX.isSome: node.boundsRaw.x = inX.get
   if inY.isSome: node.boundsRaw.y = inY.get.roundPositive
-  if inW.isSome: node.boundsRaw.w = inW.get.roundPositive
+  if inW.isSome: node.boundsRaw.w = inW.get
   if inH.isSome: node.boundsRaw.h = inH.get.roundPositive
   if inPivot.isSome: node.pivot = inPivot.get
 
