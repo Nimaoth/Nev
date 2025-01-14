@@ -419,6 +419,26 @@ type RunProcessThreadArgs = tuple
   captureErr: bool = true
   evalCommand: bool = false
 
+proc readLineIncludingLast(s: Stream, line: var string, last: char): tuple[eof: bool, last: char] =
+  ## Like streams.readLine, but also returns an empty string for the last line if the last line is empty,
+  ## which streams.readLine doesn't.
+  line.setLen(0)
+  while true:
+    var c = readChar(s)
+    if c == '\c':
+      c = readChar(s)
+      result.last = c
+      break
+    elif c == '\L':
+      result.last = c
+      break
+    elif c == '\0':
+      result.last = c
+      if line.len > 0 or last == '\L': break
+      else: return (true, c)
+    line.add(c)
+  result.eof = false
+
 proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[string], ref Exception) {.gcsafe.} =
   try:
     when debugAsyncProcess:
@@ -434,7 +454,9 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
     if args.captureOut:
       var outp = process.outputStream
       var line = newStringOfCap(120)
-      while outp.readLine(line):
+      var last = '\n'
+      var eof = false
+      while ((eof, last) = outp.readLineIncludingLast(line, last); not eof):
         result[0].add(line)
         if result[0].len >= args.maxLines:
           when debugAsyncProcess:
@@ -444,7 +466,9 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
     if args.captureErr:
       var errp = process.errorStream
       var line = newStringOfCap(120)
-      while errp.readLine(line):
+      var last = '\n'
+      var eof = false
+      while ((eof, last) = errp.readLineIncludingLast(line, last); not eof):
         result[1].add(line)
         if result[1].len >= args.maxLines:
           when debugAsyncProcess:

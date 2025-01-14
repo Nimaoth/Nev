@@ -17,6 +17,7 @@ import diff
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
+import wrap_map, diff_map, display_map
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Range, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
@@ -60,8 +61,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
   snapshot: BufferSnapshot
   selectionAnchors: seq[(Anchor, Anchor)]
 
-  wrapMap*: WrapMap
+  displayMap*: DisplayMap
+  diffDisplayMap*: DisplayMap
 
+  showDiff: bool = false
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
   diffRevision: int = 0
@@ -224,7 +227,8 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Current Command History: {self.currentCommandHistory.commands.len}\n"
   result.add &"Saved Command History: {self.savedCommandHistory.commands.len}\n"
   result.add &"Last Rendered Lines: {self.lastRenderedLines.len}\n"
-  result.add &"Wrap map: {st.stats(self.wrapMap.snapshot.map)}\n"
+  result.add &"Diff map: {st.stats(self.displayMap.wrapMap.snapshot.map)}\n"
+  result.add &"Wrap map: {st.stats(self.displayMap.diffMap.snapshot.map)}\n"
 
   var temp = 0
   for s in self.completionMatchPositions.values:
@@ -252,6 +256,8 @@ proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selection
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5)
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
+proc getFileName(self: TextDocumentEditor): string
+proc closeDiff*(self: TextDocumentEditor)
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
@@ -261,6 +267,8 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor)
 proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
 proc handleTextDocumentSaved(self: TextDocumentEditor)
 proc handleCompletionsUpdated(self: TextDocumentEditor)
+proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot)
+proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
 proc updateEventHandlers(self: TextDocumentEditor)
 proc updateModeEventHandlers(self: TextDocumentEditor)
 
@@ -283,11 +291,12 @@ proc selections*(self: TextDocumentEditor): Selections =
   self.selectionsInternal
 
 proc selection*(self: TextDocumentEditor): Selection =
+  assert self.selectionsInternal.len > 0, "[selection] Empty selection"
   self.selectionsInternal[self.selectionsInternal.high]
 
 proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   let selections = self.clampAndMergeSelections(selections)
-  assert selections.len > 0
+  assert selections.len > 0, "[selections=] Empty selections"
 
   if not self.dontRecordSelectionHistory:
     if self.selectionHistory.len == 0 or
@@ -348,6 +357,7 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 proc clearDocument*(self: TextDocumentEditor) =
+  self.closeDiff()
   if self.document.isNotNil:
     # log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
     self.document.onBufferChanged.unsubscribe(self.onBufferChangedHandle)
@@ -388,7 +398,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.clearDocument()
   self.document = document
   self.snapshot = document.buffer.snapshot.clone()
-  self.wrapMap.setBuffer(self.snapshot.clone())
+  self.displayMap.setBuffer(self.snapshot.clone())
 
   self.onEditHandle = document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =>
     self.handleEdits(arg.edits)
@@ -510,12 +520,22 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     self.document.reloadTreesitterLanguage()
     self.document.requiresLoad = false
 
-  let wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 10, 10)
-  if self.wrapMap.snapshot.buffer.remoteId != self.document.buffer.remoteId:
-    self.wrapMap.setBuffer(self.document.buffer.snapshot.clone())
+  var wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 10, 10)
+  if self.diffDocument.isNotNil:
+    # todo: this should account for the line number width
+    wrapWidth = wrapWidth div 2 - 2
+
+  if self.displayMap.remoteId != self.document.buffer.remoteId:
+    self.displayMap.setBuffer(self.document.buffer.snapshot.clone())
+
+  if self.diffDocument.isNotNil:
+    if self.diffDisplayMap.remoteId != self.diffDocument.buffer.remoteId:
+      self.diffDisplayMap.setBuffer(self.diffDocument.buffer.snapshot.clone())
+    if self.diffDocument.rope.len > 1:
+      self.diffDisplayMap.update(wrapWidth)
 
   if self.document.rope.len > 1:
-    self.wrapMap.update(self.configProvider.getValue("ui.wrap-width", wrapWidth))
+    self.displayMap.update(wrapWidth)
 
   self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
@@ -802,7 +822,7 @@ proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: 
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc updateWrapMap*(self: TextDocumentEditor) {.expose: "editor.text".} =
-  self.wrapMap.update(self.document.buffer.snapshot.clone(), force = true)
+  self.displayMap.wrapMap.update(self.document.buffer.snapshot.clone(), force = true)
   self.markDirty()
 
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
@@ -820,10 +840,16 @@ proc lineLength*(self: TextDocumentEditor, line: int): int {.expose: "editor.tex
   return self.document.lineLength(line)
 
 proc numDisplayLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
-  return self.wrapMap.toDisplayPoint(self.document.rope.summary.lines).row.int + 1
+  return self.displayMap.toDisplayPoint(self.document.rope.summary.lines).row.int + 1
 
-proc displayEndPoint*(self: TextDocumentEditor): Point =
-  return self.wrapMap.toDisplayPoint(self.document.rope.summary.lines)
+proc displayEndPoint*(self: TextDocumentEditor): DisplayPoint =
+  return self.displayMap.toDisplayPoint(self.document.rope.summary.lines)
+
+proc numWrapLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
+  return self.displayMap.wrapMap.toWrapPoint(self.document.rope.summary.lines).row.int + 1
+
+proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint {.expose: "editor.text".} =
+  return self.displayMap.wrapMap.toWrapPoint(self.document.rope.summary.lines)
 
 proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## Returns the number of lines that can be shown on the screen
@@ -849,8 +875,8 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     cursor = (self.document.numLines - 1, cursor.column)
   else:
     cursor.line = line
-    let displayPoint = self.wrapMap.toDisplayPoint(Point.init(line, 0))
-    cursor.column = self.wrapMap.toPoint(Point.init(displayPoint.row.int, self.targetColumn)).column.int
+    let wrapPoint = self.displayMap.toWrapPoint(Point.init(line, 0))
+    cursor.column = self.displayMap.toPoint(wrapPoint(wrapPoint.row.int, self.targetColumn)).column.int
   return self.clampCursor(cursor, includeAfter)
 
 proc getLastRenderedVisualLine(self: TextDocumentEditor, line: int): Option[StyledLine] =
@@ -889,11 +915,11 @@ proc numSubLines(line: StyledLine): int =
       return r.subLine + 1
 
 proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
-  var displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
-  displayPoint.row = max(displayPoint.row.int + offset, 0).uint32
-  displayPoint.column = self.targetColumn.uint32
-  displayPoint = displayPoint.clamp(Point()...self.displayEndPoint)
-  let newCursor = self.wrapMap.toPoint(displayPoint, Left).toCursor
+  var wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
+  wrapPoint.row = max(wrapPoint.row.int + offset, 0).uint32
+  wrapPoint.column = self.targetColumn.uint32
+  wrapPoint = wrapPoint.clamp(wrapPoint()...self.wrapEndPoint)
+  let newCursor = self.displayMap.toPoint(wrapPoint, Left).toCursor
   if newCursor.line >= self.document.numLines:
     return cursor
   return self.clampCursor(newCursor, includeAfter)
@@ -908,9 +934,9 @@ proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap
 
 proc doMoveCursorVisualHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
-  var displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
-  displayPoint.column = 0
-  let newCursor = self.wrapMap.toPoint(displayPoint).toCursor
+  var wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
+  wrapPoint.column = 0
+  let newCursor = self.displayMap.toPoint(wrapPoint).toCursor
   return self.clampCursor(newCursor, includeAfter)
 
 proc doMoveCursorVisualEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
@@ -1101,8 +1127,8 @@ proc getContextWithMode(self: TextDocumentEditor, context: string): string {.exp
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.
     expose("editor.text").} =
   let cursor = self.getCursor(cursor)
-  let displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
-  self.targetColumn = displayPoint.column.int
+  let wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
+  self.targetColumn = wrapPoint.column.int
 
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Inverts the current selection. Discards all but the last cursor.
@@ -1155,6 +1181,7 @@ proc deleteLines(self: TextDocumentEditor, slice: Slice[int], oldSelections: Sel
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
     let selection = self.selectionHistory.popLast
+    assert selection.len > 0, "[selectPrev] Empty selection"
     self.selectionHistory.addFirst self.selections
     self.selectionsInternal = selection
     self.cursorVisible = true
@@ -1165,6 +1192,7 @@ proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
 proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
     let selection = self.selectionHistory.popFirst
+    assert selection.len > 0, "[selectNext] Empty selection"
     self.selectionHistory.addLast self.selections
     self.selectionsInternal = selection
     self.cursorVisible = true
@@ -1801,6 +1829,12 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 proc closeDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.diffDocument.isNil:
     return
+  self.showDiff = false
+  self.displayMap.diffMap.clear()
+  self.diffDisplayMap = DisplayMap.new()
+  discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+
   self.diffDocument.onRequestRerender.unsubscribe(self.onRequestRerenderDiffHandle)
   self.diffDocument.deinit()
   self.diffDocument = nil
@@ -1841,40 +1875,42 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   log lvlInfo, fmt"Diff document '{localizedPath}'"
 
   let relPath = self.workspace.getRelativePathSync(localizedPath).get(localizedPath)
-  if self.document.isNil or self.diffRevision > revision:
+  if self.document.isNil or self.diffRevision > revision or not self.showDiff:
     return
 
   if self.document.staged:
     let committedFileContent = vcs.getCommittedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
 
     let stagedFileContent = vcs.getStagedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
 
     let changes = vcs.getFileChanges(relPath, staged = true).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
+
+    # Note: this currently clears the diff document
+    self.document.content = stagedFileContent
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
       self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
         self.markDirty()
 
+    self.diffChanges = changes
     self.diffDocument.languageId = self.document.languageId
     self.diffDocument.readOnly = true
-    self.document.content = stagedFileContent
-    self.diffChanges = changes
     self.diffDocument.content = committedFileContent
 
   else:
     let stagedFileContent = vcs.getStagedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
 
     let changes = vcs.getFileChanges(relPath, staged = false).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
 
     if self.diffDocument.isNil:
@@ -1882,10 +1918,15 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
       self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
         self.markDirty()
 
+    self.diffChanges = changes
     self.diffDocument.languageId = self.document.languageId
     self.diffDocument.readOnly = true
-    self.diffChanges = changes
     self.diffDocument.content = stagedFileContent
+
+  assert self.diffDocument.isNotNil
+  self.diffDisplayMap.setBuffer(self.diffDocument.buffer.snapshot.clone())
+  self.displayMap.diffMap.update(self.diffChanges, self.diffDisplayMap.wrapMap.snapshot, reverse = true)
+  self.diffDisplayMap.diffMap.update(self.diffChanges, self.displayMap.wrapMap.snapshot, reverse = false)
 
   if gotoFirstDiff and self.diffChanges.getSome(changes) and changes.len > 0:
     self.selection = (changes[0].target.first, 0).toSelection
@@ -1895,6 +1936,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   self.markDirty()
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
+  self.showDiff = true
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
 proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2186,11 +2228,11 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
 
   of "visual-line":
-    let displayPoint = self.wrapMap.toDisplayPoint(cursor.toPoint)
-    let displayLineStart = Point(row: displayPoint.row)
-    let displayLineEnd = Point(row: displayPoint.row + 1)
-    result[0] = self.wrapMap.toPoint(displayLineStart, Right).toCursor
-    result[1] = self.wrapMap.toPoint(displayLineEnd, Right).toCursor
+    let wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
+    let displayLineStart = wrapPoint(wrapPoint.row)
+    let displayLineEnd = wrapPoint(wrapPoint.row + 1)
+    result[0] = self.displayMap.toPoint(displayLineStart, Right).toCursor
+    result[1] = self.displayMap.toPoint(displayLineEnd, Right).toCursor
     if result[1].column == 0:
       result[1].line -= 1
       result[1].column = self.document.lineLength(result[1].line)
@@ -3553,8 +3595,9 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   if document != self.document:
     return
 
+  self.closeDiff()
   self.snapshot = self.document.buffer.snapshot.clone()
-  self.wrapMap.setBuffer(self.snapshot.clone())
+  self.displayMap.setBuffer(self.snapshot.clone())
   self.selections = self.selections
   self.searchResultsDirty = true
   self.inlayHints.setLen(0)
@@ -3563,9 +3606,9 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   self.markDirty()
 
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
-  self.wrapMap.edit(self.document.buffer.snapshot.clone(), edits)
+  self.displayMap.edit(self.document.buffer.snapshot.clone(), edits)
   if self.configProvider.getValue("text.auto-wrap", true):
-    self.wrapMap.update(self.document.buffer.snapshot.clone(), force = true)
+    self.displayMap.wrapMap.update(self.document.buffer.snapshot.clone(), force = true)
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
@@ -3635,13 +3678,23 @@ proc handleCompletionsUpdated(self: TextDocumentEditor) =
   self.markDirty()
 
 proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot) =
-  if wrapMap.snapshot.buffer.remoteId != old.buffer.remoteId:
+  if self.document.isNil or self.diffDocument.isNil:
+    return
+  if wrapMap == self.displayMap.wrapMap:
+    self.diffDisplayMap.diffMap.update(self.diffChanges, self.displayMap.wrapMap.snapshot, reverse = false)
+  elif wrapMap == self.diffDisplayMap.wrapMap:
+    self.displayMap.diffMap.update(self.diffChanges, self.diffDisplayMap.wrapMap.snapshot, reverse = true)
+
+proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
+  if self.document.isNil:
     return
 
-  self.updateTargetColumn()
-  self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
-
-  self.markDirty()
+  if displayMap == self.displayMap:
+    self.updateTargetColumn()
+    self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
+    self.markDirty()
+  elif displayMap == self.diffDisplayMap:
+    self.markDirty()
 
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
@@ -3650,6 +3703,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
   editor.completionsId = newId()
   editor.hoverId = newId()
   editor.inlayHints = @[]
+  editor.init()
   {.gcsafe.}:
     allTextEditors.add editor
   return editor
@@ -3683,9 +3737,7 @@ proc updateModeEventHandlers(self: TextDocumentEditor) =
         onInput:
           self.handleInput input, record=true
 
-proc newTextEditor*(document: TextDocument, services: Services):
-    TextDocumentEditor =
-
+proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
@@ -3699,12 +3751,15 @@ proc newTextEditor*(document: TextDocument, services: Services):
   self.workspace = self.services.getService(Workspace).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.eventHandlerNames = @["editor.text"]
-  self.wrapMap = WrapMap.new()
-  discard self.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  self.displayMap = DisplayMap.new()
+  self.diffDisplayMap = DisplayMap.new()
+  discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
 
   self.setDocument(document)
 
-  self.init()
   self.startBlinkCursorTask()
 
   self.editors.registerEditor(self)

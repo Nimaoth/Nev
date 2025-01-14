@@ -37,6 +37,38 @@ proc mapLineTargetToSource*(mappings: openArray[LineMapping], line: int): Option
 
   return some (lastSource + (line - lastTarget), false)
 
+proc mapLineSourceToTarget*(mappings: openArray[LineMapping], line: int): Option[tuple[line: int, changed: bool]] =
+  # todo: binary search
+  if mappings.len == 0:
+    return (line, false).some
+
+  if line < mappings[0].source.first:
+    return (line, false).some
+
+  var lastTarget = 0
+  var lastSource = 0
+  for i in 0..mappings.high:
+    if mappings[i].source.contains(line):
+      let targetLine = mappings[i].target.first + (line - mappings[i].source.first)
+      if mappings[i].target.contains(targetLine):
+        return (targetLine, true).some
+      return (int, bool).none
+
+    if line < mappings[i].source.first:
+      let targetLine = mappings[i].target.first + (line - mappings[i].source.first)
+      return (targetLine, false).some
+
+    lastTarget = mappings[i].target.last
+    lastSource = mappings[i].source.last
+
+  return some (lastTarget + (line - lastSource), false)
+
+proc mapLine*(mappings: openArray[LineMapping], line: int, reverse: bool): Option[tuple[line: int, changed: bool]] =
+  if reverse:
+    return mappings.mapLineTargetToSource(line)
+  else:
+    return mappings.mapLineSourceToTarget(line)
+
 static:
   let mappings = [
     LineMapping(source: (10, 10), target: (10, 20)),

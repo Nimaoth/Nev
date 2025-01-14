@@ -9,6 +9,7 @@ discard """
 import std/[unittest, options, json, sequtils, strformat]
 import misc/[util, rope_utils]
 import nimsumtree/[rope, sumtree, buffer, clock]
+import text/wrap_map
 
 var debug = false
 template log(msg: untyped) =
