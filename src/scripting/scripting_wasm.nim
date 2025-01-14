@@ -1,4 +1,4 @@
-import std/[macros, macrocache, genasts, json, strutils, os]
+import std/[macros, macrocache, genasts, json, strutils, os, sugar]
 import misc/[custom_logger, custom_async, util]
 import scripting_base, document_editor, expose, vfs
 import wasm
@@ -41,21 +41,34 @@ macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; ret
   result = quote do:
     default(`returnType`)
 
+proc newWasmModuleAsync(file: string, editorImports: WasmImports, vfs: VFS): Future[Option[WasmModule]] {.async.} =
+  try:
+    log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"
+    let module = await newWasmModule(file, @[editorImports], vfs)
+    log lvlInfo, fmt"Loaded wasm module '{file}' from app directory"
+    return module
+  except:
+    log lvlError, &"Failde to load wasm module '{file}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+    return WasmModule.none
+
 proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} =
   let listing = await self.vfs.getDirectoryListing(path)
 
   {.gcsafe.}:
     var editorImports = createEditorWasmImports()
 
-  for file2 in listing.files:
-    if not file2.endsWith(".wasm"):
-      continue
+  var wasmModuleFutures = collect:
+    for file2 in listing.files:
+      if not file2.endsWith(".wasm"):
+        continue
 
-    let file = path // file2
+      let file = path // file2
+      let module = newWasmModuleAsync(file, editorImports, self.vfs)
+      (file, module)
 
+  for (file, future) in wasmModuleFutures:
     try:
-      log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"
-      let module = await newWasmModule(file, @[editorImports], self.vfs)
+      let module = await future
 
       if module.getSome(module):
         self.moduleVfs.mount(file.splitFile.name, newInMemoryVFS())
