@@ -2,6 +2,7 @@ import std/[os, options, unicode, strutils, streams, atomics]
 import nimsumtree/[rope, static_array]
 import misc/[custom_async, custom_logger, util, timer, regex]
 import vfs
+import fsnotify
 
 when defined(windows):
   import winim/lean
@@ -13,6 +14,34 @@ logCategory "vfs-local"
 
 type
   VFSLocal* = ref object of VFS
+    watcher: Watcher
+    updateRate: int
+
+proc process(self: VFSLocal) {.async.}
+
+proc new*(_: typedesc[VFSLocal]): VFSLocal =
+  new(result)
+  result.watcher = initWatcher()
+  result.updateRate = 200
+
+  asyncSpawn result.process()
+
+proc process(self: VFSLocal) {.async.} =
+  while true:
+    await sleepAsync(self.updateRate.milliseconds)
+    try:
+      process(self.watcher)
+    except Exception as e:
+      log lvlError, &"Failed to process file watcher: {e.msg}"
+
+proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+  try:
+    register(self.watcher, path, cb)
+  except OSError as e:
+    log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
+
+method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+  self.subscribe(path, cb)
 
 proc loadFileThread(args: tuple[path: string, data: ptr string, flags: set[ReadFlag]]): bool =
   try:

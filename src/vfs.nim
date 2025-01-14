@@ -1,6 +1,9 @@
 import std/[options, strutils, tables, os, random]
 import nimsumtree/rope
 import misc/[custom_async, util, custom_logger, cancellation_token, regex]
+import fsnotify
+
+export fsnotify.PathEvent, fsnotify.FileEventAction
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -157,6 +160,9 @@ method getFileAttributesImpl*(self: VFS, path: string): Future[Option[FileAttrib
   return FileAttributes.none
 
 method setFileAttributesImpl*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.base, async: (raises: [IOError]).} =
+  discard
+
+method watchImpl*(self: VFS, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) {.base.} =
   discard
 
 method getVFSImpl*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] {.base.} =
@@ -377,6 +383,10 @@ proc getFileAttributes*(self: VFS, path: string): Future[Option[FileAttributes]]
 proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).} =
   let (vfs, path) = self.getVFS(path)
   await vfs.setFileAttributesImpl(path, attributes)
+
+proc watch*(self: VFS, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+  let (vfs, path) = self.getVFS(path)
+  vfs.watchImpl(path, cb)
 
 proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).} =
   let (vfs, relativePath) = self.getVFS(path)
