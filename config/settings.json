@@ -122,6 +122,7 @@
         "\\.ps1$": "powershell",
         "\\.wat$": "elisp",
         "\\.talon$": "talon",
+        "nimble.*?\\.paths$": "nim-paths",
         "/(vector|string|thread|iostream)$": "cpp",
         ".+/MSVC/.+/include(/.+?)*/[a-z0-9_]+$": "cpp",
         ".+/include/c\\+\\+(/.+?)+/[a-z0-9_]+$": "cpp"
@@ -152,6 +153,23 @@
         },
         "nim": {
             "treesitter": "alaviss/tree-sitter-nim",
+            "formatter": "nph",
+            "tabWidth": 2,
+            "indent": "spaces",
+            "indentAfter": [
+                ":",
+                "=",
+                "(",
+                "{",
+                "[",
+                "enum",
+                "object"
+            ],
+            "lineComment": "#"
+        },
+        "nim-paths": {
+            "treesitter": "alaviss/tree-sitter-nim",
+            "treesitter-language-name": "nim",
             "formatter": "nph",
             "tabWidth": 2,
             "indent": "spaces",
@@ -533,7 +551,7 @@
     "text": {
         "reload-diff": true,
         "reload-diff-timeout": 250,
-        "format-on-save": false,
+        "format-on-save": false
     },
 
     "debugger": {
