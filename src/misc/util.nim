@@ -8,6 +8,29 @@ export options, results
 {.push raises: [].}
 {.push warning[ProveInit]:off.}
 
+# from std/sequtils
+macro evalOnceAs(expAlias, exp: untyped,
+                 letAssigneable: static[bool]): untyped =
+  ## Injects `expAlias` in caller scope, to avoid bugs involving multiple
+  ## substitution in macro arguments such as
+  ## https://github.com/nim-lang/Nim/issues/7187.
+  ## `evalOnceAs(myAlias, myExp)` will behave as `let myAlias = myExp`
+  ## except when `letAssigneable` is false (e.g. to handle openArray) where
+  ## it just forwards `exp` unchanged.
+  expectKind(expAlias, nnkIdent)
+  var val = exp
+
+  result = newStmtList()
+  # If `exp` is not a symbol we evaluate it once here and then use the temporary
+  # symbol as alias
+  if exp.kind != nnkSym and letAssigneable:
+    val = genSym()
+    result.add(newLetStmt(val, exp))
+
+  result.add(
+    newProc(name = genSym(nskTemplate, $expAlias), params = [getType(untyped)],
+      body = val, procType = nnkTemplateDef))
+
 template getSome*[T](opt: Option[T], injected: untyped): bool =
   ((let o = opt; o.isSome())) and ((let injected {.inject, cursor.} = o.get(); true))
 
@@ -140,20 +163,30 @@ template mapIt*[T](self: Option[T], op: untyped): untyped =
     block:
       var it {.inject.}: typeof(self.get, typeOfProc);
       op), typeOfProc)
-  if self.isSome:
-    let it {.inject.} = self.get
-    some(op)
-  else:
-    OutType.none
+  block:
+    evalOnceAs(self2, self, compiles((let _ = self)))
+    if self2.isSome:
+      let it {.inject.} = self2.get
+      some(op)
+    else:
+      OutType.none
 
 template applyIt*[T, E](self: Result[T, E], op: untyped, opErr: untyped): untyped =
-  let s = self
-  if s.isOk:
-    template it: untyped {.inject.} = s.unsafeValue
-    op
-  else:
-    template it: untyped {.inject.} = s.unsafeError
-    opErr
+  block:
+    evalOnceAs(self2, self, compiles((let _ = self)))
+    if self2.isOk:
+      template it: untyped {.inject.} = self2.unsafeValue
+      op
+    else:
+      template it: untyped {.inject.} = self2.unsafeError
+      opErr
+
+template applyIt*[T, E](self: Result[T, E], op: untyped): untyped =
+  block:
+    evalOnceAs(self2, self, compiles((let _ = self)))
+    if self2.isOk:
+      template it: untyped {.inject.} = self2.unsafeValue
+      op
 
 template findIt*(self: untyped, op: untyped): untyped =
   block:
@@ -178,28 +211,6 @@ template findItOpt*(self: untyped, op: untyped): untyped =
 
 template maybeFlatten*[T](self: Option[T]): Option[T] = self
 template maybeFlatten*[T](self: Option[Option[T]]): Option[T] = self.flatten
-
-macro evalOnceAs(expAlias, exp: untyped,
-                 letAssigneable: static[bool]): untyped =
-  ## Injects `expAlias` in caller scope, to avoid bugs involving multiple
-  ## substitution in macro arguments such as
-  ## https://github.com/nim-lang/Nim/issues/7187.
-  ## `evalOnceAs(myAlias, myExp)` will behave as `let myAlias = myExp`
-  ## except when `letAssigneable` is false (e.g. to handle openArray) where
-  ## it just forwards `exp` unchanged.
-  expectKind(expAlias, nnkIdent)
-  var val = exp
-
-  result = newStmtList()
-  # If `exp` is not a symbol we evaluate it once here and then use the temporary
-  # symbol as alias
-  if exp.kind != nnkSym and letAssigneable:
-    val = genSym()
-    result.add(newLetStmt(val, exp))
-
-  result.add(
-    newProc(name = genSym(nskTemplate, $expAlias), params = [getType(untyped)],
-      body = val, procType = nnkTemplateDef))
 
 template mapItIndex*(s: typed, op: untyped): untyped =
   ## Returns a new sequence with the results of the `op` proc applied to every

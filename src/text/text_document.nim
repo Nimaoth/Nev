@@ -1077,11 +1077,9 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, config)
 
   if prevLanguageId != self.languageId:
-    log lvlWarn, &"loadTreesitterLanguage {prevLanguageId}: ignore, newer language was set"
     return
 
   if language.isNone:
-    log lvlWarn, &"Treesitter language is not available for '{self.languageId}'"
     return
 
   # log lvlInfo, &"loadTreesitterLanguage {prevLanguageId}: Loaded language, apply"
@@ -1096,8 +1094,6 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
       return
 
     self.highlightQuery = query
-  else:
-    log lvlWarn, fmt"No highlight queries found for language '{self.languageId}' in '{self.filename}'"
 
   if not self.isInitialized:
     return
@@ -1159,8 +1155,6 @@ proc newTextDocument*(
   else:
     getLanguageForFile(self.configProvider, filename).applyIt:
       self.languageId = it
-    do:
-      log lvlError, it
 
   if self.languageId != "":
     if (let value = self.configProvider.getValue("languages." & self.languageId, newJNull()); value.kind == JObject):
@@ -1410,7 +1404,6 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   getLanguageForFile(self.configProvider, filename).applyIt:
     self.languageId = it
   do:
-    log lvlError, it
     self.languageId = ""
 
   self.onPreLoaded.invoke self
