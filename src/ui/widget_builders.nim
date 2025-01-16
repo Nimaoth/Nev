@@ -4,7 +4,7 @@ import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger]
-import app, document_editor, theme, compilation_config, view, layout, config_provider
+import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service
 
 when enableAst:
   import ui/[widget_builder_model_document]
@@ -20,7 +20,7 @@ method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[Overla
 proc updateWidgetTree*(self: App, frameIndex: int) =
   # self.platform.builder.buildUINodes()
 
-  var headerColor = if self.commandLineMode: self.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  var headerColor = if self.commands.commandLineMode: self.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
 
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
@@ -50,11 +50,11 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = self.inputHistory, textColor = textColor, pivot = vec2(1, 0))
 
         builder.panel(&{FillX, SizeToContentY}, pivot = vec2(1, 0)):
-          let wasActive = self.getCommandLineTextEditor.active
-          self.getCommandLineTextEditor.active = self.commandLineMode
-          if self.getCommandLineTextEditor.active != wasActive:
-            self.getCommandLineTextEditor.markDirty(notify=false)
-          overlays.add self.getCommandLineTextEditor.createUI(builder, self)
+          let wasActive = self.commands.commandLineEditor.active
+          self.commands.commandLineEditor.active = self.commands.commandLineMode
+          if self.commands.commandLineEditor.active != wasActive:
+            self.commands.commandLineEditor.markDirty(notify=false)
+          overlays.add self.commands.commandLineEditor.createUI(builder, self)
 
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
         let overlay = currentNode
@@ -62,7 +62,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
         if self.layout.maximizeView:
           let view {.cursor.} = self.layout.views[self.layout.currentView]
           let wasActive = view.active
-          if not self.commandLineMode:
+          if not self.commands.commandLineMode:
             view.activate()
           else:
             view.deactivate()
@@ -81,7 +81,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
             let bounds = rect(xy, xwyh - xy)
 
             let wasActive = view.active
-            if (self.layout.currentView == i) and not self.commandLineMode:
+            if (self.layout.currentView == i) and not self.commands.commandLineMode:
               view.activate()
             else:
               view.deactivate()
