@@ -173,30 +173,30 @@ proc invalidationRect*(a: Rect, b: Rect): Rect =
     return rect(a.x, max(b.yh, a.y), a.w, a.yh - max(b.yh, a.y))
   return a
 
-proc mix*[T: SomeFloat](a, b: Rect, v: T): Rect =
+proc mix*[T: SomeFloat](a, b: Rect, v: T): Rect {.inline.} =
   let v = v.clamp(0, 1)
   result.x = a.x * (1.0 - v) + b.x * v
   result.y = a.y * (1.0 - v) + b.y * v
   result.w = a.w * (1.0 - v) + b.w * v
   result.h = a.h * (1.0 - v) + b.h * v
 
-proc mix*[T: SomeFloat](a: var Rect, b: Rect, v: T) =
+proc mix*[T: SomeFloat](a: var Rect, b: Rect, v: T) {.inline.} =
   let v = v.clamp(0, 1)
   a.x = a.x * (1.0 - v) + b.x * v
   a.y = a.y * (1.0 - v) + b.y * v
   a.w = a.w * (1.0 - v) + b.w * v
   a.h = a.h * (1.0 - v) + b.h * v
 
-proc almostEqual*(a, b: float32, epsilon: float32): bool =
+proc almostEqual*(a, b: float32, epsilon: float32): bool {.inline.} =
   result = abs(a - b) <= epsilon
 
-proc almostEqual*(a, b: Rect, epsilon: float32): bool =
+proc almostEqual*(a, b: Rect, epsilon: float32): bool {.inline.} =
   result = abs(a.x - b.x) <= epsilon and abs(a.y - b.y) <= epsilon and abs(a.w - b.w) <= epsilon and abs(a.h - b.h) <= epsilon
 
-proc almostEqual*(a, b: Vec2, epsilon: float32): bool =
+proc almostEqual*(a, b: Vec2, epsilon: float32): bool {.inline.} =
   result = abs(a.x - b.x) <= epsilon and abs(a.y - b.y) <= epsilon
 
-proc isNan*(rect: Rect): bool =
+proc isNan*(rect: Rect): bool {.inline.} =
   result = rect.x.isNan or rect.y.isNan or rect.w.isNan or rect.h.isNan
 
-proc round*(v: Vec2): Vec2 = vec2(v.x.round, v.y.round)
+proc round*(v: Vec2): Vec2 {.inline.} = vec2(v.x.round, v.y.round)

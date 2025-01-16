@@ -1,7 +1,7 @@
 import vmath
 import ui/node
 import misc/[event]
-import input, vfs
+import input, vfs, pixie/fonts
 
 export input, event
 
@@ -31,7 +31,7 @@ type
     vfs*: VFS
 
 method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, raises: [].} = discard
-method render*(self: Platform) {.base, gcsafe, raises: [].} = discard
+method render*(self: Platform, rerender: bool) {.base, gcsafe, raises: [].} = discard
 method sizeChanged*(self: Platform): bool {.base, gcsafe, raises: [].} = discard
 method size*(self: Platform): Vec2 {.base, gcsafe, raises: [].} = discard
 method init*(self: Platform) {.base, raises: [].} = discard
@@ -40,6 +40,7 @@ method processEvents*(self: Platform): int {.base, gcsafe, raises: [].} = discar
 method `fontSize=`*(self: Platform, fontSize: float) {.base, gcsafe, raises: [].} = discard
 method `lineDistance=`*(self: Platform, lineDistance: float) {.base, gcsafe, raises: [].} = discard
 method setFont*(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) {.base, gcsafe, raises: [].} = discard
+method getFont*(self: Platform, fontSize: float32, flags: UINodeFlags): Font {.base, gcsafe, raises: [].} = discard
 method fontSize*(self: Platform): float {.base, gcsafe, raises: [].} = discard
 method lineDistance*(self: Platform): float {.base, gcsafe, raises: [].} = discard
 method lineHeight*(self: Platform): float {.base, gcsafe, raises: [].} = discard
@@ -49,6 +50,7 @@ method measureText*(self: Platform, text: string): Vec2 {.base, gcsafe, raises: 
 method preventDefault*(self: Platform) {.base, gcsafe, raises: [].} = discard
 method getStatisticsString*(self: Platform): string {.base, gcsafe, raises: [].} = discard
 method layoutText*(self: Platform, text: string): seq[Rect] {.base, gcsafe, raises: [].} = discard
+method setVsync*(self: Platform, enabled: bool) {.base, gcsafe, raises: [].} = discard
 
 func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance
 

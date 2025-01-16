@@ -660,15 +660,6 @@ proc splitAt*(line: var StyledLine, index: RuneIndex) {.stacktrace: off, linetra
 proc splitAt*(self: TextDocument, line: var StyledLine, index: int) {.stacktrace: off, linetrace: off.} =
   line.splitAt(self.rope.runeIndexInLine((line.index, index)))
 
-proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
-  var start = 0
-  while start < str.len:
-    let bounds = str.findBounds(regex, start)
-    if bounds.first == -1:
-      break
-    result.add ((line, bounds.first), (line, bounds.last + 1))
-    start = bounds.last + 1
-
 proc overrideStyle*(line: var StyledLine, first: RuneIndex, last: RuneIndex, scope: string, priority: int) {.stacktrace: off, linetrace: off.} =
   var index = 0.RuneIndex
   for i in 0..line.parts.high:

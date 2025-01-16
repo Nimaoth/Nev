@@ -384,6 +384,14 @@ proc loadTheme*(name: string; force: bool = false) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_vsync_void_App_bool_wasm(arg: cstring): cstring {.importc.}
+proc vsync*(enabled: bool) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add enabled.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_vsync_void_App_bool_wasm(argsJsonString.cstring)
+
+
 proc editor_chooseTheme_void_App_wasm(arg: cstring): cstring {.importc.}
 proc chooseTheme*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()

@@ -289,6 +289,8 @@ proc run(app: App, plat: Platform, backend: Backend) =
   let totalTime = startTimer()
   var lastTime = totalTime.elapsed.float
 
+  var lowPowerMode = false
+
   while not app.closeRequested:
     defer:
       inc frameIndex
@@ -344,9 +346,9 @@ proc run(app: App, plat: Platform, backend: Backend) =
 
       renderedLastFrame = rerender
 
-      if rerender:
+      if rerender or not lowPowerMode:
         let renderTimer = startTimer()
-        plat.render()
+        plat.render(rerender)
         renderTime = renderTimer.elapsed.ms
 
       frameTime = app.frameTimer.elapsed.ms
@@ -385,13 +387,18 @@ proc run(app: App, plat: Platform, backend: Backend) =
       let time = app.config.getOption("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
+      lowPowerMode = true
     elif lastEvent.elapsed.ms > app.config.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
       let time = app.config.getOption("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
+      lowPowerMode = true
     elif backend == Terminal and frameSoFar < terminalSleepThreshold.float:
       sleep(terminalSleepThreshold - frameSoFar.int)
       outlierTime += terminalSleepThreshold.float
+      lowPowerMode = false
+    else:
+      lowPowerMode = false
 
     let totalTime = totalTimer.elapsed.ms
     if not app.disableLogFrameTime and

@@ -653,23 +653,25 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         currentNode.renderCommands.drawLineNumber(state.builder, chunk.point.row.int, vec2(state.bounds.x, state.offset.y), cursorLine, lineNumbers, lineNumberBounds, textColor)
 
       if chunk.len > 0:
-        let layout = self.platform.layoutText($chunk)
-        let width = layout.totalBounds.x
+        let font = self.platform.getFont(self.platform.fontSize, 0.UINodeFlags)
+        let arrangementIndex = currentNode.renderCommands.typeset(font, $chunk, wrap = false)
+        let width = currentNode.renderCommands.layoutBounds(arrangementIndex).x
+        let indices {.cursor.} = currentNode.renderCommands.arrangements[arrangementIndex]
         let bounds = rect(state.offset, vec2(width, state.builder.textHeight))
         let charBoundsStart = state.charBounds.len
         state.chunkBounds.add ChunkBounds(
           range: chunk.point...Point(row: chunk.point.row, column: chunk.point.column + chunk.len.uint32),
           bounds: bounds,
           text: chunk.diffChunk.wrapChunk.styledChunk.chunk,
-          charsRange: charBoundsStart...(charBoundsStart + layout.len),
+          charsRange: charBoundsStart...(charBoundsStart + indices.selectionRects.len),
         )
-        state.charBounds.add layout
+        state.charBounds.add currentNode.renderCommands.arrangement.selectionRects[indices.selectionRects]
 
         if state.backgroundColor.getSome(color):
           fillRect(bounds, color)
 
         let textColor = if chunk.scope.len == 0: textColor else: app.theme.tokenColor(chunk.scope, textColor)
-        drawText(chunk.toOpenArray, bounds, textColor, &{UINodeFlag.TextDrawSpaces})
+        drawText(chunk.toOpenArray, arrangementIndex, bounds, textColor, &{UINodeFlag.TextDrawSpaces})
         state.offset.x += width
         if sizeToContentY:
           currentNode.h = max(currentNode.h, bounds.yh)

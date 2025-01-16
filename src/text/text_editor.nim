@@ -20,7 +20,7 @@ import vcs/vcs
 import wrap_map, diff_map, display_map
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
-  TextEdit, Range, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
+  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
 
 import nimsumtree/[buffer, clock, static_array, rope]
 from nimsumtree/sumtree as st import summaryType, itemSummary, Bias
@@ -89,8 +89,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
   cursorMargin*: Option[float]
 
   searchQuery*: string
-  searchRegex*: Option[Regex]
-  searchResults*: Table[int, seq[Selection]]
+  searchResults*: seq[Range[Point]]
+  isUpdatingSearchResults: bool
+  lastSearchResultUpdate: tuple[buffer: BufferId, version: Global, searchQuery: string]
 
   styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
 
@@ -184,9 +185,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   lastCompletionTrigger: (Global, Cursor)
   completionsDirty: bool
-  searchResultsDirty: bool
 
   customHeader*: string
+
+  onSearchResultsUpdated*: Event[TextDocumentEditor]
 
 type
   TextDocumentEditorService* = ref object of Service
@@ -548,9 +550,6 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     for node in errorNodes:
       self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
 
-  if self.searchResultsDirty:
-    self.updateSearchResults()
-
   self.updateInlayHintsAfterChange()
 
   let newVersion = (self.document.buffer.version, self.selections[^1].last)
@@ -627,35 +626,53 @@ proc addSign*(self: TextDocumentEditor, id: Id, line: int, text: string, group: 
     self.signs[line] = @[(id, group, text, tint)]
   self.markDirty()
 
-proc updateSearchResults(self: TextDocumentEditor) =
-  if not self.searchResultsDirty:
+proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
+  if self.isUpdatingSearchResults:
     return
+  self.isUpdatingSearchResults = true
+  defer:
+    self.isUpdatingSearchResults = false
 
-  # todo: run this in a background thread
-  self.searchResultsDirty = false
+  while true:
+    let buffer = self.document.buffer.snapshot.clone()
+    let searchQuery = self.searchQuery
+    if searchQuery.len == 0:
+      self.clearCustomHighlights(searchResultsId)
+      self.searchResults.setLen(0)
+      self.markDirty()
+      return
 
-  self.clearCustomHighlights(searchResultsId)
+    if self.lastSearchResultUpdate == (buffer.remoteId, buffer.version, searchQuery):
+      return
 
-  if self.searchRegex.isNone:
-    self.searchResults.clear()
+    let t = startTimer()
+    let searchResults = await findAllAsync(buffer.visibleText.clone(), searchQuery)
+    if self.document.isNil:
+      return
+
+    self.searchResults = searchResults
+    self.lastSearchResultUpdate = (buffer.remoteId, buffer.version, searchQuery)
+    self.clearCustomHighlights(searchResultsId)
+    for s in searchResults:
+      self.addCustomHighlight(searchResultsId, s.toSelection, "editor.findMatchBackground")
+
+    self.onSearchResultsUpdated.invoke(self)
+
+    if self.document.buffer.remoteId != buffer.remoteId or self.document.buffer.version != buffer.version:
+      continue
+
+    if self.searchQuery != searchQuery:
+      continue
+
     self.markDirty()
-    return
+    break
 
-  for i in 0..<self.document.numLines:
-    # todo: don't use getLine. Figure out how to run regex on Rope
-    let selections = ($self.document.getLine(i)).findAllBounds(i, self.searchRegex.get)
-    for s in selections:
-      self.addCustomHighlight(searchResultsId, s, "editor.findMatchBackground")
-
-    if selections.len > 0:
-      self.searchResults[i] = selections
-    else:
-      self.searchResults.del i
-  self.markDirty()
+proc updateSearchResults(self: TextDocumentEditor) =
+  asyncSpawn self.updateSearchResultsAsync()
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
-  self.searchResultsDirty = true
+  self.updateSearchResults()
 
 method handleActivate*(self: TextDocumentEditor) =
   self.startBlinkCursorTask()
@@ -1723,48 +1740,59 @@ proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
     includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   self.updateSearchResults()
 
-  var i = 0
-  for line in countdown(cursor.line, 0):
-    self.searchResults.withValue(line, val):
-      let selections = val[]
-      for k in countdown(selections.high, 0):
-        if selections[k].last < cursor:
-          if i == offset:
-            if includeAfter:
-              return selections[k]
-            else:
-              return (selections[k].first, self.doMoveCursorColumn(selections[k].last, -1, wrap = false))
-          inc i
+  if self.searchResults.len == 0:
+    return cursor.toSelection
 
-  let nextSearchStart = (self.lineCount, 0)
-  if cursor != nextSearchStart:
-    let wrapped = self.getPrevFindResult(nextSearchStart, offset - i,
-      includeAfter=includeAfter, wrap=wrap)
-    if not wrapped.isEmpty:
-      return wrapped
-  return cursor.toSelection
+  var i = 0
+  let (found, index) = self.searchResults.binarySearchRange(cursor.toPoint, Bias.Left, (r, p) => cmp(r.a, p))
+  if found:
+    if index > 0:
+      result = self.searchResults[index - 1].toSelection
+    elif wrap:
+      result = self.searchResults.last.toSelection
+    else:
+      return cursor.toSelection
+  elif index == 0 and cursor.toPoint < self.searchResults[0].a:
+    if wrap:
+      result = self.searchResults.last.toSelection
+    else:
+      return cursor.toSelection
+  elif index >= 0:
+    result = self.searchResults[index].toSelection
+  else:
+    return cursor.toSelection
+
+  if not includeAfter:
+    result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
 proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
     includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   self.updateSearchResults()
 
-  var i = 0
-  for line in cursor.line..<self.document.numLines:
-    self.searchResults.withValue(line, val):
-      for selection in val[]:
-        if cursor < selection.first:
-          if i == offset:
-            if includeAfter:
-              return selection
-            else:
-              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
-          inc i
+  if self.searchResults.len == 0:
+    return cursor.toSelection
 
-  if cursor != (0, 0):
-    let wrapped = self.getNextFindResult((0, 0), offset - i, includeAfter=includeAfter, wrap=wrap)
-    if not wrapped.isEmpty:
-      return wrapped
-  return cursor.toSelection
+  var i = 0
+  let (found, index) = self.searchResults.binarySearchRange(cursor.toPoint, Bias.Right, (r, p) => cmp(r.a, p))
+  if found:
+    if index < self.searchResults.high:
+      result = self.searchResults[index + 1].toSelection
+    elif wrap:
+      result = self.searchResults[0].toSelection
+    else:
+      return cursor.toSelection
+  elif index == self.searchResults.len:
+    if wrap:
+      result = self.searchResults[0].toSelection
+    else:
+      return cursor.toSelection
+  elif index >= 0 and index <= self.searchResults.high:
+    result = self.searchResults[index].toSelection
+  else:
+    return cursor.toSelection
+
+  if not includeAfter:
+    result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
 proc createAnchors*(self: TextDocumentEditor, selections: Selections): seq[(Anchor, Anchor)] {.expose("editor.text").} =
   let snapshot {.cursor.} = self.document.buffer.snapshot
@@ -2009,9 +2037,8 @@ proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.tex
   self.updateSearchResults()
 
   var selections: seq[Selection] = @[]
-  for searchResults in self.searchResults.values:
-    for s in searchResults:
-      selections.add s
+  for s in self.searchResults:
+    selections.add s.toSelection
   self.selections = selections
 
 proc clearSelections*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -2116,6 +2143,8 @@ proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSna
 
 proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) {.expose("editor.text").} =
   self.nextSnapBehaviour = snapBehaviour.some
+  if snapBehaviour == Always:
+    self.interpolatedScrollOffset = self.scrollOffset
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float,
     cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
@@ -2500,28 +2529,19 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
 
 proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false,
     prefix: string = "", suffix: string = "") {.expose("editor.text").} =
-  if self.searchQuery == query:
+
+  let query = if escapeRegex:
+    query.escapeRegex
+  else:
+    query
+
+  let finalQuery = prefix & query & suffix
+  if self.searchQuery == finalQuery:
     return
 
-  if query.len == 0:
-    return
+  self.searchQuery = finalQuery
+  self.updateSearchResults()
 
-  try:
-    let query = if escapeRegex:
-      query.escapeRegex
-    else:
-      query
-
-    self.searchRegex = re(prefix & query & suffix).some
-    self.searchResultsDirty = true
-    self.searchQuery = query
-
-  except:
-    discard
-    # todo: can't log here because the auto generated popCurrentException() raises
-    # because currException is nil at the end of this scope when we add some code here
-    # Maybe log raises an exception internally?
-    # log lvlError, &"[setSearchQuery] Invalid regex query: '{query}', escape: {escapeRegex}"
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string,
     count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
@@ -3628,10 +3648,10 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   self.snapshot = self.document.buffer.snapshot.clone()
   self.displayMap.setBuffer(self.snapshot.clone())
   self.selections = self.selections
-  self.searchResultsDirty = true
   self.inlayHints.setLen(0)
   self.hideCompletions()
   self.updateInlayHints()
+  self.updateSearchResults()
   self.markDirty()
 
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
@@ -3659,8 +3679,7 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
       self.selectionAnchors = @[]
 
   self.clampSelection()
-  self.searchResultsDirty = true
-
+  self.updateSearchResults()
   self.updateInlayHints()
 
   self.markDirty()

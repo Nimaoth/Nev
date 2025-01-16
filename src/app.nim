@@ -1252,6 +1252,9 @@ proc loadWorkspaceFile*(self: App, path: string) =
 proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor").} =
   asyncSpawn self.setTheme(fmt"app://themes/{name}.json", force)
 
+proc vsync*(self: App, enabled: bool) {.expose("editor").} =
+  self.platform.setVsync(enabled)
+
 proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()

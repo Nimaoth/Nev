@@ -174,6 +174,40 @@ func isEmptyOrWhitespace*[D](self: RopeSlice[D]): bool =
 
   return true
 
+proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
+  var start = 0
+  while start < str.len:
+    let bounds = str.findBounds(regex, start)
+    if bounds.first == -1:
+      break
+    result.add ((line, bounds.first), (line, bounds.last + 1))
+    start = bounds.last + 1
+
+proc findAll*(rope: Rope, searchQuery: string, res: var seq[Range[Point]]) =
+  try:
+    let r = re(searchQuery)
+    for line in 0..rope.summary.lines.row.int:
+      let lineRange = rope.lineRange(line, int)
+      let selections = ($rope.slice(lineRange)).findAllBounds(line, r)
+      for s in selections:
+        res.add s.first.toPoint...s.last.toPoint
+  except RegexError:
+    discard
+
+proc findAll*(rope: Rope, searchQuery: string): seq[Range[Point]] =
+  findAll(rope, searchQuery, result)
+
+proc findAllThread(args: tuple[rope: ptr Rope, query: string, res: ptr seq[Range[Point]]]) =
+  findAll(args.rope[].clone(), args.query, args.res[])
+
+proc findAllAsync*(rope: sink Rope, searchQuery: string): Future[seq[Range[Point]]] {.async.} =
+  ## Returns `some(index)` if the string contains invalid utf8 at `index`
+  var res = newSeq[Range[Point]]()
+  var rope = rope.move
+  await spawnAsync(findAllThread, (rope.addr, searchQuery, res.addr))
+  return res
+  # ababa
+
 ######################################################################### Internal api wrappers
 
 func runeIndexInLine*(self: Rope, cursor: api.Cursor): RuneIndex =
