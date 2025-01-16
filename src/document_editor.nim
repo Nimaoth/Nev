@@ -22,6 +22,7 @@ type
     onMarkedDirty*: Event[void]
     mDirty: bool ## Set to true to trigger rerender
     active: bool
+    onActiveChanged*: Event[DocumentEditor]
 
   DocumentFactory* = ref object of RootObj
   DocumentEditorFactory* = ref object of RootObj
@@ -38,6 +39,8 @@ type
 
     documentFactories: seq[DocumentFactory]
     editorFactories: seq[DocumentEditorFactory]
+
+    commandLineEditor*: DocumentEditor
 
 func serviceName*(_: typedesc[DocumentEditorService]): string = "DocumentEditorService"
 
@@ -93,6 +96,8 @@ proc `active=`*(self: DocumentEditor, newActive: bool) =
       self.handleActivate()
     else:
       self.handleDeactivate()
+    self.onActiveChanged.invoke(self)
+    assert self.active == newActive
 
 func active*(self: DocumentEditor): bool = self.active
 

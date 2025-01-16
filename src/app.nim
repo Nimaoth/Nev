@@ -11,7 +11,7 @@ import input, events, document, document_editor, popup, dispatch_tables, theme, 
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config, vfs, vfs_service
-import service, layout, session
+import service, layout, session, command_service
 
 import nimsumtree/[rope]
 
@@ -102,6 +102,7 @@ type
     plugins*: PluginService
     registers: Registers
     vfsService*: VFSService
+    commands*: CommandService
 
     workspace*: Workspace
     vfs*: VFS
@@ -127,14 +128,7 @@ type
 
     logDocument: Document
 
-    currentHistoryEntry: int = 0
-    languageServerCommandLine: LanguageServer
-    commandLineTextEditor: DocumentEditor
     eventHandler*: EventHandler
-    commandLineEventHandlerHigh*: EventHandler
-    commandLineEventHandlerLow*: EventHandler
-    commandLineMode*: bool
-
     modeEventHandler: EventHandler
     currentMode*: string
 
@@ -156,6 +150,7 @@ proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previe
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
+proc defaultHandleCommand*(self: App, command: string): bool
 
 implTrait AppInterface, App:
   getActiveEditor(Option[DocumentEditor], App)
@@ -206,8 +201,6 @@ proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: [
   else:
     log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender(redrawEverything=true)
-
-proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
 proc runConfigCommands(self: App, key: string) =
   let startupCommands = self.config.getOption(key, newJArray())
@@ -622,6 +615,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.registers = services.getService(Registers).get
   self.vfsService = services.getService(VFSService).get
   self.workspace = services.getService(Workspace).get
+  self.commands = services.getService(CommandService).get
   self.vfs = self.vfsService.vfs
 
   self.platform.fontSize = 16
@@ -655,6 +649,23 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 
+  self.commands.languageServerCommandLine = newLanguageServerCommandLine(self.services)
+  let commandLineTextDocument = newTextDocument(self.services, language="command-line".some, languageServer=self.commands.languageServerCommandLine.some)
+  self.editors.documents.add commandLineTextDocument
+  self.commands.commandLineEditor = newTextEditor(commandLineTextDocument, self.services)
+  self.commands.commandLineEditor.renderHeader = false
+  self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
+  self.commands.commandLineEditor.TextDocumentEditor.disableScrolling = true
+  self.commands.commandLineEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
+  self.commands.commandLineEditor.TextDocumentEditor.hideCursorWhenInactive = true
+  discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
+  self.editors.commandLineEditor = self.commands.commandLineEditor
+  self.commands.defaultCommandHandler = proc(command: Option[string]): bool =
+    if command.isSome:
+      self.defaultHandleCommand(command.get)
+    else:
+      true
+
   assignEventHandler(self.eventHandler, self.events.getEventHandlerConfig("editor")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
@@ -664,7 +675,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     onInput:
       Ignored
 
-  assignEventHandler(self.commandLineEventHandlerHigh, self.events.getEventHandlerConfig("command-line-high")):
+  assignEventHandler(self.commands.commandLineEventHandlerHigh, self.events.getEventHandlerConfig("command-line-high")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
         Handled
@@ -673,7 +684,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     onInput:
       Ignored
 
-  assignEventHandler(self.commandLineEventHandlerLow, self.events.getEventHandlerConfig("command-line-low")):
+  assignEventHandler(self.commands.commandLineEventHandlerLow, self.events.getEventHandlerConfig("command-line-low")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
         Handled
@@ -681,19 +692,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
         Ignored
     onInput:
       Ignored
-
-  self.commandLineMode = false
-
-  self.languageServerCommandLine = newLanguageServerCommandLine(self.services)
-  let commandLineTextDocument = newTextDocument(self.services, language="command-line".some, languageServer=self.languageServerCommandLine.some)
-  self.editors.documents.add commandLineTextDocument
-  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.services)
-  self.commandLineTextEditor.renderHeader = false
-  self.getCommandLineTextEditor.usage = "command-line"
-  self.getCommandLineTextEditor.disableScrolling = true
-  self.getCommandLineTextEditor.lineNumbers = api.LineNumbers.None.some
-  self.getCommandLineTextEditor.hideCursorWhenInactive = true
-  discard self.commandLineTextEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
 
   var state = EditorState()
   if not options.dontRestoreConfig:
@@ -720,7 +718,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     else:
       log lvlInfo, &"Don't restore session file."
 
-  self.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
+  self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
 
   let closeUnusedDocumentsTimerS = self.config.getOption("editor.close-unused-documents-timer", 10)
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
@@ -833,7 +831,7 @@ proc shutdown*(self: App) =
   if self.wasmScriptContext.isNotNil:
     self.wasmScriptContext.deinit()
 
-  self.languageServerCommandLine.stop()
+  self.commands.languageServerCommandLine.stop()
 
   {.gcsafe.}:
     gAppInterface = nil
@@ -961,7 +959,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fontBoldItalic = self.fontBoldItalic
   state.fallbackFonts = self.fallbackFonts
 
-  state.commandHistory = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory
+  state.commandHistory = self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory
   state.sessionData = self.session.sessionData
 
   if getDebugger().getSome(debugger):
@@ -1138,77 +1136,8 @@ proc closeUnusedDocuments*(self: App) =
     # Only close one document on each iteration so we don't create spikes
     break
 
-proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
-  self.getCommandLineTextEditor.document.content = initialValue
-  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
-  self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = ""
-  self.currentHistoryEntry = 0
-  self.commandLineMode = true
-  self.getCommandLineTextEditor.setMode("insert")
-  self.events.rebuildCommandToKeysMap()
-  self.platform.requestRender()
-
-proc exitCommandLine*(self: App) {.expose("editor").} =
-  self.getCommandLineTextEditor.document.content = ""
-  self.getCommandLineTextEditor.hideCompletions()
-  self.commandLineMode = false
-  self.platform.requestRender()
-
-proc selectPreviousCommandInHistory*(self: App) {.expose("editor").} =
-  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
-
-  let command = self.getCommandLineTextEditor.document.contentString
-  if command != self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]:
-    self.currentHistoryEntry = 0
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = command
-
-  self.currentHistoryEntry += 1
-  if self.currentHistoryEntry >= self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len:
-    self.currentHistoryEntry = 0
-
-  self.getCommandLineTextEditor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
-  self.getCommandLineTextEditor.moveLast("file", Both)
-  self.platform.requestRender()
-
-proc selectNextCommandInHistory*(self: App) {.expose("editor").} =
-  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
-
-  let command = self.getCommandLineTextEditor.document.contentString
-  if command != self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]:
-    self.currentHistoryEntry = 0
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = command
-
-  self.currentHistoryEntry -= 1
-  if self.currentHistoryEntry < 0:
-    self.currentHistoryEntry = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.high
-
-  self.getCommandLineTextEditor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
-  self.getCommandLineTextEditor.moveLast("file", Both)
-  self.platform.requestRender()
-
-proc executeCommandLine*(self: App): bool {.expose("editor").} =
-  defer:
-    self.platform.requestRender()
-  self.commandLineMode = false
-  let command = self.getCommandLineTextEditor.document.contentString.replace("\n", "")
-
-  if (let i = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.find(command); i >= 0):
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.delete i
-
-  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
-
-  self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.insert command, 1
-
-  let maxHistorySize = self.config.getOption("editor.command-line.history-size", 100)
-  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len > maxHistorySize:
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.setLen maxHistorySize
-
+proc defaultHandleCommand*(self: App, command: string): bool =
   var (action, arg) = command.parseAction
-  self.getCommandLineTextEditor.document.content = ""
 
   if arg.startsWith("\\"):
     arg = $newJString(arg[1..^1])
@@ -1537,7 +1466,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
     for document in self.editors.documents:
-      if document == self.logDocument or document == self.commandLineTextEditor.getDocument():
+      if document == self.logDocument or document == self.commands.commandLineEditor.getDocument():
         continue
 
       let path = document.filename
@@ -2025,7 +1954,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
-      self.commandLine("create-file \\" & currentDirectory[])
+      self.commands.openCommandLine("create-file \\" & currentDirectory[])
 
   self.layout.pushPopup popup
 
@@ -2163,9 +2092,9 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
   if not self.modeEventHandler.isNil and not modeOnTop:
     result.add self.modeEventHandler
 
-  if self.commandLineMode:
-    result.add self.getCommandLineTextEditor.getEventHandlers({"above-mode": self.commandLineEventHandlerLow}.toTable)
-    result.add self.commandLineEventHandlerHigh
+  if self.commands.commandLineMode:
+    result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": self.commands.commandLineEventHandlerLow}.toTable)
+    result.add self.commands.commandLineEventHandlerHigh
   elif self.layout.popups.len > 0:
     result.add self.layout.popups[self.layout.popups.high].getEventHandlers()
   elif self.layout.tryGetCurrentView().getSome(view):
@@ -2305,8 +2234,8 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
       return EditorId(-1)
-    if gEditor.commandLineMode:
-      return gEditor.commandLineTextEditor.id
+    if gEditor.commands.commandLineMode:
+      return gEditor.commands.commandLineEditor.id
 
     if gEditor.layout.popups.len > 0 and gEditor.layout.popups[gEditor.layout.popups.high].getActiveEditor().getSome(editor):
       return editor.id
@@ -2317,8 +2246,8 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
   return EditorId(-1)
 
 proc getActiveEditor*(self: App): Option[DocumentEditor] =
-  if self.commandLineMode:
-    return self.commandLineTextEditor.some
+  if self.commands.commandLineMode:
+    return self.commands.commandLineEditor.some
 
   if self.layout.popups.len > 0 and self.layout.popups[self.layout.popups.high].getActiveEditor().getSome(editor):
     return editor.some
@@ -2453,7 +2382,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Input History: {self.inputHistory}\n"
       result.add &"Editor History: {self.layout.editorHistory}\n"
 
-      result.add &"Command History: {self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len}\n"
+      result.add &"Command History: {self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len}\n"
       # for command in self.commandHistory:
       #   result.add &"    {command}\n"
 
