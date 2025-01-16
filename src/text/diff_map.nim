@@ -213,6 +213,12 @@ proc createDiffMap(wrapMap: sink WrapMapSnapshot, mappings: openArray[LineMappin
   # echo "  line mappings"
   # echo mappings.mapIt(&"    {it}").join("\n")
   assert not otherWrapMap.map.isNil
+
+  # var t = startTimer()
+  # defer:
+  #   let e = t.elapsed.ms
+  #   echo &"createDiffMap took {e} ms"
+
   let endPoint = wrapMap.buffer.visibleText.summary.lines
   let endWrapPoint = wrapMap.toWrapPoint(endPoint)
   let otherEndPoint = otherWrapMap.buffer.visibleText.summary.lines
@@ -220,6 +226,17 @@ proc createDiffMap(wrapMap: sink WrapMapSnapshot, mappings: openArray[LineMappin
 
   var newMap = SumTree[DiffMapChunk].new()
   var currentChunk = DiffMapChunk()
+
+  template flushCurrentChunk(even: bool): untyped =
+    if currentChunk.summary.src != 0 or currentChunk.summary.dst != 0:
+      if even and currentChunk.summary.src == currentChunk.summary.dst:
+      # echo &"  flush {i}->{diffLine.line}, {wrapRange} -> {otherWrapRange}, {lines} -> {otherLines}, {currentChunk}"
+        newMap.add(currentChunk)
+        currentChunk = DiffMapChunk()
+      elif not even and currentChunk.summary.src != currentChunk.summary.dst:
+        newMap.add(currentChunk)
+        currentChunk = DiffMapChunk()
+
   for i in 0..<wrapMap.buffer.visibleText.lines:
     let wrapRange = wrapMap.toWrapPoint(point(i, 0))...wrapMap.toWrapPoint(point(i + 1, 0))
     let lines = if i == endPoint.row.int:
@@ -239,33 +256,31 @@ proc createDiffMap(wrapMap: sink WrapMapSnapshot, mappings: openArray[LineMappin
       # echo &"  otherWrapRange {diffLine.line}, {diffLine.changed} = {otherWrapRange} -> {otherLines}"
 
       if lines < otherLines:
+        flushCurrentChunk(even = false)
         currentChunk.summary.src += min(lines, otherLines)
         currentChunk.summary.dst += min(lines, otherLines)
-        if currentChunk.summary.src != 0 or currentChunk.summary.dst != 0:
-          # echo &"  flush {i}->{diffLine.line}, {wrapRange} -> {otherWrapRange}, {lines} -> {otherLines}, {currentChunk}"
-          newMap.add(currentChunk)
-          currentChunk = DiffMapChunk()
-        newMap.add(DiffMapChunk(summary: DiffMapChunkSummary(src: 0, dst: otherLines - lines)))
+        flushCurrentChunk(even = true)
+        currentChunk.summary.dst += otherLines - lines
       elif lines == otherLines:
+        flushCurrentChunk(even = false)
         currentChunk.summary.src += lines
         currentChunk.summary.dst += lines
       else:
+        flushCurrentChunk(even = false)
         currentChunk.summary.src += lines
         currentChunk.summary.dst += lines
 
     else:
+      flushCurrentChunk(even = false)
       currentChunk.summary.src += lines
       currentChunk.summary.dst += lines
 
     if i < endPoint.row.int and diffLine.getSome(diffLine) and nextDiffLine.getSome(nextDiffLine) and nextDiffLine.line - diffLine.line > 1:
       let otherWrapRange = otherWrapMap.toWrapPoint(point(diffLine.line + 1, 0))...otherWrapMap.toWrapPoint(point(nextDiffLine.line, 0))
       let otherLines = otherWrapRange.b.row - otherWrapRange.a.row
-      if currentChunk.summary.src != 0 or currentChunk.summary.dst != 0:
-        # echo &"  flush2 {i}->{diffLine}..{nextDiffLine}, {wrapRange} -> {otherWrapRange}, {lines} -> {otherLines}, {currentChunk}"
-        newMap.add(currentChunk)
-        currentChunk = DiffMapChunk()
       # echo &" delete otherWrapRange {otherWrapRange} -> {otherLines}"
-      newMap.add(DiffMapChunk(summary: DiffMapChunkSummary(src: 0, dst: otherLines)))
+      flushCurrentChunk(even = true)
+      currentChunk.summary.dst += otherLines
 
   if currentChunk.summary.src != 0 or currentChunk.summary.dst != 0:
     newMap.add(currentChunk)
@@ -297,8 +312,8 @@ proc edit*(self: var DiffMapSnapshot, buffer: sink WrapMapSnapshot, patch: Patch
 proc flushEdits(self: DiffMap) =
   discard
 
-proc edit*(self: DiffMap, wrapMap: sink WrapMapSnapshot, edits: openArray[tuple[old, new: Selection]]) =
-  # echo &"edit diff map"
+proc edit*(self: DiffMap, wrapMap: sink WrapMapSnapshot, patch: Patch[Point]) =
+  # echo &"edit diff map, {self.snapshot.wrapMap.map.summary} -> {wrapMap.map.summary}, {patch}"
   if self.snapshot.mappings.isSome:
     self.snapshot = createDiffMap(wrapMap.ensureMove, self.snapshot.mappings.get, self.snapshot.otherWrapMap, self.snapshot.reverse)
   else:
@@ -336,12 +351,11 @@ proc update*(self: DiffMap, mappings: Option[seq[LineMapping]], otherWrapMap: Wr
 proc clear*(self: DiffMap) =
   let oldSnapshot = self.snapshot.clone()
   self.snapshot.clear()
-  # echo &"DiffMap.onUpdated {self.snapshot.wrapMap.buffer.remoteId}@{self.snapshot.wrapMap.buffer.version}"
 
 proc seek*(self: var DiffChunkIterator, diffPoint: DiffPoint) =
   # echo &"DiffChunkIterator.seek {self.diffPoint} -> {diffPoint}"
-  let endDiffPoint = self.diffMap.toDiffPoint(self.diffMap.wrapMap.endWrapPoint)
-  assert endDiffPoint.row == self.diffMap.map.summary.dst - 1
+  var endDiffPoint = self.diffMap.toDiffPoint(self.diffMap.wrapMap.endWrapPoint)
+  assert endDiffPoint < diffPoint(self.diffMap.map.summary.dst, 0)
   if diffPoint <= endDiffPoint:
     let wrapPoint = self.diffMap.toWrapPoint(diffPoint)
     self.wrapChunks.seek(wrapPoint)

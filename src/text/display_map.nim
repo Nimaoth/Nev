@@ -134,8 +134,12 @@ proc edit*(self: var DisplayMapSnapshot, buffer: sink BufferSnapshot, patch: Pat
   self.diffMap.edit(self.wrapMap.clone(), patch)
 
 proc edit*(self: DisplayMap, buffer: sink BufferSnapshot, edits: openArray[tuple[old, new: Selection]]) =
-  self.wrapMap.edit(buffer, edits)
-  self.diffMap.edit(self.wrapMap.snapshot.clone(), edits)
+  var patch = Patch[Point]()
+  for e in edits:
+    patch.add initEdit(e.old.first.toPoint...e.old.last.toPoint, e.new.first.toPoint...e.new.last.toPoint)
+  # echo &"edit display map, {self.wrapMap.snapshot.map.summary}, {self.diffMap.snapshot.map.summary}, {patch}"
+  self.wrapMap.edit(buffer, patch)
+  self.diffMap.edit(self.wrapMap.snapshot.clone(), patch)
 
 proc update*(self: DisplayMap, wrapWidth: int, force: bool = false) =
   # echo &"DisplayMap.update {self.remoteId}@{self.wrapMap.snapshot.buffer.version}: {wrapWidth}"

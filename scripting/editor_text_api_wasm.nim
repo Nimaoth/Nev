@@ -97,20 +97,6 @@ proc numWrapLines*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_wrapEndPoint_WrapPoint_TextDocumentEditor_wasm(arg: cstring): cstring {.
-    importc.}
-proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_wrapEndPoint_WrapPoint_TextDocumentEditor_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_text_screenLineCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc screenLineCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
@@ -1473,16 +1459,21 @@ proc moveCursorCenter*(self: TextDocumentEditor;
       argsJsonString.cstring)
 
 
-proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
+proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_Option_float_Option_ScrollBehaviour_float_wasm(
     arg: cstring): cstring {.importc.}
 proc scrollToCursor*(self: TextDocumentEditor;
-                     cursor: SelectionCursor = SelectionCursor.Config) {.gcsafe,
-    raises: [].} =
+                     cursor: SelectionCursor = SelectionCursor.Config;
+                     margin: Option[float] = float.none; scrollBehaviour: Option[
+    ScrollBehaviour] = ScrollBehaviour.none; relativePosition: float = 0.5) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add cursor.toJson()
+  argsJson.add margin.toJson()
+  argsJson.add scrollBehaviour.toJson()
+  argsJson.add relativePosition.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
+  let res {.used.} = editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_Option_float_Option_ScrollBehaviour_float_wasm(
       argsJsonString.cstring)
 
 
@@ -1496,6 +1487,32 @@ proc setNextScrollBehaviour*(self: TextDocumentEditor;
   argsJson.add scrollBehaviour.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setDefaultSnapBehaviour_void_TextDocumentEditor_ScrollSnapBehaviour_wasm(
+    arg: cstring): cstring {.importc.}
+proc setDefaultSnapBehaviour*(self: TextDocumentEditor;
+                              snapBehaviour: ScrollSnapBehaviour) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add snapBehaviour.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setDefaultSnapBehaviour_void_TextDocumentEditor_ScrollSnapBehaviour_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setNextSnapBehaviour_void_TextDocumentEditor_ScrollSnapBehaviour_wasm(
+    arg: cstring): cstring {.importc.}
+proc setNextSnapBehaviour*(self: TextDocumentEditor;
+                           snapBehaviour: ScrollSnapBehaviour) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add snapBehaviour.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setNextSnapBehaviour_void_TextDocumentEditor_ScrollSnapBehaviour_wasm(
       argsJsonString.cstring)
 
 

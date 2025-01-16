@@ -470,17 +470,19 @@ proc seek*(self: var StyledChunkIterator, point: Point) =
   self.highlightsIndex = -1
   self.chunk = RopeChunk.none
 
-func contentString(self: var StyledChunkIterator, selection: Range[Point], byteRange: Range[int]): string =
+func contentString(self: var StyledChunkIterator, selection: Range[Point], byteRange: Range[int], maxLen: int): string =
   let currentChunk {.cursor.} = self.chunk.get
   if selection.a >= currentChunk.point and selection.b <= currentChunk.endPoint:
     let startIndex = selection.a.column - currentChunk.point.column
     let endIndex = selection.b.column - currentChunk.point.column
     return $currentChunk[startIndex.int...endIndex.int]
   else:
-    result = newStringOfCap(selection.b.column - selection.a.column)
+    result = newStringOfCap(min(selection.b.column.int - selection.a.column.int, maxLen))
     for slice in self.chunks.rope.rope.iterateChunks(byteRange):
       for c in slice.chars:
         result.add c
+        if result.len == maxLen:
+          return
 
 proc addHighlight(highlights: var seq[Highlight], nextHighlight: sink Highlight) =
   if highlights.len > 0:
@@ -513,6 +515,12 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
       if self.chunk.get.point.row == 209:
         echo msg
 
+  # Max length of a node used for checking predicates like #match?
+  # Nodes longer than that will not be highlighted correctly, but those should be very rare
+  # and since it's just syntax highlighting this is not super critical,
+  # and this way we avoid bad performance for some these cases.
+  const maxPredicateCheckLen = 128
+
   # todo: escapes in nim strings might cause overlapping captures
   if self.chunk.isNone or self.localOffset >= self.chunk.get.len:
     self.chunk = self.chunks.next()
@@ -542,6 +550,9 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
             continue
 
           var matches = true
+          if nodeRange.a.row !=  nodeRange.b.row:
+            matches = false
+
           for predicate in predicates:
             if not matches:
               break
@@ -561,7 +572,7 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
                     break
                 let regex {.cursor.} = regexes[][operand.`type`]
 
-                let nodeText = self.contentString(nodeRange, byteRange)
+                let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
                 if nodeText.matchLen(regex, 0) != nodeText.len:
                   matches = false
                   break
@@ -575,21 +586,21 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
                     break
                 let regex {.cursor.} = regexes[][operand.`type`]
 
-                let nodeText = self.contentString(nodeRange, byteRange)
+                let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
                 if nodeText.matchLen(regex, 0) == nodeText.len:
                   matches = false
                   break
 
               of "eq?":
                 # @todo: second arg can be capture aswell
-                let nodeText = self.contentString(nodeRange, byteRange)
+                let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
                 if nodeText != operand.`type`:
                   matches = false
                   break
 
               of "not-eq?":
                 # @todo: second arg can be capture aswell
-                let nodeText = self.contentString(nodeRange, byteRange)
+                let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
                 if nodeText == operand.`type`:
                   matches = false
                   break

@@ -417,21 +417,20 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
           bounds.range.len.column.int
 
         var selectionBounds = rect(
-          bounds.bounds.xy + vec2(firstOffset.float * builder.charWidth, 0),
-          vec2((lastOffset - firstOffset).float * builder.charWidth, builder.textHeight))
-        # fillRect(selectionBounds, color)
+          round(bounds.bounds.xy + vec2(firstOffset.float * builder.charWidth, 0)),
+          round(vec2((lastOffset - firstOffset).float * builder.charWidth, builder.textHeight)))
         renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: selectionBounds, color: color))
 
 proc drawLineNumber(renderCommands: var RenderCommands, builder: UINodeBuilder, lineNumber: int, offset: Vec2, cursorLine: int, lineNumbers: LineNumbers, lineNumberBounds: Vec2, textColor: Color) =
   var lineNumberText = ""
   var lineNumberX = 0.float
   if lineNumbers != LineNumbers.None and cursorLine == lineNumber:
-    lineNumberText = $(lineNumber + 0)
+    lineNumberText = $(lineNumber + 1)
   elif lineNumbers == LineNumbers.Absolute:
-    lineNumberText = $(lineNumber + 0)
+    lineNumberText = $(lineNumber + 1)
     lineNumberX = max(0.0, lineNumberBounds.x - lineNumberText.len.float * builder.charWidth)
   elif lineNumbers == LineNumbers.Relative:
-    lineNumberText = $abs((lineNumber + 0) - cursorLine)
+    lineNumberText = $abs((lineNumber + 1) - cursorLine)
     lineNumberX = max(0.0, lineNumberBounds.x - lineNumberText.len.float * builder.charWidth)
 
   if lineNumberText.len > 0:
@@ -450,6 +449,47 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     flags.incl SizeToContentY
   else:
     flags.incl FillY
+
+  let parentWidth = if sizeToContentX:
+    currentNode.w = builder.charWidth
+    min(self.document.rope.len.float * builder.charWidth, 500.0) # todo: figure out max height
+  else:
+    currentNode.bounds.w
+
+  let parentHeight = if sizeToContentY:
+    currentNode.h = builder.textHeight
+    min(self.document.rope.lines.float * builder.textHeight, 500.0) # todo: figure out max height
+  else:
+    currentNode.bounds.h
+
+  let enableSmoothScrolling = app.config.asConfigProvider.getValue("ui.smooth-scroll", true)
+  let snapBehaviour = self.nextSnapBehaviour.get(self.defaultSnapBehaviour)
+  let scrollSnapDistance: float = parentHeight * app.config.asConfigProvider.getValue("ui.scroll-snap-min-distance", 0.5)
+  let smoothScrollSpeed: float = app.config.asConfigProvider.getValue("ui.smooth-scroll-speed", 15.0)
+
+  if enableSmoothScrolling:
+    if self.interpolatedScrollOffset == self.scrollOffset:
+      self.nextSnapBehaviour = ScrollSnapBehaviour.none
+    elif snapBehaviour == ScrollSnapBehaviour.Always:
+      self.interpolatedScrollOffset = self.scrollOffset
+      self.nextSnapBehaviour = ScrollSnapBehaviour.none
+    elif snapBehaviour in {ScrollSnapBehaviour.MinDistanceOffscreen, MinDistanceCenter} and abs(self.interpolatedScrollOffset - self.scrollOffset) > scrollSnapDistance:
+      if snapBehaviour == ScrollSnapBehaviour.MinDistanceCenter:
+        self.interpolatedScrollOffset = self.scrollOffset
+        self.nextSnapBehaviour = ScrollSnapBehaviour.none
+      else:
+        self.interpolatedScrollOffset = self.scrollOffset + sign(self.interpolatedScrollOffset - self.scrollOffset) * scrollSnapDistance
+        self.markDirty()
+    else:
+      self.interpolatedScrollOffset = mix(self.interpolatedScrollOffset, self.scrollOffset, smoothScrollSpeed * app.platform.deltaTime)
+      if abs(self.interpolatedScrollOffset - self.scrollOffset) < 1:
+        self.interpolatedScrollOffset = self.scrollOffset
+        self.nextSnapBehaviour = ScrollSnapBehaviour.none
+      self.markDirty()
+
+  else:
+    self.interpolatedScrollOffset = self.scrollOffset
+    self.nextSnapBehaviour = ScrollSnapBehaviour.none
 
   let inclusive = app.config.getOption[:bool]("editor.text.inclusive-selection", false)
   let drawChunks = app.config.getOption[:bool]("editor.text.draw-chunks", false)
@@ -491,8 +531,9 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   else:
     0.0
 
-  var startLine = max(self.previousBaseIndex - (self.scrollOffset / builder.textHeight).int - 1, 0)
-  let startLineOffsetFromScrollOffset = (self.previousBaseIndex - startLine).float * builder.textHeight
+  let scrollOffset = self.interpolatedScrollOffset
+  var startLine = max((-scrollOffset / builder.textHeight).int - 1, 0)
+  let startLineOffsetFromScrollOffset = (-startLine).float * builder.textHeight
   var slice = self.document.rope.slice()
   let displayEndPoint = self.displayMap.toDisplayPoint(slice.summary.lines)
 
@@ -516,18 +557,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     if self.diffDocument.tsTree.isNotNil and self.diffDocument.highlightQuery.isNotNil and highlight:
       diffIter.diffChunks.wrapChunks.chunks.highlighter = Highlighter(query: self.diffDocument.highlightQuery, tree: self.diffDocument.tsTree).some
     diffIter.seekLine(startLine)
-
-  let parentWidth = if sizeToContentX:
-    currentNode.w = builder.charWidth
-    min(self.document.rope.len.float * builder.charWidth, 500.0) # todo: figure out max height
-  else:
-    currentNode.bounds.w
-
-  let parentHeight = if sizeToContentY:
-    currentNode.h = builder.textHeight
-    min(self.document.rope.lines.float * builder.textHeight, 500.0) # todo: figure out max height
-  else:
-    currentNode.bounds.h
 
   let mainOffset = if renderDiff:
     floor(parentWidth * 0.5)
@@ -555,7 +584,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     builder: builder,
     displayMap: self.displayMap,
     bounds: rect(mainOffset, 0, parentWidth - mainOffset, parentHeight),
-    offset: vec2(lineNumberWidth + mainOffset, self.scrollOffset - startLineOffsetFromScrollOffset + (iter.displayPoint.row.int - startLine).float * builder.textHeight),
+    offset: vec2(lineNumberWidth + mainOffset, scrollOffset - startLineOffsetFromScrollOffset + (iter.displayPoint.row.int - startLine).float * builder.textHeight),
     lastDisplayPoint: iter.displayPoint,
     lastDisplayEndPoint: iter.displayPoint,
     lastPoint: iter.point,
@@ -567,7 +596,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     builder: builder,
     displayMap: self.diffDisplayMap,
     bounds: rect(0, 0, mainOffset, parentHeight),
-    offset: vec2(lineNumberWidth, self.scrollOffset - startLineOffsetFromScrollOffset + (diffIter.displayPoint.row.int - startLine).float * builder.textHeight),
+    offset: vec2(lineNumberWidth, scrollOffset - startLineOffsetFromScrollOffset + (diffIter.displayPoint.row.int - startLine).float * builder.textHeight),
     lastDisplayPoint: diffIter.displayPoint,
     lastDisplayEndPoint: diffIter.displayPoint,
     lastPoint: diffIter.point,
@@ -792,7 +821,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     let centerPos = currentNode.bounds.wh * 0.5 + vec2(0, builder.textHeight * -0.5)
     var (found, index) = state.chunkBounds.binarySearchRange(centerPos, Bias.Left, cmp)
     if index notin 0..state.chunkBounds.high:
-      log lvlError, &"no center point, {index} notin {0..state.chunkBounds.high}"
       return
 
     if index + 1 < state.chunkBounds.len and centerPos.y >= state.chunkBounds[index].bounds.yh and centerPos.y < state.chunkBounds[index + 1].bounds.yh:
@@ -809,8 +837,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let dirty = self.dirty
   self.resetDirty()
 
-  let useNewRenderer = app.config.getOption[:bool]("ui.new", true)
-  let logNewRenderer = app.config.getOption[:bool]("ui.new-log", true)
+  let logNewRenderer = app.config.getOption[:bool]("ui.new-log", false)
   let transparentBackground = app.config.getOption[:bool]("ui.background.transparent", false)
   let darkenInactive = app.config.getOption[:float]("text.background.inactive-darken", 0.025)
 
@@ -873,51 +900,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
 
         builder.panel(sizeFlags + &{FillBackground, MaskContent}, backgroundColor = backgroundColor):
-          if not self.disableScrolling and not sizeToContentY:
-            let bounds = currentNode.bounds
-
-            if self.targetPoint.getSome(targetPoint):
-              let displayPoint = self.displayMap.toDisplayPoint(targetPoint)
-              let targetDisplayLine = displayPoint.row.int
-              let targetLineY = (targetDisplayLine - self.previousBaseIndex).float32 * builder.textHeight + self.scrollOffset
-
-              let center = case self.nextScrollBehaviour.get(self.defaultScrollBehaviour):
-                of CenterAlways: true
-                of CenterOffscreen: targetLineY < 0 or targetLineY + builder.textHeight > self.lastContentBounds.h
-                of ScrollToMargin: false
-                of TopOfScreen: false
-
-              if center:
-                self.previousBaseIndex = targetDisplayLine
-                self.scrollOffset = bounds.h * self.targetLineRelativeY - builder.textHeight * 0.5
-
-              else:
-                case self.nextScrollBehaviour.get(self.defaultScrollBehaviour)
-                of TopOfScreen:
-                  self.previousBaseIndex = targetDisplayLine
-                  self.scrollOffset = 0
-                else:
-                  let configMarginRelative = app.config.getOption[:bool]("text.cursor-margin-relative", true)
-                  let configMargin = app.config.getOption[:float]("text.cursor-margin", 0.2)
-                  let margin = if self.targetLineMargin.getSome(margin):
-                    clamp(margin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
-                  elif configMarginRelative:
-                    clamp(configMargin, 0.0, 1.0) * 0.5 * bounds.h
-                  else:
-                    clamp(configMargin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
-
-                  let oldPreviousBaseIndex = self.previousBaseIndex
-                  let oldScrollOffset = self.scrollOffset
-                  updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.numDisplayLines, builder.textHeight, targetLine=targetDisplayLine.some, margin=margin)
-
-            else:
-              let oldPreviousBaseIndex = self.previousBaseIndex
-              let oldScrollOffset = self.scrollOffset
-              updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.numDisplayLines, builder.textHeight, targetLine=int.none)
-
-            self.targetPoint = Point.none
-            self.nextScrollBehaviour = ScrollBehaviour.none
-
           var selectionsNode: UINode
           builder.panel(&{UINodeFlag.FillX, FillY}):
             selectionsNode = currentNode

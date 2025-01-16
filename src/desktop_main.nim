@@ -286,10 +286,16 @@ proc run(app: App, plat: Platform, backend: Backend) =
   var renderedLastFrame = false
 
   let maxPollPerFrameMs = 2.5
+  let totalTime = startTimer()
+  var lastTime = totalTime.elapsed.float
 
   while not app.closeRequested:
     defer:
       inc frameIndex
+
+    let now = totalTime.elapsed.float
+    plat.deltaTime = now - lastTime
+    lastTime = now
 
     let totalTimer = startTimer()
 

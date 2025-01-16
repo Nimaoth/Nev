@@ -574,7 +574,6 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
         platform.boxy.addImage($rune, image, genMipmaps=false)
         platform.glyphCache[rune] = $rune
 
-      proc round(v: Vec2): Vec2 = vec2(v.x.round, v.y.round)
       let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
       platform.boxy.drawImage($rune, pos, color)
 

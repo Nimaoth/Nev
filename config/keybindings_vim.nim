@@ -106,6 +106,7 @@ proc vimSelectLastCursor(editor: TextDocumentEditor) {.exposeActive(editorContex
   editor.selections = editor.selections.mapIt(it.last.toSelection)
   editor.updateTargetColumn()
   editor.setNextScrollBehaviour(ScrollToMargin)
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc vimSelectLast(editor: TextDocumentEditor, move: string, count: int = 1) {.exposeActive(editorContext, "vim-select-last").} =
   # infof"vimSelectLast '{move}' {count}"
@@ -175,6 +176,7 @@ proc vimUpdateSelections(editor: TextDocumentEditor, selections: Selections) =
 
   else:
     editor.selections = selections
+  editor.scrollToCursor Last
 
 proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.exposeActive(editorContext, "vim-delete-selection").} =
   let newSelections = editor.copySelection(getVimDefaultRegister())
@@ -684,8 +686,9 @@ proc vimMoveCursorColumn(editor: TextDocumentEditor, direction: int, count: int 
 
 proc vimMoveCursorLine(editor: TextDocumentEditor, direction: int, count: int = 1, center: bool = false) {.exposeActive(editorContext, "vim-move-cursor-line").} =
   editor.moveCursorLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
-  if center:
-    editor.setNextScrollBehaviour(CenterAlways)
+  let nextScrollBehaviour = if center: CenterAlways.some else: ScrollBehaviour.none
+  editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
+  editor.setNextSnapBehaviour(Never)
   if editor.vimState.selectLines:
     editor.vimSelectLine()
 
@@ -694,8 +697,9 @@ proc vimMoveCursorVisualLine(editor: TextDocumentEditor, direction: int, count: 
     editor.moveCursorLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
   else:
     editor.moveCursorVisualLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
-  if center:
-    editor.setNextScrollBehaviour(CenterAlways)
+  let nextScrollBehaviour = if center: CenterAlways.some else: ScrollBehaviour.none
+  editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
+  editor.setNextSnapBehaviour(Never)
   if editor.vimState.selectLines:
     editor.vimSelectLine()
 
@@ -1061,6 +1065,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.selection = (count - 1, 0).toSelection(editor.selection, which)
     editor.moveFirst "line-no-indent"
     editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
   addSubCommandWithCountBlock "", "move", "G":
     let line = if count == 0: editor.lineCount - 1 else: count - 1
@@ -1073,6 +1078,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.selection = newSelection
       editor.moveFirst "line-no-indent"
     editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
   addSubCommandWithCountBlock "", "move", "%":
     if count == 0:
@@ -1083,6 +1089,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.selection = (line, 0).toSelection(editor.selection, which)
       editor.moveFirst "line-no-indent"
       editor.scrollToCursor Last
+      editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
   addSubCommandWithCount "", "move", "k", "vim-move-cursor-visual-line", -1
   addSubCommandWithCount "", "move", "j", "vim-move-cursor-visual-line", 1
@@ -1097,10 +1104,12 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommandBlockDesc "", "n", "go to next search result":
     editor.selection = editor.getNextFindResult(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
     editor.updateTargetColumn()
   addTextCommandBlockDesc "", "N", "go to previous search result":
     editor.selection = editor.getPrevFindResult(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
     editor.updateTargetColumn()
 
   addTextCommandBlockDesc "", "/", "open search bar":
@@ -1122,11 +1131,11 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.updateTargetColumn()
 
   # Scrolling
-  addTextCommand "", "<C-e>", "scroll-lines", 1
+  addTextCommand "", "<C-e>", "scroll-lines", 2
   addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorVisualLine(editor.screenLineCount div 2, count, center=true)
   addSubCommandWithCountBlock "", "move", "<PAGE_DOWN>": editor.vimMoveCursorVisualLine(editor.screenLineCount, count, center=true)
 
-  addTextCommand "", "<C-y>", "scroll-lines", -1
+  addTextCommand "", "<C-y>", "scroll-lines", -2
   addSubCommandWithCountBlock "", "move", "<C-u>": editor.vimMoveCursorVisualLine(-editor.screenLineCount div 2, count, center=true)
   addSubCommandWithCountBlock "", "move", "<PAGE_UP>": editor.vimMoveCursorVisualLine(-editor.screenLineCount, count, center=true)
 
@@ -1264,6 +1273,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
       editor.updateTargetColumn()
       editor.scrollToCursor Last
+      editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
   addTextCommandBlock "", "dd":
     editor.vimState.selectLines = true
@@ -1466,6 +1476,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
       editor.selections = editor.selections & next
       editor.scrollToCursor Last
+      editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
     editor.setMode("visual")
@@ -1479,6 +1490,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
       editor.selections = editor.selections[0..^2] & next
       editor.scrollToCursor Last
+      editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
     editor.setMode("visual")
@@ -1487,24 +1499,28 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
       editor.selections = editor.selections & selection
       editor.scrollToCursor Last
+      editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
   addTextCommandBlock "visual", "gh":
     if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
       editor.selections = editor.selections[0..^2] & selection
       editor.scrollToCursor Last
+      editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
   addTextCommandBlock "visual", "gs":
     if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
       editor.selections = editor.selections & selection
       editor.scrollToCursor Last
+      editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
   addTextCommandBlock "visual", "gd":
     if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
       editor.selections = editor.selections[0..^2] & selection
       editor.scrollToCursor Last
+      editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
   addCommand "editor.text.visual", "S<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
@@ -1521,6 +1537,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     var insertSelections: Selections = @[]
     var insertTexts: seq[string] = @[]
     for s in editor.selections:
+      let s = s.normalized
       insertSelections.add s.first.toSelection
       insertSelections.add editor.doMoveCursorColumn(s.last, 1).toSelection
       insertTexts.add left
@@ -1543,6 +1560,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
         (editor.doMoveCursorColumn(it.first, 1), editor.doMoveCursorColumn(it.last, -1))
     )
     editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
     editor.updateTargetColumn()
 
   addTextCommand "visual", "gp", "select-parent-current-ts", false
@@ -1560,11 +1578,13 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.selections = editor.selections.mapIt((it.last, it.first))
     editor.scrollToCursor Last
     editor.updateTargetColumn()
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
   addTextCommandBlock "", "<C-g>o":
     editor.selections = editor.selections.reversed()
     editor.scrollToCursor Last
     editor.updateTargetColumn()
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-UP>", "scroll-lines", -1
@@ -1603,19 +1623,23 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.selection = editor.getNextDiagnostic(editor.selection.last, 1).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
   addTextCommandBlock "", "gn":
     editor.selection = editor.getPrevDiagnostic(editor.selection.last, 1).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
   addTextCommandBlock "", "gf":
     editor.selection = editor.getNextChange(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
     editor.centerCursor()
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
   addTextCommandBlock "", "gh":
     editor.selection = editor.getPrevChange(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
     editor.centerCursor()
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
   addTextCommand "", "<LEADER>gx", "close-diff"
   addTextCommand "", "<LEADER>gc", "update-diff"
   addTextCommand "", "<LEADER>gl", "fuzzy-search-lines"

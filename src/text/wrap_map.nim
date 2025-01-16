@@ -344,6 +344,7 @@ proc editImpl(self: var WrapMapSnapshot, buffer: sink BufferSnapshot, patch: Pat
 
   newMap.append c.suffix()
 
+  # echo &"WrapMap.edit {self.map.summary} -> {newMap.summary}"
   self = WrapMapSnapshot(map: newMap.ensureMove, buffer: buffer.ensureMove)
   log &"{self}"
   # self.validate()
@@ -380,6 +381,10 @@ proc flushEdits(self: WrapMap) =
       firstI = i + 1
   # self.pendingEdits = self.pendingEdits[firstI..^1]
 
+proc edit*(self: WrapMap, buffer: sink BufferSnapshot, patch: Patch[Point]) =
+  self.pendingEdits.add (buffer.ensureMove, patch)
+  self.flushEdits()
+
 proc edit*(self: WrapMap, buffer: sink BufferSnapshot, edits: openArray[tuple[old, new: Selection]]) =
   var patch = Patch[Point]()
   for e in edits:
@@ -408,6 +413,7 @@ proc update*(self: var WrapMapSnapshot, buffer: sink BufferSnapshot, wrapWidth: 
     self = WrapMapSnapshot(
       map: SumTree[WrapMapChunk].new([WrapMapChunk(src: endPoint, dst: endPoint.WrapPoint)]),
       buffer: buffer.ensureMove)
+    # echo &"WrapMap.upate identity {self.map.summary}"
     log &"{self}"
     return
 
@@ -455,6 +461,7 @@ proc update*(self: var WrapMapSnapshot, buffer: sink BufferSnapshot, wrapWidth: 
       dst: (currentDisplayRange.b - currentDisplayRange.a).toWrapPoint,
     ), ())
 
+  # echo &"WrapMap.upate {self.map.summary} -> {newMap.summary}"
   self = WrapMapSnapshot(map: newMap.ensureMove, buffer: buffer.ensureMove, interpolated: false)
   # self.validate()
 
@@ -498,12 +505,11 @@ proc updateAsync(self: WrapMap) {.async.} =
 
     let oldSnapshot = self.snapshot.clone()
     self.snapshot = snapshot.clone()
-    # echo &"done {self.snapshot.interpolated}"
+    # echo &"WrapMap.onUpdated {self.snapshot.buffer.remoteId}@{self.snapshot.buffer.version}"
+    self.onUpdated.invoke((self, oldSnapshot))
+
     if not self.snapshot.interpolated:
-      # echo self.snapshot
       self.pendingEdits.setLen(0)
-      # echo &"WrapMap.onUpdated {self.snapshot.buffer.remoteId}@{self.snapshot.buffer.version}"
-      self.onUpdated.invoke((self, oldSnapshot))
       return
 
     b = self.snapshot.buffer.clone()

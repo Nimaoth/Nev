@@ -45,4 +45,8 @@ method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: Documen
   let textEditorToPreview = editorToPreview.TextDocumentEditor
   editor.setDocument(textEditorToPreview.document)
   editor.selection = textEditorToPreview.selection
-  editor.centerCursor()
+  if editor.selection == (0, 0).toSelection:
+    editor.scrollToTop()
+  else:
+    editor.centerCursor()
+  editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)

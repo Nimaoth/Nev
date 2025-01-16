@@ -198,3 +198,5 @@ proc almostEqual*(a, b: Vec2, epsilon: float32): bool =
 
 proc isNan*(rect: Rect): bool =
   result = rect.x.isNan or rect.y.isNan or rect.w.isNan or rect.h.isNan
+
+proc round*(v: Vec2): Vec2 = vec2(v.x.round, v.y.round)

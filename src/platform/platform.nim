@@ -15,6 +15,7 @@ type
     showDrawnNodes*: bool = false
     supportsThinCursor*: bool
     focused*: bool
+    deltaTime*: float
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
     onKeyRelease*: Event[tuple[input: int64, modifiers: Modifiers]]
     onRune*: Event[tuple[input: int64, modifiers: Modifiers]]

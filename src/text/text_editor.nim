@@ -86,6 +86,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   selectionHistory: Deque[Selections]
   dontRecordSelectionHistory: bool
 
+  cursorMargin*: Option[float]
+
   searchQuery*: string
   searchRegex*: Option[Regex]
   searchResults*: Table[int, seq[Selection]]
@@ -97,6 +99,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   defaultScrollBehaviour*: ScrollBehaviour = CenterOffscreen
   nextScrollBehaviour*: Option[ScrollBehaviour]
+  defaultSnapBehaviour*: ScrollSnapBehaviour = MinDistanceOffscreen
+  nextSnapBehaviour*: Option[ScrollSnapBehaviour]
   targetLineMargin*: Option[float]
   targetLineRelativeY*: float = 0.5
   targetPoint*: Option[Point]
@@ -135,7 +139,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   disableScrolling*: bool
   scrollOffset*: float
-  previousBaseIndex*: int
+  interpolatedScrollOffset*: float
   lineNumbers*: Option[LineNumbers]
 
   currentCenterCursor*: Cursor # Cursor representing the center of the screen
@@ -255,9 +259,10 @@ proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5)
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
-proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
+proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, margin: Option[float] = float.none, scrollBehaviour: Option[ScrollBehaviour] = ScrollBehaviour.none, relativePosition: float = 0.5)
 proc getFileName(self: TextDocumentEditor): string
 proc closeDiff*(self: TextDocumentEditor)
+proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour)
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
@@ -380,7 +385,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.showHover = false
     self.inlayHints.setLen 0
     self.scrollOffset = 0
-    self.previousBaseIndex = 0
     self.lastRenderedLines.setLen 0
     self.currentSnippetData = SnippetData.none
 
@@ -627,6 +631,7 @@ proc updateSearchResults(self: TextDocumentEditor) =
   if not self.searchResultsDirty:
     return
 
+  # todo: run this in a background thread
   self.searchResultsDirty = false
 
   self.clearCustomHighlights(searchResultsId)
@@ -666,42 +671,64 @@ method handleDeactivate*(self: TextDocumentEditor) =
   if self.diffDocument.isNotNil:
     self.diffDocument.clearStyledTextCache()
 
-proc scrollToTop*(self: TextDocumentEditor) =
-  if self.disableScrolling:
-    return
-
-  self.targetPoint = Point.init(0, 0).some
-  self.nextScrollBehaviour = TopOfScreen.some
-  self.targetLineMargin = float.none
-  self.targetLineRelativeY = 0.5
-
-  self.updateInlayHints()
-  self.markDirty()
-
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5) =
+proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
+    scrollBehaviour = ScrollBehaviour.none, relativePosition: float = 0.5) =
   if self.disableScrolling:
     return
 
   self.targetPoint = cursor.toPoint.some
-  self.nextScrollBehaviour = CenterAlways.some
-  self.targetLineMargin = float.none
+  self.targetLineMargin = margin
   self.targetLineRelativeY = relativePosition
 
+  let targetPoint = cursor.toPoint
+  let textHeight = self.platform.totalLineHeight
+  let displayPoint = self.displayMap.toDisplayPoint(targetPoint)
+  let targetDisplayLine = displayPoint.row.int
+  let targetLineY = targetDisplayLine.float32 * textHeight + self.interpolatedScrollOffset
+
+  let configMarginRelative = self.configProvider.getValue("text.cursor-margin-relative", true)
+  let configMargin = self.cursorMargin.get(self.configProvider.getValue("text.cursor-margin", 0.2))
+  let margin = if margin.getSome(margin):
+    clamp(margin, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
+  elif configMarginRelative:
+    clamp(configMargin, 0.0, 1.0) * 0.5 * self.lastContentBounds.h
+  else:
+    clamp(configMargin, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
+
+  let center = case scrollBehaviour.get(self.defaultScrollBehaviour):
+    of CenterAlways: true
+    of CenterOffscreen: targetLineY < 0 or targetLineY + textHeight > self.lastContentBounds.h
+    of CenterMargin: targetLineY < margin or targetLineY + textHeight > self.lastContentBounds.h - margin
+    of ScrollToMargin: false
+    of TopOfScreen: false
+
+  self.nextScrollBehaviour = if center:
+    CenterAlways.some
+  else:
+    scrollBehaviour
+
+  if center:
+    self.scrollOffset = self.lastContentBounds.h * relativePosition - textHeight * 0.5 - targetDisplayLine.float * textHeight
+
+  else:
+    case scrollBehaviour.get(self.defaultScrollBehaviour)
+    of TopOfScreen:
+      self.scrollOffset = margin - targetDisplayLine.float * textHeight
+    else:
+      if targetLineY < margin:
+        self.scrollOffset = margin - targetDisplayLine.float * textHeight
+      elif targetLineY + textHeight > self.lastContentBounds.h - margin:
+        self.scrollOffset = self.lastContentBounds.h - margin - textHeight - targetDisplayLine.float * textHeight
+
+
   self.updateInlayHints()
   self.markDirty()
 
-proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
-    scrollBehaviour = ScrollBehaviour.none) =
-  if self.disableScrolling:
-    return
+proc scrollToTop*(self: TextDocumentEditor) =
+  self.scrollToCursor((0, 0), scrollBehaviour = TopOfScreen.some)
 
-  self.targetPoint = cursor.toPoint.some
-  self.nextScrollBehaviour = scrollBehaviour
-  self.targetLineMargin = margin
-  self.targetLineRelativeY = 0.5
-
-  self.updateInlayHints()
-  self.markDirty()
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5) =
+  self.scrollToCursor(cursor, scrollBehaviour = CenterAlways.some, relativePosition = relativePosition)
 
 proc isThickCursor*(self: TextDocumentEditor): bool =
   if not self.platform.supportsThinCursor:
@@ -848,7 +875,7 @@ proc displayEndPoint*(self: TextDocumentEditor): DisplayPoint =
 proc numWrapLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
   return self.displayMap.wrapMap.toWrapPoint(self.document.rope.summary.lines).row.int + 1
 
-proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint {.expose: "editor.text".} =
+proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint =
   return self.displayMap.wrapMap.toWrapPoint(self.document.rope.summary.lines)
 
 proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
@@ -859,9 +886,9 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
   assert self.lineCount > 0
-  let baseLine = int(self.scrollOffset / self.platform.totalLineHeight)
-  result.first.line = clamp(self.previousBaseIndex - baseLine - buffer, 0, self.lineCount - 1)
-  result.last.line = clamp(self.previousBaseIndex - baseLine + self.screenLineCount + buffer,
+  let baseLine = int(-self.scrollOffset / self.platform.totalLineHeight)
+  result.first.line = clamp(baseLine - buffer, 0, self.lineCount - 1)
+  result.last.line = clamp(baseLine + self.screenLineCount + buffer,
     0, self.lineCount - 1)
   result.last.column = self.document.rope.lastValidIndex(result.last.line)
 
@@ -983,9 +1010,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
   if cursor.line notin 0..<self.document.numLines:
     return cursor
 
-  # todo: use rope cursor
-  var currentLine = $self.document.getLine(cursor.line)
-
+  var c = self.document.rope.cursorT(cursor.toPoint)
   var lastIndex = self.document.rope.lastValidIndex(cursor.line, includeAfter)
 
   if offset > 0:
@@ -997,16 +1022,16 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
           cursor.line = cursor.line + 1
           cursor.column = 0
           lastIndex = self.document.rope.lastValidIndex(cursor.line, includeAfter)
-          currentLine = $self.document.getLine(cursor.line)
+          c.seekForward(point(cursor.line, 0))
           continue
         else:
           cursor.column = lastIndex
           break
 
-      cursor.column = currentLine.nextRuneStart(cursor.column)
+      c.seekNextRune()
+      cursor = c.position.toCursor
 
   elif offset < 0:
-    # echo &"doMoveCursorColumn {cursor}, {offset}, wrap: {wrap}, includeAfter: {includeAfter}"
     for i in 0..<(-offset):
       if cursor.column == 0:
         if not wrap:
@@ -1014,15 +1039,17 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
         if cursor.line > 0:
           cursor.line = cursor.line - 1
           lastIndex = self.document.rope.lastValidIndex(cursor.line, includeAfter)
-          # echo &"line {cursor.line} -> {lastIndex}"
-          currentLine = $self.document.getLine(cursor.line)
+          c.seekPrevRune()
+          if not includeAfter:
+            c.seekPrevRune()
           cursor.column = lastIndex
           continue
         else:
           cursor.column = 0
           break
 
-      cursor.column = currentLine.runeStart(cursor.column - 1)
+      c.seekPrevRune()
+      cursor = c.position.toCursor
 
   return self.clampCursor(cursor, includeAfter)
 
@@ -1188,6 +1215,7 @@ proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
     if self.blinkCursorTask.isNotNil and self.active:
       self.blinkCursorTask.reschedule()
   self.scrollToCursor(self.selection.last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
@@ -1199,6 +1227,7 @@ proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
     if self.blinkCursorTask.isNotNil and self.active:
       self.blinkCursorTask.reschedule()
   self.scrollToCursor(self.selection.last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc selectInside*(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
   self.selection = self.getSelectionForMove(cursor, "word")
@@ -1577,11 +1606,13 @@ proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("edit
   if self.document.undo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
   if self.document.redo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("editor.text").} =
   self.document.addNextCheckpoint checkpoint
@@ -1669,16 +1700,7 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
   if self.disableScrolling:
     return
 
-  self.previousBaseIndex += amount
-
-  while self.previousBaseIndex <= 0:
-    self.previousBaseIndex.inc
-    self.scrollOffset += self.platform.totalLineHeight
-
-  let numDisplayLines = self.numDisplayLines()
-  while self.previousBaseIndex >= numDisplayLines - 1:
-    self.previousBaseIndex.dec
-    self.scrollOffset -= self.platform.totalLineHeight
+  self.scrollOffset += self.platform.totalLineHeight * amount.float
 
   self.updateInlayHints()
   self.markDirty()
@@ -2082,19 +2104,23 @@ proc moveCursorCenter*(self: TextDocumentEditor, cursor: SelectionCursor = Selec
     all: bool = true) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorCenter, 0, all)
 
-proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.
-    expose("editor.text").} =
-  self.scrollToCursor(self.getCursor(cursor))
+proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
+    margin: Option[float] = float.none, scrollBehaviour: Option[ScrollBehaviour] = ScrollBehaviour.none, relativePosition: float = 0.5) {.expose("editor.text").} =
+  self.scrollToCursor(self.getCursor(cursor), margin, scrollBehaviour, relativePosition)
 
-proc setNextScrollBehaviour*(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) {.
-    expose("editor.text").} =
+proc setNextScrollBehaviour*(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) {.expose("editor.text").} =
   self.nextScrollBehaviour = scrollBehaviour.some
+
+proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) {.expose("editor.text").} =
+  self.defaultSnapBehaviour = snapBehaviour
+
+proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) {.expose("editor.text").} =
+  self.nextSnapBehaviour = snapBehaviour.some
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float,
     cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
-  let line = self.getCursor(cursor).line
-  self.previousBaseIndex = line
-  self.scrollOffset = offset
+  let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
+  self.scrollOffset = offset - displayPoint.row.float * self.platform.totalLineHeight
   self.updateInlayHints()
   self.markDirty()
 
@@ -2513,6 +2539,7 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
       self.selection = location
       self.updateTargetColumn(Last)
       self.centerCursor()
+      self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
       self.layout.showEditor(self.id)
 
   else:
@@ -2524,11 +2551,13 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
           self.selection = location
           self.updateTargetColumn(Last)
           self.centerCursor()
+          self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
         elif editor of TextDocumentEditor:
           let textEditor = editor.TextDocumentEditor
           textEditor.targetSelection = location
           textEditor.centerCursor()
+          textEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
     else:
       log lvlError, fmt"Failed to open file '{filename}' at {location}"
@@ -3646,20 +3675,23 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   if self.document.isNil:
     return
 
-  # log lvlInfo, &"handleTextDocumentLoaded {self.document.filename}: targetSelectionsInternal: {self.targetSelectionsInternal}, selectionsBeforeReload: {self.selectionsBeforeReload}"
+  # log lvlInfo, &"handleTextDocumentLoaded {self.id}, {self.usage}, {self.document.filename}: targetSelectionsInternal: {self.targetSelectionsInternal}, selectionsBeforeReload: {self.selectionsBeforeReload}"
 
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
     self.centerCursor()
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   elif self.document.autoReload:
     if self.selection == self.selectionsBeforeReload[self.selectionsBeforeReload.high]:
       self.selection = self.document.lastCursor.toSelection
       self.scrollToCursor()
+      self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
   elif self.selectionsBeforeReload.len > 0:
     self.selections = self.selectionsBeforeReload
     self.scrollToCursor()
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
@@ -3691,7 +3723,17 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
 
   if displayMap == self.displayMap:
     self.updateTargetColumn()
-    self.centerCursor(self.currentCenterCursor, self.currentCenterCursorRelativeYPos)
+    let oldScrollOffset = self.scrollOffset
+
+    if self.targetPoint.getSome(point):
+      self.scrollToCursor(point.toCursor, self.targetLineMargin, self.nextScrollBehaviour, self.targetLineRelativeY)
+    else:
+      self.scrollOffset = self.interpolatedScrollOffset
+
+    let oldInterpolatedScrollOffset = self.interpolatedScrollOffset
+    let displayPoint = self.displayMap.toDisplayPoint(self.currentCenterCursor.toPoint)
+    self.interpolatedScrollOffset = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
+
     self.markDirty()
   elif displayMap == self.diffDisplayMap:
     self.markDirty()
