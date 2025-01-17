@@ -1913,6 +1913,21 @@ proc setSearchQuery*(self: TextDocumentEditor; query: string;
       argsJsonString.cstring)
 
 
+proc editor_text_openSearchQuery_void_TextDocumentEditor_string_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc openSearchQuery*(self: TextDocumentEditor; query: string = "";
+                      scrollToPreview: bool = true; select: bool = true) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add query.toJson()
+  argsJson.add scrollToPreview.toJson()
+  argsJson.add select.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_openSearchQuery_void_TextDocumentEditor_string_bool_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_setSearchQueryFromMove_Selection_TextDocumentEditor_string_int_string_string_wasm(
     arg: cstring): cstring {.importc.}
 proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;

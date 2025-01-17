@@ -428,6 +428,17 @@ proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
   self.buffer.fillBackground(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
   self.buffer.setBackgroundColor(bgNone)
 
+proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
+  let mask = if self.masks.len > 0:
+    self.masks[self.masks.high]
+  else:
+    rect(vec2(0, 0), self.size)
+
+  let bounds = bounds and mask
+
+  self.setForegroundColor(color)
+  self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
+
 # proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
 #   let mask = if self.masks.len > 0:
 #     self.masks[self.masks.high]
@@ -555,7 +566,7 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
     for command in node.renderCommands.commands:
       case command.kind
       of RenderCommandKind.Rect:
-        platform.fillRect(command.bounds + nodePos, command.color)
+        platform.drawRect(command.bounds + nodePos, command.color)
       of RenderCommandKind.FilledRect:
         platform.fillRect(command.bounds + nodePos, command.color)
       of RenderCommandKind.Text:

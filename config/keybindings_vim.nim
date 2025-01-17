@@ -1113,13 +1113,9 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.updateTargetColumn()
 
   addTextCommandBlockDesc "", "/", "open search bar":
-    commandLine(r".set-search-query \")
+    editor.openSearchQuery()
     if getActiveEditor().isTextEditor(editor):
-      var arr = newJArray()
-      arr.add newJString("file")
-      discard editor.runAction("move-last", arr)
       editor.setMode("insert")
-      editor.updateTargetColumn()
 
   addTextCommandBlockDesc "", r"\\", "open global search bar":
     commandLine(r"search-global \")
