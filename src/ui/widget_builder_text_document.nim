@@ -467,6 +467,8 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let scrollSnapDistance: float = parentHeight * app.config.asConfigProvider.getValue("ui.scroll-snap-min-distance", 0.5)
   let smoothScrollSpeed: float = app.config.asConfigProvider.getValue("ui.smooth-scroll-speed", 15.0)
 
+  self.scrollOffset = clamp(self.scrollOffset, (1.0 - self.numDisplayLines.float) * builder.textHeight, parentHeight - builder.textHeight)
+
   if enableSmoothScrolling:
     if self.interpolatedScrollOffset == self.scrollOffset:
       self.nextSnapBehaviour = ScrollSnapBehaviour.none
@@ -653,8 +655,9 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         currentNode.renderCommands.drawLineNumber(state.builder, chunk.point.row.int, vec2(state.bounds.x, state.offset.y), cursorLine, lineNumbers, lineNumberBounds, textColor)
 
       if chunk.len > 0:
-        let font = self.platform.getFont(self.platform.fontSize, 0.UINodeFlags)
-        let arrangementIndex = currentNode.renderCommands.typeset(font, $chunk, wrap = false)
+        let font = self.platform.getFontInfo(self.platform.fontSize, 0.UINodeFlags)
+        # let arrangementIndex = currentNode.renderCommands.typeset(font, $chunk, wrap = false)
+        let arrangementIndex = currentNode.renderCommands.typeset(chunk.toOpenArray, font)
         let width = currentNode.renderCommands.layoutBounds(arrangementIndex).x
         let indices {.cursor.} = currentNode.renderCommands.arrangements[arrangementIndex]
         let bounds = rect(state.offset, vec2(width, state.builder.textHeight))

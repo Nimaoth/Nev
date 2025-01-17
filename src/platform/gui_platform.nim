@@ -56,7 +56,7 @@ proc toInput(button: Button): int64
 proc centerWindowOnMonitor*(window: Window, monitor: int)
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
-# proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
+proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
 
 method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Typefaces: {self.typefaces.len}\n"
@@ -305,7 +305,7 @@ proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
     return self.getFont(self.fontBold, fontSize)
   return self.getFont(self.fontRegular, fontSize)
 
-method getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
+proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
   if TextItalic in flags and TextBold in flags:
     return self.getFont(self.fontBoldItalic, fontSize)
   if TextItalic in flags:
@@ -322,6 +322,26 @@ proc getTypeface*(self: GuiPlatform, flags: UINodeFlags): Typeface =
   if TextBold in flags:
     return self.getTypeface(self.fontBold)
   return self.getTypeface(self.fontRegular)
+
+method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): FontInfo {.gcsafe, raises: [].} =
+  let typeface = self.getTypeface(flags)
+  let fontScale = fontSize / typeface.scale
+  let lineHeight = round((typeface.ascent - typeface.descent + typeface.lineGap) * fontScale)
+
+  proc kerningAdjustment(left, right: Rune): float =
+    return typeface.getKerningAdjustment(left, right)
+
+  proc advance (rune: Rune): float =
+    typeface.getAdvance(rune)
+
+  FontInfo(
+    ascent: typeface.ascent,
+    lineHeight: lineHeight,
+    lineGap: typeface.lineGap,
+    scale: fontScale,
+    # kerningAdjustment: kerningAdjustment,
+    advance: advance,
+  )
 
 method size*(self: GuiPlatform): Vec2 =
   try:

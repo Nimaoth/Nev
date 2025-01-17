@@ -289,6 +289,17 @@ proc toInput(key: Key, modifiers: var Modifiers): int64 =
     log lvlError, fmt"Unknown input {key}"
     0
 
+method setVsync*(self: TerminalPlatform, enabled: bool) {.gcsafe, raises: [].} = discard
+
+method getFontInfo*(self: TerminalPlatform, fontSize: float, flags: UINodeFlags): FontInfo {.gcsafe, raises: [].} =
+  FontInfo(
+    ascent: 0,
+    lineHeight: 1,
+    lineGap: 0,
+    scale: 1,
+    advance: proc(rune: Rune): float = 1
+  )
+
 method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
   try:
     var eventCounter = 0
@@ -376,27 +387,28 @@ proc toStdColor(color: chroma.Color): stdcolors.Color =
 
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) {.gcsafe.}
 
-method render*(self: TerminalPlatform) {.gcsafe.} =
+method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
   try:
-    if self.sizeChanged:
-      let (w, h) = (terminalWidth(), terminalHeight())
-      log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
-      self.buffer = newTerminalBuffer(w, h)
-      self.redrawEverything = true
+    if rerender:
+      if self.sizeChanged:
+        let (w, h) = (terminalWidth(), terminalHeight())
+        log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
+        self.buffer = newTerminalBuffer(w, h)
+        self.redrawEverything = true
 
-    if self.builder.root.lastSizeChange == self.builder.frameIndex:
-      self.redrawEverything = true
+      if self.builder.root.lastSizeChange == self.builder.frameIndex:
+        self.redrawEverything = true
 
-    self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+      self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
 
-    # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
-    try:
-      {.gcsafe.}:
-        self.buffer.display()
-      self.redrawEverything = false
-    except CatchableError:
-      log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
-      self.redrawEverything = true
+      # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
+      try:
+        {.gcsafe.}:
+          self.buffer.display()
+        self.redrawEverything = false
+      except CatchableError:
+        log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
+        self.redrawEverything = true
   except:
     discard
 
