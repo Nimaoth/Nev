@@ -12,7 +12,7 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
-import config_provider, service, layout, platform_service, vfs, vfs_service
+import config_provider, service, layout, platform_service, vfs, vfs_service, command_service
 import diff
 import workspaces/workspace
 import finder/[previewer, finder]
@@ -56,6 +56,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   workspace: Workspace
   vfsService: VFSService
   vfs: VFS
+  commands*: CommandService
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -3811,6 +3812,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.registers = self.services.getService(Registers).get
   self.workspace = self.services.getService(Workspace).get
   self.vfs = self.services.getService(VFSService).get.vfs
+  self.commands = self.services.getService(CommandService).get
   self.eventHandlerNames = @["editor.text"]
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()

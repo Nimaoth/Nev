@@ -310,52 +310,6 @@ proc toggleConsoleLogger*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_commandLine_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc commandLine*(initialValue: string = "") {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add initialValue.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_commandLine_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_exitCommandLine_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exitCommandLine*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_exitCommandLine_void_App_wasm(argsJsonString.cstring)
-
-
-proc editor_selectPreviousCommandInHistory_void_App_wasm(arg: cstring): cstring {.
-    importc.}
-proc selectPreviousCommandInHistory*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_selectPreviousCommandInHistory_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_selectNextCommandInHistory_void_App_wasm(arg: cstring): cstring {.
-    importc.}
-proc selectNextCommandInHistory*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_selectNextCommandInHistory_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_executeCommandLine_bool_App_wasm(arg: cstring): cstring {.importc.}
-proc executeCommandLine*(): bool {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_executeCommandLine_bool_App_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_writeFile_void_App_string_bool_wasm(arg: cstring): cstring {.importc.}
 proc writeFile*(path: string = ""; appFile: bool = false) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
