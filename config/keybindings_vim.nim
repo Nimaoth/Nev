@@ -1113,7 +1113,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.updateTargetColumn()
 
   addTextCommandBlockDesc "", "/", "open search bar":
-    editor.openSearchQuery()
+    editor.openSearchBar()
     if getActiveEditor().isTextEditor(editor):
       editor.setMode("insert")
 

@@ -2543,6 +2543,49 @@ proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool 
   self.searchQuery = finalQuery
   self.updateSearchResults()
 
+proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPreview: bool = true, select: bool = true) {.expose("editor.text").} =
+  let commandLineEditor = self.editors.commandLineEditor.TextDocumentEditor
+  if commandLineEditor == self:
+    return
+
+  let prevSearchQuery = self.searchQuery
+  self.commands.openCommandLine "", proc(command: Option[string]): bool =
+    if command.getSome(command):
+      self.setSearchQuery(command)
+      if select:
+        self.selection = self.getNextFindResult(self.selection.last).first.toSelection
+      self.scrollToCursor(self.selection.last)
+    else:
+      self.setSearchQuery(prevSearchQuery)
+      if scrollToPreview:
+        self.scrollToCursor(self.selection.last)
+
+  let document = commandLineEditor.document
+
+  commandLineEditor.disableCompletions = true
+  commandLineEditor.moveLast("file")
+  commandLineEditor.updateTargetColumn()
+
+  var onEditHandle = Id.new
+  var onActiveHandle = Id.new
+  var onSearchHandle = Id.new
+
+  onEditHandle[] = document.onEdit.subscribe proc(arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =
+    self.setSearchQuery(arg.document.contentString.replace(r".set-search-query \"))
+
+  onActiveHandle[] = commandLineEditor.onActiveChanged.subscribe proc(editor: DocumentEditor) =
+    if not editor.active:
+      document.onEdit.unsubscribe(onEditHandle[])
+      commandLineEditor.onActiveChanged.unsubscribe(onActiveHandle[])
+      self.onSearchResultsUpdated.unsubscribe(onSearchHandle[])
+
+  onSearchHandle[] = self.onSearchResultsUpdated.subscribe proc(_: TextDocumentEditor) =
+    if self.searchResults.len == 0:
+      self.scrollToCursor(self.selection.last)
+    else:
+      let s = self.getNextFindResult(self.selection.last)
+      if scrollToPreview:
+        self.scrollToCursor(s.last)
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string,
     count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
