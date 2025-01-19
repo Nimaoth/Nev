@@ -1,13 +1,20 @@
 import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
 import nimsumtree/[rope, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import diff, wrap_map
+import diff, overlay_map, wrap_map
 from scripting_api import Selection
 import nimsumtree/sumtree except mapIt
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
 {.pop.}
+
+type InputMapSnapshot = WrapMapSnapshot
+type InputChunkIterator = WrappedChunkIterator
+type InputChunk = WrapChunk
+type InputPoint = WrapPoint
+proc inputPoint(row: Natural = 0, column: Natural = 0): InputPoint {.inline.} = wrapPoint(row, column)
+proc toInputPoint(d: PointDiff): InputPoint {.inline.} = d.toWrapPoint
 
 var debugDiffMap* = false
 
@@ -38,16 +45,17 @@ converter toDiffPoint*(diff: PointDiff): DiffPoint = diff.toPoint.DiffPoint
 
 type
   DiffChunk* = object
-    wrapChunk*: WrapChunk
+    inputChunk*: InputChunk
     diffPoint*: DiffPoint
 
-func point*(self: DiffChunk): Point = self.wrapChunk.point
-func endPoint*(self: DiffChunk): Point = self.wrapChunk.endPoint
-func diffEndPoint*(self: DiffChunk): DiffPoint = diffPoint(self.diffPoint.row, self.diffPoint.column + self.wrapChunk.len.uint32)
-func len*(self: DiffChunk): int = self.wrapChunk.len
-func `$`*(self: DiffChunk): string = $self.wrapChunk
-template toOpenArray*(self: DiffChunk): openArray[char] = self.wrapChunk.toOpenArray
-template scope*(self: DiffChunk): string = self.wrapChunk.scope
+func point*(self: DiffChunk): Point = self.inputChunk.point
+func endPoint*(self: DiffChunk): Point = self.inputChunk.endPoint
+func diffEndPoint*(self: DiffChunk): DiffPoint = diffPoint(self.diffPoint.row, self.diffPoint.column + self.inputChunk.len.uint32)
+func endDiffPoint*(self: DiffChunk): DiffPoint = diffPoint(self.diffPoint.row, self.diffPoint.column + self.inputChunk.len.uint32)
+func len*(self: DiffChunk): int = self.inputChunk.len
+func `$`*(self: DiffChunk): string = &"DC({self.diffPoint}...{self.endDiffPoint}, {self.inputChunk})"
+template toOpenArray*(self: DiffChunk): openArray[char] = self.inputChunk.toOpenArray
+template scope*(self: DiffChunk): string = self.inputChunk.scope
 
 type
   DiffMapChunk* = object
@@ -83,19 +91,20 @@ type
 
   DiffMapSnapshot* = object
     map*: SumTree[DiffMapChunk]
-    wrapMap*: WrapMapSnapshot
-    otherWrapMap*: WrapMapSnapshot
+    version*: int
+    input*: InputMapSnapshot
+    otherInput*: InputMapSnapshot
     mappings*: Option[seq[LineMapping]] # todo: this is not thread safe
     reverse*: bool
 
   DiffMap* = ref object
     snapshot*: DiffMapSnapshot
-    # pendingEdits: seq[tuple[buffer: WrapMapSnapshot, patch: Patch[Point]]]
+    # pendingEdits: seq[tuple[buffer: InputMapSnapshot, patch: Patch[InputPoint]]]
     updatingAsync: bool
     onUpdated*: Event[tuple[map: DiffMap, old: DiffMapSnapshot]]
 
   DiffChunkIterator* = object
-    wrapChunks*: WrappedChunkIterator
+    inputChunks*: InputChunkIterator
     diffChunk*: Option[DiffChunk]
     diffMap* {.cursor.}: DiffMapSnapshot
     diffMapCursor: DiffMapChunkCursor
@@ -103,24 +112,33 @@ type
     atEnd*: bool
 
 func clone*(self: DiffMapSnapshot): DiffMapSnapshot =
-  var otherWrapMap: WrapMapSnapshot
-  if not self.otherWrapMap.map.isNil:
-    otherWrapMap = self.otherWrapMap.clone()
-  DiffMapSnapshot(map: self.map.clone(), wrapMap: self.wrapMap.clone(), otherWrapMap: otherWrapMap, mappings: self.mappings, reverse: self.reverse)
+  var otherInput: InputMapSnapshot
+  if not self.otherInput.map.isNil:
+    otherInput = self.otherInput.clone()
+  DiffMapSnapshot(map: self.map.clone(), input: self.input.clone(), otherInput: otherInput, mappings: self.mappings, reverse: self.reverse, version: self.version)
 
 proc new*(_: typedesc[DiffMap]): DiffMap =
   result = DiffMap(snapshot: DiffMapSnapshot(map: SumTree[DiffMapChunk].new([DiffMapChunk()])))
 
-proc init*(_: typedesc[DiffChunkIterator], rope: var RopeSlice[int], wrapMap: var WrapMap, diffMap: var DiffMap): DiffChunkIterator =
+proc iter*(diffMap: var DiffMapSnapshot): DiffChunkIterator =
   result = DiffChunkIterator(
-    wrapChunks: WrappedChunkIterator.init(rope, wrapMap),
-    diffMap: diffMap.snapshot.clone(),
-    diffMapCursor: diffMap.snapshot.map.initCursor(DiffMapChunkSummary),
+    inputChunks: diffMap.input.iter(),
+    diffMap: diffMap.clone(),
+    diffMapCursor: diffMap.map.initCursor(DiffMapChunkSummary),
   )
 
-func point*(self: DiffChunkIterator): Point = self.wrapChunks.point
+func point*(self: DiffChunkIterator): Point = self.inputChunks.point
+func styledChunk*(self: DiffChunk): StyledChunk {.inline.} = self.inputChunk.styledChunk
+func styledChunks*(self: var DiffChunkIterator): var StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
+func styledChunks*(self: DiffChunkIterator): StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
 
 func isNil*(self: DiffMapSnapshot): bool = self.map.isNil
+
+proc desc*(self: DiffMapSnapshot): string =
+  result = &"DiffMapSnapshot(@{self.version}, {self.map.summary}, {self.input.desc}"
+  # if not self.otherInput.map.isNil:
+  #   result.add &", {self.otherInput.desc}"
+  result.add ")"
 
 proc `$`*(self: DiffMapSnapshot): string =
   result.add "diff map\n"
@@ -135,15 +153,15 @@ proc `$`*(self: DiffMapSnapshot): string =
         result.add &"  {i}: {item.summary.src} -> {item.summary.dst}   |   {r} -> {rd}\n"
         inc i
 
-proc toDiffPoint*(self: DiffMapChunkCursor, point: WrapPoint): DiffPoint =
+proc toDiffPoint*(self: DiffMapChunkCursor, point: InputPoint): DiffPoint =
   assert point.row in self.startPos.src...self.endPos.src
   # if self.startPos.dst == self.endPos.dst:
   #   return diffPoint(self.startPos.dst)
   # let point2 = point.row.clamp(self.startPos.src...self.endPos.src)
-  let offset = point - wrapPoint(self.startPos.src)
+  let offset = point - inputPoint(self.startPos.src)
   return (diffPoint(self.startPos.dst) + offset.toDiffPoint)
 
-proc toDiffPoint*(self: DiffMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): DiffPoint =
+proc toDiffPoint*(self: DiffMapSnapshot, point: InputPoint, bias: Bias = Bias.Right): DiffPoint =
   var c = self.map.initCursor(DiffMapChunkSummary)
   discard c.seek(point.row.DiffMapChunkSrc, Bias.Right, ())
   if c.item.getSome(item) and item.summary.src == 0:
@@ -151,35 +169,30 @@ proc toDiffPoint*(self: DiffMapSnapshot, point: WrapPoint, bias: Bias = Bias.Rig
 
   return c.toDiffPoint(point)
 
-proc toDiffPoint*(self: DiffMapSnapshot, point: Point, bias: Bias = Bias.Right): DiffPoint =
-  return self.toDiffPoint(self.wrapMap.toWrapPoint(point, bias))
+# proc toDiffPoint*(self: DiffMapSnapshot, point: Point, bias: Bias = Bias.Right): DiffPoint =
+#   return self.toDiffPoint(self.input.toOutputPoint(point, bias))
 
-proc toDiffPoint*(self: DiffMap, point: Point, bias: Bias = Bias.Right): DiffPoint =
+# proc toDiffPoint*(self: DiffMap, point: Point, bias: Bias = Bias.Right): DiffPoint =
+#   self.snapshot.toDiffPoint(point, bias)
+
+proc toDiffPoint*(self: DiffMap, point: InputPoint, bias: Bias = Bias.Right): DiffPoint =
   self.snapshot.toDiffPoint(point, bias)
 
-proc toDiffPoint*(self: DiffMap, point: WrapPoint, bias: Bias = Bias.Right): DiffPoint =
-  self.snapshot.toDiffPoint(point, bias)
-
-proc toWrapPoint*(self: DiffMapChunkCursor, point: DiffPoint): WrapPoint =
-  # let point = point.clamp(self.startPos.dst...self.endPos.dst)
-  # let offset = point - self.startPos.dst
-  # return self.startPos.src + offset.toPoint
+proc toInputPoint*(self: DiffMapChunkCursor, point: DiffPoint): InputPoint =
   assert point.row in self.startPos.dst...self.endPos.dst
   if self.startPos.src == self.endPos.src:
-    return wrapPoint(self.startPos.src)
+    return inputPoint(self.startPos.src)
 
-  # let point2 = point.row.clamp(self.startPos.dst...self.endPos.dst)
   let offset = point - diffPoint(self.startPos.dst)
-  # echo &"toWrapPoint {point}, {self.startPos}, {self.endPos} -> offset {offset}, {(wrapPoint(self.startPos.src) + offset.toWrapPoint)}"
-  return (wrapPoint(self.startPos.src) + offset.toWrapPoint)
+  return (inputPoint(self.startPos.src) + offset.toInputPoint)
 
-proc toWrapPoint*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Left): WrapPoint =
+proc toInputPoint*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Left): InputPoint =
   var c = self.map.initCursor(DiffMapChunkSummary)
   discard c.seek(point.row.DiffMapChunkDst, bias, ())
   if c.item.getSome(item) and item.summary.dst == 0:
     c.next()
 
-  return c.toWrapPoint(point)
+  return c.toInputPoint(point)
 
 proc isEmptySpace*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Right): bool =
   var c = self.map.initCursor(DiffMapChunkSummary)
@@ -189,40 +202,37 @@ proc isEmptySpace*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Ri
 
   return c.startPos.src == c.endPos.src
 
-proc toPoint*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Right): Point =
-  return self.wrapMap.toPoint(self.toWrapPoint(point, bias), bias)
+# proc toPoint*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Right): Point =
+#   return self.input.toPoint(self.toInputPoint(point, bias), bias)
 
-proc toPoint*(self: DiffMap, point: DiffPoint, bias: Bias = Bias.Right): Point =
-  self.snapshot.toPoint(point, bias)
+# proc toPoint*(self: DiffMap, point: DiffPoint, bias: Bias = Bias.Right): Point =
+#   self.snapshot.toPoint(point, bias)
 
-proc toWrapPoint*(self: DiffMap, point: DiffPoint, bias: Bias = Bias.Right): WrapPoint =
-  self.snapshot.toWrapPoint(point, bias)
+proc toInputPoint*(self: DiffMap, point: DiffPoint, bias: Bias = Bias.Right): InputPoint =
+  self.snapshot.toInputPoint(point, bias)
 
-proc createIdentityDiffMap(wrapMap: sink WrapMapSnapshot): DiffMapSnapshot =
-  # echo &"createIdentityDiffMap {wrapMap.buffer.remoteId}, {wrapMap.map.summary}"
-  let endPoint = wrapMap.buffer.visibleText.summary.lines
-  let endWrapPoint = wrapMap.toWrapPoint(endPoint)
+proc createIdentityDiffMap(input: sink InputMapSnapshot): DiffMapSnapshot =
+  logMapUpdate &"createIdentityDiffMap {input.buffer.remoteId}, input summary = {input.map.summary}"
+  let endOutputPoint = input.endOutputPoint
 
   return DiffMapSnapshot(
-    map: SumTree[DiffMapChunk].new([DiffMapChunk(summary: DiffMapChunkSummary(src: endWrapPoint.row + 1, dst: endWrapPoint.row + 1))]),
-    wrapMap: wrapMap.ensureMove,
+    map: SumTree[DiffMapChunk].new([DiffMapChunk(summary: DiffMapChunkSummary(src: endOutputPoint.row + 1, dst: endOutputPoint.row + 1))]),
+    input: input.ensureMove,
   )
 
-proc createDiffMap(wrapMap: sink WrapMapSnapshot, mappings: openArray[LineMapping], otherWrapMap: WrapMapSnapshot, reverse: bool): DiffMapSnapshot =
-  # echo &"createDiffMap {wrapMap.buffer.remoteId}@{wrapMap.buffer.version} {wrapMap.map.summary} + {otherWrapMap.buffer.remoteId}@{otherWrapMap.buffer.version} {otherWrapMap.map.summary}, reverse = {reverse}"
+proc createDiffMap(input: sink InputMapSnapshot, mappings: openArray[LineMapping], otherInput: InputMapSnapshot, reverse: bool): DiffMapSnapshot =
+  logMapUpdate &"createDiffMap {input.buffer.remoteId}@{input.buffer.version}, input summary = {input.map.summary} + {otherInput.buffer.remoteId}@{otherInput.buffer.version} {otherInput.map.summary}, reverse = {reverse}"
   # echo "  line mappings"
   # echo mappings.mapIt(&"    {it}").join("\n")
-  assert not otherWrapMap.map.isNil
+  assert not otherInput.map.isNil
 
   # var t = startTimer()
   # defer:
   #   let e = t.elapsed.ms
   #   echo &"createDiffMap took {e} ms"
 
-  let endPoint = wrapMap.buffer.visibleText.summary.lines
-  let endWrapPoint = wrapMap.toWrapPoint(endPoint)
-  let otherEndPoint = otherWrapMap.buffer.visibleText.summary.lines
-  let otherEndWrapPoint = otherWrapMap.toWrapPoint(otherEndPoint)
+  let endPoint = input.buffer.visibleText.summary.lines
+  let otherEndPoint = otherInput.buffer.visibleText.summary.lines
 
   var newMap = SumTree[DiffMapChunk].new()
   var currentChunk = DiffMapChunk()
@@ -230,30 +240,27 @@ proc createDiffMap(wrapMap: sink WrapMapSnapshot, mappings: openArray[LineMappin
   template flushCurrentChunk(even: bool): untyped =
     if currentChunk.summary.src != 0 or currentChunk.summary.dst != 0:
       if even and currentChunk.summary.src == currentChunk.summary.dst:
-      # echo &"  flush {i}->{diffLine.line}, {wrapRange} -> {otherWrapRange}, {lines} -> {otherLines}, {currentChunk}"
         newMap.add(currentChunk)
         currentChunk = DiffMapChunk()
       elif not even and currentChunk.summary.src != currentChunk.summary.dst:
         newMap.add(currentChunk)
         currentChunk = DiffMapChunk()
 
-  for i in 0..<wrapMap.buffer.visibleText.lines:
-    let wrapRange = wrapMap.toWrapPoint(point(i, 0))...wrapMap.toWrapPoint(point(i + 1, 0))
+  for i in 0..<input.buffer.visibleText.lines:
+    let inputRange = input.toOutputPoint(point(i, 0))...input.toOutputPoint(point(i + 1, 0))
     let lines = if i == endPoint.row.int:
-      wrapRange.b.row - wrapRange.a.row + 1
+      inputRange.b.row - inputRange.a.row + 1
     else:
-      wrapRange.b.row - wrapRange.a.row
+      inputRange.b.row - inputRange.a.row
 
     let diffLine = mappings.mapLine(i, reverse)
     let nextDiffLine = mappings.mapLine(i + 1, reverse)
-    # echo &"wrapRange {i} = {wrapRange} -> {lines}, diff: {diffLine}, {nextDiffLine}, current: {currentChunk.summary}"
     if diffLine.getSome(diffLine):
-      let otherWrapRange = otherWrapMap.toWrapPoint(point(diffLine.line, 0))...otherWrapMap.toWrapPoint(point(diffLine.line + 1, 0))
+      let otherInputRange = otherInput.toOutputPoint(point(diffLine.line, 0))...otherInput.toOutputPoint(point(diffLine.line + 1, 0))
       let otherLines = if diffLine.line == otherEndPoint.row.int:
-        otherWrapRange.b.row - otherWrapRange.a.row + 1
+        otherInputRange.b.row - otherInputRange.a.row + 1
       else:
-        otherWrapRange.b.row - otherWrapRange.a.row
-      # echo &"  otherWrapRange {diffLine.line}, {diffLine.changed} = {otherWrapRange} -> {otherLines}"
+        otherInputRange.b.row - otherInputRange.a.row
 
       if lines < otherLines:
         flushCurrentChunk(even = false)
@@ -276,9 +283,8 @@ proc createDiffMap(wrapMap: sink WrapMapSnapshot, mappings: openArray[LineMappin
       currentChunk.summary.dst += lines
 
     if i < endPoint.row.int and diffLine.getSome(diffLine) and nextDiffLine.getSome(nextDiffLine) and nextDiffLine.line - diffLine.line > 1:
-      let otherWrapRange = otherWrapMap.toWrapPoint(point(diffLine.line + 1, 0))...otherWrapMap.toWrapPoint(point(nextDiffLine.line, 0))
-      let otherLines = otherWrapRange.b.row - otherWrapRange.a.row
-      # echo &" delete otherWrapRange {otherWrapRange} -> {otherLines}"
+      let otherInputRange = otherInput.toOutputPoint(point(diffLine.line + 1, 0))...otherInput.toOutputPoint(point(nextDiffLine.line, 0))
+      let otherLines = otherInputRange.b.row - otherInputRange.a.row
       flushCurrentChunk(even = true)
       currentChunk.summary.dst += otherLines
 
@@ -287,65 +293,62 @@ proc createDiffMap(wrapMap: sink WrapMapSnapshot, mappings: openArray[LineMappin
 
   result = DiffMapSnapshot(
     map: newMap,
-    wrapMap: wrapMap.clone(),
+    input: input.clone(),
     mappings: some(@mappings),
-    otherWrapMap: otherWrapMap.clone(),
+    otherInput: otherInput.clone(),
     reverse: reverse,
   )
 
   # echo result
 
-proc setWrapMap*(self: DiffMap, wrapMap: sink WrapMapSnapshot) =
-  if self.snapshot.wrapMap.buffer.remoteId == wrapMap.buffer.remoteId and self.snapshot.wrapMap.buffer.version == wrapMap.buffer.version:
+proc setInput*(self: DiffMap, input: sink InputMapSnapshot) =
+  if self.snapshot.input.buffer.remoteId == input.buffer.remoteId and self.snapshot.input.buffer.version == input.buffer.version:
     return
-  # let oldSnapshot = self.snapshot.clone()
-  self.snapshot = createIdentityDiffMap(wrapMap.ensureMove)
-  # echo &"DiffMap.onUpdated {self.snapshot.wrapMap.buffer.remoteId}@{self.snapshot.wrapMap.buffer.version}"
-  # self.onUpdated.invoke((self, oldSnapshot))
+  # logMapUpdate &"DiffMap.setInput {self.snapshot.desc} -> {input.desc}"
+  self.snapshot = createIdentityDiffMap(input.ensureMove)
 
 proc validate*(self: DiffMapSnapshot) =
   discard
 
-proc edit*(self: var DiffMapSnapshot, buffer: sink WrapMapSnapshot, patch: Patch[Point]) =
+proc edit*(self: var DiffMapSnapshot, buffer: sink InputMapSnapshot, patch: Patch[InputPoint]) =
   discard
 
 proc flushEdits(self: DiffMap) =
   discard
 
-proc edit*(self: DiffMap, wrapMap: sink WrapMapSnapshot, patch: Patch[Point]) =
-  # echo &"edit diff map, {self.snapshot.wrapMap.map.summary} -> {wrapMap.map.summary}, {patch}"
+proc edit*(self: DiffMap, input: sink InputMapSnapshot, patch: Patch[InputPoint]) =
+  # echo &"edit diff map, {self.snapshot.input.map.summary} -> {input.map.summary}, {patch}"
   if self.snapshot.mappings.isSome:
-    self.snapshot = createDiffMap(wrapMap.ensureMove, self.snapshot.mappings.get, self.snapshot.otherWrapMap, self.snapshot.reverse)
+    self.snapshot = createDiffMap(input.ensureMove, self.snapshot.mappings.get, self.snapshot.otherInput, self.snapshot.reverse)
   else:
-    self.snapshot = createIdentityDiffMap(wrapMap.ensureMove)
+    self.snapshot = createIdentityDiffMap(input.ensureMove)
 
-proc update*(self: var DiffMapSnapshot, wrapMap: sink WrapMapSnapshot) =
-  # echo &"DiffMap.updateWrapMap {self.wrapMap.buffer.remoteId}@{self.wrapMap.buffer.version} -> {wrapMap.buffer.remoteId}@{wrapMap.buffer.version}"
+proc update*(self: var DiffMapSnapshot, input: sink InputMapSnapshot) =
+  logMapUpdate &"DiffMapSnapshot.updateInput {self.desc} -> {input.desc}"
   if self.mappings.isSome:
-    self = createDiffMap(wrapMap.ensureMove, self.mappings.get, self.otherWrapMap, self.reverse)
+    self = createDiffMap(input.ensureMove, self.mappings.get, self.otherInput, self.reverse)
   else:
-    self = createIdentityDiffMap(wrapMap.ensureMove)
+    self = createIdentityDiffMap(input.ensureMove)
 
-proc update*(self: var DiffMapSnapshot, mappings: Option[seq[LineMapping]], otherWrapMap: WrapMapSnapshot, reverse: bool) =
-  # echo &"DiffMap.updateLineMappings {self.wrapMap.buffer.remoteId}@{self.wrapMap.buffer.version}: {self.otherWrapMap.buffer.remoteId}@{self.otherWrapMap.buffer.version} -> {otherWrapMap.buffer.remoteId}@{otherWrapMap.buffer.version}"
+proc update*(self: var DiffMapSnapshot, mappings: Option[seq[LineMapping]], otherInput: InputMapSnapshot, reverse: bool) =
+  logMapUpdate &"DiffMapSnapshot.updateLineMappings {self.desc} -> {otherInput.desc}"
   if mappings.isSome:
-    self = createDiffMap(self.wrapMap.clone(), mappings.get, otherWrapMap, reverse)
+    self = createDiffMap(self.input.clone(), mappings.get, otherInput, reverse)
   else:
-    self = createIdentityDiffMap(self.wrapMap.clone())
+    self = createIdentityDiffMap(self.input.clone())
 
 proc clear*(self: var DiffMapSnapshot) =
-  self = createIdentityDiffMap(self.wrapMap.clone())
+  self = createIdentityDiffMap(self.input.clone())
 
-proc update*(self: DiffMap, buffer: sink WrapMapSnapshot, force: bool = false) =
+proc update*(self: DiffMap, input: sink InputMapSnapshot, force: bool = false) =
+  logMapUpdate &"DiffMap.updateInput: {self.snapshot.desc} -> {input.desc}"
   let oldSnapshot = self.snapshot.clone()
-  self.snapshot.update(buffer.ensureMove)
-  # echo &"DiffMap.onUpdated {self.snapshot.wrapMap.buffer.remoteId}@{self.snapshot.wrapMap.buffer.version}"
+  self.snapshot.update(input.ensureMove)
   self.onUpdated.invoke((self, oldSnapshot))
 
-proc update*(self: DiffMap, mappings: Option[seq[LineMapping]], otherWrapMap: WrapMapSnapshot, reverse: bool, force: bool = false) =
+proc update*(self: DiffMap, mappings: Option[seq[LineMapping]], otherInput: InputMapSnapshot, reverse: bool, force: bool = false) =
   let oldSnapshot = self.snapshot.clone()
-  self.snapshot.update(mappings, otherWrapMap, reverse)
-  # echo &"DiffMap.onUpdated {self.snapshot.wrapMap.buffer.remoteId}@{self.snapshot.wrapMap.buffer.version}"
+  self.snapshot.update(mappings, otherInput, reverse)
   self.onUpdated.invoke((self, oldSnapshot))
 
 proc clear*(self: DiffMap) =
@@ -353,13 +356,13 @@ proc clear*(self: DiffMap) =
   self.snapshot.clear()
 
 proc seek*(self: var DiffChunkIterator, diffPoint: DiffPoint) =
-  # echo &"DiffChunkIterator.seek {self.diffPoint} -> {diffPoint}"
-  var endDiffPoint = self.diffMap.toDiffPoint(self.diffMap.wrapMap.endWrapPoint)
-  assert endDiffPoint < diffPoint(self.diffMap.map.summary.dst, 0)
+  logChunkIter &"DiffChunkIterator.seek {self.diffPoint} -> {diffPoint}"
+  var endDiffPoint = self.diffMap.toDiffPoint(self.diffMap.input.endOutputPoint)
+  # assert endDiffPoint < diffPoint(self.diffMap.map.summary.dst, 0)
   if diffPoint <= endDiffPoint:
-    let wrapPoint = self.diffMap.toWrapPoint(diffPoint)
-    self.wrapChunks.seek(wrapPoint)
-    self.diffPoint = self.diffMap.toDiffPoint(wrapPoint)
+    let inputPoint = self.diffMap.toInputPoint(diffPoint)
+    self.inputChunks.seek(inputPoint)
+    self.diffPoint = self.diffMap.toDiffPoint(inputPoint)
   else:
     self.atEnd = true
 
@@ -373,12 +376,12 @@ proc next*(self: var DiffChunkIterator): Option[DiffChunk] =
     self.diffChunk = DiffChunk.none
     return
 
-  self.diffChunk = if self.wrapChunks.next().getSome(it):
-    discard self.diffMapCursor.seek(it.wrapPoint.row.DiffMapChunkSrc, Bias.Right, ())
+  self.diffChunk = if self.inputChunks.next().getSome(it):
+    discard self.diffMapCursor.seek(it.outputPoint.row.DiffMapChunkSrc, Bias.Right, ())
     if self.diffMapCursor.item.getSome(item) and item.summary.src == 0:
       self.diffMapCursor.next()
-    let diffPoint = self.diffMapCursor.toDiffPoint(it.wrapPoint)
-    DiffChunk(wrapChunk: it, diffPoint: diffPoint).some
+    let diffPoint = self.diffMapCursor.toDiffPoint(it.outputPoint)
+    DiffChunk(inputChunk: it, diffPoint: diffPoint).some
   else:
     DiffChunk.none
 
@@ -387,6 +390,16 @@ proc next*(self: var DiffChunkIterator): Option[DiffChunk] =
     self.diffPoint = self.diffChunk.get.diffEndPoint
     # echo &"DiffChunkIterator.next: {oldDiffPoint} -> {self.diffPoint}"
 
-  self.atEnd = self.wrapChunks.atEnd
+  self.atEnd = self.inputChunks.atEnd
 
   return self.diffChunk
+
+#
+
+func wrap*(self: DiffMapSnapshot): lent WrapMapSnapshot {.inline.} = self.input
+func wrapChunks*(self: var DiffChunkIterator): var WrappedChunkIterator {.inline.} = self.inputChunks
+func wrapChunks*(self: DiffChunkIterator): lent WrappedChunkIterator {.inline.} = self.inputChunks
+func wrapChunk*(self: DiffChunk): lent WrapChunk {.inline.} = self.inputChunk
+proc toWrapPoint*(self: DiffMapChunkCursor, point: DiffPoint): InputPoint {.inline.} = self.toInputPoint(point)
+proc toWrapPoint*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)
+proc toWrapPoint*(self: DiffMap, point: DiffPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)

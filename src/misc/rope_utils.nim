@@ -10,6 +10,19 @@ export Bias
 {.push gcsafe.}
 {.push raises: [].}
 
+var debugMapUpdates* = true
+var debugChunkIterators* = false
+
+template logMapUpdate*(msg: untyped) =
+  when false:
+    if debugMapUpdates:
+      echo msg
+
+template logChunkIter*(msg: untyped) =
+  when false:
+    if debugChunkIterators:
+      echo msg
+
 func toPoint*(cursor: api.Cursor): Point = Point.init(max(cursor.line, 0), max(cursor.column, 0))
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
 func toRange*(selection: Selection): Range[Point] = selection.first.toPoint...selection.last.toPoint
@@ -331,19 +344,22 @@ type
     data*: ptr UncheckedArray[char]
     len*: int
     point*: Point
+    external*: bool
 
   ChunkIterator* = object
-    rope: RopeSlice[int]
+    rope: Rope
     cursor: sumtree.Cursor[rope.Chunk, (Point, int)]
-    range: Range[int]
     localOffset*: int
     point*: Point
     returnedLastChunk: bool = false
+
+func endPoint*(self: RopeChunk): Point = Point(row: self.point.row, column: self.point.column + self.len.uint32)
 
 func `$`*(chunk: RopeChunk): string =
   result = newString(chunk.len)
   for i in 0..<chunk.len:
     result[i] = chunk.data[i]
+  result = &"RC({chunk.point}...{chunk.endPoint}, '{result}')"
 
 func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
   assert range.a >= 0 and range.a <= self.len
@@ -356,21 +372,17 @@ func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
   )
 
 template toOpenArray*(self: RopeChunk): openArray[char] = self.data.toOpenArray(0, self.len - 1)
-func endPoint*(self: RopeChunk): Point = Point(row: self.point.row, column: self.point.column + self.len.uint32)
 
-proc init*(_: typedesc[ChunkIterator], rope: var RopeSlice[int]): ChunkIterator =
+proc init*(_: typedesc[ChunkIterator], rope: var Rope): ChunkIterator =
   result.rope = rope.clone()
-  result.range = rope.rope.toOffset(rope.range.a)...rope.rope.toOffset(rope.range.b)
-  result.cursor = rope.rope.tree.initCursor((Point, int))
-  discard result.cursor.seekForward(result.range.a, Bias.Right, ())
-  result.point = rope.rope.offsetToPoint(rope.range.a)
+  result.cursor = rope.tree.initCursor((Point, int))
 
 proc seekLine*(self: var ChunkIterator, line: int) =
   let point = Point(row: line.uint32)
   assert point >= self.cursor.startPos[0]
   discard self.cursor.seekForward(point, Bias.Right, ())
   self.point = point
-  self.localOffset = self.rope.rope.pointToOffset(point) - self.cursor.startPos[1]
+  self.localOffset = self.rope.pointToOffset(point) - self.cursor.startPos[1]
   assert self.localOffset >= 0
 
 proc seek*(self: var ChunkIterator, point: Point) =
@@ -378,7 +390,7 @@ proc seek*(self: var ChunkIterator, point: Point) =
   # echo &"ChunkIterator.seek {self.cursor.startPos[0]} -> {point}"
   discard self.cursor.seekForward(point, Bias.Right, ())
   self.point = point
-  self.localOffset = self.rope.rope.pointToOffset(point) - self.cursor.startPos[1]
+  self.localOffset = self.rope.pointToOffset(point) - self.cursor.startPos[1]
   assert self.localOffset >= 0
 
 proc next*(self: var ChunkIterator): Option[RopeChunk] =
@@ -393,7 +405,7 @@ proc next*(self: var ChunkIterator): Option[RopeChunk] =
       self.cursor.next(())
       self.localOffset = 0
 
-    if self.cursor.item.isSome and self.cursor.startPos[1] < self.range.b:
+    if self.cursor.item.isSome and self.cursor.startPos[1] < self.rope.summary.bytes:
       let chunk: ptr Chunk = self.cursor.item.get
       while self.localOffset < chunk.chars.len and chunk.chars[self.localOffset] == '\n':
         if self.point.column == 0:
@@ -424,9 +436,7 @@ proc next*(self: var ChunkIterator): Option[RopeChunk] =
 
       let point = self.point
 
-      var sliceRange = max(self.range.a - self.cursor.startPos[1], 0)...(min(self.range.b, self.cursor.endPos(())[1]) - self.cursor.startPos[1])
-      sliceRange.a = max(sliceRange.a, self.localOffset)
-      sliceRange.b = min(sliceRange.b, maxEndIndex)
+      let sliceRange = self.localOffset...min(self.cursor.endPos[1] - self.cursor.startPos[1], maxEndIndex)
       self.localOffset = sliceRange.b
       assert self.localOffset >= 0
       self.point.column += sliceRange.len.uint32
@@ -446,6 +456,7 @@ type
   StyledChunk* = object
     chunk*: RopeChunk
     scope*: string
+    drawWhitespace*: bool = true
 
   Highlighter* = object
     query*: TSQuery
@@ -480,14 +491,14 @@ func cmp*(a: DisplayPoint, b: DisplayPoint): int {.borrow.}
 func clamp*(p: DisplayPoint, r: Range[DisplayPoint]): DisplayPoint = min(max(p, r.a), r.b)
 converter toDisplayPoint*(diff: PointDiff): DisplayPoint = diff.toPoint.DisplayPoint
 
-proc init*(_: typedesc[StyledChunkIterator], rope: var RopeSlice[int]): StyledChunkIterator =
+proc init*(_: typedesc[StyledChunkIterator], rope: var Rope): StyledChunkIterator =
   result.chunks = ChunkIterator.init(rope)
 
 func point*(self: StyledChunkIterator): Point = self.chunks.point
 func point*(self: StyledChunk): Point = self.chunk.point
 func endPoint*(self: StyledChunk): Point = self.chunk.endPoint
 func len*(self: StyledChunk): int = self.chunk.len
-func `$`*(self: StyledChunk): string = $self.chunk
+func `$`*(self: StyledChunk): string = &"SC({self.chunk}, {self.scope}, {self.drawWhitespace})"
 template toOpenArray*(self: StyledChunk): openArray[char] = self.chunk.toOpenArray
 
 proc seekLine*(self: var StyledChunkIterator, line: int) =
@@ -512,7 +523,7 @@ func contentString(self: var StyledChunkIterator, selection: Range[Point], byteR
     return $currentChunk[startIndex.int...endIndex.int]
   else:
     result = newStringOfCap(min(selection.b.column.int - selection.a.column.int, maxLen))
-    for slice in self.chunks.rope.rope.iterateChunks(byteRange):
+    for slice in self.chunks.rope.iterateChunks(byteRange):
       for c in slice.chars:
         result.add c
         if result.len == maxLen:

@@ -17,7 +17,7 @@ import diff
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
-import wrap_map, diff_map, display_map
+import overlay_map, wrap_map, diff_map, display_map
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
@@ -124,6 +124,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   # inline hints
   inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
   inlayHintsTask: DelayedTask
+  lastInlayHintTimestamp: Lamport
+  lastInlayHintDisplayRange: Selection
 
   eventHandlerNames: seq[string]
   eventHandlers: seq[EventHandler]
@@ -147,6 +149,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   currentCenterCursor*: Cursor # Cursor representing the center of the screen
   currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
 
+  lastRenderedChunks*: seq[tuple[range: Range[Point], displayRange: Range[DisplayPoint]]]
   lastRenderedLines*: seq[StyledLine]
   lastTextAreaBounds*: Rect
   lastPressedMouseButton*: MouseButton
@@ -382,7 +385,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.editors.tryCloseDocument(document)
 
     self.selectionHistory.clear()
-    self.styledTextOverrides.clear()
     self.customHighlights.clear()
     self.signs.clear()
     self.showHover = false
@@ -508,7 +510,8 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
     result.add inject["above-completion"]
 
 proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
-  if self.inlayHints.len > 0 and self.inlayHints[0].anchor.timestamp != self.document.buffer.timestamp:
+  if self.inlayHints.len > 0 and self.lastInlayHintTimestamp != self.document.buffer.timestamp:
+    self.lastInlayHintTimestamp = self.document.buffer.timestamp
     let snapshot = self.document.buffer.snapshot.clone()
 
     for i in countdown(self.inlayHints.high, 0):
@@ -517,6 +520,11 @@ proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
         self.inlayHints[i].anchor = snapshot.anchorAt(self.inlayHints[i].hint.location.toPoint, Left)
       else:
         self.inlayHints.removeSwap(i)
+
+    self.displayMap.overlay.clear(14)
+    for hint in self.inlayHints:
+      let point = hint.hint.location.toPoint
+      self.displayMap.overlay.addOverlay(point...point, hint.hint.label, 14, "comment")
 
 proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.configProvider.isNil or self.document.isNil:
@@ -552,6 +560,10 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
       self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
 
   self.updateInlayHintsAfterChange()
+  let visibleRange = self.visibleTextRange
+  if visibleRange != self.lastInlayHintDisplayRange:
+    self.lastInlayHintDisplayRange = visibleRange
+    self.updateInlayHints()
 
   let newVersion = (self.document.buffer.version, self.selections[^1].last)
   if self.showCompletions and newVersion != self.lastCompletionTrigger:
@@ -738,8 +750,6 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
       elif targetLineY + textHeight > self.lastContentBounds.h - margin:
         self.scrollOffset = self.lastContentBounds.h - margin - textHeight - targetDisplayLine.float * textHeight
 
-
-  self.updateInlayHints()
   self.markDirty()
 
 proc scrollToTop*(self: TextDocumentEditor) =
@@ -866,10 +876,6 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: [ValueError].} =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
-proc updateWrapMap*(self: TextDocumentEditor) {.expose: "editor.text".} =
-  self.displayMap.wrapMap.update(self.document.buffer.snapshot.clone(), force = true)
-  self.markDirty()
-
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
   self.document.enableAutoReload(enabled)
 
@@ -891,10 +897,10 @@ proc displayEndPoint*(self: TextDocumentEditor): DisplayPoint =
   return self.displayMap.toDisplayPoint(self.document.rope.summary.lines)
 
 proc numWrapLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
-  return self.displayMap.wrapMap.toWrapPoint(self.document.rope.summary.lines).row.int + 1
+  return self.displayMap.wrapMap.endWrapPoint.row.int + 1
 
 proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint =
-  return self.displayMap.wrapMap.toWrapPoint(self.document.rope.summary.lines)
+  return self.displayMap.wrapMap.endWrapPoint
 
 proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## Returns the number of lines that can be shown on the screen
@@ -1709,7 +1715,6 @@ proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.tex
   if self.disableScrolling:
     return
   self.scrollOffset += amount
-  self.updateInlayHints()
   self.markDirty()
 
 proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").} =
@@ -1720,7 +1725,6 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
 
   self.scrollOffset += self.platform.totalLineHeight * amount.float
 
-  self.updateInlayHints()
   self.markDirty()
 
 proc duplicateLastSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1986,6 +1990,52 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
   self.markDirty()
 
+proc testReplace*(self: TextDocumentEditor) {.expose("editor.text").} =
+  for s in self.selections:
+    var s = s.normalized
+    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
+    self.displayMap.overlay.addOverlay(s.first.toPoint...s.last.toPoint, self.document.contentString(s).toUpperAscii, 1)
+  self.markDirty()
+
+proc testReplaceLonger*(self: TextDocumentEditor) {.expose("editor.text").} =
+  for s in self.selections:
+    var s = s.normalized
+    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
+    self.displayMap.overlay.addOverlay(s.first.toPoint...s.last.toPoint, "<>" & self.document.contentString(s).toUpperAscii & "</>", 2)
+  self.markDirty()
+
+proc testReplaceShorter*(self: TextDocumentEditor) {.expose("editor.text").} =
+  for s in self.selections:
+    var s = s.normalized
+    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
+    self.displayMap.overlay.addOverlay(s.first.toPoint...s.last.toPoint, self.document.contentString(s).toUpperAscii[1..^2], 3)
+  self.markDirty()
+
+proc testReplaceShort*(self: TextDocumentEditor) {.expose("editor.text").} =
+  for s in self.selections:
+    var s = s.normalized
+    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
+    self.displayMap.overlay.addOverlay(s.first.toPoint...s.last.toPoint, "...", 4)
+  self.markDirty()
+
+proc testInsertNewLine*(self: TextDocumentEditor) {.expose("editor.text").} =
+  for s in self.selections:
+    var s = s.normalized
+    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
+    let p = point(s.first.line + 1, 0)
+    self.displayMap.overlay.addOverlay(p...p, " ".repeat(s.first.column) & "^----- you are here!\n", 5)
+  self.markDirty()
+
+proc testInsert*(self: TextDocumentEditor) {.expose("editor.text").} =
+  for s in self.selections:
+    var s = s.normalized
+    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
+    self.displayMap.overlay.addOverlay(s.first.toPoint...s.first.toPoint, "hellope", 6)
+  self.markDirty()
+
+proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.text").} =
+  self.displayMap.overlay.clear(id)
+
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
   self.showDiff = true
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
@@ -2151,7 +2201,6 @@ proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float,
     cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
   self.scrollOffset = offset - displayPoint.row.float * self.platform.totalLineHeight
-  self.updateInlayHints()
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 {.expose("editor.text").} =
@@ -3242,6 +3291,13 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
     if inlayHints.isSuccess:
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
       self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, Left), it)
+      self.lastInlayHintTimestamp = self.document.buffer.timestamp
+
+      self.displayMap.overlay.clear(14)
+      for hint in self.inlayHints:
+        let point = hint.hint.location.toPoint
+        self.displayMap.overlay.addOverlay(point...point, hint.hint.label, 14, "comment")
+
       self.markDirty()
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -3308,40 +3364,17 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text"
   self.currentCommandHistory.commands.setLen 0
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
-  let pattern = catch(re"[_a-zA-Z0-9]+").expect("Invalid regex???")
+  let max = self.configProvider.getValue("text.choose-cursor-max", 300)
+  for chunk in self.lastRenderedChunks:
+    let str = self.document.contentString((chunk.range.a.toCursor, chunk.range.b.toCursor))
+    var i = 0
+    while i < str.len and str[i] == ' ':
+      inc i
 
-  # todo: use RopeCursor
-  # todo
-  for li, line in self.lastRenderedLines:
-    for s in ($self.document.getLine(line.index)).findAllBounds(line.index, pattern):
-      result.add s.first
-
-    # continue
-
-    # let lineNumber = line.index
-    # var column = 0
-    # for i, part in line.parts:
-    #   defer:
-    #     column += part.text.len
-
-    #   if part.text.isEmptyOrWhitespace:
-    #     continue
-
-    #   if not part.text.strip().match(pattern, 0):
-    #     continue
-
-    #   echo part.text
-
-    #   let offset = part.text.firstNonWhitespace
-    #   result.add (lineNumber, column + offset)
-
-  let line = self.selection.last.line
-  result.sort proc(a, b: auto): int =
-    let lineDistA = abs(a.line - line)
-    let lineDistB = abs(b.line - line)
-    if lineDistA != lineDistB:
-      return cmp(lineDistA, lineDistB)
-    return cmp(a.column, b.column)
+    if i + 1 < str.len:
+      result.add (chunk.range.a + point(0, i)).toCursor
+      if result.len >= max:
+        break
 
 proc getCombinationsOfLength*(self: TextDocumentEditor, keys: openArray[string],
     disallowedPairs: HashSet[string], length: int, disallowDoubles: bool): seq[string] =
@@ -3362,7 +3395,7 @@ proc assignKeys*(self: TextDocumentEditor, cursors: openArray[Cursor]): seq[stri
     "ao", "io", "rs", "ts", "iv", "al", "ec", "eo", "ns",
     "nh", "rg", "tf", "ui", "dt", "sd", "ou", "uv", "df"
   ].toHashSet
-  for length in 1..3:
+  for length in 2..4:
     if result.len == cursors.len:
       return
     for c in self.getCombinationsOfLength(possibleKeys, disallowedPairs, length, disallowDoubles=true):
@@ -3405,7 +3438,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   var progress = ""
 
   proc updateStyledTextOverrides() =
-    self.styledTextOverrides.clear()
+    self.displayMap.overlay.clear(15)
     try:
 
       var options: seq[Cursor] = @[]
@@ -3413,20 +3446,17 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
         if not keys[i].startsWith(progress):
           continue
 
-        if not self.styledTextOverrides.contains(cursors[i].line):
-          self.styledTextOverrides[cursors[i].line] = @[]
-
         if progress.len > 0:
-          self.styledTextOverrides[cursors[i].line].add (cursors[i], progress, "entity.name.function")
+          self.displayMap.overlay.addOverlay(cursors[i].toPoint...point(cursors[i].line, cursors[i].column + progress.len), progress, 15, "string")
 
-        let cursor = (cursors[i].line, cursors[i].column + progress.len)
+        let cursor = (line: cursors[i].line, column: cursors[i].column + progress.len)
         let text = keys[i][progress.len..^1]
-        self.styledTextOverrides[cursors[i].line].add (cursor, text, "constant.numeric")
+        self.displayMap.overlay.addOverlay(cursor.toPoint...point(cursor.line, cursor.column + text.len), text, 15, "constant.numeric")
 
         options.add cursors[i]
 
       if options.len == 1:
-        self.styledTextOverrides.clear()
+        self.displayMap.overlay.clear(15)
         self.document.notifyTextChanged()
         self.markDirty()
         discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson), record=false)
@@ -3443,7 +3473,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   self.modeEventHandlers.setLen(1)
   assignEventHandler(self.modeEventHandlers[0], config):
     onAction:
-      self.styledTextOverrides.clear()
+      self.displayMap.overlay.clear(15)
       self.document.notifyTextChanged()
       self.markDirty()
       if self.handleAction(action, arg, record=true).isSome:
@@ -3459,7 +3489,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
       updateStyledTextOverrides()
 
     onCanceled:
-      self.styledTextOverrides.clear()
+      self.displayMap.overlay.clear(15)
       self.setMode(oldMode)
 
   self.cursorVisible = true
@@ -3530,55 +3560,6 @@ proc setCustomHeader*(self: TextDocumentEditor, text: string) {.expose("editor.t
 
 genDispatcher("editor.text")
 addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
-
-proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
-  assert i in 0..<self.document.numLines
-  result = self.document.getStyledText(i)
-
-  # Since the original StyledLine is cached, if we modify it here we need to create a copy
-  var copied = false
-  template copyLine(): untyped =
-    if not copied:
-      copied = true
-      result = StyledLine(index: i, parts: result.parts)
-
-  let chars = (self.lastTextAreaBounds.w / self.platform.charWidth - 2).RuneCount
-  if chars > 0.RuneCount:
-    var i = 0
-    while i < result.parts.len:
-      if result.parts[i].text.runeLen > chars:
-        copyLine()
-        splitPartAt(result, i, chars.RuneIndex)
-      inc i
-
-  # Highlight the indentation of the cursor line
-  let cursorIndentLevel = self.document.rope.indentBytes(self.selection.last.line)
-  let currentIndentLevel = self.document.rope.indentBytes(i)
-  if currentIndentLevel > cursorIndentLevel:
-    copyLine()
-    let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
-    let start = self.document.rope.runeIndexInLine((i, cursorIndentLevel))
-    result.splitAt(start)
-    result.splitAt(start + 1.RuneCount)
-    result.overrideStyleAndText(start, "|", "comment", -1, opacity=opacity.some)
-
-  if self.styledTextOverrides.contains(i):
-    copyLine()
-    result.overrideStyle(0.RuneIndex, result.runeLen.RuneIndex, "comment", -1)
-
-    for override in self.styledTextOverrides[i]:
-      self.document.splitAt(result, override.cursor.column)
-      self.document.splitAt(result, override.cursor.column + override.text.len)
-      self.document.overrideStyleAndText(result, override.cursor.column, override.text,
-        override.scope, -2, joinNext = true)
-
-  for inlay in self.inlayHints:
-    if inlay.hint.location.line != i:
-      continue
-
-    copyLine()
-    self.document.insertText(result, inlay.hint.location.column.RuneIndex, inlay.hint.label,
-      "comment", containCursor=true)
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
   # debugf"[textedit] handleAction {action}, '{args}'"
@@ -3701,7 +3682,7 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
   self.displayMap.edit(self.document.buffer.snapshot.clone(), edits)
   if self.configProvider.getValue("text.auto-wrap", true):
-    self.displayMap.wrapMap.update(self.document.buffer.snapshot.clone(), force = true)
+    self.displayMap.wrapMap.update(self.displayMap.overlay.snapshot.clone(), force = true)
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
