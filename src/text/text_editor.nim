@@ -966,11 +966,28 @@ proc numSubLines(line: StyledLine): int =
       return r.subLine + 1
 
 proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
-  var wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
-  wrapPoint.row = max(wrapPoint.row.int + offset, 0).uint32
-  wrapPoint.column = self.targetColumn.uint32
-  wrapPoint = wrapPoint.clamp(wrapPoint()...self.wrapEndPoint)
-  let newCursor = self.displayMap.toPoint(wrapPoint, Left).toCursor
+  let wrapPointOld = self.displayMap.toWrapPoint(cursor.toPoint)
+  let wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), self.targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
+  let newCursor = self.displayMap.toPoint(wrapPoint, if offset < 0: Bias.Left else: Bias.Right).toCursor
+  if offset < 0 and newCursor.line > 0 and newCursor.line == cursor.line and self.displayMap.toWrapPoint(newCursor.toPoint).row == wrapPointOld.row:
+    let newCursor2 = point(cursor.line - 1, self.document.rope.lineLen(cursor.line - 1))
+    let displayPoint = self.displayMap.toDisplayPoint(newCursor2)
+    let displayPoint2 = displayPoint(displayPoint.row, self.targetColumn.uint32)
+    let point = self.displayMap.toPoint(displayPoint2)
+
+    # echo &"doMoveCursorVisualLine {cursor}, {offset} -> {newCursor2} -> {displayPoint} -> {displayPoint2} -> {point}"
+    return point.toCursor
+  elif offset > 0:
+    # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
+    # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
+    let wrapPoint2 = wrapPoint(self.displayMap.toWrapPoint(newCursor.toPoint).row, self.targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
+    let newCursor2 = self.displayMap.toPoint(wrapPoint2, if offset < 0: Bias.Left else: Bias.Right).toCursor
+
+    # echo &"doMoveCursorVisualLine {cursor}, {offset} -> {newCursor}, wp: {wrapPointOld} -> {wrapPoint} -> {self.displayMap.toWrapPoint(newCursor.toPoint)}, {wrapPoint2} -> {newCursor2}"
+    if newCursor2.line >= self.document.numLines:
+      return cursor
+    return self.clampCursor(newCursor2, includeAfter)
+
   if newCursor.line >= self.document.numLines:
     return cursor
   return self.clampCursor(newCursor, includeAfter)
@@ -3874,8 +3891,12 @@ method unregister*(self: TextDocumentEditor) =
   self.editors.unregisterEditor(self)
 
 method getStateJson*(self: TextDocumentEditor): JsonNode =
+  let selection = if self.targetSelectionsInternal.getSome(s) and s.len > 0:
+    s.last
+  else:
+    self.selection
   return %*{
-    "selection": self.selection.toJson
+    "selection": selection.toJson
   }
 
 method restoreStateJson*(self: TextDocumentEditor, state: JsonNode) =

@@ -345,7 +345,7 @@ proc cmp(r: ChunkBounds, point: Vec2): int =
   return cmp(r.bounds, point)
 
 proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selection, color: Color, renderCommands: var RenderCommands, chunkBounds: var seq[ChunkBounds]) =
-  # renderCommands.buildCommands:
+
   let dpFirst = self.displayMap.toDisplayPoint(sn.first.toPoint)
   let dpLast = self.displayMap.toDisplayPoint(sn.last.toPoint)
   let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchRange(dpFirst, Bias.Right, cmp)
@@ -391,7 +391,7 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
         let lastOffset = if lineLen == 0:
           1
         elif dpLast in bounds.displayRange:
-          sn.last.column.int - bounds.displayRange.a.column.int
+          dpLast.column.int - bounds.displayRange.a.column.int
         elif dpLast < bounds.displayRange.a:
           0
         else:
