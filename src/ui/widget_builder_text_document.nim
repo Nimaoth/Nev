@@ -623,7 +623,8 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           let color = if state.reverse: insertedTextBackgroundColor else: deletedTextBackgroundColor
           fillRect(rect(state.bounds.x + lineNumberWidth, state.offset.y, state.bounds.w - lineNumberWidth, builder.textHeight), color)
 
-      state.offset.x += (chunk.displayPoint.column - state.lastDisplayEndPoint.column).float * state.builder.charWidth
+      if chunk.displayPoint.column > state.lastDisplayEndPoint.column:
+        state.offset.x += (chunk.displayPoint.column - state.lastDisplayEndPoint.column).float * state.builder.charWidth
 
       if state.lastPoint.row != chunk.point.row and not external:
         state.lastDisplayPoint.column = 0

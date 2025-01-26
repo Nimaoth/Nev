@@ -1,7 +1,7 @@
 import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import text/diff, overlay_map
+import text/diff, overlay_map, tab_map
 from scripting_api import Selection
 
 {.push warning[Deprecated]:off.}
@@ -18,13 +18,13 @@ template log(msg: untyped) =
 {.push gcsafe.}
 {.push raises: [].}
 
-type InputMap = OverlayMap
-type InputMapSnapshot = OverlayMapSnapshot
-type InputChunkIterator = OverlayChunkIterator
-type InputChunk = OverlayChunk
-type InputPoint = OverlayPoint
-proc inputPoint(row: Natural = 0, column: Natural = 0): InputPoint {.inline.} = overlayPoint(row, column)
-proc toInputPoint(d: PointDiff): InputPoint {.inline.} = d.toOverlayPoint
+type InputMap = TabMap
+type InputMapSnapshot = TabMapSnapshot
+type InputChunkIterator = TabChunkIterator
+type InputChunk = TabChunk
+type InputPoint = TabPoint
+proc inputPoint(row: Natural = 0, column: Natural = 0): InputPoint {.inline.} = tabPoint(row, column)
+proc toInputPoint(d: PointDiff): InputPoint {.inline.} = d.toTabPoint
 
 type WrapPoint* {.borrow: `.`.} = distinct Point
 func wrapPoint*(row: Natural = 0, column: Natural = 0): WrapPoint = Point(row: row.uint32, column: column.uint32).WrapPoint
@@ -118,6 +118,7 @@ type
     wrapPoint*: WrapPoint
     localOffset: int
     atEnd*: bool
+    callCount: int
 
 func buffer*(self: WrapMapSnapshot): lent BufferSnapshot = self.input.buffer
 
@@ -196,6 +197,44 @@ proc toWrapPoint*(self: WrapMapSnapshot, point: Point, bias: Bias = Bias.Right):
 
 proc toWrapPoint*(self: WrapMap, point: InputPoint, bias: Bias = Bias.Right): WrapPoint =
   self.snapshot.toWrapPoint(point, bias)
+
+# proc toWrapBytes*(self: WrapMapChunkCursor, tab: WrapMapSnapshot, tabPoint: WrapPoint): int =
+#   if self.item.isNone:
+#     # echo &"toWrapBytes {tabPoint}\n{tab}"
+#     return self.endPos.dstBytes
+#   let item = self.item.get
+#   let offset = case item.kind
+#   of WrapMapChunkKind.Empty:
+#     let point = self.toPoint(tabPoint)
+#     let bytes = tab.buffer.visibleText.pointToOffset(point)
+#     let offset = bytes - self.startPos.srcBytes
+#     offset
+
+#   of WrapMapChunkKind.String:
+#     let localPoint = (tabPoint - self.startPos.dst).toPoint
+#     let offset = item.text.toOpenArray(0, item.text.high).pointToOffset(localPoint)
+#     offset
+
+#   of WrapMapChunkKind.Rope:
+#     0
+
+#   return (self.startPos.dstBytes + offset).clamp(self.startPos.dstBytes, self.endPos.dstBytes)
+
+# proc toWrapBytes*(self: WrapMapSnapshot, tabPoint: WrapPoint, bias: Bias = Bias.Right): int =
+#   var c = self.map.initCursor(WrapMapChunkSummary)
+#   discard c.seek(tabPoint.WrapMapChunkDst, bias, ())
+#   return c.toWrapBytes(self, tabPoint)
+
+# proc lineLen*(self: WrapMapSnapshot, line: int): int =
+#   let startOffset = self.toWrapBytes(wrapPoint(line))
+#   if line == self.endWrapPoint.row.int:
+#     return self.map.summary.dstBytes - startOffset
+#   let endOffset = self.toWrapBytes(wrapPoint(line + 1)) - 1
+#   assert endOffset >= startOffset
+#   return endOffset - startOffset
+
+# proc lineRange*(self: WrapMapSnapshot, line: int): Range[WrapPoint] =
+#   return wrapPoint(line, 0)...wrapPoint(line, self.lineLen(line))
 
 proc toInputPoint*(self: WrapMapChunkCursor, point: WrapPoint): InputPoint =
   let point = point.clamp(self.startPos.dst...self.endPos.dst)
@@ -452,47 +491,114 @@ proc update*(self: var WrapMapSnapshot, input: sink InputMapSnapshot, wrapWidth:
   var currentDisplayRange = wrapPoint()...wrapPoint()
   var indent = 0
 
+  var iter = input.iter()
+  var nextWrapColumn = wrapWidth
+
   var newMap = SumTree[WrapMapChunk].new()
-  while currentRange.b.row.int < numLines:
-    let lineLen = input.lineLen(currentRange.b.row.int)
+  var lastInputPoint = inputPoint(0, 0)
 
-    var i = 0
-    while i + wrapWidth - indent < lineLen:
-      let endI = min(i + wrapWidth - indent, lineLen)
-      currentRange.b.column = endI.uint32
-      currentDisplayRange.b.column = (endI - i + indent).uint32
-      newMap.add(WrapMapChunk(
-          src: (currentRange.b - currentRange.a).toInputPoint,
-          dst: (currentDisplayRange.b - currentDisplayRange.a).toWrapPoint,
-        ), ())
+  iter.seekLine(0)
+  var lastWasTab = false
+  while iter.next().getSome(chunk2):
+    var chunk = chunk2
+    # echo &"{currentRange} -> {currentDisplayRange}, wrap {nextWrapColumn}, chunk {chunk}"
+    if chunk.outputPoint.row > lastInputPoint.row:
+      nextWrapColumn = wrapWidth
+      currentRange.b += inputPoint(1, 0)
+      currentDisplayRange.b += wrapPoint(1, 0)
 
-      newMap.add(WrapMapChunk(src: inputPoint(), dst: wrapPoint(1, wrappedIndent)), ())
-      indent = wrappedIndent
-      currentRange = currentRange.b...currentRange.b
-      currentDisplayRange = wrapPoint(currentDisplayRange.b.row + 1, indent.uint32)...wrapPoint(currentDisplayRange.b.row + 1, indent.uint32)
-      i = endI
+    var indent = wrappedIndent
+    if chunk.wasTab and chunk.outputPoint.column > 0 and not lastWasTab:
+      nextWrapColumn = chunk.outputPoint.column.int
+      indent = 0
+      # echo &"  wrap at {nextWrapColumn}"
 
-    if currentRange.b.row.int == numLines - 1:
-      currentRange.b.column = lineLen.uint32
-      currentDisplayRange.b.column += (currentRange.b - currentRange.a).toInputPoint.column
-      # log &"last range: {currentRange} -> {currentDisplayRange}    | {(currentRange.b - currentRange.a).toInputPoint}"
-      break
+    lastInputPoint = chunk.endOutputPoint
+    lastWasTab = chunk.wasTab
 
-    currentRange.b = inputPoint(currentRange.b.row + 1)
-    currentDisplayRange.b = wrapPoint(currentDisplayRange.b.row + 1)
-    indent = 0
+    while chunk.len > 0:
+      if chunk.outputPoint.column.int >= nextWrapColumn:
+        if currentDisplayRange.a != currentDisplayRange.b:
+          # echo &"  flush0 {currentRange} -> {currentDisplayRange}"
+          newMap.add(WrapMapChunk(
+              src: (currentRange.b - currentRange.a).toInputPoint,
+              dst: (currentDisplayRange.b - currentDisplayRange.a).toWrapPoint,
+            ), ())
+        newMap.add(WrapMapChunk(src: inputPoint(), dst: wrapPoint(1, indent)), ())
+        currentRange.b = inputPoint(0, chunk.outputPoint.column.int - nextWrapColumn)
+        currentDisplayRange.b = wrapPoint(0, chunk.outputPoint.column.int - nextWrapColumn)
+        nextWrapColumn += wrapWidth - indent
 
-  newMap.add(WrapMapChunk(
-      src: (currentRange.b - currentRange.a).toInputPoint,
-      dst: (currentDisplayRange.b - currentDisplayRange.a).toWrapPoint,
-    ), ())
+      if chunk.endOutputPoint.column.int <= nextWrapColumn:
+        currentRange.b.column += chunk.len.uint32
+        currentDisplayRange.b.column += chunk.len.uint32
+        break
+
+      else:
+        assert chunk.outputPoint.column.int < nextWrapColumn
+        let (prefix, suffix) = chunk.split(nextWrapColumn - chunk.outputPoint.column.int)
+        # echo &"  split {nextWrapColumn - chunk.outputPoint.column.int} -> {prefix} | {suffix}"
+        currentRange.b.column += prefix.len.uint32
+        currentDisplayRange.b.column += prefix.len.uint32
+
+        if currentDisplayRange.a != currentDisplayRange.b:
+          # echo &"  flush2 {currentRange} -> {currentDisplayRange}"
+          newMap.add(WrapMapChunk(
+              src: (currentRange.b - currentRange.a).toInputPoint,
+              dst: (currentDisplayRange.b - currentDisplayRange.a).toWrapPoint,
+            ), ())
+
+        newMap.add(WrapMapChunk(src: inputPoint(), dst: wrapPoint(1, indent)), ())
+        currentRange.b = inputPoint(0, 0)
+        currentDisplayRange.b = wrapPoint(0, 0)
+        nextWrapColumn += wrapWidth - indent
+        chunk = suffix
+        # echo &"{currentRange} -> {currentDisplayRange}, wrap {nextWrapColumn}, chunk {chunk}"
+
+  if currentDisplayRange.a != currentDisplayRange.b:
+    # echo &"  flush3 {currentRange} -> {currentDisplayRange}"
+    newMap.add(WrapMapChunk(
+        src: (currentRange.b - currentRange.a).toInputPoint,
+        dst: (currentDisplayRange.b - currentDisplayRange.a).toWrapPoint,
+      ), ())
 
   # logMapUpdate &"WrapMap.upate {self.map.summary} -> {newMap.summary}"
   self = WrapMapSnapshot(map: newMap.ensureMove, input: input.ensureMove, interpolated: false, version: self.version + 1)
-  # self.validate()
+  # echo self
+  self.validate()
 
 proc updateThread(self: ptr WrapMapSnapshot, input: ptr InputMapSnapshot, wrapWidth: int, wrappedIndent: int): int =
   self[].update(input[].clone(), wrapWidth, wrappedIndent)
+
+proc computeEdits(old: WrapMapSnapshot, new: WrapMapSnapshot, edits: Patch[InputPoint]): Patch[WrapPoint] =
+  var oldCursor = old.map.initCursor(WrapMapChunkSummary)
+  var newCursor = new.map.initCursor(WrapMapChunkSummary)
+  for edit in edits.edits:
+    var edit = edit
+    edit.old.a.column = 0
+    edit.old.b += inputPoint(1, 0)
+    edit.new.a.column = 0
+    edit.new.b += inputPoint(1, 0)
+
+    discard oldCursor.seek(edit.old.a.WrapMapChunkSrc, Bias.Right, ())
+    var oldStart = oldCursor.startPos.dst
+    oldStart += (edit.old.a - oldCursor.startPos.src).toWrapPoint
+
+    discard oldCursor.seek(edit.old.b.WrapMapChunkSrc, Bias.Right, ())
+    var oldEnd = oldCursor.startPos.dst
+    oldEnd += (edit.old.b - oldCursor.startPos.src).toWrapPoint
+
+    discard newCursor.seek(edit.new.a.WrapMapChunkSrc, Bias.Right, ())
+    var newStart = newCursor.startPos.dst
+    newStart += (edit.new.a - newCursor.startPos.src).toWrapPoint
+
+    discard newCursor.seek(edit.new.b.WrapMapChunkSrc, Bias.Right, ())
+    var newEnd = newCursor.startPos.dst
+    newEnd += (edit.new.b - newCursor.startPos.src).toWrapPoint
+
+    result.add initEdit(oldStart...oldEnd, newStart...newEnd)
+
+  # echo &"computeEdits {edits}\n  A: {old}\n  B: {new}\n  -> {result}"
 
 proc updateAsync(self: WrapMap) {.async.} =
   if self.updatingAsync: return
@@ -532,7 +638,6 @@ proc updateAsync(self: WrapMap) {.async.} =
 
     let oldSnapshot = self.snapshot.clone()
     self.snapshot = snapshot.clone()
-    # echo &"WrapMap.onUpdated {self.snapshot.buffer.remoteId}@{self.snapshot.buffer.version}"
     logMapUpdate &"WrapMap.updatedAsync {self.snapshot.desc}"
     self.onUpdated.invoke((self, oldSnapshot))
 
@@ -577,18 +682,24 @@ proc seek*(self: var WrappedChunkIterator, wrapPoint: WrapPoint) =
   self.localOffset = 0
   self.inputChunk = InputChunk.none
   self.wrapChunk = WrapChunk.none
+  # echo &"  {self.wrapPoint}"
 
 proc seekLine*(self: var WrappedChunkIterator, line: int) =
   self.seek(wrapPoint(line))
 
 proc next*(self: var WrappedChunkIterator): Option[WrapChunk] =
+  # defer:
+  #   if self.callCount == 0:
+  #     echo &"WrappedChunkIterator.next {self.inputChunk} -> {self.wrapChunk}"
+  #   inc self.callCount
+
   if self.atEnd:
     self.wrapChunk = WrapChunk.none
     return
 
   template log(msg: untyped) =
     when false:
-      if self.inputChunk.get.point.row == 209:
+      if self.callCount == 0:
         echo msg
 
   # echo &"Warp.next {self.wrapPoint}"
@@ -605,6 +716,7 @@ proc next*(self: var WrappedChunkIterator): Option[WrapChunk] =
 
   assert self.inputChunk.isSome
   var currentChunk = self.inputChunk.get
+  # log &"  input chunk {currentChunk}"
   let currentPoint = currentChunk.point + point(0, self.localOffset)
   let currentInputPoint = currentChunk.outputPoint + inputPoint(0, self.localOffset)
   discard self.wrapMapCursor.seek(currentInputPoint.WrapMapChunkSrc, Bias.Right, ())
@@ -613,14 +725,20 @@ proc next*(self: var WrappedChunkIterator): Option[WrapChunk] =
 
   let oldWrapPoint = self.wrapPoint
   self.wrapPoint = self.wrapMapCursor.toWrapPoint(currentInputPoint)
-  # echo &"WrappedChunkIterator.next: {oldWrapPoint} -> {self.wrapPoint}"
+  # if self.wrapMapCursor.item.isSome:
+  #   log &"  {oldWrapPoint}, {currentInputPoint} -> {self.wrapPoint}, {self.wrapMapCursor.startPos}...{self.wrapMapCursor.endPos}     |   {self.wrapMapCursor.item.mapIt($it[])}"
+  # else:
+  #   log &"  {oldWrapPoint}, {currentInputPoint} -> {self.wrapPoint}, {self.wrapMapCursor.startPos}...{self.wrapMapCursor.endPos}"
 
   let startOffset = self.localOffset
   let map = (
     src: self.wrapMapCursor.startPos.src...self.wrapMapCursor.endPos.src,
     dst: self.wrapMapCursor.startPos.dst...self.wrapMapCursor.endPos.dst)
 
+  # log &"  map: {map},      {currentChunk}"
+
   if currentChunk.endOutputPoint <= map.src.b:
+    # log &"  local offset {self.localOffset} -> {currentChunk.len}"
     self.localOffset = currentChunk.len
     assert self.localOffset >= 0
     currentChunk.styledChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.styledChunk.chunk.data[startOffset].addr)
@@ -630,10 +748,8 @@ proc next*(self: var WrappedChunkIterator): Option[WrapChunk] =
     self.wrapChunk = WrapChunk(inputChunk: currentChunk, wrapPoint: self.wrapPoint).some
 
   else:
+    # log &"  local offset {self.localOffset} -> {map.src.b.column.int - currentChunk.outputPoint.column.int}"
     self.localOffset = map.src.b.column.int - currentChunk.outputPoint.column.int
-    if self.localOffset < 0:
-      echo self.wrapMap
-      echo self.wrapMap.input
     assert self.localOffset >= 0
     currentChunk.styledChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.styledChunk.chunk.data[startOffset].addr)
     currentChunk.styledChunk.chunk.len = self.localOffset - startOffset
@@ -645,17 +761,17 @@ proc next*(self: var WrappedChunkIterator): Option[WrapChunk] =
 
 #
 
-func toOutputPoint*(self: WrapMapSnapshot, point: OverlayPoint, bias: Bias = Bias.Right): WrapPoint {.inline.} = self.toWrapPoint(point, bias)
+func toOutputPoint*(self: WrapMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): WrapPoint {.inline.} = self.toWrapPoint(point, bias)
 func toOutputPoint*(self: WrapMapSnapshot, point: Point, bias: Bias = Bias.Right): WrapPoint {.inline.} = self.toWrapPoint(point, bias)
 func `outputPoint=`*(self: var WrapChunk, point: WrapPoint) = self.wrapPoint = point
 template outputPoint*(self: WrapChunk): WrapPoint = self.wrapPoint
 template endOutputPoint*(self: WrapChunk): WrapPoint = self.endWrapPoint
 template endOutputPoint*(self: WrapMapSnapshot): WrapPoint = self.endWrapPoint
 
-func overlay*(self: WrapMapSnapshot): lent OverlayMapSnapshot {.inline.} = self.input
-func overlayChunks*(self: var WrappedChunkIterator): var OverlayChunkIterator {.inline.} = self.inputChunks
-func overlayChunks*(self: WrappedChunkIterator): lent OverlayChunkIterator {.inline.} = self.inputChunks
-func overlayChunk*(self: WrapChunk): lent OverlayChunk {.inline.} = self.inputChunk
-proc toOverlayPoint*(self: WrapMapChunkCursor, point: WrapPoint): InputPoint {.inline.} = self.toInputPoint(point)
-proc toOverlayPoint*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)
-proc toOverlayPoint*(self: WrapMap, point: WrapPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)
+func tabMap*(self: WrapMapSnapshot): lent TabMapSnapshot {.inline.} = self.input
+func tabChunks*(self: var WrappedChunkIterator): var TabChunkIterator {.inline.} = self.inputChunks
+func tabChunks*(self: WrappedChunkIterator): lent TabChunkIterator {.inline.} = self.inputChunks
+func tabChunk*(self: WrapChunk): lent TabChunk {.inline.} = self.inputChunk
+proc toTabPoint*(self: WrapMapChunkCursor, point: WrapPoint): InputPoint {.inline.} = self.toInputPoint(point)
+proc toTabPoint*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)
+proc toTabPoint*(self: WrapMap, point: WrapPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)

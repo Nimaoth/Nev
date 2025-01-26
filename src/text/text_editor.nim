@@ -17,7 +17,7 @@ import diff
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
-import overlay_map, wrap_map, diff_map, display_map
+import overlay_map, tab_map, wrap_map, diff_map, display_map
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
@@ -168,6 +168,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastItems*: seq[tuple[index: int, bounds: Rect]]
   showCompletions*: bool
   scrollToCompletion*: Option[int]
+
+  lastEndDisplayPoint: DisplayPoint
 
   completionEngine: CompletionEngine
 
@@ -540,6 +542,9 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     # todo: this should account for the line number width
     wrapWidth = wrapWidth div 2 - 2
 
+  let tabWidth = self.configProvider.getValue("text.tab-width", self.document.tabWidth)
+  self.displayMap.tabMap.setTabWidth(tabWidth)
+
   if self.displayMap.remoteId != self.document.buffer.remoteId:
     self.displayMap.setBuffer(self.document.buffer.snapshot.clone())
 
@@ -909,12 +914,14 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
-  assert self.lineCount > 0
+  assert self.numDisplayLines > 0
   let baseLine = int(-self.scrollOffset / self.platform.totalLineHeight)
-  result.first.line = clamp(baseLine - buffer, 0, self.lineCount - 1)
-  result.last.line = clamp(baseLine + self.screenLineCount + buffer,
-    0, self.lineCount - 1)
-  result.last.column = self.document.rope.lastValidIndex(result.last.line)
+  var displayRange: Range[DisplayPoint]
+  displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
+  displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines - 1).uint32
+  # result.last.column = self.document.rope.lastValidIndex(result.last.line)
+  result.first = self.displayMap.toPoint(displayRange.a).toCursor
+  result.last = self.displayMap.toPoint(displayRange.b).toCursor
 
 proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
@@ -3699,7 +3706,7 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
   self.displayMap.edit(self.document.buffer.snapshot.clone(), edits)
   if self.configProvider.getValue("text.auto-wrap", true):
-    self.displayMap.wrapMap.update(self.displayMap.overlay.snapshot.clone(), force = true)
+    self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
@@ -3783,17 +3790,20 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
     return
 
   if displayMap == self.displayMap:
-    self.updateTargetColumn()
-    let oldScrollOffset = self.scrollOffset
+    if displayMap.endDisplayPoint.row != self.lastEndDisplayPoint.row:
+      self.lastEndDisplayPoint = displayMap.endDisplayPoint
+      self.updateTargetColumn()
+      let oldScrollOffset = self.scrollOffset
 
-    if self.targetPoint.getSome(point):
-      self.scrollToCursor(point.toCursor, self.targetLineMargin, self.nextScrollBehaviour, self.targetLineRelativeY)
-    else:
-      self.scrollOffset = self.interpolatedScrollOffset
+      if self.targetPoint.getSome(point):
+        self.scrollToCursor(point.toCursor, self.targetLineMargin, self.nextScrollBehaviour, self.targetLineRelativeY)
+      else:
+        self.scrollOffset = self.interpolatedScrollOffset
 
-    let oldInterpolatedScrollOffset = self.interpolatedScrollOffset
-    let displayPoint = self.displayMap.toDisplayPoint(self.currentCenterCursor.toPoint)
-    self.interpolatedScrollOffset = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
+      let oldInterpolatedScrollOffset = self.interpolatedScrollOffset
+      let displayPoint = self.displayMap.toDisplayPoint(self.currentCenterCursor.toPoint)
+      self.interpolatedScrollOffset = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
+      # debugf"handleDisplayMapUpdated {self.getFileName()}: {oldScrollOffset} -> {self.scrollOffset}, {oldInterpolatedScrollOffset} -> {self.interpolatedScrollOffset}, target {self.targetPoint}"
 
     self.markDirty()
   elif displayMap == self.diffDisplayMap:

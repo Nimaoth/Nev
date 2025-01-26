@@ -368,12 +368,13 @@ func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
   return RopeChunk(
     data: cast[ptr UncheckedArray[char]](self.data[range.a].addr),
     len: range.len,
+    external: self.external,
     point: Point(row: self.point.row, column: self.point.column + range.a.uint32)
   )
 
 template toOpenArray*(self: RopeChunk): openArray[char] = self.data.toOpenArray(0, self.len - 1)
 
-proc init*(_: typedesc[ChunkIterator], rope: var Rope): ChunkIterator =
+proc init*(_: typedesc[ChunkIterator], rope {.byref.}: Rope): ChunkIterator =
   result.rope = rope.clone()
   result.cursor = rope.tree.initCursor((Point, int))
 
@@ -393,7 +394,7 @@ proc seek*(self: var ChunkIterator, point: Point) =
   self.localOffset = self.rope.pointToOffset(point) - self.cursor.startPos[1]
   assert self.localOffset >= 0
 
-proc next*(self: var ChunkIterator): Option[RopeChunk] =
+func next*(self: var ChunkIterator): Option[RopeChunk] =
   while true:
     if self.cursor.atEnd:
       if not self.returnedLastChunk:
@@ -426,11 +427,20 @@ proc next*(self: var ChunkIterator): Option[RopeChunk] =
       if self.localOffset == chunk.chars.len:
         continue
 
+      let nextTab = chunk.chars(self.localOffset, chunk.chars.len - 1).find('\t')
       let nextNewLine = chunk.chars(self.localOffset, chunk.chars.len - 1).find('\n')
-      var maxEndIndex = if nextNewLine == -1:
+      var maxEndIndex = if nextTab == -1 and nextNewLine == -1:
         chunk.chars.len
-      else:
+      elif nextTab == -1 or (nextNewLine != -1 and nextNewLine < nextTab):
         self.localOffset + nextNewLine
+      elif nextTab > 0:
+        self.localOffset + nextTab
+      else:
+        assert nextTab == 0
+        var endOffset = self.localOffset + 1
+        while endOffset < chunk.chars.len and chunk.chars[endOffset] == '\t':
+          inc endOffset
+        endOffset
 
       assert maxEndIndex >= self.localOffset
 
@@ -491,7 +501,7 @@ func cmp*(a: DisplayPoint, b: DisplayPoint): int {.borrow.}
 func clamp*(p: DisplayPoint, r: Range[DisplayPoint]): DisplayPoint = min(max(p, r.a), r.b)
 converter toDisplayPoint*(diff: PointDiff): DisplayPoint = diff.toPoint.DisplayPoint
 
-proc init*(_: typedesc[StyledChunkIterator], rope: var Rope): StyledChunkIterator =
+proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope): StyledChunkIterator =
   result.chunks = ChunkIterator.init(rope)
 
 func point*(self: StyledChunkIterator): Point = self.chunks.point
@@ -739,3 +749,24 @@ template defineCustomPoint*(name: untyped) =
   func cmp*(a: name, b: name): int {.borrow.}
   func clamp*(p: name, r: Range[name]): name = min(max(p, r.a), r.b)
   converter toDiffPoint*(diff: PointDiff): name = diff.toPoint.name
+
+proc split*(self: RopeChunk, index: int): (RopeChunk, RopeChunk) =
+  (
+    RopeChunk(data: self.data, len: index, external: self.external, point: self.point),
+    RopeChunk(
+      data: cast[ptr UncheckedArray[char]](self.data[index].addr),
+      len: self.len - index,
+      external: self.external,
+      point: point(self.point.row, self.point.column + index.uint32),
+    ),
+  )
+
+proc split*(self: StyledChunk, index: int): (StyledChunk, StyledChunk) =
+  let (prefix, suffix) = self.chunk.split(index)
+  (
+    StyledChunk(chunk: prefix, scope: self.scope, drawWhitespace: self.drawWhitespace),
+    StyledChunk(chunk: suffix, scope: self.scope, drawWhitespace: self.drawWhitespace),
+  )
+
+proc `[]`*(self: StyledChunk, r: Range[int]): StyledChunk =
+  StyledChunk(chunk: self.chunk[r], scope: self.scope, drawWhitespace: self.drawWhitespace)

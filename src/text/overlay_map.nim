@@ -167,7 +167,7 @@ proc `$`*(self: OverlayMapSnapshot): string =
         result.add &"  {i} #{item.id}: {item.src} -> {item.dst}  {item.srcBytes} -> {item.dstBytes}   |   {r} -> {rd}  {b} -> {bd}  {item.kind}\n"
         inc i
 
-proc iter*(overlay: var OverlayMapSnapshot): OverlayChunkIterator =
+proc iter*(overlay {.byref.}: OverlayMapSnapshot): OverlayChunkIterator =
   # echo &"OverlayMapSnapshot.iter {overlay}"
   result = OverlayChunkIterator(
     styledChunks: StyledChunkIterator.init(overlay.buffer.visibleText),
@@ -176,6 +176,8 @@ proc iter*(overlay: var OverlayMapSnapshot): OverlayChunkIterator =
   )
 
 func point*(self: OverlayChunkIterator): Point = self.styledChunks.point
+func chunk*(self: var OverlayChunk): var RopeChunk = self.styledChunk.chunk
+func chunk*(self: OverlayChunk): RopeChunk = self.styledChunk.chunk
 func point*(self: OverlayChunk): Point = self.styledChunk.point
 func endPoint*(self: OverlayChunk): Point = self.styledChunk.endPoint
 func endOverlayPoint*(self: OverlayChunk): OverlayPoint = overlayPoint(self.overlayPoint.row, self.overlayPoint.column + self.styledChunk.len.uint32)
@@ -257,6 +259,9 @@ proc lineLen*(self: OverlayMapSnapshot, line: int): int =
   let endOffset = self.toOverlayBytes(overlayPoint(line + 1)) - 1
   assert endOffset >= startOffset
   return endOffset - startOffset
+
+proc lineRange*(self: OverlayMapSnapshot, line: int): Range[OverlayPoint] =
+  return overlayPoint(line, 0)...overlayPoint(line, self.lineLen(line))
 
 proc setBuffer*(self: OverlayMap, buffer: sink BufferSnapshot) =
   # logMapUpdate &"OverlayMap.setBuffer {self.snapshot.buffer.remoteId}@{self.snapshot.buffer.version} -> {buffer.remoteId}@{buffer.version}"
@@ -636,6 +641,16 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
   return self.overlayChunk
 
 #
+
+proc split*(self: OverlayChunk, index: int): (OverlayChunk, OverlayChunk) =
+  let (prefix, suffix) = self.styledChunk.split(index)
+  (
+    OverlayChunk(styledChunk: prefix, overlayPoint: self.overlayPoint),
+    OverlayChunk(styledChunk: suffix, overlayPoint: overlayPoint(self.overlayPoint.row, self.overlayPoint.column + index.uint32)),
+  )
+
+proc `[]`*(self: OverlayChunk, r: Range[int]): OverlayChunk =
+  OverlayChunk(styledChunk: self.styledChunk[r], overlayPoint: overlayPoint(self.overlayPoint.row, self.overlayPoint.column + r.a.uint32))
 
 func toOutputPoint*(self: OverlayMapSnapshot, point: Point, bias: Bias): OverlayPoint {.inline.} = self.toOverlayPoint(point, bias)
 func `outputPoint=`*(self: var OverlayChunk, point: OverlayPoint) = self.overlayPoint = point

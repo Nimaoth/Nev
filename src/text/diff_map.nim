@@ -48,12 +48,12 @@ type
     inputChunk*: InputChunk
     diffPoint*: DiffPoint
 
-func point*(self: DiffChunk): Point = self.inputChunk.point
-func endPoint*(self: DiffChunk): Point = self.inputChunk.endPoint
-func diffEndPoint*(self: DiffChunk): DiffPoint = diffPoint(self.diffPoint.row, self.diffPoint.column + self.inputChunk.len.uint32)
-func endDiffPoint*(self: DiffChunk): DiffPoint = diffPoint(self.diffPoint.row, self.diffPoint.column + self.inputChunk.len.uint32)
-func len*(self: DiffChunk): int = self.inputChunk.len
-func `$`*(self: DiffChunk): string = &"DC({self.diffPoint}...{self.endDiffPoint}, {self.inputChunk})"
+func point*(self: DiffChunk): Point {.inline.} = self.inputChunk.point
+func endPoint*(self: DiffChunk): Point {.inline.} = self.inputChunk.endPoint
+func diffEndPoint*(self: DiffChunk): DiffPoint {.inline.} = diffPoint(self.diffPoint.row, self.diffPoint.column + self.inputChunk.len.uint32)
+func endDiffPoint*(self: DiffChunk): DiffPoint {.inline.} = diffPoint(self.diffPoint.row, self.diffPoint.column + self.inputChunk.len.uint32)
+func len*(self: DiffChunk): int {.inline.} = self.inputChunk.len
+func `$`*(self: DiffChunk): string {.inline.} = &"DC({self.diffPoint}...{self.endDiffPoint}, {self.inputChunk})"
 template toOpenArray*(self: DiffChunk): openArray[char] = self.inputChunk.toOpenArray
 template scope*(self: DiffChunk): string = self.inputChunk.scope
 
@@ -210,6 +210,9 @@ proc isEmptySpace*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Ri
 
 proc toInputPoint*(self: DiffMap, point: DiffPoint, bias: Bias = Bias.Right): InputPoint =
   self.snapshot.toInputPoint(point, bias)
+
+func endDiffPoint*(self: DiffMapSnapshot): DiffPoint {.inline.} = self.toDiffPoint(self.input.endOutputPoint)
+func endDiffPoint*(self: DiffMap): DiffPoint {.inline.} = self.snapshot.endDiffPoint
 
 proc createIdentityDiffMap(input: sink InputMapSnapshot): DiffMapSnapshot =
   logMapUpdate &"createIdentityDiffMap {input.buffer.remoteId}, input summary = {input.map.summary}"
