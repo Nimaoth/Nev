@@ -805,13 +805,13 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         let dp = self.displayMap.toDisplayPoint(s.last.toPoint)
         let p = self.displayMap.toPoint(dp)
         let ob = self.displayMap.overlay.snapshot.toOverlayBytes(dp.OverlayPoint)
-        let (found, lastIndex) = state.chunkBounds.binarySearchRange(s.last.toPoint, Bias.Left, cmp)
         let (foundDisplay, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
         # echo &"{s.last.toPoint} -> {dp} -> {p}"
         if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
+          self.lastHoverLocationBounds = state.chunkBounds[lastIndexDisplay].bounds.some
 
   for selections in self.customHighlights.values:
     for s in selections:
