@@ -296,6 +296,17 @@ proc editImpl(self: var WrapMapSnapshot, input: sink InputMapSnapshot, patch: Pa
 
   logMapUpdate &"WrapMapSnapshot.editImpl {self.desc} -> {input.desc} | {patch}"
 
+  if self.map.summary == WrapMapChunkSummary():
+    let endPoint = input.endOutputPoint
+    self = WrapMapSnapshot(
+      map: SumTree[WrapMapChunk].new([WrapMapChunk(src: endPoint, dst: endPoint.WrapPoint)]),
+      input: input.ensureMove,
+      interpolated: false,
+      version: self.version + 1)
+    for e in patch.edits:
+      result.add initEdit(e.old.a.WrapPoint...e.old.b.WrapPoint, e.new.a.WrapPoint...e.new.b.WrapPoint)
+    return
+
   log &"============\nedit {patch}\n  {self}"
   # let p2 = patch.decompose()
 

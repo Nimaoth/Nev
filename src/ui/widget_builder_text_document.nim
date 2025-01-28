@@ -502,6 +502,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     else: 0
   let maxLineNumberLen = ($maxLineNumber).len + 1
   let cursorLine = self.selection.last.line
+  let cursorDisplayLine = self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int
 
   let lineNumberPadding = builder.charWidth
   let lineNumberBounds = if lineNumbers != LineNumbers.None:
@@ -524,6 +525,21 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     currentNode.renderCommands.clear()
     selectionsNode.renderCommands.clear()
     return
+
+  let contextLines = if showContextLines:
+    var contextLines: seq[int]
+    for i in 0..10:
+      let displayPoint = displayPoint(startLine + i + 2, 0)
+      if displayPoint.row.int >= self.numDisplayLines:
+        break
+      let s = self.displayMap.toPoint(displayPoint)
+      contextLines = self.getContextLines(s.toCursor)
+      if contextLines.len <= i:
+        break
+
+    contextLines
+  else:
+    @[]
 
   let highlight = app.config.asConfigProvider.getValue("ui.highlight", true)
 
@@ -590,6 +606,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
   self.lastRenderedChunks.setLen(0)
 
+  selectionsNode.renderCommands.clear()
   currentNode.renderCommands.clear()
   currentNode.renderCommands.spacesColor = commentColor
   buildCommands(currentNode.renderCommands):
@@ -675,6 +692,9 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         if drawChunks:
           drawRect(bounds, color(1, 0, 0))
 
+        # if not external and self.selection.last.toPoint in chunk.point...chunk.endPoint:
+        #   debugf"{chunk}  |  {self.selection.last.toPoint} -> {self.displayMap.toDisplayPoint(self.selection.last.toPoint)}"
+
       else:
         # todo: use display points for chunkBounds, or both?
         state.chunkBounds.add ChunkBounds(
@@ -690,11 +710,66 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
       return LineDrawerResult.Continue
 
+    var addedCursorLineBackground = false
     while iter.next().getSome(chunk):
+      if not addedCursorLineBackground and chunk.displayPoint.row.int == cursorDisplayLine:
+        let yOffset = (chunk.displayPoint.row.int - state.lastDisplayPoint.row.int).float * builder.textHeight
+        selectionsNode.renderCommands.commands.add(RenderCommand(
+          kind: RenderCommandKind.FilledRect,
+          bounds: rect(state.bounds.x, state.offset.y + yOffset, state.bounds.w, builder.textHeight),
+          color: backgroundColor.lighten(0.05)))
+        addedCursorLineBackground = true
+
+      if state.chunkBounds.len > 1000000:
+        assert false, "Rendering too much text, your font size is too small or there is a bug"
+
       case drawChunk(chunk, state)
       of Continue: discard
       of ContinueNextLine: iter.seekLine(chunk.displayPoint.row.int + 1)
       of Break: break
+
+    if showContextLines and contextLines.len > 0:
+      let startDisplayPoint = self.displayMap.toDisplayPoint(point(contextLines.last, 0))
+      var contextLinesIter = self.displayMap.iter()
+      if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
+        contextLinesIter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+      var contextLinesState = LineDrawerState(
+        builder: builder,
+        displayMap: self.displayMap,
+        bounds: rect(mainOffset, 0, parentWidth - mainOffset, parentHeight),
+        offset: vec2(lineNumberWidth + mainOffset, 0),
+        lastDisplayPoint: startDisplayPoint,
+        lastDisplayEndPoint: startDisplayPoint,
+        lastPoint: point(contextLines.last, 0),
+        cursorOnScreen: false,
+        reverse: true,
+      )
+      contextLinesIter.seekLine(startDisplayPoint.row.int)
+
+      fillRect(rect(contextLinesState.bounds.x, contextLinesState.bounds.y, contextLinesState.bounds.w, builder.textHeight), backgroundColor.lighten(0.05))
+
+      var i = contextLines.high
+      while contextLinesIter.next().getSome(chunk):
+        if chunk.displayPoint.row > contextLinesState.lastDisplayPoint.row:
+          dec i
+          if i < 0:
+            break
+          let nextPoint = point(contextLines[i], 0)
+          let nextDisplayPoint = self.displayMap.toDisplayPoint(nextPoint)
+          contextLinesIter.seekLine(nextDisplayPoint.row.int)
+          fillRect(rect(contextLinesState.bounds.x, (contextLines.high - i).float * builder.textHeight, contextLinesState.bounds.w, builder.textHeight), backgroundColor.lighten(0.05))
+          contextLinesState.offset.x = lineNumberWidth + mainOffset
+          contextLinesState.offset.y += builder.textHeight
+          contextLinesState.lastDisplayPoint = nextDisplayPoint
+          contextLinesState.lastDisplayEndPoint = nextDisplayPoint
+          contextLinesState.lastPoint = nextPoint
+          contextLinesState.addedLineNumber = false
+          continue
+
+        case drawChunk(chunk, contextLinesState)
+        of Continue: discard
+        of ContinueNextLine: discard
+        of Break: break
 
     if renderDiff:
       startScissor(diffState.bounds)
@@ -737,8 +812,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
-
-  selectionsNode.renderCommands.clear()
 
   for selections in self.customHighlights.values:
     for s in selections:

@@ -1318,7 +1318,7 @@ proc getParentNodeSelection(self: TextDocumentEditor, selection: Selection, incl
 
   let tree = self.document.tsTree
 
-  var node = self.document.tsTree.root.descendantForRange(selection.tsRange)
+  var node = tree.root.descendantForRange(selection.tsRange)
   while node != tree.root:
     var r = self.includeSelectionEnd(node.getRange.toSelection, includeAfter)
     if r != selection:
@@ -3299,6 +3299,26 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
     self.showHoverTask.reschedule()
 
   self.markDirty()
+
+proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
+  if self.document.tsTree.isNil:
+    return @[]
+
+  let tree = self.document.tsTree
+
+  var node = tree.root.descendantForRange(cursor.toSelection.tsRange)
+  var lastColumn = int.high
+  while node != tree.root:
+    var r = node.getRange.toSelection
+    # echo &"getContextLines {cursor}, last: {lastColumn}, node: {r.first}, -> {result}"
+    if r.first.line != cursor.line and (result.len == 0 or r.first.line != result.last):
+      if result.len > 0 and r.first.column == lastColumn:
+        result[result.high] = r.first.line
+      elif (result.len > 0 and result.last != r.first.line) or r.first.column < lastColumn:
+        result.add r.first.line
+        lastColumn = r.first.column
+
+    node = node.parent
 
 proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.isNil:
