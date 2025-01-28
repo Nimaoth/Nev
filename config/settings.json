@@ -122,6 +122,7 @@
         "\\.ps1$": "powershell",
         "\\.wat$": "elisp",
         "\\.talon$": "talon",
+        "\\.lua$": "lua",
         "nimble.*?\\.paths$": "nim-paths",
         "/(vector|string|thread|iostream)$": "cpp",
         ".+/MSVC/.+/include(/.+?)*/[a-z0-9_]+$": "cpp",
@@ -509,6 +510,17 @@
             ],
             "lineComment": ";"
         },
+        "lua": {
+            "treesitter": "tjdevries/tree-sitter-lua",
+            "tabWidth": 4,
+            "indent": "spaces",
+            "indentAfter": [
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "--"
+        },
         "wit": {
             "treesitter": "liamwh/tree-sitter-wit",
             "tabWidth": 2,
@@ -578,6 +590,10 @@
             "transparent": false
         },
         "theme": "app://themes/tokyo-night-color-theme.json"
+    },
+
+    "platform": {
+        "terminal-sleep-threshold": 5
     },
 
     "keybindings": {
