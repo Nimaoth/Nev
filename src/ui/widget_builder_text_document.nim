@@ -464,7 +464,8 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         self.interpolatedScrollOffset = self.scrollOffset + sign(self.interpolatedScrollOffset - self.scrollOffset) * scrollSnapDistance
         self.markDirty()
     else:
-      self.interpolatedScrollOffset = mix(self.interpolatedScrollOffset, self.scrollOffset, smoothScrollSpeed * app.platform.deltaTime)
+      let alpha = 1 - exp(-smoothScrollSpeed * app.platform.deltaTime)
+      self.interpolatedScrollOffset = mix(self.interpolatedScrollOffset, self.scrollOffset, alpha)
       if abs(self.interpolatedScrollOffset - self.scrollOffset) < 1:
         self.interpolatedScrollOffset = self.scrollOffset
         self.nextSnapBehaviour = ScrollSnapBehaviour.none
@@ -813,9 +814,12 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
           self.lastHoverLocationBounds = state.chunkBounds[lastIndexDisplay].bounds.some
 
+  let visibleTextRange = self.visibleTextRange(2)
   for selections in self.customHighlights.values:
     for s in selections:
       var sn = s.selection.normalized
+      if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
+        continue
       let color = app.theme.color(s.color, color(200/255, 200/255, 200/255)) * s.tint
       self.drawHighlight(builder, sn, color, selectionsNode.renderCommands, state.chunkBounds)
 
@@ -823,6 +827,8 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     var sn = s.normalized
     if isThickCursor and inclusive:
       sn.last.column += 1
+    if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
+      continue
 
     self.drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state.chunkBounds)
 
@@ -895,7 +901,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
   # Get center line
   if not state.cursorOnScreen:
-      # todo: move this to a function
+    # todo: move this to a function
     let centerPos = currentNode.bounds.wh * 0.5 + vec2(0, builder.textHeight * -0.5)
     var (found, index) = state.chunkBounds.binarySearchRange(centerPos, Bias.Left, cmp)
     if index notin 0..state.chunkBounds.high:

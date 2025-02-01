@@ -109,7 +109,7 @@ type
     updatingAsync: bool
     onUpdated*: Event[tuple[map: WrapMap, old: WrapMapSnapshot]]
 
-  WrappedChunkIterator* = object
+  WrapChunkIterator* = object
     inputChunks*: InputChunkIterator
     inputChunk: Option[InputChunk]
     wrapChunk*: Option[WrapChunk]
@@ -128,17 +128,17 @@ func clone*(self: WrapMapSnapshot): WrapMapSnapshot =
 proc new*(_: typedesc[WrapMap]): WrapMap =
   result = WrapMap(snapshot: WrapMapSnapshot(map: SumTree[WrapMapChunk].new([WrapMapChunk()])))
 
-proc iter*(wrapMap: var WrapMapSnapshot): WrappedChunkIterator =
-  result = WrappedChunkIterator(
+proc iter*(wrapMap: var WrapMapSnapshot): WrapChunkIterator =
+  result = WrapChunkIterator(
     inputChunks: wrapMap.input.iter(),
     wrapMap: wrapMap.clone(),
     wrapMapCursor: wrapMap.map.initCursor(WrapMapChunkSummary),
   )
 
-func point*(self: WrappedChunkIterator): Point {.inline.} = self.inputChunks.point
+func point*(self: WrapChunkIterator): Point {.inline.} = self.inputChunks.point
 func styledChunk*(self: WrapChunk): StyledChunk {.inline.} = self.inputChunk.styledChunk
-func styledChunks*(self: var WrappedChunkIterator): var StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
-func styledChunks*(self: WrappedChunkIterator): StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
+func styledChunks*(self: var WrapChunkIterator): var StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
+func styledChunks*(self: WrapChunkIterator): StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
 func point*(self: WrapChunk): Point = self.inputChunk.point
 func endPoint*(self: WrapChunk): Point = self.inputChunk.endPoint
 func wrapEndPoint*(self: WrapChunk): WrapPoint = wrapPoint(self.wrapPoint.row, self.wrapPoint.column + self.inputChunk.len.uint32)
@@ -684,24 +684,39 @@ proc update*(self: WrapMap, input: sink InputMapSnapshot, force: bool = false) =
 
   asyncSpawn self.updateAsync()
 
-proc seek*(self: var WrappedChunkIterator, wrapPoint: WrapPoint) =
-  # echo &"WrappedChunkIterator.seek {self.wrapPoint} -> {wrapPoint}"
+proc seek*(self: var WrapChunkIterator, wrapPoint: WrapPoint) =
+  # echo &"WrapChunkIterator.seek {self.wrapPoint} -> {wrapPoint}"
   assert wrapPoint >= self.wrapPoint
+  discard self.wrapMapCursor.seekForward(wrapPoint.WrapMapChunkDst, Bias.Right, ())
+  if self.wrapMapCursor.item.getSome(item) and item.src == inputPoint():
+    self.wrapMapCursor.next()
   self.wrapPoint = wrapPoint
-  let inputPoint = self.wrapMap.toInputPoint(self.wrapPoint)
+  let inputPoint = self.wrapMapCursor.toInputPoint(self.wrapPoint)
   self.inputChunks.seek(inputPoint)
   self.localOffset = 0
   self.inputChunk = InputChunk.none
   self.wrapChunk = WrapChunk.none
   # echo &"  {self.wrapPoint}"
 
-proc seekLine*(self: var WrappedChunkIterator, line: int) =
+proc seek*(self: var WrapChunkIterator, point: Point) =
+  self.inputChunks.seek(point)
+  discard self.wrapMapCursor.seekForward(self.inputChunks.outputPoint.WrapMapChunkSrc, Bias.Right, ())
+  if self.wrapMapCursor.item.getSome(item) and item.src == inputPoint():
+    self.wrapMapCursor.next()
+  let wrapPoint = self.wrapMapCursor.toWrapPoint(self.inputChunks.outputPoint)
+  self.wrapPoint = wrapPoint
+  self.localOffset = 0
+  self.inputChunk = InputChunk.none
+  self.wrapChunk = WrapChunk.none
+  # echo &"  {self.wrapPoint}"
+
+proc seekLine*(self: var WrapChunkIterator, line: int) =
   self.seek(wrapPoint(line))
 
-proc next*(self: var WrappedChunkIterator): Option[WrapChunk] =
+proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
   # defer:
   #   if self.callCount == 0:
-  #     echo &"WrappedChunkIterator.next {self.inputChunk} -> {self.wrapChunk}"
+  #     echo &"WrapChunkIterator.next {self.inputChunk} -> {self.wrapChunk}"
   #   inc self.callCount
 
   if self.atEnd:
@@ -780,9 +795,10 @@ template endOutputPoint*(self: WrapChunk): WrapPoint = self.endWrapPoint
 template endOutputPoint*(self: WrapMapSnapshot): WrapPoint = self.endWrapPoint
 
 func tabMap*(self: WrapMapSnapshot): lent TabMapSnapshot {.inline.} = self.input
-func tabChunks*(self: var WrappedChunkIterator): var TabChunkIterator {.inline.} = self.inputChunks
-func tabChunks*(self: WrappedChunkIterator): lent TabChunkIterator {.inline.} = self.inputChunks
+func tabChunks*(self: var WrapChunkIterator): var TabChunkIterator {.inline.} = self.inputChunks
+func tabChunks*(self: WrapChunkIterator): lent TabChunkIterator {.inline.} = self.inputChunks
 func tabChunk*(self: WrapChunk): lent TabChunk {.inline.} = self.inputChunk
 proc toTabPoint*(self: WrapMapChunkCursor, point: WrapPoint): InputPoint {.inline.} = self.toInputPoint(point)
 proc toTabPoint*(self: WrapMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)
 proc toTabPoint*(self: WrapMap, point: WrapPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)
+func outputPoint*(self: WrapChunkIterator): WrapPoint = self.wrapPoint

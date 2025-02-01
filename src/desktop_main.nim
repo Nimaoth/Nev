@@ -403,7 +403,7 @@ proc run(app: App, plat: Platform, backend: Backend) =
     let totalTime = totalTimer.elapsed.ms
     if not app.disableLogFrameTime and
         (eventCounter > 0 or totalTime > outlierTime or app.logNextFrameTime):
-      log(lvlDebug, fmt"Total: {totalTime:>5.2f}, Poll: {pollTime:>5.2f}ms, Event: {eventTime:>5.2f}ms, Frame: {frameTime:>5.2f}ms (u: {updateTime:>5.2f}ms, r: {renderTime:>5.2f}ms)")
+      log(lvlDebug, fmt"Total: {totalTime:>5.2f} ms, Poll: {pollTime:>5.2f} ms, Event: {eventTime:>5.2f} ms, Frame: {frameTime:>5.2f} ms (u: {updateTime:>5.2f} ms, r: {renderTime:>5.2f} ms)")
     app.logNextFrameTime = false
 
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")

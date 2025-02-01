@@ -645,7 +645,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   {.gcsafe.}:
     gTheme = self.theme
 
-  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false)
+  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
   self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 

@@ -63,7 +63,7 @@ type
   TabChunkIterator* = object
     inputChunks*: InputChunkIterator
     tabMap* {.cursor.}: TabMapSnapshot
-    tabChunk*: TabChunk
+    tabChunk*: Option[TabChunk]
     tabPoint*: TabPoint
     tabTexts: string
     column*: int
@@ -137,6 +137,9 @@ proc iter*(self {.byref.}: TabMapSnapshot): TabChunkIterator =
   )
 
 func expandTabs*(self: TabMapSnapshot, chunks: var InputChunkIterator, column: int): int =
+  if self.buffer.visibleText.summary.tabs == 0:
+    return column
+
   var expandedChars = 0
   var expandedBytes = 0
   var collapsedBytes = 0
@@ -165,6 +168,9 @@ func expandTabs*(self: TabMapSnapshot, chunks: var InputChunkIterator, column: i
   # result = column
 
 proc collapseTabs*(self: TabMapSnapshot, chunks: var InputChunkIterator, column: int, bias: Bias): tuple[collapsedBytes: int, expandedChars: int, toNextStop: int] =
+  if self.buffer.visibleText.summary.tabs == 0:
+    return (column, column, 0)
+
   var expandedBytes = 0
   var expandedChars = 0
   var collapsedBytes = 0
@@ -199,10 +205,13 @@ proc collapseTabs*(self: TabMapSnapshot, chunks: var InputChunkIterator, column:
   result = (collapsedBytes + max(column - expandedBytes, 0), expandedChars, 0)
 
 func toTabPoint*(self: TabMapSnapshot, point: InputPoint): TabPoint =
-  var chunks = self.input.iter()
-  chunks.seekLine(point.row.int)
-  let expanded = self.expandTabs(chunks, point.column.int)
-  return tabPoint(point.row.int, expanded)
+  if self.buffer.visibleText.summary.tabs == 0:
+    return point.TabPoint
+  else:
+    var chunks = self.input.iter()
+    chunks.seekLine(point.row.int)
+    let expanded = self.expandTabs(chunks, point.column.int)
+    return tabPoint(point.row.int, expanded)
 
 proc toTabPoint*(self: TabMapSnapshot, point: Point, bias: Bias = Bias.Right): TabPoint =
   self.toTabPoint(self.input.toOutputPoint(point, bias))
@@ -211,10 +220,13 @@ proc toTabPoint*(self: TabMap, point: InputPoint, bias: Bias = Bias.Right): TabP
   self.snapshot.toTabPoint(point)
 
 proc toInputPoint*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): InputPoint =
-  var chunks = self.input.iter()
-  chunks.seekLine(point.row.int)
-  let (collapsedBytes, expandedChars, toNextStop) = self.collapseTabs(chunks, point.column.int, bias)
-  return inputPoint(point.row.int, collapsedBytes)
+  if self.buffer.visibleText.summary.tabs == 0:
+    return point.InputPoint
+  else:
+    var chunks = self.input.iter()
+    chunks.seekLine(point.row.int)
+    let (collapsedBytes, expandedChars, toNextStop) = self.collapseTabs(chunks, point.column.int, bias)
+    return inputPoint(point.row.int, collapsedBytes)
 
 proc toInputPointEx*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): tuple[inputPoint: InputPoint, expandedChars: int, toNextStop: int] =
   var chunks = self.input.iter()
@@ -297,6 +309,16 @@ proc update*(self: TabMap, input: sink InputMapSnapshot, force: bool = false) =
     maxExpansionColumn: self.snapshot.maxExpansionColumn,
   )
 
+proc seek*(self: var TabChunkIterator, point: Point) =
+  # echo &"TabChunkIterator.seek {self.point} -> {point}"
+  self.inputChunks.seek(point)
+  let tabPoint = self.tabMap.toTabPoint(self.inputChunks.outputPoint)
+  self.tabPoint = tabPoint
+  self.inputColumn = point.column.int
+  self.outputColumn = tabPoint.column.int
+  self.column = tabPoint.column.int # todo
+  self.tabChunk = TabChunk.none
+
 proc seek*(self: var TabChunkIterator, tabPoint: TabPoint) =
   # echo &"TabChunkIterator.seek {self.tabPoint} -> {tabPoint}"
   assert tabPoint >= self.tabPoint
@@ -306,42 +328,47 @@ proc seek*(self: var TabChunkIterator, tabPoint: TabPoint) =
   self.outputColumn = tabPoint.column.int
   self.column = tabPoint.column.int # todo
   self.inputChunks.seek(inputPoint)
-  if self.inputChunks.next().getSome(it):
-    self.tabChunk = TabChunk(inputChunk: it, tabPoint: tabPoint)
+  self.tabChunk = TabChunk.none
   # echo &"  {self.inputColumn}, {self.outputColumn}, {self.column}"
 
 proc seekLine*(self: var TabChunkIterator, line: int) =
   self.seek(tabPoint(line))
 
 proc next*(self: var TabChunkIterator): Option[TabChunk] =
-  if self.tabChunk.toOpenArray.len == 0:
+  if self.tabChunk.isNone:
     if self.inputChunks.next().getSome(it):
-      if it.outputPoint.row > self.tabChunk.inputChunk.outputPoint.row:
-        self.tabChunk = TabChunk(inputChunk: it, tabPoint: it.outputPoint.TabPoint)
+      self.tabChunk = TabChunk(inputChunk: it, tabPoint: self.tabPoint).some
+    else:
+      return TabChunk.none
+
+  elif self.tabChunk.get.toOpenArray.len == 0:
+    if self.inputChunks.next().getSome(it):
+      if it.outputPoint.row > self.tabChunk.get.inputChunk.outputPoint.row:
+        self.tabChunk = TabChunk(inputChunk: it, tabPoint: it.outputPoint.TabPoint).some
         self.inputColumn = it.outputPoint.column.int
         self.outputColumn = self.inputColumn
         self.column = self.inputColumn
       else:
-        self.tabChunk = TabChunk(inputChunk: it, tabPoint: tabPoint(self.tabChunk.tabPoint.row, self.outputColumn))
+        self.tabChunk = TabChunk(inputChunk: it, tabPoint: tabPoint(self.tabChunk.get.tabPoint.row, self.outputColumn)).some
 
       if self.insideLeadingTab:
-        self.tabChunk = self.tabChunk.split(1)[1]
+        self.tabChunk = self.tabChunk.get.split(1)[1].some
         self.insideLeadingTab = false
         self.inputColumn += 1
 
     else:
       return TabChunk.none
 
-  for i, c in enumerate(self.tabChunk.toOpenArray.runes):
+  for i, c in enumerate(self.tabChunk.get.toOpenArray.runes):
     case c
     of '\t'.Rune:
       if i > 0:
-        var (prefix, suffix) = self.tabChunk.split(i)
-        self.tabChunk = suffix
+        var (prefix, suffix) = self.tabChunk.get.split(i)
+        self.tabChunk = suffix.some
         return prefix.some
       else:
-        var (prefix, suffix) = self.tabChunk.split(1)
-        self.tabChunk = suffix
+        var (prefix, suffix) = self.tabChunk.get.split(1)
+        self.tabChunk = suffix.some
 
         let tabWidth = if self.inputColumn < self.maxExpansionColumn:
           self.tabMap.tabWidth
@@ -364,7 +391,7 @@ proc next*(self: var TabChunkIterator): Option[TabChunk] =
         prefix.styledChunk.drawWhitespace = false
         prefix.wasTab = true
 
-        self.tabChunk.tabPoint.column = self.outputColumn.uint32
+        self.tabChunk.get.tabPoint.column = self.outputColumn.uint32
 
         return prefix.some
 
@@ -374,8 +401,8 @@ proc next*(self: var TabChunkIterator): Option[TabChunk] =
         self.inputColumn += c.size
       self.outputColumn += c.size
 
-  result = self.tabChunk.some
-  self.tabChunk.chunk.len = 0
+  result = self.tabChunk
+  self.tabChunk.get.chunk.len = 0
 
 #
 
@@ -392,3 +419,4 @@ func overlayChunks*(self: TabChunkIterator): lent OverlayChunkIterator {.inline.
 func overlayChunk*(self: TabChunk): lent OverlayChunk {.inline.} = self.inputChunk
 proc toOverlayPoint*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)
 proc toOverlayPoint*(self: TabMap, point: TabPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)
+func outputPoint*(self: TabChunkIterator): TabPoint = self.tabPoint

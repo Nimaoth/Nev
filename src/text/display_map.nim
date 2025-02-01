@@ -212,6 +212,11 @@ proc seek*(self: var DisplayChunkIterator, displayPoint: DisplayPoint) =
   self.displayChunk = DisplayChunk.none
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
 
+proc seek*(self: var DisplayChunkIterator, point: Point) =
+  self.diffChunks.seek(point)
+  self.displayChunk = DisplayChunk.none
+  self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
+
 proc seekLine*(self: var DisplayChunkIterator, line: int) =
   self.diffChunks.seekLine(line)
   self.displayChunk = DisplayChunk.none

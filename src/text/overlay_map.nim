@@ -472,10 +472,11 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
 
 proc seek*(self: var OverlayChunkIterator, point: Point) =
   # echo &"OverlayChunkIterator.seek {self.overlayPoint} -> {overlayPoint}"
-  let overlayPoint = self.overlayMap.toOverlayPoint(point)
+  self.styledChunks.seek(point)
+  discard self.overlayMapCursor.seekForward(point.OverlayMapChunkSrc, Bias.Left, ())
+  let overlayPoint = self.overlayMapCursor.toOverlayPoint(point)
   assert overlayPoint >= self.overlayPoint
   self.overlayPoint = overlayPoint
-  self.styledChunks.seek(point)
   self.localOffset = 0
   self.styledChunk = StyledChunk.none
   self.overlayChunk = OverlayChunk.none
@@ -483,14 +484,14 @@ proc seek*(self: var OverlayChunkIterator, point: Point) =
 proc seek*(self: var OverlayChunkIterator, overlayPoint: OverlayPoint) =
   # echo &"OverlayChunkIterator.seek {self.overlayPoint} -> {overlayPoint}"
   assert overlayPoint >= self.overlayPoint
+  discard self.overlayMapCursor.seekForward(overlayPoint.OverlayMapChunkDst, Bias.Left, ())
   self.overlayPoint = overlayPoint
-  let point = self.overlayMap.toPoint(self.overlayPoint, Bias.Left)
+  let point = self.overlayMapCursor.toPoint(self.overlayPoint)
   self.styledChunks.seek(point)
   self.localOffset = 0
   self.styledChunk = StyledChunk.none
   self.overlayChunk = OverlayChunk.none
 
-  discard self.overlayMapCursor.seekForward(overlayPoint.OverlayMapChunkDst, Bias.Left, ())
   if self.overlayMapCursor.endPos.src > self.overlayMapCursor.startPos.src and overlayPoint == self.overlayMapCursor.endPos.dst:
     # echo &"at end of {self.overlayMapCursor.startPos} -> {self.overlayMapCursor.endPos}"
     self.overlayMapCursor.next()
@@ -657,3 +658,4 @@ func `outputPoint=`*(self: var OverlayChunk, point: OverlayPoint) = self.overlay
 template outputPoint*(self: OverlayChunk): OverlayPoint = self.overlayPoint
 template endOutputPoint*(self: OverlayChunk): OverlayPoint = self.endOverlayPoint
 template endOutputPoint*(self: OverlayMapSnapshot): OverlayPoint = self.endOverlayPoint
+func outputPoint*(self: OverlayChunkIterator): OverlayPoint = self.overlayPoint

@@ -664,7 +664,7 @@ proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
       return
 
     let t = startTimer()
-    let searchResults = await findAllAsync(buffer.visibleText.clone(), searchQuery)
+    let searchResults = await findAllAsync(buffer.visibleText.slice(int), searchQuery)
     if self.document.isNil:
       return
 
@@ -915,7 +915,7 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
   assert self.numDisplayLines > 0
-  let baseLine = int(-self.scrollOffset / self.platform.totalLineHeight)
+  let baseLine = int(-self.interpolatedScrollOffset / self.platform.totalLineHeight)
   var displayRange: Range[DisplayPoint]
   displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
   displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines - 1).uint32
@@ -3311,12 +3311,13 @@ proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
   while node != tree.root:
     var r = node.getRange.toSelection
     # echo &"getContextLines {cursor}, last: {lastColumn}, node: {r.first}, -> {result}"
+    let indent = self.document.getIndentLevelForLine(r.first.line)
     if r.first.line != cursor.line and (result.len == 0 or r.first.line != result.last):
-      if result.len > 0 and r.first.column == lastColumn:
+      if result.len > 0 and indent == lastColumn:
         result[result.high] = r.first.line
-      elif (result.len > 0 and result.last != r.first.line) or r.first.column < lastColumn:
+      elif (result.len > 0 and result.last != r.first.line) or indent < lastColumn:
         result.add r.first.line
-        lastColumn = r.first.column
+        lastColumn = indent
 
     node = node.parent
 

@@ -10,7 +10,7 @@ import std/[threadpool]
 {.pop.}
 
 type InputMapSnapshot = WrapMapSnapshot
-type InputChunkIterator = WrappedChunkIterator
+type InputChunkIterator = WrapChunkIterator
 type InputChunk = WrapChunk
 type InputPoint = WrapPoint
 proc inputPoint(row: Natural = 0, column: Natural = 0): InputPoint {.inline.} = wrapPoint(row, column)
@@ -358,6 +358,17 @@ proc clear*(self: DiffMap) =
   let oldSnapshot = self.snapshot.clone()
   self.snapshot.clear()
 
+proc seek*(self: var DiffChunkIterator, point: Point) =
+  logChunkIter &"DiffChunkIterator.seek {self.point} -> {point}"
+  self.inputChunks.seek(point)
+  discard self.diffMapCursor.seekForward(self.inputChunks.outputPoint.row.DiffMapChunkSrc, Bias.Right, ())
+  if self.diffMapCursor.item.getSome(item) and item.summary.src == 0:
+    self.diffMapCursor.next()
+
+  self.diffPoint = self.diffMapCursor.toDiffPoint(self.inputChunks.outputPoint)
+  self.atEnd = false
+  self.diffChunk = DiffChunk.none
+
 proc seek*(self: var DiffChunkIterator, diffPoint: DiffPoint) =
   logChunkIter &"DiffChunkIterator.seek {self.diffPoint} -> {diffPoint}"
   var endDiffPoint = self.diffMap.toDiffPoint(self.diffMap.input.endOutputPoint)
@@ -400,8 +411,8 @@ proc next*(self: var DiffChunkIterator): Option[DiffChunk] =
 #
 
 func wrap*(self: DiffMapSnapshot): lent WrapMapSnapshot {.inline.} = self.input
-func wrapChunks*(self: var DiffChunkIterator): var WrappedChunkIterator {.inline.} = self.inputChunks
-func wrapChunks*(self: DiffChunkIterator): lent WrappedChunkIterator {.inline.} = self.inputChunks
+func wrapChunks*(self: var DiffChunkIterator): var WrapChunkIterator {.inline.} = self.inputChunks
+func wrapChunks*(self: DiffChunkIterator): lent WrapChunkIterator {.inline.} = self.inputChunks
 func wrapChunk*(self: DiffChunk): lent WrapChunk {.inline.} = self.inputChunk
 proc toWrapPoint*(self: DiffMapChunkCursor, point: DiffPoint): InputPoint {.inline.} = self.toInputPoint(point)
 proc toWrapPoint*(self: DiffMapSnapshot, point: DiffPoint, bias: Bias = Bias.Right): InputPoint {.inline.} = self.toInputPoint(point, bias)

@@ -144,6 +144,22 @@ func lineRange*(self: Rope, line: int, includeLineEnd: bool = true): Range[int] 
 
   return 0...0
 
+func lineRange*[D](self: RopeSlice[D], line: int, includeLineEnd: bool = true): Range[int] =
+  ## Returns a the range of the given line. If `includeLineEnd` is true then the end of the range will
+  ## be the index of the newline character (used for a selection with an _exclusive_ end cursor),
+  ## if `includeLineEnd` is false and the line is not empty then the end of the range will be before the last character
+  ## (used for a selection with an _inclusive_ end cursor).
+
+  if line in 0..<self.lines:
+    var lineRange = self.lineRange(line, int)
+    # debugEcho &"lineRange {line} -> {lineRange}"
+    if not includeLineEnd and lineRange.a < lineRange.b:
+      lineRange.b = self.validateOffset(lineRange.b.pred(), Bias.Left)
+
+    return lineRange
+
+  return 0...0
+
 func indentRange*(self: RopeSlice, line: int, D: typedesc): Range[D] =
   if line < 0 or line >= self.lines:
     return D.default...D.default
@@ -378,21 +394,21 @@ proc init*(_: typedesc[ChunkIterator], rope {.byref.}: Rope): ChunkIterator =
   result.rope = rope.clone()
   result.cursor = rope.tree.initCursor((Point, int))
 
-proc seekLine*(self: var ChunkIterator, line: int) =
-  let point = Point(row: line.uint32)
-  assert point >= self.cursor.startPos[0]
-  discard self.cursor.seekForward(point, Bias.Right, ())
-  self.point = point
-  self.localOffset = self.rope.pointToOffset(point) - self.cursor.startPos[1]
-  assert self.localOffset >= 0
-
 proc seek*(self: var ChunkIterator, point: Point) =
   assert point >= self.cursor.startPos[0]
   # echo &"ChunkIterator.seek {self.cursor.startPos[0]} -> {point}"
   discard self.cursor.seekForward(point, Bias.Right, ())
   self.point = point
-  self.localOffset = self.rope.pointToOffset(point) - self.cursor.startPos[1]
+  let localPointOffset = (point - self.cursor.startPos[0]).toPoint
+  if self.cursor.item.getSome(item):
+    let localOffset = item[].pointToOffset(localPointOffset)
+    self.localOffset = localOffset
+  else:
+    self.localOffset = self.rope.pointToOffset(point) - self.cursor.startPos[1]
   assert self.localOffset >= 0
+
+proc seekLine*(self: var ChunkIterator, line: int) =
+  self.seek(point(line, 0))
 
 func next*(self: var ChunkIterator): Option[RopeChunk] =
   while true:
@@ -489,6 +505,7 @@ func displayPoint*(row: Natural = 0, column: Natural = 0): DisplayPoint = Point(
 func `$`*(a: DisplayPoint): string {.borrow.}
 func `<`*(a: DisplayPoint, b: DisplayPoint): bool {.borrow.}
 func `<=`*(a: DisplayPoint, b: DisplayPoint): bool {.borrow.}
+func `==`*(a: DisplayPoint, b: DisplayPoint): bool {.borrow.}
 func `+`*(a: DisplayPoint, b: DisplayPoint): DisplayPoint {.borrow.}
 func `+`*(point: DisplayPoint, diff: PointDiff): DisplayPoint {.borrow.}
 func `+=`*(a: var DisplayPoint, b: DisplayPoint) {.borrow.}
