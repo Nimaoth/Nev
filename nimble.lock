@@ -445,8 +445,8 @@
       }
     },
     "windy": {
-      "version": "0.0.4",
-      "vcsRevision": "fbbb4668e2d9be396914e5d4665d7914cf07ee04",
+      "version": "0.0.5",
+      "vcsRevision": "853d34eec00224c1d3ea6b0312f39097d0634f1b",
       "url": "https://github.com/Nimaoth/windy",
       "downloadMethod": "git",
       "dependencies": [
@@ -456,7 +456,7 @@
         "ws"
       ],
       "checksums": {
-        "sha1": "409377d9169d551af714cd2a293c90604f95768b"
+        "sha1": "1323a96835a262ff58f626bc463069e753b77560"
       }
     },
     "winim": {
