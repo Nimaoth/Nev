@@ -901,6 +901,9 @@ proc numDisplayLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
 proc displayEndPoint*(self: TextDocumentEditor): DisplayPoint =
   return self.displayMap.toDisplayPoint(self.document.rope.summary.lines)
 
+proc endDisplayPoint*(self: TextDocumentEditor): DisplayPoint =
+  return self.displayMap.endDisplayPoint
+
 proc numWrapLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
   return self.displayMap.wrapMap.endWrapPoint.row.int + 1
 
@@ -918,7 +921,10 @@ proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
   let baseLine = int(-self.interpolatedScrollOffset / self.platform.totalLineHeight)
   var displayRange: Range[DisplayPoint]
   displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
-  displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines - 1).uint32
+  displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines).uint32
+  if displayRange.b > self.endDisplayPoint:
+    displayRange.b = self.endDisplayPoint
+
   # result.last.column = self.document.rope.lastValidIndex(result.last.line)
   result.first = self.displayMap.toPoint(displayRange.a).toCursor
   result.last = self.displayMap.toPoint(displayRange.b).toCursor
@@ -2012,49 +2018,6 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
     self.updateTargetColumn(Last)
     self.centerCursor(self.selection.last)
 
-  self.markDirty()
-
-proc testReplace*(self: TextDocumentEditor) {.expose("editor.text").} =
-  for s in self.selections:
-    var s = s.normalized
-    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
-    self.displayMap.overlay.addOverlay(s.first.toPoint...s.last.toPoint, self.document.contentString(s).toUpperAscii, 1)
-  self.markDirty()
-
-proc testReplaceLonger*(self: TextDocumentEditor) {.expose("editor.text").} =
-  for s in self.selections:
-    var s = s.normalized
-    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
-    self.displayMap.overlay.addOverlay(s.first.toPoint...s.last.toPoint, "<>" & self.document.contentString(s).toUpperAscii & "</>", 2)
-  self.markDirty()
-
-proc testReplaceShorter*(self: TextDocumentEditor) {.expose("editor.text").} =
-  for s in self.selections:
-    var s = s.normalized
-    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
-    self.displayMap.overlay.addOverlay(s.first.toPoint...s.last.toPoint, self.document.contentString(s).toUpperAscii[1..^2], 3)
-  self.markDirty()
-
-proc testReplaceShort*(self: TextDocumentEditor) {.expose("editor.text").} =
-  for s in self.selections:
-    var s = s.normalized
-    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
-    self.displayMap.overlay.addOverlay(s.first.toPoint...s.last.toPoint, "...", 4)
-  self.markDirty()
-
-proc testInsertNewLine*(self: TextDocumentEditor) {.expose("editor.text").} =
-  for s in self.selections:
-    var s = s.normalized
-    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
-    let p = point(s.first.line + 1, 0)
-    self.displayMap.overlay.addOverlay(p...p, " ".repeat(s.first.column) & "^----- you are here!\n", 5)
-  self.markDirty()
-
-proc testInsert*(self: TextDocumentEditor) {.expose("editor.text").} =
-  for s in self.selections:
-    var s = s.normalized
-    s.last = self.doMoveCursorColumn(s.last, 1, wrap = false, includeAfter = true)
-    self.displayMap.overlay.addOverlay(s.first.toPoint...s.first.toPoint, "hellope", 6)
   self.markDirty()
 
 proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.text").} =

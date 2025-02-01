@@ -7,7 +7,7 @@ import platform/platform
 import ui/[widget_builders_base, widget_library]
 import app, document_editor, theme, config_provider, layout
 import text/language/[lsp_types]
-import text/[diff, custom_treesitter, overlay_map, wrap_map, diff_map, display_map]
+import text/[diff, custom_treesitter, syntax_map, overlay_map, wrap_map, diff_map, display_map]
 
 import ui/node
 
@@ -306,16 +306,22 @@ type ChunkBounds = object
   displayRange: rope.Range[DisplayPoint]
   bounds: Rect
   text: RopeChunk
+  chunk: DisplayChunk
   charsRange: rope.Range[int]
 
 proc cmp(r: ChunkBounds, point: Point): int =
-  if r.range.a.row > point.row:
+  let range = if r.chunk.styledChunk.chunk.external:
+    r.range.a...r.range.a
+  else:
+    r.range
+
+  if range.a.row > point.row:
     return 1
-  if point.row == r.range.a.row and r.range.a.column > point.column:
+  if point.row == range.a.row and range.a.column > point.column:
     return 1
-  if r.range.b.row < point.row:
+  if range.b.row < point.row:
     return -1
-  if point.row == r.range.b.row and r.range.b.column < point.column:
+  if point.row == range.b.row and range.b.column < point.column:
     return -1
   return 0
 
@@ -344,28 +350,50 @@ proc cmp(r: Rect, point: Vec2): int =
 proc cmp(r: ChunkBounds, point: Vec2): int =
   return cmp(r.bounds, point)
 
-proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selection, color: Color, renderCommands: var RenderCommands, chunkBounds: var seq[ChunkBounds]) =
+proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selection, color: Color, renderCommands: var RenderCommands, chunkBounds: var seq[ChunkBounds], iter: var DisplayChunkIterator, cursor: var RopeCursorT[Point]) =
 
-  let dpFirst = self.displayMap.toDisplayPoint(sn.first.toPoint)
-  let dpLast = self.displayMap.toDisplayPoint(sn.last.toPoint)
-  let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchRange(dpFirst, Bias.Right, cmp)
-  let (lastFound, lastIndexNormalized) = chunkBounds.binarySearchRange(dpLast, Bias.Right, cmp)
-  # echo &"{sn} -> {dpFirst}...{dpLast} -> first: {firstFound}, {firstIndexNormalized}, last: {lastFound}, {lastIndexNormalized}"
+  # if sn.first.toPoint < iter.point:
+  #   echo &"reset-------------------------------------"
+  #   iter = self.displayMap.iter()
+
+  # iter.seek(sn.first.toPoint)
+  # let dpFirst = iter.displayPoint
+  # iter.seek(sn.last.toPoint)
+  # let dpLast = iter.displayPoint
+
+  # let dpFirst = self.displayMap.toDisplayPoint(sn.first.toPoint)
+  # let dpLast = self.displayMap.toDisplayPoint(sn.last.toPoint)
+
+  # if dpFirst != dpFirst2:
+  #   echo &"{sn} -> {dpFirst} != {dpFirst2}"
+
+  # if dpLast != dpLast2:
+  #   echo &"{sn} -> {dpLast} != {dpLast2}"
+
+  # let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchRange(dpFirst, Bias.Right, cmp)
+  # let (lastFound, lastIndexNormalized) = chunkBounds.binarySearchRange(dpLast, Bias.Right, cmp)
+
+  let r = sn.first.toPoint...sn.last.toPoint
+
+  let (firstFound, firstIndexNormalized) = chunkBounds.binarySearchRange(r.a, Bias.Right, cmp)
+  let (lastFound, lastIndexNormalized) = chunkBounds.binarySearchRange(r.b, Bias.Right, cmp)
+  # echo &"{sn} -> {r} -> first: {firstFound}, {firstIndexNormalized}, last: {lastFound}, {lastIndexNormalized} / {chunkBounds.len}"
+  # echo &"{sn} -> {dpFirst}...{dpLast} -> first: {firstFound}, {firstIndexNormalized}, last: {lastFound}, {lastIndexNormalized} / {chunkBounds.len}"
   if chunkBounds.len > 0:
     let firstIndexClamped = if firstIndexNormalized != -1:
       firstIndexNormalized
-    elif dpFirst < chunkBounds[0].displayRange.a:
+    elif r.a < chunkBounds[0].range.a:
       0
-    elif dpFirst > chunkBounds[^1].displayRange.b:
+    elif r.a > chunkBounds[^1].range.b:
       chunkBounds.high
     else:
       -1
 
     let lastIndexClamped = if lastIndexNormalized != -1:
       lastIndexNormalized
-    elif dpLast < chunkBounds[0].displayRange.a:
+    elif r.b < chunkBounds[0].range.a:
       0
-    elif dpLast > chunkBounds[^1].displayRange.b:
+    elif r.b > chunkBounds[^1].range.b:
       chunkBounds.high
     else:
       -1
@@ -376,31 +404,47 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
           break
 
         let bounds = chunkBounds[i]
-        let lineLen = self.document.lineLength(bounds.range.a.row.int)
+
+        let linePoint = point(bounds.range.a.row, 0)
+        if cursor.position > linePoint:
+          cursor.resetCursor()
+        if cursor.position < linePoint or not cursor.didSeek:
+          cursor.seekForward(linePoint)
+          cursor.cacheOffset()
+
+        let lineEmpty = cursor.currentChar() == '\n'
 
         # todo: correctly handle multi byte chars
-        let firstOffset = if lineLen == 0:
+        let firstOffset = if lineEmpty:
           0
-        elif dpFirst in bounds.displayRange:
-          dpFirst.column.int - bounds.displayRange.a.column.int
-        elif dpFirst < bounds.displayRange.a:
+        elif r.a in bounds.range:
+          r.a.column.int - bounds.range.a.column.int
+        elif r.a < bounds.range.a:
           0
         else:
-          bounds.displayRange.len.column.int
+          bounds.range.len.column.int
 
-        let lastOffset = if lineLen == 0:
+        let lastOffset = if lineEmpty:
           1
-        elif dpLast in bounds.displayRange:
-          dpLast.column.int - bounds.displayRange.a.column.int
-        elif dpLast < bounds.displayRange.a:
+        elif r.b in bounds.range:
+          r.b.column.int - bounds.range.a.column.int
+        elif r.b < bounds.range.a:
           0
         else:
-          bounds.displayRange.len.column.int
+          bounds.range.len.column.int
 
         var selectionBounds = rect(
-          round(bounds.bounds.xy + vec2(firstOffset.float * builder.charWidth, 0)),
-          round(vec2((lastOffset - firstOffset).float * builder.charWidth, builder.textHeight)))
-        renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: selectionBounds, color: color))
+          (bounds.bounds.xy + vec2(firstOffset.float * builder.charWidth, 0)),
+          (vec2((lastOffset - firstOffset).float * builder.charWidth, builder.textHeight)))
+
+        if renderCommands.commands.len > 0:
+          let last = renderCommands.commands[^1].addr
+          if last.kind == RenderCommandKind.FilledRect and last.bounds.y == selectionBounds.y and last.bounds.h == selectionBounds.h and abs(last.bounds.xw - selectionBounds.x) < 0.1 and last.color == color:
+            last.bounds.w += selectionBounds.w
+          else:
+            renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: selectionBounds, color: color))
+        else:
+          renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: selectionBounds, color: color))
 
 proc drawLineNumber(renderCommands: var RenderCommands, builder: UINodeBuilder, lineNumber: int, offset: Vec2, cursorLine: int, lineNumbers: LineNumbers, lineNumberBounds: Vec2, textColor: Color) =
   var lineNumberText = ""
@@ -674,6 +718,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           displayRange: chunk.displayPoint...chunk.endDisplayPoint,
           bounds: bounds,
           text: chunk.styledChunk.chunk,
+          chunk: chunk,
           charsRange: charBoundsStart...(charBoundsStart + indices.selectionRects.len),
         )
         state.charBounds.add currentNode.renderCommands.arrangement.selectionRects[indices.selectionRects]
@@ -703,6 +748,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           displayRange: chunk.displayPoint...chunk.endDisplayPoint,
           bounds: rect(state.offset, vec2(state.builder.charWidth, state.builder.textHeight)),
           text: chunk.styledChunk.chunk,
+          chunk: chunk,
           charsRange: state.charBounds.len...state.charBounds.len,
         )
 
@@ -807,13 +853,14 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         let p = self.displayMap.toPoint(dp)
         let ob = self.displayMap.overlay.snapshot.toOverlayBytes(dp.OverlayPoint)
         let (foundDisplay, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
-        # echo &"{s.last.toPoint} -> {dp} -> {p}"
         if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
           self.lastHoverLocationBounds = state.chunkBounds[lastIndexDisplay].bounds.some
 
+  var ropeCursor = self.displayMap.buffer.visibleText.cursorT(Point)
+  var highlightIter = self.displayMap.iter()
   let visibleTextRange = self.visibleTextRange(2)
   for selections in self.customHighlights.values:
     for s in selections:
@@ -821,7 +868,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
       if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
         continue
       let color = app.theme.color(s.color, color(200/255, 200/255, 200/255)) * s.tint
-      self.drawHighlight(builder, sn, color, selectionsNode.renderCommands, state.chunkBounds)
+      self.drawHighlight(builder, sn, color, selectionsNode.renderCommands, state.chunkBounds, highlightIter, ropeCursor)
 
   for s in self.selections:
     var sn = s.normalized
@@ -830,7 +877,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
       continue
 
-    self.drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state.chunkBounds)
+    self.drawHighlight(builder, sn, selectionColor, selectionsNode.renderCommands, state.chunkBounds, highlightIter, ropeCursor)
 
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)

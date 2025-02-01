@@ -85,7 +85,7 @@ proc new*(_: typedesc[TabMap]): TabMap =
   result = TabMap(snapshot: TabMapSnapshot())
 
 func point*(self: TabChunkIterator): Point {.inline.} = self.inputChunks.point
-func styledChunk*(self: TabChunk): StyledChunk {.inline.} = self.inputChunk.styledChunk
+template styledChunk*(self: TabChunk): StyledChunk = self.inputChunk.styledChunk
 func styledChunk*(self: var TabChunk): var StyledChunk {.inline.} = self.inputChunk.styledChunk
 func chunk*(self: var TabChunk): var RopeChunk = self.styledChunk.chunk
 func chunk*(self: TabChunk): RopeChunk = self.styledChunk.chunk

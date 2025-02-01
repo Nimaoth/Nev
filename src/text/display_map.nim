@@ -76,7 +76,7 @@ type
 func clone*(self: DisplayMapSnapshot): DisplayMapSnapshot =
   DisplayMapSnapshot(
     overlay: self.overlay.clone(),
-    tabMAp: self.tabMap.clone(),
+    tabMap: self.tabMap.clone(),
     wrapMap: self.wrapMap.clone(),
     diffMap: self.diffMap.clone(),
   )
@@ -105,8 +105,9 @@ proc iter*(displayMap: var DisplayMap): DisplayChunkIterator =
   )
 
 func remoteId*(self: DisplayMap): BufferId = self.wrapMap.snapshot.buffer.remoteId
+func buffer*(self: DisplayMap): lent BufferSnapshot = self.wrapMap.snapshot.buffer
 func point*(self: DisplayChunkIterator): Point = self.diffChunks.point
-func styledChunk*(self: DisplayChunk): StyledChunk {.inline.} = self.diffChunk.styledChunk
+template styledChunk*(self: DisplayChunk): StyledChunk = self.diffChunk.styledChunk
 func styledChunks*(self: var DisplayChunkIterator): var StyledChunkIterator {.inline.} = self.diffChunks.styledChunks
 func styledChunks*(self: DisplayChunkIterator): StyledChunkIterator {.inline.} = self.diffChunks.styledChunks
 

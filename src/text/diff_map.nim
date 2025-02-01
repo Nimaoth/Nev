@@ -128,7 +128,7 @@ proc iter*(diffMap: var DiffMapSnapshot): DiffChunkIterator =
   )
 
 func point*(self: DiffChunkIterator): Point = self.inputChunks.point
-func styledChunk*(self: DiffChunk): StyledChunk {.inline.} = self.inputChunk.styledChunk
+template styledChunk*(self: DiffChunk): StyledChunk = self.inputChunk.styledChunk
 func styledChunks*(self: var DiffChunkIterator): var StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
 func styledChunks*(self: DiffChunkIterator): StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
 

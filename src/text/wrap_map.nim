@@ -136,7 +136,7 @@ proc iter*(wrapMap: var WrapMapSnapshot): WrapChunkIterator =
   )
 
 func point*(self: WrapChunkIterator): Point {.inline.} = self.inputChunks.point
-func styledChunk*(self: WrapChunk): StyledChunk {.inline.} = self.inputChunk.styledChunk
+template styledChunk*(self: WrapChunk): StyledChunk = self.inputChunk.styledChunk
 func styledChunks*(self: var WrapChunkIterator): var StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
 func styledChunks*(self: WrapChunkIterator): StyledChunkIterator {.inline.} = self.inputChunks.styledChunks
 func point*(self: WrapChunk): Point = self.inputChunk.point
