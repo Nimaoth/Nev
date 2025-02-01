@@ -212,31 +212,6 @@ proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
     result.add ((line, bounds.first), (line, bounds.last + 1))
     start = bounds.last + 1
 
-proc findAll*(rope: Rope, searchQuery: string, res: var seq[Range[Point]]) =
-  try:
-    let r = re(searchQuery)
-    for line in 0..rope.summary.lines.row.int:
-      let lineRange = rope.lineRange(line, int)
-      let selections = ($rope.slice(lineRange)).findAllBounds(line, r)
-      for s in selections:
-        res.add s.first.toPoint...s.last.toPoint
-  except RegexError:
-    discard
-
-proc findAll*(rope: Rope, searchQuery: string): seq[Range[Point]] =
-  findAll(rope, searchQuery, result)
-
-proc findAllThread(args: tuple[rope: ptr Rope, query: string, res: ptr seq[Range[Point]]]) =
-  findAll(args.rope[].clone(), args.query, args.res[])
-
-proc findAllAsync*(rope: sink Rope, searchQuery: string): Future[seq[Range[Point]]] {.async.} =
-  ## Returns `some(index)` if the string contains invalid utf8 at `index`
-  var res = newSeq[Range[Point]]()
-  var rope = rope.move
-  await spawnAsync(findAllThread, (rope.addr, searchQuery, res.addr))
-  return res
-  # ababa
-
 ######################################################################### Internal api wrappers
 
 func runeIndexInLine*(self: Rope, cursor: api.Cursor): RuneIndex =
@@ -787,3 +762,30 @@ proc split*(self: StyledChunk, index: int): (StyledChunk, StyledChunk) =
 
 proc `[]`*(self: StyledChunk, r: Range[int]): StyledChunk =
   StyledChunk(chunk: self.chunk[r], scope: self.scope, drawWhitespace: self.drawWhitespace)
+
+proc findAll*(text: RopeSlice[int], searchQuery: string, res: var seq[Range[Point]]) =
+  try:
+    let r = re(searchQuery)
+
+    for line in 0..text.summary.lines.row.int:
+      let lineRange = text.lineRange(line, int)
+      # echo &"findAll {searchQuery}, {lineRange}"
+      let selections = ($text.slice(lineRange)).findAllBounds(line, r)
+      for s in selections:
+        res.add s.first.toPoint...s.last.toPoint
+  except RegexError:
+    discard
+
+proc findAll*(text: RopeSlice[int], searchQuery: string): seq[Range[Point]] =
+  findAll(text, searchQuery, result)
+
+proc findAllThread(args: tuple[text: ptr RopeSlice[int], query: string, res: ptr seq[Range[Point]]]) =
+  findAll(args.text[].clone(), args.query, args.res[])
+
+proc findAllAsync*(text: sink RopeSlice[int], searchQuery: string): Future[seq[Range[Point]]] {.async.} =
+  ## Returns `some(index)` if the string contains invalid utf8 at `index`
+  var res = newSeq[Range[Point]]()
+  var text = text.move
+  await spawnAsync(findAllThread, (text.addr, searchQuery, res.addr))
+  return res
+  # ababa
