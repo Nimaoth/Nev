@@ -1751,7 +1751,7 @@ func charCategory(c: char): int =
 
 proc findWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
   # todo: use RopeCursor
-  let line = $self.getLine(cursor.line)
+  let line = self.getLine(cursor.line)
   result = cursor.toSelection
   if result.first.column == line.len:
     dec result.first.column
@@ -1759,8 +1759,8 @@ proc findWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
 
   # Search to the left
   while result.first.column > 0 and result.first.column < line.len:
-    let leftCategory = line[result.first.column - 1].charCategory
-    let rightCategory = line[result.first.column].charCategory
+    let leftCategory = line.charAt(result.first.column - 1).charCategory
+    let rightCategory = line.charAt(result.first.column).charCategory
     if leftCategory != rightCategory:
       break
     result.first.column -= 1
@@ -1769,8 +1769,8 @@ proc findWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
   if result.last.column < line.len:
     result.last.column += 1
   while result.last.column >= 0 and result.last.column < line.len:
-    let leftCategory = line[result.last.column - 1].charCategory
-    let rightCategory = line[result.last.column].charCategory
+    let leftCategory = line.charAt(result.last.column - 1).charCategory
+    let rightCategory = line.charAt(result.last.column).charCategory
     if leftCategory != rightCategory:
       break
     result.last.column += 1

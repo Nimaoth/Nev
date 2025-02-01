@@ -333,40 +333,6 @@ proc vimMotionVisualLine*(editor: TextDocumentEditor, cursor: Cursor, count: int
   elif result.last.column < lineLen: # This is the case if we're not in the last visual sub line
     result.last.column.dec
 
-proc vimMotionWord*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
-  const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
-
-  var line = editor.getLine(cursor.line)
-  if line.len == 0:
-    return (cursor.line, 0).toSelection
-
-  var c = line[cursor.column.clamp(0, line.high)]
-  if c in Whitespace:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in Whitespace)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
-
-  elif c in AlphaNumeric:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in AlphaNumeric)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
-
-  else:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace and c notin AlphaNumeric)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
-
-proc vimMotionWordBig*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
-  var line = editor.getLine(cursor.line)
-  if line.len == 0:
-    return (cursor.line, 0).toSelection
-
-  var c = line[cursor.column.clamp(0, line.high)]
-  if c in Whitespace:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in Whitespace)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
-
-  else:
-    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
-    return ((cursor.line, startColumn), (cursor.line, endColumn))
-
 proc vimMotionParagraphInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   let isEmpty = editor.lineLength(cursor.line) == 0
 
@@ -385,12 +351,12 @@ proc vimMotionParagraphOuter*(editor: TextDocumentEditor, cursor: Cursor, count:
 
 proc vimMotionWordOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   result = vimMotionWord(editor, cursor, count)
-  if result.last.column < editor.lineLength(result.last.line) and editor.getLine(result.last.line)[result.last.column] in Whitespace:
+  if result.last.column < editor.lineLength(result.last.line) and editor.getChar(result.last) in Whitespace:
     result.last = editor.vimMotionWord(result.last, 1).last
 
 proc vimMotionWordBigOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   result = vimMotionWordBig(editor, cursor, count)
-  if result.last.column < editor.lineLength(result.last.line) and editor.getLine(result.last.line)[result.last.column] in Whitespace:
+  if result.last.column < editor.lineLength(result.last.line) and editor.getChar(result.last) in Whitespace:
     result.last = editor.vimMotionWordBig(result.last, 1).last
 
 proc charAt*(editor: TextDocumentEditor, cursor: Cursor): char =
@@ -481,10 +447,6 @@ proc vimMotionSurroundSingleQuotesOuter*(editor: TextDocumentEditor, cursor: Cur
 # todo
 addCustomTextMove "vim-line", vimMotionLine
 addCustomTextMove "vim-visual-line", vimMotionVisualLine
-addCustomTextMove "vim-word", vimMotionWord
-addCustomTextMove "vim-WORD", vimMotionWordBig
-addCustomTextMove "vim-word-inner", vimMotionWord
-addCustomTextMove "vim-WORD-inner", vimMotionWordBig
 addCustomTextMove "vim-word-outer", vimMotionWordOuter
 addCustomTextMove "vim-WORD-outer", vimMotionWordBigOuter
 addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
@@ -594,8 +556,7 @@ proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool
             else:
               continue
 
-          let line = editor.getLine(selection.first.line)
-          if selection.first.column >= line.len or line[selection.first.column] notin Whitespace:
+          if selection.first.column >= editor.lineLength(selection.first.line) or editor.getChar(selection.first) notin Whitespace:
             res = cursor
             break
       # echo res, ", ", it, ", ", which
@@ -628,7 +589,7 @@ proc applyMove(editor: TextDocumentEditor, selections: seq[Selection], move: str
             else:
               continue
           if selection.last.column < editor.lineLength(selection.last.line) and
-              editor.getLine(selection.last.line)[selection.last.column] notin Whitespace:
+              editor.getChar(selection.last) notin Whitespace:
             res = cursor
             break
           if backwards and selection.last.column == editor.lineLength(selection.last.line):

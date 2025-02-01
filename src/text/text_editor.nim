@@ -1221,6 +1221,9 @@ proc getRevision*(self: TextDocumentEditor): int {.expose("editor.text").} =
 proc getUsage*(self: TextDocumentEditor): string {.expose("editor.text").} =
   return self.usage
 
+proc getChar*(self: TextDocumentEditor, cursor: Cursor): char {.expose("editor.text").} =
+  return self.document.rope.slice(Point).charAt(cursor.toPoint)
+
 proc getText*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool = false):
     string {.expose("editor.text").} =
   return self.document.contentString(selection, inclusiveEnd)
@@ -2278,6 +2281,55 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
   if selection.isBackwards:
     result = result.reverse
 
+proc getEnclosing(text: RopeSlice, column: int, predicate: proc(c: char): bool {.gcsafe, raises: [].}): (int, int) =
+  var cf = text.cursor(column)
+  var cb = cf.clone()
+  while cf.offset < text.len - 1:
+    cf.seekNextRune()
+    if not predicate(cf.currentChar()):
+      cf.seekPrevRune()
+      break
+  while cb.offset > 0:
+    cb.seekPrevRune()
+    if not predicate(cb.currentChar()):
+      cb.seekNextRune()
+      break
+  return (cb.offset, cf.offset)
+
+proc vimMotionWord*(self: TextDocumentEditor, cursor: Cursor, count: int = 0): Selection {.expose("editor.text").} =
+  const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
+
+  var line = self.document.getLine(cursor.line)
+  if line.len == 0:
+    return (cursor.line, 0).toSelection
+
+  let c = line.charAt(cursor.column.clamp(0, line.len - 1))
+  if c in Whitespace:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  elif c in AlphaNumeric:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in AlphaNumeric)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  else:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace and c notin AlphaNumeric)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+proc vimMotionWordBig*(self: TextDocumentEditor, cursor: Cursor, count: int = 0): Selection {.expose("editor.text").} =
+  var line = self.document.getLine(cursor.line)
+  if line.len == 0:
+    return (cursor.line, 0).toSelection
+
+  let c = line.charAt(cursor.column.clamp(0, line.len - 1))
+  if c in Whitespace:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  else:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
     count: int = 0): Selection {.expose("editor.text").} =
   case move
@@ -2285,6 +2337,26 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result = self.findWordBoundary(cursor)
     for _ in 1..<count:
       result = result or self.findWordBoundary(result.last) or self.findWordBoundary(result.first)
+
+  of "vim-word":
+    result = self.vimMotionWord(cursor)
+    for _ in 1..<count:
+      result = result or self.vimMotionWord(result.last) or self.vimMotionWord(result.first)
+
+  of "vim-WORD":
+    result = self.vimMotionWordBig(cursor)
+    for _ in 1..<count:
+      result = result or self.vimMotionWordBig(result.last) or self.vimMotionWordBig(result.first)
+
+  of "vim-word-inner":
+    result = self.vimMotionWord(cursor)
+    for _ in 1..<count:
+      result = result or self.vimMotionWord(result.last) or self.vimMotionWord(result.first)
+
+  of "vim-WORD-inner":
+    result = self.vimMotionWordBig(cursor)
+    for _ in 1..<count:
+      result = result or self.vimMotionWordBig(result.last) or self.vimMotionWordBig(result.first)
 
   of "word-line":
     # todo: use RopeCursor
