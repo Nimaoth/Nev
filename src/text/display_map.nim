@@ -1,7 +1,7 @@
 import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm, sugar]
 import nimsumtree/[rope, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import overlay_map, tab_map, wrap_map, diff_map
+import syntax_map, overlay_map, tab_map, wrap_map, diff_map
 from scripting_api import Selection
 import nimsumtree/sumtree except mapIt
 
@@ -20,9 +20,28 @@ template log(msg: untyped) =
 {.push raises: [].}
 
 type
+  DisplayPoint* {.borrow: `.`.} = distinct Point
+
   DisplayChunk* = object
     diffChunk*: DiffChunk
     displayPoint*: DisplayPoint
+
+func displayPoint*(row: Natural = 0, column: Natural = 0): DisplayPoint = Point(row: row.uint32, column: column.uint32).DisplayPoint
+func `$`*(a: DisplayPoint): string {.borrow.}
+func `<`*(a: DisplayPoint, b: DisplayPoint): bool {.borrow.}
+func `<=`*(a: DisplayPoint, b: DisplayPoint): bool {.borrow.}
+func `==`*(a: DisplayPoint, b: DisplayPoint): bool {.borrow.}
+func `+`*(a: DisplayPoint, b: DisplayPoint): DisplayPoint {.borrow.}
+func `+`*(point: DisplayPoint, diff: PointDiff): DisplayPoint {.borrow.}
+func `+=`*(a: var DisplayPoint, b: DisplayPoint) {.borrow.}
+func `+=`*(point: var DisplayPoint, diff: PointDiff) {.borrow.}
+func `-`*(a: DisplayPoint, b: DisplayPoint): PointDiff {.borrow.}
+func dec*(a: var DisplayPoint): DisplayPoint {.borrow.}
+func pred*(a: DisplayPoint): DisplayPoint {.borrow.}
+func clone*(a: DisplayPoint): DisplayPoint {.borrow.}
+func cmp*(a: DisplayPoint, b: DisplayPoint): int {.borrow.}
+func clamp*(p: DisplayPoint, r: Range[DisplayPoint]): DisplayPoint = min(max(p, r.a), r.b)
+converter toDisplayPoint*(diff: PointDiff): DisplayPoint = diff.toPoint.DisplayPoint
 
 func point*(self: DisplayChunk): Point {.inline.} = self.diffChunk.point
 func endPoint*(self: DisplayChunk): Point {.inline.} = self.diffChunk.endPoint

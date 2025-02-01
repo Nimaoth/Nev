@@ -2,6 +2,7 @@ import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
 import nimsumtree/[rope, sumtree, buffer, clock, static_array]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
 import text/diff
+import syntax_map
 from scripting_api import Selection
 
 {.push warning[Deprecated]:off.}

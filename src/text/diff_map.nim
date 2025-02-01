@@ -1,7 +1,7 @@
 import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
 import nimsumtree/[rope, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import diff, overlay_map, wrap_map
+import diff, syntax_map, overlay_map, wrap_map
 from scripting_api import Selection
 import nimsumtree/sumtree except mapIt
 

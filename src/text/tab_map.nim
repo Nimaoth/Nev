@@ -1,7 +1,7 @@
 import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm, enumerate]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import text/diff, overlay_map
+import text/diff, syntax_map, overlay_map
 from scripting_api import Selection
 
 {.push warning[Deprecated]:off.}

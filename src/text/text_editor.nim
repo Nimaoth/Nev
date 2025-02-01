@@ -4,7 +4,7 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex]
 import scripting/[expose, scripting_base]
 import platform/[platform]
 import language/[language_server_base]
