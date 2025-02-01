@@ -349,13 +349,13 @@
       }
     },
     "nimsumtree": {
-      "version": "0.5.0",
-      "vcsRevision": "66d7bab73b1a195fc059c94b1aed5c9d4237911f",
+      "version": "0.5.1",
+      "vcsRevision": "2fea73adc1335cdc46161634d1daaba5540997e6",
       "url": "https://github.com/Nimaoth/nimsumtree",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "df9b065781d5ac437efad7bd5e7f380beb434a47"
+        "sha1": "df0db7665e4cb049cdd99b1ff67e6a5d18c0dff4"
       }
     },
     "nimtreesitter": {
