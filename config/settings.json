@@ -589,7 +589,9 @@
         "background": {
             "transparent": false
         },
-        "theme": "app://themes/tokyo-night-color-theme.json"
+        "theme": "app://themes/tokyo-night-color-theme.json",
+        "smooth-scroll": true,
+        "cursor-trail": 2
     },
 
     "platform": {

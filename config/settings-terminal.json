@@ -10,6 +10,7 @@
         "scroll-margin-relative": true
     },
     "+ui": {
-        "smooth-scroll": false
+        "smooth-scroll": false,
+        "cursor-trail": 0
     }
 }
