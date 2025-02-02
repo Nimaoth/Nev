@@ -1,6 +1,6 @@
 import std/[strutils, macros, genasts, sequtils, sets, algorithm]
 import plugin_runtime, keybindings_normal
-import misc/[timer, util, myjsonutils, custom_unicode, id]
+import misc/[timer, util, myjsonutils, custom_unicode, id, regex]
 import input_api
 
 embedSource()
@@ -1059,7 +1059,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommandBlockDesc "", "*", "set search query to word":
     editor.selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b").first.toSelection
   addTextCommandBlockDesc "visual", "*", "set search query to selection":
-    editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
+    discard editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
     editor.selection = editor.selection.first.toSelection
     editor.setMode("normal")
   addTextCommandBlockDesc "", "n", "go to next search result":
@@ -1438,6 +1438,21 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
     editor.setMode("visual")
 
+  addTextCommandBlock "visual", "L":
+    if editor.selections.len == 1:
+      let text = editor.getText(editor.selection, inclusiveEnd=true)
+      let textEscaped = text.escapeRegex
+      let currentSearchQuery = editor.getSearchQuery()
+      # infof"'{text}' -> '{textEscaped}' -> '{currentSearchQuery}'"
+      if textEscaped != currentSearchQuery and r"\b" & textEscaped & r"\b" != currentSearchQuery:
+        if editor.setSearchQuery(text, escapeRegex=true):
+          return
+
+    let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
+    editor.selections = editor.selections & next
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
+
   addTextCommandBlock "", "H":
     if editor.selections.len == 1:
       var selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b")
@@ -1521,15 +1536,6 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.updateTargetColumn()
 
   addTextCommand "visual", "gp", "select-parent-current-ts", false
-
-  addTextCommandBlock "visual", "L":
-    if editor.selections.len == 1:
-      editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
-
-    let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
-    editor.selections = editor.selections & next
-    editor.scrollToCursor Last
-    editor.updateTargetColumn()
 
   addTextCommandBlock "visual", "o":
     editor.selections = editor.selections.mapIt((it.last, it.first))

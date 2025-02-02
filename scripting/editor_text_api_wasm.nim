@@ -1937,11 +1937,25 @@ proc moveFirst*(self: TextDocumentEditor; move: string;
       argsJsonString.cstring)
 
 
-proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_wasm(
+proc editor_text_getSearchQuery_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getSearchQuery*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getSearchQuery_string_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_setSearchQuery_bool_TextDocumentEditor_string_bool_string_string_wasm(
     arg: cstring): cstring {.importc.}
 proc setSearchQuery*(self: TextDocumentEditor; query: string;
                      escapeRegex: bool = false; prefix: string = "";
-                     suffix: string = "") {.gcsafe, raises: [].} =
+                     suffix: string = ""): bool {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add query.toJson()
@@ -1949,8 +1963,12 @@ proc setSearchQuery*(self: TextDocumentEditor; query: string;
   argsJson.add prefix.toJson()
   argsJson.add suffix.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_wasm(
+  let res {.used.} = editor_text_setSearchQuery_bool_TextDocumentEditor_string_bool_string_string_wasm(
       argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_text_openSearchBar_void_TextDocumentEditor_string_bool_bool_wasm(

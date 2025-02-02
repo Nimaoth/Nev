@@ -2643,8 +2643,11 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
 
+proc getSearchQuery*(self: TextDocumentEditor): string {.expose("editor.text").} =
+  return self.searchQuery
+
 proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false,
-    prefix: string = "", suffix: string = "") {.expose("editor.text").} =
+    prefix: string = "", suffix: string = ""): bool {.expose("editor.text").} =
 
   let query = if escapeRegex:
     query.escapeRegex
@@ -2653,10 +2656,11 @@ proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool 
 
   let finalQuery = prefix & query & suffix
   if self.searchQuery == finalQuery:
-    return
+    return false
 
   self.searchQuery = finalQuery
   self.updateSearchResults()
+  return true
 
 proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPreview: bool = true, select: bool = true) {.expose("editor.text").} =
   let commandLineEditor = self.editors.commandLineEditor.TextDocumentEditor
@@ -2666,12 +2670,12 @@ proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPrevie
   let prevSearchQuery = self.searchQuery
   self.commands.openCommandLine "", proc(command: Option[string]): bool =
     if command.getSome(command):
-      self.setSearchQuery(command)
+      discard self.setSearchQuery(command)
       if select:
         self.selection = self.getNextFindResult(self.selection.last).first.toSelection
       self.scrollToCursor(self.selection.last)
     else:
-      self.setSearchQuery(prevSearchQuery)
+      discard self.setSearchQuery(prevSearchQuery)
       if scrollToPreview:
         self.scrollToCursor(self.selection.last)
 
@@ -2686,7 +2690,7 @@ proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPrevie
   var onSearchHandle = Id.new
 
   onEditHandle[] = document.onEdit.subscribe proc(arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =
-    self.setSearchQuery(arg.document.contentString.replace(r".set-search-query \"))
+    discard self.setSearchQuery(arg.document.contentString.replace(r".set-search-query \"))
 
   onActiveHandle[] = commandLineEditor.onActiveChanged.subscribe proc(editor: DocumentEditor) =
     if not editor.active:
@@ -2706,7 +2710,7 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string,
     count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
   let selection = self.getSelectionForMove(self.selection.last, move, count)
   let searchText = self.document.contentString(selection)
-  self.setSearchQuery(searchText, escapeRegex=true, prefix, suffix)
+  discard self.setSearchQuery(searchText, escapeRegex=true, prefix, suffix)
   return selection
 
 proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
