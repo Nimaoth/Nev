@@ -473,6 +473,22 @@ proc getUsage*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_getChar_char_TextDocumentEditor_Cursor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getChar*(self: TextDocumentEditor; cursor: Cursor): char {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getChar_char_TextDocumentEditor_Cursor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_getText_string_TextDocumentEditor_Selection_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getText*(self: TextDocumentEditor; selection: Selection;
@@ -1737,6 +1753,40 @@ proc extendSelectionWithMove*(self: TextDocumentEditor; selection: Selection;
   argsJson.add count.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_extendSelectionWithMove_Selection_TextDocumentEditor_Selection_string_int_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_vimMotionWord_Selection_TextDocumentEditor_Cursor_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc vimMotionWord*(self: TextDocumentEditor; cursor: Cursor; count: int = 0): Selection {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add count.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_vimMotionWord_Selection_TextDocumentEditor_Cursor_int_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_vimMotionWordBig_Selection_TextDocumentEditor_Cursor_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc vimMotionWordBig*(self: TextDocumentEditor; cursor: Cursor; count: int = 0): Selection {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add count.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_vimMotionWordBig_Selection_TextDocumentEditor_Cursor_int_wasm(
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
