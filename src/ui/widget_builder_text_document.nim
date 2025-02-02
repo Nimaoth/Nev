@@ -29,6 +29,72 @@ type LocationInfos = object
   hover: Option[CursorLocationInfo]
   diagnostic: Option[CursorLocationInfo]
 
+type
+  ChunkBounds = object
+    range: rope.Range[Point]
+    displayRange: rope.Range[DisplayPoint]
+    bounds: Rect
+    text: RopeChunk
+    chunk: DisplayChunk
+    charsRange: rope.Range[int]
+
+  LineDrawerResult = enum Continue, ContinueNextLine, Break
+  LineDrawerState = object
+    builder: UINodeBuilder
+    displayMap: DisplayMap
+    offset: Vec2
+    bounds: Rect
+    lastDisplayPoint: DisplayPoint
+    lastDisplayEndPoint: DisplayPoint
+    lastPoint: Point
+    cursorOnScreen: bool
+    charBounds: seq[Rect]
+    chunkBounds: seq[ChunkBounds]
+    addedLineNumber: bool = false
+    backgroundColor: Option[Color]
+    reverse: bool
+
+proc cmp(r: ChunkBounds, point: Point): int =
+  let range = if r.chunk.styledChunk.chunk.external:
+    r.range.a...r.range.a
+  else:
+    r.range
+
+  if range.a.row > point.row:
+    return 1
+  if point.row == range.a.row and range.a.column > point.column:
+    return 1
+  if range.b.row < point.row:
+    return -1
+  if point.row == range.b.row and range.b.column < point.column:
+    return -1
+  return 0
+
+proc cmp(r: ChunkBounds, point: DisplayPoint): int =
+  if r.displayRange.a.row > point.row:
+    return 1
+  if point.row == r.displayRange.a.row and r.displayRange.a.column > point.column:
+    return 1
+  if r.displayRange.b.row < point.row:
+    return -1
+  if point.row == r.displayRange.b.row and r.displayRange.b.column < point.column:
+    return -1
+  return 0
+
+proc cmp(r: Rect, point: Vec2): int =
+  if r.y > point.y:
+    return 1
+  if r.yh <= point.y:
+    return -1
+  if r.x > point.x:
+    return 1
+  if r.xw <= point.x:
+    return -1
+  return 0
+
+proc cmp(r: ChunkBounds, point: Vec2): int =
+  return cmp(r.bounds, point)
+
 template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
   if part.scopeIsToken:
     theme.tokenColor(part.scope, default)
@@ -301,55 +367,6 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
 
-type ChunkBounds = object
-  range: rope.Range[Point]
-  displayRange: rope.Range[DisplayPoint]
-  bounds: Rect
-  text: RopeChunk
-  chunk: DisplayChunk
-  charsRange: rope.Range[int]
-
-proc cmp(r: ChunkBounds, point: Point): int =
-  let range = if r.chunk.styledChunk.chunk.external:
-    r.range.a...r.range.a
-  else:
-    r.range
-
-  if range.a.row > point.row:
-    return 1
-  if point.row == range.a.row and range.a.column > point.column:
-    return 1
-  if range.b.row < point.row:
-    return -1
-  if point.row == range.b.row and range.b.column < point.column:
-    return -1
-  return 0
-
-proc cmp(r: ChunkBounds, point: DisplayPoint): int =
-  if r.displayRange.a.row > point.row:
-    return 1
-  if point.row == r.displayRange.a.row and r.displayRange.a.column > point.column:
-    return 1
-  if r.displayRange.b.row < point.row:
-    return -1
-  if point.row == r.displayRange.b.row and r.displayRange.b.column < point.column:
-    return -1
-  return 0
-
-proc cmp(r: Rect, point: Vec2): int =
-  if r.y > point.y:
-    return 1
-  if r.yh <= point.y:
-    return -1
-  if r.x > point.x:
-    return 1
-  if r.xw <= point.x:
-    return -1
-  return 0
-
-proc cmp(r: ChunkBounds, point: Vec2): int =
-  return cmp(r.bounds, point)
-
 proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selection, color: Color, renderCommands: var RenderCommands, chunkBounds: var seq[ChunkBounds], iter: var DisplayChunkIterator, cursor: var RopeCursorT[Point]) =
 
   # if sn.first.toPoint < iter.point:
@@ -415,7 +432,7 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
         let lineEmpty = cursor.currentChar() == '\n'
 
         # todo: correctly handle multi byte chars
-        let firstOffset = if lineEmpty:
+        let firstOffset = if lineEmpty or bounds.chunk.styledChunk.chunk.external:
           0
         elif r.a in bounds.range:
           r.a.column.int - bounds.range.a.column.int
@@ -424,7 +441,7 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
         else:
           bounds.range.len.column.int
 
-        let lastOffset = if lineEmpty:
+        let lastOffset = if lineEmpty or bounds.chunk.styledChunk.chunk.external:
           1
         elif r.b in bounds.range:
           r.b.column.int - bounds.range.a.column.int
@@ -462,6 +479,90 @@ proc drawLineNumber(renderCommands: var RenderCommands, builder: UINodeBuilder, 
     let width = builder.textWidth(lineNumberText)
     buildCommands(renderCommands):
       drawText(lineNumberText, rect(offset.x + lineNumberX, offset.y, width, builder.textHeight), textColor, 0.UINodeFlags)
+
+proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode, renderCommands: var RenderCommands, state: var LineDrawerState) =
+
+  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
+  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
+  let cursorSpeed: float = app.config.asConfigProvider.getValue("ui.cursor-speed", 100.0)
+  let cursorTrail: int = app.config.asConfigProvider.getValue("ui.cursor-trail", 2)
+  let isThickCursor = self.isThickCursor
+
+  buildCommands(renderCommands):
+    self.cursorHistories.setLen(self.selections.len)
+    for i, s in self.selections:
+      let dp = self.displayMap.toDisplayPoint(s.last.toPoint)
+      let (found, lastIndex) = state.chunkBounds.binarySearchRange(dp, Bias.Right, cmp)
+      if lastIndex in 0..<state.chunkBounds.len and dp in state.chunkBounds[lastIndex].displayRange:
+        let chunk = state.chunkBounds[lastIndex]
+        # todo: correctly handle multi byte chars
+        let relativeOffset = dp.column.int - chunk.displayRange.a.column.int
+        var cursorBounds = rect(chunk.bounds.xy + vec2(relativeOffset.float * builder.charWidth, 0), vec2(builder.charWidth, builder.textHeight))
+
+        let charBounds = cursorBounds
+        if not isThickCursor:
+          cursorBounds.w *= 0.2
+
+        var cursorVisible = self.cursorVisible
+        if cursorTrail > 0:
+          if self.cursorHistories[i].len != 0:
+            let alpha = 1 - exp(-cursorSpeed * app.platform.deltaTime)
+            var nextPos = mix(self.cursorHistories[i].last, cursorBounds.xy, alpha)
+            if (nextPos - cursorBounds.xy).length < 1:
+              nextPos = cursorBounds.xy
+            self.cursorHistories[i].add nextPos
+
+            for p in self.cursorHistories[i]:
+              if p != cursorBounds.xy:
+                cursorVisible = true
+                self.markDirty()
+
+          else:
+            self.cursorHistories[i].add cursorBounds.xy
+            self.markDirty()
+            self.cursorVisible = true
+
+          while self.cursorHistories[i].len > cursorTrail.clamp(0, 100):
+            self.cursorHistories[i].removeShift(0)
+
+        else:
+          self.cursorHistories[i].setLen(0)
+
+        if cursorVisible:
+          var last = if self.cursorHistories[i].len > 0:
+            self.cursorHistories[i][0]
+          else:
+            cursorBounds.xy
+
+          for xy in self.cursorHistories[i]:
+            let dist = (xy - last).length
+            for i in 0..<dist.int:
+              let xyInterp = mix(last, xy, i.float / dist)
+              fillRect(rect(xyInterp, cursorBounds.wh), cursorForegroundColor)
+            last = xy
+
+          let dist = (cursorBounds.xy - last).length
+          for i in 0..<dist.int:
+            let xyInterp = mix(last, cursorBounds.xy, i.float / dist)
+            fillRect(rect(xyInterp, cursorBounds.wh), cursorForegroundColor)
+
+          fillRect(cursorBounds, cursorForegroundColor)
+          if isThickCursor:
+            let currentRune = self.document.runeAt(s.last)
+            drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
+
+        self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
+
+      if i == self.selections.high:
+        let dp = self.displayMap.toDisplayPoint(s.last.toPoint)
+        let p = self.displayMap.toPoint(dp)
+        let ob = self.displayMap.overlay.snapshot.toOverlayBytes(dp.OverlayPoint)
+        let (foundDisplay, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
+        if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
+          state.cursorOnScreen = true
+          self.currentCenterCursor = s.last
+          self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
+          self.lastHoverLocationBounds = state.chunkBounds[lastIndexDisplay].bounds.some
 
 proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode, selectionsNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool) =
   var flags = 0.UINodeFlags
@@ -531,8 +632,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let showContextLines = not renderDiff and app.config.getOption[:bool]("editor.text.context-lines", true)
 
   let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
-  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
-  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
   let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
   let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
@@ -607,23 +706,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     floor(parentWidth * 0.5)
   else:
     0
-
-  type
-    LineDrawerResult = enum Continue, ContinueNextLine, Break
-    LineDrawerState = object
-      builder: UINodeBuilder
-      displayMap: DisplayMap
-      offset: Vec2
-      bounds: Rect
-      lastDisplayPoint: DisplayPoint
-      lastDisplayEndPoint: DisplayPoint
-      lastPoint: Point
-      cursorOnScreen: bool
-      charBounds: seq[Rect]
-      chunkBounds: seq[ChunkBounds]
-      addedLineNumber: bool = false
-      backgroundColor: Option[Color]
-      reverse: bool
 
   var state = LineDrawerState(
     builder: builder,
@@ -827,37 +909,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         of Break: break
       endScissor()
 
-    for i, s in self.selections:
-      let dp = self.displayMap.toDisplayPoint(s.last.toPoint)
-      let (found, lastIndex) = state.chunkBounds.binarySearchRange(dp, Bias.Right, cmp)
-      if lastIndex in 0..<state.chunkBounds.len and dp in state.chunkBounds[lastIndex].displayRange:
-        let chunk = state.chunkBounds[lastIndex]
-        # todo: correctly handle multi byte chars
-        let relativeOffset = dp.column.int - chunk.displayRange.a.column.int
-        var cursorBounds = rect(chunk.bounds.xy + vec2(relativeOffset.float * builder.charWidth, 0), vec2(builder.charWidth, builder.textHeight))
-
-        let charBounds = cursorBounds
-        if not isThickCursor:
-          cursorBounds.w *= 0.2
-
-        if self.cursorVisible:
-          fillRect(cursorBounds, cursorForegroundColor)
-          if isThickCursor:
-            let currentRune = self.document.runeAt(s.last)
-            drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
-
-        self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
-
-      if i == self.selections.high:
-        let dp = self.displayMap.toDisplayPoint(s.last.toPoint)
-        let p = self.displayMap.toPoint(dp)
-        let ob = self.displayMap.overlay.snapshot.toOverlayBytes(dp.OverlayPoint)
-        let (foundDisplay, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
-        if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
-          state.cursorOnScreen = true
-          self.currentCenterCursor = s.last
-          self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
-          self.lastHoverLocationBounds = state.chunkBounds[lastIndexDisplay].bounds.some
+  self.drawCursors(builder, app, currentNode, currentNode.renderCommands, state)
 
   var ropeCursor = self.displayMap.buffer.visibleText.cursorT(Point)
   var highlightIter = self.displayMap.iter()

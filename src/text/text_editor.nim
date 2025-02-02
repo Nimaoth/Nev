@@ -89,6 +89,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   cursorMargin*: Option[float]
 
+  cursorHistories*: seq[seq[Vec2]]
+
   searchQuery*: string
   searchResults*: seq[Range[Point]]
   isUpdatingSearchResults: bool
