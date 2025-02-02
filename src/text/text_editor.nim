@@ -692,6 +692,7 @@ proc updateSearchResults(self: TextDocumentEditor) =
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
+  self.cursorHistories.setLen(0)
   self.updateSearchResults()
 
 method handleActivate*(self: TextDocumentEditor) =
@@ -1925,6 +1926,7 @@ proc closeDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
   discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
   discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
 
+  self.cursorHistories.setLen(0)
   self.diffDocument.onRequestRerender.unsubscribe(self.onRequestRerenderDiffHandle)
   self.diffDocument.deinit()
   self.diffDocument = nil
@@ -2022,6 +2024,9 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
     self.selection = (changes[0].target.first, 0).toSelection
     self.updateTargetColumn(Last)
     self.centerCursor(self.selection.last)
+
+  self.cursorHistories.setLen(0)
+  self.markDirty()
 
   self.markDirty()
 
@@ -3756,6 +3761,7 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
   self.displayMap.setBuffer(self.snapshot.clone())
   self.selections = self.selections
   self.inlayHints.setLen(0)
+  self.cursorHistories.setLen(0)
   self.hideCompletions()
   self.updateInlayHints()
   self.updateSearchResults()
@@ -3819,6 +3825,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
     self.scrollToCursor()
     self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
+  self.cursorHistories.setLen(0)
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
 

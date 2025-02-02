@@ -484,6 +484,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
 
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
+  let cursorTrailColor = cursorForegroundColor.darken(0.1)
   let cursorSpeed: float = app.config.asConfigProvider.getValue("ui.cursor-speed", 100.0)
   let cursorTrail: int = app.config.asConfigProvider.getValue("ui.cursor-trail", 2)
   let isThickCursor = self.isThickCursor
@@ -538,13 +539,13 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
             let dist = (xy - last).length
             for i in 0..<dist.int:
               let xyInterp = mix(last, xy, i.float / dist)
-              fillRect(rect(xyInterp, cursorBounds.wh), cursorForegroundColor)
+              fillRect(rect(xyInterp, cursorBounds.wh), cursorTrailColor)
             last = xy
 
           let dist = (cursorBounds.xy - last).length
           for i in 0..<dist.int:
             let xyInterp = mix(last, cursorBounds.xy, i.float / dist)
-            fillRect(rect(xyInterp, cursorBounds.wh), cursorForegroundColor)
+            fillRect(rect(xyInterp, cursorBounds.wh), cursorTrailColor)
 
           fillRect(cursorBounds, cursorForegroundColor)
           if isThickCursor:
