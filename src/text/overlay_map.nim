@@ -140,6 +140,7 @@ type
 
     subIterKind: OverlayMapChunkKind
     stringOffset: int
+    stringRuneOffset: int
     stringLine: int
     ropeIter: ChunkIterator
 
@@ -505,12 +506,14 @@ proc seek*(self: var OverlayChunkIterator, overlayPoint: OverlayPoint) =
       # self.stringLine = overlayPoint.row.int - self.overlayMapCursor.startPos.dst.row.int
       self.stringLine = 0 # todo
       self.stringOffset = item.text.toOpenArray(0, item.text.high).pointToOffset((overlayPoint - self.overlayMapCursor.startPos.dst).toPoint)
+      self.stringRuneOffset = item.text.toOpenArray(0, item.text.high).pointToCount((overlayPoint - self.overlayMapCursor.startPos.dst).toPoint).int
       # echo &"OverlayChunkIterator.seek {overlayPoint} -> {self.stringLine}, {self.stringOffset}"
     of OverlayMapChunkKind.Rope:
       # todo
       self.subIterKind = OverlayMapChunkKind.Rope
       self.stringLine = 0 # todo
       self.stringOffset = 0 # todo
+      self.stringRuneOffset = 0 # todo
 
 proc seekLine*(self: var OverlayChunkIterator, line: int) =
   self.seek(overlayPoint(line))
@@ -549,16 +552,27 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
   if self.overlayMapCursor.item.getSome(item):
     case item.kind
     of OverlayMapChunkKind.String:
-      let (line, offset) = if self.subIterKind == OverlayMapChunkKind.String:
-        (self.stringLine, self.stringOffset)
+      let (line, offset, runeOffset) = if self.subIterKind == OverlayMapChunkKind.String:
+        (self.stringLine, self.stringOffset, self.stringRuneOffset)
       else:
-        (0, 0)
+        (0, 0, 0)
 
       let nl = item.text.find('\n', offset)
       let endOffset = if nl == -1:
         item.text.len
       else:
         nl
+
+      let endRuneOffset = item.text.offsetToCount(endOffset).int
+
+      var dataOriginal: ptr UncheckedArray[char] = nil
+      var lenOriginal = 0
+      # if self.styledChunk.getSome(styledChunk):
+      #   let offsetOriginal = styledChunk.chunk.toOpenArrayOriginal.countToOffset(runeOffset.Count)
+      #   let chunkOriginal = styledChunk.split(offsetOriginal).suffix.split(endOffset).prefix
+      #   dataOriginal = chunkOriginal.chunk.dataOriginal
+      #   lenOriginal = chunkOriginal.chunk.lenOriginal
+      #   echo &"  {chunkOriginal}"
 
       let currentChunk = StyledChunk(
         chunk: RopeChunk(
@@ -567,6 +581,13 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
           else:
             nil,
           len: endOffset - offset,
+          # dataOriginal: if offset < item.text.len:
+          #   cast[ptr UncheckedArray[char]](item.text[offset].addr)
+          # else:
+          #   nil,
+          # lenOriginal: endOffset - offset,
+          dataOriginal: dataOriginal,
+          lenOriginal: lenOriginal,
           point: mappedPoint + point(line, 0),
           external: true,
         ),
@@ -581,6 +602,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
         self.subIterKind = OverlayMapChunkKind.Empty
         self.stringLine = 0
         self.stringOffset = 0
+        self.stringRuneOffset = 0
 
         if self.overlayMapCursor.startPos.src == self.overlayMapCursor.endPos.src:
           # echo &"  next"
@@ -601,6 +623,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
         self.overlayPoint += overlayPoint(1, 0)
         self.stringLine = line + 1
         self.stringOffset = endOffset + 1
+        self.stringRuneOffset = endRuneOffset + 1
 
       self.overlayChunk = overlayChunk.some
       return self.overlayChunk
@@ -628,23 +651,21 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
 
   if currentChunk.endPoint <= map.src.b:
     self.localOffset = currentChunk.len
-    currentChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.chunk.data[startOffset].addr)
-    currentChunk.chunk.len = self.localOffset - startOffset
-    currentChunk.chunk.point = mappedPoint
-    self.overlayChunk = OverlayChunk(styledChunk: currentChunk, overlayPoint: self.overlayPoint).some
+    var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
+    newChunk.chunk.point = mappedPoint
+    self.overlayChunk = OverlayChunk(styledChunk: newChunk, overlayPoint: self.overlayPoint).some
 
   else:
     self.localOffset = map.src.b.column.int - currentChunk.point.column.int
-    currentChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.chunk.data[startOffset].addr)
-    currentChunk.chunk.len = self.localOffset - startOffset
-    currentChunk.chunk.point = mappedPoint
-    self.overlayChunk = OverlayChunk(styledChunk: currentChunk, overlayPoint: self.overlayPoint).some
+    var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
+    newChunk.chunk.point = mappedPoint
+    self.overlayChunk = OverlayChunk(styledChunk: newChunk, overlayPoint: self.overlayPoint).some
 
   return self.overlayChunk
 
 #
 
-proc split*(self: OverlayChunk, index: int): (OverlayChunk, OverlayChunk) =
+proc split*(self: OverlayChunk, index: int): tuple[prefix: OverlayChunk, suffix: OverlayChunk] =
   let (prefix, suffix) = self.styledChunk.split(index)
   (
     OverlayChunk(styledChunk: prefix, overlayPoint: self.overlayPoint),

@@ -12,6 +12,8 @@ type
   RopeChunk* = object
     data*: ptr UncheckedArray[char]
     len*: int
+    dataOriginal*: ptr UncheckedArray[char]
+    lenOriginal*: int
     point*: Point
     external*: bool
 
@@ -49,7 +51,14 @@ func `$`*(chunk: RopeChunk): string =
   result = newString(chunk.len)
   for i in 0..<chunk.len:
     result[i] = chunk.data[i]
-  result = &"RC({chunk.point}...{chunk.endPoint}, '{result}')"
+  if chunk.data != chunk.dataOriginal:
+    var str = ""
+    str.setLen(chunk.lenOriginal)
+    for i in 0..<chunk.lenOriginal:
+      str[i] = chunk.dataOriginal[i]
+    result = &"RC({chunk.point}...{chunk.endPoint}, '{result}', '{str}')"
+  else:
+    result = &"RC({chunk.point}...{chunk.endPoint}, '{result}')"
 
 func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
   assert range.a >= 0 and range.a <= self.len
@@ -58,24 +67,58 @@ func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
   return RopeChunk(
     data: cast[ptr UncheckedArray[char]](self.data[range.a].addr),
     len: range.len,
+    dataOriginal: cast[ptr UncheckedArray[char]](self.dataOriginal[range.a].addr),
+    lenOriginal: range.len,
     external: self.external,
     point: Point(row: self.point.row, column: self.point.column + range.a.uint32)
   )
 
 template toOpenArray*(self: RopeChunk): openArray[char] = self.data.toOpenArray(0, self.len - 1)
+template toOpenArrayOriginal*(self: RopeChunk): openArray[char] = self.dataOriginal.toOpenArray(0, self.lenOriginal - 1)
 
-proc split*(self: RopeChunk, index: int): (RopeChunk, RopeChunk) =
-  (
-    RopeChunk(data: self.data, len: index, external: self.external, point: self.point),
-    RopeChunk(
-      data: cast[ptr UncheckedArray[char]](self.data[index].addr),
-      len: self.len - index,
-      external: self.external,
-      point: point(self.point.row, self.point.column + index.uint32),
-    ),
-  )
+proc split*(self: RopeChunk, index: int): tuple[prefix: RopeChunk, suffix: RopeChunk] =
+  if self.data == self.dataOriginal:
+    (
+      RopeChunk(
+        data: self.data,
+        len: index,
+        dataOriginal: self.dataOriginal,
+        lenOriginal: index,
+        external: self.external,
+        point: self.point
+      ),
+      RopeChunk(
+        data: cast[ptr UncheckedArray[char]](self.data[index].addr),
+        len: self.len - index,
+        dataOriginal: cast[ptr UncheckedArray[char]](self.dataOriginal[index].addr),
+        lenOriginal: self.lenOriginal - index,
+        external: self.external,
+        point: point(self.point.row, self.point.column + index.uint32),
+      ),
+    )
+  else:
+    let runeOffset = self.data.toOpenArray(0, self.len - 1).offsetToCount(index).int
+    let indexOriginal = self.dataOriginal.toOpenArray(0, self.lenOriginal - 1).countToOffset(runeOffset.Count)
+    (
+      RopeChunk(
+        data: self.data,
+        len: index,
+        dataOriginal: self.dataOriginal,
+        lenOriginal: indexOriginal,
+        external: self.external,
+        point: self.point
+      ),
+      RopeChunk(
+        data: cast[ptr UncheckedArray[char]](self.data[index].addr),
+        len: self.len - index,
+        dataOriginal: cast[ptr UncheckedArray[char]](self.dataOriginal[indexOriginal].addr),
+        lenOriginal: self.lenOriginal - indexOriginal,
+        external: self.external,
+        point: point(self.point.row, self.point.column + index.uint32),
+      ),
+    )
 
-proc split*(self: StyledChunk, index: int): (StyledChunk, StyledChunk) =
+proc split*(self: StyledChunk, index: int): tuple[prefix: StyledChunk, suffix: StyledChunk] =
   let (prefix, suffix) = self.chunk.split(index)
   (
     StyledChunk(chunk: prefix, scope: self.scope, drawWhitespace: self.drawWhitespace),
@@ -128,6 +171,8 @@ func next*(self: var ChunkIterator): Option[RopeChunk] =
           result = RopeChunk(
             data: cast[ptr UncheckedArray[char]](chunk.chars[self.localOffset].addr),
             len: 0,
+            dataOriginal: cast[ptr UncheckedArray[char]](chunk.chars[self.localOffset].addr),
+            lenOriginal: 0,
             point: self.point,
           ).some
         self.point.row += 1
@@ -173,6 +218,8 @@ func next*(self: var ChunkIterator): Option[RopeChunk] =
         result = RopeChunk(
           data: cast[ptr UncheckedArray[char]](chunk.chars[sliceRange.a].addr),
           len: sliceRange.len,
+          dataOriginal: cast[ptr UncheckedArray[char]](chunk.chars[sliceRange.a].addr),
+          lenOriginal: sliceRange.len,
           point: point,
         ).some
         return
@@ -388,6 +435,8 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
         assert self.localOffset >= 0
         currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
         currentChunk.len = self.localOffset - startOffset
+        currentChunk.dataOriginal = cast[ptr UncheckedArray[char]](currentChunk.dataOriginal[startOffset].addr)
+        currentChunk.lenOriginal = self.localOffset - startOffset
         currentChunk.point.column += startOffset.uint32
         return StyledChunk(chunk: currentChunk).some
       elif currentPoint < nextHighlight.range.b:
@@ -396,6 +445,8 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
         self.highlightsIndex = self.highlightsIndex + 1
         currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
         currentChunk.len = self.localOffset - startOffset
+        currentChunk.dataOriginal = cast[ptr UncheckedArray[char]](currentChunk.dataOriginal[startOffset].addr)
+        currentChunk.lenOriginal = self.localOffset - startOffset
         currentChunk.point.column += startOffset.uint32
         return StyledChunk(chunk: currentChunk, scope: nextHighlight.scope).some
       else:
@@ -405,5 +456,7 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   assert self.localOffset >= 0
   currentChunk.data = cast[ptr UncheckedArray[char]](currentChunk.data[startOffset].addr)
   currentChunk.len = self.localOffset - startOffset
+  currentChunk.dataOriginal = cast[ptr UncheckedArray[char]](currentChunk.dataOriginal[startOffset].addr)
+  currentChunk.lenOriginal = self.localOffset - startOffset
   currentChunk.point.column += startOffset.uint32
   return StyledChunk(chunk: currentChunk).some

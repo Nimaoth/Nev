@@ -100,7 +100,7 @@ func `$`*(self: TabChunk): string = &"TC({self.tabPoint}...{self.endTabPoint}, {
 template toOpenArray*(self: TabChunk): openArray[char] = self.inputChunk.toOpenArray
 template scope*(self: TabChunk): string = self.inputChunk.scope
 
-proc split*(self: TabChunk, index: int): (TabChunk, TabChunk) =
+proc split*(self: TabChunk, index: int): tuple[prefix: TabChunk, suffix: TabChunk] =
   let (prefix, suffix) = self.inputChunk.split(index)
   (
     TabChunk(inputChunk: prefix, wasTab: self.wasTab, tabPoint: self.tabPoint),
@@ -134,6 +134,7 @@ proc iter*(self {.byref.}: TabMapSnapshot): TabChunkIterator =
     tabMap: self.clone(),
     maxExpansionColumn: self.maxExpansionColumn,
     insideLeadingTab: toNextStop > 0,
+    tabTexts: "|" & " ".repeat(self.tabWidth - 1),
   )
 
 func expandTabs*(self: TabMapSnapshot, chunks: var InputChunkIterator, column: int): int =
@@ -383,10 +384,8 @@ proc next*(self: var TabChunkIterator): Option[TabChunk] =
         self.inputColumn += 1
         self.outputColumn = nextOutputColumn
 
-        let i = self.tabTexts.len
-        self.tabTexts.add "|" & " ".repeat(len - 1)
-        prefix.chunk.data = cast[ptr UncheckedArray[char]](self.tabTexts[i].addr)
-        prefix.chunk.len = self.tabTexts.len - i
+        prefix.chunk.data = cast[ptr UncheckedArray[char]](self.tabTexts[0].addr)
+        prefix.chunk.len = len
         prefix.styledChunk.scope = "comment"
         prefix.styledChunk.drawWhitespace = false
         prefix.wasTab = true

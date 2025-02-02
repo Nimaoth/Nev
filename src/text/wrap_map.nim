@@ -714,11 +714,6 @@ proc seekLine*(self: var WrapChunkIterator, line: int) =
   self.seek(wrapPoint(line))
 
 proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
-  # defer:
-  #   if self.callCount == 0:
-  #     echo &"WrapChunkIterator.next {self.inputChunk} -> {self.wrapChunk}"
-  #   inc self.callCount
-
   if self.atEnd:
     self.wrapChunk = WrapChunk.none
     return
@@ -741,8 +736,7 @@ proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
       return
 
   assert self.inputChunk.isSome
-  var currentChunk = self.inputChunk.get
-  # log &"  input chunk {currentChunk}"
+  let currentChunk = self.inputChunk.get
   let currentPoint = currentChunk.point + point(0, self.localOffset)
   let currentInputPoint = currentChunk.outputPoint + inputPoint(0, self.localOffset)
   discard self.wrapMapCursor.seek(currentInputPoint.WrapMapChunkSrc, Bias.Right, ())
@@ -751,37 +745,25 @@ proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
 
   let oldWrapPoint = self.wrapPoint
   self.wrapPoint = self.wrapMapCursor.toWrapPoint(currentInputPoint)
-  # if self.wrapMapCursor.item.isSome:
-  #   log &"  {oldWrapPoint}, {currentInputPoint} -> {self.wrapPoint}, {self.wrapMapCursor.startPos}...{self.wrapMapCursor.endPos}     |   {self.wrapMapCursor.item.mapIt($it[])}"
-  # else:
-  #   log &"  {oldWrapPoint}, {currentInputPoint} -> {self.wrapPoint}, {self.wrapMapCursor.startPos}...{self.wrapMapCursor.endPos}"
 
   let startOffset = self.localOffset
   let map = (
     src: self.wrapMapCursor.startPos.src...self.wrapMapCursor.endPos.src,
     dst: self.wrapMapCursor.startPos.dst...self.wrapMapCursor.endPos.dst)
 
-  # log &"  map: {map},      {currentChunk}"
-
   if currentChunk.endOutputPoint <= map.src.b:
-    # log &"  local offset {self.localOffset} -> {currentChunk.len}"
     self.localOffset = currentChunk.len
     assert self.localOffset >= 0
-    currentChunk.styledChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.styledChunk.chunk.data[startOffset].addr)
-    currentChunk.styledChunk.chunk.len = self.localOffset - startOffset
-    currentChunk.styledChunk.chunk.point = currentPoint
-    currentChunk.outputPoint = currentInputPoint
-    self.wrapChunk = WrapChunk(inputChunk: currentChunk, wrapPoint: self.wrapPoint).some
+    var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
+    newChunk.outputPoint = currentInputPoint
+    self.wrapChunk = WrapChunk(inputChunk: newChunk, wrapPoint: self.wrapPoint).some
 
   else:
-    # log &"  local offset {self.localOffset} -> {map.src.b.column.int - currentChunk.outputPoint.column.int}"
     self.localOffset = map.src.b.column.int - currentChunk.outputPoint.column.int
     assert self.localOffset >= 0
-    currentChunk.styledChunk.chunk.data = cast[ptr UncheckedArray[char]](currentChunk.styledChunk.chunk.data[startOffset].addr)
-    currentChunk.styledChunk.chunk.len = self.localOffset - startOffset
-    currentChunk.styledChunk.chunk.point = currentPoint
-    currentChunk.outputPoint = currentInputPoint
-    self.wrapChunk = WrapChunk(inputChunk: currentChunk, wrapPoint: self.wrapPoint).some
+    var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
+    newChunk.outputPoint = currentInputPoint
+    self.wrapChunk = WrapChunk(inputChunk: newChunk, wrapPoint: self.wrapPoint).some
 
   return self.wrapChunk
 
