@@ -280,18 +280,18 @@ proc toggleFlag*(self: ConfigService, flag: string) {.expose("config").} =
   log lvlInfo, fmt"toggleFlag '{flag}' -> {newValue}"
   self.setFlag(flag, newValue)
 
-proc getAllConfigKeys*(node: JsonNode, prefix: string, res: var seq[tuple[key: string, value: string]]) =
+proc getAllConfigKeys*(node: JsonNode, prefix: string, res: var seq[tuple[key: string, value: JsonNode]]) =
   case node.kind
   of JObject:
     if prefix.len > 0:
-      res.add (prefix, $node)
+      res.add (prefix, node)
     for key, value in node.fields.pairs:
       let key = if prefix.len > 0: prefix & "." & key else: key
       value.getAllConfigKeys(key, res)
   else:
-    res.add (prefix, $node)
+    res.add (prefix, node)
 
-proc getAllConfigKeys*(self: ConfigService): seq[tuple[key: string, value: string]] =
+proc getAllConfigKeys*(self: ConfigService): seq[tuple[key: string, value: JsonNode]] =
   self.settings.getAllConfigKeys("", result)
 
 addGlobalDispatchTable "config", genDispatchTable("config")

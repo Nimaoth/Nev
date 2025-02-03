@@ -1371,10 +1371,11 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
     for (key, value) in self.config.getAllConfigKeys():
+      let valueStr = $value
       items.add FinderItem(
         displayName: key,
-        data: value,
-        detail: value[0..min(value.high, 50)],
+        data: value.pretty,
+        detail: valueStr[0..min(valueStr.high, 50)],
       )
 
     return items
