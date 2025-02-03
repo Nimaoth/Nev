@@ -728,7 +728,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
 
-  let showNextPossibleInputsDelay = self.config.getOption("editor.which-key-delay", 500)
+  let showNextPossibleInputsDelay = self.config.getOption("ui.which-key-delay", 500)
   self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
     self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
     self.platform.requestRender()
@@ -2228,7 +2228,7 @@ proc updateNextPossibleInputs*(self: App) =
       cmp(a.input, b.input)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
-    self.showNextPossibleInputsTask.interval = self.config.getOption("editor.which-key-delay", 500)
+    self.showNextPossibleInputsTask.interval = self.config.getOption("ui.which-key-delay", 500)
     self.showNextPossibleInputsTask.reschedule()
 
   elif self.nextPossibleInputs.len == 0:
