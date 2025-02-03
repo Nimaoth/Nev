@@ -500,13 +500,18 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
         #   continue
 
         let relativeOffset = p.column.int - chunk.range.a.column.int
-        let runeOffset = chunk.chunk.styledChunk.chunk.toOpenArrayOriginal.offsetToCount(relativeOffset).int
+        let runeOffset = if p.column.int == chunk.range.b.column.int:
+          chunk.chunk.styledChunk.chunk.toOpenArrayOriginal.runeLen.int
+        else:
+          chunk.chunk.styledChunk.chunk.toOpenArrayOriginal.offsetToCount(relativeOffset).int
         var cursorBounds = rect(chunk.bounds.xy + vec2(runeOffset.float * builder.charWidth, 0), vec2(builder.charWidth, builder.textHeight))
 
-        if chunk.charsRange.a + runeOffset in 0..state.charBounds.high:
-          # echo &"uiae {state.charBounds[chunk.charsRange.a + runeOffset]}"
-          cursorBounds = state.charBounds[chunk.charsRange.a + runeOffset] + chunk.bounds.xy
-          cursorBounds.h = builder.textHeight
+        if chunk.range.a != chunk.range.b:
+          if p.column.int == chunk.range.b.column.int and chunk.charsRange.a + runeOffset - 1 in 0..state.charBounds.high:
+            cursorBounds.xy = state.charBounds[chunk.charsRange.a + runeOffset - 1].xwy + chunk.bounds.xy
+          elif chunk.charsRange.a + runeOffset in 0..state.charBounds.high:
+            cursorBounds = state.charBounds[chunk.charsRange.a + runeOffset] + chunk.bounds.xy
+            cursorBounds.h = builder.textHeight
 
         let charBounds = cursorBounds
         if not isThickCursor:
