@@ -136,8 +136,9 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gp", "explore-current-file-directory"
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommand "editor", "<LEADER>gk", "browse-keybinds"
+  addCommand "editor", "<LEADER>gi", "browse-settings"
   addCommand "editor", "<LEADER>gn", "open-last-editor"
-  addCommandBlock "editor", "<LEADER>log":
+  addCommandBlockDesc "editor", "<LEADER>log", "Show log file":
     logs(scrollToBottom = true)
     nextView()
 
@@ -187,15 +188,18 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "popup.selector.file-explorer", "<C-f>", "create-file"
   addCommand "popup.selector.file-explorer", "<C-u>", "refresh"
 
-  addCommandBlock "editor", "<LEADER>al":
+  addCommand "popup.selector.settings", "<C-t>", "toggle-flag"
+  addCommand "popup.selector.settings", "<C-s>", "update-setting"
+
+  addCommandBlockDesc "editor", "<LEADER>al", "Run last configuration":
     runLastConfiguration()
     showDebuggerView()
 
-  addCommandBlock "editor", "<LEADER>av":
+  addCommandBlockDesc "editor", "<LEADER>av", "Choose run configuration":
     chooseRunConfiguration()
     showDebuggerView()
 
-  addCommandBlock "editor", "<LEADER>ab":
+  addCommandBlockDesc "editor", "<LEADER>ab", "Toggle breakpoint":
     if getActiveEditor().isTextEditor editor:
       addBreakpoint(editor.id, editor.selection.last.line)
 

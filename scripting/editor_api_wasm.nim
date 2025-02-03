@@ -377,6 +377,19 @@ proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
       argsJsonString.cstring)
 
 
+proc editor_browseSettings_void_App_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc browseSettings*(scaleX: float = 0.8; scaleY: float = 0.8;
+                     previewScale: float = 0.5) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_browseSettings_void_App_float_float_float_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_chooseFile_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
     importc.}
 proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;

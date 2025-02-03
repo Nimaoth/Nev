@@ -1,4 +1,4 @@
-import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode]
 import ui/node
@@ -9,7 +9,7 @@ import config_provider, app_interface
 import text/language/language_server_base, language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text/[custom_treesitter]
-import finder/[finder, previewer]
+import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout, session, command_service
 
@@ -1362,6 +1362,65 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
   self.layout.pushPopup popup
 
+proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  let previewer = newDataPreviewer(self.services, language="javascript".some).Previewer.toDisposableRef.some
+
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+    var items = newSeq[FinderItem]()
+    for (key, value) in self.config.getAllConfigKeys():
+      items.add FinderItem(
+        displayName: key,
+        data: value,
+        detail: value[0..min(value.high, 50)],
+      )
+
+    return items
+
+  let source = newSyncDataSource(getItems)
+  let finder = newFinder(source, filterAndSort=true)
+  var popup = newSelectorPopup(self.services, "settings".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    # discard self.layout.openFile(item.data)
+    return true
+
+  popup.addCustomCommand "toggle-flag", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let key = item.displayName
+    self.config.toggleFlag(key)
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "update-setting", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let key = item.displayName
+    let value = popup.previewEditor.document.contentString
+    try:
+      let valueJson = value.parseJson
+      self.config.asConfigProvider.setValue(key, valueJson)
+      source.retrigger()
+      return true
+    except Exception as e:
+      log lvlError, &"Failed to update setting '{key}' to '{value}': {e.msg}"
+
+  self.layout.pushPopup popup
+
 proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
@@ -2165,6 +2224,9 @@ proc updateNextPossibleInputs*(self: App) =
             desc = val[]
           self.nextPossibleInputs.add (inputToString(x[0], x[1]), desc, false)
 
+    self.nextPossibleInputs.sort proc(a, b: tuple[input: string, description: string, continues: bool]): int =
+      cmp(a.input, b.input)
+
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
     self.showNextPossibleInputsTask.interval = self.config.getOption("editor.which-key-delay", 500)
     self.showNextPossibleInputsTask.reschedule()
@@ -2268,6 +2330,7 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
 
   if description.len > 0:
     self.events.commandDescriptions[baseContext & subContext & keys] = description
+    self.events.getEventHandlerConfig(baseContext).addCommandDescription(keys, description)
 
   var source = source
   if self.plugins.currentScriptContext.getSome(scriptContext):

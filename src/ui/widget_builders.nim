@@ -3,7 +3,7 @@ import misc/[custom_logger, rect_utils]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
-  widget_builder_debugger]
+  widget_builder_debugger, widget_library]
 import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service
 
 when enableAst:
@@ -102,7 +102,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       overlay()
 
     if self.showNextPossibleInputs:
-      let inputLines = self.config.asConfigProvider.getValue("ui.next-input-height", 10)
+      let inputLines = self.config.asConfigProvider.getValue("ui.which-key-height", 10)
       let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
       let continuesTextColor = self.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
       let keysTextColor = self.theme.tokenColor("number", color(225/255, 200/255, 200/255))
@@ -115,13 +115,15 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
             if i > 0:
               builder.panel(0.UINodeFlags, w = builder.charWidth * 2)
 
+            var n: UINode
             builder.panel(&{LayoutVertical, SizeToContentX}):
+              n = currentNode
               var row = 0
               while i < self.nextPossibleInputs.len and row < inputLines:
                 let (input, desc, continues) = self.nextPossibleInputs[i]
                 builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
                   builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = input, textColor = keysTextColor)
-                  builder.panel(&{}, w = builder.charWidth * 2)
+                  # builder.panel(&{}, w = builder.charWidth * 2)
                   if continues:
                     builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = continuesTextColor)
                   else:
@@ -129,3 +131,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
                 inc row
                 inc i
+
+            let oldW = n.bounds.w
+            alignGrid(n, builder.charWidth * 2, [GridAlignment.Right])
+            builder.updateSizeToContent(n)

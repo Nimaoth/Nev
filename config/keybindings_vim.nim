@@ -1572,13 +1572,11 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-k><C-d>", "print-treesitter-tree-under-cursor"
   addTextCommand "", "<C-k><C-t>", "reload-treesitter"
-  addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
   addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
   addCommand "editor", "<C-k><C-k>", "toggle-flag", "ui.new"
   addCommand "editor", "<C-k><C-r>", "reload-plugin"
   addCommand "editor", "<C-k><S-r>", "reload-config"
   addCommand "editor", "<C-k><CS-r>", "reload-state"
-  addTextCommandBlock "", "<C-k><C-z>": collectGarbage()
 
   addTextCommand "", "M", "enter-choose-cursor-mode", "vim-handle-select-word"
 
