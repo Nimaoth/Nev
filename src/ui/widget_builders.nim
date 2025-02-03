@@ -28,6 +28,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   builder.panel(rootFlags): # fullscreen overlay
 
     var overlays: seq[OverlayFunction]
+    var mainBounds: Rect
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
@@ -57,6 +58,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           overlays.add self.commands.commandLineEditor.createUI(builder, self)
 
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
+        mainBounds = currentNode.bounds
         let overlay = currentNode
 
         if self.layout.maximizeView:
@@ -98,3 +100,32 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     for overlay in overlays:
       overlay()
+
+    if self.showNextPossibleInputs:
+      let inputLines = self.config.asConfigProvider.getValue("ui.next-input-height", 10)
+      let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+      let continuesTextColor = self.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
+      let keysTextColor = self.theme.tokenColor("number", color(225/255, 200/255, 200/255))
+
+      let height = (inputLines + 2).float * builder.textHeight
+      builder.panel(&{FillX, FillBackground, MaskContent}, y = mainBounds.h - height, h = height, backgroundColor = headerColor):
+        builder.panel(&{LayoutHorizontal}, x = builder.charWidth, y = builder.textHeight, w = currentNode.w - builder.charWidth * 2, h = currentNode.h - builder.textHeight * 2):
+          var i = 0
+          while i < self.nextPossibleInputs.len:
+            if i > 0:
+              builder.panel(0.UINodeFlags, w = builder.charWidth * 2)
+
+            builder.panel(&{LayoutVertical, SizeToContentX}):
+              var row = 0
+              while i < self.nextPossibleInputs.len and row < inputLines:
+                let (input, desc, continues) = self.nextPossibleInputs[i]
+                builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
+                  builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = input, textColor = keysTextColor)
+                  builder.panel(&{}, w = builder.charWidth * 2)
+                  if continues:
+                    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = continuesTextColor)
+                  else:
+                    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = textColor)
+
+                inc row
+                inc i

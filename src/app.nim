@@ -1,6 +1,6 @@
 import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform]
@@ -139,6 +139,10 @@ type
     previewer: Option[DisposableRef[Previewer]]
 
     closeUnusedDocumentsTask: DelayedTask
+
+    showNextPossibleInputsTask: DelayedTask
+    nextPossibleInputs*: seq[tuple[input: string, description: string, continues: bool]]
+    showNextPossibleInputs*: bool
 
 var gEditor* {.exportc.}: App = nil
 
@@ -723,6 +727,11 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   let closeUnusedDocumentsTimerS = self.config.getOption("editor.close-unused-documents-timer", 10)
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
+
+  let showNextPossibleInputsDelay = self.config.getOption("editor.which-key-delay", 500)
+  self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
+    self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
+    self.platform.requestRender()
 
   self.runEarlyCommandsFromAppOptions()
   self.runConfigCommands("startup-commands")
@@ -2126,6 +2135,40 @@ proc recordInputToHistory*(self: App, input: string) =
   if self.inputHistory.len > maxLen:
     self.inputHistory = self.inputHistory[(self.inputHistory.len - maxLen)..^1]
 
+proc updateNextPossibleInputs*(self: App) =
+  self.nextPossibleInputs.setLen(0)
+  for handler in self.currentEventHandlers:
+    if not handler.inProgress:
+      continue
+
+    let nextPossibleInputs = handler.getNextPossibleInputs()
+    for x in nextPossibleInputs:
+      for next in x[2]:
+        if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isAlpha:
+          continue
+
+        let actions = handler.dfa.getActions(next)
+        if actions.len > 1:
+          var desc = &"... ({handler.config.context})"
+          handler.config.stateToDescription.withValue(next.current, val):
+            desc = val[] & "..."
+          self.nextPossibleInputs.add (inputToString(x[0], x[1]), desc, true)
+        elif actions.len > 0:
+          var desc = &"{actions[0][0]} {actions[0][1]}"
+          handler.config.stateToDescription.withValue(next.current, val):
+            desc = val[]
+          self.nextPossibleInputs.add (inputToString(x[0], x[1]), desc, false)
+
+  if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
+    self.showNextPossibleInputsTask.interval = self.config.getOption("editor.which-key-delay", 500)
+    self.showNextPossibleInputsTask.reschedule()
+
+  elif self.nextPossibleInputs.len == 0:
+    self.showNextPossibleInputs = false
+
+  if self.showNextPossibleInputs:
+    self.platform.requestRender()
+
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   # logScope lvlDebug, &"handleKeyPress {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
@@ -2151,6 +2194,8 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   except:
     discard
 
+  self.updateNextPossibleInputs()
+
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
   discard
 
@@ -2175,6 +2220,8 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
       self.platform.preventDefault()
   except:
     discard
+
+  self.updateNextPossibleInputs()
 
 proc handleDropFile*(self: App, path, content: string) =
   let document = newTextDocument(self.services, path, content)

@@ -17,10 +17,9 @@ type
     function: string
 
   DFAInput = object
-    # length 16 because there are 4 modifiers and so 2^4 = 16 possible combinations
     next: Table[Modifiers, Transition]
 
-  InputKey = int64
+  InputKey* = int64
   DFAState = object
     isTerminal: bool
     nextState: int # The state to go to next if we are in a terminal state
@@ -30,7 +29,6 @@ type
     terminalStates: seq[int]
     capture: string
     suffix: string
-    functionIndices: BitSet
 
   CommandDFA* = ref object
     persistentState: int
@@ -43,7 +41,6 @@ type
 
   CommandState* = object
     current*: int
-    persistent: int
     captures*: Table[string, string]
     functionIndices*: BitSet
 
@@ -95,6 +92,11 @@ proc getAction*(dfa: CommandDFA, state: CommandState): (string, string) =
   for functionIndex in state.functionIndices:
     let (function, args) = dfa.functions[functionIndex]
     return (function, dfa.fillCaptures(state, args))
+
+proc getActions*(dfa: CommandDFA, state: CommandState): seq[(string, string)] =
+  for functionIndex in state.functionIndices:
+    let (function, args) = dfa.functions[functionIndex]
+    result.add (function, dfa.fillCaptures(state, args))
 
 proc stepEmpty(dfa: CommandDFA, state: CommandState): seq[CommandState] =
   for transition in dfa.states[state.current].epsilonTransitions:
@@ -159,11 +161,60 @@ proc stepAll*(dfa: CommandDFA, states: seq[CommandState], currentInput: int64, m
   for state in states:
     result.add dfa.stepAll(state, currentInput, mods, states.len == 1 and states[0].current == 0)
 
+proc getNextPossibleInputs(dfa: CommandDFA, state: CommandState, result: var seq[(InputKey, Modifiers, seq[CommandState])]) =
+  for transition in dfa.states[state.current].transitions.pairs:
+    if transition[0].len > 1:
+      continue
+    for currentInput in transition[0]:
+      for (modifier, transition) in transition[1].next.pairs:
+        var newState = state
+        newState.current = transition.state
+        newState.functionIndices.bitSetIntersect transition.functionIndices
+        newState.captures.mgetOrPut(transition.capture, "").add(inputToString(currentInput, modifier))
+
+        var states: seq[CommandState]
+        if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
+          states.add newState
+        states.add dfa.stepEmpty(newState)
+        result.add (currentInput, modifier, states)
+
+proc getNextPossibleInputs*(dfa: CommandDFA, state: CommandState, beginEmpty: bool): seq[(InputKey, Modifiers, seq[CommandState])] =
+  if beginEmpty:
+    var states = dfa.stepEmpty(state)
+    if dfa.states[state.current].transitions.len > 0:
+      states.add state
+
+    for state in states:
+      dfa.getNextPossibleInputs(state, result)
+
+  else:
+    dfa.getNextPossibleInputs(state, result)
+
+  return
+
+proc getNextPossibleInputs*(dfa: CommandDFA, states: seq[CommandState]): seq[(InputKey, Modifiers, seq[CommandState])] =
+  let states = if states.len > 0:
+    states
+  else:
+    var functionIndices: BitSet
+    for i in 0..<dfa.functions.len:
+      functionIndices.bitSetIncl i
+    @[CommandState(current: 0, functionIndices: functionIndices)]
+
+  for state in states:
+    result.add dfa.getNextPossibleInputs(state, states.len == 1 and states[0].current == 0)
+
 proc isTerminal*(dfa: CommandDFA, state: int): bool =
   return dfa.states[state].isTerminal
 
 proc getDefaultState*(dfa: CommandDFA, state: int): int =
   return dfa.states[state].nextState
+
+proc getFunctionIndices*(dfa: CommandDFA, state: int): BitSet =
+  for i in dfa.states[state].transitions.values:
+    for t in i.next.values:
+      result.bitSetUnion(t.functionIndices)
+  return result
 
 proc inputAsString(input: int64): string =
   result = case input:

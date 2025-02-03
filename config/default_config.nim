@@ -48,22 +48,15 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<C-x><C-x>", "quit"
   addCommand "editor", "<CAS-r>", "reload-plugin"
 
-  addCommand "editor", "<LEADER><*-T>1", "load-theme", "synthwave-color-theme"
-  addCommand "editor", "<LEADER><*-T>2", "load-theme", "tokyo-night-storm-color-theme"
-
-  addCommand "editor", "<LEADER>ft", "toggle-flag", "editor.log-frame-time"
-  # addCommand "editor", "<C-SPACE>pp", proc() =
-    # toggleFlag "editor.poll"
-    # echo "-> ", getFlag("editor.poll")
-  addCommand "editor", "<LEADER>fl", "toggle-flag", "logging"
-  addCommand "editor", "<LEADER>ffs", "toggle-flag", "render-selected-value"
-  addCommand "editor", "<LEADER>ffr", "toggle-flag", "log-render-duration"
-  addCommand "editor", "<LEADER>ffd", "toggle-flag", "render-debug-info"
-  addCommand "editor", "<LEADER>ffo", "toggle-flag", "render-execution-output"
-  addCommand "editor", "<LEADER>ffg", "toggle-flag", "text.print-scopes"
-  addCommand "editor", "<LEADER>ffm", "toggle-flag", "text.print-matches"
-  addCommand "editor", "<LEADER>ffh", "toggle-flag", "text.show-node-highlight"
-  addCommand "editor", "<LEADER>iii", "toggleShowDrawnNodes"
+  addCommand "editor", "<LEADER>ot", "toggle-flag", "editor.log-frame-time"
+  addCommand "editor", "<LEADER>ol", "toggle-flag", "logging"
+  addCommand "editor", "<LEADER>os", "toggle-flag", "render-selected-value"
+  addCommand "editor", "<LEADER>or", "toggle-flag", "log-render-duration"
+  addCommand "editor", "<LEADER>od", "toggle-flag", "render-debug-info"
+  addCommand "editor", "<LEADER>oo", "toggle-flag", "render-execution-output"
+  addCommand "editor", "<LEADER>og", "toggle-flag", "text.print-scopes"
+  addCommand "editor", "<LEADER>om", "toggle-flag", "text.print-matches"
+  addCommand "editor", "<LEADER>oh", "toggle-flag", "text.show-node-highlight"
   addCommandBlockDesc "editor", "<C-5>", "":
     setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") - 1, 0, 100000))
     echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
@@ -77,21 +70,19 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") + 1, -100000, 100000))
 
   # addCommand "editor", "<S-SPACE><*-l>", ""
-  addCommand "editor", "<LEADER>ff", "log-options"
+  # addCommand "editor", "<LEADER>ff", "log-options"
   addCommand "editor", "<ESCAPE>", "escape"
 
   # Window stuff <LEADER>w
   withKeys "<LEADER>w", "<C-w>":
-    addCommand "editor", "<*-F>-", "change-font-size", -1
-    addCommand "editor", "<*-F>+", "change-font-size", 1
-    addCommand "editor", "<*-A>-", "change-animation-speed", 1 / 1.5
-    addCommand "editor", "<*-A>+", "change-animation-speed", 1.5
+    addCommand "editor", "<*-f>-", "change-font-size", -1
+    addCommand "editor", "<*-f>+", "change-font-size", 1
+    addCommand "editor", "<*-k>n", "change-layout-prop", "main-split", -0.05
+    addCommand "editor", "<*-k>t", "change-layout-prop", "main-split", 0.05
     addCommand "editor", "b", "toggle-status-bar-location"
     addCommand "editor", "1", "set-layout", "horizontal"
     addCommand "editor", "2", "set-layout", "vertical"
     addCommand "editor", "3", "set-layout", "fibonacci"
-    addCommand "editor", "<*-l>n", "change-layout-prop", "main-split", -0.05
-    addCommand "editor", "<*-l>t", "change-layout-prop", "main-split", 0.05
     addCommand "editor", "v", "create-view"
     addCommand "editor", "a", "create-keybind-autocomplete-view"
     addCommand "editor", "x", "close-current-view", keepHidden=true, restoreHidden=false
@@ -150,29 +141,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     logs(scrollToBottom = true)
     nextView()
 
-  withKeys "<LEADER>s":
-    addCommandBlock "editor", "l<*-n>1":
-      setOption("editor.text.line-numbers", LineNumbers.None)
-      requestRender(true)
-
-    addCommandBlock "editor", "l<*-n>2":
-      setOption("editor.text.line-numbers", LineNumbers.Absolute)
-      requestRender(true)
-
-    addCommandBlock "editor", "l<*-n>3":
-      setOption("editor.text.line-numbers", LineNumbers.Relative)
-      requestRender(true)
-
-    addCommandBlock "editor", "dl": lspLogVerbose(true)
-    addCommandBlock "editor", "dL": lspLogVerbose(false)
-
-  addCommand "editor", "<LEADER>lf", "load-file"
-  addCommand "editor", "<LEADER>sf", "write-file"
-  addCommand "editor", "<LEADER>rSS", "write-file", "", true
-  addCommand "editor", "<LEADER>rSA", "save-app-state"
-  addCommand "editor", "<LEADER>rSC", "remove-from-local-storage"
-  addCommand "editor", "<LEADER>rCC", "clear-workspace-caches"
-  addCommand "editor", "<LEADER>rCC", "clear-workspace-caches"
+  addCommand "editor", "<LEADER>fl", "load-file"
+  addCommand "editor", "<LEADER>fs", "write-file"
 
   addCommand "command-line-low", "<ESCAPE>", "exit-command-line"
   addCommand "command-line-low", "<ENTER>", "execute-command-line"
@@ -275,6 +245,19 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommandBlock "debugger", "<C-d>":
     for i in 0..10:
       nextVariable()
+
+  addCommandDescription "editor", "<LEADER>g", "Global pickers"
+  addCommandDescription "editor.text", "<LEADER>g", "Document pickers"
+  addCommandDescription "editor", "<LEADER>a", "Debugger"
+  addCommandDescription "editor", "<LEADER>a", "Debugger"
+  addCommandDescription "editor", "<LEADER>o", "Options"
+  addCommandDescription "editor", "<LEADER>ff", "Rendering"
+  addCommandDescription "editor", "<LEADER>w", "Window"
+  addCommandDescription "editor", "<LEADER>wf", "Change font size"
+  addCommandDescription "editor", "<LEADER>wk", "Split size ratio"
+  addCommandDescription "editor", "<LEADER>r", "Run"
+  addCommandDescription "editor", "<LEADER>f", "File"
+  addCommandDescription "editor", "<LEADER>m", "Toggle fullscreen"
 
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 

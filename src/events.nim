@@ -1,4 +1,4 @@
-import std/[tables, sequtils, strutils]
+import std/[tables, sequtils, strutils, sugar, unicode]
 import misc/[custom_logger, util, custom_async]
 import scripting/expose
 import input, service, dispatch_tables
@@ -31,6 +31,8 @@ type
     consumeAllInput*: bool
     revision: int
     leaders: seq[string]
+    descriptions*: Table[string, string]
+    stateToDescription*: Table[int, string]
 
   EventHandler* = ref object
     states: seq[CommandState]
@@ -93,7 +95,24 @@ proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Tab
 proc buildDFA*(config: EventHandlerConfig): CommandDFA {.gcsafe, raises: [].} =
   var commands = initTable[string, Table[string, string]]()
   config.combineCommands(commands)
-  return buildDFA(commands, config.leaders)
+  result = buildDFA(commands, config.leaders)
+
+  let leaders = collect(newSeq):
+    for leader in config.leaders:
+      let (keys, _, _, _, _) = parseNextInput(leader.toRunes, 0)
+      for key in keys:
+        (key.inputCodes.a, key.mods)
+
+  config.stateToDescription.clear()
+  for leader in leaders:
+    for (keys, desc) in config.descriptions.pairs:
+      var states: seq[CommandState]
+      for (inputCode, mods, _) in parseInputs(keys, [leader]):
+        let oldStates = states
+        states = result.stepAll(states, inputCode.a, mods)
+
+      for s in states:
+        config.stateToDescription[s.current] = desc
 
 proc maxRevision*(config: EventHandlerConfig): int =
   result = config.revision
@@ -130,6 +149,10 @@ proc addCommand*(config: EventHandlerConfig, context: string, keys: string, acti
   config.commands[context][keys] = Command(command: action, source: source)
   config.revision += 1
 
+proc addCommandDescription*(config: EventHandlerConfig, keys: string, description: string) =
+  config.descriptions[keys] = description
+  config.revision += 1
+
 proc removeCommand*(config: EventHandlerConfig, keys: string) =
   config.commands.del(keys)
   config.revision += 1
@@ -149,6 +172,9 @@ proc setLeader*(config: EventHandlerConfig, leader: string) =
 proc setLeaders*(config: EventHandlerConfig, leaders: openArray[string]) =
   config.leaders = @leaders
   config.revision += 1
+
+proc getNextPossibleInputs*(handler: EventHandler): auto =
+  handler.dfa.getNextPossibleInputs(handler.states)
 
 template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
   block:
@@ -236,7 +262,7 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
     handlerBody
     target = handler
 
-proc reset*(handler: var EventHandler) =
+proc resetHandler*(handler: var EventHandler) =
   handler.states = @[]
 
 proc inProgress*(states: openArray[CommandState]): bool =
@@ -246,6 +272,7 @@ proc inProgress*(states: openArray[CommandState]): bool =
   return false
 
 proc inProgress*(handler: EventHandler): bool = handler.states.inProgress
+proc states*(handler: EventHandler): auto = handler.states
 
 proc anyInProgress*(handlers: openArray[EventHandler]): bool =
   for h in handlers:
@@ -271,7 +298,7 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
       # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
 
     if not handler.inProgress:
-      handler.reset()
+      handler.resetHandler()
       if not prevStates.inProgress:
         return Ignored
       else:
@@ -283,10 +310,31 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
     elif handler.states.anyIt(handler.dfa.isTerminal(it.current)):
       if handler.states.len != 1:
         return Failed
+
       let (action, arg) = handler.dfa.getAction(handler.states[0])
-      handler.reset()
-      # handler.state.current = handler.dfa.getDefaultState(handler.state.current) # todo
-      return handler.handleAction(action, arg)
+      let currentState = handler.states[0].current
+      let nextState = handler.dfa.getDefaultState(currentState)
+
+      if nextState != 0:
+        handler.states = @[CommandState(
+          current: nextState,
+          functionIndices: handler.dfa.getFunctionIndices(nextState),
+          captures: handler.states[0].captures, # todo
+        )]
+      else:
+        handler.resetHandler()
+
+      let res = handler.handleAction(action, arg)
+      case res
+      of Failed: return Failed
+      of Ignored: return Ignored
+      of Canceled: return Canceled
+      of Progress: return Progress
+      of Handled:
+        if handler.inProgress:
+          return Progress
+        else:
+          return Handled
 
     else:
       if not handler.handleProgress.isNil:
@@ -321,7 +369,7 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
         # Don't reset the current handler
         if k != handlerIndex:
           var h = h
-          h.reset()
+          h.resetHandler()
 
       return Handled
     of Progress:
@@ -437,5 +485,15 @@ proc removeCommand*(self: EventHandlerService, context: string, keys: string) {.
   # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   self.getEventHandlerConfig(context).removeCommand(keys)
   self.invalidateCommandToKeysMap()
+
+proc addCommandDescription*(self: EventHandlerService, context: string, keys: string, description: string = "") {.expose("events").} =
+  let context = if context.endsWith("."):
+    context[0..^2]
+  else:
+    context
+
+  log lvlWarn, fmt"Adding command description to '{context}': '{keys}' -> '{description}'"
+
+  self.getEventHandlerConfig(context).addCommandDescription(keys, description)
 
 addGlobalDispatchTable "events", genDispatchTable("events")
