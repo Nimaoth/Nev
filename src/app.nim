@@ -1966,7 +1966,13 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
-      self.commands.openCommandLine("create-file \\" & currentDirectory[])
+      let dir = currentDirectory[]
+      self.commands.openCommandLine "", proc(command: Option[string]): bool =
+        if command.getSome(path):
+          if path.isAbsolute:
+            self.createFile(path)
+          else:
+            self.createFile(dir // path)
 
   self.layout.pushPopup popup
 
