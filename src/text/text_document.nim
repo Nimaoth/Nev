@@ -28,28 +28,6 @@ logCategory "text-document"
 
 type
 
-  StyledText* = object
-    text*: string
-    scope*: string
-    scopeC*: cstring
-    priority*: int
-    bounds*: Rect
-    opacity*: Option[float]
-    joinNext*: bool
-    textRange*: Option[tuple[startOffset: int, endOffset: int, startIndex: RuneIndex, endIndex: RuneIndex]]
-    visualRange*: Option[tuple[startColumn: int, endColumn: int, subLine: int]]
-    underline*: bool
-    underlineColor*: Color
-    inlayContainCursor*: bool
-    scopeIsToken*: bool = true
-    canWrap*: bool = true
-    modifyCursorAtEndOfLine*: bool = false ## If true and the cursor is at the end of the line
-                                           ## then the cursor will be behind the part.
-
-  StyledLine* = ref object
-    index*: int
-    parts*: seq[StyledText]
-
   TextDocumentChange = object
     startByte: int
     oldEndByte: int
@@ -109,8 +87,6 @@ type
     languageServer*: Option[LanguageServer]
     languageServerFuture*: Option[Future[Option[LanguageServer]]]
 
-    styledTextCache: Table[int, StyledLine]
-
     diagnosticsPerLine*: Table[int, seq[int]]
     currentDiagnostics*: seq[Diagnostic]
     currentDiagnosticsAnchors: seq[Range[Anchor]]
@@ -126,7 +102,6 @@ type
 var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
-proc clearStyledTextCache*(self: TextDocument, line: Option[int] = int.none)
 proc clearDiagnostics*(self: TextDocument)
 proc numLines*(self: TextDocument): int {.noSideEffect.}
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
@@ -136,13 +111,6 @@ proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, ne
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
 
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
-
-proc getSizeBytes(line: StyledLine): int =
-  result = sizeof(StyledLine)
-  for part in line.parts:
-    result += sizeof(StyledText)
-    result += part.text.len
-    result += part.scope.len
 
 method getStatisticsString*(self: TextDocument): string =
   try:
@@ -160,11 +128,6 @@ method getStatisticsString*(self: TextDocument): string =
     result.add &"Fragment: {fragmentStats}\n"
     result.add &"Insertion: {insertionStats}\n"
     result.add &"Undo: {undoStats}\n"
-
-    var styledTextCacheBytes = 0
-    for c in self.styledTextCache.values:
-      styledTextCacheBytes += c.getSizeBytes()
-    result.add &"Styled line cache: {self.styledTextCache.len}, {styledTextCacheBytes} bytes\n"
 
     result.add &"Diagnostics per line: {self.diagnosticsPerLine.len}\n"
     result.add &"Diagnostics: {self.currentDiagnostics.len}"
@@ -304,7 +267,6 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
 
         self.currentTree = newTree
         self.currentContentFailedToParse = self.currentTree.isNil
-        self.clearStyledTextCache()
         self.notifyRequestRerender()
 
         if self.buffer.version == oldVersion:
@@ -362,7 +324,6 @@ proc `content=`*(self: TextDocument, value: sink Rope) =
   self.onBufferChanged.invoke (self,)
 
   self.clearDiagnostics()
-  self.clearStyledTextCache()
   self.notifyTextChanged()
 
 proc `content=`*(self: TextDocument, value: sink string) =
@@ -391,7 +352,6 @@ proc `content=`*(self: TextDocument, value: sink string) =
   self.onBufferChanged.invoke (self,)
 
   self.clearDiagnostics()
-  self.clearStyledTextCache()
   self.notifyTextChanged()
 
 proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelections: openArray[Selection], texts: openArray[S], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
@@ -409,7 +369,6 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
 
   var edits = newSeqOfCap[tuple[old, new: Selection]](selections.len)
   var c = self.rope.cursorT(Point)
-  var clearCache = false
 
   var ranges = newSeqOfCap[(Range[int], S)](selections.len)
   var newSelections = newSeqOfCap[(int, Selection)](selections.len)
@@ -451,12 +410,6 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
     if not self.tsLanguage.isNil:
       self.addTreesitterChange(oldByteRange[0], oldByteRange[1], newByteRangeEnd, oldPointRange[0], oldPointRange[1], newPointRangeEnd)
 
-    if not clearCache:
-      if selection.first.line == selection.last.line and summary.lines.row == 0:
-        self.styledTextCache.del selection.first.line
-      else:
-        clearCache = true
-
     pointDiff = newPointRangeEnd - selection.last.toPoint
     byteDiff = newByteRangeEnd - endByte
 
@@ -485,9 +438,6 @@ proc edit*[S](self: TextDocument, selections: openArray[Selection], oldSelection
 
   if notify:
     self.notifyTextChanged()
-
-  if clearCache:
-    self.clearStyledTextCache()
 
   for s in result.items:
     assert s.first.line in 0..int32.high
@@ -590,139 +540,6 @@ proc runeCursorToCursor*(self: TextDocument, cursor: RuneCursor): Cursor =
 proc runeSelectionToSelection*(self: TextDocument, cursor: RuneSelection): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
 
-func len*(line: StyledLine): int {.stacktrace: off, linetrace: off.} =
-  result = 0
-  for p in line.parts:
-    result += p.text.len
-
-proc runeIndex*(line: StyledLine, index: int): RuneIndex {.stacktrace: off, linetrace: off.} =
-  var i = 0
-  for part in line.parts.mitems:
-    if index >= i and index < i + part.text.len:
-      result += part.text.toOpenArray.runeIndex(index - i).RuneCount
-      return
-    i += part.text.len
-    result += part.text.toOpenArray.runeLen
-
-proc runeLen*(line: StyledLine): RuneCount {.stacktrace: off, linetrace: off.} =
-  for part in line.parts.mitems:
-    result += part.text.toOpenArray.runeLen
-
-proc visualColumnToCursorColumn*(self: TextDocument, line: int, visualColumn: int): int =
-  var column = 0
-  let tabWidth = self.tabWidth
-
-  var c = self.rope.cursorT(Point.init(line, 0))
-  while not c.atEnd and column < visualColumn:
-    let r = c.currentRune
-
-    if r == '\t'.Rune:
-      column = align(column + 1, tabWidth)
-    else:
-      column += 1
-
-    result += r.size
-    c.seekNextRune()
-
-proc cursorToVisualColumn*(self: TextDocument, cursor: Cursor): int =
-  let tabWidth = self.tabWidth
-
-  var c = self.rope.cursorT(Point.init(cursor.line, 0))
-  while c.position < cursor.toPoint and not c.atEnd:
-    if c.currentRune == '\t'.Rune:
-      result = align(result + 1, tabWidth)
-    else:
-      result += 1
-    c.seekNextRune()
-
-proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) {.stacktrace: off, linetrace: off.} =
-  if partIndex < line.parts.len and index != 0.RuneIndex and index != line.parts[partIndex].text.runeLen.RuneIndex:
-    var copy = line.parts[partIndex]
-    let byteIndex = line.parts[partIndex].text.toOpenArray.runeOffset(index)
-    line.parts[partIndex].text = line.parts[partIndex].text[0..<byteIndex]
-    if line.parts[partIndex].textRange.isSome:
-      let byteIndexGlobal = line.parts[partIndex].textRange.get.startOffset + byteIndex
-      let indexGlobal = line.parts[partIndex].textRange.get.startIndex + index.RuneCount
-      line.parts[partIndex].textRange.get.endOffset = byteIndexGlobal
-      line.parts[partIndex].textRange.get.endIndex = indexGlobal
-      copy.textRange.get.startOffset = byteIndexGlobal
-      copy.textRange.get.startIndex = indexGlobal
-
-    copy.text = copy.text[byteIndex..^1]
-    line.parts.insert(copy, partIndex + 1)
-
-proc splitAt*(line: var StyledLine, index: RuneIndex) {.stacktrace: off, linetrace: off.} =
-  for i in 0..line.parts.high:
-    if line.parts[i].textRange.getSome(r) and index > r.startIndex and index < r.endIndex:
-      splitPartAt(line, i, RuneIndex(index - r.startIndex))
-      break
-
-proc splitAt*(self: TextDocument, line: var StyledLine, index: int) {.stacktrace: off, linetrace: off.} =
-  line.splitAt(self.rope.runeIndexInLine((line.index, index)))
-
-proc overrideStyle*(line: var StyledLine, first: RuneIndex, last: RuneIndex, scope: string, priority: int) {.stacktrace: off, linetrace: off.} =
-  var index = 0.RuneIndex
-  for i in 0..line.parts.high:
-    if index >= first and index + line.parts[i].text.runeLen <= last and priority < line.parts[i].priority:
-      line.parts[i].scope = scope
-      line.parts[i].scopeC = line.parts[i].scope.cstring
-      line.parts[i].priority = priority
-    index += line.parts[i].text.runeLen
-
-proc overrideUnderline*(line: var StyledLine, first: RuneIndex, last: RuneIndex, underline: bool, color: Color) {.stacktrace: off, linetrace: off.} =
-  var index = 0.RuneIndex
-  for i in 0..line.parts.high:
-    if index >= first and index + line.parts[i].text.runeLen <= last:
-      line.parts[i].underline = underline
-      line.parts[i].underlineColor = color
-    index += line.parts[i].text.runeLen
-
-proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) {.stacktrace: off, linetrace: off.} =
-  let textRuneLen = text.runeLen
-
-  for i in 0..line.parts.high:
-    if line.parts[i].textRange.getSome(r):
-      let firstInRange = r.startIndex >= first
-      let lastInRange = r.endIndex <= first + textRuneLen
-      let higherPriority = priority < line.parts[i].priority
-
-      if firstInRange and lastInRange and higherPriority:
-        line.parts[i].scope = scope
-        line.parts[i].scopeC = line.parts[i].scope.cstring
-        line.parts[i].priority = priority
-        line.parts[i].opacity = opacity
-
-        let textOverrideFirst: RuneIndex = r.startIndex - first.RuneCount
-        let textOverrideLast: RuneIndex = r.startIndex + (line.parts[i].text.runeLen.RuneIndex - first)
-        line.parts[i].text = text[textOverrideFirst..<textOverrideLast]
-        line.parts[i].joinNext = joinNext or line.parts[i].joinNext
-
-proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) {.stacktrace: off, linetrace: off.} =
-  line.overrideStyle(self.rope.runeIndexInLine((line.index, first)), self.rope.runeIndexInLine((line.index, last)), scope, priority)
-
-proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, last: int, underline: bool, color: Color) {.stacktrace: off, linetrace: off.} =
-  line.overrideUnderline(self.rope.runeIndexInLine((line.index, first)), self.rope.runeIndexInLine((line.index, last)), underline, color)
-
-proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) {.stacktrace: off, linetrace: off.} =
-  line.overrideStyleAndText(self.rope.runeIndexInLine((line.index, first)), text, scope, priority, opacity, joinNext)
-
-proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool, modifyCursorAtEndOfLine: bool = false) {.stacktrace: off, linetrace: off.} =
-  line.splitAt(offset)
-  for i in 0..line.parts.high:
-    if line.parts[i].textRange.getSome(r):
-      if offset == r.endIndex:
-        line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000, inlayContainCursor: containCursor, modifyCursorAtEndOfLine: modifyCursorAtEndOfLine), i + 1)
-        return
-
-proc insertTextBefore*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string) {.stacktrace: off, linetrace: off.} =
-  line.splitAt(offset)
-  var index = 0.RuneIndex
-  for i in 0..line.parts.high:
-    if offset == index:
-      line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000), i)
-      return
-    index += line.parts[i].text.runeLen
-
 proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Selection] =
   if self.errorQuery.isNil or self.tsTree.isNil:
     return
@@ -730,324 +547,6 @@ proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Select
   for match in self.errorQuery.matches(self.tsTree.root, tsRange(tsPoint(selection.first.line, 0), tsPoint(selection.last.line, 0))):
     for capture in match.captures:
       result.add capture.node.getRange.toSelection
-
-proc replaceSpaces(self: TextDocument, line: var StyledLine) {.stacktrace: off, linetrace: off.} =
-  # override whitespace
-  let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
-  if opacity <= 0:
-    return
-
-  var bounds: seq[Range[int]] # Rune indices
-  var c = self.rope.cursorT(Point.init(line.index, 0))
-  var index = 0
-  while not c.atEnd:
-    let r = c.currentRune
-    if r == ' '.Rune:
-      if bounds.len > 0 and index == bounds[^1].b:
-        bounds[^1].b += 1
-      else:
-        bounds.add index...(index + 1)
-    elif r == '\n'.Rune:
-      break
-
-    index += 1
-    c.seekNextRune()
-
-  if bounds.len == 0:
-    return
-
-  for s in bounds:
-    line.splitAt(s.a.RuneIndex)
-    line.splitAt(s.b.RuneIndex)
-
-  let ch = self.configProvider.getValue("editor.text.whitespace.char", "·")
-  for s in bounds:
-    let text = ch.repeat(s.len)
-    line.overrideStyleAndText(s.a.RuneIndex, text, "comment", 0, opacity=opacity.some)
-
-proc replaceTabs(self: TextDocument, line: var StyledLine) {.stacktrace: off, linetrace: off.} =
-  var bounds: seq[Range[int]] # Rune indices
-  var c = self.rope.cursorT(Point.init(line.index, 0))
-  var index = 0
-  while not c.atEnd:
-    let r = c.currentRune
-    if r == '\t'.Rune:
-      bounds.add index...(index + 1)
-    elif r == '\n'.Rune:
-      break
-
-    index += r.size
-    c.seekNextRune()
-
-  if bounds.len == 0:
-    return
-
-  let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
-
-  for s in bounds:
-    line.splitAt(s.a.RuneIndex)
-    line.splitAt(s.b.RuneIndex)
-
-  let tabWidth = self.tabWidth
-  var currentOffset = 0
-  var previousEnd = 0
-
-  for s in bounds:
-    currentOffset += s.a - previousEnd
-
-    let alignCorrection = currentOffset mod tabWidth
-    let currentTabWidth = tabWidth - alignCorrection
-    let t = "|"
-    let runeIndex = s.a.RuneIndex
-    line.overrideStyleAndText(runeIndex, t, "comment", 0, opacity=opacity.some)
-    if currentTabWidth > 1:
-      self.insertText(line, runeIndex + 1.RuneCount, " ".repeat(currentTabWidth - 1), "comment", containCursor=false, modifyCursorAtEndOfLine=true)
-
-    currentOffset += currentTabWidth
-    previousEnd = s.b
-
-proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) {.stacktrace: off, linetrace: off.} =
-  # diagnostics
-  self.resolveDiagnosticAnchors()
-  let theme = ({.gcsafe.}: gTheme)
-
-  self.diagnosticsPerLine.withValue(line.index, indices):
-    const maxNonErrors = 2
-    const maxErrors = 4
-
-    var nonErrorDiagnostics = 0
-    var errorDiagnostics = 0
-
-    for diagnosticIndex in indices[]:
-      if diagnosticIndex notin 0..self.currentDiagnostics.high:
-        continue
-
-      let diagnostic {.cursor.} = self.currentDiagnostics[diagnosticIndex]
-      if diagnostic.removed:
-        continue
-
-      let isError = diagnostic.severity.isSome and diagnostic.severity.get == lsp_types.DiagnosticSeverity.Error
-      if isError:
-        if errorDiagnostics >= maxErrors:
-          continue
-        errorDiagnostics.inc
-      else:
-        if nonErrorDiagnostics >= maxNonErrors:
-          continue
-        nonErrorDiagnostics.inc
-
-      let colorName = if diagnostic.severity.getSome(severity):
-        case severity
-        of lsp_types.DiagnosticSeverity.Error: "editorError.foreground"
-        of lsp_types.DiagnosticSeverity.Warning: "editorWarning.foreground"
-        of lsp_types.DiagnosticSeverity.Information: "editorInfo.foreground"
-        of lsp_types.DiagnosticSeverity.Hint: "editorHint.foreground"
-      else:
-        "editorHint.foreground"
-
-      let color = if theme.isNotNil:
-        theme.color(colorName, color(1, 1, 1))
-      elif diagnostic.severity.getSome(severity):
-        case severity
-        of lsp_types.DiagnosticSeverity.Error: color(1, 0, 0)
-        of lsp_types.DiagnosticSeverity.Warning: color(1, 0.8, 0.2)
-        of lsp_types.DiagnosticSeverity.Information: color(1, 1, 1)
-        of lsp_types.DiagnosticSeverity.Hint: color(0.7, 0.7, 0.7)
-      else:
-        color(0.7, 0.7, 0.7)
-
-      var lastIndex = if diagnostic.selection.last.line == line.index:
-        self.rope.runeIndexInLine((line.index, diagnostic.selection.last.column))
-      else:
-        self.lineRuneLen(line.index).RuneIndex
-
-      var firstIndex = if diagnostic.selection.first.line == line.index:
-        self.rope.runeIndexInLine((line.index, diagnostic.selection.first.column))
-      else:
-        self.rope.indentRunes(line.index)
-
-      line.splitAt(firstIndex)
-      line.splitAt(lastIndex)
-      line.overrideUnderline(firstIndex, lastIndex, true, color)
-
-      let newLineIndex = diagnostic.message.find("\n")
-      let maxIndex = if newLineIndex != -1:
-        newLineIndex
-      else:
-        diagnostic.message.len
-
-      let diagnosticMessage: string = "     ■ " & diagnostic.message[0..<maxIndex]
-      line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, canWrap: false, priority: 1000000000)
-
-var regexes = initTable[string, Regex]()
-proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) {.stacktrace: off, linetrace: off.} =
-  # logScope lvlInfo, &"applyTreesitterHighlighting({line.index}, {self.filename})"
-  try:
-    var regexes = ({.gcsafe.}: regexes.addr)
-
-    if self.highlightQuery.isNil or self.tsTree.isNil:
-      return
-
-    let lineLen = self.lineLength(line.index)
-
-    for match in self.highlightQuery.matches(self.tsTree.root, tsRange(tsPoint(line.index, 0), tsPoint(line.index, lineLen))):
-      let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
-
-      for capture in match.captures:
-        let scope = capture.name
-        let node = capture.node
-
-        var matches = true
-        for predicate in predicates:
-
-          if not matches:
-            break
-
-          for operand in predicate.operands:
-            let value = $operand.`type`
-
-            if operand.name != scope:
-              matches = false
-              break
-
-            case $predicate.operator
-            of "match?":
-              if not regexes[].contains(value):
-                regexes[][value] = re(value)
-              let regex {.cursor.} = regexes[][value]
-
-              let nodeText = self.contentString(node.getRange)
-              if nodeText.matchLen(regex, 0) != nodeText.len:
-                matches = false
-                break
-
-            of "not-match?":
-              if not regexes[].contains(value):
-                regexes[][value] = re(value)
-              let regex {.cursor.} = regexes[][value]
-
-              let nodeText = self.contentString(node.getRange)
-              if nodeText.matchLen(regex, 0) == nodeText.len:
-                matches = false
-                break
-
-            of "eq?":
-              # @todo: second arg can be capture aswell
-              let nodeText = self.contentString(node.getRange)
-              if nodeText != value:
-                matches = false
-                break
-
-            of "not-eq?":
-              # @todo: second arg can be capture aswell
-              let nodeText = self.contentString(node.getRange)
-              if nodeText == value:
-                matches = false
-                break
-
-            of "any-of?":
-              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
-              # todo
-              matches = false
-              break
-
-            of "lua-match?":
-              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
-              # todo
-              matches = false
-              break
-
-            of "not-lua-match?":
-              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
-              # todo
-              matches = false
-              break
-
-            of "vim-match?":
-              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
-              # todo
-              matches = false
-              break
-
-            of "not-vim-match?":
-              # log(lvlError, fmt"Unknown predicate '{predicate.name}'")
-              # todo
-              matches = false
-              break
-
-            else:
-              # log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
-              discard
-
-          if self.configProvider.getFlag("text.print-matches", false):
-            let nodeText = self.contentString(node.getRange)
-            log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
-
-        if not matches:
-          continue
-
-        let nodeRange = node.getRange
-
-        if nodeRange.first.row == line.index:
-          splitAt(self, line, nodeRange.first.column)
-        if nodeRange.last.row == line.index:
-          splitAt(self, line, nodeRange.last.column)
-
-        let first = if nodeRange.first.row < line.index:
-          0
-        elif nodeRange.first.row == line.index:
-          nodeRange.first.column
-        else:
-          lineLen
-
-        let last = if nodeRange.last.row < line.index:
-          0
-        elif nodeRange.last.row == line.index:
-          nodeRange.last.column
-        else:
-          lineLen
-
-        overrideStyle(self, line, first, last, $scope, 100 - match.pattern)
-
-  except CatchableError:
-    discard
-
-proc getStyledText*(self: TextDocument, i: int): StyledLine {.stacktrace: off, linetrace: off.} =
-  self.styledTextCache.withValue(i, line):
-    return line[]
-
-  if i >= self.numLines:
-    log lvlError, fmt"getStyledText({i}) out of range {self.numLines}"
-    return StyledLine()
-
-  var b = initBench()
-
-  b.scope "reparse treesitter":
-    if self.changes.len > 0 or self.currentTree.isNil:
-      self.reparseTreesitter()
-
-  b.scope "getLine":
-    var line = self.getLine(i)
-
-  var parts = newSeqOfCap[StyledText](50)
-  parts.add StyledText(text: $line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)
-  result = StyledLine(index: i, parts: parts.move)
-  self.styledTextCache[i] = result
-
-  b.scope "highlight":
-    self.applyTreesitterHighlighting(result)
-
-  b.scope "spaces":
-    self.replaceSpaces(result)
-
-  b.scope "tabs":
-    self.replaceTabs(result)
-
-  b.scope "underline":
-    self.addDiagnosticsUnderline(result)
-
-  when defined(nevBench):
-    echo &"getStyledText({i}): {b}"
 
 proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
@@ -1057,7 +556,6 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.currentContentFailedToParse = false
   self.tsLanguage = nil
   self.currentTree.delete()
-  self.clearStyledTextCache()
 
   if self.languageId == "":
     return
@@ -1103,7 +601,6 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   if prevLanguageId != self.languageId:
     return
 
-  self.clearStyledTextCache()
   self.notifyRequestRerender()
 
 proc reloadTreesitterLanguage*(self: TextDocument) =
@@ -1401,7 +898,6 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
 
   self.content = content.move
 
-  self.clearStyledTextCache()
   self.autoDetectIndentStyle()
   self.onLoaded.invoke self
 
@@ -1470,9 +966,6 @@ proc resolveDiagnosticAnchors*(self: TextDocument) =
   self.diagnosticsPerLine.clear()
 
   for i in countdown(self.currentDiagnostics.high, 0):
-    for line in self.currentDiagnostics[i].selection.first.line..self.currentDiagnostics[i].selection.last.line:
-      self.styledTextCache.del(line)
-
     if self.currentDiagnosticsAnchors[i].summaryOpt(Point, snapshot, resolveDeleted = false).getSome(range):
       self.currentDiagnostics[i].selection = range.toSelection
       self.currentDiagnosticsAnchors[i] = snapshot.anchorAt(self.currentDiagnostics[i].selection.toRange, Right, Left)
@@ -1484,11 +977,8 @@ proc resolveDiagnosticAnchors*(self: TextDocument) =
   for i, d in self.currentDiagnostics:
     for line in d.selection.first.line..d.selection.last.line:
       self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
-      self.styledTextCache.del(line)
 
 proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
-  for line in self.diagnosticsPerLine.keys:
-    self.styledTextCache.del(line)
 
   let snapshot = snapshot.take(self.buffer.snapshot.clone())
 
@@ -1518,7 +1008,6 @@ proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.
 
     for line in selection.first.line..selection.last.line:
       self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
-      self.styledTextCache.del(line)
 
   if snapshot.version != self.buffer.version:
     self.lastDiagnosticAnchorResolve = snapshot.version
@@ -1618,13 +1107,6 @@ proc clearDiagnostics*(self: TextDocument) =
   self.diagnosticsPerLine.clear()
   self.currentDiagnostics.setLen 0
   self.currentDiagnosticsAnchors.setLen 0
-  self.clearStyledTextCache()
-
-proc clearStyledTextCache*(self: TextDocument, line: Option[int] = int.none) =
-  if line.getSome(line):
-    self.styledTextCache.del(line)
-  else:
-    self.styledTextCache.clear()
 
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
@@ -1825,7 +1307,6 @@ proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, ne
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
   var co = oldText.cursorT(Point)
   var cn = self.rope.cursorT(Point)
-  var clearCache = false
 
   var edits = newSeqOfCap[tuple[old, new: Selection]](patch.edits.len)
 
@@ -1849,16 +1330,7 @@ proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32]) =
     if not self.tsLanguage.isNil:
       self.addTreesitterChange(edit.new.a.int, edit.new.a.int + edit.old.len.int, edit.new.b.int, startPosOld, endPosOld, endPosNew)
 
-    if not clearCache:
-      if startPosOld.row == endPosOld.row and startPosOld.row == endPosNew.row:
-        self.styledTextCache.del startPosOld.row.int
-      else:
-        clearCache = true
-
   self.onEdit.invoke (self, edits)
-
-  if clearCache:
-    self.clearStyledTextCache()
 
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none

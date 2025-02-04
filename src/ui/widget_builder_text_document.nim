@@ -96,47 +96,7 @@ proc cmp(r: Rect, point: Vec2): int =
 proc cmp(r: ChunkBounds, point: Vec2): int =
   return cmp(r.bounds, point)
 
-template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
-  if part.scopeIsToken:
-    theme.tokenColor(part.scope, default)
-  else:
-    theme.color(part.scope, default)
-
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool
-proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex]
-
-proc getTextRange(line: StyledLine, partIndex: int): (RuneIndex, RuneIndex) =
-  var startRune = 0.RuneIndex
-  var endRune = 0.RuneIndex
-
-  if partIndex >= line.parts.len:
-    return
-
-  if line.parts[partIndex].textRange.isSome:
-    startRune = line.parts[partIndex].textRange.get.startIndex
-    endRune = line.parts[partIndex].textRange.get.endIndex
-  else:
-    # Inlay text, find start rune of neighbor, prefer left side
-    var found = false
-    for i in countdown(partIndex - 1, 0):
-      if line.parts[i].textRange.isSome:
-        startRune = line.parts[i].textRange.get.endIndex
-        if not line.parts[partIndex].inlayContainCursor:
-          # choose background color of right neighbor
-          startRune -= 1.RuneCount
-
-        found = true
-        break
-
-    if not found:
-      for i in countup(partIndex + 1, line.parts.high):
-        if line.parts[i].textRange.isSome:
-          startRune = line.parts[i].textRange.get.startIndex
-          break
-
-    endRune = startRune
-
-  return (startRune, endRune)
 
 proc `*`(c: Color, v: Color): Color {.inline.} =
   ## Multiply color by a value.
@@ -1151,17 +1111,3 @@ proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
     return ($self.getLine(line)).match(self.languageConfig.get.ignoreContextLineRegex.get)
 
   return false
-
-proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex] =
-  result.first = if selection.first.line < line.index:
-    0.RuneIndex
-  elif selection.first.line == line.index:
-    document.buffer.visibleText.runeIndexInLine(selection.first)
-  else: line.runeLen.RuneIndex
-
-  result.last = if selection.last.line < line.index:
-    0.RuneIndex
-  elif selection.last.line == line.index:
-    document.buffer.visibleText.runeIndexInLine(selection.last)
-  else:
-    line.runeLen.RuneIndex

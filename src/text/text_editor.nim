@@ -152,7 +152,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
 
   lastRenderedChunks*: seq[tuple[range: Range[Point], displayRange: Range[DisplayPoint]]]
-  lastRenderedLines*: seq[StyledLine]
   lastTextAreaBounds*: Rect
   lastPressedMouseButton*: MouseButton
   dragStartSelection*: Selection
@@ -240,9 +239,9 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Inlay Hints: {self.inlayHints.len}\n"
   result.add &"Current Command History: {self.currentCommandHistory.commands.len}\n"
   result.add &"Saved Command History: {self.savedCommandHistory.commands.len}\n"
-  result.add &"Last Rendered Lines: {self.lastRenderedLines.len}\n"
-  result.add &"Diff map: {st.stats(self.displayMap.wrapMap.snapshot.map)}\n"
+  result.add &"Overlay map: {st.stats(self.displayMap.overlay.snapshot.map)}\n"
   result.add &"Wrap map: {st.stats(self.displayMap.diffMap.snapshot.map)}\n"
+  result.add &"Diff map: {st.stats(self.displayMap.wrapMap.snapshot.map)}\n"
 
   var temp = 0
   for s in self.completionMatchPositions.values:
@@ -394,7 +393,6 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.showHover = false
     self.inlayHints.setLen 0
     self.scrollOffset = 0
-    self.lastRenderedLines.setLen 0
     self.currentSnippetData = SnippetData.none
 
 proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
@@ -705,10 +703,6 @@ method handleDeactivate*(self: TextDocumentEditor) =
     self.cursorVisible = true
     self.markDirty()
 
-  self.document.clearStyledTextCache()
-  if self.diffDocument.isNotNil:
-    self.diffDocument.clearStyledTextCache()
-
 proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
     scrollBehaviour = ScrollBehaviour.none, relativePosition: float = 0.5) =
   if self.disableScrolling:
@@ -919,7 +913,7 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   # todo
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
-proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
+proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[DisplayPoint] =
   assert self.numDisplayLines > 0
   let baseLine = int(-self.interpolatedScrollOffset / self.platform.totalLineHeight)
   var displayRange: Range[DisplayPoint]
@@ -928,7 +922,10 @@ proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
   if displayRange.b > self.endDisplayPoint:
     displayRange.b = self.endDisplayPoint
 
-  # result.last.column = self.document.rope.lastValidIndex(result.last.line)
+  return displayRange
+
+proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
+  let displayRange = self.visibleDisplayRange(buffer)
   result.first = self.displayMap.toPoint(displayRange.a).toCursor
   result.last = self.displayMap.toPoint(displayRange.b).toCursor
 
@@ -945,41 +942,6 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     let wrapPoint = self.displayMap.toWrapPoint(Point.init(line, 0))
     cursor.column = self.displayMap.toPoint(wrapPoint(wrapPoint.row.int, self.targetColumn)).column.int
   return self.clampCursor(cursor, includeAfter)
-
-proc getLastRenderedVisualLine(self: TextDocumentEditor, line: int): Option[StyledLine] =
-  # todo
-  for l in self.lastRenderedLines:
-    if l.index == line:
-      return l.some
-
-proc getPartContaining(line: StyledLine, column: int): Option[ptr StyledText] =
-  for i in countdown(line.parts.high, 0):
-    template part: untyped = line.parts[i]
-    if part.visualRange.isSome:
-      if column in part.textRange.get.startOffset..part.textRange.get.endOffset:
-        return part.addr.some
-
-proc getPartContainingVisual(line: StyledLine, subLine: int, visualColumn: int): Option[ptr StyledText] =
-  var closest = int.high
-  for part in line.parts.mitems:
-    if part.visualRange.getSome(r) and r.subLine == subLine:
-
-      if visualColumn in part.visualRange.get.startColumn..<part.visualRange.get.endColumn:
-        closest = 0
-        return part.addr.some
-      else:
-        let distance = min(
-          (visualColumn - part.visualRange.get.startColumn).abs,
-          (visualColumn - part.visualRange.get.endColumn + 1).abs,
-        )
-        if distance < closest:
-          closest = distance
-          result = part.addr.some
-
-proc numSubLines(line: StyledLine): int =
-  for i in countdown(line.parts.high, 0):
-    if line.parts[i].visualRange.getSome(r):
-      return r.subLine + 1
 
 proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
   let wrapPointOld = self.displayMap.toWrapPoint(cursor.toPoint)
@@ -1016,27 +978,6 @@ proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap
     includeAfter: bool): Cursor {.expose: "editor.text".} =
   return (cursor.line, self.document.rope.lastValidIndex cursor.line)
 
-proc doMoveCursorVisualHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
-    includeAfter: bool): Cursor {.expose: "editor.text".} =
-  var wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
-  wrapPoint.column = 0
-  let newCursor = self.displayMap.toPoint(wrapPoint).toCursor
-  return self.clampCursor(newCursor, includeAfter)
-
-proc doMoveCursorVisualEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
-    includeAfter: bool): Cursor {.expose: "editor.text".} =
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line) and
-      line.getPartContaining(cursor.column).getSome(part):
-
-    let r = part[].visualRange.get
-    if line.getPartContainingVisual(r.subLine, int.high).getSome(part):
-      if includeAfter:
-        return (cursor.line, part[].textRange.get.endOffset)
-      else:
-        return (cursor.line, part[].textRange.get.endOffset - 1)
-
-  return (cursor.line, self.document.rope.lastValidIndex cursor.line)
-
 proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool, includeAfter: bool): Cursor {.expose: "editor.text".} =
   return self.getPrevFindResult(cursor, offset, includeAfter=includeAfter).first
@@ -1051,14 +992,9 @@ proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: in
 
 proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
-  # todo
-  if self.lastRenderedLines.len == 0:
-    return cursor
-
-  let r = self.visibleTextRange()
-  let line = clamp((r.first.line + r.last.line) div 2, 0, self.document.numLines - 1)
-  let column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
-  return (line, column)
+  let r = self.visibleDisplayRange()
+  let line = clamp((r.a.row.int + r.b.row.int) div 2, 0, self.numDisplayLines - 1)
+  return self.displayMap.toPoint(displayPoint(line, self.targetColumn)).toCursor
 
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool = true, includeAfter: bool = true): Cursor {.expose: "editor.text".} =
@@ -1471,11 +1407,12 @@ proc getNextNodeWithSameType*(self: TextDocumentEditor, selection: Selection, of
 proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.expose("editor.text").} =
   ## Returns true if the completion window should automatically open at the given position
   # todo: use RopeCursor
-  let line = self.document.getLine(cursor.line)
-  if cursor.column <= 0 or cursor.column > line.len:
+  if cursor.column <= 0 or cursor.column > self.document.rope.lineLen(cursor.line):
     return false
 
-  let previousRune = line.runeAt(line.clip(cursor.column - 1, Bias.Left))
+  var c = self.document.rope.cursorT(cursor.toPoint)
+  c.seekPrevRune()
+  let previousRune = c.currentRune()
   let wordChars = self.document.languageConfig.mapIt(it.completionWordChars).get(IdentChars)
   let extraTriggerChars = if self.document.completionTriggerCharacters.len > 0:
     self.document.completionTriggerCharacters
@@ -2119,16 +2056,6 @@ proc moveCursorHome*(self: TextDocumentEditor, cursor: SelectionCursor = Selecti
 proc moveCursorEnd*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
     all: bool = true, includeAfter: bool = true) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorEnd, 0, all, includeAfter=includeAfter)
-  self.updateTargetColumn(cursor)
-
-proc moveCursorVisualHome*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
-    all: bool = true) {.expose("editor.text").} =
-  self.moveCursor(cursor, doMoveCursorVisualHome, 0, all)
-  self.updateTargetColumn(cursor)
-
-proc moveCursorVisualEnd*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
-    all: bool = true, includeAfter: bool = true) {.expose("editor.text").} =
-  self.moveCursor(cursor, doMoveCursorVisualEnd, 0, all, includeAfter=includeAfter)
   self.updateTargetColumn(cursor)
 
 proc moveCursorTo*(self: TextDocumentEditor, str: string,

@@ -182,46 +182,6 @@ proc doMoveCursorEnd*(self: TextDocumentEditor; cursor: Cursor; offset: int;
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_doMoveCursorVisualHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
-    arg: cstring): cstring {.importc.}
-proc doMoveCursorVisualHome*(self: TextDocumentEditor; cursor: Cursor;
-                             offset: int; wrap: bool; includeAfter: bool): Cursor {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add cursor.toJson()
-  argsJson.add offset.toJson()
-  argsJson.add wrap.toJson()
-  argsJson.add includeAfter.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_doMoveCursorVisualHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_text_doMoveCursorVisualEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
-    arg: cstring): cstring {.importc.}
-proc doMoveCursorVisualEnd*(self: TextDocumentEditor; cursor: Cursor;
-                            offset: int; wrap: bool; includeAfter: bool): Cursor {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add cursor.toJson()
-  argsJson.add offset.toJson()
-  argsJson.add wrap.toJson()
-  argsJson.add includeAfter.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_doMoveCursorVisualEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_text_doMoveCursorPrevFindResult_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
@@ -1344,36 +1304,6 @@ proc moveCursorEnd*(self: TextDocumentEditor;
   argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_moveCursorVisualHome_void_TextDocumentEditor_SelectionCursor_bool_wasm(
-    arg: cstring): cstring {.importc.}
-proc moveCursorVisualHome*(self: TextDocumentEditor;
-                           cursor: SelectionCursor = SelectionCursor.Config;
-                           all: bool = true) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add cursor.toJson()
-  argsJson.add all.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorVisualHome_void_TextDocumentEditor_SelectionCursor_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_moveCursorVisualEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
-    arg: cstring): cstring {.importc.}
-proc moveCursorVisualEnd*(self: TextDocumentEditor;
-                          cursor: SelectionCursor = SelectionCursor.Config;
-                          all: bool = true; includeAfter: bool = true) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add cursor.toJson()
-  argsJson.add all.toJson()
-  argsJson.add includeAfter.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorVisualEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
       argsJsonString.cstring)
 
 
