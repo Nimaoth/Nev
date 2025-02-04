@@ -52,6 +52,13 @@ func `$`*(self: DisplayChunk): string {.inline.} = $self.diffChunk
 template toOpenArray*(self: DisplayChunk): openArray[char] = self.diffChunk.toOpenArray
 template scope*(self: DisplayChunk): string = self.diffChunk.scope
 
+proc split*(self: DisplayChunk, index: int): tuple[prefix: DisplayChunk, suffix: DisplayChunk] =
+  let (prefix, suffix) = self.diffChunk.split(index)
+  (
+    DisplayChunk(diffChunk: prefix, displayPoint: self.displayPoint),
+    DisplayChunk(diffChunk: suffix, displayPoint: displayPoint(self.displayPoint.row, self.displayPoint.column + index.uint32)),
+  )
+
 type
   DisplayMapSnapshot* = object
     buffer*: BufferSnapshot
@@ -69,9 +76,13 @@ type
 
   DisplayChunkIterator* = object
     diffChunks*: DiffChunkIterator
+    bufferedChunk: Option[DisplayChunk]
     displayChunk*: Option[DisplayChunk]
     displayPoint*: DisplayPoint
     atEnd*: bool
+    indentGuideColumn*: Option[int]
+    insideIndent: bool = true
+    bar: string = "|"
 
 func clone*(self: DisplayMapSnapshot): DisplayMapSnapshot =
   DisplayMapSnapshot(
@@ -236,19 +247,67 @@ proc seek*(self: var DisplayChunkIterator, point: Point) =
   self.diffChunks.seek(point)
   self.displayChunk = DisplayChunk.none
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
+  self.bufferedChunk = DisplayChunk.none
+  self.insideIndent = true
 
 proc seekLine*(self: var DisplayChunkIterator, line: int) =
   self.diffChunks.seekLine(line)
   self.displayChunk = DisplayChunk.none
   self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
+  self.bufferedChunk = DisplayChunk.none
+  self.insideIndent = true
 
 proc next*(self: var DisplayChunkIterator): Option[DisplayChunk] =
   if self.atEnd:
     self.displayChunk = DisplayChunk.none
     return
 
-  self.displayChunk = self.diffChunks.next().mapIt(DisplayChunk(diffChunk: it, displayPoint: it.diffPoint.DisplayPoint))
-  self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
-  self.atEnd = self.diffChunks.atEnd
+  let oldDisplayChunk = self.displayChunk
+  self.displayChunk = if self.bufferedChunk.isSome:
+    self.bufferedChunk.take().some
+  else:
+    self.diffChunks.next().mapIt(DisplayChunk(diffChunk: it, displayPoint: it.diffPoint.DisplayPoint))
 
+  self.displayPoint = self.diffChunks.diffPoint.DisplayPoint
+
+  if self.indentGuideColumn.isSome and self.displayChunk.isSome and oldDisplayChunk.isSome and oldDisplayChunk.get.point.row < self.displayChunk.get.point.row:
+      self.insideIndent = true
+
+  if self.insideIndent and self.indentGuideColumn.getSome(indentGuideColumn) and self.displayChunk.getSome(chunk) and not chunk.diffChunk.wrapChunk.tabChunk.wasTab:
+    var maxEnd = 0
+    while maxEnd < chunk.len:
+      if chunk.toOpenArray()[maxEnd] notin Whitespace:
+        break
+      inc maxEnd
+
+    if chunk.endPoint.column.int <= indentGuideColumn:
+      if maxEnd < chunk.len:
+        self.insideIndent = false
+      self.atEnd = self.diffChunks.atEnd
+      return self.displayChunk
+    elif chunk.point.column.int > indentGuideColumn:
+      self.atEnd = self.diffChunks.atEnd
+      self.insideIndent = false
+      return self.displayChunk
+    elif indentGuideColumn >= chunk.point.column.int + maxEnd:
+      # after first non whitespace
+      self.atEnd = self.diffChunks.atEnd
+      self.insideIndent = false
+      return self.displayChunk
+    elif chunk.point.column.int == indentGuideColumn:
+      let suffix = chunk.split(1).suffix
+      if suffix.len > 0:
+        self.bufferedChunk = suffix.some
+      self.displayChunk.get.styledChunk.chunk.len = 1
+      self.displayChunk.get.styledChunk.chunk.data = cast[ptr UncheckedArray[char]](self.bar[0].addr)
+      self.displayChunk.get.styledChunk.scope = "comment"
+      return self.displayChunk
+    else:
+      let (prefix, suffix) = chunk.split(indentGuideColumn - chunk.point.column.int)
+      if suffix.len > 0:
+        self.bufferedChunk = suffix.some
+      self.displayChunk = prefix.some
+      return self.displayChunk
+
+  self.atEnd = self.diffChunks.atEnd
   return self.displayChunk

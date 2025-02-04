@@ -57,6 +57,13 @@ func `$`*(self: DiffChunk): string {.inline.} = &"DC({self.diffPoint}...{self.en
 template toOpenArray*(self: DiffChunk): openArray[char] = self.inputChunk.toOpenArray
 template scope*(self: DiffChunk): string = self.inputChunk.scope
 
+proc split*(self: DiffChunk, index: int): tuple[prefix: DiffChunk, suffix: DiffChunk] =
+  let (prefix, suffix) = self.inputChunk.split(index)
+  (
+    DiffChunk(inputChunk: prefix, diffPoint: self.diffPoint),
+    DiffChunk(inputChunk: suffix, diffPoint: diffPoint(self.diffPoint.row, self.diffPoint.column + index.uint32)),
+  )
+
 type
   DiffMapChunk* = object
     summary*: DiffMapChunkSummary

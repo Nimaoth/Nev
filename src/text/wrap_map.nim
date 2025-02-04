@@ -148,6 +148,13 @@ func `$`*(self: WrapChunk): string = &"WC({self.wrapPoint}...{self.endWrapPoint}
 template toOpenArray*(self: WrapChunk): openArray[char] = self.inputChunk.toOpenArray
 template scope*(self: WrapChunk): string = self.inputChunk.scope
 
+proc split*(self: WrapChunk, index: int): tuple[prefix: WrapChunk, suffix: WrapChunk] =
+  let (prefix, suffix) = self.inputChunk.split(index)
+  (
+    WrapChunk(inputChunk: prefix, wrapPoint: self.wrapPoint),
+    WrapChunk(inputChunk: suffix, wrapPoint: wrapPoint(self.wrapPoint.row, self.wrapPoint.column + index.uint32)),
+  )
+
 func isNil*(self: WrapMapSnapshot): bool = self.map.isNil
 
 func endWrapPoint*(self: WrapMapSnapshot): WrapPoint = self.map.summary.dst

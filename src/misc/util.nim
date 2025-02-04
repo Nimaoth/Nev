@@ -69,6 +69,13 @@ template take*[T](opt: sink Option[T]): T =
   else:
     raise newException(UnpackDefect, "Can't obtain a value from a `none`")
 
+proc take*[T](opt: var Option[T]): T =
+  if opt.isSome:
+    result = opt.get.move
+    opt = T.none
+  else:
+    raise newException(UnpackDefect, "Can't obtain a value from a `none`")
+
 func get*[T](opt: openArray[T], index: int): Option[T] =
   if index in 0..opt.high:
     opt[index].some

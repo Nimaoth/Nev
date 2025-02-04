@@ -701,10 +701,14 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     @[]
 
   let highlight = app.config.asConfigProvider.getValue("ui.highlight", true)
+  let indentGuide = app.config.asConfigProvider.getValue("ui.indent-guide", true)
 
   var iter = self.displayMap.iter()
   if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
     iter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+  if indentGuide:
+    let cursorIndentLevel = self.document.rope.indentRunes(self.selection.last.line).int
+    iter.indentGuideColumn = cursorIndentLevel.some
   iter.seekLine(startLine)
   # echo &"startLine: {startLine}, scrollOffset: {scrollOffset}, uiae: {startLineOffsetFromScrollOffset}, point: {iter.point}, {iter.diffChunks.wrapChunks.overlayChunks.overlayPoint}, {iter.diffChunks.wrapChunks.wrapPoint}, {iter.diffChunks.diffPoint}, {iter.displayPoint}, "
 
@@ -877,6 +881,9 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
       var contextLinesIter = self.displayMap.iter()
       if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
         contextLinesIter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+      if indentGuide:
+        let cursorIndentLevel = self.document.rope.indentRunes(self.selection.last.line).int
+        contextLinesIter.indentGuideColumn = cursorIndentLevel.some
       var contextLinesState = LineDrawerState(
         builder: builder,
         displayMap: self.displayMap,
