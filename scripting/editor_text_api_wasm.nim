@@ -1133,6 +1133,17 @@ proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection {.
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_clearOverlays_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc clearOverlays*(self: TextDocumentEditor; id: int = -1) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add id.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_clearOverlays_void_TextDocumentEditor_int_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_updateDiff_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) {.

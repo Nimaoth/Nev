@@ -44,6 +44,7 @@ type
 
     typefaces: Table[string, Typeface]
     glyphCache: LruCache[Rune, string]
+    asciiGlyphCache: array[128, string]
 
     lastEvent: Option[(int64, Modifiers, Button)]
 
@@ -525,6 +526,8 @@ method render*(self: GuiPlatform, rerender: bool) =
         for (_, image) in self.glyphCache.pairs:
           self.boxy.removeImage(image)
         self.glyphCache.clear()
+        for image in self.asciiGlyphCache.mitems:
+          image.setLen(0)
 
       if self.builder.root.lastSizeChange == self.builder.frameIndex:
         self.redrawEverything = true
@@ -608,18 +611,33 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
     if arrangementIndex == -1 or arrangementIndex >= uint32.high.int:
       let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
       template drawRune(i: int, rune: Rune, color: Color): untyped =
-        if not platform.glyphCache.contains(rune):
-          var path = font.typeface.getGlyphPath(rune)
-          let rect = arrangement.selectionRects[i]
-          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
-          for paint in font.paints:
-            image.fillPath(path, paint)
-          platform.boxy.addImage($rune, image, genMipmaps=false)
-          platform.glyphCache[rune] = $rune
+        if rune.int < platform.asciiGlyphCache.len:
+          if platform.asciiGlyphCache[rune.int].len == 0:
+            var path = font.typeface.getGlyphPath(rune)
+            let rect = arrangement.selectionRects[i]
+            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+            var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+            for paint in font.paints:
+              image.fillPath(path, paint)
+            platform.boxy.addImage($rune, image, genMipmaps=false)
+            platform.asciiGlyphCache[rune.int] = $rune
 
-        let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-        platform.boxy.drawImage($rune, pos, color)
+          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+          platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
+
+        else:
+          if not platform.glyphCache.contains(rune):
+            var path = font.typeface.getGlyphPath(rune)
+            let rect = arrangement.selectionRects[i]
+            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+            var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+            for paint in font.paints:
+              image.fillPath(path, paint)
+            platform.boxy.addImage($rune, image, genMipmaps=false)
+            platform.glyphCache[rune] = $rune
+
+          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+          platform.boxy.drawImage($rune, pos, color)
 
       if TextDrawSpaces in flags:
         const spaceRune = "·".runeAt(0)

@@ -557,8 +557,9 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.document.rope.len > 1:
     self.displayMap.update(wrapWidth)
 
-  self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
+    # todo: when disabling editor.text.highlight-treesitter-errors we should clear them once aswell
+    self.clearCustomHighlights(errorNodesHighlightId)
     let errorNodes = self.document.getErrorNodesInRange(
       self.visibleTextRange(buffer = 10))
     for node in errorNodes:
@@ -1969,6 +1970,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
 proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.text").} =
   self.displayMap.overlay.clear(id)
+  self.markDirty()
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
   self.showDiff = true
