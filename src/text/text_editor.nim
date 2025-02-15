@@ -2724,40 +2724,42 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
 
     discard self.layout.pushSelectorPopup(builder)
 
+proc gotoRegexLocation(self: TextDocumentEditor, regexTemplate: string): Future[void] {.async.} =
+  let s = self.getSelectionForMove(self.selection.last, "word")
+  let text = self.document.contentString(s)
+  let searchString = if regexTemplate.len > 0:
+    regexTemplate.replace("[[0]]", text)
+  else:
+    "\\b" & text & "\\b"
+
+  log lvlInfo, &"Find '{text}' using regex '{searchString}'"
+  let searchResults = self.workspace.searchWorkspace(searchString, 100).await
+  if self.document.isNil:
+    return
+
+  var locations: seq[Definition]
+  for info in searchResults:
+    locations.add Definition(filename: "local://" // info.path, location: (info.line - 1, info.column))
+  await self.gotoLocationAsync(locations)
+
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = self.document.languageServer
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    # todo: absolute paths
     let locations = await ls.getDefinition(self.document.localizedPath, self.selection.last)
     if self.document.isNil:
       return
     await self.gotoLocationAsync(locations)
 
   else:
-    let s = self.getSelectionForMove(self.selection.last, "word")
-    let text = self.document.contentString(s)
     let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-definition", "")
-    let searchString = if regexTemplate.len > 0:
-      regexTemplate.replace("[[0]]", text)
-    else:
-      "\\b" & text & "\\b"
-
-    log lvlInfo, &"Find '{text}' using regex '{searchString}'"
-    let searchResults = self.workspace.searchWorkspace(searchString, 100).await
-    if self.document.isNil:
-      return
-
-    var locations: seq[Definition]
-    for info in searchResults:
-      locations.add Definition(filename: "local://" // info.path, location: (info.line - 1, info.column))
-    await self.gotoLocationAsync(locations)
+    await self.gotoRegexLocation(regexTemplate)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.languageServer
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
@@ -2766,9 +2768,13 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
       return
     await self.gotoLocationAsync(locations)
 
+  else:
+    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-declaration", "")
+    await self.gotoRegexLocation(regexTemplate)
+
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.languageServer
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
@@ -2777,9 +2783,13 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
       return
     await self.gotoLocationAsync(locations)
 
+  else:
+    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-type-definition", "")
+    await self.gotoRegexLocation(regexTemplate)
+
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.languageServer
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
@@ -2788,9 +2798,13 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
       return
     await self.gotoLocationAsync(locations)
 
+  else:
+    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-implementation", "")
+    await self.gotoRegexLocation(regexTemplate)
+
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.languageServer
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
@@ -2799,9 +2813,13 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
       return
     await self.gotoLocationAsync(locations)
 
+  else:
+    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-references", "")
+    await self.gotoRegexLocation(regexTemplate)
+
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.languageServer
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
@@ -2904,7 +2922,7 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
 
   discard self.layout.pushSelectorPopup(builder)
 
-proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool) =
+proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool, detailFilename: bool = false) =
   var builder = SelectorPopupBuilder()
   builder.scope = "text-lsp-locations".some
   builder.scaleX = 0.85
@@ -2912,9 +2930,13 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
 
   var res = newSeq[FinderItem]()
   for i, symbol in symbols:
+    var detail = $symbol.symbolType
+    if detailFilename:
+      detail.add "\t"
+      detail.add symbol.filename
     res.add FinderItem(
       displayName: symbol.name,
-      detail: $symbol.symbolType,
+      detail: detail,
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
 
@@ -2929,9 +2951,11 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
   discard self.layout.pushSelectorPopup(builder)
 
 proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  if self.document.getLanguageServer().await.getSome(ls):
-    if self.document.isNil:
-      return
+  let languageServer = self.document.languageServer
+  if self.document.isNil:
+    return
+
+  if languageServer.getSome(ls):
     let symbols = await ls.getSymbols(self.document.localizedPath)
     if self.document.isNil:
       return
@@ -2939,6 +2963,28 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
       return
 
     self.openSymbolSelectorPopup(symbols, navigateOnSelect=true)
+
+  else:
+    let searchString = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.symbols", "")
+
+    log lvlInfo, &"Find symbols using regex '{searchString}'"
+    let rope = self.document.rope.clone()
+    let searchResults = await findAllAsync(rope.slice(int), searchString)
+    if self.document.isNil:
+      return
+
+    var locations: seq[Symbol]
+    for r in searchResults:
+      if locations.len > 1000:
+        log lvlWarn, &"gotoSymbolRegex: too many results ({searchResults.len}), truncate at 1000"
+        break
+      let name = $rope.slice(r)
+      locations.add Symbol(
+        location: r.a.toCursor,
+        name: name,
+        filename: self.getFileName())
+
+    self.openSymbolSelectorPopup(locations, navigateOnSelect=true)
 
 type
   LspWorkspaceSymbolsDataSource* = ref object of DataSource
@@ -2991,10 +3037,11 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
     self.delayedTask.reschedule()
 
 proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
-  if self.document.getLanguageServer().await.getSome(ls):
-    if self.document.isNil:
-      return
+  let languageServer = self.document.languageServer
+  if self.document.isNil:
+    return
 
+  if languageServer.getSome(ls):
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.85
@@ -3009,6 +3056,51 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
       true
 
     discard self.layout.pushSelectorPopup(builder)
+
+  else:
+    let searchString = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.workspace-symbols", newJString(""))
+    let rgLanguageId = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
+    let maxResults = self.configProvider.getValue(&"text.search-workspace-regex-max-results", 50_000)
+
+    log lvlInfo, &"Find workspace symbols using regex '{searchString}'"
+    let customArgs = @["--type", rgLanguageId, "--only-matching"]
+
+    let searchStrings = if searchString.kind == JString:
+      @[(SymbolType.Unknown, searchString.str)]
+    elif searchString.kind == JObject:
+      var searchStrings: seq[(SymbolType, string)]
+      for sk, searchString in searchString.fields.pairs:
+        if searchString.kind != JString:
+          log lvlInfo, &"Invalid value for field '{sk}' in config {searchString}: string expected"
+          continue
+        try:
+          let symbolType = parseEnum[SymbolType](sk)
+          searchStrings.add (symbolType, searchString.str)
+        except Exception as e:
+          log lvlInfo, &"Invalid symbol kind '{sk}' in config {searchString}: {e.msg}"
+
+      searchStrings
+
+    else:
+      @[]
+
+    var locations: seq[Symbol]
+
+    let futures = collect:
+      for (symbolType, searchString) in searchStrings:
+        self.workspace.searchWorkspace(searchString, maxResults, customArgs)
+
+    var res = futures.allFinished.await.mapIt(it.read)
+    for i in 0..res.high:
+      for info in res[i]:
+        let cursor = (info.line - 1, info.column)
+        locations.add Symbol(
+          location: cursor,
+          name: info.text,
+          symbolType: searchStrings[i][0],
+          filename: "local://" // info.path)
+
+    self.openSymbolSelectorPopup(locations, navigateOnSelect=true, detailFilename=true)
 
 proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.gotoDefinitionAsync()
