@@ -2725,8 +2725,8 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
     discard self.layout.pushSelectorPopup(builder)
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.languageServer
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
@@ -2734,6 +2734,25 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getDefinition(self.document.localizedPath, self.selection.last)
     if self.document.isNil:
       return
+    await self.gotoLocationAsync(locations)
+
+  else:
+    let s = self.getSelectionForMove(self.selection.last, "word")
+    let text = self.document.contentString(s)
+    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-definition", "")
+    let searchString = if regexTemplate.len > 0:
+      regexTemplate.replace("[[0]]", text)
+    else:
+      "\\b" & text & "\\b"
+
+    log lvlInfo, &"Find '{text}' using regex '{searchString}'"
+    let searchResults = self.workspace.searchWorkspace(searchString, 100).await
+    if self.document.isNil:
+      return
+
+    var locations: seq[Definition]
+    for info in searchResults:
+      locations.add Definition(filename: "local://" // info.path, location: (info.line - 1, info.column))
     await self.gotoLocationAsync(locations)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
