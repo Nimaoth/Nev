@@ -167,7 +167,18 @@
                 "enum",
                 "object"
             ],
-            "lineComment": "#"
+            "lineComment": "#",
+            "search-regexes": {
+                "goto-definition": "((proc|method|func|template|macro|type) [[0]]\\b)|(\\b[[0]]\\b.*?= (object|ref|tuple|enum))|(\\b[[0]]\\b\\*?( \\{.*?)?:.+)",
+                "symbols": "((proc|method|func|template|macro|type) `?[a-zA-Z0-9_]+\\b)|(\\b`?[a-zA-Z0-9_]+\\b.*?= (object|ref|tuple|enum))",
+                "workspace-symbols": {
+                    "Unknown": ["((proc|method|func|template|macro|type) `?[a-zA-Z0-9_]+\\b)|(\\b`?[a-zA-Z0-9_]+\\b.*?= (object|ref|tuple|enum))"],
+                    "Class": "\\b`?[a-zA-Z0-9_]+\\b.*?= (object|ref|tuple)",
+                    "Function": "((proc|func|template|macro|type) `?[a-zA-Z0-9_]+\\b)",
+                    "Method": "((method) `?[a-zA-Z0-9_]+\\b)",
+                    "Enum": "\\b`?[a-zA-Z0-9_]+\\b.*?= (enum)"
+                }
+            }
         },
         "nim-paths": {
             "treesitter": "alaviss/tree-sitter-nim",
