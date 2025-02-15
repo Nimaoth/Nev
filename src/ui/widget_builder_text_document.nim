@@ -664,6 +664,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let indentGuide = app.config.asConfigProvider.getValue("ui.indent-guide", true)
 
   var iter = self.displayMap.iter()
+  iter.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
   if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
     iter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
   if indentGuide:
@@ -786,6 +787,11 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
         if state.backgroundColor.getSome(color):
           fillRect(bounds, color)
+
+        if chunk.styledChunk.underline.getSome(underline):
+          # todo: use text render style instead of this so it works in terminal aswell
+          let underlineColor = app.theme.tokenColor(underline.color, textColor)
+          fillRect(rect(bounds.x, bounds.yh, bounds.w, 2), underlineColor)
 
         let textColor = if chunk.scope.len == 0: textColor else: app.theme.tokenColor(chunk.scope, textColor)
         var flags = 0.UINodeFlags

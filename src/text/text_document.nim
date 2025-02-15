@@ -6,6 +6,7 @@ import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjso
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme, service, vfs, vfs_service
+import syntax_map
 import pkg/[chroma, results]
 
 import diff
@@ -88,6 +89,7 @@ type
     languageServerFuture*: Option[Future[Option[LanguageServer]]]
 
     diagnosticsPerLine*: Table[int, seq[int]]
+    diagnosticEndPoints*: seq[DiagnosticEndPoint]
     currentDiagnostics*: seq[Diagnostic]
     currentDiagnosticsAnchors: seq[Range[Anchor]]
     onDiagnosticsHandle: Id
@@ -954,6 +956,15 @@ proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
   except Exception as e:
     log lvlError, &"Failed to format document '{self.filename}': {e.msg}\n{e.getStackTrace()}"
 
+proc updateDiagnosticEndPoints(self: TextDocument) =
+  self.diagnosticEndPoints.setLen(0)
+  for i, d in self.currentDiagnostics:
+    let severity = d.severity.get(lsp_types.DiagnosticSeverity.Hint)
+    self.diagnosticEndPoints.add DiagnosticEndPoint(severity: severity, point: d.selection.first.toPoint, start: true)
+    self.diagnosticEndPoints.add DiagnosticEndPoint(severity: severity, point: d.selection.last.toPoint, start: false)
+
+  self.diagnosticEndPoints.sort proc(a, b: DiagnosticEndPoint): int = cmp(a.point, b.point)
+
 proc resolveDiagnosticAnchors*(self: TextDocument) =
   if self.currentDiagnostics.len == 0:
     return
@@ -977,6 +988,8 @@ proc resolveDiagnosticAnchors*(self: TextDocument) =
   for i, d in self.currentDiagnostics:
     for line in d.selection.first.line..d.selection.last.line:
       self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
+
+  self.updateDiagnosticEndPoints()
 
 proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
 
@@ -1008,6 +1021,8 @@ proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.
 
     for line in selection.first.line..selection.last.line:
       self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
+
+  self.updateDiagnosticEndPoints()
 
   if snapshot.version != self.buffer.version:
     self.lastDiagnosticAnchorResolve = snapshot.version
@@ -1107,6 +1122,8 @@ proc clearDiagnostics*(self: TextDocument) =
   self.diagnosticsPerLine.clear()
   self.currentDiagnostics.setLen 0
   self.currentDiagnosticsAnchors.setLen 0
+
+  self.updateDiagnosticEndPoints()
 
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
