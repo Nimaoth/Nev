@@ -2732,6 +2732,8 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.getSome(ls):
     # todo: absolute paths
     let locations = await ls.getDefinition(self.document.localizedPath, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2741,6 +2743,8 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     let locations = await ls.getDeclaration(self.document.localizedPath, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2750,6 +2754,8 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     let locations = await ls.getTypeDefinition(self.document.localizedPath, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2759,6 +2765,8 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     let locations = await ls.getImplementation(self.document.localizedPath, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2768,6 +2776,8 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     let locations = await ls.getReferences(self.document.localizedPath, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -2777,6 +2787,8 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     let filename = await ls.switchSourceHeader(self.document.localizedPath)
+    if self.document.isNil:
+      return
     if filename.getSome(filename):
       discard self.layout.openFile(filename)
 
@@ -2784,12 +2796,12 @@ proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Fu
   let revision = self.completionEngine.revision
 
   await sleepAsync(0.milliseconds)
-  if revision != self.completionEngine.revision or self.document.isNil:
+  if self.document.isNil or revision != self.completionEngine.revision:
     return
 
   while gAsyncFrameTimer.elapsed.ms > 5:
     await sleepAsync(0.milliseconds)
-    if revision != self.completionEngine.revision or self.document.isNil:
+    if self.document.isNil or revision != self.completionEngine.revision:
       return
 
   if completionIndex notin 0..self.completionMatches.high:
@@ -2902,6 +2914,8 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
     if self.document.isNil:
       return
     let symbols = await ls.getSymbols(self.document.localizedPath)
+    if self.document.isNil:
+      return
     if symbols.len == 0:
       return
 
@@ -2916,7 +2930,6 @@ type
 
 proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
   let symbols = self.languageServer.getWorkspaceSymbols(self.query).await
-
   let t = startTimer()
   var items = newItemList(symbols.len)
   var index = 0
@@ -3214,6 +3227,8 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
 
   if languageServer.getSome(ls):
     let hoverInfo = await ls.getHover(self.document.localizedPath, cursor)
+    if self.document.isNil:
+      return
     if hoverInfo.getSome(hoverInfo):
       self.showHover = true
       self.hoverScrollOffset = 0
@@ -3305,6 +3320,9 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
     let visibleRange = self.visibleTextRange(self.screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
     let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.localizedPath, visibleRange)
+    if self.document.isNil:
+      return
+
     # todo: detect if canceled instead
     if inlayHints.isSuccess:
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
