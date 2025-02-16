@@ -73,6 +73,30 @@ proc toggleFlag*(self: ConfigProvider, flag: string) =
   if self.getConfigValue(flag).isSome:
     self.setFlag(flag, not self.getFlag(flag, false))
 
+proc decodeRegex*(value: JsonNode, default: string = ""): string =
+  if value.kind == JString:
+    return value.str
+  elif value.kind == JArray:
+    var r = ""
+    for t in value.elems:
+      if t.kind != JString:
+        log lvlError, &"Invalid regex value: {value}, expected string, got {t}"
+        continue
+      if r.len > 0:
+        r.add "|"
+      r.add t.str
+
+    return r
+  elif value.kind == JNull:
+    return default
+  else:
+    log lvlError, &"Invalid regex value: {value}, expected string | array[string]"
+    return default
+
+proc getRegexValue*(self: ConfigProvider, path: string, default: string = ""): string =
+  let value = self.getValue(path, newJNull())
+  return value.decodeRegex(default)
+
 type
   ConfigService* = ref object of Service
     settings*: JsonNode

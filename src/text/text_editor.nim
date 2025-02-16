@@ -2734,8 +2734,10 @@ proc gotoRegexLocation(self: TextDocumentEditor, regexTemplate: string): Future[
   else:
     "\\b" & text & "\\b"
 
+  let rgLanguageId = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
   log lvlInfo, &"Find '{text}' using regex '{searchString}'"
-  let searchResults = self.workspace.searchWorkspace(searchString, 100).await
+  let customArgs = @["--type", rgLanguageId, "--only-matching"]
+  let searchResults = self.workspace.searchWorkspace(searchString, 100, customArgs).await
   if self.document.isNil:
     return
 
@@ -2756,8 +2758,8 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-definition", "")
-    await self.gotoRegexLocation(regexTemplate)
+    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-definition")
+    await self.gotoRegexLocation(t)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = self.document.languageServer
@@ -2771,8 +2773,8 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-declaration", "")
-    await self.gotoRegexLocation(regexTemplate)
+    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-declaration")
+    await self.gotoRegexLocation(t)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = self.document.languageServer
@@ -2786,8 +2788,8 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-type-definition", "")
-    await self.gotoRegexLocation(regexTemplate)
+    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-type-definition")
+    await self.gotoRegexLocation(t)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = self.document.languageServer
@@ -2801,8 +2803,8 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-implementation", "")
-    await self.gotoRegexLocation(regexTemplate)
+    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-implementation")
+    await self.gotoRegexLocation(t)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = self.document.languageServer
@@ -2816,8 +2818,8 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let regexTemplate = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.goto-references", "")
-    await self.gotoRegexLocation(regexTemplate)
+    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-references")
+    await self.gotoRegexLocation(t)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = self.document.languageServer
@@ -2967,7 +2969,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
     self.openSymbolSelectorPopup(symbols, navigateOnSelect=true)
 
   else:
-    let searchString = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.symbols", "")
+    let searchString = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.symbols")
 
     log lvlInfo, &"Find symbols using regex '{searchString}'"
     let rope = self.document.rope.clone()
@@ -3069,15 +3071,17 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
 
     let searchStrings = if searchString.kind == JString:
       @[(SymbolType.Unknown, searchString.str)]
+    elif searchString.kind == JArray:
+      @[(SymbolType.Unknown, searchString.decodeRegex())]
     elif searchString.kind == JObject:
       var searchStrings: seq[(SymbolType, string)]
       for sk, searchString in searchString.fields.pairs:
-        if searchString.kind != JString:
-          log lvlInfo, &"Invalid value for field '{sk}' in config {searchString}: string expected"
+        let r = searchString.decodeRegex()
+        if r.len == 0:
           continue
         try:
           let symbolType = parseEnum[SymbolType](sk)
-          searchStrings.add (symbolType, searchString.str)
+          searchStrings.add (symbolType, r)
         except Exception as e:
           log lvlInfo, &"Invalid symbol kind '{sk}' in config {searchString}: {e.msg}"
 
