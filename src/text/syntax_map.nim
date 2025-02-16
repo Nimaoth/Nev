@@ -89,7 +89,7 @@ func `[]`*(self: RopeChunk, range: Range[int]): RopeChunk =
     dataOriginal: cast[ptr UncheckedArray[char]](self.dataOriginal[range.a].addr),
     lenOriginal: range.len,
     external: self.external,
-    point: Point(row: self.point.row, column: self.point.column + range.a.uint32)
+    point: Point(row: self.point.row, column: self.point.column + range.a.uint32),
   )
 
 template toOpenArray*(self: RopeChunk): openArray[char] = self.data.toOpenArray(0, self.len - 1)
@@ -104,7 +104,7 @@ proc split*(self: RopeChunk, index: int): tuple[prefix: RopeChunk, suffix: RopeC
         dataOriginal: self.dataOriginal,
         lenOriginal: index,
         external: self.external,
-        point: self.point
+        point: self.point,
       ),
       RopeChunk(
         data: cast[ptr UncheckedArray[char]](self.data[index].addr),
@@ -125,7 +125,7 @@ proc split*(self: RopeChunk, index: int): tuple[prefix: RopeChunk, suffix: RopeC
         dataOriginal: self.dataOriginal,
         lenOriginal: indexOriginal,
         external: self.external,
-        point: self.point
+        point: self.point,
       ),
       RopeChunk(
         data: cast[ptr UncheckedArray[char]](self.data[index].addr),

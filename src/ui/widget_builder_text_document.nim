@@ -711,6 +711,11 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     reverse: false,
   )
 
+  let errorColor = app.theme.tokenColor("error", color(0.8, 0.2, 0.2))
+  let warningColor = app.theme.tokenColor("warning", color(0.8, 0.8, 0.2))
+  let informationColor = app.theme.tokenColor("information", color(0.8, 0.8, 0.8))
+  let hintColor = app.theme.tokenColor("hint", color(0.7, 0.7, 0.7))
+
   self.lastRenderedChunks.setLen(0)
 
   selectionsNode.renderCommands.clear()
@@ -727,6 +732,20 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         state.addedLineNumber = false
 
       while state.lastDisplayPoint.row < chunk.displayPoint.row:
+        self.document.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
+          for i in val[].mitems:
+            let i = i
+            let diagnostic {.cursor.} = self.document.currentDiagnostics[i]
+            let message = "     ■ " & diagnostic.message[0..<min(diagnostic.message.len, 100)]
+            let width = message.runeLen.float * builder.charWidth # todo: measure text
+            let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
+            of lsp_types.DiagnosticSeverity.Error: errorColor
+            of lsp_types.DiagnosticSeverity.Warning: warningColor
+            of lsp_types.DiagnosticSeverity.Information: informationColor
+            of lsp_types.DiagnosticSeverity.Hint: hintColor
+            drawText(message, rect(state.offset.x, state.offset.y, width, builder.textHeight), color, 0.UINodeFlags)
+            state.offset.x += width
+
         if state.lastDisplayEndPoint.column == 0:
           if state.displayMap.diffMap.snapshot.isEmptySpace(state.lastDisplayPoint.DiffPoint):
             fillRect(rect(state.bounds.x + lineNumberWidth, state.offset.y, state.bounds.w - lineNumberWidth, builder.textHeight), backgroundColor.darken(0.03))
