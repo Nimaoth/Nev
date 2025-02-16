@@ -944,14 +944,15 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     cursor.column = self.displayMap.toPoint(wrapPoint(wrapPoint.row.int, self.targetColumn)).column.int
   return self.clampCursor(cursor, includeAfter)
 
-proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
+proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false, targetColumn: Option[int] = int.none): Cursor {.expose: "editor.text".} =
+  let targetColumn = targetColumn.get(self.targetColumn)
   let wrapPointOld = self.displayMap.toWrapPoint(cursor.toPoint)
-  let wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), self.targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
+  let wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
   let newCursor = self.displayMap.toPoint(wrapPoint, if offset < 0: Bias.Left else: Bias.Right).toCursor
   if offset < 0 and newCursor.line > 0 and newCursor.line == cursor.line and self.displayMap.toWrapPoint(newCursor.toPoint).row == wrapPointOld.row:
     let newCursor2 = point(cursor.line - 1, self.document.rope.lineLen(cursor.line - 1))
     let displayPoint = self.displayMap.toDisplayPoint(newCursor2)
-    let displayPoint2 = displayPoint(displayPoint.row, self.targetColumn.uint32)
+    let displayPoint2 = displayPoint(displayPoint.row, targetColumn.uint32)
     let point = self.displayMap.toPoint(displayPoint2)
 
     # echo &"doMoveCursorVisualLine {cursor}, {offset} -> {newCursor2} -> {displayPoint} -> {displayPoint2} -> {point}"
@@ -959,7 +960,7 @@ proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: in
   elif offset > 0:
     # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
     # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
-    let wrapPoint2 = wrapPoint(self.displayMap.toWrapPoint(newCursor.toPoint).row, self.targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
+    let wrapPoint2 = wrapPoint(self.displayMap.toWrapPoint(newCursor.toPoint).row, targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
     let newCursor2 = self.displayMap.toPoint(wrapPoint2, if offset < 0: Bias.Left else: Bias.Right).toCursor
 
     # echo &"doMoveCursorVisualLine {cursor}, {offset} -> {newCursor}, wp: {wrapPointOld} -> {wrapPoint} -> {self.displayMap.toWrapPoint(newCursor.toPoint)}, {wrapPoint2} -> {newCursor2}"
@@ -1962,10 +1963,9 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
     self.selection = (changes[0].target.first, 0).toSelection
     self.updateTargetColumn(Last)
     self.centerCursor(self.selection.last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   self.cursorHistories.setLen(0)
-  self.markDirty()
-
   self.markDirty()
 
 proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.text").} =
@@ -2048,7 +2048,21 @@ proc moveCursorLine*(self: TextDocumentEditor, distance: int,
 proc moveCursorVisualLine*(self: TextDocumentEditor, distance: int,
     cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true,
     includeAfter: bool = true) {.expose("editor.text").} =
-  self.moveCursor(cursor, doMoveCursorVisualLine, distance, all, wrap, includeAfter)
+
+  var minLine = int.high
+  var maxLine = int.low
+  for s in self.selections:
+    minLine = min(minLine, s.last.line)
+    maxLine = max(maxLine, s.last.line)
+
+  proc doMoveCursor(self: TextDocumentEditor, cursor: Cursor, offset: int,
+      wrap: bool = true, includeAfter: bool = true): Cursor =
+    let targetColumn = if maxLine - minLine + 1 < self.selections.len:
+      self.displayMap.toDisplayPoint(cursor.toPoint).column.int
+    else:
+      self.targetColumn
+    self.doMoveCursorVisualLine(cursor, offset, wrap, includeAfter, targetColumn.some)
+  self.moveCursor(cursor, doMoveCursor, distance, all, wrap, includeAfter)
 
 proc moveCursorHome*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
     all: bool = true) {.expose("editor.text").} =

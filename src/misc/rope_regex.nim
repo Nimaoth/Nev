@@ -648,27 +648,26 @@ iterator findAllBounds*(
     if i == s.len:
       break
 
-proc findAll*(text: RopeSlice[int], searchQuery: string, res: var seq[Range[Point]]) =
-  try:
-    let r = re(searchQuery)
+proc findAll*(text: RopeSlice[int], r: Regex2, res: var seq[Range[Point]]) =
+  for line in 0..text.summary.lines.row.int:
+    let lineRange = text.lineRange(line, int)
+    let slice = text.slice(lineRange)
+    for b in findAllBounds(slice, r, 0):
+      res.add point(line, b.a)...point(line, b.b + 1)
 
-    for line in 0..text.summary.lines.row.int:
-      let lineRange = text.lineRange(line, int)
-      let slice = text.slice(lineRange)
-      for b in findAllBounds(slice, r, 0):
-        res.add point(line, b.a)...point(line, b.b + 1)
+    # let selections = ($text.slice(lineRange)).findAllBounds(line, r)
+    # for s in selections:
+    #   res.add s.first.toPoint...s.last.toPoint
 
-      # let selections = ($text.slice(lineRange)).findAllBounds(line, r)
-      # for s in selections:
-      #   res.add s.first.toPoint...s.last.toPoint
-  except RegexError:
-    discard
-
-proc findAll*(text: RopeSlice[int], searchQuery: string): seq[Range[Point]] =
+proc findAll*(text: RopeSlice[int], searchQuery: Regex2): seq[Range[Point]] =
   findAll(text, searchQuery, result)
 
 proc findAllThread(args: tuple[text: ptr RopeSlice[int], query: string, res: ptr seq[Range[Point]]]) =
-  findAll(args.text[].clone(), args.query, args.res[])
+  try:
+    let r = re(args.query)
+    findAll(args.text[].clone(), r, args.res[])
+  except RegexError:
+    discard
 
 proc findAllAsync*(text: sink RopeSlice[int], searchQuery: string): Future[seq[Range[Point]]] {.async.} =
   ## Returns `some(index)` if the string contains invalid utf8 at `index`
