@@ -3834,6 +3834,67 @@ proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Sele
   if self.configProvider.getValue("text.auto-wrap", true):
     self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
+proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
+  let enableColorHighlight = self.configProvider.getValue(&"text.color-highlight.enabled", true)
+  # debugf"updateColorOverlays {enableColorHighlight}"
+  if not enableColorHighlight:
+    return
+
+  let colorHighlight = self.configProvider.getValue(&"text.color-highlight.{self.document.languageId}", newJObject())
+  if colorHighlight.kind != JObject:
+    return
+
+  type
+    ColorType = enum Hex = "hex", Float1 = "float1", Float256 = "float256"
+    ColorHighlightConfig = object
+      enabled: bool = false
+      regex: string = "(#[0-9a-fA-F]{6})|(#[0-9a-fA-F]{8})"
+      kind: ColorType = Hex
+
+  let floatRegex = re"(\d+(\.\d+)?)"
+
+  try:
+    let config = colorHighlight.jsonTo(ColorHighlightConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+    if not config.enabled:
+      return
+    let rope = self.document.rope.clone()
+    let colorRanges = await findAllAsync(rope.slice(int), config.regex)
+    if self.document.isNil:
+      return
+
+    # todo: this can scale up pretty quickly, could be done in a background thread
+    let t = startTimer()
+    self.displayMap.overlay.clear(13)
+    for r in colorRanges:
+      let text = rope[r]
+      let color = case config.kind
+      of Hex: $text
+      of Float1:
+        var c = color(0, 0, 0)
+        let text = $text
+        let numbers = text.findAllBounds(0, floatRegex)
+        if numbers.len >= 3:
+          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat
+          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat
+          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat
+        "#" & c.toHex
+      of Float256:
+        var c = color(0, 0, 0)
+        let text = $text
+        let numbers = text.findAllBounds(0, floatRegex)
+        if numbers.len >= 3:
+          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat / 256.0
+          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat / 256.0
+          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 256.0
+        "#" & c.toHex
+
+      self.displayMap.overlay.addOverlay(r.a...r.a, "■", 13, color)
+
+    # echo &"took {t.elapsed.ms} ms"
+
+  except Exception as e:
+    log lvlError, &"Failed to find colors: {e.msg}"
+
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
   self.snapshot = self.document.buffer.snapshot.clone()
@@ -3856,6 +3917,8 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
   self.updateSearchResults()
   self.updateInlayHints()
+
+  asyncSpawn self.updateColorOverlays()
 
   self.markDirty()
 
