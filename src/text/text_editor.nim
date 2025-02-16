@@ -930,6 +930,98 @@ proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
   result.first = self.displayMap.toPoint(displayRange.a).toCursor
   result.last = self.displayMap.toPoint(displayRange.b).toCursor
 
+proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): float64 =
+  let node = c.currentNode
+
+  template checkRes(b: untyped): untyped =
+    if not b:
+      return 0
+
+  case node.nodeType
+  of "program":
+    discard c.gotoFirstChild()
+    return c.evaluateJsNode(rope, floatingPoint)
+
+  of "expression_statement":
+    discard c.gotoFirstChild()
+    return c.evaluateJsNode(rope, floatingPoint)
+
+  of "binary_expression":
+    discard c.gotoFirstChild()
+    discard c.gotoNextSibling()
+    let op = c.currentNode.nodeType
+    discard c.gotoParent()
+
+    discard c.gotoFirstChild()
+    let a = c.evaluateJsNode(rope, floatingPoint)
+    discard c.gotoLastChild()
+    let b = c.evaluateJsNode(rope, floatingPoint)
+    discard c.gotoParent()
+    return case op
+    of "+": a + b
+    of "-": a - b
+    of "*": a * b
+    of "/":
+      let res = a / b
+      if res != res.int.float:
+        floatingPoint = true
+      res
+    of "%": a mod b
+    else: a
+
+  of "number":
+    let valStr = $rope.slice(node.getRange.toSelection.toRange)
+    if valStr.contains("."):
+      floatingPoint = true
+    let val = valStr.parseFloat.catch(0)
+    discard c.gotoParent()
+    return val
+
+  of "else":
+    log lvlWarn, &"Unknown js tree node type '{node.nodeType}': {node}"
+    return 0
+
+proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.async.} =
+  let config = self.configProvider.getValue("treesitter.javascript", newJObject())
+  let l = self.vfs.getTreesitterLanguage("javascript", config).await
+  if l.getSome(l):
+    withParser(p):
+      p.setLanguage(l)
+
+      var texts: seq[string]
+      for i, selection in selections:
+        let originalText = self.document.contentString(selection, inclusiveEnd)
+        var text = prefix & originalText & suffix
+        if addSelectionIndex:
+          text.add "+"
+          text.add $i
+
+        let rope = Rope.new(text)
+        let tree = p.parseString(text)
+        if tree.isNotNil:
+          defer:
+            tree.delete()
+          tree.root.withTreeCursor(c):
+            var floatingPoint = false
+            let res = c.evaluateJsNode(rope, floatingPoint)
+            let resStr = if floatingPoint:
+              $res
+            else:
+              $int(res.round)
+            texts.add resStr
+        else:
+          texts.add originalText
+
+      assert selections.len == texts.len
+      let selections = self.document.edit(selections, self.selections, texts, inclusiveEnd=inclusiveEnd)
+      if inclusiveEnd:
+        self.selections = selections.mapIt((it.first, self.doMoveCursorColumn(it.last, -1)))
+      else:
+        self.selections = selections
+
+proc evaluateExpressions(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.expose: "editor.text".} =
+  asyncSpawn self.evaluateExpressionAsync(selections, inclusiveEnd, prefix, suffix, addSelectionIndex)
+
 proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
   var cursor = cursor
@@ -2330,6 +2422,24 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
 
   of "word-line-back":
     return self.getSelectionForMove((cursor.line, max(0, cursor.column - 1)), "word-line", count).reverse
+
+  of "number":
+    var r = cursor.toPoint...cursor.toPoint
+    var c = self.document.rope.cursorT(cursor.toPoint)
+    while c.currentChar in {'0'..'9'}:
+      c.seekNextRune()
+      r.b = c.position
+
+    if r.a.column > 0:
+      c = self.document.rope.cursorT(cursor.toPoint)
+      while c.position.column > 0:
+        c.seekPrevRune()
+        if c.currentChar notin {'0'..'9'}:
+          c.seekNextRune()
+          break
+        r.a = c.position
+
+    return r.toSelection
 
   of "line-back":
     let first = if cursor.line > 0 and cursor.column == 0:

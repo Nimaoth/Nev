@@ -1537,7 +1537,58 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   addTextCommand "visual", "gp", "select-parent-current-ts", false
 
+  addTextCommandBlock "visual", "gxx":
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, true)
+  addTextCommandBlock "visual", "gxf":
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, true, suffix = "+1")
+  addTextCommandBlock "visual", "gxh":
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, true, suffix = "-1")
+  addTextCommandBlock "visual", "gxc":
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, true, addSelectionIndex = true)
+
+  addTextCommandBlock "normal", "gxf":
+    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, false, suffix = "+1")
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+  addTextCommandBlock "normal", "gxh":
+    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, false, suffix = "-1")
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+  addTextCommandBlock "normal", "gxc":
+    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+
+  addTextCommandBlock "insert", "<C-g><*-x>f":
+    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, false, suffix = "+1")
+    editor.selections = editor.selections.mapIt(it.last.toSelection)
+  addTextCommandBlock "insert", "<C-g><*-x>h":
+    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, false, suffix = "-1")
+    editor.selections = editor.selections.mapIt(it.last.toSelection)
+  addTextCommandBlock "insert", "<C-g><*-x>c":
+    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+    editor.addNextCheckpoint("insert")
+    editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
+    editor.selections = editor.selections.mapIt(it.last.toSelection)
+
   addTextCommandBlock "visual", "o":
+    editor.selections = editor.selections.mapIt((it.last, it.first))
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
+
+  addTextCommandBlock "visual-line", "o":
     editor.selections = editor.selections.mapIt((it.last, it.first))
     editor.scrollToCursor Last
     editor.updateTargetColumn()
