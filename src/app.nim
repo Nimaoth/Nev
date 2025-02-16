@@ -2107,6 +2107,10 @@ proc reloadPlugin*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload current plugin"
   asyncSpawn self.reloadPluginAsync()
 
+proc reloadTheme*(self: App) {.expose("editor").} =
+  log lvlInfo, &"Reload theme"
+  asyncSpawn self.setTheme(self.theme.path, force = true)
+
 proc reloadState*(self: App) {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
   var state = EditorState()

@@ -548,6 +548,13 @@ proc reloadPlugin*() {.gcsafe, raises: [].} =
   let res {.used.} = editor_reloadPlugin_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_reloadTheme_void_App_wasm(arg: cstring): cstring {.importc.}
+proc reloadTheme*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_reloadTheme_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_reloadState_void_App_wasm(arg: cstring): cstring {.importc.}
 proc reloadState*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
