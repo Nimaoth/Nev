@@ -692,8 +692,27 @@ method deinit*(self: TextDocument) =
 method `$`*(self: TextDocument): string =
   return self.filename
 
-proc saveAsync(self:  TextDocument) {.async.} =
+proc saveAsync*(self: TextDocument) {.async.} =
   try:
+    log lvlInfo, &"[save] '{self.filename}'"
+
+    if self.filename.len == 0:
+      log lvlError, &"save: Missing filename"
+      return
+
+    if self.staged:
+      return
+
+    let trimTrailingWhitespace = self.configProvider.getValue("text.trim-trailing-whitespace.enabled", true)
+    let maxFileSizeForTrim = self.configProvider.getValue("text.trim-trailing-whitespace.max-size", 1000000)
+    if trimTrailingWhitespace:
+      if self.rope.len <= maxFileSizeForTrim:
+        self.trimTrailingWhitespace()
+      else:
+        log lvlWarn, &"File is bigger than max size: {self.rope.len} > {maxFileSizeForTrim}"
+    else:
+      log lvlWarn, &"Don't trim whitespace"
+
     await self.vfs.write(self.filename, self.rope.slice())
 
     if not self.isInitialized:
@@ -710,7 +729,6 @@ proc saveAsync(self:  TextDocument) {.async.} =
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
-  log lvlInfo, &"[save] '{self.filename}'"
 
   if self.filename.len == 0:
     log lvlError, &"save: Missing filename"
@@ -720,16 +738,6 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
     return
 
   self.appFile = app
-
-  let trimTrailingWhitespace = self.configProvider.getValue("text.trim-trailing-whitespace.enabled", true)
-  let maxFileSizeForTrim = self.configProvider.getValue("text.trim-trailing-whitespace.max-size", 1000000)
-  if trimTrailingWhitespace:
-    if self.rope.len <= maxFileSizeForTrim:
-      self.trimTrailingWhitespace()
-    else:
-      log lvlWarn, &"File is bigger than max size: {self.rope.len} > {maxFileSizeForTrim}"
-  else:
-    log lvlWarn, &"Don't trim whitespace"
 
   asyncSpawn self.saveAsync()
 
@@ -791,8 +799,8 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.
         var selections = newSeq[Selection]()
         var texts = newSeq[RopeSlice[int]]()
         for edit in diff.edits:
-          let a = oldRope.convert(edit.range.a, Point)
-          let b = oldRope.convert(edit.range.b, Point)
+          let a = oldRope.convert(edit.old.a, Point)
+          let b = oldRope.convert(edit.old.b, Point)
           selections.add (a.toCursor, b.toCursor)
           texts.add edit.text.clone()
 

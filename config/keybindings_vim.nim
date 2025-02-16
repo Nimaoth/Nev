@@ -1654,5 +1654,11 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
   addTextCommand "", "<LEADER>gx", "close-diff"
   addTextCommand "", "<LEADER>gc", "update-diff"
+  addTextCommand "normal", "<LEADER>gy", "stage-selected", false
+  addTextCommand "visual", "<LEADER>gy", "stage-selected", true
+  addTextCommand "visual-line", "<LEADER>gy", "stage-selected", true
+  addTextCommand "normal", "<LEADER>gr", "revert-selected", false
+  addTextCommand "visual", "<LEADER>gr", "revert-selected", true
+  addTextCommand "visual-line", "<LEADER>gr", "revert-selected", true
   addTextCommand "", "<LEADER>gl", "fuzzy-search-lines"
   addTextCommand "", "<LEADER>gL", "fuzzy-search-lines", minScore = 0.4, sort = false

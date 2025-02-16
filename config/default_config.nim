@@ -179,7 +179,13 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
 
   addCommand "popup.selector.git", "<C-a>", "stage-selected"
   addCommand "popup.selector.git", "<C-u>", "unstage-selected"
-  addCommand "popup.selector.git", "<C-r>", "revert-selected"
+  addCommand "popup.selector.git", "<C-q>a", "revert-selected"
+
+  addCommand "popup.selector.git", "<C-h>", "prev-change"
+  addCommand "popup.selector.git", "<C-f>", "next-change"
+  addCommand "popup.selector.git", "<C-s>", "stage-change"
+  addCommand "popup.selector.git", "<C-q>h", "revert-change"
+
   addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
   addCommand "popup.selector.file-explorer", "<C-r>", "go-up"
   addCommand "popup.selector.file-explorer", "<CS-y>", "enter-normalized"

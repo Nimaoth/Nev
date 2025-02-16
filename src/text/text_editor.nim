@@ -3,7 +3,7 @@ import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
+import misc/[id, util, rect_utils, event, custom_logger, custom_async, async_process, fuzzy_matching,
   custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex]
 import scripting/[expose, scripting_base]
 import platform/[platform]
@@ -23,7 +23,7 @@ from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
 
 import nimsumtree/[buffer, clock, static_array, rope]
-from nimsumtree/sumtree as st import summaryType, itemSummary, Bias
+from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
 
 export text_document, document_editor, id
 
@@ -272,6 +272,8 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selecti
 proc getFileName(self: TextDocumentEditor): string
 proc closeDiff*(self: TextDocumentEditor)
 proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour)
+proc numDisplayLines*(self: TextDocumentEditor): int
+proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true, includeAfter: bool = true): Cursor
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
@@ -2074,6 +2076,194 @@ proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
     if self.diffDocument.isNotNil:
       self.updateDiff()
+
+proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
+  if self.diffDocument.isNil or self.diffChanges.isNone:
+    return
+
+  var selection = self.selection.normalized
+  if inclusiveEnd:
+    selection.last = self.doMoveCursorColumn(selection.last, 1)
+
+  log lvlInfo, &"Revert ranges {selection}"
+
+  let ropeOld = self.diffDocument.rope.clone()
+  let ropeNew = self.document.rope.clone()
+  var ropeDiff: RopeDiff[Point]
+
+  for mapping in self.diffChanges.get:
+    var rangeOld: Range[Point]
+    var rangeNew: Range[Point]
+    rangeOld.a.row = mapping.source.first.uint32
+    rangeOld.b.row = mapping.source.last.uint32
+    rangeNew.a.row = mapping.target.first.uint32
+    rangeNew.b.row = mapping.target.last.uint32
+
+    var text = Rope.new("")
+    for line in mapping.lines:
+      text.add line
+      text.add "\n"
+
+    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+      ropeDiff.edits.add (rangeNew, rangeOld, ropeOld.slice(rangeOld))
+
+  for e in ropeDiff.edits:
+    echo &"apply edit {e}"
+
+  let selections = ropeDiff.edits.mapIt(it.old.toSelection)
+  let texts = ropeDiff.edits.mapIt(it.text)
+  discard self.document.edit(selections, self.selections, texts)
+  await self.document.saveAsync()
+  self.updateDiff()
+
+proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
+  if self.diffDocument.isNil or self.diffChanges.isNone:
+    return
+
+  var selection = self.selection.normalized
+  if inclusiveEnd:
+    selection.last = self.doMoveCursorColumn(selection.last, 1)
+
+  log lvlInfo, &"Revert ranges {selection}"
+
+  let ropeOld = self.diffDocument.rope.clone()
+  let ropeNew = self.document.rope.clone()
+  var ropeDiff: RopeDiff[Point]
+
+  for mapping in self.diffChanges.get:
+    var rangeOld: Range[Point]
+    var rangeNew: Range[Point]
+    rangeOld.a.row = mapping.source.first.uint32
+    rangeOld.b.row = mapping.source.last.uint32
+    rangeNew.a.row = mapping.target.first.uint32
+    rangeNew.b.row = mapping.target.last.uint32
+
+    var text = Rope.new("")
+    for line in mapping.lines:
+      text.add line
+      text.add "\n"
+
+    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+      # todo
+      discard
+
+    else:
+      ropeDiff.edits.add (rangeOld, rangeNew, text.slice(Point))
+
+  let new = ropeOld.slice(Point).apply(ropeDiff)
+  let filename = self.getFileName().extractFilename
+  let backupPath = &"ws0://temp/git/backup.{filename}"
+  let originalPath = self.document.filename
+  let originalPathLocalized = self.document.localizedPath
+  let backupPathLocalized = self.vfs.localize(backupPath)
+  if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
+    log lvlInfo, &"backup {originalPath} to {backupPath}"
+    await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+    await self.vfs.write(originalPath, new)
+    let res = await vcs.stageFile(originalPathLocalized)
+    log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
+    await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+    discard await self.vfs.delete(backupPath)
+
+    self.updateDiff()
+
+proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
+  if self.diffDocument.isNil or self.diffChanges.isNone:
+    return
+
+  var selection = self.selection.normalized
+  if inclusiveEnd:
+    selection.last = self.doMoveCursorColumn(selection.last, 1)
+
+  log lvlInfo, &"Stage ranges {selection}"
+
+  var ropeDiff: RopeDiff[Point]
+
+  let stagedRope = self.diffDocument.rope.clone()
+  let newRope = self.document.rope.clone()
+
+  for mapping in self.diffChanges.get:
+    var rangeOld: Range[Point]
+    var rangeNew: Range[Point]
+    rangeOld.a.row = mapping.source.first.uint32
+    rangeOld.b.row = mapping.source.last.uint32
+    rangeNew.a.row = mapping.target.first.uint32
+    rangeNew.b.row = mapping.target.last.uint32
+
+    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+      var rangeNewClamped = rangeNew
+      rangeNewClamped.a = max(rangeNew.a, selection.first.toPoint)
+      rangeNewClamped.b = min(rangeNew.b, selection.last.toPoint)
+
+      var text = Rope.new("")
+      for line in mapping.lines:
+        text.add line
+        text.add "\n"
+
+      let rangeNewRel = (rangeNewClamped.a - rangeNew.a).toPoint...(rangeNewClamped.b - rangeNew.a).toPoint
+      if selection.isEmpty or (selection.first.toPoint <= rangeNew.a and selection.last.toPoint >= rangeNew.b):
+        ropeDiff.edits.add (rangeOld, rangeNew, text.slice(Point))
+
+      else:
+        let textOld = stagedRope.slice(rangeOld)
+        let diff = diff(textOld, text.slice(Point))
+        let rangeOldRel = diff.newToOld(rangeNewRel)
+        let rangeOldClamped = rangeOld.a + rangeOldRel
+
+        ropeDiff.edits.add (rangeOldClamped, rangeNewClamped, text.slice(rangeNewRel))
+
+  let new = self.diffDocument.rope.slice(Point).apply(ropeDiff)
+  let filename = self.getFileName().extractFilename
+  let backupPath = &"ws0://temp/git/backup.{filename}"
+  let originalPath = self.document.filename
+  let originalPathLocalized = self.document.localizedPath
+  let backupPathLocalized = self.vfs.localize(backupPath)
+  if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
+    log lvlInfo, &"backup {originalPath} to {backupPath}"
+    await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+    await self.vfs.write(originalPath, new)
+    let res = await vcs.stageFile(originalPathLocalized)
+    log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
+    await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+    discard await self.vfs.delete(backupPath)
+
+    self.updateDiff()
+
+  # this tries to create a patch and apply it to the index directly, but git refuses the patch and the line indices
+  # are maybe wrong
+
+  # let stagedPath = &"ws0://temp/git/staged.{filename}"
+  # let newPath = &"ws0://temp/git/new.{filename}"
+  # let diffPath = &"ws0://temp/git/{filename}.diff"
+  # await self.vfs.write(stagedPath, self.diffDocument.rope.clone())
+  # await self.vfs.write(newPath, new)
+
+  # let workspaceRoot = self.vfs.localize("ws0://")
+
+  # let pathA = self.vfs.localize(stagedPath)
+  # let pathB = self.vfs.localize(newPath)
+  # let gitDiff = await runProcessAsyncOutput("git", @["diff", "--no-index", "-U0", pathA, pathB])
+
+  # let originalPath = self.document.localizedPath.relativePath(workspaceRoot).catch(self.document.localizedPath)
+  # var patch = gitDiff.output.replace(pathA, originalPath).replace(pathB, originalPath)
+  # let nl1 = patch.find("\n")
+  # let nl2 = patch.find("\n", nl1 + 1)
+  # if nl2 > 0:
+  #   patch = patch[nl2+1..^1]
+  # await self.vfs.write(diffPath, patch)
+
+  # let gitApply = await runProcessAsyncOutput("git", @["apply", "--cached", "-v", self.vfs.localize(diffPath)])
+  # echo &"git apply -> \n{gitApply.output}\n--------\n{gitApply.err}\n=============="
+  # self.updateDiff()
+
+proc revertSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.expose("editor.text").} =
+  asyncSpawn self.revertSelectedAsync(inclusiveEnd)
+
+proc stageSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.expose("editor.text").} =
+  if self.document.staged:
+    asyncSpawn self.unstageSelectedAsync(inclusiveEnd)
+  else:
+    asyncSpawn self.stageSelectedAsync(inclusiveEnd)
 
 proc stageFile*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.stageFileAsync()
