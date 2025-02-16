@@ -338,6 +338,14 @@ proc loadTheme*(name: string; force: bool = false) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_vsync_void_App_bool_wasm(arg: cstring): cstring {.importc.}
+proc vsync*(enabled: bool) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add enabled.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_vsync_void_App_bool_wasm(argsJsonString.cstring)
+
+
 proc editor_chooseTheme_void_App_wasm(arg: cstring): cstring {.importc.}
 proc chooseTheme*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
@@ -366,6 +374,19 @@ proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
   argsJson.add previewScale.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_browseKeybinds_void_App_bool_float_float_float_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_browseSettings_void_App_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc browseSettings*(scaleX: float = 0.8; scaleY: float = 0.8;
+                     previewScale: float = 0.5) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_browseSettings_void_App_float_float_float_wasm(
       argsJsonString.cstring)
 
 
@@ -525,6 +546,13 @@ proc reloadPlugin*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_reloadPlugin_void_App_wasm(argsJsonString.cstring)
+
+
+proc editor_reloadTheme_void_App_wasm(arg: cstring): cstring {.importc.}
+proc reloadTheme*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_reloadTheme_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_reloadState_void_App_wasm(arg: cstring): cstring {.importc.}

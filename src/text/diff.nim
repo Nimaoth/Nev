@@ -37,6 +37,38 @@ proc mapLineTargetToSource*(mappings: openArray[LineMapping], line: int): Option
 
   return some (lastSource + (line - lastTarget), false)
 
+proc mapLineSourceToTarget*(mappings: openArray[LineMapping], line: int): Option[tuple[line: int, changed: bool]] =
+  # todo: binary search
+  if mappings.len == 0:
+    return (line, false).some
+
+  if line < mappings[0].source.first:
+    return (line, false).some
+
+  var lastTarget = 0
+  var lastSource = 0
+  for i in 0..mappings.high:
+    if mappings[i].source.contains(line):
+      let targetLine = mappings[i].target.first + (line - mappings[i].source.first)
+      if mappings[i].target.contains(targetLine):
+        return (targetLine, true).some
+      return (int, bool).none
+
+    if line < mappings[i].source.first:
+      let targetLine = mappings[i].target.first + (line - mappings[i].source.first)
+      return (targetLine, false).some
+
+    lastTarget = mappings[i].target.last
+    lastSource = mappings[i].source.last
+
+  return some (lastTarget + (line - lastSource), false)
+
+proc mapLine*(mappings: openArray[LineMapping], line: int, reverse: bool): Option[tuple[line: int, changed: bool]] =
+  if reverse:
+    return mappings.mapLineTargetToSource(line)
+  else:
+    return mappings.mapLineSourceToTarget(line)
+
 static:
   let mappings = [
     LineMapping(source: (10, 10), target: (10, 20)),
@@ -69,14 +101,15 @@ type
     len: int
 
   Operation[T] = object
-    range: Range[int]
+    old: Range[int]
     items: seq[T]
 
   Diff[T] = object
     ops: seq[Operation[T]]
 
   RopeEdit*[T] = tuple
-    range: Range[T]
+    old: Range[T]
+    new: Range[T]
     text: RopeSlice[T]
 
   RopeDiff*[T] = object
@@ -125,7 +158,7 @@ proc slice(c: RopeCursorWrapper, first, last: int): RopeSlice[Count] = c.cursor.
 proc clone*[T](diff: RopeDiff[T]): RopeDiff[T] =
   result.edits.setLen(diff.edits.len)
   for i in 0..diff.edits.high:
-    result.edits[i] = (diff.edits[i].range, diff.edits[i].text.clone())
+    result.edits[i] = (diff.edits[i].old, diff.edits[i].text.clone())
 
 proc initDiffData[T, C](data: sink C): DiffData[T, C] =
   # result.data = cast[ptr UncheckedArray[int]](data[0].addr)
@@ -315,13 +348,17 @@ proc diff*[T](a, b: openArray[T]): Diff[T] =
       inc indexB
 
     if startA < indexA or startB < indexB:
-      result.ops.add Operation[T](range: startA...indexA, items: dataB.data.slice(startB, indexB))
+      result.ops.add Operation[T](
+        old: startA...indexA,
+        new: startB...indexB,
+        items: dataB.data.slice(startB, indexB),
+      )
 
-proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool], enableCancel: static[bool] = false): RopeDiff[T] =
+proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool] = nil, enableCancel: static[bool] = false): RopeDiff[T] =
   if a.len == 0:
-    return RopeDiff[T](edits: @[(T.default...T.default, b)])
+    return RopeDiff[T](edits: @[(T.default...T.default, T.default...T.fromSummary(b.summary, ()), b)])
   if b.len == 0:
-    return RopeDiff[T](edits: @[(T.default...T.fromSummary(b.summary, ()), Rope.new().slice())])
+    return RopeDiff[T](edits: @[(T.default...T.fromSummary(b.summary, ()), T.default...T.default, Rope.new().slice(T))])
 
   let a = a.slice(0.Count...a.summary.len)
   let b = b.slice(0.Count...b.summary.len)
@@ -360,9 +397,55 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool], enableCancel: s
     if startA < indexA or startB < indexB:
       let start = a.convert(startA.Count, T)
       let index = a.convert(indexA.Count, T)
-      result.edits.add (start...index, dataB.data.slice(startB, indexB).slice(T))
+      let startBPoint = b.convert(startB.Count, T)
+      let indexBPoint = b.convert(indexB.Count, T)
+      result.edits.add (start...index, startBPoint...indexBPoint, dataB.data.slice(startB, indexB).slice(T))
 
-  # echo result
+proc oldToNew*[T](diff: RopeDiff[T], pos: T): T =
+  var oldStart = T.default
+  var newStart = T.default
+  for e in diff.edits:
+    if pos < e.old.a:
+      let rel: T = pos - oldStart
+      return newStart + rel
+
+    oldStart = e.old.a
+    newStart = e.new.a
+    if pos < e.old.b:
+      let rel: T = pos - oldStart
+      return min(newStart + rel, e.new.b)
+
+    oldStart = e.old.b
+    newStart = e.new.b
+
+  let rel: T = pos - oldStart
+  return newStart + rel
+
+proc newToOld*[T](diff: RopeDiff[T], pos: T): T =
+  var oldStart = T.default
+  var newStart = T.default
+  for e in diff.edits:
+    if pos < e.new.a:
+      let rel: T = pos - newStart
+      return oldStart + rel
+
+    oldStart = e.old.a
+    newStart = e.new.a
+    if pos < e.new.b:
+      let rel: T = pos - newStart
+      return min(oldStart + rel, e.old.b)
+
+    oldStart = e.old.b
+    newStart = e.new.b
+
+  let rel: T = pos - newStart
+  return oldStart + rel
+
+proc oldToNew*[T](diff: RopeDiff[T], range: Range[T]): Range[T] =
+  return diff.oldToNew(range.a)...diff.oldToNew(range.b)
+
+proc newToOld*[T](diff: RopeDiff[T], range: Range[T]): Range[T] =
+  return diff.newToOld(range.a)...diff.newToOld(range.b)
 
 # proc diff*(a: sink RopeSlice[int], b: string, cancel: ptr Atomic[bool], enableCancel: static[bool] = false): RopeDiff[int] =
 #   if a.len == 0:
@@ -408,13 +491,13 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool], enableCancel: s
 #       let index = a.convert(indexA.Count, int)
 #       result.edits.add (start...index, dataB.data.slice(startB, indexB).slice(int))
 
-proc apply[T](a: openArray[T], diff: Diff[T]): seq[T] =
+proc apply*[T](a: openArray[T], diff: Diff[T]): seq[T] =
   var last = 0
   for op in diff.ops:
-    if op.range.a > last:
-      result.add a[last..<op.range.a]
+    if op.old.a > last:
+      result.add a[last..<op.old.a]
     result.add op.items
-    last = op.range.b
+    last = op.old.b
 
   if last < a.len:
     result.add a[last..^1]
@@ -423,11 +506,11 @@ proc apply*[T](a: RopeSlice[T], diff: RopeDiff[T]): Rope =
   result = Rope.new()
   var c = a.cursor(T)
   for op in diff.edits:
-    if op.range.a > c.position:
-      result.add c.slice(op.range.a).toRope()
+    if op.old.a > c.position:
+      result.add c.slice(op.old.a).toRope()
     assert not op.text.rope.tree.isNil
     result.add op.text.toRope()
-    c.seekForward(op.range.b)
+    c.seekForward(op.old.b)
 
   result.add c.suffix().toRope()
 
