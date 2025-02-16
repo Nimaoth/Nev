@@ -76,9 +76,17 @@ template readFinished*[T: not void](fut: Future[T]): lent T =
   except:
     raiseAssert("Failed to read unfinished future")
 
-template thenIt*[T](f: Future[T], body: untyped): untyped =
-  f.addCallback(proc(a: Future[T]) =
-    let it {.inject.} = a.read
-    body
-  )
+proc thenAsync*[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}) {.async.} =
+  await f
+  cb(f)
 
+proc then*[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}) =
+  asyncSpawn f.thenAsync(cb)
+
+template thenIt*[T](f: Future[T], body: untyped): untyped =
+  proc cb(ff: Future[T]) {.gcsafe, raises: [].} =
+    when T isnot void:
+      let it {.inject.} = ff.read
+    body
+
+  f.then(cb)
