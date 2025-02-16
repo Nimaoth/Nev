@@ -184,6 +184,7 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
   if self.currentDiff:
     self.editor.document.staged = self.currentStaged
     self.editor.updateDiff(gotoFirstDiff=true)
+    self.editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   else:
     self.editor.document.staged = false
     self.editor.closeDiff()
