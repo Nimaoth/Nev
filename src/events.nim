@@ -108,7 +108,6 @@ proc buildDFA*(config: EventHandlerConfig): CommandDFA {.gcsafe, raises: [].} =
     for (keys, desc) in config.descriptions.pairs:
       var states: seq[CommandState]
       for (inputCode, mods, _) in parseInputs(keys, [leader]):
-        let oldStates = states
         states = result.stepAll(states, inputCode.a, mods)
 
       for s in states:

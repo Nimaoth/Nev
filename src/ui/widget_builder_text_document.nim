@@ -1,6 +1,6 @@
-import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math, options, json]
+import std/[strformat, tables, strutils, math, options, json]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, custom_unicode, myjsonutils, regex, rope_utils, timer]
+import misc/[util, custom_logger, custom_unicode, myjsonutils, rope_utils, timer]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
@@ -24,10 +24,6 @@ import nimsumtree/[buffer, rope]
 logCategory "widget_builder_text"
 
 type CursorLocationInfo* = tuple[node: UINode, text: string, bounds: Rect, original: Cursor]
-type LocationInfos = object
-  cursor: Option[CursorLocationInfo]
-  hover: Option[CursorLocationInfo]
-  diagnostic: Option[CursorLocationInfo]
 
 type
   ChunkBounds = object
@@ -96,36 +92,12 @@ proc cmp(r: Rect, point: Vec2): int =
 proc cmp(r: ChunkBounds, point: Vec2): int =
   return cmp(r.bounds, point)
 
-proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool
-
 proc `*`(c: Color, v: Color): Color {.inline.} =
   ## Multiply color by a value.
   result.r = c.r * v.r
   result.g = c.g * v.g
   result.b = c.b * v.b
   result.a = c.a * v.a
-
-proc getCursorPos(self: TextDocumentEditor, builder: UINodeBuilder, text: string, line: int, startOffset: RuneIndex, pos: Vec2): int =
-  ## Calculates the byte index in the original line at the given pos (relative to the parts top left corner)
-
-  var offset = 0.0
-  var i = 0
-  for r in text.runes:
-    let w = builder.textWidth($r).round
-    let posX = if self.isThickCursor(): pos.x else: pos.x + w * 0.5
-
-    if posX < offset + w:
-      let runeOffset = startOffset + i.RuneCount
-      if runeOffset.RuneCount >= self.document.lineRuneLen(line):
-        return 0
-      let byteIndex = self.document.buffer.visibleText.byteOffsetInLine(line, runeOffset)
-      return byteIndex
-
-    offset += w
-    inc i
-
-  let byteIndex = self.document.buffer.visibleText.byteOffsetInLine(line, startOffset + text.runeLen)
-  return byteIndex
 
 proc getCursorPos2(self: TextDocumentEditor, builder: UINodeBuilder, text: openArray[char], pos: Vec2): int =
   ## Calculates the byte index in the original line at the given pos (relative to the parts top left corner)
@@ -332,9 +304,8 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
 
   let r = sn.first.toPoint...sn.last.toPoint
 
-  let (firstFound, firstIndexNormalized) = state.chunkBounds.binarySearchRange(r.a, Bias.Right, cmp)
-  let (lastFound, lastIndexNormalized) = state.chunkBounds.binarySearchRange(r.b, Bias.Right, cmp)
-  # echo &"{sn} -> {r} -> first: {firstFound}, {firstIndexNormalized}, last: {lastFound}, {lastIndexNormalized} / {chunkBounds.len}"
+  let (_, firstIndexNormalized) = state.chunkBounds.binarySearchRange(r.a, Bias.Right, cmp)
+  let (_, lastIndexNormalized) = state.chunkBounds.binarySearchRange(r.b, Bias.Right, cmp)
   if state.chunkBounds.len > 0:
     let firstIndexClamped = if firstIndexNormalized != -1:
       firstIndexNormalized
@@ -371,7 +342,6 @@ proc drawHighlight(self: TextDocumentEditor, builder: UINodeBuilder, sn: Selecti
         let lineEmpty = cursor.currentChar() == '\n'
         let ropeChunk = bounds.chunk.styledChunk.chunk
         let rangeOriginal = ropeChunk.point...(ropeChunk.point + point(0, ropeChunk.lenOriginal))
-        template textOriginal: untyped = ropeChunk.dataOriginal.toOpenArray(0, ropeChunk.lenOriginal)
 
         let firstOffset = if bounds.chunk.styledChunk.chunk.external and r.a.column.int < rangeOriginal.a.column.int:
           0
@@ -450,7 +420,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
     self.cursorHistories.setLen(self.selections.len)
     for i, s in self.selections:
       let p = s.last.toPoint
-      var (found, lastIndex) = state.chunkBounds.binarySearchRange(p, Bias.Left, cmp)
+      var (_, lastIndex) = state.chunkBounds.binarySearchRange(p, Bias.Left, cmp)
       while lastIndex in 0..<state.chunkBounds.high and p in state.chunkBounds[lastIndex + 1].range:
         # echo &"skip external"
         inc lastIndex
@@ -529,15 +499,12 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
 
       if i == self.selections.high:
         let dp = self.displayMap.toDisplayPoint(s.last.toPoint)
-        let p = self.displayMap.toPoint(dp)
-        let ob = self.displayMap.overlay.snapshot.toOverlayBytes(dp.OverlayPoint)
-        let (foundDisplay, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
+        let (_, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
         if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
           self.lastHoverLocationBounds = state.chunkBounds[lastIndexDisplay].bounds.some
-          # echo &"-> {state.chunkBounds[lastIndexDisplay].chunk}"
 
 proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode, selectionsNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool) =
   var flags = 0.UINodeFlags
@@ -598,7 +565,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let inclusive = app.config.getOption[:bool]("editor.text.inclusive-selection", false)
   let drawChunks = app.config.getOption[:bool]("editor.text.draw-chunks", false)
 
-  let charWidth = builder.charWidth
   let isThickCursor = self.isThickCursor
 
   let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
@@ -607,7 +573,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let showContextLines = not renderDiff and app.config.getOption[:bool]("editor.text.context-lines", true)
 
   let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
-  let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
+  let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background"], backgroundColor.lighten(0.05))
   let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
   let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
   var changedTextBackgroundColor = app.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
@@ -893,7 +859,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           let nextPoint = point(contextLines[i], 0)
           let nextDisplayPoint = self.displayMap.toDisplayPoint(nextPoint)
           contextLinesIter.seekLine(nextDisplayPoint.row.int)
-          fillRect(rect(contextLinesState.bounds.x, (contextLines.high - i).float * builder.textHeight, contextLinesState.bounds.w, builder.textHeight), backgroundColor.lighten(0.05))
+          fillRect(rect(contextLinesState.bounds.x, (contextLines.high - i).float * builder.textHeight, contextLinesState.bounds.w, builder.textHeight), contextBackgroundColor)
           contextLinesState.offset.x = lineNumberWidth + mainOffset
           contextLinesState.offset.y += builder.textHeight
           contextLinesState.lastDisplayPoint = nextDisplayPoint
@@ -948,7 +914,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     if self.document.isNil:
       return
 
-    var (found, index) = state.chunkBounds.binarySearchRange(pos, Bias.Left, cmp)
+    var (_, index) = state.chunkBounds.binarySearchRange(pos, Bias.Left, cmp)
     if index notin 0..state.chunkBounds.high:
       return
 
@@ -966,7 +932,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
     let posAdjusted = if self.isThickCursor(): pos else: pos + vec2(builder.charWidth * 0.5, 0)
     let searchPosition = vec2(posAdjusted.x - chunk.bounds.x, 0)
-    var (charFound, charIndex) = state.charBounds.toOpenArray(chunk.charsRange.a, chunk.charsRange.b - 1).binarySearchRange(searchPosition, Left, cmp)
+    var (_, charIndex) = state.charBounds.toOpenArray(chunk.charsRange.a, chunk.charsRange.b - 1).binarySearchRange(searchPosition, Left, cmp)
 
     var newCursor = self.selection.last
     if charIndex + chunk.charsRange.a in chunk.charsRange.a..<chunk.charsRange.b:
@@ -1012,7 +978,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   if not state.cursorOnScreen:
     # todo: move this to a function
     let centerPos = currentNode.bounds.wh * 0.5 + vec2(0, builder.textHeight * -0.5)
-    var (found, index) = state.chunkBounds.binarySearchRange(centerPos, Bias.Left, cmp)
+    var (_, index) = state.chunkBounds.binarySearchRange(centerPos, Bias.Left, cmp)
     if index notin 0..state.chunkBounds.high:
       return
 
@@ -1119,20 +1085,3 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   if self.showHover:
     result.add proc() =
       self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
-
-proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
-  if line == 0 or self.languageConfig.isNone:
-    return false
-
-  let indent = self.getIndentLevelForLine(line)
-  if self.getIndentLevelForLine(line - 1) < indent:
-    return false
-
-  if self.languageConfig.get.ignoreContextLinePrefix.isSome:
-    return self.rope.lineStartsWith(line, self.languageConfig.get.ignoreContextLinePrefix.get, true)
-
-  if self.languageConfig.get.ignoreContextLineRegex.isSome:
-    # todo: don't use getLine
-    return ($self.getLine(line)).match(self.languageConfig.get.ignoreContextLineRegex.get)
-
-  return false

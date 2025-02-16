@@ -182,10 +182,10 @@ template applyIt*[T, E](self: Result[T, E], op: untyped, opErr: untyped): untype
   block:
     evalOnceAs(self2, self, compiles((let _ = self)))
     if self2.isOk:
-      template it: untyped {.inject.} = self2.unsafeValue
+      template it: untyped {.inject, used.} = self2.unsafeValue
       op
     else:
-      template it: untyped {.inject.} = self2.unsafeError
+      template it: untyped {.inject, used.} = self2.unsafeError
       opErr
 
 template applyIt*[T, E](self: Result[T, E], op: untyped): untyped =

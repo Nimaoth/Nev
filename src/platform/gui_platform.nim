@@ -329,8 +329,9 @@ method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): Fon
   let fontScale = fontSize / typeface.scale
   let lineHeight = round((typeface.ascent - typeface.descent + typeface.lineGap) * fontScale)
 
-  proc kerningAdjustment(left, right: Rune): float =
-    return typeface.getKerningAdjustment(left, right)
+  # todo
+  # proc kerningAdjustment(left, right: Rune): float =
+  #   return typeface.getKerningAdjustment(left, right)
 
   proc advance (rune: Rune): float =
     typeface.getAdvance(rune)

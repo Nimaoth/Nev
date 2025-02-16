@@ -1,8 +1,8 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
+import std/[options, strformat, tables, algorithm]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[custom_async, custom_unicode, util, regex, timer, event, rope_utils]
+import misc/[custom_async, custom_unicode, util, regex, timer, rope_utils]
 import text/diff, text/custom_treesitter
 from language/lsp_types import nil
 
@@ -318,11 +318,6 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
 
   if self.atEnd:
     return
-
-  template log(msg: untyped) =
-    when false:
-      if self.chunk.get.point.row == 209:
-        echo msg
 
   # Max length of a node used for checking predicates like #match?
   # Nodes longer than that will not be highlighted correctly, but those should be very rare

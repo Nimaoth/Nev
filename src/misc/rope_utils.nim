@@ -1,8 +1,8 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
+import std/[options, strutils, atomics, tables]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_async, custom_unicode, util, text/custom_treesitter, regex, timer, event
+import custom_async, custom_unicode, util, text/custom_treesitter, regex, timer
 import text/diff
 
 export Bias

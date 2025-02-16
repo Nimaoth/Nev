@@ -1,13 +1,11 @@
-import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables,
-  deques, sets, algorithm, os]
+import std/[strutils, options, json]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[id, util, rect_utils, event, custom_logger, custom_async, custom_unicode, myjsonutils, timer]
-import scripting/[expose, scripting_base]
+import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils]
+import scripting/[expose]
 import platform/[platform]
-import text/language/[language_server_base]
-import document, document_editor, events, input
-import dispatch_tables, config_provider, service, platform_service
+import events
+import dispatch_tables, config_provider, service
 import language_server_command_line
 
 import command_service

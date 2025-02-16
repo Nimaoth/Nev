@@ -3,7 +3,7 @@ import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[id, util, rect_utils, event, custom_logger, custom_async, async_process, fuzzy_matching,
+import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
   custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex]
 import scripting/[expose, scripting_base]
 import platform/[platform]
@@ -462,9 +462,6 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.handleDocumentChanged()
 
 method deinit*(self: TextDocumentEditor) =
-  let filename = if self.document.isNotNil: self.document.filename else: ""
-  # logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
-
   self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
 
   self.unregister()
@@ -666,7 +663,6 @@ proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
     if self.lastSearchResultUpdate == (buffer.remoteId, buffer.version, searchQuery):
       return
 
-    let t = startTimer()
     let searchResults = await findAllAsync(buffer.visibleText.slice(int), searchQuery)
     if self.document.isNil:
       return
@@ -941,24 +937,24 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
 
   case node.nodeType
   of "program":
-    discard c.gotoFirstChild()
+    checkRes c.gotoFirstChild()
     return c.evaluateJsNode(rope, floatingPoint)
 
   of "expression_statement":
-    discard c.gotoFirstChild()
+    checkRes c.gotoFirstChild()
     return c.evaluateJsNode(rope, floatingPoint)
 
   of "binary_expression":
-    discard c.gotoFirstChild()
-    discard c.gotoNextSibling()
+    checkRes c.gotoFirstChild()
+    checkRes c.gotoNextSibling()
     let op = c.currentNode.nodeType
-    discard c.gotoParent()
+    checkRes c.gotoParent()
 
-    discard c.gotoFirstChild()
+    checkRes c.gotoFirstChild()
     let a = c.evaluateJsNode(rope, floatingPoint)
-    discard c.gotoLastChild()
+    checkRes c.gotoLastChild()
     let b = c.evaluateJsNode(rope, floatingPoint)
-    discard c.gotoParent()
+    checkRes c.gotoParent()
     return case op
     of "+": a + b
     of "-": a - b
@@ -976,7 +972,7 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     if valStr.contains("."):
       floatingPoint = true
     let val = valStr.parseFloat.catch(0)
-    discard c.gotoParent()
+    checkRes c.gotoParent()
     return val
 
   of "else":
@@ -1817,7 +1813,6 @@ proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
   if self.searchResults.len == 0:
     return cursor.toSelection
 
-  var i = 0
   let (found, index) = self.searchResults.binarySearchRange(cursor.toPoint, Bias.Left, (r, p) => cmp(r.a, p))
   if found:
     if index > 0:
@@ -1846,7 +1841,6 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
   if self.searchResults.len == 0:
     return cursor.toSelection
 
-  var i = 0
   let (found, index) = self.searchResults.binarySearchRange(cursor.toPoint, Bias.Right, (r, p) => cmp(r.a, p))
   if found:
     if index < self.searchResults.high:
@@ -2070,13 +2064,6 @@ proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose
   self.showDiff = true
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
-proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  if self.vcs.getVcsForFile(self.document.filename).getSome(vcs):
-    let res = await vcs.stageFile(self.document.localizedPath)
-
-    if self.diffDocument.isNotNil:
-      self.updateDiff()
-
 proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
   if self.diffDocument.isNil or self.diffChanges.isNone:
     return
@@ -2088,7 +2075,6 @@ proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) 
   log lvlInfo, &"Revert ranges {selection}"
 
   let ropeOld = self.diffDocument.rope.clone()
-  let ropeNew = self.document.rope.clone()
   var ropeDiff: RopeDiff[Point]
 
   for mapping in self.diffChanges.get:
@@ -2127,7 +2113,6 @@ proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false)
   log lvlInfo, &"Revert ranges {selection}"
 
   let ropeOld = self.diffDocument.rope.clone()
-  let ropeNew = self.document.rope.clone()
   var ropeDiff: RopeDiff[Point]
 
   for mapping in self.diffChanges.get:
@@ -2160,7 +2145,7 @@ proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false)
     log lvlInfo, &"backup {originalPath} to {backupPath}"
     await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
     await self.vfs.write(originalPath, new)
-    let res = await vcs.stageFile(originalPathLocalized)
+    discard await vcs.stageFile(originalPathLocalized)
     log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
     await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
     discard await self.vfs.delete(backupPath)
@@ -2180,7 +2165,6 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
   var ropeDiff: RopeDiff[Point]
 
   let stagedRope = self.diffDocument.rope.clone()
-  let newRope = self.document.rope.clone()
 
   for mapping in self.diffChanges.get:
     var rangeOld: Range[Point]
@@ -2222,7 +2206,7 @@ proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {
     log lvlInfo, &"backup {originalPath} to {backupPath}"
     await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
     await self.vfs.write(originalPath, new)
-    let res = await vcs.stageFile(originalPathLocalized)
+    discard await vcs.stageFile(originalPathLocalized)
     log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
     await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
     discard await self.vfs.delete(backupPath)
@@ -2264,6 +2248,13 @@ proc stageSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.expo
     asyncSpawn self.unstageSelectedAsync(inclusiveEnd)
   else:
     asyncSpawn self.stageSelectedAsync(inclusiveEnd)
+
+proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  if self.vcs.getVcsForFile(self.document.filename).getSome(vcs):
+    discard await vcs.stageFile(self.document.localizedPath)
+
+    if self.diffDocument.isNotNil:
+      self.updateDiff()
 
 proc stageFile*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.stageFileAsync()
@@ -3548,7 +3539,7 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         cursorEditSelections.add self.document.getCompletionSelectionAt(s.last)
         cursorInsertTexts.add edit.newText
 
-    elif edit.asInsertReplaceEdit().getSome(edit):
+    elif edit.asInsertReplaceEdit().isSome:
       return
 
     else:
@@ -4181,7 +4172,6 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
       return
 
     # todo: this can scale up pretty quickly, could be done in a background thread
-    let t = startTimer()
     self.displayMap.overlay.clear(13)
     for r in colorRanges:
       let text = rope[r]
@@ -4207,8 +4197,6 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
         "#" & c.toHex
 
       self.displayMap.overlay.addOverlay(r.a...r.a, "■", 13, color)
-
-    # echo &"took {t.elapsed.ms} ms"
 
   except Exception as e:
     log lvlError, &"Failed to find colors: {e.msg}"
@@ -4301,14 +4289,14 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
     if displayMap.endDisplayPoint.row != self.lastEndDisplayPoint.row:
       self.lastEndDisplayPoint = displayMap.endDisplayPoint
       self.updateTargetColumn()
-      let oldScrollOffset = self.scrollOffset
+      # let oldScrollOffset = self.scrollOffset
 
       if self.targetPoint.getSome(point):
         self.scrollToCursor(point.toCursor, self.targetLineMargin, self.nextScrollBehaviour, self.targetLineRelativeY)
       else:
         self.scrollOffset = self.interpolatedScrollOffset
 
-      let oldInterpolatedScrollOffset = self.interpolatedScrollOffset
+      # let oldInterpolatedScrollOffset = self.interpolatedScrollOffset
       let displayPoint = self.displayMap.toDisplayPoint(self.currentCenterCursor.toPoint)
       self.interpolatedScrollOffset = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
       # debugf"handleDisplayMapUpdated {self.getFileName()}: {oldScrollOffset} -> {self.scrollOffset}, {oldInterpolatedScrollOffset} -> {self.interpolatedScrollOffset}, target {self.targetPoint}"

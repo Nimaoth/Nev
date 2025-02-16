@@ -1,20 +1,11 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm, sugar]
+import std/[options, tables, sugar]
 import nimsumtree/[rope, buffer, clock]
-import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
+import misc/[custom_async, custom_unicode, util, event, rope_utils]
 import syntax_map, overlay_map, tab_map, wrap_map, diff_map
 from scripting_api import Selection
 import nimsumtree/sumtree except mapIt
 
-{.push warning[Deprecated]:off.}
-import std/[threadpool]
-{.pop.}
-
 var debugDisplayMap* = false
-
-template log(msg: untyped) =
-  when false:
-    if debugDisplayMap:
-      echo msg
 
 {.push gcsafe.}
 {.push raises: [].}

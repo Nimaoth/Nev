@@ -2,10 +2,10 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, bench, rope_utils, async_process]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, rope_utils, async_process]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
-import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme, service, vfs, vfs_service
+import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, service, vfs, vfs_service
 import syntax_map
 import pkg/[chroma, results]
 

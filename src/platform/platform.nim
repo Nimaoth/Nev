@@ -1,7 +1,7 @@
 import vmath
 import ui/node
 import misc/[event]
-import input, vfs, pixie/fonts
+import input, vfs
 
 export input, event
 

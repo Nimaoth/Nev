@@ -1,30 +1,18 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm, enumerate]
+import std/[options, strutils, strformat, enumerate]
 import nimsumtree/[rope, sumtree, buffer, clock]
-import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import text/diff, syntax_map, overlay_map
-from scripting_api import Selection
-
-{.push warning[Deprecated]:off.}
-import std/[threadpool]
-{.pop.}
+import misc/[custom_async, custom_unicode, util, event, rope_utils]
+import syntax_map, overlay_map
 
 var debugTabMap* = false
-
-template log(msg: untyped) =
-  when false:
-    if debugTabMap:
-      echo msg
 
 {.push gcsafe.}
 {.push raises: [].}
 
-type InputMap = OverlayMap
 type InputMapSnapshot = OverlayMapSnapshot
 type InputChunkIterator = OverlayChunkIterator
 type InputChunk = OverlayChunk
 type InputPoint = OverlayPoint
 proc inputPoint(row: Natural = 0, column: Natural = 0): InputPoint {.inline.} = overlayPoint(row, column)
-proc toInputPoint(d: PointDiff): InputPoint {.inline.} = d.toOverlayPoint
 
 type TabPoint* {.borrow: `.`.} = distinct Point
 func tabPoint*(row: Natural = 0, column: Natural = 0): TabPoint = Point(row: row.uint32, column: column.uint32).TabPoint
@@ -126,7 +114,7 @@ proc `$`*(self: TabMapSnapshot): string =
 
 proc iter*(self {.byref.}: TabMapSnapshot): TabChunkIterator =
   let r = tabPoint(0, 0)...self.endTabPoint # todo: pass as parameter
-  var (inputStart, expandedChars, toNextStop) = self.toInputPointEx(r.a)
+  var (_, _, toNextStop) = self.toInputPointEx(r.a)
   if r.a + tabPoint(0, toNextStop) > r.b:
     toNextStop = r.b.column.int - r.a.column.int
   result = TabChunkIterator(
@@ -226,13 +214,12 @@ proc toInputPoint*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Righ
   else:
     var chunks = self.input.iter()
     chunks.seekLine(point.row.int)
-    let (collapsedBytes, expandedChars, toNextStop) = self.collapseTabs(chunks, point.column.int, bias)
+    let (collapsedBytes, _, _) = self.collapseTabs(chunks, point.column.int, bias)
     return inputPoint(point.row.int, collapsedBytes)
 
 proc toInputPointEx*(self: TabMapSnapshot, point: TabPoint, bias: Bias = Bias.Right): tuple[inputPoint: InputPoint, expandedChars: int, toNextStop: int] =
   var chunks = self.input.iter()
   chunks.seekLine(point.row.int)
-  let expanded = point.column
   let (collapsedBytes, expandedChars, toNextStop) = self.collapseTabs(chunks, point.column.int, bias)
   return (inputPoint(point.row.int, collapsedBytes), expandedChars, toNextStop)
 
@@ -244,7 +231,6 @@ proc setInput*(self: TabMap, input: sink InputMapSnapshot) =
   if self.snapshot.buffer.remoteId == input.buffer.remoteId and self.snapshot.buffer.version == input.buffer.version and self.snapshot.input.version == input.version:
     return
 
-  let endPoint = input.endOutputPoint
   self.snapshot = TabMapSnapshot(
     tabWidth: self.snapshot.tabWidth,
     input: input.ensureMove,
@@ -285,8 +271,6 @@ proc setTabWidth*(self: TabMap, tabWidth: int) =
 
   logMapUpdate &"TabMap.setWrapWidth {self.snapshot.desc} -> {tabWidth}"
 
-  let old = self.snapshot.clone()
-
   self.snapshot = TabMapSnapshot(
     version: self.snapshot.version + 1,
     input: self.snapshot.input.clone(),
@@ -294,7 +278,8 @@ proc setTabWidth*(self: TabMap, tabWidth: int) =
     maxExpansionColumn: self.snapshot.maxExpansionColumn,
   )
 
-  let patch = initPatch([initEdit(tabPoint(0, 0)...old.endTabPoint, tabPoint(0, 0)...self.snapshot.endTabPoint)])
+  # todo
+  # let patch = initPatch([initEdit(tabPoint(0, 0)...old.endTabPoint, tabPoint(0, 0)...self.snapshot.endTabPoint)])
   # self.onUpdated.invoke (self, old, patch)
 
 proc update*(self: TabMap, input: sink InputMapSnapshot, force: bool = false) =

@@ -2021,18 +2021,13 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     return true
 
   popup.addCustomCommand "create-file", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.getSelectedItem().getSome(item):
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
-        log lvlError, fmt"Failed to parse file info from item: {item}"
-        return true
-
-      let dir = currentDirectory[]
-      self.commands.openCommandLine "", proc(command: Option[string]): bool =
-        if command.getSome(path):
-          if path.isAbsolute:
-            self.createFile(path)
-          else:
-            self.createFile(dir // path)
+    let dir = currentDirectory[]
+    self.commands.openCommandLine "", proc(command: Option[string]): bool =
+      if command.getSome(path):
+        if path.isAbsolute:
+          self.createFile(path)
+        else:
+          self.createFile(dir // path)
 
   self.layout.pushPopup popup
 

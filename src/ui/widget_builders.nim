@@ -132,6 +132,5 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
                 inc row
                 inc i
 
-            let oldW = n.bounds.w
             alignGrid(n, builder.charWidth * 2, [GridAlignment.Right])
             builder.updateSizeToContent(n)

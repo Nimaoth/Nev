@@ -491,7 +491,7 @@ proc newToOld*[T](diff: RopeDiff[T], range: Range[T]): Range[T] =
 #       let index = a.convert(indexA.Count, int)
 #       result.edits.add (start...index, dataB.data.slice(startB, indexB).slice(int))
 
-proc apply[T](a: openArray[T], diff: Diff[T]): seq[T] =
+proc apply*[T](a: openArray[T], diff: Diff[T]): seq[T] =
   var last = 0
   for op in diff.ops:
     if op.old.a > last:

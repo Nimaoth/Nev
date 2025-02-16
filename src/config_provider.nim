@@ -15,7 +15,7 @@ traitRef ConfigProvider:
   method onConfigChanged*(self: ConfigProvider): ptr Event[void] {.gcsafe, raises: [].}
 
 proc setValue*[T](self: ConfigProvider, path: string, value: T) =
-  template createSetOption(self, path, value, constructor: untyped): untyped =
+  template createSetOption(self, path, value, constructor: untyped): untyped {.used.} =
     block:
       self.setConfigValue(path, constructor(value))
 

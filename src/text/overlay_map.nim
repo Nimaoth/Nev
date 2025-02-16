@@ -1,20 +1,9 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
+import std/[options, strutils, atomics, strformat, tables]
 import nimsumtree/[rope, sumtree, buffer, clock, static_array]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import text/diff
 import syntax_map
-from scripting_api import Selection
-
-{.push warning[Deprecated]:off.}
-import std/[threadpool]
-{.pop.}
 
 var debugOverlayMap* = false
-
-template log(msg: untyped) =
-  when false:
-    if debugOverlayMap:
-      echo msg
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -326,9 +315,6 @@ proc edit*(self: OverlayMap, buffer: sink BufferSnapshot, patch: Patch[Point]): 
 
 proc update*(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot) =
   discard
-
-proc updateThread(self: ptr OverlayMapSnapshot, buffer: ptr BufferSnapshot): int =
-  self[].update(buffer[].clone())
 
 proc update*(self: OverlayMap, buffer: sink BufferSnapshot, force: bool = false) =
   logMapUpdate &"OverlayMap.updateBuffer {self.snapshot.desc} -> {buffer.remoteId}@{buffer.version}, force = {force}"

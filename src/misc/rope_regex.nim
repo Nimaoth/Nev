@@ -1,9 +1,8 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
+import std/[options, tables]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_async, custom_unicode, util, text/custom_treesitter, regex, timer, event
-import text/diff
+import custom_async, custom_unicode, util, text/custom_treesitter, regex, timer
 
 import regex/common
 import regex/nodematch
@@ -601,16 +600,9 @@ func findSomeOptImpl*(
 
 
 when defined(noRegexOpt):
-  template findSomeOptTpl(s, pattern, ms, i): untyped =
-    findSomeImpl(s, pattern, ms, i)
   template findSomeOptTpl(s, pattern, ms, i, flags): untyped =
     findSomeImpl(s, pattern, ms, i, flags)
 else:
-  template findSomeOptTpl(s, pattern, ms, i): untyped =
-    if pattern.litOpt.canOpt:
-      findSomeOptImpl(s, pattern, ms, i)
-    else:
-      findSomeImpl(s, pattern, ms, i)
   template findSomeOptTpl(s, pattern, ms, i, flags): untyped =
     if pattern.litOpt.canOpt:
       findSomeOptImpl(s, pattern, ms, i, flags)
@@ -638,10 +630,7 @@ iterator findAllBounds*(
   let flags = {mfNoCaptures}
   while i <= s.len:
     doAssert(i > i2); i2 = i
-    let oldI = i
     i = findSomeOptTpl(s, pattern.toRegex, ms, i, flags)
-    # echo &"findAllBounds {s.range}, {oldI} -> {i}"
-    #debugEcho i
     if i < 0: break
     for ab in ms.bounds:
       yield ab
@@ -654,10 +643,6 @@ proc findAll*(text: RopeSlice[int], r: Regex2, res: var seq[Range[Point]]) =
     let slice = text.slice(lineRange)
     for b in findAllBounds(slice, r, 0):
       res.add point(line, b.a)...point(line, b.b + 1)
-
-    # let selections = ($text.slice(lineRange)).findAllBounds(line, r)
-    # for s in selections:
-    #   res.add s.first.toPoint...s.last.toPoint
 
 proc findAll*(text: RopeSlice[int], searchQuery: Regex2): seq[Range[Point]] =
   findAll(text, searchQuery, result)

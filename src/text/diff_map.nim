@@ -1,13 +1,8 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
+import std/[options, atomics, strformat, tables]
 import nimsumtree/[rope, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
 import diff, syntax_map, overlay_map, wrap_map
-from scripting_api import Selection
 import nimsumtree/sumtree except mapIt
-
-{.push warning[Deprecated]:off.}
-import std/[threadpool]
-{.pop.}
 
 type InputMapSnapshot = WrapMapSnapshot
 type InputChunkIterator = WrapChunkIterator
@@ -17,11 +12,6 @@ proc inputPoint(row: Natural = 0, column: Natural = 0): InputPoint {.inline.} = 
 proc toInputPoint(d: PointDiff): InputPoint {.inline.} = d.toWrapPoint
 
 var debugDiffMap* = false
-
-template log(msg: untyped) =
-  when false:
-    if debugDiffMap:
-      echo msg
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -323,9 +313,6 @@ proc validate*(self: DiffMapSnapshot) =
 proc edit*(self: var DiffMapSnapshot, buffer: sink InputMapSnapshot, patch: Patch[InputPoint]) =
   discard
 
-proc flushEdits(self: DiffMap) =
-  discard
-
 proc edit*(self: DiffMap, input: sink InputMapSnapshot, patch: Patch[InputPoint]) =
   # echo &"edit diff map, {self.snapshot.input.map.summary} -> {input.map.summary}, {patch}"
   if self.snapshot.mappings.isSome:
@@ -362,7 +349,6 @@ proc update*(self: DiffMap, mappings: Option[seq[LineMapping]], otherInput: Inpu
   self.onUpdated.invoke((self, oldSnapshot))
 
 proc clear*(self: DiffMap) =
-  let oldSnapshot = self.snapshot.clone()
   self.snapshot.clear()
 
 proc seek*(self: var DiffChunkIterator, point: Point) =
@@ -407,9 +393,7 @@ proc next*(self: var DiffChunkIterator): Option[DiffChunk] =
     DiffChunk.none
 
   if self.diffChunk.isSome:
-    let oldDiffPoint = self.diffPoint
     self.diffPoint = self.diffChunk.get.diffEndPoint
-    # echo &"DiffChunkIterator.next: {oldDiffPoint} -> {self.diffPoint}"
 
   self.atEnd = self.inputChunks.atEnd
 

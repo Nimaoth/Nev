@@ -86,7 +86,6 @@ proc updateWordCache(self: CompletionProviderDocument) {.async.} =
 
   var data = CompletionProviderDocumentThreadState(rope: self.document.buffer.visibleText.clone(), cursors: self.cursors)
   while true:
-    let timer = startTimer()
     let oldId = (self.document.buffer.version, self.document.buffer.remoteId)
     await spawnAsync(cacheWordsThread, data.addr)
     if self.document.isNil:

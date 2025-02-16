@@ -147,14 +147,10 @@ proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEdi
   self.editorFactories.add(factory)
 
 proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
-  let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
-  # log lvlInfo, fmt"registerEditor {editor.id} '{filename}'"
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
 
 proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
-  let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
-  # log lvlInfo, fmt"unregisterEditor {editor.id} '{filename}'"
   self.editors.del(editor.id)
   self.onEditorDeregistered.invoke editor
 

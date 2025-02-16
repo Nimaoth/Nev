@@ -1,8 +1,7 @@
-import std/[options, strutils, atomics, strformat, sequtils, tables, algorithm]
+import std/[options, atomics, strformat, tables]
 import nimsumtree/[rope, sumtree, buffer, clock]
 import misc/[custom_async, custom_unicode, util, timer, event, rope_utils]
-import text/diff, syntax_map, overlay_map, tab_map
-from scripting_api import Selection
+import syntax_map, overlay_map, tab_map
 
 {.push warning[Deprecated]:off.}
 import std/[threadpool]
@@ -18,7 +17,6 @@ template log(msg: untyped) =
 {.push gcsafe.}
 {.push raises: [].}
 
-type InputMap = TabMap
 type InputMapSnapshot = TabMapSnapshot
 type InputChunkIterator = TabChunkIterator
 type InputChunk = TabChunk
@@ -358,7 +356,6 @@ proc editImpl(self: var WrapMapSnapshot, input: sink InputMapSnapshot, patch: Pa
         currentRange = c.startPos.src...c.endPos.src
         log &"  reset current chunk to {currentChunk}, {currentRange}"
 
-      let item = c.item.get
       let map = (
         src: c.startPos.src...c.endPos.src,
         dst: c.startPos.dst...c.endPos.dst)
@@ -381,9 +378,6 @@ proc editImpl(self: var WrapMapSnapshot, input: sink InputMapSnapshot, patch: Pa
         old: c.toWrapPoint(eu.old.a)...c.toWrapPoint(eu.old.b),
         # new: c.toWrapPoint(eu.new.a)...c.toWrapPointNoClamp(eu.new.b))
         new: c.toWrapPoint(eu.new.a)...(c.toWrapPoint(eu.new.a) + (eu.new.b - eu.new.a).toWrapPoint))
-      let displayEdit2 = (
-        old: c.toWrapPoint(edit.old.a)...c.toWrapPoint(edit.old.b),
-        new: c.toWrapPoint(edit.new.a)...c.toWrapPointNoClamp(edit.new.b))
 
       log &"      edit: {edit} -> displayEdit: {displayEdit}"
 
@@ -402,10 +396,8 @@ proc editImpl(self: var WrapMapSnapshot, input: sink InputMapSnapshot, patch: Pa
 
       log &"      diff: {editDiff} -> {displayEditDiff}"
 
-      let prevChunk = currentChunk
       currentChunk.src += editDiff
       currentChunk.dst += displayEditDiff
-      log &"      chunk: {prevChunk} -> {currentChunk}"
 
       if eu.old.b > map.src.b:
         let bias = if eu.old.b < self.map.summary.src:
@@ -502,12 +494,8 @@ proc update*(self: var WrapMapSnapshot, input: sink InputMapSnapshot, wrapWidth:
 
   let wrappedIndent = min(wrappedIndent, wrapWidth - 1)
 
-  let b = input.clone()
-  let numLines = input.endOutputPoint.row.int + 1
-
   var currentRange = inputPoint()...inputPoint()
   var currentDisplayRange = wrapPoint()...wrapPoint()
-  var indent = 0
 
   var iter = input.iter()
   var nextWrapColumn = wrapWidth
@@ -588,6 +576,7 @@ proc update*(self: var WrapMapSnapshot, input: sink InputMapSnapshot, wrapWidth:
 proc updateThread(self: ptr WrapMapSnapshot, input: ptr InputMapSnapshot, wrapWidth: int, wrappedIndent: int): int =
   self[].update(input[].clone(), wrapWidth, wrappedIndent)
 
+# todo
 proc computeEdits(old: WrapMapSnapshot, new: WrapMapSnapshot, edits: Patch[InputPoint]): Patch[WrapPoint] =
   var oldCursor = old.map.initCursor(WrapMapChunkSummary)
   var newCursor = new.map.initCursor(WrapMapChunkSummary)
@@ -725,11 +714,6 @@ proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
     self.wrapChunk = WrapChunk.none
     return
 
-  template log(msg: untyped) =
-    when false:
-      if self.callCount == 0:
-        echo msg
-
   # echo &"Warp.next {self.wrapPoint}"
   # defer:
   #   echo &"  -> {result}"
@@ -744,13 +728,11 @@ proc next*(self: var WrapChunkIterator): Option[WrapChunk] =
 
   assert self.inputChunk.isSome
   let currentChunk = self.inputChunk.get
-  let currentPoint = currentChunk.point + point(0, self.localOffset)
   let currentInputPoint = currentChunk.outputPoint + inputPoint(0, self.localOffset)
   discard self.wrapMapCursor.seek(currentInputPoint.WrapMapChunkSrc, Bias.Right, ())
   if self.wrapMapCursor.item.getSome(item) and item.src == inputPoint():
     self.wrapMapCursor.next()
 
-  let oldWrapPoint = self.wrapPoint
   self.wrapPoint = self.wrapMapCursor.toWrapPoint(currentInputPoint)
 
   let startOffset = self.localOffset

@@ -1,14 +1,9 @@
-import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables,
-  deques, sets, algorithm, os]
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-from scripting_api as api import nil
-import misc/[id, util, rect_utils, event, custom_logger, custom_async, custom_unicode, myjsonutils, timer]
-import scripting/[expose, scripting_base]
+import std/[options, strformat]
+import misc/[util, custom_logger, custom_async, custom_unicode]
 import platform/[platform]
 import text/language/[language_server_base]
-import document, document_editor, events, input
-import dispatch_tables, config_provider, service, platform_service
-import language_server_command_line
+import document_editor, events
+import config_provider, service, platform_service
 
 logCategory "commands"
 
@@ -56,7 +51,7 @@ proc handleCommand*(self: CommandService, command: string): bool =
     log lvlError, &"Unhandled command 'command'"
     return false
   except Exception as e:
-    log lvlError, &"Failed to run command '{command}'"
+    log lvlError, &"Failed to run command '{command}': {e.msg}"
     return false
 
 var commandLineImpl*: proc(self: CommandService, initialValue: string) {.gcsafe, raises: [].}
