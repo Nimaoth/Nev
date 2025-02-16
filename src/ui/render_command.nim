@@ -59,6 +59,7 @@ type
       textOffset*: uint32
       textLen*: uint32
       arrangementIndex*: uint32 = uint32.high
+      underlineColor*: Color
     else:
       discard
 
@@ -166,12 +167,12 @@ template buildCommands*(renderCommands: var RenderCommands, body: untyped) =
         renderCommands.strings.add c
       let len = renderCommands.strings.len.uint32 - offset
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: uint32.high))
-    template drawText(inText: openArray[char], arrangementIndex: int, inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
+    template drawText(inText: openArray[char], arrangementIndex: int, inBounds: Rect, inColor: Color, inFlags: UINodeFlags, inUnderlineColor: Color): untyped {.used.} =
       let offset = renderCommands.strings.len.uint32
       for c in inText:
         renderCommands.strings.add c
       let len = renderCommands.strings.len.uint32 - offset
-      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32))
+      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: len, bounds: inBounds, color: inColor, flags: inFlags, arrangementIndex: arrangementIndex.uint32, underlineColor: inUnderlineColor))
     template startScissor(inBounds: Rect): untyped {.used.} =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.ScissorStart, bounds: inBounds))
     template endScissor(): untyped {.used.} =

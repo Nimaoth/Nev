@@ -773,16 +773,17 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
         if state.backgroundColor.getSome(color):
           fillRect(bounds, color)
 
-        if chunk.styledChunk.underline.getSome(underline):
-          # todo: use text render style instead of this so it works in terminal aswell
+        let (underlineColor, underlineFlags) = if chunk.styledChunk.underline.getSome(underline):
           let underlineColor = app.theme.tokenColor(underline.color, textColor)
-          fillRect(rect(bounds.x, bounds.yh, bounds.w, 2), underlineColor)
+          (underlineColor, &{TextUndercurl})
+        else:
+          (color(1, 1, 1), 0.UINodeFlags)
 
         let textColor = if chunk.scope.len == 0: textColor else: app.theme.tokenColor(chunk.scope, textColor)
-        var flags = 0.UINodeFlags
+        var flags = underlineFlags
         if chunk.styledChunk.drawWhitespace:
           flags.incl UINodeFlag.TextDrawSpaces
-        drawText(chunk.toOpenArray, arrangementIndex, bounds, textColor, flags)
+        drawText(chunk.toOpenArray, arrangementIndex, bounds, textColor, flags, underlineColor)
         state.offset.x += width
         if sizeToContentY:
           currentNode.h = max(currentNode.h, bounds.yh)

@@ -745,7 +745,7 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       of RenderCommandKind.Text:
         # todo: don't copy string data
         let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-        platform.drawText(node.renderCommands, text, command.arrangementIndex.int, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags)
+        platform.drawText(node.renderCommands, text, command.arrangementIndex.int, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags, command.underlineColor)
       of RenderCommandKind.ScissorStart:
         platform.boxy.pushLayer()
         maskBounds.add(command.bounds + nodePos)
