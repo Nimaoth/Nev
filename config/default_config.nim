@@ -57,6 +57,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>og", "toggle-flag", "text.print-scopes"
   addCommand "editor", "<LEADER>om", "toggle-flag", "text.print-matches"
   addCommand "editor", "<LEADER>oh", "toggle-flag", "text.show-node-highlight"
+  addCommand "editor", "<LEADER>ok", "toggle-flag", "ui.which-key-no-progress"
   addCommandBlockDesc "editor", "<C-5>", "":
     setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") - 1, 0, 100000))
     echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
@@ -169,7 +170,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "popup.selector", "<C-k>+", "set-min-score", 0.2, add = true
   addCommand "popup.selector", "<C-k>-", "set-min-score", -0.2, add = true
   addCommand "popup.selector.preview", "<TAB>", "toggle-focus-preview"
-  addCommandBlock "popup.selector", "<C-l>":
+  addCommandBlockDesc "popup.selector", "<C-l>", "Save location list":
     setLocationListFromCurrentPopup()
 
   addCommand "editor", "<C-n>", "goto-prev-location"
@@ -185,6 +186,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "popup.selector.git", "<C-f>", "next-change"
   addCommand "popup.selector.git", "<C-s>", "stage-change"
   addCommand "popup.selector.git", "<C-q>h", "revert-change"
+  addCommandDescription "popup.selector", "<C-k>", "Scoring"
+  addCommandDescription "popup.selector.git", "<C-q>", "Revert"
 
   addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
   addCommand "popup.selector.file-explorer", "<C-r>", "go-up"

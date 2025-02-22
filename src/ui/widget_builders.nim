@@ -106,31 +106,4 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
       let continuesTextColor = self.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
       let keysTextColor = self.theme.tokenColor("number", color(225/255, 200/255, 200/255))
-
-      let height = (inputLines + 2).float * builder.textHeight
-      builder.panel(&{FillX, FillBackground, MaskContent}, y = mainBounds.h - height, h = height, backgroundColor = headerColor):
-        builder.panel(&{LayoutHorizontal}, x = builder.charWidth, y = builder.textHeight, w = currentNode.w - builder.charWidth * 2, h = currentNode.h - builder.textHeight * 2):
-          var i = 0
-          while i < self.nextPossibleInputs.len:
-            if i > 0:
-              builder.panel(0.UINodeFlags, w = builder.charWidth * 2)
-
-            var n: UINode
-            builder.panel(&{LayoutVertical, SizeToContentX}):
-              n = currentNode
-              var row = 0
-              while i < self.nextPossibleInputs.len and row < inputLines:
-                let (input, desc, continues) = self.nextPossibleInputs[i]
-                builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
-                  builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = input, textColor = keysTextColor)
-                  # builder.panel(&{}, w = builder.charWidth * 2)
-                  if continues:
-                    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = continuesTextColor)
-                  else:
-                    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = textColor)
-
-                inc row
-                inc i
-
-            alignGrid(n, builder.charWidth * 2, [GridAlignment.Right])
-            builder.updateSizeToContent(n)
+      builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, inputLines, mainBounds)

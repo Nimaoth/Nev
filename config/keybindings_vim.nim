@@ -893,7 +893,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
         editor.clearTabStops()
       editor.setMode("normal")
 
-  addCommandBlock "popup.selector", "<ESCAPE>":
+  addCommandBlockDesc "popup.selector", "<ESCAPE>", "Close":
     if getActiveEditor().isTextEditor(editor):
       if editor.mode == "normal":
         if getActivePopup().isSelectorPopup(popup):
@@ -1467,28 +1467,28 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
     editor.setMode("visual")
 
-  addTextCommandBlock "visual", "gl":
+  addTextCommandBlockDesc "visual", "gl", "Add next node of same type to selection":
     if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
       editor.selections = editor.selections & selection
       editor.scrollToCursor Last
       editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
-  addTextCommandBlock "visual", "gh":
+  addTextCommandBlockDesc "visual", "gh", "Move last selection to next node of same type":
     if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
       editor.selections = editor.selections[0..^2] & selection
       editor.scrollToCursor Last
       editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
-  addTextCommandBlock "visual", "gs":
+  addTextCommandBlockDesc "visual", "gs", "Add next sibling node to selection":
     if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
       editor.selections = editor.selections & selection
       editor.scrollToCursor Last
       editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
 
-  addTextCommandBlock "visual", "gd":
+  addTextCommandBlockDesc "visual", "gd", "Move last selection to next sibling node":
     if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
       editor.selections = editor.selections[0..^2] & selection
       editor.scrollToCursor Last

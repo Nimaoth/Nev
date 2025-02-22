@@ -2200,14 +2200,27 @@ proc recordInputToHistory*(self: App, input: string) =
   if self.inputHistory.len > maxLen:
     self.inputHistory = self.inputHistory[(self.inputHistory.len - maxLen)..^1]
 
-proc updateNextPossibleInputs*(self: App) =
-  self.nextPossibleInputs.setLen(0)
-  for handler in self.currentEventHandlers:
-    if not handler.inProgress:
+proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handler: EventHandler): bool {.gcsafe, raises: [].} = nil): seq[tuple[input: string, description: string, continues: bool]] =
+  result.setLen(0)
+  let handlers = self.currentEventHandlers
+  let anyInProgress = handlers.anyInProgress
+
+  for handler in handlers:
+    if (anyInProgress or inProgressOnly) and not handler.inProgress:
+      continue
+
+    if filter != nil and not filter(handler):
       continue
 
     let nextPossibleInputs = handler.getNextPossibleInputs()
     for x in nextPossibleInputs:
+      let key = inputToString(x[0], x[1])
+
+      for i in 0..result.high:
+        if result[i].input == key:
+          result.removeSwap(i)
+          break
+
       for next in x[2]:
         if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isAlpha:
           continue
@@ -2217,15 +2230,19 @@ proc updateNextPossibleInputs*(self: App) =
           var desc = &"... ({handler.config.context})"
           handler.config.stateToDescription.withValue(next.current, val):
             desc = val[] & "..."
-          self.nextPossibleInputs.add (inputToString(x[0], x[1]), desc, true)
+          result.add (key, desc, true)
         elif actions.len > 0:
           var desc = &"{actions[0][0]} {actions[0][1]}"
           handler.config.stateToDescription.withValue(next.current, val):
             desc = val[]
-          self.nextPossibleInputs.add (inputToString(x[0], x[1]), desc, false)
+          result.add (key, desc, false)
 
-    self.nextPossibleInputs.sort proc(a, b: tuple[input: string, description: string, continues: bool]): int =
+    result.sort proc(a, b: tuple[input: string, description: string, continues: bool]): int =
       cmp(a.input, b.input)
+
+proc updateNextPossibleInputs*(self: App) =
+  let whichKeyInProgressOnly = not self.config.asConfigProvider.getValue("ui.which-key-no-progress", false)
+  self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
     self.showNextPossibleInputsTask.interval = self.config.getOption("ui.which-key-delay", 500)

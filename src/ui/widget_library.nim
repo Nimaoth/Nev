@@ -46,6 +46,36 @@ proc alignGrid*(root: UINode, gap: float, columnAlignments: openArray[GridAlignm
     rows.add l
   alignGrid(rows, gap, columnAlignments)
 
+proc renderCommandKeys*(builder: UINodeBuilder, nextPossibleInputs: openArray[tuple[input: string, description: string, continues: bool]], textColor: Color, continuesTextColor: Color, keysTextColor: Color, backgroundColor: Color, inputLines: int, bounds: Rect, padding: int = 1) =
+  let height = (inputLines + padding * 2).float * builder.textHeight
+  let padding = padding.float
+  builder.panel(&{FillX, FillBackground, MaskContent}, y = bounds.h - height, h = height, backgroundColor = backgroundColor):
+    builder.panel(&{LayoutHorizontal}, x = builder.charWidth * padding, y = builder.textHeight * padding, w = currentNode.w - builder.charWidth * padding * 2, h = currentNode.h - builder.textHeight * padding * 2):
+      var i = 0
+      while i < nextPossibleInputs.len:
+        if i > 0:
+          builder.panel(0.UINodeFlags, w = builder.charWidth * 2)
+
+        var n: UINode
+        builder.panel(&{LayoutVertical, SizeToContentX}):
+          n = currentNode
+          var row = 0
+          while i < nextPossibleInputs.len and row < inputLines:
+            let (input, desc, continues) = nextPossibleInputs[i]
+            builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
+              builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = input, textColor = keysTextColor)
+              # builder.panel(&{}, w = builder.charWidth * 2)
+              if continues:
+                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = continuesTextColor)
+              else:
+                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = desc, textColor = textColor)
+
+            inc row
+            inc i
+
+        alignGrid(n, builder.charWidth * 2, [GridAlignment.Right])
+        builder.updateSizeToContent(n)
+
 template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: string,
     inDocument: Document, inHeaderColor: Color, inTextColor: Color, body: untyped): UINode =
 
