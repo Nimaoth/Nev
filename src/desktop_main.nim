@@ -286,10 +286,18 @@ proc run(app: App, plat: Platform, backend: Backend) =
   var renderedLastFrame = false
 
   let maxPollPerFrameMs = 2.5
+  let totalTime = startTimer()
+  var lastTime = totalTime.elapsed.float
+
+  var lowPowerMode = false
 
   while not app.closeRequested:
     defer:
       inc frameIndex
+
+    let now = totalTime.elapsed.float
+    plat.deltaTime = now - lastTime
+    lastTime = now
 
     let totalTimer = startTimer()
 
@@ -338,9 +346,9 @@ proc run(app: App, plat: Platform, backend: Backend) =
 
       renderedLastFrame = rerender
 
-      if rerender:
+      if rerender or not lowPowerMode:
         let renderTimer = startTimer()
-        plat.render()
+        plat.render(rerender)
         renderTime = renderTimer.elapsed.ms
 
       frameTime = app.frameTimer.elapsed.ms
@@ -374,22 +382,28 @@ proc run(app: App, plat: Platform, backend: Backend) =
     var outlierTime = 20.0
 
     let frameSoFar = totalTimer.elapsed.ms
+    let terminalSleepThreshold = app.config.getOption("platform.terminal-sleep-threshold", 0)
     if lastEvent.elapsed.ms > app.config.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
       let time = app.config.getOption("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
+      lowPowerMode = true
     elif lastEvent.elapsed.ms > app.config.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
       let time = app.config.getOption("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
-    elif backend == Terminal and frameSoFar < 5:
-      sleep(5 - frameSoFar.int)
-      outlierTime += 5
+      lowPowerMode = true
+    elif backend == Terminal and frameSoFar < terminalSleepThreshold.float:
+      sleep(terminalSleepThreshold - frameSoFar.int)
+      outlierTime += terminalSleepThreshold.float
+      lowPowerMode = false
+    else:
+      lowPowerMode = false
 
     let totalTime = totalTimer.elapsed.ms
     if not app.disableLogFrameTime and
         (eventCounter > 0 or totalTime > outlierTime or app.logNextFrameTime):
-      log(lvlDebug, fmt"Total: {totalTime:>5.2f}, Poll: {pollTime:>5.2f}ms, Event: {eventTime:>5.2f}ms, Frame: {frameTime:>5.2f}ms (u: {updateTime:>5.2f}ms, r: {renderTime:>5.2f}ms)")
+      log(lvlDebug, fmt"Total: {totalTime:>5.2f} ms, Poll: {pollTime:>5.2f} ms, Event: {eventTime:>5.2f} ms, Frame: {frameTime:>5.2f} ms (u: {updateTime:>5.2f} ms, r: {renderTime:>5.2f} ms)")
     app.logNextFrameTime = false
 
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")

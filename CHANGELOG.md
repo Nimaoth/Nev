@@ -20,6 +20,11 @@
 - Many small fixes and improvements
 - Removed filesystem related things from workspace, Nev now uses a virtual file system internally.
 
+- Added settings browser
+- Added key binding preview while waiting for further input in longer keybindings
+- Added regex based goto-definition/goto-references/goto-symbol etc if no language server is available (requires ripgrep). Regexes can be configured per language
+- Improved document completions to run mostly on a background thread (except filtering) and cache the entire document
+
 ### Vim
 - Fixed ctrl+w and ctrl+u in insert mode
 - Escape now needs to be pressed twice to cancel the command line or popups, pressing it once goes to normal mode instead

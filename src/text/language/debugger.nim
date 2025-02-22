@@ -296,7 +296,7 @@ proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.as
   if editor.getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
     textEditor.targetSelection = location.toSelection
-    textEditor.scrollToCursor(location, scrollBehaviour = CenterOffscreen.some)
+    textEditor.scrollToCursor(location, scrollBehaviour = CenterMargin.some)
 
     let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
     textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground",

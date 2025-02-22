@@ -58,10 +58,10 @@ proc bitSetInit*(b: var BitSet, length: int) =
 proc bitSetUnion*(x: var BitSet, y: BitSet) =
   if x.len < y.len:
     x.setLen y.len
-  for i in 0..high(x): x[i] = x[i] or y[i]
+  for i in 0..min(high(x), high(y)): x[i] = x[i] or y[i]
 
 proc bitSetDiff*(x: var BitSet, y: BitSet) =
-  for i in 0..high(x): x[i] = x[i] and not y[i]
+  for i in 0..min(high(x), high(y)): x[i] = x[i] and not y[i]
 
 proc bitSetSymDiff*(x: var BitSet, y: BitSet) =
   for i in 0..high(x): x[i] = x[i] xor y[i]

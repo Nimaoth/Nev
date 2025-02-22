@@ -8,6 +8,7 @@ import finder/[finder, previewer, file_previewer]
 import platform/[platform]
 import service, dispatch_tables, platform_service
 import selector_popup, vcs, layout
+from scripting_api import SelectionCursor, ScrollSnapBehaviour
 
 logCategory "vcs_api"
 
@@ -213,6 +214,38 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
 
     asyncSpawn self.diffStagedFileAsync(workspace, fileInfo.path)
     return true
+
+  popup.addCustomCommand "prev-change", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    popup.previewEditor.selection = popup.previewEditor.getPrevChange(popup.previewEditor.selection.last)
+    popup.previewEditor.scrollToCursor(SelectionCursor.Last)
+    popup.previewEditor.centerCursor()
+    popup.previewEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+
+  popup.addCustomCommand "next-change", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    popup.previewEditor.selection = popup.previewEditor.getNextChange(popup.previewEditor.selection.last)
+    popup.previewEditor.scrollToCursor(SelectionCursor.Last)
+    popup.previewEditor.centerCursor()
+    popup.previewEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+
+  popup.addCustomCommand "stage-change", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    if popup.previewEditor.document.staged:
+      popup.previewEditor.unstageSelectedAsync().thenIt:
+        source.retrigger()
+    else:
+      popup.previewEditor.stageSelectedAsync().thenIt:
+        source.retrigger()
+
+  popup.addCustomCommand "revert-change", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    popup.previewEditor.revertSelectedAsync().thenIt:
+      source.retrigger()
 
   let layout = self.services.getService(LayoutService).get
   layout.pushPopup popup

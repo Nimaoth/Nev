@@ -6,6 +6,7 @@ from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 
 {.push gcsafe.}
+{.used.}
 
 proc pushSelectorPopupImpl(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
   var popup = newSelectorPopup(self.services, builder.scope, builder.finder, builder.previewer.toDisposableRef)

@@ -142,5 +142,3 @@ macro addBuiltinServices*(services: Services) =
     let name = serviceInfo[1]
     let dependencies = serviceInfo[2]
     result.add genAst(services, T, name, dependencies, services.addService(name, T(), dependencies))
-
-  echo result.repr
