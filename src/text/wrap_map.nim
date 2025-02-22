@@ -97,6 +97,7 @@ type
     input*: InputMapSnapshot
     # buffer*: BufferSnapshot
     interpolated*: bool = true
+    wrappedIndent*: int = 4
     version*: int
 
   WrapMap* = ref object
@@ -408,6 +409,7 @@ proc editImpl(self: var WrapMapSnapshot, input: sink InputMapSnapshot, patch: Pa
         log &"  add2 current chunk {currentChunk}"
         # todo: only add when not empty
         newMap.add currentChunk
+        newMap.add(WrapMapChunk(src: inputPoint(), dst: wrapPoint(1, self.wrappedIndent)), ())
         discard c.seekForward(eu.old.b.WrapMapChunkSrc, bias, ())
         log &"  seek {eu.old.b} -> {eu.old.b} >= {c.endPos.src}"
       else:
@@ -493,6 +495,7 @@ proc update*(self: var WrapMapSnapshot, input: sink InputMapSnapshot, wrapWidth:
     return
 
   let wrappedIndent = min(wrappedIndent, wrapWidth - 1)
+  self.wrappedIndent = wrappedIndent
 
   var currentRange = inputPoint()...inputPoint()
   var currentDisplayRange = wrapPoint()...wrapPoint()

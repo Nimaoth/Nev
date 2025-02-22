@@ -127,7 +127,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
   inlayHintsTask: DelayedTask
   lastInlayHintTimestamp: Lamport
-  lastInlayHintDisplayRange: Selection
+  lastInlayHintDisplayRange: Range[Point]
+  lastInlayHintBufferRange: Range[Point]
 
   eventHandlerNames: seq[string]
   eventHandlers: seq[EventHandler]
@@ -565,9 +566,9 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
       self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
 
   self.updateInlayHintsAfterChange()
-  let visibleRange = self.visibleTextRange
-  if visibleRange != self.lastInlayHintDisplayRange:
-    self.lastInlayHintDisplayRange = visibleRange
+  let visibleRange = self.visibleTextRange.toRange
+  let bufferRange = self.lastInlayHintBufferRange
+  if visibleRange.a < bufferRange.a or visibleRange.b > bufferRange.b:
     self.updateInlayHints()
 
   let newVersion = (self.document.buffer.version, self.selections[^1].last)
@@ -967,6 +968,17 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     of "%": a mod b
     else: a
 
+  of "unary_expression":
+    checkRes c.gotoFirstChild()
+    let op = c.currentNode.nodeType
+    checkRes c.gotoNextSibling()
+    let a = c.evaluateJsNode(rope, floatingPoint)
+    checkRes c.gotoParent()
+    return case op
+    of "+": a
+    of "-": -a
+    else: a
+
   of "number":
     let valStr = $rope.slice(node.getRange.toSelection.toRange)
     if valStr.contains("."):
@@ -975,7 +987,7 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     checkRes c.gotoParent()
     return val
 
-  of "else":
+  else:
     log lvlWarn, &"Unknown js tree node type '{node.nodeType}': {node}"
     return 0
 
@@ -2093,9 +2105,6 @@ proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) 
     if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
       ropeDiff.edits.add (rangeNew, rangeOld, ropeOld.slice(rangeOld))
 
-  for e in ropeDiff.edits:
-    echo &"apply edit {e}"
-
   let selections = ropeDiff.edits.mapIt(it.old.toSelection)
   let texts = ropeDiff.edits.mapIt(it.text)
   discard self.document.edit(selections, self.selections, texts)
@@ -2615,6 +2624,10 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
       c = self.document.rope.cursorT(cursor.toPoint)
       while c.position.column > 0:
         c.seekPrevRune()
+        if c.currentChar == '-':
+          r.a = c.position
+          break
+
         if c.currentChar notin {'0'..'9'}:
           c.seekNextRune()
           break
@@ -3739,7 +3752,8 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
     if self.document.isNil:
       return
 
-    let visibleRange = self.visibleTextRange(self.screenLineCount)
+    let screenLineCount = self.screenLineCount
+    let visibleRange = self.visibleTextRange(screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
     let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.localizedPath, visibleRange)
     if self.document.isNil:
@@ -3750,6 +3764,8 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
       self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, Left), it)
       self.lastInlayHintTimestamp = self.document.buffer.timestamp
+      self.lastInlayHintDisplayRange = visibleRange.toRange
+      self.lastInlayHintBufferRange = (self.lastInlayHintDisplayRange.a + point(screenLineCount div 2, 0))...(self.lastInlayHintDisplayRange.b - point(screenLineCount div 2, 0))
 
       self.displayMap.overlay.clear(14)
       for hint in self.inlayHints:
