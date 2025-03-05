@@ -10,18 +10,19 @@ export Bias
 {.push gcsafe.}
 {.push raises: [].}
 
-var debugMapUpdates* = true
+const debugAllMapUpdates* = false
+var debugAllMapUpdatesRT* = true
 var debugChunkIterators* = false
 
 template logMapUpdate*(msg: untyped) =
-  when false:
-    if debugMapUpdates:
-      echo msg
+  when debugAllMapUpdates:
+    if debugAllMapUpdatesRT:
+      debugEcho msg
 
 template logChunkIter*(msg: untyped) =
   when false:
     if debugChunkIterators:
-      echo msg
+      debugEcho msg
 
 func toPoint*(cursor: api.Cursor): Point = Point.init(max(cursor.line, 0), max(cursor.column, 0))
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)

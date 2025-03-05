@@ -509,3 +509,21 @@ proc next*(self: var StyledChunkIterator): Option[StyledChunk] =
   currentChunk.lenOriginal = self.localOffset - startOffset
   currentChunk.point.column += startOffset.uint32
   return StyledChunk(chunk: currentChunk, underline: underline).some
+
+iterator chunks*[T](iter: var T): typeof(iter.next.get) =
+  while iter.next().getSome(chunk):
+    yield chunk
+
+iterator styledChunks*(iter: var ChunkIterator): StyledChunk =
+  while iter.next().getSome(chunk):
+    yield StyledChunk(chunk: chunk)
+
+iterator styledChunks*(iter: var StyledChunkIterator): StyledChunk =
+  while iter.next().getSome(chunk):
+    yield chunk
+
+iterator styledChunks*[T](iter: var T): StyledChunk =
+  for chunk in chunks(iter):
+    var c = chunk.styledChunk
+    c.chunk.point = chunk.outputPoint.Point
+    yield c

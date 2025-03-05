@@ -401,6 +401,12 @@ proc next*(self: var DiffChunkIterator): Option[DiffChunk] =
 
 #
 
+func toOutputPoint*(self: DiffMapSnapshot, point: WrapPoint, bias: Bias = Bias.Right): DiffPoint {.inline.} = self.toDiffPoint(point, bias)
+func `outputPoint=`*(self: var DiffChunk, point: DiffPoint) = self.diffPoint = point
+template outputPoint*(self: DiffChunk): DiffPoint = self.diffPoint
+template endOutputPoint*(self: DiffChunk): DiffPoint = self.endDiffPoint
+template endOutputPoint*(self: DiffMapSnapshot): DiffPoint = self.endDiffPoint
+
 func wrap*(self: DiffMapSnapshot): lent WrapMapSnapshot {.inline.} = self.input
 func wrapChunks*(self: var DiffChunkIterator): var WrapChunkIterator {.inline.} = self.inputChunks
 func wrapChunks*(self: DiffChunkIterator): lent WrapChunkIterator {.inline.} = self.inputChunks

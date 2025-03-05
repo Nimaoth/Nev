@@ -1,4 +1,4 @@
-import std/[options, tables, sugar]
+import std/[options, tables, sugar, strformat]
 import nimsumtree/[rope, buffer, clock]
 import misc/[custom_async, custom_unicode, util, event, rope_utils]
 import syntax_map, overlay_map, tab_map, wrap_map, diff_map
@@ -302,3 +302,7 @@ proc next*(self: var DisplayChunkIterator): Option[DisplayChunk] =
 
   self.atEnd = self.diffChunks.atEnd
   return self.displayChunk
+
+template outputPoint*(self: DisplayChunk): DisplayPoint = self.displayPoint
+template endOutputPoint*(self: DisplayChunk): DisplayPoint = self.endDisplayPoint
+template endOutputPoint*(self: DisplayMapSnapshot): DisplayPoint = self.endDisplayPoint
