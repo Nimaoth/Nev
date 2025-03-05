@@ -39,7 +39,7 @@ requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.17"
 requires "https://github.com/Nimaoth/nimwasmtime >= 0.2.1"
-requires "https://github.com/Nimaoth/nimsumtree >= 0.5.4"
+requires "https://github.com/Nimaoth/nimsumtree >= 0.5.5"
 
 # Use this to include all treesitter languages (takes longer to download)
 requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.6"

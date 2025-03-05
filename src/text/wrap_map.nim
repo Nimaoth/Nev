@@ -283,7 +283,7 @@ proc validate*(self: WrapMapSnapshot) =
     c.next()
 
   if endPos != self.input.endOutputPoint:
-    echo &"--------------------------------\n-------------------------------\nInvalid wrap map {self.desc}, endpos {endPos} != {self.input.endOutputPoint}\n{self}\n{self}\n---------------------------------------"
+    echo &"--------------------------------\n-------------------------------\nInvalid wrap map {self.desc}, endpos {endPos} != {self.input.endOutputPoint}\n{self}\n---------------------------------------"
     return
 
   if self.map.summary.src != self.input.endOutputPoint:
