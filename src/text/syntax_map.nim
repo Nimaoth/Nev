@@ -67,14 +67,17 @@ func high*(_: typedesc[Point]): Point = Point(row: uint32.high, column: uint32.h
 func endPoint*(self: RopeChunk): Point = Point(row: self.point.row, column: self.point.column + self.len.uint32)
 
 func `$`*(chunk: RopeChunk): string =
-  result = newString(chunk.len)
+  proc escape(c: char): string =
+    if c == '\n':
+      return "\\n"
+    return $c
+  result = newStringOfCap(chunk.len)
   for i in 0..<chunk.len:
-    result[i] = chunk.data[i]
+    result.add chunk.data[i].escape
   if chunk.data != chunk.dataOriginal:
-    var str = ""
-    str.setLen(chunk.lenOriginal)
+    var str = newStringOfCap(chunk.lenOriginal)
     for i in 0..<chunk.lenOriginal:
-      str[i] = chunk.dataOriginal[i]
+      str.add chunk.dataOriginal[i].escape
     result = &"RC({chunk.point}...{chunk.endPoint}, '{result}', '{str}')"
   else:
     result = &"RC({chunk.point}...{chunk.endPoint}, '{result}')"
@@ -253,13 +256,6 @@ func len*(self: StyledChunk): int = self.chunk.len
 func `$`*(self: StyledChunk): string = &"SC({self.chunk}, {self.scope}, {self.drawWhitespace})"
 template toOpenArray*(self: StyledChunk): openArray[char] = self.chunk.toOpenArray
 
-proc seekLine*(self: var StyledChunkIterator, line: int) =
-  self.chunks.seekLine(line)
-  self.localOffset = 0
-  self.highlights.setLen(0)
-  self.highlightsIndex = -1
-  self.chunk = RopeChunk.none
-
 proc nextDiagnostic(self: var StyledChunkIterator) =
   if self.diagnosticIndex < self.diagnosticEndPoints.len:
     let change = if self.diagnosticEndPoints[self.diagnosticIndex].start: 1 else: -1
@@ -272,12 +268,16 @@ proc nextDiagnostic(self: var StyledChunkIterator) =
 
 proc seek*(self: var StyledChunkIterator, point: Point) =
   self.chunks.seek(point)
+  self.chunks2.seek(point)
   self.localOffset = 0 # todo: does this need to be != 0?
   self.highlights.setLen(0)
   self.highlightsIndex = -1
   self.chunk = RopeChunk.none
   while self.diagnosticIndex < self.diagnosticEndPoints.len and point >= self.diagnosticEndPoints[self.diagnosticIndex].point:
     self.nextDiagnostic()
+
+proc seekLine*(self: var StyledChunkIterator, line: int) =
+  self.seek(point(line, 0))
 
 func contentString(self: var StyledChunkIterator, selection: Range[Point], byteRange: Range[int], maxLen: int): string =
   let currentChunk {.cursor.} = self.chunk.get

@@ -27,7 +27,6 @@ const defaultOverlays = [
   (point(1, 4)...point(1, 4), "xvlc", 1, Bias.Right),
 ]
 
-# suite "Overlay map":
 proc prepareData(content: string): (Buffer, OverlayMap) =
   var b = initBuffer(content = content)
   check $b.visibleText == content
@@ -36,8 +35,11 @@ proc prepareData(content: string): (Buffer, OverlayMap) =
   om.setBuffer(b.snapshot.clone())
   (b, om)
 
-# test "Initial update":
-proc test(edits: openArray[(Range[Point], string)], content: string = file, overlays: openArray[(Range[Point], string, int, Bias)] = defaultOverlays) =
+proc test(edits: openArray[(Range[Point], string)], content: string = file, overlays: openArray[(Range[Point], string, int, Bias)] = defaultOverlays, debug = false) =
+  # debugChunkIter = debug
+  # defer:
+  #   debugChunkIter = false
+
   let edits = @edits
   log &"================================================== testEdit {edits}"
   log content
@@ -111,7 +113,6 @@ const defaultOverlays3 = [
   (point(0, 1)...point(0, 4), "ack", 1, Bias.Left),
 ]
 
-# debugOverlayMapNext = true
 test([(point(0, 2)...point(0, 2), "+")], file, defaultOverlays3)
 test([(point(0, 2)...point(0, 3), "")], file, defaultOverlays3)
 test([(point(0, 2)...point(0, 3), "+")], file, defaultOverlays3)
