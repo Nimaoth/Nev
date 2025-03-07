@@ -14,6 +14,27 @@ traitRef ConfigProvider:
   method setConfigValue(self: ConfigProvider, path: string, value: JsonNode) {.gcsafe, raises: [].}
   method onConfigChanged*(self: ConfigProvider): ptr Event[void] {.gcsafe, raises: [].}
 
+proc setValue*[T](self: ConfigProvider, path: string, value: T) =
+  template createSetOption(self, path, value, constructor: untyped): untyped {.used.} =
+    block:
+      self.setConfigValue(path, constructor(value))
+
+  try:
+    when T is bool:
+      self.createSetOption(path, value, newJBool)
+    elif T is Ordinal:
+      self.createSetOption(path, value, newJInt)
+    elif T is float32 | float64:
+      self.createSetOption(path, value, newJFloat)
+    elif T is string:
+      self.createSetOption(path, value, newJString)
+    elif T is JsonNode:
+      self.setConfigValue(path, value)
+    else:
+      {.fatal: ("Can't set option with type " & $T).}
+  except KeyError:
+    discard
+
 proc getValue*[T](self: ConfigProvider, path: string, default: T = T.default): T =
   template createGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =
     block:
@@ -21,6 +42,7 @@ proc getValue*[T](self: ConfigProvider, path: string, default: T = T.default): T
       if value.isSome:
         accessor(value.get, defaultValue)
       else:
+        self.setValue(path, defaultValue)
         defaultValue
 
   try:
@@ -41,25 +63,6 @@ proc getValue*[T](self: ConfigProvider, path: string, default: T = T.default): T
   except KeyError:
     return default
 
-proc setValue*[T](self: ConfigProvider, path: string, value: T) =
-  template createSetOption(self, path, value, constructor: untyped): untyped =
-    block:
-      self.setConfigValue(path, constructor(value))
-
-  try:
-    when T is bool:
-      self.createSetOption(path, value, newJBool)
-    elif T is Ordinal:
-      self.createSetOption(path, value, newJInt)
-    elif T is float32 | float64:
-      self.createSetOption(path, value, newJFloat)
-    elif T is string:
-      self.createSetOption(path, value, newJString)
-    else:
-      {.fatal: ("Can't set option with type " & $T).}
-  except KeyError:
-    discard
-
 proc getFlag*(self: ConfigProvider, flag: string, default: bool): bool =
   return self.getValue(flag, default)
 
@@ -69,6 +72,30 @@ proc setFlag*(self: ConfigProvider, flag: string, value: bool) =
 proc toggleFlag*(self: ConfigProvider, flag: string) =
   if self.getConfigValue(flag).isSome:
     self.setFlag(flag, not self.getFlag(flag, false))
+
+proc decodeRegex*(value: JsonNode, default: string = ""): string =
+  if value.kind == JString:
+    return value.str
+  elif value.kind == JArray:
+    var r = ""
+    for t in value.elems:
+      if t.kind != JString:
+        log lvlError, &"Invalid regex value: {value}, expected string, got {t}"
+        continue
+      if r.len > 0:
+        r.add "|"
+      r.add t.str
+
+    return r
+  elif value.kind == JNull:
+    return default
+  else:
+    log lvlError, &"Invalid regex value: {value}, expected string | array[string]"
+    return default
+
+proc getRegexValue*(self: ConfigProvider, path: string, default: string = ""): string =
+  let value = self.getValue(path, newJNull())
+  return value.decodeRegex(default)
 
 type
   ConfigService* = ref object of Service
@@ -109,74 +136,6 @@ implTrait ConfigProvider, ConfigService:
 
   proc onConfigChanged*(self: ConfigService): ptr Event[void] = self.onConfigChanged.addr
 
-proc getOption*[T](self: ConfigService, path: string, default: Option[T] = T.none): Option[T] =
-  try:
-    template createGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =
-      block:
-        if self.isNil:
-          return default
-        let node = self.settings{path.split(".")}
-        if node.isNil:
-          return default
-        accessor(node, defaultValue)
-
-    when T is bool:
-      return createGetOption(self, path, T.default, getBool).some
-    elif T is enum:
-      return parseEnum[T](createGetOption(self, path, "", getStr)).some.catch(default)
-    elif T is Ordinal:
-      return createGetOption(self, path, T.default.int, getInt).T.some
-    elif T is float32 | float64:
-      return createGetOption(self, path, T.default, getFloat).some
-    elif T is string:
-      return createGetOption(self, path, T.default, getStr).some
-    elif T is JsonNode:
-      if self.isNil:
-        return default
-      let node = self.settings{path.split(".")}
-      if node.isNil:
-        return default
-      return node.some
-    else:
-      {.fatal: ("Can't get option with type " & $T).}
-
-  except:
-    return T.none
-
-proc getOption*[T](self: ConfigService, path: string, default: T = T.default): T =
-  try:
-    template createGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =
-      block:
-        if self.isNil:
-          return default
-        let node = self.settings{path.split(".")}
-        if node.isNil:
-          return default
-        accessor(node, defaultValue)
-
-    when T is bool:
-      return createGetOption(self, path, default, getBool)
-    elif T is enum:
-      return parseEnum[T](createGetOption(self, path, "", getStr), default)
-    elif T is Ordinal:
-      return createGetOption(self, path, default, getInt)
-    elif T is float32 | float64:
-      return createGetOption(self, path, default, getFloat)
-    elif T is string:
-      return createGetOption(self, path, default, getStr)
-    elif T is JsonNode:
-      if self.isNil:
-        return default
-      let node = self.settings{path.split(".")}
-      if node.isNil:
-        return default
-      return node
-    else:
-      {.fatal: ("Can't get option with type " & $T).}
-
-  except:
-    return default
-
 proc setOption*[T](self: ConfigService, path: string, value: T) =
   template createSetOption(self, path, value, constructor: untyped): untyped =
     block:
@@ -211,6 +170,76 @@ proc setOption*[T](self: ConfigService, path: string, value: T) =
 
   except:
     discard
+
+proc getOption*[T](self: ConfigService, path: string, default: Option[T] = T.none): Option[T] =
+  try:
+    template createGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =
+      block:
+        if self.isNil:
+          return default
+        let node = self.settings{path.split(".")}
+        if node.isNil:
+          self.setOption(path, defaultValue)
+          return default
+        accessor(node, defaultValue)
+
+    when T is bool:
+      return createGetOption(self, path, T.default, getBool).some
+    elif T is enum:
+      return parseEnum[T](createGetOption(self, path, "", getStr)).some.catch(default)
+    elif T is Ordinal:
+      return createGetOption(self, path, T.default.int, getInt).T.some
+    elif T is float32 | float64:
+      return createGetOption(self, path, T.default, getFloat).some
+    elif T is string:
+      return createGetOption(self, path, T.default, getStr).some
+    elif T is JsonNode:
+      if self.isNil:
+        return default
+      let node = self.settings{path.split(".")}
+      if node.isNil:
+        return default
+      return node.some
+    else:
+      {.fatal: ("Can't get option with type " & $T).}
+
+  except:
+    return T.none
+
+proc getOption*[T](self: ConfigService, path: string, default: T = T.default): T =
+  try:
+    template createGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =
+      block:
+        if self.isNil:
+          return default
+        let node = self.settings{path.split(".")}
+        if node.isNil:
+          self.setOption(path, defaultValue)
+          return default
+        accessor(node, defaultValue)
+
+    when T is bool:
+      return createGetOption(self, path, default, getBool)
+    elif T is enum:
+      return parseEnum[T](createGetOption(self, path, "", getStr), default)
+    elif T is Ordinal:
+      return createGetOption(self, path, default, getInt)
+    elif T is float32 | float64:
+      return createGetOption(self, path, default, getFloat)
+    elif T is string:
+      return createGetOption(self, path, default, getStr)
+    elif T is JsonNode:
+      if self.isNil:
+        return default
+      let node = self.settings{path.split(".")}
+      if node.isNil:
+        return default
+      return node
+    else:
+      {.fatal: ("Can't get option with type " & $T).}
+
+  except:
+    return default
 
 ###########################################################################
 
@@ -274,5 +303,19 @@ proc toggleFlag*(self: ConfigService, flag: string) {.expose("config").} =
   let newValue = not self.getFlag(flag)
   log lvlInfo, fmt"toggleFlag '{flag}' -> {newValue}"
   self.setFlag(flag, newValue)
+
+proc getAllConfigKeys*(node: JsonNode, prefix: string, res: var seq[tuple[key: string, value: JsonNode]]) =
+  case node.kind
+  of JObject:
+    if prefix.len > 0:
+      res.add (prefix, node)
+    for key, value in node.fields.pairs:
+      let key = if prefix.len > 0: prefix & "." & key else: key
+      value.getAllConfigKeys(key, res)
+  else:
+    res.add (prefix, node)
+
+proc getAllConfigKeys*(self: ConfigService): seq[tuple[key: string, value: JsonNode]] =
+  self.settings.getAllConfigKeys("", result)
 
 addGlobalDispatchTable "config", genDispatchTable("config")

@@ -1,6 +1,6 @@
-import std/[sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform]
@@ -9,7 +9,7 @@ import config_provider, app_interface
 import text/language/language_server_base, language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text/[custom_treesitter]
-import finder/[finder, previewer]
+import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
 import service, layout, session, command_service
 
@@ -139,6 +139,10 @@ type
     previewer: Option[DisposableRef[Previewer]]
 
     closeUnusedDocumentsTask: DelayedTask
+
+    showNextPossibleInputsTask: DelayedTask
+    nextPossibleInputs*: seq[tuple[input: string, description: string, continues: bool]]
+    showNextPossibleInputs*: bool
 
 var gEditor* {.exportc.}: App = nil
 
@@ -645,7 +649,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   {.gcsafe.}:
     gTheme = self.theme
 
-  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false)
+  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
   self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 
@@ -723,6 +727,11 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   let closeUnusedDocumentsTimerS = self.config.getOption("editor.close-unused-documents-timer", 10)
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
+
+  let showNextPossibleInputsDelay = self.config.getOption("ui.which-key-delay", 500)
+  self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
+    self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
+    self.platform.requestRender()
 
   self.runEarlyCommandsFromAppOptions()
   self.runConfigCommands("startup-commands")
@@ -1181,6 +1190,9 @@ proc loadWorkspaceFile*(self: App, path: string) =
 proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor").} =
   asyncSpawn self.setTheme(fmt"app://themes/{name}.json", force)
 
+proc vsync*(self: App, enabled: bool) {.expose("editor").} =
+  self.platform.setVsync(enabled)
+
 proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
@@ -1347,6 +1359,66 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
       editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
     return true
+
+  self.layout.pushPopup popup
+
+proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  let previewer = newDataPreviewer(self.services, language="javascript".some).Previewer.toDisposableRef.some
+
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+    var items = newSeq[FinderItem]()
+    for (key, value) in self.config.getAllConfigKeys():
+      let valueStr = $value
+      items.add FinderItem(
+        displayName: key,
+        data: value.pretty,
+        detail: valueStr[0..min(valueStr.high, 50)],
+      )
+
+    return items
+
+  let source = newSyncDataSource(getItems)
+  let finder = newFinder(source, filterAndSort=true)
+  var popup = newSelectorPopup(self.services, "settings".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    # discard self.layout.openFile(item.data)
+    return true
+
+  popup.addCustomCommand "toggle-flag", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let key = item.displayName
+    self.config.toggleFlag(key)
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "update-setting", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let key = item.displayName
+    let value = popup.previewEditor.document.contentString
+    try:
+      let valueJson = value.parseJson
+      self.config.asConfigProvider.setValue(key, valueJson)
+      source.retrigger()
+      return true
+    except Exception as e:
+      log lvlError, &"Failed to update setting '{key}' to '{value}': {e.msg}"
 
   self.layout.pushPopup popup
 
@@ -1949,12 +2021,13 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     return true
 
   popup.addCustomCommand "create-file", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.getSelectedItem().getSome(item):
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
-        log lvlError, fmt"Failed to parse file info from item: {item}"
-        return true
-
-      self.commands.openCommandLine("create-file \\" & currentDirectory[])
+    let dir = currentDirectory[]
+    self.commands.openCommandLine "", proc(command: Option[string]): bool =
+      if command.getSome(path):
+        if path.isAbsolute:
+          self.createFile(path)
+        else:
+          self.createFile(dir // path)
 
   self.layout.pushPopup popup
 
@@ -2028,6 +2101,10 @@ proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
 proc reloadPlugin*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload current plugin"
   asyncSpawn self.reloadPluginAsync()
+
+proc reloadTheme*(self: App) {.expose("editor").} =
+  log lvlInfo, &"Reload theme"
+  asyncSpawn self.setTheme(self.theme.path, force = true)
 
 proc reloadState*(self: App) {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
@@ -2123,6 +2200,60 @@ proc recordInputToHistory*(self: App, input: string) =
   if self.inputHistory.len > maxLen:
     self.inputHistory = self.inputHistory[(self.inputHistory.len - maxLen)..^1]
 
+proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handler: EventHandler): bool {.gcsafe, raises: [].} = nil): seq[tuple[input: string, description: string, continues: bool]] =
+  result.setLen(0)
+  let handlers = self.currentEventHandlers
+  let anyInProgress = handlers.anyInProgress
+
+  for handler in handlers:
+    if (anyInProgress or inProgressOnly) and not handler.inProgress:
+      continue
+
+    if filter != nil and not filter(handler):
+      continue
+
+    let nextPossibleInputs = handler.getNextPossibleInputs()
+    for x in nextPossibleInputs:
+      let key = inputToString(x[0], x[1])
+
+      for i in 0..result.high:
+        if result[i].input == key:
+          result.removeSwap(i)
+          break
+
+      for next in x[2]:
+        if x[1] == {Shift} and x[0] in 0..Rune.high.int and x[0].Rune.isAlpha:
+          continue
+
+        let actions = handler.dfa.getActions(next)
+        if actions.len > 1:
+          var desc = &"... ({handler.config.context})"
+          handler.config.stateToDescription.withValue(next.current, val):
+            desc = val[] & "..."
+          result.add (key, desc, true)
+        elif actions.len > 0:
+          var desc = &"{actions[0][0]} {actions[0][1]}"
+          handler.config.stateToDescription.withValue(next.current, val):
+            desc = val[]
+          result.add (key, desc, false)
+
+    result.sort proc(a, b: tuple[input: string, description: string, continues: bool]): int =
+      cmp(a.input, b.input)
+
+proc updateNextPossibleInputs*(self: App) =
+  let whichKeyInProgressOnly = not self.config.asConfigProvider.getValue("ui.which-key-no-progress", false)
+  self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
+
+  if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
+    self.showNextPossibleInputsTask.interval = self.config.getOption("ui.which-key-delay", 500)
+    self.showNextPossibleInputsTask.reschedule()
+
+  elif self.nextPossibleInputs.len == 0:
+    self.showNextPossibleInputs = false
+
+  if self.showNextPossibleInputs:
+    self.platform.requestRender()
+
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   # logScope lvlDebug, &"handleKeyPress {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
@@ -2148,6 +2279,8 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   except:
     discard
 
+  self.updateNextPossibleInputs()
+
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
   discard
 
@@ -2172,6 +2305,8 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
       self.platform.preventDefault()
   except:
     discard
+
+  self.updateNextPossibleInputs()
 
 proc handleDropFile*(self: App, path, content: string) =
   let document = newTextDocument(self.services, path, content)
@@ -2212,6 +2347,7 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
 
   if description.len > 0:
     self.events.commandDescriptions[baseContext & subContext & keys] = description
+    self.events.getEventHandlerConfig(baseContext).addCommandDescription(keys, description)
 
   var source = source
   if self.plugins.currentScriptContext.getSome(scriptContext):

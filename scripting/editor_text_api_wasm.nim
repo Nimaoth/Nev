@@ -59,6 +59,34 @@ proc lineLength*(self: TextDocumentEditor; line: int): int {.gcsafe, raises: [].
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_numDisplayLines_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc numDisplayLines*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_numDisplayLines_int_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_numWrapLines_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc numWrapLines*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_numWrapLines_int_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_screenLineCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc screenLineCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
@@ -71,6 +99,24 @@ proc screenLineCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
     result = parseJson($res).jsonTo(typeof(result))
   except:
     raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_evaluateExpressions_void_TextDocumentEditor_Selections_bool_string_string_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc evaluateExpressions*(self: TextDocumentEditor; selections: Selections;
+                          inclusiveEnd: bool = false; prefix: string = "";
+                          suffix: string = ""; addSelectionIndex: bool = false) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add selections.toJson()
+  argsJson.add inclusiveEnd.toJson()
+  argsJson.add prefix.toJson()
+  argsJson.add suffix.toJson()
+  argsJson.add addSelectionIndex.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_evaluateExpressions_void_TextDocumentEditor_Selections_bool_string_string_bool_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_text_doMoveCursorLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
@@ -93,20 +139,22 @@ proc doMoveCursorLine*(self: TextDocumentEditor; cursor: Cursor; offset: int;
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+proc editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_Option_int_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorVisualLine*(self: TextDocumentEditor; cursor: Cursor;
                              offset: int; wrap: bool = false;
-                             includeAfter: bool = false): Cursor {.gcsafe,
-    raises: [].} =
+                             includeAfter: bool = false;
+                             targetColumn: Option[int] = int.none): Cursor {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add cursor.toJson()
   argsJson.add offset.toJson()
   argsJson.add wrap.toJson()
   argsJson.add includeAfter.toJson()
+  argsJson.add targetColumn.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+  let res {.used.} = editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_Option_int_wasm(
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
@@ -147,46 +195,6 @@ proc doMoveCursorEnd*(self: TextDocumentEditor; cursor: Cursor; offset: int;
   argsJson.add includeAfter.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_text_doMoveCursorVisualHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
-    arg: cstring): cstring {.importc.}
-proc doMoveCursorVisualHome*(self: TextDocumentEditor; cursor: Cursor;
-                             offset: int; wrap: bool; includeAfter: bool): Cursor {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add cursor.toJson()
-  argsJson.add offset.toJson()
-  argsJson.add wrap.toJson()
-  argsJson.add includeAfter.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_doMoveCursorVisualHome_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc editor_text_doMoveCursorVisualEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
-    arg: cstring): cstring {.importc.}
-proc doMoveCursorVisualEnd*(self: TextDocumentEditor; cursor: Cursor;
-                            offset: int; wrap: bool; includeAfter: bool): Cursor {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add cursor.toJson()
-  argsJson.add offset.toJson()
-  argsJson.add wrap.toJson()
-  argsJson.add includeAfter.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_doMoveCursorVisualEnd_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
@@ -438,6 +446,22 @@ proc getUsage*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
   argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getUsage_string_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_getChar_char_TextDocumentEditor_Cursor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getChar*(self: TextDocumentEditor; cursor: Cursor): char {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getChar_char_TextDocumentEditor_Cursor_wasm(
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
@@ -1129,6 +1153,17 @@ proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection {.
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_clearOverlays_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc clearOverlays*(self: TextDocumentEditor; id: int = -1) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add id.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_clearOverlays_void_TextDocumentEditor_int_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_updateDiff_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) {.
@@ -1138,6 +1173,30 @@ proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) {.
   argsJson.add gotoFirstDiff.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_updateDiff_void_TextDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_revertSelected_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc revertSelected*(self: TextDocumentEditor; inclusiveEnd: bool = false) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add inclusiveEnd.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_revertSelected_void_TextDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_stageSelected_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc stageSelected*(self: TextDocumentEditor; inclusiveEnd: bool = false) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add inclusiveEnd.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_stageSelected_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -1303,36 +1362,6 @@ proc moveCursorEnd*(self: TextDocumentEditor;
       argsJsonString.cstring)
 
 
-proc editor_text_moveCursorVisualHome_void_TextDocumentEditor_SelectionCursor_bool_wasm(
-    arg: cstring): cstring {.importc.}
-proc moveCursorVisualHome*(self: TextDocumentEditor;
-                           cursor: SelectionCursor = SelectionCursor.Config;
-                           all: bool = true) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add cursor.toJson()
-  argsJson.add all.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorVisualHome_void_TextDocumentEditor_SelectionCursor_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_moveCursorVisualEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
-    arg: cstring): cstring {.importc.}
-proc moveCursorVisualEnd*(self: TextDocumentEditor;
-                          cursor: SelectionCursor = SelectionCursor.Config;
-                          all: bool = true; includeAfter: bool = true) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add cursor.toJson()
-  argsJson.add all.toJson()
-  argsJson.add includeAfter.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorVisualEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_text_moveCursorTo_void_TextDocumentEditor_string_SelectionCursor_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorTo*(self: TextDocumentEditor; str: string;
@@ -1421,16 +1450,21 @@ proc moveCursorCenter*(self: TextDocumentEditor;
       argsJsonString.cstring)
 
 
-proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
+proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_Option_float_Option_ScrollBehaviour_float_wasm(
     arg: cstring): cstring {.importc.}
 proc scrollToCursor*(self: TextDocumentEditor;
-                     cursor: SelectionCursor = SelectionCursor.Config) {.gcsafe,
-    raises: [].} =
+                     cursor: SelectionCursor = SelectionCursor.Config;
+                     margin: Option[float] = float.none; scrollBehaviour: Option[
+    ScrollBehaviour] = ScrollBehaviour.none; relativePosition: float = 0.5) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add cursor.toJson()
+  argsJson.add margin.toJson()
+  argsJson.add scrollBehaviour.toJson()
+  argsJson.add relativePosition.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
+  let res {.used.} = editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_Option_float_Option_ScrollBehaviour_float_wasm(
       argsJsonString.cstring)
 
 
@@ -1444,6 +1478,32 @@ proc setNextScrollBehaviour*(self: TextDocumentEditor;
   argsJson.add scrollBehaviour.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setDefaultSnapBehaviour_void_TextDocumentEditor_ScrollSnapBehaviour_wasm(
+    arg: cstring): cstring {.importc.}
+proc setDefaultSnapBehaviour*(self: TextDocumentEditor;
+                              snapBehaviour: ScrollSnapBehaviour) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add snapBehaviour.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setDefaultSnapBehaviour_void_TextDocumentEditor_ScrollSnapBehaviour_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setNextSnapBehaviour_void_TextDocumentEditor_ScrollSnapBehaviour_wasm(
+    arg: cstring): cstring {.importc.}
+proc setNextSnapBehaviour*(self: TextDocumentEditor;
+                           snapBehaviour: ScrollSnapBehaviour) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add snapBehaviour.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setNextSnapBehaviour_void_TextDocumentEditor_ScrollSnapBehaviour_wasm(
       argsJsonString.cstring)
 
 
@@ -1685,6 +1745,40 @@ proc extendSelectionWithMove*(self: TextDocumentEditor; selection: Selection;
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_vimMotionWord_Selection_TextDocumentEditor_Cursor_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc vimMotionWord*(self: TextDocumentEditor; cursor: Cursor; count: int = 0): Selection {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add count.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_vimMotionWord_Selection_TextDocumentEditor_Cursor_int_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_vimMotionWordBig_Selection_TextDocumentEditor_Cursor_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc vimMotionWordBig*(self: TextDocumentEditor; cursor: Cursor; count: int = 0): Selection {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add count.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_vimMotionWordBig_Selection_TextDocumentEditor_Cursor_int_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_wasm(
     arg: cstring): cstring {.importc.}
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
@@ -1828,11 +1922,25 @@ proc moveFirst*(self: TextDocumentEditor; move: string;
       argsJsonString.cstring)
 
 
-proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_wasm(
+proc editor_text_getSearchQuery_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getSearchQuery*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getSearchQuery_string_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_setSearchQuery_bool_TextDocumentEditor_string_bool_string_string_wasm(
     arg: cstring): cstring {.importc.}
 proc setSearchQuery*(self: TextDocumentEditor; query: string;
                      escapeRegex: bool = false; prefix: string = "";
-                     suffix: string = "") {.gcsafe, raises: [].} =
+                     suffix: string = ""): bool {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add query.toJson()
@@ -1840,7 +1948,26 @@ proc setSearchQuery*(self: TextDocumentEditor; query: string;
   argsJson.add prefix.toJson()
   argsJson.add suffix.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_wasm(
+  let res {.used.} = editor_text_setSearchQuery_bool_TextDocumentEditor_string_bool_string_string_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_openSearchBar_void_TextDocumentEditor_string_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc openSearchBar*(self: TextDocumentEditor; query: string = "";
+                    scrollToPreview: bool = true; select: bool = true) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add query.toJson()
+  argsJson.add scrollToPreview.toJson()
+  argsJson.add select.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_openSearchBar_void_TextDocumentEditor_string_bool_bool_wasm(
       argsJsonString.cstring)
 
 

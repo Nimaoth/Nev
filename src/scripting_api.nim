@@ -34,8 +34,15 @@ type Backend* = enum Gui = "gui", Terminal = "terminal", Browser = "browser"
 type ScrollBehaviour* = enum
   CenterAlways = "CenterAlways"
   CenterOffscreen = "CenterOffscreen"
+  CenterMargin = "CenterMargin"
   ScrollToMargin = "ScrollToMargin"
   TopOfScreen = "TopOfScreen"
+
+type ScrollSnapBehaviour* = enum
+  Never = "Never"
+  Always = "Always"
+  MinDistanceOffscreen = "MinDistanceOffscreen"
+  MinDistanceCenter = "MinDistanceCenter"
 
 type ToggleBool* = enum False, True, Toggle
 

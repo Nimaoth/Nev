@@ -122,6 +122,8 @@
         "\\.ps1$": "powershell",
         "\\.wat$": "elisp",
         "\\.talon$": "talon",
+        "\\.lua$": "lua",
+        "\\.log$": "log",
         "nimble.*?\\.paths$": "nim-paths",
         "/(vector|string|thread|iostream)$": "cpp",
         ".+/MSVC/.+/include(/.+?)*/[a-z0-9_]+$": "cpp",
@@ -165,7 +167,17 @@
                 "enum",
                 "object"
             ],
-            "lineComment": "#"
+            "lineComment": "#",
+            "search-regexes": {
+                "goto-definition": "((proc|method|func|template|macro|iterator|type|^var|^let) [[0]]\\b)|(\\b[[0]]\\b.*?= (object|ref|tuple|enum|proc))|((type |  +)\\b[[0]]\\b\\*?( \\{.*?)?:.+[^,;]$)",
+                "symbols": "((proc|method|func|template|macro|iterator|type) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|tuple|enum|proc))",
+                "workspace-symbols": {
+                    "Class": "(\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|tuple)",
+                    "Function": "((proc|func|template|macro|iterator|type) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (proc))",
+                    "Method": "((method) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))",
+                    "Enum": "(\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (enum)"
+                }
+            }
         },
         "nim-paths": {
             "treesitter": "alaviss/tree-sitter-nim",
@@ -282,7 +294,21 @@
             "blockComment": [
                 "/*",
                 "*/"
-            ]
+            ],
+            "search-regexes": {
+                "goto-definition": [
+                    "^\\s*(\\w+[\\*\\s]+)[[0]]\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                    "^\\s*(typedef\\s+)?(struct|enum|union)\\s+[[0]]"
+                 ],
+                "symbols": [
+                    "^\\s*(\\w+[\\*\\s]+)\\w+\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                    "^\\s*(typedef\\s+)?(struct|enum|union)\\s+\\w+"
+                ],
+                "workspace-symbols": {
+                    "Function": "^\\s*(\\w+[\\*\\s]+)\\w+\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                    "Class": "^\\s*(typedef\\s+)?(struct|enum|union)\\s+\\w+"
+                }
+            }
         },
         "cpp": {
             "treesitter": "tree-sitter/tree-sitter-cpp",
@@ -346,7 +372,21 @@
                 "{",
                 "["
             ],
-            "lineComment": "//"
+            "lineComment": "//",
+            "search-regexes": {
+                "goto-definition": [
+                    "fn \\b[[0]]\\b",
+                    "\\b[[0]]\\b = (struct|enum|union|@import)"
+                ],
+                "symbols": [
+                    "fn \\b[a-zA-Z0-9_]+\\b",
+                    "\\b[a-zA-Z0-9_]+\\b = (struct|enum|union|@import)"
+                ],
+                "workspace-symbols": {
+                    "Class": "\\b[a-zA-Z0-9_]+\\b = (struct|enum|union|@import)",
+                    "Function": "fn \\b[a-zA-Z0-9_]+\\b"
+                }
+            }
         },
         "odin": {
             "treesitter": "ap29600/tree-sitter-odin",
@@ -458,6 +498,9 @@
         "swift": {
             "treesitter": "alex-pinkus/tree-sitter-swift"
         },
+        "log": {
+            "treesitter": "Tudyx/tree-sitter-log"
+        },
         "talon": {
             "treesitter": "wenkokke/tree-sitter-talon",
             "tabWidth": 4,
@@ -509,6 +552,17 @@
             ],
             "lineComment": ";"
         },
+        "lua": {
+            "treesitter": "tjdevries/tree-sitter-lua",
+            "tabWidth": 4,
+            "indent": "spaces",
+            "indentAfter": [
+                "(",
+                "{",
+                "["
+            ],
+            "lineComment": "--"
+        },
         "wit": {
             "treesitter": "liamwh/tree-sitter-wit",
             "tabWidth": 2,
@@ -551,7 +605,14 @@
     "text": {
         "reload-diff": true,
         "reload-diff-timeout": 250,
-        "format-on-save": false
+        "format-on-save": false,
+        "color-highlight": {
+            "json": {
+                "enabled": true,
+                "regex": "(#[0-9a-fA-F]{6})|(#[0-9a-fA-F]{8})",
+                "kind": "hex"
+            }
+        }
     },
 
     "debugger": {
@@ -577,7 +638,15 @@
         "background": {
             "transparent": false
         },
-        "theme": "app://themes/tokyo-night-color-theme.json"
+        "theme": "app://themes/tokyo-night-color-theme.json",
+        "smooth-scroll": true,
+        "cursor-trail": 2,
+        "which-key-delay": 250,
+        "which-key-height": 6
+    },
+
+    "platform": {
+        "terminal-sleep-threshold": 5
     },
 
     "keybindings": {

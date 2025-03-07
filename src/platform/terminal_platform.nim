@@ -1,4 +1,4 @@
-import std/[strformat, terminal, typetraits, enumutils, strutils, sets]
+import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate]
 import std/colors as stdcolors
 import vmath
 import chroma as chroma
@@ -201,6 +201,10 @@ method lineHeight*(self: TerminalPlatform): float = 1
 method charWidth*(self: TerminalPlatform): float = 1
 method charGap*(self: TerminalPlatform): float = 0
 method measureText*(self: TerminalPlatform, text: string): Vec2 = vec2(text.len.float, 1)
+method layoutText*(self: TerminalPlatform, text: string): seq[Rect] =
+  result = newSeqOfCap[Rect](text.len)
+  for i, c in enumerate(text.runes):
+    result.add rect(i.float, 0, 1, 1)
 
 proc pushMask(self: TerminalPlatform, mask: Rect) =
   let maskedMask = if self.masks.len > 0:
@@ -284,6 +288,17 @@ proc toInput(key: Key, modifiers: var Modifiers): int64 =
   else:
     log lvlError, fmt"Unknown input {key}"
     0
+
+method setVsync*(self: TerminalPlatform, enabled: bool) {.gcsafe, raises: [].} = discard
+
+method getFontInfo*(self: TerminalPlatform, fontSize: float, flags: UINodeFlags): FontInfo {.gcsafe, raises: [].} =
+  FontInfo(
+    ascent: 0,
+    lineHeight: 1,
+    lineGap: 0,
+    scale: 1,
+    advance: proc(rune: Rune): float = 1
+  )
 
 method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
   try:
@@ -372,27 +387,28 @@ proc toStdColor(color: chroma.Color): stdcolors.Color =
 
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) {.gcsafe.}
 
-method render*(self: TerminalPlatform) {.gcsafe.} =
+method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
   try:
-    if self.sizeChanged:
-      let (w, h) = (terminalWidth(), terminalHeight())
-      log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
-      self.buffer = newTerminalBuffer(w, h)
-      self.redrawEverything = true
+    if rerender:
+      if self.sizeChanged:
+        let (w, h) = (terminalWidth(), terminalHeight())
+        log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
+        self.buffer = newTerminalBuffer(w, h)
+        self.redrawEverything = true
 
-    if self.builder.root.lastSizeChange == self.builder.frameIndex:
-      self.redrawEverything = true
+      if self.builder.root.lastSizeChange == self.builder.frameIndex:
+        self.redrawEverything = true
 
-    self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+      self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
 
-    # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
-    try:
-      {.gcsafe.}:
-        self.buffer.display()
-      self.redrawEverything = false
-    except CatchableError:
-      log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
-      self.redrawEverything = true
+      # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
+      try:
+        {.gcsafe.}:
+          self.buffer.display()
+        self.redrawEverything = false
+      except CatchableError:
+        log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
+        self.redrawEverything = true
   except:
     discard
 
@@ -423,6 +439,17 @@ proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
   self.setBackgroundColor(color)
   self.buffer.fillBackground(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
   self.buffer.setBackgroundColor(bgNone)
+
+proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
+  let mask = if self.masks.len > 0:
+    self.masks[self.masks.high]
+  else:
+    rect(vec2(0, 0), self.size)
+
+  let bounds = bounds and mask
+
+  self.setForegroundColor(color)
+  self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
 
 # proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
 #   let mask = if self.masks.len > 0:
@@ -467,9 +494,10 @@ proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int
 
   return (bytes, len)
 
-proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, lineLen: RuneCount, italic: bool) =
+proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Color, spaceColor: chroma.Color, wrap: bool, lineLen: RuneCount, italic: bool, flags: UINodeFlags) =
   var yOffset = 0.0
 
+  self.setForegroundColor(color)
   for line in text.splitLines:
     let runeLen = line.runeLen
 
@@ -505,7 +533,25 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, line
         startRune = endRune
 
     else:
-      self.writeLine(pos + vec2(0, yOffset), line, italic)
+      if TextDrawSpaces in flags:
+        var start = 0
+        var i = line.find(' ')
+        if i == -1:
+          self.writeLine(pos + vec2(0, yOffset), line, italic)
+        else:
+          const spaceText = "·"
+          while i != -1:
+            self.writeLine(pos + vec2(start.float, yOffset), line[start..<i], italic)
+            self.setForegroundColor(spaceColor)
+            self.writeLine(pos + vec2(i.float, yOffset), spaceText, italic)
+            self.setForegroundColor(color)
+            start = i + 1
+            i = line.find(' ', start)
+
+          if start < line.len:
+            self.writeLine(pos + vec2(start.float, yOffset), line[start..^1], italic)
+      else:
+        self.writeLine(pos + vec2(0, yOffset), line, italic)
       yOffset += 1
 
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
@@ -542,8 +588,7 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
 
     if DrawText in node.flags:
       platform.buffer.setBackgroundColor(bgNone)
-      platform.setForegroundColor(node.textColor)
-      platform.writeText(bounds.xy, node.text, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags)
+      platform.writeText(bounds.xy, node.text, node.textColor, node.textColor, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags, node.flags)
 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
@@ -551,15 +596,14 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
     for command in node.renderCommands.commands:
       case command.kind
       of RenderCommandKind.Rect:
-        platform.fillRect(command.bounds + nodePos, command.color)
+        platform.drawRect(command.bounds + nodePos, command.color)
       of RenderCommandKind.FilledRect:
         platform.fillRect(command.bounds + nodePos, command.color)
       of RenderCommandKind.Text:
         # todo: don't copy string data
         let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
         platform.buffer.setBackgroundColor(bgNone)
-        platform.setForegroundColor(command.color)
-        platform.writeText(command.bounds.xy + nodePos, text, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags)
+        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
       of RenderCommandKind.ScissorStart:
         platform.pushMask(command.bounds + nodePos)
       of RenderCommandKind.ScissorEnd:

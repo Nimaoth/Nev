@@ -131,11 +131,11 @@ proc getWorkspacePath*(self: Workspace): string =
   except ValueError, OSError:
     return ""
 
-proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int):
+proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int, customArgs: seq[string]):
     Future[seq[SearchResult]] {.async: (raises: []).} =
   try:
-    let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root],
-      maxLines=maxResults).await
+    let args = @["--line-number", "--column", "--heading"] & customArgs & @[query, root]
+    let output = runProcessAsync("rg", args, maxLines=maxResults).await
     var res: seq[SearchResult]
 
     var currentFile = ""
@@ -172,11 +172,11 @@ proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResu
   except CatchableError:
     return @[]
 
-proc searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[seq[SearchResult]] {.async: (raises: []).} =
+proc searchWorkspace*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
   var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
-  futs.add self.searchWorkspaceFolder(query, self.path, maxResults)
+  futs.add self.searchWorkspaceFolder(query, self.path, maxResults, customArgs)
   for path in self.additionalPaths:
-    futs.add self.searchWorkspaceFolder(query, path, maxResults)
+    futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
 
   var res: seq[SearchResult]
   for fut in futs:

@@ -1,5 +1,5 @@
-import std/[options, tables, json]
-import misc/[custom_async, custom_logger, event, custom_unicode, response]
+import std/[options, json]
+import misc/[custom_async, custom_logger, event, response]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
 import document
@@ -9,13 +9,7 @@ from lsp_types as lsp_types import CompletionItem
 {.push gcsafe.}
 {.push raises: [].}
 
-type OnRequestSaveHandle* = distinct int
-
-proc `==`(x, y: OnRequestSaveHandle): bool {.borrow.}
-
 type LanguageServer* = ref object of RootObj
-  onRequestSave: Table[OnRequestSaveHandle, proc(targetFilename: string): Future[void] {.gcsafe, raises: [].}]
-  onRequestSaveIndex: Table[string, seq[OnRequestSaveHandle]]
   onMessage*: Event[tuple[verbosity: lsp_types.MessageType, message: string]]
   onDiagnostics*: Event[lsp_types.PublicDiagnosticsParams]
 

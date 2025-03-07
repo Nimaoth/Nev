@@ -60,11 +60,12 @@ proc color*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0,
       return val[]
   return default.color
 
-proc tokenColor*(theme: Theme, name: cstring, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
-  let res = theme.tokenColors.getCascading($name, Style()).foreground
-  return res.get default.color
-
 proc tokenColor*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+  if name.startsWith("#"):
+    try:
+      return name.parseHtmlHex
+    except InvalidColor:
+      return default
   return theme.tokenColors.getCascading(name, Style()).foreground.get default.color
 
 proc tokenColor*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =

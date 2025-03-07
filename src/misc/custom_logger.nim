@@ -60,8 +60,8 @@ let isTerminal {.used.} = when declared(isatty): isatty(stdout) else: false
 
 func formatTime(t: float64): string =
   if t >= 1000:
-    return &"{int(t / 1000)}s {(t mod 1000.0):>6.2f}ms"
-  return &"{t:6.3f}ms"
+    return &"{int(t / 1000)}s {(t mod 1000.0):>6.2f} ms"
+  return &"{t:6.3f} ms"
 
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
   let time = self.timer.elapsed.ms

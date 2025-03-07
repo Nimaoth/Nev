@@ -111,6 +111,8 @@ type TSInputEdit* = object
 
 type TSLanguageCtor = proc(): ptr ts.TSLanguage {.stdcall.}
 
+type TSTreeCursor* = ts.TSTreeCursor
+
 func `=destroy`(t: TsTree) {.raises: [].} = discard
 
 func setLanguage*(self: TSParser, language: TSLanguage) =

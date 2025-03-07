@@ -3,7 +3,7 @@ import misc/[custom_logger, rect_utils]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
-  widget_builder_debugger]
+  widget_builder_debugger, widget_library]
 import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service
 
 when enableAst:
@@ -28,6 +28,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   builder.panel(rootFlags): # fullscreen overlay
 
     var overlays: seq[OverlayFunction]
+    var mainBounds: Rect
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
@@ -57,6 +58,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           overlays.add self.commands.commandLineEditor.createUI(builder, self)
 
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
+        mainBounds = currentNode.bounds
         let overlay = currentNode
 
         if self.layout.maximizeView:
@@ -98,3 +100,10 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     for overlay in overlays:
       overlay()
+
+    if self.showNextPossibleInputs:
+      let inputLines = self.config.asConfigProvider.getValue("ui.which-key-height", 10)
+      let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+      let continuesTextColor = self.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
+      let keysTextColor = self.theme.tokenColor("number", color(225/255, 200/255, 200/255))
+      builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, inputLines, mainBounds)
