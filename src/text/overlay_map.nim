@@ -898,11 +898,12 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
   log &"  currentChunk: {currentChunk}, currentPoint: {currentPoint}, {self.overlayMapCursor.startPos.src}, {self.overlayMapCursor.endPos.src}, local offset: {self.localOffset}"
   if self.overlayMapCursor.startPos.src == self.overlayMapCursor.endPos.src:
     if currentPoint < self.overlayMap.map.summary.src:
-      # log &"aaaaaaaaaaaaaaaaaaaa {currentPoint}, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}"
-      assert false, &"aaaaaaaaaaaaaaaaaaaa {currentPoint}, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}"
+      # this should not happen
+      echo &"ERROR {currentPoint}, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {currentChunk}\n{self.overlayMap}"
       self.overlayMapCursor.next()
-      log &"  OverlayChunkIterator.next3 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
+      echo &"  OverlayChunkIterator.next3 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
       self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
+      assert false
 
   let startOffset = self.localOffset
   let map = (

@@ -25,6 +25,17 @@ type
     point*: Point
     returnedLastChunk: bool = false
 
+  RopeChunksState* = object
+    seekPoint: Option[Point]
+    nextPoint: Point
+
+  # New version of the chunk iterator based on nim iterator instead of manual state management
+  ChunkIterator2* = object
+    rope: Rope
+    iter: iterator(rope: Rope, state: var RopeChunksState): RopeChunk {.gcsafe, raises: [].}
+    state: RopeChunksState
+    done: bool
+
 type
   StyledChunkUnderline* = object
     color*: string
@@ -47,7 +58,7 @@ type
     point*: Point
 
   StyledChunkIterator* = object
-    chunks*: ChunkIterator
+    chunks*: ChunkIterator2
     chunk: Option[RopeChunk]
     localOffset: int
     atEnd: bool
@@ -246,10 +257,128 @@ func next*(self: var ChunkIterator): Option[RopeChunk] =
         ).some
         return
 
-proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope): StyledChunkIterator =
-  result.chunks = ChunkIterator.init(rope)
+iterator ropeChunks*(rope: Rope, state: var RopeChunksState): RopeChunk =
+  var cursor = rope.tree.initCursor((Point, int))
+  var chunkOriginal = RopeChunk()
+  var chunk = RopeChunk()
 
-func point*(self: StyledChunkIterator): Point = self.chunks.point
+  # Handle empty rope case
+  if rope.len == 0:
+    yield chunk
+
+  while true:
+    if state.seekPoint.getSome(point):
+      assert point >= chunk.point
+      discard cursor.seekForward(point, Bias.Right, ())
+    else:
+      cursor.next()
+
+    if cursor.item.isNone:
+      break
+
+    let inputChunk: ptr Chunk = cursor.item.get
+    chunkOriginal = RopeChunk(
+      data: cast[ptr UncheckedArray[char]](inputChunk.chars[0].addr),
+      len: inputChunk.chars.len,
+      dataOriginal: cast[ptr UncheckedArray[char]](inputChunk.chars[0].addr),
+      lenOriginal: inputChunk.chars.len,
+      point: cursor.startPos[0],
+    )
+    chunk = chunkOriginal
+
+    var i = 0
+    var start = 0
+
+    template updateChunk(nextChunk: RopeChunk, nextI: int, nextPointState: Point): untyped =
+      chunk = nextChunk
+      chunk.point = nextPointState
+      i = nextI
+      start = i
+      state.nextPoint = nextPointState
+
+    template yieldChunk(c: RopeChunk, nextChunk: RopeChunk, nextI: int): untyped =
+      let c2 = nextChunk
+      updateChunk(c2, nextI, c2.point)
+      yield c
+      continue
+
+    if state.seekPoint.getSome(point):
+      assert point >= cursor.startPos[0]
+      assert point <= cursor.endPos[0]
+      let localOffset = inputChunk[].pointToOffset(point - cursor.startPos[0])
+      updateChunk chunkOriginal.split(localOffset)[1], localOffset, point
+      state.seekPoint = Point.none
+
+    # Iterate the chunk to find and split at \t and \n
+    while i < inputChunk.chars.len:
+      # Handle seeking
+      if state.seekPoint.getSome(point):
+        if point < cursor.endPos[0]:
+          # Seek forward but in same chunk
+          let localOffset = inputChunk[].pointToOffset(point - cursor.startPos[0])
+          updateChunk chunkOriginal.split(localOffset)[1], localOffset, point
+          state.seekPoint = Point.none
+
+        else:
+          # seek after current chunk, handled by outside loop
+          break
+
+      # Handle current char
+      let c = inputChunk.chars[i]
+      if c == '\t':
+        if i > start:
+          let (prefix, suffix) = chunk.split(i - start)
+          yieldChunk prefix, suffix, i
+        else:
+          let (tab, suffix) = chunk.split(1)
+          yieldChunk tab, suffix, i + 1
+      elif c == '\n':
+        let (prefix, suffix) = chunk.split(i - start)
+        var (_, suffix2) = suffix.split(1)
+        suffix2.point += point(1, 0)
+        yieldChunk prefix, suffix2, i + 1
+      else:
+        inc i
+
+    if state.seekPoint.isSome:
+      continue
+
+    # Yield last non-empty chunk or empty chunk for empty line
+    if chunk.len > 0 or chunk.point.column == 0:
+      state.nextPoint = chunk.endPoint
+      yield chunk
+
+iterator ropeChunks*(rope: Rope): RopeChunk =
+  var state = RopeChunksState()
+  for chunk in ropeChunks(rope, state):
+    yield chunk
+
+iterator ropeChunksC*(rope: Rope, state: var RopeChunksState): RopeChunk {.closure.} =
+  for chunk in ropeChunks(rope, state):
+    yield chunk
+
+proc init*(_: typedesc[ChunkIterator2], rope: sink Rope): ChunkIterator2 =
+  result.rope = rope
+  result.iter = ropeChunksC
+
+proc seek*(self: var ChunkIterator2, point: Point) =
+  self.state.seekPoint = point.some
+
+proc next*(self: var ChunkIterator2): Option[RopeChunk] =
+  if self.done:
+    return RopeChunk.none
+
+  let chunk = self.iter(self.rope, self.state)
+  if finished(self.iter):
+    self.done = true
+    return RopeChunk.none
+
+  return chunk.some
+
+proc init*(_: typedesc[StyledChunkIterator], rope {.byref.}: Rope): StyledChunkIterator =
+  result.chunks = ChunkIterator2.init(rope.clone())
+
+func point*(self: StyledChunkIterator): Point = self.chunks.state.nextPoint
 func point*(self: StyledChunk): Point = self.chunk.point
 func endPoint*(self: StyledChunk): Point = self.chunk.endPoint
 func len*(self: StyledChunk): int = self.chunk.len
@@ -268,7 +397,6 @@ proc nextDiagnostic(self: var StyledChunkIterator) =
 
 proc seek*(self: var StyledChunkIterator, point: Point) =
   self.chunks.seek(point)
-  self.chunks2.seek(point)
   self.localOffset = 0 # todo: does this need to be != 0?
   self.highlights.setLen(0)
   self.highlightsIndex = -1
@@ -515,7 +643,7 @@ iterator chunks*[T](iter: var T): typeof(iter.next.get) =
     yield chunk
 
 iterator styledChunks*(iter: var ChunkIterator): StyledChunk =
-  while iter.next().getSome(chunk):
+  for chunk in iter.rope.ropeChunks:
     yield StyledChunk(chunk: chunk)
 
 iterator styledChunks*(iter: var StyledChunkIterator): StyledChunk =
