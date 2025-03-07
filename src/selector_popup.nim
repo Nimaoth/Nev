@@ -398,6 +398,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.previewEditor.renderHeader = true
     popup.previewEditor.lineNumbers = api.LineNumbers.None.some
     popup.previewEditor.disableCompletions = true
+    popup.previewEditor.cursorMargin = 0.0.some
 
     discard popup.previewEditor.onMarkedDirty.subscribe () =>
       popup.markDirty()

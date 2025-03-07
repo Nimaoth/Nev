@@ -86,3 +86,11 @@
 - move git stuff to workspace to support multiple git repositories
 - global search:
   - figure out how to specify file filters and other options (case sensitive, whole word match, regex)
+
+- fix performance issue in render
+- fix performance issue when updating selections
+
+- Use new key binding ui in e.g. selector popup to show custom commands
+- fix cursor rendering in terminal when cursor is at end of file
+- add option for disabling which-key
+- highlights all instances of word under current cursor

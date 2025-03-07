@@ -1,4 +1,4 @@
-import std/[options, os, tables, json]
+import std/[os, tables, json]
 import results
 import misc/[custom_logger, regex]
 import config_provider

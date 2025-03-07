@@ -54,3 +54,16 @@ proc removeCommand*(context: string; keys: string) {.gcsafe, raises: [].} =
   let res {.used.} = events_removeCommand_void_EventHandlerService_string_string_wasm(
       argsJsonString.cstring)
 
+
+proc events_addCommandDescription_void_EventHandlerService_string_string_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc addCommandDescription*(context: string; keys: string;
+                            description: string = "") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add context.toJson()
+  argsJson.add keys.toJson()
+  argsJson.add description.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = events_addCommandDescription_void_EventHandlerService_string_string_string_wasm(
+      argsJsonString.cstring)
+

@@ -69,6 +69,13 @@ template take*[T](opt: sink Option[T]): T =
   else:
     raise newException(UnpackDefect, "Can't obtain a value from a `none`")
 
+proc take*[T](opt: var Option[T]): T =
+  if opt.isSome:
+    result = opt.get.move
+    opt = T.none
+  else:
+    raise newException(UnpackDefect, "Can't obtain a value from a `none`")
+
 func get*[T](opt: openArray[T], index: int): Option[T] =
   if index in 0..opt.high:
     opt[index].some
@@ -175,10 +182,10 @@ template applyIt*[T, E](self: Result[T, E], op: untyped, opErr: untyped): untype
   block:
     evalOnceAs(self2, self, compiles((let _ = self)))
     if self2.isOk:
-      template it: untyped {.inject.} = self2.unsafeValue
+      template it: untyped {.inject, used.} = self2.unsafeValue
       op
     else:
-      template it: untyped {.inject.} = self2.unsafeError
+      template it: untyped {.inject, used.} = self2.unsafeError
       opErr
 
 template applyIt*[T, E](self: Result[T, E], op: untyped): untyped =

@@ -1,4 +1,4 @@
-import std/[tables, options, json, os, random]
+import std/[tables, options, json, os]
 import results
 import misc/[custom_async, custom_logger, myjsonutils, util]
 import scripting/expose

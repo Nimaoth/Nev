@@ -1,12 +1,28 @@
-import std/[options, strutils, atomics]
-import nimsumtree/[rope, sumtree]
+import std/[options, strutils, atomics, tables]
+import nimsumtree/[rope, sumtree, buffer, clock]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_async, custom_unicode, util
+import custom_async, custom_unicode, util, text/custom_treesitter, regex, timer
 import text/diff
+
+export Bias
 
 {.push gcsafe.}
 {.push raises: [].}
+
+const debugAllMapUpdates* = false
+var debugAllMapUpdatesRT* = true
+var debugChunkIterators* = false
+
+template logMapUpdate*(msg: untyped) =
+  when debugAllMapUpdates:
+    if debugAllMapUpdatesRT:
+      debugEcho msg
+
+template logChunkIter*(msg: untyped) =
+  when false:
+    if debugChunkIterators:
+      debugEcho msg
 
 func toPoint*(cursor: api.Cursor): Point = Point.init(max(cursor.line, 0), max(cursor.column, 0))
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)
@@ -121,6 +137,23 @@ func lineRange*(self: Rope, line: int, includeLineEnd: bool = true): Range[int] 
 
   if line in 0..<self.lines:
     var lineRange = self.lineRange(line, int)
+    # debugEcho &"lineRange {line} -> {lineRange}"
+    if not includeLineEnd and lineRange.a < lineRange.b:
+      lineRange.b = self.validateOffset(lineRange.b.pred(), Bias.Left)
+
+    return lineRange
+
+  return 0...0
+
+func lineRange*[D](self: RopeSlice[D], line: int, includeLineEnd: bool = true): Range[int] =
+  ## Returns a the range of the given line. If `includeLineEnd` is true then the end of the range will
+  ## be the index of the newline character (used for a selection with an _exclusive_ end cursor),
+  ## if `includeLineEnd` is false and the line is not empty then the end of the range will be before the last character
+  ## (used for a selection with an _inclusive_ end cursor).
+
+  if line in 0..<self.lines:
+    var lineRange = self.lineRange(line, int)
+    # debugEcho &"lineRange {line} -> {lineRange}"
     if not includeLineEnd and lineRange.a < lineRange.b:
       lineRange.b = self.validateOffset(lineRange.b.pred(), Bias.Left)
 
@@ -171,6 +204,15 @@ func isEmptyOrWhitespace*[D](self: RopeSlice[D]): bool =
 
   return true
 
+proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
+  var start = 0
+  while start < str.len:
+    let bounds = str.findBounds(regex, start)
+    if bounds.first == -1:
+      break
+    result.add ((line, bounds.first), (line, bounds.last + 1))
+    start = bounds.last + 1
+
 ######################################################################### Internal api wrappers
 
 func runeIndexInLine*(self: Rope, cursor: api.Cursor): RuneIndex =
@@ -206,3 +248,103 @@ proc lineStartsWith*(self: Rope, line: int, text: string, ignoreWhitespace: bool
 
   let lineSlice = self.slice(lineRange)
   return lineSlice.startsWith(text)
+
+proc binarySearchRange*[T, K](a: openArray[T], key: K, bias: Bias,
+                         cmp: proc (x: T, y: K): int {.closure.}): (bool, int) {.effectsOf: cmp.} =
+  ## Binary search for `key` in `a`. Return the index of `key` and whether is was found
+  ## Assumes that `a` is sorted according to `cmp`.
+  ##
+  ## `cmp` is the comparator function to use, the expected return values are
+  ## the same as those of system.cmp.
+  runnableExamples:
+    assert binarySearchRange(["a", "b", "c", "d"], "d", system.cmp[string]) == 3
+    assert binarySearchRange(["a", "b", "c", "d"], "c", system.cmp[string]) == 2
+  let len = a.len
+
+  if len == 0:
+    return (false, 0)
+
+  if len == 1:
+    if cmp(a[0], key) == 0:
+      return (true, 0)
+    else:
+      return (false, 0)
+
+  result = (true, 0)
+
+  var idx = 0
+  if (len and (len - 1)) == 0:
+    # when `len` is a power of 2, a faster shr can be used.
+    var step = len shr 1
+    var cmpRes: int
+    while step > 0:
+      let i = idx or step
+      cmpRes = cmp(a[i], key)
+      if cmpRes == 0:
+        if bias == Bias.Right and i + 1 < len and cmp(a[i + 1], key) == 0:
+          return (true, i + 1)
+        if bias == Bias.Left and i - 1 >= 0 and cmp(a[i - 1], key) == 0:
+          return (true, i - 1)
+        return (true, i)
+
+      if cmpRes < 0:
+        idx = i
+      step = step shr 1
+
+    let final = cmp(a[idx], key)
+    result[0] = final == 0
+    if final < 0 and bias == Bias.Right:
+      idx = min(idx + 1, len - 1)
+    elif final > 0 and bias == Bias.Left:
+      idx = max(idx - 1, 0)
+  else:
+    var b = len
+    var cmpRes: int
+    while idx < b:
+      var mid = (idx + b) shr 1
+      cmpRes = cmp(a[mid], key)
+      if cmpRes == 0:
+        if bias == Bias.Right and mid + 1 < len and cmp(a[mid + 1], key) == 0:
+          return (true, mid + 1)
+        if bias == Bias.Left and mid - 1 >= 0 and cmp(a[mid - 1], key) == 0:
+          return (true, mid - 1)
+        return (true, mid)
+
+      if cmpRes < 0:
+        idx = mid + 1
+      else:
+        b = mid
+
+    if idx >= len:
+      result[0] = false
+      if bias == Bias.Left:
+        idx = max(idx - 1, 0)
+
+    else:
+      let final = cmp(a[idx], key)
+      result[0] = final == 0
+      if final < 0 and bias == Bias.Right:
+        idx = min(idx + 1, len - 1)
+      elif final > 0 and bias == Bias.Left:
+        idx = max(idx - 1, 0)
+
+  result[1] = idx
+
+template defineCustomPoint*(name: untyped) =
+  type name* {.borrow: `.`.} = distinct Point
+  func diffPoint*(row: Natural = 0, column: Natural = 0): name = Point(row: row.uint32, column: column.uint32).name
+  func `$`*(a: name): string {.borrow.}
+  func `<`*(a: name, b: name): bool {.borrow.}
+  func `<=`*(a: name, b: name): bool {.borrow.}
+  func `==`*(a: name, b: name): bool {.borrow.}
+  func `+`*(a: name, b: name): name {.borrow.}
+  func `+`*(point: name, diff: PointDiff): name {.borrow.}
+  func `+=`*(a: var name, b: name) {.borrow.}
+  func `+=`*(point: var name, diff: PointDiff) {.borrow.}
+  func `-`*(a: name, b: name): PointDiff {.borrow.}
+  func dec*(a: var name): name {.borrow.}
+  func pred*(a: name): name {.borrow.}
+  func clone*(a: name): name {.borrow.}
+  func cmp*(a: name, b: name): int {.borrow.}
+  func clamp*(p: name, r: Range[name]): name = min(max(p, r.a), r.b)
+  converter toDiffPoint*(diff: PointDiff): name = diff.toPoint.name

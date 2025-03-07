@@ -1,4 +1,4 @@
-import std/[strutils]
+import std/[strutils, sugar, sequtils]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, fuzzy_matching]
 import ui/node
@@ -7,7 +7,7 @@ import ui/[widget_builders_base, widget_library]
 import text/text_editor
 import app, selector_popup, theme
 import finder/finder
-import config_provider
+import config_provider, events
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
@@ -54,6 +54,13 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
   let backgroundColor = app.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
   let selectionColor = app.theme.color("list.activeSelectionBackground",
     color(0.8, 0.8, 0.8)).withAlpha(1)
+
+  let excluded = ["prev", "next", "accept", "close"]
+  proc filterCommand(s: string): bool =
+    return not excluded.anyIt(s.toLowerAscii.startsWith(it))
+  let nextPossibleInputs = app.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
+  var whichKeyHeight = app.config.asConfigProvider.getValue("ui.selector-popup.which-key-height", 5)
+  whichKeyHeight = (nextPossibleInputs.len + 1) div 2
 
   builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h,
       backgroundColor = backgroundColor, userId = self.userId.newPrimaryId):
@@ -147,6 +154,14 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
               for col, node in nodes:
                 node.rawX = x
                 x += maxWidths[col] + gap
+
+          if app.nextPossibleInputs.len == 0:
+
+            let textColor = app.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+            let continuesTextColor = app.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
+            let keysTextColor = app.theme.tokenColor("number", color(0.882, 0.784, 0.784))
+            var headerColor = app.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
+            builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeight, currentNode.bounds, padding = 0)
 
         if showPreview:
           builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewScale),
