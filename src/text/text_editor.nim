@@ -126,7 +126,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   # inline hints
   inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
   inlayHintsTask: DelayedTask
-  lastInlayHintTimestamp: Lamport
+  lastInlayHintTimestamp: Global
   lastInlayHintDisplayRange: Range[Point]
   lastInlayHintBufferRange: Range[Point]
 
@@ -512,8 +512,8 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
     result.add inject["above-completion"]
 
 proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
-  if self.inlayHints.len > 0 and self.lastInlayHintTimestamp != self.document.buffer.timestamp:
-    self.lastInlayHintTimestamp = self.document.buffer.timestamp
+  if self.inlayHints.len > 0 and self.lastInlayHintTimestamp != self.document.buffer.snapshot.version:
+    self.lastInlayHintTimestamp = self.document.buffer.snapshot.version
     let snapshot = self.document.buffer.snapshot.clone()
 
     for i in countdown(self.inlayHints.high, 0):
@@ -522,11 +522,6 @@ proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
         self.inlayHints[i].anchor = snapshot.anchorAt(self.inlayHints[i].hint.location.toPoint, Left)
       else:
         self.inlayHints.removeSwap(i)
-
-    self.displayMap.overlay.clear(14)
-    for hint in self.inlayHints:
-      let point = hint.hint.location.toPoint
-      self.displayMap.overlay.addOverlay(point...point, hint.hint.label, 14, "comment")
 
 proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.configProvider.isNil or self.document.isNil:
@@ -3753,6 +3748,7 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       return
 
     let screenLineCount = self.screenLineCount
+    let visibleRangeHalf = self.visibleTextRange(screenLineCount div 2)
     let visibleRange = self.visibleTextRange(screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
     let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.localizedPath, visibleRange)
@@ -3761,16 +3757,28 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
     # todo: detect if canceled instead
     if inlayHints.isSuccess:
-      # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
-      self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, Left), it)
-      self.lastInlayHintTimestamp = self.document.buffer.timestamp
+      template getBias(hint: untyped): Bias =
+        if hint.paddingRight:
+          Bias.Right
+        else:
+          Bias.Left
+
+      self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, it.getBias), it)
+      self.lastInlayHintTimestamp = snapshot.version
+      self.updateInlayHintsAfterChange()
       self.lastInlayHintDisplayRange = visibleRange.toRange
-      self.lastInlayHintBufferRange = (self.lastInlayHintDisplayRange.a + point(screenLineCount div 2, 0))...(self.lastInlayHintDisplayRange.b - point(screenLineCount div 2, 0))
+      self.lastInlayHintBufferRange = visibleRangeHalf.toRange
 
       self.displayMap.overlay.clear(14)
       for hint in self.inlayHints:
         let point = hint.hint.location.toPoint
-        self.displayMap.overlay.addOverlay(point...point, hint.hint.label, 14, "comment")
+        let bias = hint.hint.getBias
+        if hint.hint.paddingLeft:
+          self.displayMap.overlay.addOverlay(point...point, " " & hint.hint.label, 14, "comment", bias)
+        elif hint.hint.paddingRight:
+          self.displayMap.overlay.addOverlay(point...point, hint.hint.label & " ", 14, "comment", bias)
+        else:
+          self.displayMap.overlay.addOverlay(point...point, hint.hint.label, 14, "comment", bias)
 
       self.markDirty()
 
@@ -3778,7 +3786,7 @@ proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.clearDiagnostics()
   self.markDirty()
 
-proc updateInlayHints*(self: TextDocumentEditor) =
+proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
       asyncSpawn self.updateInlayHintsAsync()
