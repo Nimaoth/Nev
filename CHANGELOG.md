@@ -20,10 +20,16 @@
 - Many small fixes and improvements
 - Removed filesystem related things from workspace, Nev now uses a virtual file system internally.
 
+- Added smooth scrolling
 - Added settings browser
 - Added key binding preview while waiting for further input in longer keybindings
 - Added regex based goto-definition/goto-references/goto-symbol etc if no language server is available (requires ripgrep). Regexes can be configured per language
 - Improved document completions to run mostly on a background thread (except filtering) and cache the entire document
+- Added inlay hints to preview colors detected using regex, e.g. "#feabee" can be detected, and an inlay hint in the corresponding color will be shown before the text. Has to be configured per language.
+- Git view improvements:
+  - Added keybindings to navigate changes without switching focus to the preview
+  - Added ability to stage/unstage/revert individual changes, from git view or while diff is open
+- Added expression evaluation for basic arithmetic like 1+2, and keybindings that add/subtract from a number at the cursor location
 
 ### Vim
 - Fixed ctrl+w and ctrl+u in insert mode
