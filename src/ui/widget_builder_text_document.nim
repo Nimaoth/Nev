@@ -184,6 +184,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     backgroundColor.a = 1
 
   const numLinesToShow = 25
+  let completionPanelHeight = min(self.completionMatches.len, numLinesToShow).float * totalLineHeight
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
 
   const docsWidth = 75.0
@@ -197,6 +198,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   var completionsPanel: UINode = nil
   builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
+    let reverse = top + completionPanelHeight > completionsPanel.parent.bounds.h
 
     proc handleScroll(delta: float) =
       let scrollAmount = delta * app.config.asConfigProvider.getValue("text.scroll-speed", 40.0)
@@ -207,18 +209,13 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     var maxDetailWidth = 1 * builder.charWidth
     var detailColumn: seq[UINode] = @[]
 
-    proc handleLine(i: int, y: float, down: bool) =
+    proc handleLine(i: int, y: float) =
       var backgroundColor = backgroundColor
 
       if i == self.selectedCompletion:
         backgroundColor = selectedBackgroundColor
 
-      let pivot = if down:
-        vec2(0, 0)
-      else:
-        vec2(0, 1)
-
-      builder.panel(&{SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
+      builder.panel(&{FillBackground}, y = y, h = totalLineHeight, backgroundColor = backgroundColor):
         rows.add currentNode
 
         let completion {.cursor.} = self.completions[self.completionMatches[i].index]
@@ -242,17 +239,31 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
         else:
           ""
         let scopeText = completion.source & " " & detail
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(0, 0), text = scopeText, textColor = scopeColor):
+        builder.panel(&{DrawText, SizeToContentX}, x = currentNode.w, h = totalLineHeight, text = scopeText, textColor = scopeColor):
           detailColumn.add currentNode
           maxDetailWidth = max(maxDetailWidth, currentNode.w)
 
     var listNode: UINode
-    builder.panel(&{UINodeFlag.MaskContent, DrawBorder, SizeToContentX, SizeToContentY}, borderColor = borderColor):
+    builder.panel(&{UINodeFlag.MaskContent, DrawBorder, SizeToContentX}, borderColor = borderColor, h = completionPanelHeight):
       listNode = currentNode
-      let lineFlags = &{SizeToContentX, SizeToContentY}
-      let maxHeight = bottom - top
-      let linesNode = builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.high, maxHeight.some, lineFlags, backgroundColor, handleScroll, handleLine)
+      let lineFlags = &{SizeToContentX, FillY}
+      let maxHeight = completionPanelHeight
+      let firstIndex = max(self.completionsBaseIndex - (self.completionsScrollOffset / totalLineHeight).int, 0)
+      var y = if reverse: completionPanelHeight - totalLineHeight else: 0
 
+      builder.panel(lineFlags):
+        for i in firstIndex..self.completionMatches.high:
+          handleLine(i, y)
+          if reverse:
+            y -= totalLineHeight
+            if y <= -totalLineHeight:
+              break
+          else:
+            y += totalLineHeight
+            if y > completionPanelHeight:
+              break
+
+      let linesNode = currentNode.last
       let totalWidth = maxLabelWidth + maxDetailWidth + builder.charWidth
       linesNode.w = totalWidth
 
@@ -289,13 +300,6 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
     completionsPanel.rawY = cursorBounds.y
     completionsPanel.pivot = vec2(0, 1)
-
-    # Reverse order of rows
-    for i in 0..<(rows.len div 2):
-      let y1 = rows[i].bounds.y
-      let y2 = rows[rows.high - i].bounds.y
-      rows[i].rawY = y2
-      rows[rows.high - i].rawY = y1
 
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)

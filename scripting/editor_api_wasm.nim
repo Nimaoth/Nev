@@ -6,8 +6,8 @@ import scripting_api, misc/myjsonutils
 
 proc editor_getOptionJson_JsonNode_ConfigService_string_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
-proc getOptionJson*(path: string; default: JsonNode): JsonNode {.gcsafe,
-    raises: [].} =
+proc getOptionJson*(path: string; default: JsonNode = newJNull()): JsonNode {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add path.toJson()
   argsJson.add default.toJson()
