@@ -194,9 +194,15 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         block:
           when `originalArgumentType` is JsonNode:
             when `isVarargs`:
-              `jsonArg`[`index`..^1]
+              if `jsonArg`.len >= `index`:
+                `jsonArg`[`index`..^1]
+              else:
+                @[]
             else:
-              `jsonArg`[`index`]
+              if `jsonArg`.len > `index`:
+                `jsonArg`[`index`]
+              else:
+                raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
           else:
             if `jsonArg`.len > `index`:
               `jsonArg`[`index`].jsonTo `mappedArgumentType`
@@ -207,11 +213,20 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         block:
           when `originalArgumentType` is JsonNode:
             when `isVarargs`:
-              `jsonArg`[`index`..^1]
+              if `jsonArg`.len >= `index`:
+                `jsonArg`[`index`..^1]
+              else:
+                @[]
             else:
-              `jsonArg`[`index`]
+              if `jsonArg`.len > `index`:
+                `jsonArg`[`index`]
+              else:
+                raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
           else:
-            `jsonArg`[`index`].jsonTo `mappedArgumentType`
+            if `jsonArg`.len > `index`:
+              `jsonArg`[`index`].jsonTo `mappedArgumentType`
+            else:
+              raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
 
     #
     var callFromScriptArg = scriptFunction.argName(i)

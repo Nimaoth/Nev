@@ -34,7 +34,11 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
     let tempArg = if def.isVarargs(i):
       genAst(jsonArg, index): jsonArg[index..^1]
     else:
-      genAst(jsonArg, index): jsonArg[index]
+      genAst(jsonArg, index, newName = def.name.repr.newLit):
+        if index < jsonArg.elems.len:
+          jsonArg[index]
+        else:
+          raise newException(JsonCallError, "Missing argument " & $(index + 1) & " for call to " & newName)
 
     let tempArg2 = genAst(jsonArg, index, mappedArgumentType, newName = def.name.repr.newLit):
       if index < jsonArg.elems.len:
@@ -128,7 +132,11 @@ proc createJsonWrapper*(fun: NimNode, typ: NimNode, newName: NimNode): NimNode =
     let tempArg = if false: # def.isVarargs(i): # todo
       genAst(jsonArg, index): jsonArg[index..^1]
     else:
-      genAst(jsonArg, index): jsonArg[index]
+      genAst(jsonArg, index, newName = typ.repr.newLit):
+        if index < jsonArg.elems.len:
+          jsonArg[index]
+        else:
+          raise newException(JsonCallError, "Missing argument " & $(index + 1) & " for call to " & newName)
 
     let tempArg2 = genAst(jsonArg, index, mappedArgumentType, name = typ.repr.newLit):
       if index < jsonArg.elems.len:
