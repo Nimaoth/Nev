@@ -151,7 +151,8 @@ proc fromJsonHook*(style: var Style, jsonNode: JsonNode) {.raises: [ValueError].
 
 proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme {.raises: [ValueError].} =
   result = Theme()
-  result.name = json["name"].jsonTo string
+  if json.hasKey("name"):
+    result.name = json["name"].jsonTo string
 
   if json.hasKey("type"):
     result.typ = json["type"].jsonTo string
@@ -196,6 +197,8 @@ proc loadFromString*(input: string, path: string = "string"): Option[Theme] =
   try:
     let json = input.parseJson
     var newTheme = json.jsonToTheme
+    if newTheme.name == "":
+      newTheme.name = path
     newTheme.path = path
     return some(newTheme)
   except CatchableError:
