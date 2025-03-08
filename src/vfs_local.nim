@@ -93,11 +93,24 @@ proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref C
       if args.cancel[].load:
         return
 
+      var localBuffer = array[chunkBase, char].default
+
       let len = buffer.len
       buffer.setLen(len + bytesToRead)
       try:
-        let bytesRead = s.readData(buffer[len].addr, bytesToRead)
-        buffer.setLen(len + bytesRead)
+        var totalBytesRead = 0
+        while totalBytesRead < bytesToRead:
+          let bytesToReadLocal = min(localBuffer.len, bytesToRead - totalBytesRead)
+          let bytesRead = s.readData(localBuffer[0].addr, bytesToReadLocal)
+          for i in 0..<bytesRead:
+            if localBuffer[i] != '\r':
+              buffer[len + totalBytesRead] = localBuffer[i]
+              inc totalBytesRead
+
+          if bytesRead < bytesToReadLocal:
+            break
+
+        buffer.setLen(len + totalBytesRead)
       except CatchableError as e:
         args.err[] = e
         buffer.setLen(len)
