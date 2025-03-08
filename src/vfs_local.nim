@@ -41,6 +41,7 @@ proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {
     log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
 
 method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+  log lvlInfo, &"Register watcher for local file system at '{path}'"
   self.subscribe(path, cb)
 
 proc loadFileThread(args: tuple[path: string, data: ptr string, flags: set[ReadFlag]]): bool =

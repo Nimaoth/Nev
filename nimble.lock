@@ -236,26 +236,47 @@
         "sha1": "ba179f34b0513ebd1615076f07b61e2e217bd228"
       }
     },
-    "xio": {
-      "version": "0.1.0",
-      "vcsRevision": "73321c2c163e7eebbee1b5774ccde8a74ef6fdbf",
-      "url": "https://github.com/ringabout/xio",
+    "macosutils": {
+      "version": "0.3.2",
+      "vcsRevision": "bb2c2ca53b6650a4a82f63db09b527e6fd570ac8",
+      "url": "https://github.com/elcritch/macosutils",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "dd17219a2b85085faa784bc0fc7d61bf37b60715"
+        "sha1": "2ff214486d4f013395554aff38b7309d33b62a3c"
+      }
+    },
+    "winim": {
+      "version": "3.9.4",
+      "vcsRevision": "6fdee629140baa0d7060ddf86662457d11f50d35",
+      "url": "https://github.com/khchen/winim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "4b7c430159be2e8b2dc4b663a9b19f7678b58f87"
+      }
+    },
+    "dmon": {
+      "version": "0.4.0",
+      "vcsRevision": "b068e274bd5a45e44ef91a337261dd3eee7423b5",
+      "url": "https://github.com/elcritch/dmon-nim",
+      "downloadMethod": "git",
+      "dependencies": [
+        "macosutils",
+        "winim"
+      ],
+      "checksums": {
+        "sha1": "fdc44b446b2ed5473a04fcb628e499bb5fd12a6c"
       }
     },
     "fsnotify": {
-      "version": "0.1.4",
-      "vcsRevision": "725614b59f1179fc739871594d959660e032c4eb",
-      "url": "https://github.com/planety/fsnotify",
+      "version": "0.1.5",
+      "vcsRevision": "66cdc17abc11ca2b9c609d463339e62cd5a0424f",
+      "url": "https://github.com/Nimaoth/fsnotify",
       "downloadMethod": "git",
-      "dependencies": [
-        "xio"
-      ],
+      "dependencies": [],
       "checksums": {
-        "sha1": "54d37680fbbaabf18913fe85686a8543e139ad63"
+        "sha1": "cb0ac0956c3d42951a778ea338b2163ca5de6a9c"
       }
     },
     "fusion": {
@@ -457,16 +478,6 @@
       ],
       "checksums": {
         "sha1": "1323a96835a262ff58f626bc463069e753b77560"
-      }
-    },
-    "winim": {
-      "version": "3.9.4",
-      "vcsRevision": "6fdee629140baa0d7060ddf86662457d11f50d35",
-      "url": "https://github.com/khchen/winim",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "4b7c430159be2e8b2dc4b663a9b19f7678b58f87"
       }
     }
   },
