@@ -154,7 +154,7 @@ proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previe
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
-proc defaultHandleCommand*(self: App, command: string): bool
+proc defaultHandleCommand*(self: App, command: string): Option[string]
 
 implTrait AppInterface, App:
   getActiveEditor(Option[DocumentEditor], App)
@@ -662,13 +662,15 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.TextDocumentEditor.disableScrolling = true
   self.commands.commandLineEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   self.commands.commandLineEditor.TextDocumentEditor.hideCursorWhenInactive = true
+  self.commands.commandLineEditor.TextDocumentEditor.cursorMargin = 0.0.some
+  self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
   discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
   self.editors.commandLineEditor = self.commands.commandLineEditor
-  self.commands.defaultCommandHandler = proc(command: Option[string]): bool =
+  self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
     if command.isSome:
       self.defaultHandleCommand(command.get)
     else:
-      true
+      string.none
 
   assignEventHandler(self.eventHandler, self.events.getEventHandlerConfig("editor")):
     onAction:
@@ -689,6 +691,24 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       Ignored
 
   assignEventHandler(self.commands.commandLineEventHandlerLow, self.events.getEventHandlerConfig("command-line-low")):
+    onAction:
+      if self.handleAction(action, arg, record=true).isSome:
+        Handled
+      else:
+        Ignored
+    onInput:
+      Ignored
+
+  assignEventHandler(self.commands.commandLineResultEventHandlerHigh, self.events.getEventHandlerConfig("command-line-result-high")):
+    onAction:
+      if self.handleAction(action, arg, record=true).isSome:
+        Handled
+      else:
+        Ignored
+    onInput:
+      Ignored
+
+  assignEventHandler(self.commands.commandLineResultEventHandlerLow, self.events.getEventHandlerConfig("command-line-result-low")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:
         Handled
@@ -1145,13 +1165,16 @@ proc closeUnusedDocuments*(self: App) =
     # Only close one document on each iteration so we don't create spikes
     break
 
-proc defaultHandleCommand*(self: App, command: string): bool =
+proc defaultHandleCommand*(self: App, command: string): Option[string] =
   var (action, arg) = command.parseAction
 
   if arg.startsWith("\\"):
     arg = $newJString(arg[1..^1])
 
-  return self.handleAction(action, arg, record=true).isSome
+  let res = self.handleAction(action, arg, record=true)
+  if res.getSome(res) and res.kind != JNull:
+    return res.pretty.some
+  return string.none
 
 proc writeFile*(self: App, path: string = "", appFile: bool = false) {.expose("editor").} =
   defer:
@@ -2022,7 +2045,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "create-file", proc(popup: SelectorPopup, args: JsonNode): bool =
     let dir = currentDirectory[]
-    self.commands.openCommandLine "", proc(command: Option[string]): bool =
+    self.commands.openCommandLine "", proc(command: Option[string]): Option[string] =
       if command.getSome(path):
         if path.isAbsolute:
           self.createFile(path)
@@ -2169,9 +2192,12 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
   if not self.modeEventHandler.isNil and not modeOnTop:
     result.add self.modeEventHandler
 
-  if self.commands.commandLineMode:
+  if self.commands.commandLineInputMode:
     result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": self.commands.commandLineEventHandlerLow}.toTable)
     result.add self.commands.commandLineEventHandlerHigh
+  elif self.commands.commandLineResultMode:
+    result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": self.commands.commandLineResultEventHandlerLow}.toTable)
+    result.add self.commands.commandLineResultEventHandlerHigh
   elif self.layout.popups.len > 0:
     result.add self.layout.popups[self.layout.popups.high].getEventHandlers()
   elif self.layout.tryGetCurrentView().getSome(view):

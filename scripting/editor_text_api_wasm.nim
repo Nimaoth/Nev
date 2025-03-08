@@ -139,6 +139,34 @@ proc doMoveCursorLine*(self: TextDocumentEditor; cursor: Cursor; offset: int;
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_getDefaultScrollBehaviour_ScrollBehaviour_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc getDefaultScrollBehaviour*(self: TextDocumentEditor): ScrollBehaviour {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getDefaultScrollBehaviour_ScrollBehaviour_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_setDefaultScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_wasm(
+    arg: cstring): cstring {.importc.}
+proc setDefaultScrollBehaviour*(self: TextDocumentEditor;
+                                scrollBehaviour: ScrollBehaviour) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add scrollBehaviour.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setDefaultScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_doMoveCursorVisualLine_Cursor_TextDocumentEditor_Cursor_int_bool_bool_Option_int_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorVisualLine*(self: TextDocumentEditor; cursor: Cursor;

@@ -1041,6 +1041,12 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     cursor.column = self.displayMap.toPoint(wrapPoint(wrapPoint.row.int, self.targetColumn)).column.int
   return self.clampCursor(cursor, includeAfter)
 
+proc getDefaultScrollBehaviour(self: TextDocumentEditor): ScrollBehaviour {.expose: "editor.text".} =
+  self.defaultScrollBehaviour
+
+proc setDefaultScrollBehaviour(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) {.expose: "editor.text".} =
+  self.defaultScrollBehaviour = scrollBehaviour
+
 proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false, targetColumn: Option[int] = int.none): Cursor {.expose: "editor.text".} =
   let targetColumn = targetColumn.get(self.targetColumn)
   let wrapPointOld = self.displayMap.toWrapPoint(cursor.toPoint)
@@ -2910,7 +2916,7 @@ proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPrevie
     return
 
   let prevSearchQuery = self.searchQuery
-  self.commands.openCommandLine "", proc(command: Option[string]): bool =
+  self.commands.openCommandLine "", proc(command: Option[string]): Option[string] =
     if command.getSome(command):
       discard self.setSearchQuery(command)
       if select:

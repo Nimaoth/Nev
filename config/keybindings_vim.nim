@@ -658,7 +658,9 @@ proc vimMoveCursorVisualLine(editor: TextDocumentEditor, direction: int, count: 
     editor.moveCursorLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
   else:
     editor.moveCursorVisualLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
-  let nextScrollBehaviour = if center: CenterAlways.some else: ScrollBehaviour.none
+  let defaultScrollBehaviour = editor.getDefaultScrollBehaviour
+  let defaultCenter = defaultScrollBehaviour in {CenterAlways, CenterOffscreen}
+  let nextScrollBehaviour = if center and defaultCenter: CenterAlways.some else: ScrollBehaviour.none
   editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
   editor.setNextSnapBehaviour(Never)
   if editor.vimState.selectLines:
@@ -884,6 +886,16 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.setMode("normal")
 
   addCommandBlockDesc "command-line-low", "<ESCAPE>", "exit to normal mode and clear things":
+    if getActiveEditor().isTextEditor(editor):
+      if editor.mode == "normal":
+        exitCommandLine()
+        return
+
+      if editor.mode == "normal":
+        editor.clearTabStops()
+      editor.setMode("normal")
+
+  addCommandBlockDesc "command-line-result-low", "<ESCAPE>", "exit to normal mode and clear things":
     if getActiveEditor().isTextEditor(editor):
       if editor.mode == "normal":
         exitCommandLine()

@@ -525,10 +525,12 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     currentNode.bounds.w
 
   let parentHeight = if sizeToContentY:
-    currentNode.h = builder.textHeight
-    min(self.document.rope.lines.float * builder.textHeight, 500.0) # todo: figure out max height
+    min(self.numDisplayLines.float * builder.textHeight, 500.0) # todo: figure out max height
   else:
     currentNode.bounds.h
+
+  if sizeToContentY:
+    currentNode.h = parentHeight
 
   let enableSmoothScrolling = app.config.asConfigProvider.getValue("ui.smooth-scroll", true)
   let snapBehaviour = self.nextSnapBehaviour.get(self.defaultSnapBehaviour)
@@ -785,8 +787,6 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
           flags.incl UINodeFlag.TextDrawSpaces
         drawText(chunk.toOpenArray, arrangementIndex, bounds, textColor, flags, underlineColor)
         state.offset.x += width
-        if sizeToContentY:
-          currentNode.h = max(currentNode.h, bounds.yh)
 
         if drawChunks:
           drawRect(bounds, color(1, 0, 0))

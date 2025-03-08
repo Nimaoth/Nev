@@ -150,6 +150,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "command-line-low", "<ENTER>", "execute-command-line"
   addCommand "command-line-low", "<UP>", "select-previous-command-in-history"
   addCommand "command-line-low", "<DOWN>", "select-next-command-in-history"
+  addCommand "command-line-results-low", "<ESCAPE>", "exit-command-line"
 
   addCommand "popup.selector", "<ENTER>", "accept"
   addCommand "popup.selector", "<C-y>", "accept"
