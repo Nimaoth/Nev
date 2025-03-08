@@ -2265,6 +2265,16 @@ proc clearDiagnostics*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_text_updateInlayHints_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc updateInlayHints*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_updateInlayHints_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_setReadOnly_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) {.gcsafe, raises: [].} =
