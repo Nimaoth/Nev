@@ -1,4 +1,4 @@
-import std/[os, options, unicode, strutils, streams, atomics]
+import std/[os, options, unicode, strutils, streams, atomics, sequtils]
 import nimsumtree/[rope, static_array]
 import misc/[custom_async, custom_logger, util, timer, regex]
 import vfs
@@ -36,7 +36,8 @@ proc process(self: VFSLocal) {.async.} =
 
 proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
   try:
-    register(self.watcher, path, cb)
+    proc cbWrapper(events: seq[PathEvent]) {.gcsafe, raises: [].} = cb(events.deduplicate(isSorted = true))
+    register(self.watcher, path, cbWrapper)
   except OSError as e:
     log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
 
