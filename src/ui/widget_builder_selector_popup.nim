@@ -83,7 +83,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
             var rows: seq[seq[UINode]] = @[]
 
             builder.panel(&{FillX, LayoutVertical} + yFlag):
-              let maxLineCount = floor(bounds.h / totalLineHeight).int
+              let nextKeyHeight = whichKeyHeight.float * builder.textHeight
+              let maxLineCount = max(floor((bounds.h - nextKeyHeight) / totalLineHeight).int - 1, 1)
               let targetNumRenderedItems = min(maxLineCount, items.filteredLen)
               var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
 
@@ -156,7 +157,6 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
                 x += maxWidths[col] + gap
 
           if app.nextPossibleInputs.len == 0:
-
             let textColor = app.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
             let continuesTextColor = app.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
             let keysTextColor = app.theme.tokenColor("number", color(0.882, 0.784, 0.784))
