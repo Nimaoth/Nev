@@ -1,4 +1,4 @@
-import std/[options, strformat]
+import std/[options, strformat, json]
 import misc/[util, custom_logger, custom_async, custom_unicode]
 import platform/[platform]
 import text/language/[language_server_base]
@@ -11,14 +11,15 @@ logCategory "commands"
 {.push raises: [].}
 
 type
-  CommandHandler* = proc(command: Option[string]): bool {.gcsafe.}
+  CommandHandler* = proc(command: Option[string]): Option[string] {.gcsafe.}
 
   CommandService* = ref object of Service
     events*: EventHandlerService
     platform*: Platform
     config*: ConfigProvider
 
-    commandLineMode*: bool
+    commandLineInputMode*: bool
+    commandLineResultMode*: bool
     commandLineEditor*: DocumentEditor
     languageServerCommandLine*: LanguageServer
     defaultCommandHandler*: CommandHandler
@@ -28,6 +29,8 @@ type
     eventHandler*: EventHandler
     commandLineEventHandlerHigh*: EventHandler
     commandLineEventHandlerLow*: EventHandler
+    commandLineResultEventHandlerHigh*: EventHandler
+    commandLineResultEventHandlerLow*: EventHandler
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
@@ -42,20 +45,23 @@ method init*(self: CommandService): Future[Result[void, ref CatchableError]] {.a
 
   return ok()
 
-proc handleCommand*(self: CommandService, command: string): bool =
+proc handleCommand*(self: CommandService, command: string): Option[string] =
   try:
     if self.commandHandler.isNotNil:
       return self.commandHandler(command.some)
     if self.defaultCommandHandler.isNotNil:
       return self.defaultCommandHandler(command.some)
     log lvlError, &"Unhandled command 'command'"
-    return false
+    return string.none
   except Exception as e:
     log lvlError, &"Failed to run command '{command}': {e.msg}"
-    return false
+    return string.none
 
-var commandLineImpl*: proc(self: CommandService, initialValue: string) {.gcsafe, raises: [].}
+# todo: add prefix parameter
+var commandLineImpl*: proc(self: CommandService, initialValue: string, prefix: string) {.gcsafe, raises: [].}
 proc openCommandLine*(self: CommandService, initialValue: string = "", handler: CommandHandler = nil) =
   {.gcsafe.}:
-    commandLineImpl(self, initialValue)
+    commandLineImpl(self, initialValue, "")
     self.commandHandler = handler
+
+proc commandLineMode*(self: CommandService): bool = self.commandLineInputMode or self.commandLineResultMode

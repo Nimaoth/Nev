@@ -290,7 +290,7 @@ proc setOption*(self: ConfigService, option: string, value: JsonNode, override: 
   except:
     discard
 
-proc getOptionJson*(self: ConfigService, path: string, default: JsonNode): JsonNode {.expose("editor").} =
+proc getOptionJson*(self: ConfigService, path: string, default: JsonNode = newJNull()): JsonNode {.expose("editor").} =
   return self.getOption[:JsonNode](path, default)
 
 proc getFlag*(self: ConfigService, flag: string, default: bool = false): bool {.expose("config").} =
