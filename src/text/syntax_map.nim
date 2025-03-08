@@ -171,7 +171,7 @@ proc chunkIter*(rope {.byref.}: Rope): ChunkIterator =
 
 proc seek*(self: var ChunkIterator, point: Point) =
   assert point >= self.cursor.startPos[0]
-  # echo &"ChunkIterator.seek {self.cursor.startPos[0]} -> {point}"
+  # debugEcho &"ChunkIterator.seek {self.cursor.startPos[0]} -> {point}"
   discard self.cursor.seekForward(point, Bias.Right, ())
   self.point = point
   let localPointOffset = (point - self.cursor.startPos[0]).toPoint
@@ -268,7 +268,8 @@ iterator ropeChunks*(rope: Rope, state: var RopeChunksState): RopeChunk =
 
   while true:
     if state.seekPoint.getSome(point):
-      assert point >= chunk.point
+      if point < chunk.point:
+        cursor.resetCursor()
       discard cursor.seekForward(point, Bias.Right, ())
     else:
       cursor.next()
@@ -313,7 +314,7 @@ iterator ropeChunks*(rope: Rope, state: var RopeChunksState): RopeChunk =
     while i < inputChunk.chars.len:
       # Handle seeking
       if state.seekPoint.getSome(point):
-        if point < cursor.endPos[0]:
+        if point >= cursor.startPos[0] and point < cursor.endPos[0]:
           # Seek forward but in same chunk
           let localOffset = inputChunk[].pointToOffset(point - cursor.startPos[0])
           updateChunk chunkOriginal.split(localOffset)[1], localOffset, point
