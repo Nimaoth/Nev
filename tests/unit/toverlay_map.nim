@@ -42,11 +42,12 @@ proc test(edits: openArray[(Range[Point], string)], content: string = file, over
 
   let edits = @edits
   log &"================================================== testEdit {edits}"
+  log "---------- initial content"
   log content
   log "---------------------"
   var (b, om) = prepareData(content)
   echo &"initial snapshot: {om.snapshot}"
-  log "----------"
+  log "---------- initial overlay map"
   echo om.snapshot.renderString()
   log "----------"
   for overlay in overlays:
@@ -55,20 +56,25 @@ proc test(edits: openArray[(Range[Point], string)], content: string = file, over
   # om.addOverlay(point(0, 5)...point(0, 5), "test", 1)
   # om.addOverlay(point(1, 4)...point(1, 4), "xvlc", 1)
   echo &"overlay snapshot: {om.snapshot}"
-  log "----------"
+  log "---------- overlay map before edit"
   echo om.snapshot.renderString()
   log "----------"
-  log "---------------------"
   discard b.edit edits
+  log "--------------------- content after edit"
   log b.visibleText
   log "---------------------"
+  if b.patches.len == 0:
+    log "---------- overlay map after edit"
+    echo om.snapshot.renderString()
+    log "----------"
+
   for p in b.patches:
     let patch = p.patch.convert(Point, om.snapshot.buffer.visibleText, b.visibleText)
     log &"edit patch: {patch}"
     let overlayPatch = om.snapshot.edit(b.snapshot.clone(), patch)
     log &"new snapshot: {om.snapshot}"
     log &"overlay patch: {overlayPatch}"
-    log "----------"
+    log "---------- overlay map after edit"
     echo om.snapshot.renderString()
     log "----------"
     let actual = om.snapshot.map.toSeq()
@@ -170,3 +176,26 @@ test([
 test([
     (point(0, 0)...point(0, 1), ""),
   ], "a", [])
+
+test([], "a", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Left)])
+test([], "a", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Right)])
+
+test([], "a", [(point(0, 1)...point(0, 1), "XYZ", 1, Bias.Left)])
+test([], "a", [(point(0, 1)...point(0, 1), "XYZ", 1, Bias.Right)])
+
+test([], "", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Left)])
+test([], "", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Right)])
+
+test([(point(0, 0)...point(0, 1), "")], "a", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Left)])
+test([(point(0, 0)...point(0, 1), "")], "a", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Right)])
+
+test([(point(0, 0)...point(0, 1), "")], "a", [(point(0, 1)...point(0, 1), "XYZ", 1, Bias.Left)])
+test([(point(0, 0)...point(0, 1), "")], "a", [(point(0, 1)...point(0, 1), "XYZ", 1, Bias.Right)])
+
+test([(point(0, 0)...point(0, 0), "+")], "", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Left)])
+test([(point(0, 0)...point(0, 0), "+")], "", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Right)])
+
+test([(point(0, 0)...point(0, 0), "+")], "a", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Left)])
+test([(point(0, 0)...point(0, 0), "+")], "a", [(point(0, 0)...point(0, 0), "XYZ", 1, Bias.Right)])
+test([(point(0, 1)...point(0, 1), "+")], "a", [(point(0, 1)...point(0, 1), "XYZ", 1, Bias.Left)])
+test([(point(0, 1)...point(0, 1), "+")], "a", [(point(0, 1)...point(0, 1), "XYZ", 1, Bias.Right)])

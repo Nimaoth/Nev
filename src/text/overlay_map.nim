@@ -170,7 +170,7 @@ proc `$`*(self: OverlayMapSnapshot): string =
       let rd = c.startPos.dst...c.endPos.dst
       let b = c.startPos.srcBytes...c.endPos.srcBytes
       let bd = c.startPos.dstBytes...c.endPos.dstBytes
-      result.add &"  {i} #{item.id}: {item.src} -> {item.dst}  {item.srcBytes} -> {item.dstBytes}   |   {r} -> {rd}  {b} -> {bd}  {item.kind}"
+      result.add &"  {i} #{item.id}: {item.src} -> {item.dst}  {item.srcBytes} -> {item.dstBytes}   |   {r} -> {rd}  {b} -> {bd}  {item.kind}  {item.bias}"
       if item.kind == OverlayMapChunkKind.String:
         result.add "  '"
         result.add item.text
@@ -369,13 +369,19 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot, patch: 
       continue
 
     # Skip over left aligned overlays at the current position
-    while c.endPos.src < self.map.summary.src and e.old.a == c.endPos.src and (
-      (c.item.get[].kind != Empty and c.item.get[].bias == Bias.Left) or (c.nextItem().getSome(item) and item[].kind != Empty and item[].bias == Bias.Left)):
-      # while c.endPos.src < self.map.summary.src and e.old.a == c.endPos.src and (c.item.get[].bias == Bias.Left or true):
-      logEdit &"Overlay biased left, at border {e}, {c.endPos}"
-      logEdit &"-> chunk {c.item.get[]}"
-      newMap.add c.item.get[]
-      c.next()
+    while true:
+      let nextItem = c.nextItem()
+      let nextItemEmpty = nextItem.mapIt(it.kind == Empty).get(false)
+      let beforeEnd = c.endPos.src < self.map.summary.src or nextItemEmpty
+      let editAtEndOfChunk = e.old.a == c.endPos.src
+      let currentNonEmptyOrNextNonEmptyLeftBiased = (c.item.get[].kind != Empty) or (nextItem.getSome(item) and item[].kind != Empty and item[].bias == Bias.Left)
+      if beforeEnd and editAtEndOfChunk and currentNonEmptyOrNextNonEmptyLeftBiased:
+        logEdit &"Overlay biased left, at border {e}, {c.endPos}"
+        logEdit &"-> chunk {c.item.get[]}"
+        newMap.add c.item.get[]
+        c.next()
+      else:
+        break
 
     if c.item.isNone:
       logEdit &"Reached end 2"
@@ -456,7 +462,7 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot, patch: 
     if delete and e.old.b > c.endPos.src:
       logEdit &"seek forward {e.old.b} > {c.endPos.src}"
       logEdit &"-> chunk {chunk}"
-      if chunk.src == inputPoint() and chunk.dst == overlayPoint() and chunk.srcBytes == 0 and chunk.dstBytes == 0:
+      if chunk.src == inputPoint() and chunk.dst == overlayPoint() and chunk.srcBytes == 0 and chunk.dstBytes == 0 and not (newMap.summary.srcBytes == buffer.visibleText.summary.bytes):
         discard
       else:
         newMap.add chunk
@@ -501,7 +507,7 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot, patch: 
       result.edits.add overlayEdit
 
     logEdit &"-> chunk {chunk}"
-    if chunk.src == inputPoint() and chunk.dst == overlayPoint() and chunk.srcBytes == 0 and chunk.dstBytes == 0:
+    if chunk.src == inputPoint() and chunk.dst == overlayPoint() and chunk.srcBytes == 0 and chunk.dstBytes == 0 and not (newMap.summary.srcBytes == buffer.visibleText.summary.bytes):
       discard
     else:
       newMap.add chunk
@@ -641,7 +647,13 @@ proc clear*(self: OverlayMap, id: int = -1) =
 
 proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, scope: string = "", bias: Bias = Bias.Left) =
   logOverlayMapUpdate &"OverlayMap.add {range}, '{text}', {id}, '{scope}', bias, {self.snapshot.desc}"
-  # debugEcho &"OverlayMap.addOverlay {range}, '{text}'\n{self.snapshot}"
+
+  template log(msg: untyped) =
+    when false:
+      debugEcho msg
+
+
+  log &"OverlayMap.addOverlay {range}, '{text}'\n{self.snapshot}"
   let newSummary = TextSummary.init(text)
   var newMap = SumTree[OverlayMapChunk].new()
 
@@ -650,17 +662,26 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
   let byteRange = self.snapshot.buffer.visibleText.pointToOffset(range.a)...self.snapshot.buffer.visibleText.pointToOffset(range.b)
 
   var c = self.snapshot.map.initCursor(OverlayMapChunkSummary)
-  newMap.append c.slice(range.a.OverlayMapChunkSrc, Bias.Right)
+  newMap.append c.slice(range.a.OverlayMapChunkSrc, Bias.Left)
+  # Skip over left aligned overlays at the current position
+  while c.endPos.src < self.snapshot.map.summary.src and range.a == c.endPos.src and (
+    (c.item.get[].kind != Empty and c.item.get[].bias == Bias.Left) or (c.nextItem().getSome(item) and item[].kind != Empty and item[].bias == Bias.Left)):
+    log &"Overlay biased left, at border {range}, {c.endPos}"
+    log &"-> chunk {c.item.get[]}"
+    newMap.add c.item.get[]
+    c.next()
 
-  # debugEcho &"  current: {newMap.summary}, current: {c.startPos}...{c.endPos}"
-  if range.a > c.startPos.src:
+  let currentEmpty = c.startPos.src == c.endPos.src
+
+  log &"  current: {newMap.summary}, current: {c.startPos}...{c.endPos}"
+  if range.a > c.startPos.src or (currentEmpty and bias == Bias.Right):
     if c.item.getSome(item):
       if item.kind == OverlayMapChunkKind.String:
         discard # todo
       else:
         let newRange = (range.a - c.startPos.src).toPoint
         let newByteRange = byteRange.a - c.startPos.srcBytes
-        # debugEcho &"  add start of overlappin chunk {newRange}"
+        log &"  add start of overlappin chunk {newRange}"
         newMap.add OverlayMapChunk(src: newRange, dst: newRange.OverlayPoint, srcBytes: newByteRange, dstBytes: newByteRange)
 
   newMap.add OverlayMapChunk(id: id, src: range.len, dst: newSummary.lines.OverlayPoint, srcBytes: byteRange.len, dstBytes: newSummary.bytes, kind: OverlayMapChunkKind.String, text: text, scope: scope, bias: bias)
@@ -669,14 +690,14 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
   let overlayRangeNew = overlayRangeOld.a...(overlayRangeOld.a + newSummary.lines.OverlayPoint)
   patch.add initEdit(overlayRangeOld, overlayRangeNew)
 
-  if range.b < c.endPos.src:
+  if range.b < c.endPos.src or (currentEmpty and bias == Bias.Left):
     if c.item.getSome(item):
       if item.kind == OverlayMapChunkKind.String:
         discard # todo
       else:
         let newRange = (c.endPos.src - range.b).toPoint
         let newByteRange = c.endPos.srcBytes - byteRange.b
-        # debugEcho &"  add end of overlappin chunk {newRange}"
+        log &"  add end of overlappin chunk {newRange}"
         newMap.add OverlayMapChunk(src: newRange, dst: newRange.OverlayPoint, srcBytes: newByteRange, dstBytes: newByteRange)
 
   c.next()
@@ -686,7 +707,7 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
     buffer: self.snapshot.buffer.clone(),
     version: self.snapshot.version + 1,
   )
-  # debugEcho newSnapshot
+  # log newSnapshot
   let old = self.snapshot.clone()
   self.snapshot = newSnapshot
   self.onUpdated.invoke (self, old, patch)
@@ -701,11 +722,17 @@ template log(msg: untyped) =
     if true:
       debugEcho msg
 
+var debugOverlayMapNext* = false
+template logIter(msg: untyped) =
+  when false:
+    if ({.gcsafe.}: debugOverlayMapNext):
+      debugEcho msg
+
 proc setupSubIterAfterSeek(self: var OverlayChunkIterator) =
   # Bias to right if at end of non-empty chunk
-  # debugEcho &"setupSubIterAfterSeek: {self.overlayPoint} == {self.overlayMapCursor.endPos.dst}"
+  logIter &"setupSubIterAfterSeek: {self.overlayPoint} == {self.overlayMapCursor.endPos.dst}"
   if self.overlayMapCursor.endPos.src > self.overlayMapCursor.startPos.src and self.overlayPoint == self.overlayMapCursor.endPos.dst:
-    # debugEcho &"at end of {self.overlayMapCursor.startPos} -> {self.overlayMapCursor.endPos}"
+    logIter &"at end of {self.overlayMapCursor.startPos} -> {self.overlayMapCursor.endPos}"
     self.overlayMapCursor.next()
 
   if self.overlayMapCursor.item.getSome(item):
@@ -718,7 +745,7 @@ proc setupSubIterAfterSeek(self: var OverlayChunkIterator) =
       self.stringLine = 0 # todo
       self.stringOffset = item.text.toOpenArray(0, item.text.high).pointToOffset((self.overlayPoint - self.overlayMapCursor.startPos.dst).toPoint)
       self.stringRuneOffset = item.text.toOpenArray(0, item.text.high).pointToCount((self.overlayPoint - self.overlayMapCursor.startPos.dst).toPoint).int
-      # debugEcho &"OverlayChunkIterator.seek {self.overlayPoint} -> {self.stringLine}, {self.stringOffset}"
+      logIter &"OverlayChunkIterator.seek {self.overlayPoint} -> {self.stringLine}, {self.stringOffset}"
     of OverlayMapChunkKind.Rope:
       # todo
       self.subIterKind = OverlayMapChunkKind.Rope
@@ -727,11 +754,11 @@ proc setupSubIterAfterSeek(self: var OverlayChunkIterator) =
       self.stringRuneOffset = 0 # todo
 
 proc seek*(self: var OverlayChunkIterator, point: Point) =
-  log &"OverlayChunkIterator.seekPoint1 {self.styledChunks.point} -> {point}"
+  logIter &"OverlayChunkIterator.seekPoint1 {self.styledChunks.point} -> {point}"
   self.styledChunks.seek(point)
   discard self.overlayMapCursor.seekForward(point.OverlayMapChunkSrc, Bias.Left, ())
   let overlayPoint = self.overlayMapCursor.toOverlayPoint(point)
-  log &"OverlayChunkIterator.seekPoint2 {self.overlayPoint} -> {overlayPoint}"
+  logIter &"OverlayChunkIterator.seekPoint2 {self.overlayPoint} -> {overlayPoint}"
   assert overlayPoint >= self.overlayPoint
   self.overlayPoint = overlayPoint
   self.localOffset = 0
@@ -740,7 +767,7 @@ proc seek*(self: var OverlayChunkIterator, point: Point) =
   self.setupSubIterAfterSeek()
 
 proc seek*(self: var OverlayChunkIterator, overlayPoint: OverlayPoint) =
-  log &"OverlayChunkIterator.seek {self.overlayPoint} -> {overlayPoint}"
+  logIter &"OverlayChunkIterator.seek {self.overlayPoint} -> {overlayPoint}"
   # if overlayPoint < self.overlayPoint:
   #   debugEcho
   assert overlayPoint >= self.overlayPoint
@@ -756,7 +783,6 @@ proc seek*(self: var OverlayChunkIterator, overlayPoint: OverlayPoint) =
 proc seekLine*(self: var OverlayChunkIterator, line: int) =
   self.seek(overlayPoint(line))
 
-var debugOverlayMapNext* = false
 proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
   # let mainThreadId = ({.cast(noSideEffect).}: ({.gcsafe.}: mainThreadId))
   # let threadId = ({.cast(noSideEffect).}: getThreadId())
@@ -764,41 +790,41 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
     self.overlayChunk = OverlayChunk.none
     return
 
-  template log(msg: untyped) =
-    if debugOverlayMapNext:
-      debugEcho msg
-
-  log &"Overlay.next {self.overlayPoint}, {self.styledChunks.point}, {self.subIterKind}, localOffset: {self.localOffset}"
+  logIter &"Overlay.next {self.overlayPoint}, {self.styledChunks.point}, {self.subIterKind}, localOffset: {self.localOffset}"
   # defer:
-  #   log &"  -> {result}"
+  #   logIter &"  -> {result}"
 
   if self.subIterKind == OverlayMapChunkKind.Empty:
-    if self.styledChunk.isNone or self.localOffset >= self.styledChunk.get.len:
+    if self.styledChunk.isNone or self.localOffset > self.styledChunk.get.len:
       self.styledChunk = self.styledChunks.next()
       self.localOffset = 0
-      if self.styledChunk.isNone:
+
+    if self.styledChunk.getSome(currentChunk):
+      let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
+      if not self.overlayMapCursor.didSeek() or currentPoint > self.overlayMapCursor.endPos.src:
+        discard self.overlayMapCursor.seekForward(currentPoint.OverlayMapChunkSrc, Bias.Left, ())
+
+      if currentPoint == self.overlayMapCursor.endPos.src and self.overlayMapCursor.startPos.src != self.overlayMapCursor.endPos.src:
+        self.overlayMapCursor.next()
+
+      logIter &"  OverlayChunkIterator.next1 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
+      self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
+
+    elif self.overlayMapCursor.atEnd:
+      self.atEnd = true
+      self.overlayChunk = OverlayChunk.none
+      return
+    else:
+      self.overlayMapCursor.next()
+      if self.overlayMapCursor.atEnd:
         self.atEnd = true
         self.overlayChunk = OverlayChunk.none
         return
 
-      log &" Overlay.next input chunk = {self.styledChunk.get}"
-
-    assert self.styledChunk.isSome
-    var currentChunk = self.styledChunk.get
-    let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
-    if not self.overlayMapCursor.didSeek() or currentPoint > self.overlayMapCursor.endPos.src:
-      discard self.overlayMapCursor.seekForward(currentPoint.OverlayMapChunkSrc, Bias.Left, ())
-
-    if currentPoint == self.overlayMapCursor.endPos.src and self.overlayMapCursor.startPos.src != self.overlayMapCursor.endPos.src:
-      self.overlayMapCursor.next()
-
-    log &"  OverlayChunkIterator.next1 {self.overlayPoint} -> {self.overlayMapCursor.toOverlayPoint(currentPoint)}"
-    self.overlayPoint = self.overlayMapCursor.toOverlayPoint(currentPoint)
-
   let mappedPoint = self.overlayMapCursor.toPoint(self.overlayPoint)
 
   if self.overlayMapCursor.item.getSome(item):
-    log &" Overlay.next cursor: {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos},   {item[]}"
+    logIter &" Overlay.next cursor: {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos},   {item[]}"
     case item.kind
     of OverlayMapChunkKind.String:
       let (line, offset, runeOffset) = if self.subIterKind == OverlayMapChunkKind.String:
@@ -806,7 +832,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
       else:
         (0, 0, 0)
 
-      log &"  String overlay: {line}, {offset}, {runeOffset}"
+      logIter &"  String overlay: {line}, {offset}, {runeOffset}"
 
       let nl = item.text.find('\n', offset)
       let endOffset = if nl == -1:
@@ -823,7 +849,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
       #   let chunkOriginal = styledChunk.split(offsetOriginal).suffix.split(endOffset).prefix
       #   dataOriginal = chunkOriginal.chunk.dataOriginal
       #   lenOriginal = chunkOriginal.chunk.lenOriginal
-      #   log &"  {chunkOriginal}"
+      #   logIter &"  {chunkOriginal}"
 
       let currentChunk = StyledChunk(
         chunk: RopeChunk(
@@ -847,37 +873,39 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
       )
 
       let overlayChunk = OverlayChunk(styledChunk: currentChunk, overlayPoint: self.overlayPoint)
-      log &"  overlay chunk {overlayChunk}, endOffset: {endOffset}, len: {item.text.len}"
+      logIter &"  overlay chunk {overlayChunk}, endOffset: {endOffset}, len: {item.text.len}"
 
       if endOffset == item.text.len:
         self.subIterKind = OverlayMapChunkKind.Empty
         self.stringLine = 0
         self.stringOffset = 0
         self.stringRuneOffset = 0
+        # if self.styledChunk.isNone:
+        #   self.atEnd = true
 
         if self.overlayMapCursor.startPos.src == self.overlayMapCursor.endPos.src:
-          log &"  next"
+          logIter &"  next"
           self.overlayMapCursor.next()
         else:
-          log &"  seek {self.overlayMapCursor.startPos.src} != {self.overlayMapCursor.endPos.src}"
+          logIter &"  seek {self.overlayMapCursor.startPos.src} != {self.overlayMapCursor.endPos.src}"
           let deletedRange: InputPoint = self.overlayMapCursor.endPos.src - self.overlayMapCursor.startPos.src
           let insertedRange: InputPoint = self.overlayMapCursor.endPos.dst - self.overlayMapCursor.startPos.dst
           if deletedRange >= insertedRange:
             self.seek(self.overlayMapCursor.endPos.src)
           else:
             self.seek(self.overlayMapCursor.endPos.dst)
-          log &"  after seek {self.overlayMapCursor.startPos.src} <= {self.overlayMapCursor.endPos.src}, {self.overlayPoint}, {self.overlayMapCursor.endPos.dst}"
+          logIter &"  after seek {self.overlayMapCursor.startPos.src} <= {self.overlayMapCursor.endPos.src}, {self.overlayPoint}, {self.overlayMapCursor.endPos.dst}"
           if self.overlayMapCursor.endPos.src > self.overlayMapCursor.startPos.src and self.overlayPoint == self.overlayMapCursor.endPos.dst:
-            log &"at end of {self.overlayMapCursor.startPos} -> {self.overlayMapCursor.endPos}"
-            log &"  and next, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {self.overlayPoint}"
+            logIter &"at end of {self.overlayMapCursor.startPos} -> {self.overlayMapCursor.endPos}"
+            logIter &"  and next, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {self.overlayPoint}"
             self.overlayMapCursor.next()
 
         if self.overlayMapCursor.item.getSome(item) and item.kind != OverlayMapChunkKind.Empty:
-          log &"  Next chunk also string {item[]}, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {self.overlayPoint}"
+          logIter &"  Next chunk also string {item[]}, {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos}, {self.overlayPoint}"
           self.subIterKind = item.kind
       else:
         self.subIterKind = OverlayMapChunkKind.String
-        log &"  OverlayChunkIterator.next2 {self.overlayPoint} -> {self.overlayPoint + overlayPoint(1, 0)}"
+        logIter &"  OverlayChunkIterator.next2 {self.overlayPoint} -> {self.overlayPoint + overlayPoint(1, 0)}"
         self.overlayPoint += overlayPoint(1, 0)
         self.stringLine = line + 1
         self.stringOffset = endOffset + 1
@@ -893,9 +921,9 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
     else:
       discard
 
-  var currentChunk = self.styledChunk.get
+  let currentChunk = self.styledChunk.get
   let currentPoint = currentChunk.point + Point(column: self.localOffset.uint32)
-  log &"  currentChunk: {currentChunk}, currentPoint: {currentPoint}, {self.overlayMapCursor.startPos.src}, {self.overlayMapCursor.endPos.src}, local offset: {self.localOffset}"
+  logIter &"  currentChunk: {currentChunk}, currentPoint: {currentPoint}, {self.overlayMapCursor.startPos.src}, {self.overlayMapCursor.endPos.src}, local offset: {self.localOffset}"
   if self.overlayMapCursor.startPos.src == self.overlayMapCursor.endPos.src:
     if currentPoint < self.overlayMap.map.summary.src:
       # this should not happen
@@ -911,18 +939,22 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
     dst: self.overlayMapCursor.startPos.dst...self.overlayMapCursor.endPos.dst)
 
   if currentChunk.endPoint <= map.src.b:
-    log &"  current chunk ends before current mapping {currentChunk.endPoint} <= {map.src.b}, map: {map}"
-    self.localOffset = currentChunk.len
-    var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
+    logIter &"  current chunk ends before current mapping {currentChunk.endPoint} <= {map.src.b}, map: {map}"
+    self.localOffset = currentChunk.len + 1
+    var newChunk = currentChunk.split(startOffset).suffix.split(currentChunk.len - startOffset).prefix
     newChunk.chunk.point = mappedPoint
     self.overlayChunk = OverlayChunk(styledChunk: newChunk, overlayPoint: self.overlayPoint).some
 
   else:
-    log &"  current mapping ends before current chunk {currentChunk.endPoint} > {map.src.b}, map: {map}"
+    logIter &"  current mapping ends before current chunk {currentChunk.endPoint} > {map.src.b}, map: {map}"
     self.localOffset = map.src.b.column.int - currentChunk.point.column.int
+
     var newChunk = currentChunk.split(startOffset).suffix.split(self.localOffset - startOffset).prefix
     newChunk.chunk.point = mappedPoint
     self.overlayChunk = OverlayChunk(styledChunk: newChunk, overlayPoint: self.overlayPoint).some
+
+    if self.localOffset == self.styledChunk.get.len:
+      inc self.localOffset
 
   return self.overlayChunk
 
