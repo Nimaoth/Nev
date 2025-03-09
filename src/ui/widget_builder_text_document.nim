@@ -497,7 +497,8 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           fillRect(cursorBounds, cursorForegroundColor)
           if isThickCursor:
             let currentRune = self.document.runeAt(s.last)
-            drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
+            if currentRune != 0.Rune:
+              drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
 
         self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
 
@@ -523,13 +524,14 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     flags.incl FillY
 
   let parentWidth = if sizeToContentX:
-    currentNode.w = builder.charWidth
-    min(self.document.rope.len.float * builder.charWidth, 500.0) # todo: figure out max height
+    # todo
+    (self.document.rope.len + 1).clamp(1, 200).float * builder.charWidth
   else:
     currentNode.bounds.w
 
   let parentHeight = if sizeToContentY:
-    min(self.numDisplayLines.float * builder.textHeight, 500.0) # todo: figure out max height
+    # todo
+    self.numDisplayLines.clamp(1, 200).float * builder.textHeight
   else:
     currentNode.bounds.h
 
@@ -1001,7 +1003,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let dirty = self.dirty
   self.resetDirty()
 
-  let logNewRenderer = app.config.getOption[:bool]("ui.new-log", false)
+  let logNewRenderer = app.config.getOption[:bool]("ui.log-text-render-time", false)
   let transparentBackground = app.config.getOption[:bool]("ui.background.transparent", false)
   let darkenInactive = app.config.getOption[:float]("text.background.inactive-darken", 0.025)
 
