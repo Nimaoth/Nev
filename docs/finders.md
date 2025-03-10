@@ -131,3 +131,9 @@ The columns are:
 
 To search for a key combination simply prefix the search with `|`. This isn't strictly necessary but will improve search results.
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/browse-keybinds-key.png)
+
+## `browse-settings`
+
+This command opens a finder which allows you to search through all settings currently known (settings are known if some feature reads/writes the value of the setting)
+If the setting is a boolean you can toggle it with `<C-t>`. Other settings can be changed by changing the value in th
+preview and saving.
