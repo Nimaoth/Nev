@@ -34,6 +34,7 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 
 ## Important notes if you intend to use it
 - Current only UTF-8 encoded files are supported
+- Carriage return (`0xD`) will be removed when loading, and not added back when saving.
 - Language servers, debug adapters have to installed manually at the moment, treesitter parsers require [emscripten](https://github.com/emscripten-core/emscripten)
 - Read the [docs](docs/getting_started.md)
 
