@@ -53,6 +53,7 @@ type
 proc getSearchString*(self: SelectorPopup): string {.gcsafe, raises: [].}
 proc closed*(self: SelectorPopup): bool {.gcsafe, raises: [].}
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] {.gcsafe, raises: [].}
+proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].}
 
 implTrait ISelectorPopup, SelectorPopup:
   getSearchString(string, SelectorPopup)
@@ -70,6 +71,9 @@ proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: s
 
   discard matchFuzzySublime(pattern, text, result, true, config)
   self.completionMatchPositions[i] = result
+
+method initImpl*(self: SelectorPopup) {.gcsafe, raises: [].} =
+  self.handleItemsUpdated()
 
 method deinit*(self: SelectorPopup) {.gcsafe, raises: [].} =
   logScope lvlInfo, &"[deinit] Destroying selector popup"

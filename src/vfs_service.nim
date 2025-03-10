@@ -2,7 +2,7 @@ import std/[tables, options, json, os]
 import results
 import misc/[custom_async, custom_logger, myjsonutils, util]
 import scripting/expose
-import service, dispatch_tables, vfs, vfs_local
+import service, dispatch_tables, vfs, vfs_local, vfs_config, config_provider
 import fsnotify
 
 {.push gcsafe.}
@@ -16,7 +16,7 @@ type
 
 func serviceName*(_: typedesc[VFSService]): string = "VFSService"
 
-addBuiltinService(VFSService)
+addBuiltinService(VFSService, ConfigService)
 
 method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"VFSService.init"
@@ -29,6 +29,7 @@ method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async
   self.vfs.mount("", VFSLink(target: localVfs, targetPrefix: ""))
   self.vfs.mount("app://", VFSLink(target: localVfs, targetPrefix: getAppDir().normalizeNativePath))
   self.vfs.mount("temp://", VFSLink(target: localVfs, targetPrefix: getTempDir().normalizeNativePath))
+  self.vfs.mount("settings://", VFSConfig.new(self.services.getService(ConfigService).get))
   self.vfs.mount("ed://", VFSInMemory())
   self.vfs.mount("plugs://", VFSNull())
   self.vfs.mount("ws://", VFS())

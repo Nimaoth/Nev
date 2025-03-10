@@ -28,9 +28,12 @@ proc markDirty*(self: Popup) =
 proc resetDirty*(self: Popup) =
   self.mDirty = false
 
+method initImpl*(self: Popup) {.base.} = discard
+
 proc init*(self: Popup) =
   self.id = newEditorId()
   self.userId = newId()
+  self.initImpl()
 
 method deinit*(self: Popup) {.base.} = discard
 
