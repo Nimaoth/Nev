@@ -1389,7 +1389,8 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
   defer:
     self.platform.requestRender()
 
-  let previewer = newDataPreviewer(self.services, language="javascript".some).Previewer.toDisposableRef.some
+  let dataPreviewer = newDataPreviewer(self.services, language="javascript".some)
+  let previewer = dataPreviewer.Previewer.toDisposableRef.some
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
@@ -1411,8 +1412,11 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
   popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    # discard self.layout.openFile(item.data)
     return true
+
+  popup.handleItemSelected = proc(item: FinderItem) =
+    let path = "settings://" & item.displayName.replace('.', '/')
+    dataPreviewer.setPath(path)
 
   popup.addCustomCommand "toggle-flag", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:

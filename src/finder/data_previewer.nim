@@ -29,6 +29,9 @@ method deinit*(self: DataPreviewer) =
 
   self[] = default(typeof(self[]))
 
+proc setPath*(self: DataPreviewer, path: string) =
+  self.tempDocument.filename = path
+
 method delayPreview*(self: DataPreviewer) =
   discard
 
