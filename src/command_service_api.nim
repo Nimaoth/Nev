@@ -12,7 +12,6 @@ import command_service
 
 import nimsumtree/[rope, sumtree]
 import text/[text_editor, display_map, overlay_map]
-import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 
 logCategory "commands-api"
 

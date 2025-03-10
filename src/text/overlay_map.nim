@@ -119,14 +119,14 @@ func cmp*(a: OverlayMapChunkIdCount, b: OverlayMapChunkSummary, cx: int): int =
 
 type
   OverlayChunk* = object
-    styledChunk*: StyledChunk
+    styledChunk*: InputChunk
     overlayPoint*: OverlayPoint
 
   OverlayMapChunkCursor* = sumtree.Cursor[OverlayMapChunk, OverlayMapChunkSummary]
 
   OverlayMapSnapshot* = object
     map*: SumTree[OverlayMapChunk]
-    buffer*: BufferSnapshot
+    buffer*: InputMapSnapshot
     version*: int
 
   OverlayMap* = ref object
@@ -134,8 +134,8 @@ type
     onUpdated*: Event[tuple[map: OverlayMap, old: OverlayMapSnapshot, patch: Patch[OverlayPoint]]]
 
   OverlayChunkIterator* = object
-    styledChunks*: StyledChunkIterator
-    styledChunk: Option[StyledChunk]
+    styledChunks*: InputChunkIterator
+    styledChunk: Option[InputChunk]
     overlayChunk: Option[OverlayChunk]
     overlayMap {.cursor.}: OverlayMapSnapshot
     overlayMapCursor: OverlayMapChunkCursor
@@ -181,7 +181,7 @@ proc `$`*(self: OverlayMapSnapshot): string =
 proc iter*(overlay {.byref.}: OverlayMapSnapshot): OverlayChunkIterator =
   # debugEcho &"OverlayMapSnapshot.iter {overlay}"
   result = OverlayChunkIterator(
-    styledChunks: StyledChunkIterator.init(overlay.buffer.visibleText),
+    styledChunks: InputChunkIterator.init(overlay.buffer.visibleText),
     overlayMap: overlay.clone(),
     overlayMapCursor: overlay.map.initCursor(OverlayMapChunkSummary),
   )
@@ -240,7 +240,7 @@ proc toPoint*(self: OverlayMapChunkCursor, point: OverlayPoint): Point =
   let point = point.clamp(self.startPos.dst...self.endPos.dst)
   let offset = point - self.startPos.dst
   # debugEcho &"toPoint {point}, {self.startPos}, {self.endPos} -> offset {offset}, {self.startPos.src + offset.toPoint}"
-  return (self.startPos.src + offset.toPoint).clamp(self.startPos.src...self.endPos.src)
+  return (self.startPos.src + offset.toInputPoint).clamp(self.startPos.src...self.endPos.src)
 
 proc toPoint*(self: OverlayMapSnapshot, point: OverlayPoint, bias: Bias = Bias.Right): Point =
   var c = self.map.initCursor(OverlayMapChunkSummary)
@@ -288,7 +288,7 @@ proc lineLen*(self: OverlayMapSnapshot, line: int): int =
 proc lineRange*(self: OverlayMapSnapshot, line: int): Range[OverlayPoint] =
   return overlayPoint(line, 0)...overlayPoint(line, self.lineLen(line))
 
-proc setBuffer*(self: OverlayMap, buffer: sink BufferSnapshot) =
+proc setBuffer*(self: OverlayMap, buffer: sink InputMapSnapshot) =
   logOverlayMapUpdate &"OverlayMap.setBuffer {self.snapshot.buffer.remoteId}@{self.snapshot.buffer.version} -> {buffer.remoteId}@{buffer.version}"
   if self.snapshot.buffer.remoteId == buffer.remoteId and self.snapshot.buffer.version == buffer.version:
     return
@@ -326,7 +326,7 @@ proc clamp[T](self: Range[T], other: Range[T]): Range[T] = self.a.clamp(other)..
 # Instantiating Edit[T] directly doesn't work, because sumtree also exports an Edit[T] type and even if I use buffer.Edit[:T], the compiler tries to instantiate sumtree.Edit[T] aswell
 # which fails for int because sumtree.Edit has some additional requirements. Maybe adding a concept would help?
 type BufferByteEdit = typeof(Patch[int]().edits[0])
-proc editImpl(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot, patch: Patch[Point], byteEditAbsolute: BufferByteEdit, version: int, old: OverlayMapSnapshot): Patch[OverlayPoint] =
+proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch: Patch[Point], byteEditAbsolute: BufferByteEdit, version: int, old: OverlayMapSnapshot): Patch[OverlayPoint] =
   template logEdit(msg: untyped) =
     if false:
       debugEcho msg
@@ -532,7 +532,7 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot, patch: 
   )
   logEdit &"  overlay map: {self}"
 
-proc edit*(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot, patch: Patch[Point]): Patch[OverlayPoint] =
+proc edit*(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch: Patch[Point]): Patch[OverlayPoint] =
   if self.buffer.remoteId == buffer.remoteId and self.buffer.version == buffer.version:
     return
 
@@ -549,13 +549,13 @@ proc edit*(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot, patch: Pat
 
   self.validate()
 
-proc edit*(self: OverlayMap, buffer: sink BufferSnapshot, patch: Patch[Point]): Patch[OverlayPoint] =
+proc edit*(self: OverlayMap, buffer: sink InputMapSnapshot, patch: Patch[Point]): Patch[OverlayPoint] =
   self.snapshot.edit(buffer, patch)
 
-proc update*(self: var OverlayMapSnapshot, buffer: sink BufferSnapshot) =
+proc update*(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot) =
   logOverlayMapUpdate &"OverlayMapSnapshot.updateBuffer {self.desc} -> {buffer.remoteId}@{buffer.version}"
 
-proc update*(self: OverlayMap, buffer: sink BufferSnapshot, force: bool = false) =
+proc update*(self: OverlayMap, buffer: sink InputMapSnapshot, force: bool = false) =
   logOverlayMapUpdate &"OverlayMap.updateBuffer {self.snapshot.desc} -> {buffer.remoteId}@{buffer.version}, force = {force}"
   if not force and self.snapshot.buffer.remoteId == buffer.remoteId and self.snapshot.buffer.version == buffer.version:
     return
@@ -712,16 +712,6 @@ proc addOverlay*(self: OverlayMap, range: Range[Point], text: string, id: int, s
   self.snapshot = newSnapshot
   self.onUpdated.invoke (self, old, patch)
 
-let mainThreadId = ({.cast(noSideEffect).}: getThreadId())
-
-template log(msg: untyped) =
-  when false:
-    # let mainThreadId = ({.cast(noSideEffect).}: ({.gcsafe.}: mainThreadId))
-    # let threadId = ({.cast(noSideEffect).}: getThreadId())
-    # if threadId == mainThreadId:
-    if true:
-      debugEcho msg
-
 var debugOverlayMapNext* = false
 template logIter(msg: untyped) =
   when false:
@@ -762,7 +752,7 @@ proc seek*(self: var OverlayChunkIterator, point: Point) =
   assert overlayPoint >= self.overlayPoint
   self.overlayPoint = overlayPoint
   self.localOffset = 0
-  self.styledChunk = StyledChunk.none
+  self.styledChunk = InputChunk.none
   self.overlayChunk = OverlayChunk.none
   self.setupSubIterAfterSeek()
 
@@ -776,7 +766,7 @@ proc seek*(self: var OverlayChunkIterator, overlayPoint: OverlayPoint) =
   let point = self.overlayMapCursor.toPoint(self.overlayPoint)
   self.styledChunks.seek(point)
   self.localOffset = 0
-  self.styledChunk = StyledChunk.none
+  self.styledChunk = InputChunk.none
   self.overlayChunk = OverlayChunk.none
   self.setupSubIterAfterSeek()
 
@@ -784,15 +774,11 @@ proc seekLine*(self: var OverlayChunkIterator, line: int) =
   self.seek(overlayPoint(line))
 
 proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
-  # let mainThreadId = ({.cast(noSideEffect).}: ({.gcsafe.}: mainThreadId))
-  # let threadId = ({.cast(noSideEffect).}: getThreadId())
   if self.atEnd:
     self.overlayChunk = OverlayChunk.none
     return
 
   logIter &"Overlay.next {self.overlayPoint}, {self.styledChunks.point}, {self.subIterKind}, localOffset: {self.localOffset}"
-  # defer:
-  #   logIter &"  -> {result}"
 
   if self.subIterKind == OverlayMapChunkKind.Empty:
     if self.styledChunk.isNone or self.localOffset > self.styledChunk.get.len:
@@ -851,7 +837,7 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
       #   lenOriginal = chunkOriginal.chunk.lenOriginal
       #   logIter &"  {chunkOriginal}"
 
-      let currentChunk = StyledChunk(
+      let currentChunk = InputChunk(
         chunk: RopeChunk(
           data: if offset < item.text.len:
             cast[ptr UncheckedArray[char]](item.text[offset].addr)

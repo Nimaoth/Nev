@@ -1,4 +1,4 @@
-import std/[options, strformat, json]
+import std/[options, strformat]
 import misc/[util, custom_logger, custom_async, custom_unicode]
 import platform/[platform]
 import text/language/[language_server_base]
