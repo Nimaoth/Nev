@@ -1,11 +1,8 @@
-import std/[os, options, unicode, strutils, streams, atomics, sequtils, json, tables]
-import nimsumtree/[rope, static_array]
-import misc/[custom_async, custom_logger, util, timer, regex, myjsonutils]
+import std/[options, strutils, json, tables]
+import nimsumtree/[rope]
+import misc/[custom_async, custom_logger, util, myjsonutils]
 import vfs
 import config_provider
-
-when defined(windows):
-  import winim/lean
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -72,14 +69,9 @@ method getFileKindImpl*(self: VFSConfig, path: string): Future[Option[FileKind]]
   return FileKind.File.some
 
 method getFileAttributesImpl*(self: VFSConfig, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
-  try:
-    let permissions = path.getFilePermissions()
-    return FileAttributes(writable: true, readable: true).some
-  except:
-    return FileAttributes.none
+  return FileAttributes(writable: true, readable: true).some
 
 method getDirectoryListingImpl*(self: VFSConfig, path: string): Future[DirectoryListing] {.async: (raises: []).} =
-  log lvlWarn, &"getDirectoryListingImpl '{path}'"
   let value = if path == "":
     self.config.settings
   else:
@@ -97,17 +89,12 @@ method getDirectoryListingImpl*(self: VFSConfig, path: string): Future[Directory
 
 method copyFileImpl*(self: VFSConfig, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
   try:
+    # todo
     discard
-    # let dir = dest.splitPath.head
-    # createDir(dir)
-    # copyFileWithPermissions(src, dest)
   except Exception as e:
     raise newException(IOError, &"Failed to copy file '{src}' to '{dest}': {e.msg}", e)
 
 method findFilesImpl*(self: VFSConfig, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).} =
   var res = newSeq[string]()
-  # try:
-  #   await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr))
-  # except Exception as e:
-  #   log lvlError, &"Failed to find files in {self.name}/{root}: {e.msg}"
+  # todo
   return res

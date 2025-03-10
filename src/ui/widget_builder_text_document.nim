@@ -202,7 +202,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
 
     proc handleScroll(delta: float) =
       let scrollAmount = delta * app.config.asConfigProvider.getValue("text.scroll-speed", 40.0)
-      self.scrollOffset += scrollAmount
+      self.completionsScrollOffset += scrollAmount
       self.markDirty()
 
     var maxLabelWidth = 4 * builder.charWidth
@@ -247,11 +247,13 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     builder.panel(&{UINodeFlag.MaskContent, DrawBorder, SizeToContentX}, borderColor = borderColor, h = completionPanelHeight):
       listNode = currentNode
       let lineFlags = &{SizeToContentX, FillY}
-      let maxHeight = completionPanelHeight
       let firstIndex = max(self.completionsBaseIndex - (self.completionsScrollOffset / totalLineHeight).int, 0)
       var y = if reverse: completionPanelHeight - totalLineHeight else: 0
 
       builder.panel(lineFlags):
+        onScroll:
+          handleScroll(delta.y)
+
         for i in firstIndex..self.completionMatches.high:
           handleLine(i, y)
           if reverse:
@@ -425,9 +427,10 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
     for i, s in self.selections:
       let p = s.last.toPoint
       var (_, lastIndex) = state.chunkBounds.binarySearchRange(p, Bias.Left, cmp)
+
       while lastIndex in 0..<state.chunkBounds.high and p in state.chunkBounds[lastIndex + 1].range:
-        # echo &"skip external"
         inc lastIndex
+
       if lastIndex in 0..<state.chunkBounds.len and p in state.chunkBounds[lastIndex].range:
         let chunk = state.chunkBounds[lastIndex]
         # if chunk.chunk.styledChunk.chunk.external:
