@@ -2221,7 +2221,7 @@ proc clearInputHistoryDelayed*(self: App) =
     self.clearInputHistoryTask.reschedule()
 
 proc recordInputToHistory*(self: App, input: string) =
-  let recordInput = self.config.getOption[:bool]("editor.record-input-history", true)
+  let recordInput = self.config.getOption[:bool]("editor.record-input-history", false)
   if not recordInput:
     return
 

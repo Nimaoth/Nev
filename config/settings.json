@@ -593,13 +593,14 @@
             "whitespace": {
                 "char": "·"
             },
-            "highlight-treesitter-errors": false
+            "highlight-treesitter-errors": false,
+            "context-lines": true
         },
         "restore-open-workspaces": true,
         "restore-open-editors": true,
         "frame-time-smoothing": 0.8,
         "close-unused-documents-timer": 10,
-        "maxViews": 2
+        "max-views": 2
     },
 
     "text": {
