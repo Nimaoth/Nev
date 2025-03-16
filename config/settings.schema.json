@@ -294,7 +294,7 @@
                 "restore-open-editors": {
                     "type": "boolean"
                 },
-                "maxViews": {
+                "max-views": {
                     "type": "integer"
                 },
                 "close-unused-documents-timer": {

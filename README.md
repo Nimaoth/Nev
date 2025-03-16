@@ -2,7 +2,7 @@
 
 ![Build](https://github.com/Nimaoth/Nev/actions/workflows/main.yml/badge.svg?event=push)
 
-This is still very early in developement and very experimental. Use at your own risk!
+This is still very early in development and very experimental. Use at your own risk!
 
 Nev is a text editor focused on keyboard usage, customizability and speed which runs in the terminal and in a GUI.
 It also aims to provide tools for writing code out of the box, like Git integration, syntax highlighting using [Treesitter](https://tree-sitter.github.io/tree-sitter/), language integration using [LSP](https://microsoft.github.io/language-server-protocol) and debugging using [DAP](https://microsoft.github.io/debug-adapter-protocol/).
