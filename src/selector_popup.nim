@@ -285,10 +285,10 @@ proc setFocusPreview*(self: SelectorPopup, focus: bool) {.expose("popup.selector
 genDispatcher("popup.selector")
 addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
 
-proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
+method handleAction*(self: SelectorPopup, action: string, arg: string): Option[JsonNode] {.gcsafe, raises: [].} =
   # debugf"SelectorPopup.handleAction {action} '{arg}'"
   if self.textEditor.isNil:
-    return
+    return JsonNode.none
 
   try:
     if self.customCommands.contains(action):
@@ -296,25 +296,27 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
       for a in newStringStream(arg).parseJsonFragments():
         args.add a
       if self.customCommands[action](self, args):
-        return Handled
+        return newJNull().some
 
     var args = newJArray()
     args.add api.SelectorPopup(id: self.id).toJson
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.plugins.invokeAnyCallback(action, args).isNotNil:
-      return Handled
+    let res1 = self.plugins.invokeAnyCallback(action, args)
+    if res1.isNotNil:
+      return res1.some
 
-    if dispatch(action, args).isSome:
-      return Handled
+    let res2 = dispatch(action, args)
+    if res2.isSome:
+      return res2
 
-    return Ignored
+    return JsonNode.none
   except:
     log lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}"
     log lvlError, getCurrentException().getStackTrace()
 
-  return Failed
+  return JsonNode.none
 
 proc handleTextChanged*(self: SelectorPopup) =
   if self.textEditor.isNil:
@@ -414,20 +416,29 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
 
   assignEventHandler(popup.eventHandler, popup.events.getEventHandlerConfig("popup.selector")):
     onAction:
-      popup.handleAction action, arg
+      if popup.handleAction(action, arg).isSome:
+        Handled
+      else:
+        Ignored
     onInput:
       Ignored
 
   assignEventHandler(popup.previewEventHandler, popup.events.getEventHandlerConfig("popup.selector.preview")):
     onAction:
-      popup.handleAction action, arg
+      if popup.handleAction(action, arg).isSome:
+        Handled
+      else:
+        Ignored
     onInput:
       Ignored
 
   if scopeName.isSome:
      assignEventHandler(popup.customEventHandler, popup.events.getEventHandlerConfig("popup.selector." & scopeName.get)):
       onAction:
-        popup.handleAction action, arg
+        if popup.handleAction(action, arg).isSome:
+          Handled
+        else:
+          Ignored
       onInput:
         Ignored
 

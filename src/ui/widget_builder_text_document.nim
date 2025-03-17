@@ -581,7 +581,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
 
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
-  let showContextLines = not renderDiff and app.config.getOption[:bool]("editor.text.context-lines", true)
+  let showContextLines = not renderDiff and self.showContextLines.get(false)
 
   let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background"], backgroundColor.lighten(0.05))
@@ -693,11 +693,17 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let informationColor = app.theme.tokenColor("information", color(0.8, 0.8, 0.8))
   let hintColor = app.theme.tokenColor("hint", color(0.7, 0.7, 0.7))
 
+  let space = app.config.asConfigProvider.getValue("editor.text.whitespace.char", "·")
+  let spaceColorName = app.config.asConfigProvider.getValue("editor.text.whitespace.color", "comment")
+  if space.len > 0:
+    currentNode.renderCommands.space = space.runeAt(0)
+
+  currentNode.renderCommands.spacesColor = app.theme.tokenColor(spaceColorName, textColor)
+
   self.lastRenderedChunks.setLen(0)
 
   selectionsNode.renderCommands.clear()
   currentNode.renderCommands.clear()
-  currentNode.renderCommands.spacesColor = commentColor
   buildCommands(currentNode.renderCommands):
 
     proc drawChunk(chunk: DisplayChunk, state: var LineDrawerState): LineDrawerResult =

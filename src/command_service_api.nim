@@ -43,9 +43,9 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   editor.disableScrolling = true
   editor.lineNumbers = api.LineNumbers.None.some
   editor.document.setReadOnly(false)
-  editor.clearOverlays(5)
+  editor.clearOverlays(overlayIdPrefix)
   if prefix != "":
-    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), prefix, 5, scope = "comment", bias = Bias.Left)
+    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
   self.events.rebuildCommandToKeysMap()
   self.platform.requestRender()
 

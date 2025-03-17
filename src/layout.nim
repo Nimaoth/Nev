@@ -272,6 +272,12 @@ proc popPopup*(self: LayoutService, popup: Popup) =
 proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
   self.pushSelectorPopupImpl(self, builder)
 
+iterator visibleEditors*(self: LayoutService): DocumentEditor =
+  ## Returns a list of all editors which are currently shown
+  for view in self.views:
+    if view of EditorView:
+      yield view.EditorView.editor
+
 ###########################################################################
 
 proc getLayoutService(): Option[LayoutService] =

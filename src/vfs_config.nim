@@ -1,6 +1,6 @@
 import std/[options, strutils, json, tables]
 import nimsumtree/[rope]
-import misc/[custom_async, custom_logger, util, myjsonutils]
+import misc/[custom_async, custom_logger, util, myjsonutils, jsonex]
 import vfs
 import config_provider
 
@@ -21,38 +21,40 @@ method name*(self: VFSConfig): string = &"VFSConfig({self.prefix})"
 
 method readImpl*(self: VFSConfig, path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
   try:
-    let key = path.replace("/", ".")
-    let value = self.config.getOption[:JsonNode](key, nil)
-    if value != nil:
-      return value.pretty
-    return ""
+    let value = self.config.getByPath(path)
+    if value == nil:
+      return ""
+    return value.pretty
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 method readRopeImpl*(self: VFSConfig, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
   try:
-    let key = path.replace("/", ".")
-    let value = self.config.getOption[:JsonNode](key, nil)
-    if value != nil:
-      rope[] = Rope.new(value.pretty)
-    else:
+    let value = self.config.getByPath(path)
+    if value == nil:
       rope[] = Rope.new("")
+    else:
+      rope[] = Rope.new(value.pretty)
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 method writeImpl*(self: VFSConfig, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
   try:
-    let key = path.replace("/", ".")
-    let value = content.parseJson()
-    self.config.setOption(key, value)
+    let (store, key) = self.config.getStoreForPath(path)
+    if store == nil:
+      return
+    let value = content.parseJsonex()
+    store.set(key, value)
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 method writeImpl*(self: VFSConfig, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
   try:
-    let key = path.replace("/", ".")
-    let value = ($content).parseJson()
-    self.config.setOption(key, value)
+    let (store, key) = self.config.getStoreForPath(path)
+    if store == nil:
+      return
+    let value = ($content).parseJsonex()
+    store.set(key, value)
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
@@ -60,8 +62,7 @@ method deleteImpl*(self: VFSConfig, path: string): Future[bool] {.async: (raises
   discard
 
 method getFileKindImpl*(self: VFSConfig, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
-  let key = path.replace("/", ".")
-  let value = self.config.getOption[:JsonNode](key, nil)
+  let value = self.config.getByPath(path)
   if value == nil:
     return FileKind.none
   if value.kind == JObject:

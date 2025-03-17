@@ -34,7 +34,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
-        let maxViews = self.config.getOption[:int]("editor.maxViews", int.high)
+        let maxViews = self.config.getOption[:int]("editor.max-views", int.high)
         let maximizedText = if self.layout.maximizeView:
           "[Fullscreen]"
         elif maxViews == int.high:

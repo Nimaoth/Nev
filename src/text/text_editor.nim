@@ -25,7 +25,7 @@ from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
 import nimsumtree/[buffer, clock, static_array, rope]
 from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
 
-export text_document, document_editor, id
+export text_document, document_editor, id, Bias
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -34,6 +34,11 @@ logCategory "texted"
 
 let searchResultsId = newId()
 let errorNodesHighlightId = newId()
+
+const overlayIdPrefix* = 12
+const overlayIdColorHighlight* = 13
+const overlayIdInlayHint* = 14
+const overlayIdChooseCursor* = 15
 
 type
   Command = object
@@ -197,6 +202,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   customHeader*: string
 
   onSearchResultsUpdated*: Event[TextDocumentEditor]
+
+  showContextLines*: Setting[bool]
 
 type
   TextDocumentEditorService* = ref object of Service
@@ -532,9 +539,9 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     self.document.reloadTreesitterLanguage()
     self.document.requiresLoad = false
 
-  var wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 10, 10)
+  # todo: this should account for the line number width
+  var wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 4, 10)
   if self.diffDocument.isNotNil:
-    # todo: this should account for the line number width
     wrapWidth = wrapWidth div 2 - 2
 
   let tabWidth = self.configProvider.getValue("text.tab-width", self.document.tabWidth)
@@ -687,6 +694,7 @@ method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
   self.cursorHistories.setLen(0)
   self.updateSearchResults()
+  self.configStore.detail = self.document.filename
 
 method handleActivate*(self: TextDocumentEditor) =
   self.startBlinkCursorTask()
@@ -895,6 +903,9 @@ proc displayEndPoint*(self: TextDocumentEditor): DisplayPoint =
 
 proc endDisplayPoint*(self: TextDocumentEditor): DisplayPoint =
   return self.displayMap.endDisplayPoint
+
+proc endPoint*(self: TextDocumentEditor): Point =
+  return self.displayMap.buffer.visibleText.endPoint
 
 proc numWrapLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
   return self.displayMap.wrapMap.endWrapPoint.row.int + 1
@@ -2071,6 +2082,10 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
 proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.text").} =
   self.displayMap.overlay.clear(id)
+  self.markDirty()
+
+proc addOverlay*(self: TextDocumentEditor, range: Range[Point], text: string, id: int, scope: string, bias: Bias) {.expose("editor.text").} =
+  self.displayMap.overlay.addOverlay(range, text, id, scope, bias)
   self.markDirty()
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
@@ -3775,16 +3790,16 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       self.lastInlayHintDisplayRange = visibleRange.toRange
       self.lastInlayHintBufferRange = visibleRangeHalf.toRange
 
-      self.displayMap.overlay.clear(14)
+      self.displayMap.overlay.clear(overlayIdInlayHint)
       for hint in self.inlayHints:
         let point = hint.hint.location.toPoint
         let bias = hint.hint.getBias
         if hint.hint.paddingLeft:
-          self.displayMap.overlay.addOverlay(point...point, " " & hint.hint.label, 14, "comment", bias)
+          self.displayMap.overlay.addOverlay(point...point, " " & hint.hint.label, overlayIdInlayHint, "comment", bias)
         elif hint.hint.paddingRight:
-          self.displayMap.overlay.addOverlay(point...point, hint.hint.label & " ", 14, "comment", bias)
+          self.displayMap.overlay.addOverlay(point...point, hint.hint.label & " ", overlayIdInlayHint, "comment", bias)
         else:
-          self.displayMap.overlay.addOverlay(point...point, hint.hint.label, 14, "comment", bias)
+          self.displayMap.overlay.addOverlay(point...point, hint.hint.label, overlayIdInlayHint, "comment", bias)
 
       self.markDirty()
 
@@ -3926,7 +3941,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   var progress = ""
 
   proc updateStyledTextOverrides() =
-    self.displayMap.overlay.clear(15)
+    self.displayMap.overlay.clear(overlayIdChooseCursor)
     try:
 
       var options: seq[Cursor] = @[]
@@ -3935,16 +3950,16 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
           continue
 
         if progress.len > 0:
-          self.displayMap.overlay.addOverlay(cursors[i].toPoint...point(cursors[i].line, cursors[i].column + progress.len), progress, 15, "string")
+          self.displayMap.overlay.addOverlay(cursors[i].toPoint...point(cursors[i].line, cursors[i].column + progress.len), progress, overlayIdChooseCursor, "string")
 
         let cursor = (line: cursors[i].line, column: cursors[i].column + progress.len)
         let text = keys[i][progress.len..^1]
-        self.displayMap.overlay.addOverlay(cursor.toPoint...point(cursor.line, cursor.column + text.len), text, 15, "constant.numeric")
+        self.displayMap.overlay.addOverlay(cursor.toPoint...point(cursor.line, cursor.column + text.len), text, overlayIdChooseCursor, "constant.numeric")
 
         options.add cursors[i]
 
       if options.len == 1:
-        self.displayMap.overlay.clear(15)
+        self.displayMap.overlay.clear(overlayIdChooseCursor)
         self.document.notifyTextChanged()
         self.markDirty()
         discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson), record=false)
@@ -3961,7 +3976,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   self.modeEventHandlers.setLen(1)
   assignEventHandler(self.modeEventHandlers[0], config):
     onAction:
-      self.displayMap.overlay.clear(15)
+      self.displayMap.overlay.clear(overlayIdChooseCursor)
       self.document.notifyTextChanged()
       self.markDirty()
       if self.handleAction(action, arg, record=true).isSome:
@@ -3977,7 +3992,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
       updateStyledTextOverrides()
 
     onCanceled:
-      self.displayMap.overlay.clear(15)
+      self.displayMap.overlay.clear(overlayIdChooseCursor)
       self.setMode(oldMode)
 
   self.cursorVisible = true
@@ -4202,7 +4217,7 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
       return
 
     # todo: this can scale up pretty quickly, could be done in a background thread
-    self.displayMap.overlay.clear(13)
+    self.displayMap.overlay.clear(overlayIdColorHighlight)
     for r in colorRanges:
       let text = rope[r]
       let color = case config.kind
@@ -4226,7 +4241,7 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
           c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 256.0
         "#" & c.toHex
 
-      self.displayMap.overlay.addOverlay(r.a...r.a, "■", 13, color)
+      self.displayMap.overlay.addOverlay(r.a...r.a, "■", overlayIdColorHighlight, color)
 
   except Exception as e:
     log lvlError, &"Failed to find colors: {e.msg}"
@@ -4380,7 +4395,8 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   var self = createTextEditorInstance()
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
-  self.configProvider = services.getService(ConfigService).get.asConfigProvider
+  let configService = services.getService(ConfigService).get
+  self.configProvider = configService.asConfigProvider
   self.editors = services.getService(DocumentEditorService).get
   self.layout = services.getService(LayoutService).get
   self.vcs = self.services.getService(VCSService).get
@@ -4397,6 +4413,10 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
   discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
   discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+
+  self.configStore = ConfigStore.new(configService.mainConfig, "editor/" & $self.id)
+  self.configStore.filename = &"settings://editor/{self.id}"
+  self.showContextLines = self.configStore.setting("editor.text.context-lines", bool)
 
   self.setDocument(document)
 

@@ -1,6 +1,6 @@
 import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex, custom_unicode]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform]
@@ -376,7 +376,7 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
     log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
 
 proc loadSettingsFrom*(self: App, directory: string,
-    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
+    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}, name: string) {.async.} =
 
   {.gcsafe.}:
     let filenames = [
@@ -395,15 +395,61 @@ proc loadSettingsFrom*(self: App, directory: string,
 
   assert filenames.len == settings.len
 
+  if directory notin self.config.storeGroups:
+    self.config.storeGroups[directory] = @[]
+  var oldStores = self.config.storeGroups[directory]
+  var deletedStores = oldStores
+  var addedStores = newSeq[ConfigStore]()
+  var newStores = newSeq[ConfigStore]()
+
+  # echo &"loadSettingsFrom {directory}, oldStores: {oldStores.mapIt(it.desc)}"
+
   for i in 0..<filenames.len:
     if settings[i].isSome:
+      let filename = filenames[i]
       try:
-        log lvlInfo, &"Apply settings from {filenames[i]}"
+        log lvlInfo, &"Apply settings from {filename}"
         let json = settings[i].get.parseJson()
         self.config.setOption("", json, override=false)
 
+        let jsonex = settings[i].get.parseJsonex()
+        if filename in self.config.stores:
+          # echo &"  file {filename} was reloaded"
+          let store = self.config.stores[filename]
+          store.setSettings(jsonex)
+          store.originalText = settings[i].get
+          newStores.add(store)
+          deletedStores.del(store)
+        else:
+          # echo &"  file {filename} is new"
+          var name = name & "-" & filename.splitFile.name
+          name = name.replace("-settings", "")
+          let store = ConfigStore.new(nil, name, jsonex)
+          store.filename = filename
+          store.originalText = settings[i].get
+          self.config.stores[filename] = store
+          newStores.add(store)
+          addedStores.add(store)
+
       except CatchableError:
-        log(lvlError, &"Failed to load settings from {filenames[i]}: {getCurrentExceptionMsg()}")
+        log(lvlError, &"Failed to load settings from {filename}: {getCurrentExceptionMsg()}")
+
+  # echo &"loadSettingsFrom {directory}, deletedStores: {deletedStores.mapIt(it.desc)}"
+  for store in deletedStores:
+    store.parent = nil
+    store.setSettings(newJexObject())
+    store.onConfigChanged.invoke("")
+
+  # echo &"loadSettingsFrom {directory}, addedStores: {addedStores.mapIt(it.desc)}"
+  # echo &"loadSettingsFrom {directory}, newStores: {newStores.mapIt(it.desc)}"
+
+  for i in 1..newStores.high:
+    let child = newStores[i]
+    let parent = newStores[i - 1]
+    child.setParent(parent)
+
+  self.config.storeGroups[directory] = newStores
+  self.config.reconnectGroups()
 
 proc loadKeybindings*(self: App, directory: string,
     loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
@@ -446,9 +492,9 @@ proc loadConfigFileFrom(self: App, context: string, path: string):
 
   return string.none
 
-proc loadConfigFrom*(self: App, root: string) {.async.} =
+proc loadConfigFrom*(self: App, root: string, name: string) {.async.} =
   await allFutures(
-    self.loadSettingsFrom(root, loadConfigFileFrom),
+    self.loadSettingsFrom(root, loadConfigFileFrom, name),
     self.loadKeybindings(root, loadConfigFileFrom)
   )
 
@@ -639,8 +685,10 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.setupDefaultKeybindings()
 
-  await self.loadConfigFrom(appConfigDir)
-  await self.loadConfigFrom(homeConfigDir)
+  self.config.groups.add(appConfigDir)
+  await self.loadConfigFrom(appConfigDir, "app")
+  self.config.groups.add(homeConfigDir)
+  await self.loadConfigFrom(homeConfigDir, "home")
   log lvlInfo, &"Finished loading app and user settings"
 
   self.applySettingsFromAppOptions()
@@ -760,16 +808,20 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   #   asyncSpawn self.listenForConnection(port)
 
   if self.config.getFlag("editor.restore-open-workspaces", true):
-    for wf in state.workspaceFolders:
+    for i, wf in state.workspaceFolders:
       log(lvlInfo, fmt"Restoring workspace")
       self.workspace.restore(wf.settings)
-      await self.loadConfigFrom(workspaceConfigDir)
+
+      if i == 0:
+        self.config.groups.add(workspaceConfigDir)
+        await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.path == "":
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
     self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
-    await self.loadConfigFrom(workspaceConfigDir)
+    self.config.groups.add(workspaceConfigDir)
+    await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
   let themeName = self.config.getOption("ui.theme", "app://themes/tokyo-night-color-theme.json")
   await self.setTheme(themeName)
@@ -1385,21 +1437,71 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
   self.layout.pushPopup popup
 
-proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
+proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
   let dataPreviewer = newDataPreviewer(self.services, language="javascript".some)
   let previewer = dataPreviewer.Previewer.toDisposableRef.some
 
+  var state: ref tuple[
+    index: int,
+    stores: seq[ConfigStore],
+    merged: bool,
+    targetEditor: DocumentEditor,
+    changedEventSource: ConfigStore,
+    changedHandle: Id]
+  new(state)
+  state.merged = true
+
+  if includeActiveEditor and self.getActiveEditor().getSome(editor):
+    state.targetEditor = editor
+    for s in editor.configStore.parentStores:
+      state.stores.add(s)
+  else:
+    for s in self.config.mainConfig.parentStores:
+      state.stores.add(s)
+
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+    proc printUserData(node: JsonNodeEx): string =
+      let sourceStore = self.config.getStoreForId(node.userData)
+      if sourceStore != nil:
+        return sourceStore.name
+
+    let store = state.stores[state.index]
+    let settings = if state.merged:
+      store.mergedSettings
+    else:
+      store.settings
+
+    let data = if state.merged or store.originalText.len == 0:
+      settings.pretty(printUserData = printUserData)
+    else:
+      store.originalText
+
+    let detail = if state.merged:
+      store.name & " merged\t" & store.filename
+    else:
+      store.name & " raw\t" & store.filename
+
     var items = newSeq[FinderItem]()
-    for (key, value) in self.config.getAllConfigKeys():
+    items.add FinderItem(
+      displayName: "",
+      data: data,
+      detail: detail,
+    )
+
+    for (key, value) in settings.getAllKeys():
       let valueStr = $value
+      let sourceStore = self.config.getStoreForId(value.userData)
+      let detail = if sourceStore != nil:
+        &"{sourceStore.name}\t{sourceStore.detail}"
+      else:
+        &"{store.name}\t{store.detail}"
       items.add FinderItem(
         displayName: key,
-        data: value.pretty,
-        detail: valueStr[0..min(valueStr.high, 50)],
+        data: value.pretty(printUserData = printUserData),
+        detail: detail,
       )
 
     return items
@@ -1410,13 +1512,101 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
+  popup.previewEditor.configStore.set("editor.text.context-lines", false)
+
+  proc updateListener() =
+    if state.changedEventSource != nil:
+      state.changedEventSource.onConfigChanged.unsubscribe(state.changedHandle)
+      state.changedEventSource = nil
+
+    state.changedEventSource = state.stores[state.index]
+    state.changedHandle = state.changedEventSource.onConfigChanged.subscribe proc(key: string) =
+      log lvlWarn, &"Setting changed '{key}', retrigger"
+      source.retrigger()
+
+  updateListener()
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     return true
 
   popup.handleItemSelected = proc(item: FinderItem) =
-    let path = "settings://" & item.displayName.replace('.', '/')
+    let store = state.stores[state.index]
+    let path = if item.displayName.len == 0 and not state.merged and store.originalText.len > 0:
+      store.filename
+    elif item.displayName.len > 0:
+      "settings://" // store.name // item.displayName.replace('.', '/')
+    else:
+      "settings://" // store.name
     dataPreviewer.setPath(path)
+
+    var prefix = ""
+    if store.detail != "":
+      prefix.add "(" & store.detail & ") "
+    prefix.add if state.merged: "(merged) " else: "(raw) "
+    prefix.add store.name
+    prefix.add "."
+    popup.textEditor.clearOverlays(overlayIdPrefix)
+    popup.textEditor.addOverlay(point(0, 0)...point(0, 0), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
+
+  popup.addCustomCommand "reload-store", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let store = state.stores[state.index]
+    self.vfs.read(store.filename).thenItOrElse:
+      if popup.textEditor.isNil:
+        return
+
+      try:
+        let content = it
+        let jsonex = content.parseJsonex()
+        store.setSettings(jsonex)
+      except Exception as e:
+        log lvlError, &"Failed to reload settings store '{store.name}': {e.msg}"
+    do:
+      let e = err
+      log lvlError, &"Failed to reload settings store '{store.name}': {e.msg}"
+
+    return true
+
+  popup.addCustomCommand "show-preview-editor-settings", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.previewEditor.isNil:
+      return false
+    state.targetEditor = popup.previewEditor
+    state.stores.setLen(0)
+    for s in popup.previewEditor.configStore.parentStores:
+      state.stores.add(s)
+    state.index = 0
+    updateListener()
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "toggle-merged", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    state.merged = not state.merged
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "prev-store", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    dec state.index
+    if state.index < 0:
+      state.index = state.stores.high
+    updateListener()
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "next-store", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    inc state.index
+    if state.index >= state.stores.len:
+      state.index = 0
+    updateListener()
+    source.retrigger()
+    return true
 
   popup.addCustomCommand "toggle-flag", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
@@ -1425,9 +1615,16 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
     let item = popup.getSelectedItem().getOr:
       return true
 
+    let store = state.stores[state.index]
     let key = item.displayName
-    self.config.toggleFlag(key)
-    source.retrigger()
+    let value = store.get(key, bool)
+    store.set(key, not value)
+
+    if state.targetEditor != nil:
+      state.targetEditor.markDirty()
+    for editor in self.layout.visibleEditors:
+      editor.markDirty()
+
     return true
 
   popup.addCustomCommand "update-setting", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -1437,15 +1634,37 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
     let item = popup.getSelectedItem().getOr:
       return true
 
+    let store = state.stores[state.index]
     let key = item.displayName
     let value = popup.previewEditor.document.contentString
     try:
-      let valueJson = value.parseJson
-      self.config.asConfigProvider.setValue(key, valueJson)
-      source.retrigger()
+      let valueJson = value.parseJsonEx
+      store.set(key, valueJson)
+
+      if state.targetEditor != nil:
+        state.targetEditor.markDirty()
+      for editor in self.layout.visibleEditors:
+        editor.markDirty()
       return true
     except Exception as e:
       log lvlError, &"Failed to update setting '{key}' to '{value}': {e.msg}"
+
+  popup.addCustomCommand "delete-setting", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let store = state.stores[state.index]
+    let key = item.displayName
+    store.clear(key)
+
+    if state.targetEditor != nil:
+      state.targetEditor.markDirty()
+    for editor in self.layout.visibleEditors:
+      editor.markDirty()
+    return true
 
   self.layout.pushPopup popup
 
@@ -2114,9 +2333,9 @@ proc reloadPluginAsync*(self: App) {.async.} =
     self.runConfigCommands("plugin-post-reload-commands")
 
 proc reloadConfigAsync*(self: App) {.async.} =
-  await self.loadConfigFrom(appConfigDir)
-  await self.loadConfigFrom(homeConfigDir)
-  await self.loadConfigFrom(workspaceConfigDir)
+  await self.loadConfigFrom(appConfigDir, "app")
+  await self.loadConfigFrom(homeConfigDir, "home")
+  await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
 proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
@@ -2609,6 +2828,13 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
     if action.startsWith("."): # active action
       if self.getActiveEditor().getSome(editor):
         return editor.handleAction(action[1..^1], arg, record=false)
+
+      log lvlError, fmt"No current view"
+      return JsonNode.none
+
+    if action.startsWith("^"): # active popup action
+      if self.layout.popups.len > 0:
+        return self.layout.popups[^1].handleAction(action[1..^1], arg)
 
       log lvlError, fmt"No current view"
       return JsonNode.none

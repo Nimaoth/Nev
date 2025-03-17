@@ -36,7 +36,10 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
 
   var completions: seq[CompletionItem]
   if useActive:
-    let currentNamespace = layout.getActiveViewEditor().mapIt(it.getNamespace)
+    let currentNamespace = if layout.popups.len > 0:
+      "popup.selector".some
+    else:
+      layout.getActiveViewEditor().mapIt(it.getNamespace)
     {.gcsafe.}:
       for table in activeDispatchTables.mitems:
         if not table.global and table.namespace.some != currentNamespace:

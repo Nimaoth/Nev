@@ -494,8 +494,10 @@ proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int
 
   return (bytes, len)
 
-proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Color, spaceColor: chroma.Color, wrap: bool, lineLen: RuneCount, italic: bool, flags: UINodeFlags) =
+proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Color, spaceColor: chroma.Color, spaceRune: Rune, wrap: bool, lineLen: RuneCount, italic: bool, flags: UINodeFlags) =
   var yOffset = 0.0
+
+  let spaceText = $spaceRune
 
   self.setForegroundColor(color)
   for line in text.splitLines:
@@ -539,7 +541,6 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Co
         if i == -1:
           self.writeLine(pos + vec2(0, yOffset), line, italic)
         else:
-          const spaceText = "·"
           while i != -1:
             self.writeLine(pos + vec2(start.float, yOffset), line[start..<i], italic)
             self.setForegroundColor(spaceColor)
@@ -588,7 +589,7 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
 
     if DrawText in node.flags:
       platform.buffer.setBackgroundColor(bgNone)
-      platform.writeText(bounds.xy, node.text, node.textColor, node.textColor, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags, node.flags)
+      platform.writeText(bounds.xy, node.text, node.textColor, node.textColor, ' '.Rune, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags, node.flags)
 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
@@ -603,7 +604,7 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
         # todo: don't copy string data
         let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
         platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
+        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
       of RenderCommandKind.ScissorStart:
         platform.pushMask(command.bounds + nodePos)
       of RenderCommandKind.ScissorEnd:
