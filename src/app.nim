@@ -207,7 +207,7 @@ proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: [
   self.platform.requestRender(redrawEverything=true)
 
 proc runConfigCommands(self: App, key: string) =
-  let startupCommands = self.config.getOption(key, newJArray())
+  let startupCommands = self.config.runtime.get(key, newJexArray())
   if startupCommands.isNil or startupCommands.kind != JArray:
     return
 
@@ -258,8 +258,8 @@ proc setupDefaultKeybindings(self: App) =
   let selectorPopupConfig = self.events.getEventHandlerConfig("popup.selector")
 
   self.setHandleInputs("editor.text", true)
-  self.config.setOption[:string]("editor.text.cursor.movement.", "both")
-  self.config.setOption[:bool]("editor.text.cursor.wide.", false)
+  self.config.runtime.set("editor.text.cursor.movement.", "both")
+  self.config.runtime.set("editor.text.cursor.wide.", false)
 
   editorConfig.addCommand("", "<C-x><C-x>", "quit")
   editorConfig.addCommand("", "<CAS-r>", "reload-plugin")
@@ -585,7 +585,7 @@ proc loadConfigFrom*(self: App, root: string, name: string) {.async.} =
 #               continue
 
 #             log lvlInfo, &"Set {setting}"
-#             self.config.setOption(path, value)
+#             self.config.runtime.set(path, value)
 #           else:
 #             discard self.layout.openFile(message)
 
@@ -609,7 +609,7 @@ proc applySettingsFromAppOptions(self: App) =
       continue
 
     log lvlInfo, &"Set {setting}"
-    self.config.setOption(path, value)
+    self.config.runtime.set(path, value)
 
 proc runEarlyCommandsFromAppOptions(self: App) =
   log lvlInfo, &"Run early commands provided through command line"
@@ -789,11 +789,11 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
 
-  let closeUnusedDocumentsTimerS = self.config.getOption("editor.close-unused-documents-timer", 10)
+  let closeUnusedDocumentsTimerS = self.config.runtime.get("editor.close-unused-documents-timer", 10)
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
 
-  let showNextPossibleInputsDelay = self.config.getOption("ui.which-key-delay", 500)
+  let showNextPossibleInputsDelay = self.config.runtime.get("ui.which-key-delay", 500)
   self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
     self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
     self.platform.requestRender()
@@ -801,7 +801,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.runEarlyCommandsFromAppOptions()
   self.runConfigCommands("startup-commands")
 
-  # if self.getOption("command-server.port", Port.none).getSome(port):
+  # if self.runtime.get("command-server.port", Port.none).getSome(port):
   #   asyncSpawn self.listenForConnection(port)
 
   if self.config.getFlag("editor.restore-open-workspaces", true):
@@ -820,7 +820,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     self.config.groups.add(workspaceConfigDir)
     await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-  let themeName = self.config.getOption("ui.theme", "app://themes/tokyo-night-color-theme.json")
+  let themeName = self.config.runtime.get("ui.theme", "app://themes/tokyo-night-color-theme.json")
   await self.setTheme(themeName)
 
   self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
@@ -888,7 +888,7 @@ proc saveAppState*(self: App)
 proc printStatistics*(self: App)
 
 proc shutdown*(self: App) =
-  if self.config.getOption("editor.print-statistics-on-shutdown", false):
+  if self.config.runtime.get("editor.print-statistics-on-shutdown", false):
     self.printStatistics()
 
   self.saveAppState()
@@ -1962,7 +1962,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
 
   let workspace = self.workspace
 
-  let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
+  let maxResults = self.config.runtime.get("editor.max-search-results", 1000)
   let source = newWorkspaceSearchDataSource(workspace, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
@@ -1994,8 +1994,8 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     self.platform.requestRender()
 
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
-    let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
-    let maxLen = self.config.getOption[:int]("editor.max-search-result-display-len", 1000)
+    let maxResults = self.config.runtime.get("editor.max-search-results", 1000)
+    let maxLen = self.config.runtime.get("editor.max-search-result-display-len", 1000)
     return self.workspace.searchWorkspaceItemList(query, maxResults, maxLen).await
 
   let source = newAsyncCallbackDataSource(getItems)
@@ -2036,9 +2036,9 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
 
       (language[first..<last].replace("tree-sitter-", "").replace("-", "_"), language)
     else:
-      (language, self.config.getOption(&"languages.{language}.treesitter", ""))
+      (language, self.config.runtime.get(&"languages.{language}.treesitter", ""))
 
-    let queriesSubDir = self.config.getOption(&"languages.{language}.treesitter-queries", "").catch("")
+    let queriesSubDir = self.config.runtime.get(&"languages.{language}.treesitter-queries", "").catch("")
 
     log lvlInfo, &"Install treesitter parser for {language} from {repo}"
     let parts = repo.split("/")
@@ -2408,7 +2408,7 @@ proc getContextWithMode(self: App, context: string): string {.expose("editor").}
 proc currentEventHandlers*(self: App): seq[EventHandler] =
   result = @[self.eventHandler]
 
-  let modeOnTop = self.config.getOption[:bool](self.getContextWithMode("editor.custom-mode-on-top"), true)
+  let modeOnTop = self.config.runtime.get(self.getContextWithMode("editor.custom-mode-on-top"), true)
   if not self.modeEventHandler.isNil and not modeOnTop:
     result.add self.modeEventHandler
 
@@ -2427,7 +2427,7 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
     result.add self.modeEventHandler
 
 proc clearInputHistoryDelayed*(self: App) =
-  let clearInputHistoryDelay = self.config.getOption[:int]("editor.clear-input-history-delay", 3000)
+  let clearInputHistoryDelay = self.config.runtime.get("editor.clear-input-history-delay", 3000)
   if self.clearInputHistoryTask.isNil:
     self.clearInputHistoryTask = startDelayed(clearInputHistoryDelay, repeat=false):
       self.inputHistory.setLen 0
@@ -2437,7 +2437,7 @@ proc clearInputHistoryDelayed*(self: App) =
     self.clearInputHistoryTask.reschedule()
 
 proc recordInputToHistory*(self: App, input: string) =
-  let recordInput = self.config.getOption[:bool]("editor.record-input-history", false)
+  let recordInput = self.config.runtime.get("editor.record-input-history", false)
   if not recordInput:
     return
 
@@ -2487,11 +2487,11 @@ proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handle
       cmp(a.input, b.input)
 
 proc updateNextPossibleInputs*(self: App) =
-  let whichKeyInProgressOnly = not self.config.asConfigProvider.getValue("ui.which-key-no-progress", false)
+  let whichKeyInProgressOnly = not self.config.mainConfig.get("ui.which-key-no-progress", false)
   self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
-    self.showNextPossibleInputsTask.interval = self.config.getOption("ui.which-key-delay", 500)
+    self.showNextPossibleInputsTask.interval = self.config.runtime.get("ui.which-key-delay", 500)
     self.showNextPossibleInputsTask.reschedule()
 
   elif self.nextPossibleInputs.len == 0:

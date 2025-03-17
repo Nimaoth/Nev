@@ -2,7 +2,7 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, rope_utils, async_process]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, rope_utils, async_process, jsonex]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, service, vfs, vfs_service
@@ -69,7 +69,8 @@ type
     changes: seq[TextDocumentChange]
     changesAsync: seq[TextDocumentChange]
 
-    configProvider: ConfigProvider
+    configService: ConfigService
+    config: ConfigStore
     languageConfig*: Option[TextLanguageConfig]
     indentStyle*: IndentStyle
     createLanguageServer*: bool = true
@@ -475,7 +476,7 @@ proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, bufferId: BufferId
   self.notifyRequestRerender()
 
 proc recordSnapshotForDiagnostics(self: TextDocument) =
-  let diagnosticHistoryMaxLength = self.configProvider.getValue("text.diagnostic-snapshot-history", 5)
+  let diagnosticHistoryMaxLength = self.config.get("text.diagnostic-snapshot-history", 5)
   self.diagnosticSnapshots.add(self.buffer.snapshot.clone())
   while self.diagnosticSnapshots.len > diagnosticHistoryMaxLength:
     self.diagnosticSnapshots.removeShift(0)
@@ -563,8 +564,8 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   let prevLanguageId = self.languageId
-  let config = self.configProvider.getValue("treesitter." & self.languageId, newJObject())
-  let treesitterLanguageName = self.configProvider.getValue(&"languages.{self.languageId}.treesitter-language-name", self.languageId)
+  let config = self.config.get("treesitter." & self.languageId, newJexObject())
+  let treesitterLanguageName = self.config.get(&"languages.{self.languageId}.treesitter-language-name", self.languageId)
   var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, config)
 
   if prevLanguageId != self.languageId:
@@ -630,7 +631,7 @@ proc newTextDocument*(
   self.appFile = app
   self.workspace = services.getService(Workspace).get
   self.services = services
-  self.configProvider = services.getService(ConfigService).get.asConfigProvider
+  self.configService = services.getService(ConfigService).get
   self.vfs = services.getService(VFSService).get.vfs
   self.createLanguageServer = createLanguageServer
   self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
@@ -640,14 +641,17 @@ proc newTextDocument*(
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
+  self.config = ConfigStore.new(self.configService.mainConfig, "document/" & self.filename)
+  self.config.filename = &"settings://document/{self.filename}"
+
   if language.getSome(language):
     self.languageId = language
   else:
-    getLanguageForFile(self.configProvider, filename).applyIt:
+    getLanguageForFile(self.config, filename).applyIt:
       self.languageId = it
 
   if self.languageId != "":
-    if (let value = self.configProvider.getValue("languages." & self.languageId, newJNull()); value.kind == JObject):
+    if (let value = self.config.get("languages." & self.languageId, newJNull()); value.kind == JObject):
       try:
         self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
         if value.hasKey("indent"):
@@ -662,7 +666,7 @@ proc newTextDocument*(
       except CatchableError:
         discard
 
-  let autoStartServer = self.configProvider.getValue("editor.text.auto-start-language-server", false)
+  let autoStartServer = self.config.get("editor.text.auto-start-language-server", false)
 
   self.content = content
   self.languageServer = languageServer.mapIt(it)
@@ -703,8 +707,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
     if self.staged:
       return
 
-    let trimTrailingWhitespace = self.configProvider.getValue("text.trim-trailing-whitespace.enabled", true)
-    let maxFileSizeForTrim = self.configProvider.getValue("text.trim-trailing-whitespace.max-size", 1000000)
+    let trimTrailingWhitespace = self.config.get("text.trim-trailing-whitespace.enabled", true)
+    let maxFileSizeForTrim = self.config.get("text.trim-trailing-whitespace.max-size", 1000000)
     if trimTrailingWhitespace:
       if self.rope.len <= maxFileSizeForTrim:
         self.trimTrailingWhitespace()
@@ -722,7 +726,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.lastSavedRevision = self.undoableRevision
     self.onSaved.invoke()
 
-    if self.configProvider.getValue("text.format-on-save", false):
+    if self.config.get("text.format-on-save", false):
       asyncSpawn self.format(runOnTempFile = false)
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
@@ -742,8 +746,8 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
   asyncSpawn self.saveAsync()
 
 proc autoDetectIndentStyle(self: TextDocument) =
-  let maxSamples = self.configProvider.getValue("text.auto-detect-indent.samples", 50)
-  let maxTime = self.configProvider.getValue("text.auto-detect-indent.timeout", 20.0)
+  let maxSamples = self.config.get("text.auto-detect-indent.samples", 50)
+  let maxTime = self.config.get("text.auto-detect-indent.timeout", 20.0)
 
   var containsTab = false
   var linePos = Point.init(0, 0)
@@ -785,8 +789,8 @@ proc autoDetectIndentStyle(self: TextDocument) =
   # log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
 proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.} =
-  if self.configProvider.getValue("text.reload-diff", true):
-    let diffTimeout = self.configProvider.getValue("text.reload-diff-timeout", 250)
+  if self.config.get("text.reload-diff", true):
+    let diffTimeout = self.config.get("text.reload-diff-timeout", 250)
     let t = startTimer()
 
     try:
@@ -806,7 +810,7 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.
 
         discard self.edit(selections, [], texts)
 
-      if self.configProvider.getValue("text.reload-diff-check", false):
+      if self.config.get("text.reload-diff-check", false):
         if $self.rope != $rope:
           log lvlError, &"Failed diff: {self.rope.len} != {rope.len}"
           self.replaceAll(rope.move)
@@ -899,7 +903,7 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.filename = filename
   self.isBackedByFile = false
 
-  getLanguageForFile(self.configProvider, filename).applyIt:
+  getLanguageForFile(self.config, filename).applyIt:
     self.languageId = it
   do:
     self.languageId = ""
@@ -925,7 +929,7 @@ method load*(self: TextDocument, filename: string = "") =
 
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
   try:
-    let formatterConfig = self.configProvider.getValue(&"languages.{self.languageId}.formatter", newJNull())
+    let formatterConfig = self.config.get(&"languages.{self.languageId}.formatter", newJNull())
     let (formatterPath, formatterArgs) = if formatterConfig.kind == JString:
       (formatterConfig.getStr, @[])
     else:
@@ -1073,8 +1077,8 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   if not self.createLanguageServer:
     return LanguageServer.none
 
-  let url = self.configProvider.getValue("editor.text.languages-server.url", "")
-  let port = self.configProvider.getValue("editor.text.languages-server.port", 0)
+  let url = self.config.get("editor.text.languages-server.url", "")
+  let port = self.config.get("editor.text.languages-server.port", 0)
   let config = if url != "" and port != 0:
     (url, port).some
   else:

@@ -153,7 +153,7 @@ proc `currentView=`*(self: LayoutService, newIndex: int, addToHistory = true) =
   self.updateActiveEditor(addToHistory)
 
 proc addView*(self: LayoutService, view: View, addToHistory = true, append = false) =
-  let maxViews = self.config.getOption[:int]("editor.max-views", int.high)
+  let maxViews = self.config.runtime.get("editor.max-views", int.high)
 
   while maxViews > 0 and self.views.len > maxViews:
     self.views[self.views.high].deactivate()
@@ -309,7 +309,7 @@ proc setMaxViews*(self: LayoutService, maxViews: int, openExisting: bool = false
   ## Closes any views that exceed the new limit
 
   log lvlInfo, fmt"[setMaxViews] {maxViews}"
-  self.config.setOption[:int]("editor.max-views", maxViews)
+  self.config.runtime.set("editor.max-views", maxViews)
   while maxViews > 0 and self.views.len > maxViews:
     self.views[self.views.high].deactivate()
     self.hiddenViews.add self.views.pop()

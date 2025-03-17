@@ -59,7 +59,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
   proc filterCommand(s: string): bool =
     return not excluded.anyIt(s.toLowerAscii.startsWith(it))
   let nextPossibleInputs = app.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
-  var whichKeyHeight = app.config.asConfigProvider.getValue("ui.selector-popup.which-key-height", 5)
+  var whichKeyHeight = app.config.mainConfig.get("ui.selector-popup.which-key-height", 5)
   whichKeyHeight = (nextPossibleInputs.len + 1) div 2
 
   builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h,
@@ -126,7 +126,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
                   var row: seq[UINode] = @[]
 
                   builder.panel(&{FillX, SizeToContentY}):
-                    if app.config.getOption("ui.selector.show-score", false):
+                    if app.config.runtime.get("ui.selector.show-score", false):
                       row.add builder.createTextWithMaxWidth($item.score, maxColumnWidth, "...", detailColor, &{TextItalic})
 
                     row.add builder.highlightedText(name, matchIndices, textColor,

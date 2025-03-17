@@ -4,7 +4,7 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex]
 import scripting/[expose, scripting_base]
 import platform/[platform]
 import language/[language_server_base]
@@ -50,7 +50,6 @@ type
 
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
-  configProvider*: ConfigProvider
   editors*: DocumentEditorService
   layout*: LayoutService
   services*: Services
@@ -361,8 +360,8 @@ proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
   self.markDirty()
 
-func useInclusiveSelections*(self: TextDocumentEditor): bool =
-  self.configProvider.getValue("editor.text.inclusive-selection", false)
+proc useInclusiveSelections*(self: TextDocumentEditor): bool =
+  self.configStore.get("editor.text.inclusive-selection", false)
 
 proc startBlinkCursorTask(self: TextDocumentEditor) =
   if not self.blinkCursor:
@@ -460,7 +459,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
     self.handleLanguageServerAttached(self.document, ls)
 
   if self.document.createLanguageServer:
-    self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
+    self.completionEngine.addProvider newCompletionProviderSnippet(self.configStore, self.document)
       .withMergeStrategy(MergeStrategy(kind: TakeAll))
       .withPriority(1)
     self.completionEngine.addProvider newCompletionProviderDocument(self.document)
@@ -531,7 +530,7 @@ proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
         self.inlayHints.removeSwap(i)
 
 proc preRender*(self: TextDocumentEditor, bounds: Rect) =
-  if self.configProvider.isNil or self.document.isNil:
+  if self.document.isNil:
     return
 
   if self.document.requiresLoad:
@@ -544,7 +543,7 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.diffDocument.isNotNil:
     wrapWidth = wrapWidth div 2 - 2
 
-  let tabWidth = self.configProvider.getValue("text.tab-width", self.document.tabWidth)
+  let tabWidth = self.configStore.get("text.tab-width", self.document.tabWidth)
   self.displayMap.tabMap.setTabWidth(tabWidth)
 
   if self.displayMap.remoteId != self.document.buffer.remoteId:
@@ -559,7 +558,7 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.document.rope.len > 1:
     self.displayMap.update(wrapWidth)
 
-  if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
+  if self.configStore.get("editor.text.highlight-treesitter-errors", true):
     # todo: when disabling editor.text.highlight-treesitter-errors we should clear them once aswell
     self.clearCustomHighlights(errorNodesHighlightId)
     let errorNodes = self.document.getErrorNodesInRange(
@@ -721,8 +720,8 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   let targetDisplayLine = displayPoint.row.int
   let targetLineY = targetDisplayLine.float32 * textHeight + self.interpolatedScrollOffset
 
-  let configMarginRelative = self.configProvider.getValue("text.cursor-margin-relative", true)
-  let configMargin = self.cursorMargin.get(self.configProvider.getValue("text.cursor-margin", 0.2))
+  let configMarginRelative = self.configStore.get("text.cursor-margin-relative", true)
+  let configMargin = self.cursorMargin.get(self.configStore.get("text.cursor-margin", 0.2))
   let margin = if margin.getSome(margin):
     clamp(margin, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
   elif configMarginRelative:
@@ -766,13 +765,13 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: f
 proc isThickCursor*(self: TextDocumentEditor): bool =
   if not self.platform.supportsThinCursor:
     return true
-  return self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.wide"), false)
+  return self.configStore.get(self.getContextWithMode("editor.text.cursor.wide"), false)
 
 proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor =
   case which
   of Config:
     let key = self.getContextWithMode("editor.text.cursor.movement")
-    let configCursor = self.configProvider.getValue(key, SelectionCursor.Both)
+    let configCursor = self.configStore.get(key, SelectionCursor.Both)
     return self.getCursor(selection, configCursor)
   of Both, Last, LastToFirst:
     return selection.last
@@ -788,7 +787,7 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor,
   case cursor
   of Config:
     let key = self.getContextWithMode("editor.text.cursor.movement")
-    let configCursor = self.configProvider.getValue(key, SelectionCursor.Both)
+    let configCursor = self.configStore.get(key, SelectionCursor.Both)
     self.moveCursor(configCursor, movement, offset, all, wrap, includeAfter)
 
   of Both:
@@ -853,7 +852,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   if self.disableScrolling:
     return
 
-  let scrollAmount = scroll.y * self.configProvider.getValue("text.scroll-speed", 40.0)
+  let scrollAmount = scroll.y * self.configStore.get("text.scroll-speed", 40.0)
   # todo
   # if not self.lastCompletionsWidget.isNil and
   #     self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
@@ -998,7 +997,7 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     return 0
 
 proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.async.} =
-  let config = self.configProvider.getValue("treesitter.javascript", newJObject())
+  let config = self.configStore.get("treesitter.javascript", newJexObject())
   let l = self.vfs.getTreesitterLanguage("javascript", config).await
   if l.getSome(l):
     withParser(p):
@@ -2498,11 +2497,11 @@ proc updateCommandCount*(self: TextDocumentEditor, digit: int) {.expose("editor.
   self.commandCount = self.commandCount * 10 + digit
 
 proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("editor.text").} =
-  self.configProvider.setFlag("editor.text." & name, value)
+  self.configStore.set("editor.text." & name, value)
   self.markDirty()
 
 proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
-  return self.configProvider.getFlag("editor.text." & name, false)
+  return self.configStore.get("editor.text." & name, false)
 
 proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.
     expose("editor.text").} =
@@ -2780,7 +2779,7 @@ proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCurs
   case which
   of Config:
     let key = self.getContextWithMode("editor.text.cursor.movement")
-    let cursorSelector = self.configProvider.getValue(key, SelectionCursor.Both)
+    let cursorSelector = self.configStore.get(key, SelectionCursor.Both)
     return self.cursor(selection, cursorSelector)
   of Both:
     return selection.last
@@ -2790,19 +2789,19 @@ proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCurs
     return selection.last
 
 proc applyMove*(self: TextDocumentEditor, args {.varargs.}: JsonNode) {.expose("editor.text").} =
-  self.configProvider.setValue("text.move-count", self.getCommandCount)
-  self.setMode self.configProvider.getValue("text.move-next-mode", "")
-  self.setCommandCount self.configProvider.getValue("text.move-command-count", 0)
-  let command = self.configProvider.getValue("text.move-action", "")
+  self.configStore.set("text.move-count", self.getCommandCount)
+  self.setMode self.configStore.get("text.move-next-mode", "")
+  self.setCommandCount self.configStore.get("text.move-command-count", 0)
+  let command = self.configStore.get("text.move-action", "")
   discard self.runAction(command, args)
-  self.configProvider.setValue("text.move-action", "")
+  self.configStore.set("text.move-action", "")
 
 proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
   ## Deletes text based on the current selections.
   ##
   ## `move` specifies which move should be applied to each selection.
-  let count = self.configProvider.getValue("text.move-count", 0)
+  let count = self.configStore.get("text.move-count", 0)
 
   # echo fmt"delete-move {move}, {which}, {count}, {inside}"
 
@@ -2821,7 +2820,7 @@ proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false,
 
 proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = self.configProvider.getValue("text.move-count", 0)
+  let count = self.configStore.get("text.move-count", 0)
 
   self.selections = if inside:
     self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.getSelectionForMove(s.last, move, count))
@@ -2836,7 +2835,7 @@ proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
 
 proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = self.configProvider.getValue("text.move-count", 0)
+  let count = self.configStore.get("text.move-count", 0)
 
   self.selections = if inside:
     self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.extendSelectionWithMove(s, move, count))
@@ -2857,7 +2856,7 @@ proc copyMove*(self: TextDocumentEditor, move: string, inside: bool = false,
 
 proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = self.configProvider.getValue("text.move-count", 0)
+  let count = self.configStore.get("text.move-count", 0)
 
   let selections = if inside:
     self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.getSelectionForMove(s.last, move, count))
@@ -2876,7 +2875,7 @@ proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = 
     all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    let cursorSelector = self.configProvider.getValue(
+    let cursorSelector = self.configStore.get(
       self.getContextWithMode("editor.text.cursor.movement"),
       SelectionCursor.Both
     )
@@ -2893,7 +2892,7 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
     all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    let cursorSelector = self.configProvider.getValue(
+    let cursorSelector = self.configStore.get(
       self.getContextWithMode("editor.text.cursor.movement"),
       SelectionCursor.Both
     )
@@ -3068,7 +3067,7 @@ proc gotoRegexLocation(self: TextDocumentEditor, regexTemplate: string): Future[
   else:
     "\\b" & text & "\\b"
 
-  let rgLanguageId = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
+  let rgLanguageId = self.configStore.get(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
   log lvlInfo, &"Find '{text}' using regex '{searchString}'"
   let customArgs = @["--type", rgLanguageId, "--only-matching"]
   let searchResults = self.workspace.searchWorkspace(searchString, 100, customArgs).await
@@ -3092,7 +3091,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-definition")
+    let t = self.configStore.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-definition")
     await self.gotoRegexLocation(t)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3107,7 +3106,7 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-declaration")
+    let t = self.configStore.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-declaration")
     await self.gotoRegexLocation(t)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3122,7 +3121,7 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-type-definition")
+    let t = self.configStore.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-type-definition")
     await self.gotoRegexLocation(t)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3137,7 +3136,7 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-implementation")
+    let t = self.configStore.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-implementation")
     await self.gotoRegexLocation(t)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3152,7 +3151,7 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-references")
+    let t = self.configStore.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-references")
     await self.gotoRegexLocation(t)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3303,7 +3302,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
     self.openSymbolSelectorPopup(symbols, navigateOnSelect=true)
 
   else:
-    let searchString = self.configProvider.getRegexValue(&"languages.{self.document.languageId}.search-regexes.symbols")
+    let searchString = self.configStore.getRegexValue(&"languages.{self.document.languageId}.search-regexes.symbols")
 
     log lvlInfo, &"Find symbols using regex '{searchString}'"
     let rope = self.document.rope.clone()
@@ -3396,9 +3395,9 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     discard self.layout.pushSelectorPopup(builder)
 
   else:
-    let searchString = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.workspace-symbols", newJString(""))
-    let rgLanguageId = self.configProvider.getValue(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
-    let maxResults = self.configProvider.getValue(&"text.search-workspace-regex-max-results", 50_000)
+    let searchString = self.configStore.get(&"languages.{self.document.languageId}.search-regexes.workspace-symbols", newJexString(""))
+    let rgLanguageId = self.configStore.get(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
+    let maxResults = self.configStore.get(&"text.search-workspace-regex-max-results", 50_000)
 
     log lvlInfo, &"Find workspace symbols using regex '{searchString}'"
     let customArgs = @["--type", rgLanguageId, "--only-matching"]
@@ -3714,7 +3713,7 @@ proc hideHoverDelayed*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.showHoverTask.isNotNil:
     self.showHoverTask.pause()
 
-  let hoverDelayMs = self.configProvider.getValue("text.hover-delay", 200)
+  let hoverDelayMs = self.configStore.get("text.hover-delay", 200)
   if self.hideHoverTask.isNil:
     self.hideHoverTask = startDelayed(hoverDelayMs, repeat=false):
       self.hideHover()
@@ -3729,7 +3728,7 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   if self.hideHoverTask.isNotNil:
     self.hideHoverTask.pause()
 
-  let hoverDelayMs = self.configProvider.getValue("text.hover-delay", 200)
+  let hoverDelayMs = self.configStore.get("text.hover-delay", 200)
   if self.showHoverTask.isNil:
     self.showHoverTask = startDelayed(hoverDelayMs, repeat=false):
       self.showHoverFor(self.currentHoverLocation)
@@ -3867,7 +3866,7 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text"
   self.currentCommandHistory.commands.setLen 0
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
-  let max = self.configProvider.getValue("text.choose-cursor-max", 300)
+  let max = self.configStore.get("text.choose-cursor-max", 300)
   for chunk in self.lastRenderedChunks:
     let str = self.document.contentString((chunk.range.a.toCursor, chunk.range.b.toCursor))
     var i = 0
@@ -4011,23 +4010,23 @@ proc recordCurrentCommand*(self: TextDocumentEditor, registers: seq[string] = @[
     self.registers.recordingCommands
 
 proc runSingleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.single-click-command", "")
-  let args = self.configProvider.getValue("editor.text.single-click-command-args", newJArray())
+  let commandName = self.configStore.get("editor.text.single-click-command", "")
+  let args = self.configStore.get("editor.text.single-click-command-args", newJArray())
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runDoubleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.double-click-command", "extend-select-move")
-  let args = self.configProvider.getValue("editor.text.double-click-command-args",
+  let commandName = self.configStore.get("editor.text.double-click-command", "extend-select-move")
+  let args = self.configStore.get("editor.text.double-click-command-args",
     %[newJString("word"), newJBool(true)])
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runTripleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.triple-click-command", "extend-select-move")
-  let args = self.configProvider.getValue("editor.text.triple-click-command-args",
+  let commandName = self.configStore.get("editor.text.triple-click-command", "extend-select-move")
+  let args = self.configStore.get("editor.text.triple-click-command-args",
     %[newJString("line"), newJBool(true)])
   if commandName.len == 0:
     return
@@ -4185,16 +4184,16 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
 
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
   self.displayMap.edit(self.document.buffer.snapshot.clone(), edits)
-  if self.configProvider.getValue("text.auto-wrap", true):
+  if self.configStore.get("text.auto-wrap", true):
     self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
-  let enableColorHighlight = self.configProvider.getValue(&"text.color-highlight.enabled", true)
+  let enableColorHighlight = self.configStore.get(&"text.color-highlight.enabled", true)
   # debugf"updateColorOverlays {enableColorHighlight}"
   if not enableColorHighlight:
     return
 
-  let colorHighlight = self.configProvider.getValue(&"text.color-highlight.{self.document.languageId}", newJObject())
+  let colorHighlight = self.configStore.get(&"text.color-highlight.{self.document.languageId}", newJObject())
   if colorHighlight.kind != JObject:
     return
 
@@ -4396,7 +4395,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
   let configService = services.getService(ConfigService).get
-  self.configProvider = configService.asConfigProvider
   self.editors = services.getService(DocumentEditorService).get
   self.layout = services.getService(LayoutService).get
   self.vcs = self.services.getService(VCSService).get
@@ -4437,7 +4435,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
-  self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
+  self.setMode(self.configStore.get("editor.text.default-mode", ""))
 
   return self
 

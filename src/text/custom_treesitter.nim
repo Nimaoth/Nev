@@ -1,5 +1,5 @@
 import std/[options, json, tables]
-import misc/[custom_logger, custom_async, util, custom_unicode]
+import misc/[custom_logger, custom_async, util, custom_unicode, jsonex]
 import vfs
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
@@ -419,7 +419,7 @@ proc getLanguageWasmStore(): ptr TSWasmStore =
 
   return wasmStore
 
-proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNodeEx): Future[Option[TSLanguage]] {.async.} =
   try:
     const fileExtension = when defined(windows):
       "dll"
@@ -520,7 +520,7 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): F
 var loadedLanguages: Table[string, TSLanguage]
 var loadingLanguages: Table[string, Future[Option[TSLanguage]]]
 
-proc loadLanguage(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+proc loadLanguage(vfs: VFS, languageId: string, config: JsonNodeEx): Future[Option[TSLanguage]] {.async.} =
   let language = await loadLanguageDynamically(vfs, languageId, config)
   if language.isSome:
     return language
@@ -563,7 +563,7 @@ proc unloadTreesitterLanguage*(languageId: string) {.gcsafe, raises: [].} =
     loadedLanguages.del(languageId)
     loadingLanguages.del(languageId)
 
-proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNodeEx): Future[Option[TSLanguage]] {.async.} =
   # log lvlInfo, &"getTreesitterLanguage {languageId}: {config}"
   let loadingLanguages = ({.gcsafe.}: loadingLanguages.addr)
   let loadedLanguages = ({.gcsafe.}: loadedLanguages.addr)

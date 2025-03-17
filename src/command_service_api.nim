@@ -108,7 +108,7 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
   for command in commands:
     self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.insert command, 1
 
-  let maxHistorySize = self.config.getValue("editor.command-line.history-size", 100)
+  let maxHistorySize = self.config.get("editor.command-line.history-size", 100)
   if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len > maxHistorySize:
     self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.setLen maxHistorySize
 

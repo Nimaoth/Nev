@@ -288,7 +288,7 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[Over
   let dirty = self.dirty
   self.dirty = false
 
-  let transparentBackground = app.config.getOption[:bool]("ui.background.transparent", false)
+  let transparentBackground = app.config.runtime.get("ui.background.transparent", false)
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
   var backgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(0.025)
   var activeBackgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 40/255))

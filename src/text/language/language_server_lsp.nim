@@ -41,15 +41,17 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
 
   {.gcsafe.}:
     let config = gServices.getService(ConfigService).get
-    let workspaceConfigName = config.getOption("lsp." & self.languageId & ".workspace-configuration-name", "settings")
+    let workspaceConfigName = config.runtime.get("lsp." & self.languageId & ".workspace-configuration-name", "settings")
 
     for item in params.items:
       # todo: implement scopeUri support
       if item.section.isNone:
+        let key = ["lsp", self.languageId, workspaceConfigName].filterIt(it.len > 0).join(".")
+        res.add config.runtime.get(key, newJNull())
         continue
 
       let key = ["lsp", self.languageId, workspaceConfigName, item.section.get].filterIt(it.len > 0).join(".")
-      res.add config.getOption(key, newJNull())
+      res.add config.runtime.get(key, newJNull())
 
   return res
 
@@ -115,7 +117,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
 
     let configs = services.getService(ConfigService).get
 
-    let config = configs.getOption("lsp." & languageId, newJObject())
+    let config = configs.runtime.get("lsp." & languageId, newJObject())
     if config.isNil:
       return LanguageServer.none
 
@@ -132,7 +134,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       @[]
 
     let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJNull()).jsonTo(string).catch("settings")
-    let userOptions = configs.getOption(
+    let userOptions = configs.runtime.get(
       "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
     let workspaceInfo = if workspace.getSome(workspace):
@@ -234,8 +236,11 @@ template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
     else:
       newSeq[Definition]()
 
+# todo: change return type to Response[seq[Definition]]
 method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
-  debugf"[getDefinition] {filename}"
+  if self.serverCapabilities.definitionProvider.isNone:
+    return @[]
+
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
@@ -252,8 +257,13 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
     log(lvlError, "No definitions found")
   return res
 
+# todo: change return type to Response[seq[Definition]]
 method getDeclaration*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
+
+  if self.serverCapabilities.declarationProvider.isNone:
+    return @[]
+
   let response = await self.client.getDeclaration(filename, location.line, location.column)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
@@ -270,8 +280,13 @@ method getDeclaration*(self: LanguageServerLSP, filename: string, location: Curs
     log(lvlError, "No declaration found")
   return res
 
+# todo: change return type to Response[seq[Definition]]
 method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
+
+  if self.serverCapabilities.typeDefinitionProvider.isNone:
+    return @[]
+
   let response = await self.client.getTypeDefinitions(filename, location.line, location.column)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
@@ -288,8 +303,13 @@ method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: C
     log(lvlError, "No type definitions found")
   return res
 
+# todo: change return type to Response[seq[Definition]]
 method getImplementation*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
+
+  if self.serverCapabilities.implementationProvider.isNone:
+    return @[]
+
   let response = await self.client.getImplementation(filename, location.line, location.column)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
@@ -306,8 +326,13 @@ method getImplementation*(self: LanguageServerLSP, filename: string, location: C
     log(lvlError, "No implementations found")
   return res
 
+# todo: change return type to Response[seq[Definition]]
 method getReferences*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
+
+  if self.serverCapabilities.referencesProvider.isNone:
+    return @[]
+
   let response = await self.client.getReferences(filename, location.line, location.column)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
@@ -346,8 +371,13 @@ method switchSourceHeader*(self: LanguageServerLSP, filename: string): Future[Op
 
   return response.result.decodeUrl.parseUri.path.normalizePathUnix.some
 
+# todo: change return type to Response
 method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Option[string]] {.async.} =
+
+  if self.serverCapabilities.hoverProvider.isNone:
+    return string.none
+
   let response = await self.client.getHover(filename, location.line, location.column)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
@@ -444,8 +474,12 @@ proc toInternalSymbolKind(symbolKind: SymbolKind): SymbolType =
   except:
     return SymbolType.Unknown
 
+# todo: change return type to Response
 method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
+
+  if self.serverCapabilities.documentSymbolProvider.isNone:
+    return completions
 
   debugf"[getSymbols] {filename}"
   let response = await self.client.getSymbols(filename)
@@ -491,8 +525,12 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
 
   return completions
 
+# todo: change return type to Response
 method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
+
+  if self.serverCapabilities.workspaceSymbolProvider.isNone:
+    return completions
 
   let response = await self.client.getWorkspaceSymbols(query)
   if response.isError:
@@ -567,6 +605,8 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
 
 method getCompletions*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Response[CompletionList]] {.async.} =
+  if self.serverCapabilities.completionProvider.isNone:
+    return success(CompletionList())
   let localizedPath = self.vfs.localize(filename)
   return await self.client.getCompletions(localizedPath, location.line, location.column)
 

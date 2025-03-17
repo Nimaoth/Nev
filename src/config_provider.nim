@@ -9,102 +9,13 @@ import service, platform_service, dispatch_tables
 
 logCategory "config"
 
-traitRef ConfigProvider:
-  method getConfigValue(self: ConfigProvider, path: string): Option[JsonNode] {.gcsafe, raises: [].}
-  method setConfigValue(self: ConfigProvider, path: string, value: JsonNode) {.gcsafe, raises: [].}
-  method onConfigChanged*(self: ConfigProvider): ptr Event[void] {.gcsafe, raises: [].}
-
-proc setValue*[T](self: ConfigProvider, path: string, value: T) =
-  template createSetOption(self, path, value, constructor: untyped): untyped {.used.} =
-    block:
-      self.setConfigValue(path, constructor(value))
-
-  try:
-    when T is bool:
-      self.createSetOption(path, value, newJBool)
-    elif T is Ordinal:
-      self.createSetOption(path, value, newJInt)
-    elif T is float32 | float64:
-      self.createSetOption(path, value, newJFloat)
-    elif T is string:
-      self.createSetOption(path, value, newJString)
-    elif T is JsonNode:
-      self.setConfigValue(path, value)
-    else:
-      {.fatal: ("Can't set option with type " & $T).}
-  except KeyError:
-    discard
-
-proc getValue*[T](self: ConfigProvider, path: string, default: T = T.default): T =
-  template createGetOption(self, path, defaultValue, accessor: untyped): untyped {.used.} =
-    block:
-      let value = self.getConfigValue(path)
-      if value.isSome:
-        accessor(value.get, defaultValue)
-
-      else:
-        # todo: this causes infinite recursion because setValue logs -> insert into log document -> config.getValue -> here
-        # self.setValue(path, defaultValue)
-        defaultValue
-
-  try:
-    when T is bool:
-      return createGetOption(self, path, default, getBool)
-    elif T is enum:
-      return parseEnum[T](createGetOption(self, path, "", getStr), default)
-    elif T is Ordinal:
-      return createGetOption(self, path, default, getInt)
-    elif T is float32 | float64:
-      return createGetOption(self, path, default, getFloat)
-    elif T is string:
-      return createGetOption(self, path, default, getStr)
-    elif T is JsonNode:
-      return self.getConfigValue(path).get(default)
-    else:
-      {.fatal: ("Can't get option with type " & $T).}
-  except KeyError:
-    return default
-
-proc getFlag*(self: ConfigProvider, flag: string, default: bool): bool =
-  return self.getValue(flag, default)
-
-proc setFlag*(self: ConfigProvider, flag: string, value: bool) =
-  self.setValue(flag, value)
-
-proc toggleFlag*(self: ConfigProvider, flag: string) =
-  if self.getConfigValue(flag).isSome:
-    self.setFlag(flag, not self.getFlag(flag, false))
-
-proc decodeRegex*(value: JsonNode, default: string = ""): string =
-  if value.kind == JString:
-    return value.str
-  elif value.kind == JArray:
-    var r = ""
-    for t in value.elems:
-      if t.kind != JString:
-        log lvlError, &"Invalid regex value: {value}, expected string, got {t}"
-        continue
-      if r.len > 0:
-        r.add "|"
-      r.add t.str
-
-    return r
-  elif value.kind == JNull:
-    return default
-  else:
-    log lvlError, &"Invalid regex value: {value}, expected string | array[string]"
-    return default
-
-proc getRegexValue*(self: ConfigProvider, path: string, default: string = ""): string =
-  let value = self.getValue(path, newJNull())
-  return value.decodeRegex(default)
-
 type
   ConfigLayerKind* = enum Unchanged, Extend, Override
 
   ConfigService* = ref object of Service
     onConfigChanged*: Event[void]
     mainConfig*: ConfigStore
+    runtime*: ConfigStore
 
     storeGroups*: Table[string, seq[ConfigStore]]
     stores*: Table[string, ConfigStore]
@@ -129,6 +40,34 @@ type
     key*: string
 
   ConfigStoreLayer = tuple[revision: int, kind: ConfigLayerKind, store: ConfigStore]
+
+proc setUserData(node: JsonNodeEx, userData: int)
+proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx)
+
+func serviceName*(_: typedesc[ConfigService]): string = "ConfigService"
+
+addBuiltinService(ConfigService)
+
+var nextConfigStoreId = 1
+proc new*(_: typedesc[ConfigStore], parent: ConfigStore, name: string, settings: JsonNodeEx = newJexObject()): ConfigStore =
+  let id = block:
+    {.gcsafe.}:
+      let id = nextConfigStoreId
+      inc nextConfigStoreId
+      id
+
+  result = ConfigStore(id: id, parent: parent, name: name, filename: name, settings: newJexObject())
+  result.settings.setUserData(id)
+  settings.setUserData(id)
+  result.settings.evaluateSettingsRec(settings)
+  result.settings.extend = true
+
+method init*(self: ConfigService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"ConfigService.init"
+  self.mainConfig = ConfigStore.new(nil, "runtime")
+  self.mainConfig.filename = "settings://runtime"
+  self.runtime = self.mainConfig
+  return ok()
 
 proc desc*(self: ConfigStore, pretty = false): string =
   result = &"CS({self.name}@{self.revision}"
@@ -167,7 +106,7 @@ proc reconnectGroups*(self: ConfigService) =
       child.parent = parent
       inc child.revision
 
-  let child = self.mainConfig
+  let child = self.runtime
   let parent = self.lastGroupConfigStore()
 
   if child.parent != parent:
@@ -235,20 +174,6 @@ proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx) =
 
   else:
     target = node
-
-var nextConfigStoreId = 1
-proc new*(_: typedesc[ConfigStore], parent: ConfigStore, name: string, settings: JsonNodeEx = newJexObject()): ConfigStore =
-  let id = block:
-    {.gcsafe.}:
-      let id = nextConfigStoreId
-      inc nextConfigStoreId
-      id
-
-  result = ConfigStore(id: id, parent: parent, name: name, filename: name, settings: newJexObject())
-  result.settings.setUserData(id)
-  settings.setUserData(id)
-  result.settings.evaluateSettingsRec(settings)
-  result.settings.extend = true
 
 proc setParent*(self: ConfigStore, parent: ConfigStore) =
   if self.parent != parent:
@@ -375,7 +300,6 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
       subKey = subKey[1..^1]
       extend = false
 
-    # log &"sub '{subKey}'"
     defer:
       prevI = i + 1
       i = key.find('.', prevI)
@@ -396,17 +320,10 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
         node[subKey] = newValue
       node = node[subKey]
 
-  # log lvlDebug, &"  -> setting '{key}' to {value} in {self.desc(pretty=true)}"
   self.onConfigChanged.invoke(key)
 
 var logGetValue* = false
 proc getImpl(self: ConfigStore, key: string, layers: var seq[ConfigStoreLayer], recurse: bool = true): JsonNodeEx =
-  template log(msg: untyped): untyped =
-    if logGetValue:
-      echo msg
-
-  # log &"getValue {self.desc}, '{key}'"
-
   result = self.settings
 
   var prevI = 0
@@ -420,7 +337,6 @@ proc getImpl(self: ConfigStore, key: string, layers: var seq[ConfigStoreLayer], 
 
   while prevI <= key.len:
     let subKey = key[prevI..<i]
-    # log &"sub '{subKey}'"
     defer:
       prevI = i + 1
       i = key.find('.', prevI)
@@ -516,6 +432,8 @@ proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
     try:
       when T is JsonNode:
         return value.toJson
+      elif T is JsonNodeEx:
+        return value
       else:
         return value.jsonTo(T)
     except Exception as e:
@@ -529,16 +447,40 @@ proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
 proc get*(self: ConfigStore, key: string, T: typedesc): T {.inline.} =
   self.get(key, T, T.default)
 
+proc get*[T](self: ConfigStore, key: string, defaultValue: T): T {.inline.} =
+  self.get(key, T, defaultValue)
+
+proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
+  if value.kind == JString:
+    return value.str
+  elif value.kind == JArray:
+    var r = ""
+    for t in value.elems:
+      if t.kind != JString:
+        log lvlError, &"Invalid regex value: {value}, expected string, got {t}"
+        continue
+      if r.len > 0:
+        r.add "|"
+      r.add t.str
+
+    return r
+  elif value.kind == JNull:
+    return default
+  else:
+    log lvlError, &"Invalid regex value: {value}, expected string | array[string]"
+    return default
+
+proc getRegexValue*(self: ConfigStore, path: string, default: string = ""): string =
+  let value = self.get(path, JsonNodeEx, nil)
+  if value == nil:
+    return default
+  return value.decodeRegex(default)
+
 proc setting*(self: ConfigStore, key: string, T: typedesc): Setting[T] =
   return Setting[T](store: self, key: key)
 
 var logSetting* = false
 proc cacheValue[T](self: Setting[T]) =
-  template log(msg: untyped): untyped =
-    if logSetting:
-      echo msg
-
-  # echo &"cacheValue {self.store.desc}.{self.key}"
   self.layers.setLen(0)
   let value = self.store.getImpl(self.key, self.layers)
   if value == nil:
@@ -550,26 +492,17 @@ proc cacheValue[T](self: Setting[T]) =
       let t = $T
       log lvlError, &"Failed to cache setting '{self.key}' of type {t}: {e.msg} ({value})"
 
-  # let uiae = self.layers.mapIt(&"{it.revision}, {it.kind}, {it.store.desc}").join("\n")
-  # echo &"cacheValue\n{uiae.indent(4)}"
-
 proc get*[T](self: Setting[T], default: T): T =
-  template log(msg: untyped): untyped =
-    if logSetting:
-      echo msg
-
   defer:
     let rawSetting = self.store.get(self.key, T)
     if rawSetting != result:
       log lvlError, &"Setting {self.store.desc}.{self.key} not invalidated correctly: {rawSetting} != {result}"
 
   if self.cache.isNone:
-    # log lvlWarn, &"not cached yet {self.store.desc}.{self.key}"
     self.cacheValue()
     return self.cache.get(default)
 
   # Check if cache valid
-  # log lvlWarn, &"get {self.store.desc}.{self.key}: check cache"
   for i, store in enumerate(self.store.parentStores(includeSelf = true)):
     if i >= self.layers.len:
       self.cacheValue()
@@ -577,16 +510,13 @@ proc get*[T](self: Setting[T], default: T): T =
 
     let layer = self.layers[i]
     if store == layer.store and store.revision == layer.revision and layer.kind == Override:
-      # log lvlWarn, &"get {self.store.desc}.{self.key}: cache up to date: {self.cache}"
       return self.cache.get
     elif store != layer.store or (store.revision != layer.revision and layer.kind in {Extend, Override}):
-      # log lvlWarn, &"get {self.store.desc}.{self.key}: cache invalid"
       self.cacheValue()
       return self.cache.get(default)
     elif store != layer.store or (store.revision != layer.revision and layer.kind in {Unchanged}):
       var tempLayers = newSeq[ConfigStoreLayer]()
       if layer.store.getImpl(self.key, tempLayers, recurse = false) != nil:
-        # log lvlWarn, &"get {self.store.desc}.{self.key}: cache invalid, Unchanged -> changed"
         self.cacheValue()
         return self.cache.get(default)
 
@@ -610,14 +540,14 @@ proc getAllConfigKeys*(self: ConfigStore): seq[tuple[key: string, value: JsonNod
   self.settings.getAllConfigKeys("", result)
 
 proc getStoreForId*(self: ConfigService, id: int): ConfigStore =
-  for store in self.mainConfig.parentStores:
+  for store in self.runtime.parentStores:
     if store.id == id:
       return store
 
   return nil
 
 proc getStoreForPath*(self: ConfigService, path: string): (ConfigStore, string) =
-  for store in self.mainConfig.parentStores:
+  for store in self.runtime.parentStores:
     if path.startsWith(store.name):
       return (store, path[store.name.len..^1].strip(chars = {'/'}).replace("/", "."))
 
@@ -645,50 +575,6 @@ proc getByPath*(self: ConfigService, path: string, T: typedesc, defaultValue: T)
 proc getByPath*(self: ConfigService, path: string, T: typedesc): T {.inline.} =
   self.getByPath(path, T, T.default)
 
-func serviceName*(_: typedesc[ConfigService]): string = "ConfigService"
-
-addBuiltinService(ConfigService)
-
-method init*(self: ConfigService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"ConfigService.init"
-  self.mainConfig = ConfigStore.new(nil, "runtime")
-  self.mainConfig.filename = "settings://runtime"
-  return ok()
-
-implTrait ConfigProvider, ConfigService:
-  proc getConfigValue(self: ConfigService, path: string): Option[JsonNode] =
-    let value = self.mainConfig.get(path, JsonNodeEx)
-    if value == nil:
-      return JsonNode.none
-    return value.toJson.some
-
-  proc setConfigValue(self: ConfigService, path: string, value: JsonNode) =
-    let valueEx = value.toJsonEx
-    self.mainConfig.set(path, valueEx)
-
-  proc onConfigChanged*(self: ConfigService): ptr Event[void] = self.onConfigChanged.addr
-
-proc setOption*[T](self: ConfigService, path: string, value: T) =
-  self.mainConfig.set(path, value)
-  self.onConfigChanged.invoke()
-  self.services.getService(PlatformService).get.platform.requestRender(true)
-
-proc getOption*[T](self: ConfigService, path: string, default: Option[T] = T.none): Option[T] =
-  let value = self.mainConfig.get(path)
-  if value == nil:
-    return T.none
-
-  try:
-    when T is JsonNode:
-      return value.jsonTo(T).toJson
-    else:
-      return value.jsonTo(T)
-  except:
-    return T.none
-
-proc getOption*[T](self: ConfigService, path: string, default: T = T.default): T =
-  return self.mainConfig.get(path, T, default)
-
 ###########################################################################
 
 proc getConfigService(): Option[ConfigService] =
@@ -700,24 +586,24 @@ static:
   addInjector(ConfigService, getConfigService)
 
 proc logOptions*(self: ConfigService) {.expose("config").} =
-  log lvlInfo, self.mainConfig.mergedSettings.pretty()
+  log lvlInfo, self.runtime.mergedSettings.pretty()
 
 proc setOption*(self: ConfigService, option: string, value: JsonNode, override: bool = true) {.expose("config").} =
   if self.isNil:
     return
 
-  self.mainConfig.set(option, value.toJsonEx)
+  self.runtime.set(option, value.toJsonEx)
   self.onConfigChanged.invoke()
   self.services.getService(PlatformService).get.platform.requestRender(true)
 
 proc getOptionJson*(self: ConfigService, path: string, default: JsonNode = newJNull()): JsonNode {.expose("editor").} =
-  return self.getOption[:JsonNode](path, default)
+  return self.runtime.get(path, default)
 
 proc getFlag*(self: ConfigService, flag: string, default: bool = false): bool {.expose("config").} =
-  return self.mainConfig.get(flag, bool, default)
+  return self.runtime.get(flag, bool, default)
 
 proc setFlag*(self: ConfigService, flag: string, value: bool) {.expose("config").} =
-  self.setOption[:bool](flag, value)
+  self.runtime.set(flag, value)
 
 proc toggleFlag*(self: ConfigService, flag: string) {.expose("config").} =
   let newValue = not self.getFlag(flag)

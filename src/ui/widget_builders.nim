@@ -34,7 +34,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
-        let maxViews = self.config.getOption[:int]("editor.max-views", int.high)
+        let maxViews = self.config.runtime.get("editor.max-views", int.high)
         let maximizedText = if self.layout.maximizeView:
           "[Fullscreen]"
         elif maxViews == int.high:
@@ -102,7 +102,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       overlay()
 
     if self.showNextPossibleInputs:
-      let inputLines = self.config.asConfigProvider.getValue("ui.which-key-height", 10)
+      let inputLines = self.config.mainConfig.get("ui.which-key-height", 10)
       let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
       let continuesTextColor = self.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
       let keysTextColor = self.theme.tokenColor("number", color(225/255, 200/255, 200/255))
