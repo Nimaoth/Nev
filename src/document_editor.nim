@@ -23,7 +23,7 @@ type
     mDirty: bool ## Set to true to trigger rerender
     active: bool
     onActiveChanged*: Event[DocumentEditor]
-    configStore*: ConfigStore
+    config*: ConfigStore
 
   DocumentFactory* = ref object of RootObj
   DocumentEditorFactory* = ref object of RootObj

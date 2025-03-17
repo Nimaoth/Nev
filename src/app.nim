@@ -207,7 +207,7 @@ proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: [
   self.platform.requestRender(redrawEverything=true)
 
 proc runConfigCommands(self: App, key: string) =
-  let startupCommands = self.config.runtime.get(key, newJexArray())
+  let startupCommands = self.config.runtime.get(key, newJArray())
   if startupCommands.isNil or startupCommands.kind != JArray:
     return
 
@@ -1453,10 +1453,10 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
   if includeActiveEditor and self.getActiveEditor().getSome(editor):
     state.targetEditor = editor
-    for s in editor.configStore.parentStores:
+    for s in editor.config.parentStores:
       state.stores.add(s)
   else:
-    for s in self.config.mainConfig.parentStores:
+    for s in self.config.runtime.parentStores:
       state.stores.add(s)
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
@@ -1509,7 +1509,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
-  popup.previewEditor.configStore.set("editor.text.context-lines", false)
+  popup.previewEditor.config.set("editor.text.context-lines", false)
 
   proc updateListener() =
     if state.changedEventSource != nil:
@@ -1571,7 +1571,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
       return false
     state.targetEditor = popup.previewEditor
     state.stores.setLen(0)
-    for s in popup.previewEditor.configStore.parentStores:
+    for s in popup.previewEditor.config.parentStores:
       state.stores.add(s)
     state.index = 0
     updateListener()
@@ -2338,7 +2338,7 @@ proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
   log lvlInfo, &"Reload config"
   if clearOptions:
-    self.config.mainConfig.setSettings(newJexObject())
+    self.config.runtime.setSettings(newJexObject())
   asyncSpawn self.reloadConfigAsync()
 
 proc reloadPlugin*(self: App) {.expose("editor").} =
@@ -2487,7 +2487,7 @@ proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handle
       cmp(a.input, b.input)
 
 proc updateNextPossibleInputs*(self: App) =
-  let whichKeyInProgressOnly = not self.config.mainConfig.get("ui.which-key-no-progress", false)
+  let whichKeyInProgressOnly = not self.config.runtime.get("ui.which-key-no-progress", false)
   self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:

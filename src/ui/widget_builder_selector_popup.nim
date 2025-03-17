@@ -59,7 +59,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
   proc filterCommand(s: string): bool =
     return not excluded.anyIt(s.toLowerAscii.startsWith(it))
   let nextPossibleInputs = app.getNextPossibleInputs(false, (handler) => handler.config.context.startsWith("popup.selector")).filterIt(filterCommand(it.description))
-  var whichKeyHeight = app.config.mainConfig.get("ui.selector-popup.which-key-height", 5)
+  var whichKeyHeight = app.config.runtime.get("ui.selector-popup.which-key-height", 5)
   whichKeyHeight = (nextPossibleInputs.len + 1) div 2
 
   builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h,

@@ -641,7 +641,7 @@ proc newTextDocument*(
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
-  self.config = ConfigStore.new(self.configService.mainConfig, "document/" & self.filename)
+  self.config = ConfigStore.new(self.configService.runtime, "document/" & self.filename)
   self.config.filename = &"settings://document/{self.filename}"
 
   if language.getSome(language):

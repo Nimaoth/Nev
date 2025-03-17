@@ -102,7 +102,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       overlay()
 
     if self.showNextPossibleInputs:
-      let inputLines = self.config.mainConfig.get("ui.which-key-height", 10)
+      let inputLines = self.config.runtime.get("ui.which-key-height", 10)
       let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
       let continuesTextColor = self.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
       let keysTextColor = self.theme.tokenColor("number", color(225/255, 200/255, 200/255))

@@ -439,6 +439,12 @@ proc getOrDefault*(node: JsonNodeEx, key: string): JsonNodeEx =
   if not isNil(node) and node.kind == JObject:
     result = node.fields.getOrDefault(key)
 
+proc getOrDefault*(node: JsonNodeEx, key: openArray[char]): JsonNodeEx =
+  ## Gets a field from a `node`. If `node` is nil or not an object or
+  ## value at `key` does not exist, returns nil
+  if not isNil(node) and node.kind == JObject:
+    result = node.fields.getOrDefault(key)
+
 proc `{}`*(node: JsonNodeEx, key: string): JsonNodeEx =
   ## Gets a field from a `node`. If `node` is nil or not an object or
   ## value at `key` does not exist, returns nil

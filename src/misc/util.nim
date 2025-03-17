@@ -346,3 +346,21 @@ func endsWith*[T](s, suffix: openArray[T]): bool =
     if s[i+j] != suffix[i]: return false
     inc(i)
   if i >= suffixLen: return true
+
+iterator splitOpenArray*(s: string, sep: char, maxsplit: int = -1): tuple[p: ptr UncheckedArray[char], len: int] =
+  var last = 0
+  var splits = maxsplit
+
+  while last <= len(s):
+    var first = last
+    while last < len(s) and s[last] != sep:
+      inc(last)
+    if splits == 0: last = len(s)
+    let p = if s.len > 0:
+      cast[ptr UncheckedArray[char]](cast[int](s[0].addr) + first)
+    else:
+      nil
+    yield (p, last - first)
+    if splits == 0: break
+    dec(splits)
+    inc(last, 1)

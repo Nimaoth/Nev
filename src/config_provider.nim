@@ -14,7 +14,6 @@ type
 
   ConfigService* = ref object of Service
     onConfigChanged*: Event[void]
-    mainConfig*: ConfigStore
     runtime*: ConfigStore
 
     storeGroups*: Table[string, seq[ConfigStore]]
@@ -64,9 +63,8 @@ proc new*(_: typedesc[ConfigStore], parent: ConfigStore, name: string, settings:
 
 method init*(self: ConfigService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"ConfigService.init"
-  self.mainConfig = ConfigStore.new(nil, "runtime")
-  self.mainConfig.filename = "settings://runtime"
-  self.runtime = self.mainConfig
+  self.runtime = ConfigStore.new(nil, "runtime")
+  self.runtime.filename = "settings://runtime"
   return ok()
 
 proc desc*(self: ConfigStore, pretty = false): string =
@@ -221,8 +219,10 @@ proc extendJson*(a: var JsonNodeEx, b: JsonNodeEx) =
 
 proc mergedSettings*(self: ConfigStore): JsonNodeEx =
   if self.parent != nil:
-    let parentMergedSettings = self.parent.mergedSettings
-    if self.mergedSettingsCache.settings == nil or parentMergedSettings != self.mergedSettingsCache.parent or self.mergedSettingsCache.revision != self.parent.revision:
+    var parentMergedSettings = self.parent.mergedSettings
+    let a = cast[ptr JsonNodeEx](parentMergedSettings)
+    let b = cast[ptr JsonNodeEx](self.mergedSettingsCache.parent)
+    if self.mergedSettingsCache.settings == nil or a != b or self.mergedSettingsCache.revision != self.parent.revision:
       # log lvlInfo, &"Parent changed for ConfigStore {self.desc}, recalculate merged settings"
       var mergedSettings = parentMergedSettings.copy()
       mergedSettings.extendJson(self.settings)
@@ -323,86 +323,42 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
   self.onConfigChanged.invoke(key)
 
 var logGetValue* = false
-proc getImpl(self: ConfigStore, key: string, layers: var seq[ConfigStoreLayer], recurse: bool = true): JsonNodeEx =
-  result = self.settings
-
-  var prevI = 0
-  var i = key.find('.')
-  if i == -1:
-    i = key.len
-
-  var overrode = false
-  var extended = false
-  var addedSelf = false
-
-  while prevI <= key.len:
-    let subKey = key[prevI..<i]
-    defer:
-      prevI = i + 1
-      i = key.find('.', prevI)
-      if i == -1:
-        i = key.len
-
-    if prevI == key.len and not key.endsWith("."):
+proc getImpl(self: ConfigStore, key: string, layers: var seq[ConfigStoreLayer], collectLayers: bool = false, recurse: bool = true): JsonNodeEx =
+  var res = self.settings
+  var extend = res.extend
+  for keyRaw in key.splitOpenArray('.'):
+    if isNil(res) or res.kind != JObject:
+      res = nil
       break
+    res = res.fields.getOrDefault(keyRaw.p.toOpenArray(0, keyRaw.len - 1))
+    if res != nil:
+      extend = extend and res.extend
 
-    if result.isNil:
+  if not extend:
+    if collectLayers:
+      layers.add (self.revision, Override, self)
+    return res
+
+  if res == nil:
+    if collectLayers:
+      layers.add (self.revision, Unchanged, self)
+  else:
+    if collectLayers:
+      layers.add (self.revision, Extend, self)
+
+  if self.parent != nil and recurse:
+    let parentRes = self.parent.getImpl(key, layers, collectLayers, recurse)
+    if res != nil and parentRes == nil:
+      return res
+    elif res != nil and parentRes != nil:
+      result = parentRes.copy()
+      result.extendJson(res)
       return
-    if result.kind == JObject:
-      let val = result.fields.getOrDefault(subKey, nil)
-      if val != nil:
-        if self.parent != nil and val.extend and not extended and not overrode and recurse:
-          if not addedSelf:
-            layers.add (self.revision, Extend, self)
-            addedSelf = true
-
-          result = self.parent.getImpl(key[0..<i], layers)
-          if result != nil:
-            result = result.copy()
-            result.extendJson(val)
-          else:
-            result = val
-          extended = true
-        else:
-          if not addedSelf:
-            layers.add (self.revision, Override, self)
-            addedSelf = true
-
-          overrode = true
-          result = val
-
-      else:
-        # Key not found in current object
-        if self.parent != nil and result.extend and not extended and recurse:
-          if not addedSelf:
-            layers.add (self.revision, Unchanged, self)
-            addedSelf = true
-          return self.parent.getImpl(key, layers)
-        else:
-          if not addedSelf:
-            layers.add (self.revision, Unchanged, self)
-            addedSelf = true
-          return nil
-
-    elif result.kind == JArray:
-      try:
-        let index = subKey.parseInt
-        result = result.elems[index]
-        overrode = true
-
-        if not addedSelf:
-          layers.add (self.revision, Override, self)
-          addedSelf = true
-
-      except:
-        return nil
-
     else:
-      return nil
+      assert res == nil
+      return parentRes
 
-  if not addedSelf:
-    layers.add (self.revision, Override, self)
-    addedSelf = true
+  return res
 
 proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
   var layers: seq[ConfigStoreLayer] = @[]
@@ -411,20 +367,6 @@ proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
 proc get*(self: ConfigStore, key: string): JsonNodeEx =
   var layers: seq[ConfigStoreLayer] = @[]
   result = self.getImpl(key, layers)
-  # let mergedResult = self.mergedSettings{key.split('.')}
-  # if $result != $mergedResult:
-  #   echo &"Different result between result and merged result for '{self.name}.{key}': {result} != {mergedResult}"
-  #   let uiae = layers.mapIt(&"{it.revision}, {it.kind}, {it.store.desc}").join("\n")
-  #   echo "===================== self desc"
-  #   echo self.desc(true)
-  #   echo "===================== self"
-  #   echo self
-  #   echo "===================== settings"
-  #   echo self.settings.pretty
-  #   echo "===================== merged settings"
-  #   echo self.mergedSettings{key.split(".")}
-  #   echo "===================== layers"
-  #   echo uiae.indent(4)
 
 proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
   let value = self.get(key)
@@ -482,7 +424,7 @@ proc setting*(self: ConfigStore, key: string, T: typedesc): Setting[T] =
 var logSetting* = false
 proc cacheValue[T](self: Setting[T]) =
   self.layers.setLen(0)
-  let value = self.store.getImpl(self.key, self.layers)
+  let value = self.store.getImpl(self.key, self.layers, collectLayers = true)
   if value == nil:
     self.cache = T.default.some
   else:

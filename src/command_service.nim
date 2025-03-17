@@ -40,7 +40,7 @@ method init*(self: CommandService): Future[Result[void, ref CatchableError]] {.a
   log lvlInfo, &"CommandService.init"
   self.platform = self.services.getService(PlatformService).get.platform
   self.events = self.services.getService(EventHandlerService).get
-  self.config = self.services.getService(ConfigService).get.mainConfig
+  self.config = self.services.getService(ConfigService).get.runtime
   assert self.platform != nil
 
   return ok()

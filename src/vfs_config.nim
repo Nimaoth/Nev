@@ -75,7 +75,7 @@ method getFileAttributesImpl*(self: VFSConfig, path: string): Future[Option[File
 method getDirectoryListingImpl*(self: VFSConfig, path: string): Future[DirectoryListing] {.async: (raises: []).} =
   if path == "":
     var res = DirectoryListing()
-    for store in self.config.mainConfig.parentStores:
+    for store in self.config.runtime.parentStores:
       res.folders.add store.name
     return res
 
