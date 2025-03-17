@@ -103,7 +103,6 @@ type
   ConfigLayerKind* = enum Unchanged, Extend, Override
 
   ConfigService* = ref object of Service
-    settings*: JsonNode
     onConfigChanged*: Event[void]
     mainConfig*: ConfigStore
 
@@ -652,7 +651,6 @@ addBuiltinService(ConfigService)
 
 method init*(self: ConfigService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"ConfigService.init"
-  self.settings = newJObject()
   self.mainConfig = ConfigStore.new(nil, "runtime")
   self.mainConfig.filename = "settings://runtime"
   return ok()
@@ -702,7 +700,7 @@ static:
   addInjector(ConfigService, getConfigService)
 
 proc logOptions*(self: ConfigService) {.expose("config").} =
-  log(lvlInfo, self.settings.pretty)
+  log lvlInfo, self.mainConfig.mergedSettings.pretty()
 
 proc setOption*(self: ConfigService, option: string, value: JsonNode, override: bool = true) {.expose("config").} =
   if self.isNil:
@@ -725,19 +723,5 @@ proc toggleFlag*(self: ConfigService, flag: string) {.expose("config").} =
   let newValue = not self.getFlag(flag)
   log lvlInfo, fmt"toggleFlag '{flag}' -> {newValue}"
   self.setFlag(flag, newValue)
-
-proc getAllConfigKeys*(node: JsonNode, prefix: string, res: var seq[tuple[key: string, value: JsonNode]]) =
-  case node.kind
-  of JObject:
-    if prefix.len > 0:
-      res.add (prefix, node)
-    for key, value in node.fields.pairs:
-      let key = if prefix.len > 0: prefix & "." & key else: key
-      value.getAllConfigKeys(key, res)
-  else:
-    res.add (prefix, node)
-
-proc getAllConfigKeys*(self: ConfigService): seq[tuple[key: string, value: JsonNode]] =
-  self.settings.getAllConfigKeys("", result)
 
 addGlobalDispatchTable "config", genDispatchTable("config")

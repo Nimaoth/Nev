@@ -31,7 +31,7 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
 
   var useActive = false
   if self.documents.getDocument(filename).getSome(document) and document of TextDocument:
-    if document.TextDocument.rope.startsWith("."):
+    if document.TextDocument.rope.startsWith(".") or document.TextDocument.rope.startsWith("^"):
       useActive = true
 
   var completions: seq[CompletionItem]

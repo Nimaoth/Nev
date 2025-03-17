@@ -73,11 +73,20 @@ method getFileAttributesImpl*(self: VFSConfig, path: string): Future[Option[File
   return FileAttributes(writable: true, readable: true).some
 
 method getDirectoryListingImpl*(self: VFSConfig, path: string): Future[DirectoryListing] {.async: (raises: []).} =
-  let value = if path == "":
-    self.config.settings
+  if path == "":
+    var res = DirectoryListing()
+    for store in self.config.mainConfig.parentStores:
+      res.folders.add store.name
+    return res
+
+  let (store, key) = self.config.getStoreForPath(path)
+  if store == nil:
+    return DirectoryListing()
+
+  let value = if key == "":
+    store.settings
   else:
-    let key = path.replace("/", ".")
-    self.config.getOption[:JsonNode](key, nil)
+    store.get(key, JsonNodeEx, nil)
 
   var res = DirectoryListing()
   if value != nil and value.kind == JObject:

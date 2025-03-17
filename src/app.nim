@@ -409,9 +409,6 @@ proc loadSettingsFrom*(self: App, directory: string,
       let filename = filenames[i]
       try:
         log lvlInfo, &"Apply settings from {filename}"
-        let json = settings[i].get.parseJson()
-        self.config.setOption("", json, override=false)
-
         let jsonex = settings[i].get.parseJsonex()
         if filename in self.config.stores:
           # echo &"  file {filename} was reloaded"
@@ -2341,7 +2338,7 @@ proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
   log lvlInfo, &"Reload config"
   if clearOptions:
-    self.config.settings = newJObject()
+    self.config.mainConfig.setSettings(newJexObject())
   asyncSpawn self.reloadConfigAsync()
 
 proc reloadPlugin*(self: App) {.expose("editor").} =
@@ -2760,7 +2757,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Event Handlers: {self.events.eventHandlerConfigs.len}\n"
         # events.eventHandlerConfigs: Table[string, EventHandlerConfig]
 
-      result.add &"Options: {self.config.settings.pretty.len}\n"
       result.add &"Callbacks: {self.plugins.callbacks.len}\n"
       result.add &"Script Actions: {self.plugins.scriptActions.len}\n"
 
