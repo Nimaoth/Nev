@@ -1192,19 +1192,19 @@ proc clearOverlays*(self: TextDocumentEditor; id: int = -1) {.gcsafe, raises: []
       argsJsonString.cstring)
 
 
-proc editor_text_addOverlay_void_TextDocumentEditor_Range_Point_string_int_string_Bias_wasm(
+proc editor_text_addOverlay_void_TextDocumentEditor_Selection_string_int_string_Bias_wasm(
     arg: cstring): cstring {.importc.}
-proc addOverlay*(self: TextDocumentEditor; range: Range[Point]; text: string;
+proc addOverlay*(self: TextDocumentEditor; selection: Selection; text: string;
                  id: int; scope: string; bias: Bias) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
-  argsJson.add range.toJson()
+  argsJson.add selection.toJson()
   argsJson.add text.toJson()
   argsJson.add id.toJson()
   argsJson.add scope.toJson()
   argsJson.add bias.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_addOverlay_void_TextDocumentEditor_Range_Point_string_int_string_Bias_wasm(
+  let res {.used.} = editor_text_addOverlay_void_TextDocumentEditor_Selection_string_int_string_Bias_wasm(
       argsJsonString.cstring)
 
 

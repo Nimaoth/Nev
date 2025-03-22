@@ -1,6 +1,6 @@
 import std/[strutils, options, json, tables, uri, strformat, sequtils, typedthreads]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process]
+import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process, jsonex]
 import language_server_base, app_interface, config_provider, lsp_client, document, service, vfs, vfs_service
 import workspaces/workspace as ws
 
@@ -117,14 +117,14 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
 
     let configs = services.getService(ConfigService).get
 
-    let config = configs.runtime.get("lsp." & languageId, newJObject())
-    if config.isNil:
+    let config = configs.runtime.get("lsp." & languageId, newJexNull())
+    if config.isNil or config.kind == JNull:
       return LanguageServer.none
 
     log lvlInfo, fmt"Starting language server for {languageId} with config {config}"
 
     if not config.hasKey("path"):
-      log lvlError, &"Missing path in config for language server {languageId}"
+      log lvlError, &"Missing path in config for language server '{languageId}'"
       return LanguageServer.none
 
     let exePath = config["path"].jsonTo(string)
@@ -133,7 +133,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     else:
       @[]
 
-    let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJNull()).jsonTo(string).catch("settings")
+    let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJexNull()).jsonTo(string).catch("settings")
     let userOptions = configs.runtime.get(
       "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
@@ -165,7 +165,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       lsp.serverCapabilities = capabilities
       lsp.initializedFuture.complete(true)
 
-      let initialConfig = config.fields.getOrDefault("initial-configuration", newJNull())
+      let initialConfig = config.fields.getOrDefault("initial-configuration", newJexNull()).toJson
       if initialConfig.kind != JNull:
         asyncSpawn client.notifyConfigurationChangedChannel.send(initialConfig)
 

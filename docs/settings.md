@@ -59,7 +59,6 @@ For examples and default values see [here](../config/settings.json)
 | `editor.text.cursor.movement.` | bool | false | todo |
 | `editor.text.cursor.movement.normal` | bool | false | todo |
 | `editor.text.languages-server` | bool | false | todo |
-| `editor.text.vim-motion-action` | bool | false | todo |
 | `editor.frame-time-smoothing` | bool | false | todo |
 | `editor.custom-mode-on-top` | bool | false | todo |
 | `platform.terminal-sleep-threshold` | number (ms) | 5 | todo |

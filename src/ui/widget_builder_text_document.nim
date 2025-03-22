@@ -169,7 +169,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let transparentBackground = self.config.get("ui.background.transparent", false)
+  let transparentBackground = self.uiSettings.background.transparent.get()
   var backgroundColor = app.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
   let borderColor = app.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
   let selectedBackgroundColor = app.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
@@ -201,7 +201,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     let reverse = top + completionPanelHeight > completionsPanel.parent.bounds.h
 
     proc handleScroll(delta: float) =
-      let scrollAmount = delta * self.config.get("text.scroll-speed", 40.0)
+      let scrollAmount = delta * self.uiSettings.scrollSpeed.get()
       self.completionsScrollOffset += scrollAmount
       self.markDirty()
 
@@ -418,8 +418,8 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let cursorTrailColor = cursorForegroundColor.darken(0.1)
-  let cursorSpeed: float = self.config.get("ui.cursor-speed", 100.0)
-  let cursorTrail: int = self.config.get("ui.cursor-trail", 2)
+  let cursorSpeed: float = self.uiSettings.cursorTrailSpeed.get()
+  let cursorTrail: int = self.uiSettings.cursorTrailLength.get()
   let isThickCursor = self.isThickCursor
 
   buildCommands(renderCommands):
@@ -541,10 +541,10 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   if sizeToContentY:
     currentNode.h = parentHeight
 
-  let enableSmoothScrolling = self.config.get("ui.smooth-scroll", true)
+  let enableSmoothScrolling = self.uiSettings.smoothScroll.get()
   let snapBehaviour = self.nextSnapBehaviour.get(self.defaultSnapBehaviour)
-  let scrollSnapDistance: float = parentHeight * self.config.get("ui.scroll-snap-min-distance", 0.5)
-  let smoothScrollSpeed: float = self.config.get("ui.smooth-scroll-speed", 15.0)
+  let scrollSnapDistance: float = parentHeight * self.uiSettings.smoothScrollSnapThreshold.get()
+  let smoothScrollSpeed: float = self.uiSettings.smoothScrollSpeed.get()
 
   self.scrollOffset = clamp(self.scrollOffset, (1.0 - self.numDisplayLines.float) * builder.textHeight, parentHeight - builder.textHeight)
 
@@ -574,7 +574,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     self.nextSnapBehaviour = ScrollSnapBehaviour.none
 
   let inclusive = self.config.get("editor.text.inclusive-selection", false)
-  let drawChunks = self.config.get("editor.text.draw-chunks", false)
+  let drawChunks = self.debugSettings.drawTextChunks.get()
 
   let isThickCursor = self.isThickCursor
 
@@ -591,7 +591,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let commentColor = app.theme.tokenColor("comment", textColor)
 
   # line numbers
-  let lineNumbers = self.lineNumbers.get self.config.get("editor.text.line-numbers", LineNumbers.Absolute)
+  let lineNumbers = self.uiSettings.lineNumbers.get()
   let maxLineNumber = case lineNumbers
     of LineNumbers.Absolute: self.document.numLines
     of LineNumbers.Relative: 99
@@ -637,8 +637,8 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   else:
     @[]
 
-  let highlight = self.config.get("ui.highlight", true)
-  let indentGuide = self.config.get("ui.indent-guide", true)
+  let highlight = self.uiSettings.syntaxHighlighting.get()
+  let indentGuide = self.uiSettings.indentGuide.get()
 
   var iter = self.displayMap.iter()
   iter.styledChunks.diagnosticEndPoints = self.document.diagnosticEndPoints # todo: don't copy everything here
@@ -693,8 +693,8 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   let informationColor = app.theme.tokenColor("information", color(0.8, 0.8, 0.8))
   let hintColor = app.theme.tokenColor("hint", color(0.7, 0.7, 0.7))
 
-  let space = self.config.get("editor.text.whitespace.char", "·")
-  let spaceColorName = self.config.get("editor.text.whitespace.color", "comment")
+  let space = self.uiSettings.whitespaceChar.get()
+  let spaceColorName = self.uiSettings.whitespaceColor.get()
   if space.len > 0:
     currentNode.renderCommands.space = space.runeAt(0)
 
@@ -1012,12 +1012,12 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let dirty = self.dirty
   self.resetDirty()
 
-  let logNewRenderer = self.config.get("ui.log-text-render-time", false)
-  let transparentBackground = self.config.get("ui.background.transparent", false)
-  let darkenInactive = self.config.get("text.background.inactive-darken", 0.025)
+  let logNewRenderer = self.debugSettings.logTextRenderTime.get()
+  let transparentBackground = self.uiSettings.background.transparent.get()
+  let inactiveBrightnessChange = self.uiSettings.background.inactiveBrightnessChange.get()
 
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(darkenInactive)
+  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
 
   if transparentBackground:
     backgroundColor.a = 0
@@ -1081,8 +1081,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             selectionsNode.renderCommands.clear()
 
           onScroll:
-            self.scrollText(delta.y * self.config.get("text.scroll-speed", 40.0))
-
+            self.scrollText(delta.y * self.uiSettings.scrollSpeed.get())
 
           var t = startTimer()
 

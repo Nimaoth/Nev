@@ -298,6 +298,16 @@ template softAssert*(condition: bool, message: string): untyped =
 func removeSwap*[T](s: var seq[T]; index: int) = s.del(index)
 func removeShift*[T](s: var seq[T]; index: int) = s.delete(index)
 
+func removeSwap*[T](s: var seq[T]; item: T) =
+  let index = s.find(item)
+  if index != -1:
+    s.del(index)
+
+func removeShift*[T](s: var seq[T]; item: T) =
+  let index = s.find(item)
+  if index != -1:
+    s.delete(index)
+
 func indentExtraLines*(s: string, count: Natural, padding: string = " "): string =
   ## Indents each line except the first in `s` by `count` amount of `padding`.
   ##

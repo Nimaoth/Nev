@@ -251,6 +251,8 @@ generatePluginBindings()
 static:
   generateScriptingApiPerModule()
 
+defineSetAllDefaultSettings()
+
 # Initialize renderer
 var plat: Platform = nil
 case backend.get

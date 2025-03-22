@@ -274,7 +274,7 @@ proc vimYankMove(editor: TextDocumentEditor, move: string, count: int = 1) {.exp
   editor.vimYankSelection()
 
 proc vimFinishMotion(editor: TextDocumentEditor) =
-  let command = getOption[string]("editor.text.vim-motion-action")
+  let command = getSessionData[string]("editor.text.vim-motion-action")
   let commandCount = editor.getCommandCount
   # let commandCount = getOption[int]("text.command-count", 1)
   # infof"finish motion {moveCommandCount}, {commandCount} {command}"
@@ -286,7 +286,7 @@ proc vimFinishMotion(editor: TextDocumentEditor) =
     var args = newJArray()
     # args.add newJString("move-before " & input)
     discard editor.runAction(command, args)
-    setOption("editor.text.vim-motion-action", "")
+    setSessionData("editor.text.vim-motion-action", "")
 
   editor.updateTargetColumn()
   let nextMode = vimMotionNextMode.getOrDefault(editor.id, "normal")
@@ -793,7 +793,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.setCustomHeader("vim")
 
   setHandleInputs "editor.text", false
-  setOption "editor.text.vim-motion-action", "vim-select-last-cursor"
+  setSessionData "editor.text.vim-motion-action", "vim-select-last-cursor"
   setOption "editor.text.cursor.movement.", "last"
   setOption "editor.text.cursor.movement.normal", "last"
   setOption "editor.text.cursor.wide.", true
@@ -851,7 +851,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
     case newMode
     of "normal":
-      setOption "editor.text.vim-motion-action", "vim-select-last-cursor"
+      setSessionData "editor.text.vim-motion-action", "vim-select-last-cursor"
       setOption "editor.text.inclusive-selection", false
       vimMotionNextMode[editor.id] = "normal"
       editor.selections = editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
@@ -860,7 +860,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
     of "insert":
       setOption "editor.text.inclusive-selection", false
-      setOption "editor.text.vim-motion-action", ""
+      setSessionData "editor.text.vim-motion-action", ""
       vimMotionNextMode[editor.id] = "insert"
 
     of "visual":
@@ -1369,7 +1369,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   # Visual mode
   addTextCommandBlock "", "v":
     editor.setMode "visual"
-    setOption "editor.text.vim-motion-action", ""
+    setSessionData "editor.text.vim-motion-action", ""
     vimMotionNextMode[editor.id] = "visual"
 
   addTextCommand "visual", "<move>", "vim-select <move>"
@@ -1398,7 +1398,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommandBlock "", "V":
     editor.setMode "visual-line"
     editor.vimSelectLine()
-    # setOption "editor.text.vim-motion-action", ""
+    # setSessionData "editor.text.vim-motion-action", ""
     # vimMotionNextMode[editor.id] = "visual"
 
   addTextCommand "visual-line", "<move>", "vim-select <move>"

@@ -1,5 +1,5 @@
 import std/[options, json]
-import misc/[myjsonutils, regex, custom_logger, util]
+import misc/[myjsonutils, regex, custom_logger, util, jsonex]
 
 logCategory "language-config"
 
@@ -13,7 +13,7 @@ type
     ignoreContextLineRegex*: Option[Regex]
     completionWordChars*: set[char] = {'a'..'z', 'A'..'Z', '0'..'9', '_'}
 
-proc fromJsonHook*(self: var TextLanguageConfig, node: JsonNode, opt = Joptions()) =
+proc fromJsonExHook*(self: var TextLanguageConfig, node: JsonNodeEx, opt = Joptions()) =
   if self.isNil:
     new self
   try:

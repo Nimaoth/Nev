@@ -20,7 +20,8 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
-  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
+  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
+  Command, WorkspaceEdit
 
 import nimsumtree/[buffer, clock, static_array, rope]
 from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
@@ -61,6 +62,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   vfsService: VFSService
   vfs: VFS
   commands*: CommandService
+  configService*: ConfigService
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -151,7 +153,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   disableScrolling*: bool
   scrollOffset*: float
   interpolatedScrollOffset*: float
-  lineNumbers*: Option[LineNumbers]
 
   currentCenterCursor*: Cursor # Cursor representing the center of the screen
   currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
@@ -203,6 +204,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   onSearchResultsUpdated*: Event[TextDocumentEditor]
 
   showContextLines*: Setting[bool]
+  uiSettings*: UiSettings
+  debugSettings*: DebugSettings
 
 type
   TextDocumentEditorService* = ref object of Service
@@ -470,6 +473,8 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
 
 method deinit*(self: TextDocumentEditor) =
   self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
+
+  self.configService.removeStore(self.config)
 
   self.unregister()
 
@@ -2083,8 +2088,8 @@ proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.tex
   self.displayMap.overlay.clear(id)
   self.markDirty()
 
-proc addOverlay*(self: TextDocumentEditor, range: Range[Point], text: string, id: int, scope: string, bias: Bias) {.expose("editor.text").} =
-  self.displayMap.overlay.addOverlay(range, text, id, scope, bias)
+proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias) {.expose("editor.text").} =
+  self.displayMap.overlay.addOverlay(selection.toRange, text, id, scope, bias)
   self.markDirty()
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
@@ -4394,7 +4399,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   var self = createTextEditorInstance()
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
-  let configService = services.getService(ConfigService).get
+  self.configService = services.getService(ConfigService).get
   self.editors = services.getService(DocumentEditorService).get
   self.layout = services.getService(LayoutService).get
   self.vcs = self.services.getService(VCSService).get
@@ -4412,8 +4417,13 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
   discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
 
-  self.config = ConfigStore.new(configService.runtime, "editor/" & $self.id)
-  self.config.filename = &"settings://editor/{self.id}"
+  self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}")
+  discard self.config.onConfigChanged.subscribe proc(key: string) =
+    # Keep this simple and cheap, this is called often
+    self.markDirty()
+
+  self.uiSettings = UiSettings.new(self.config)
+  self.debugSettings = DebugSettings.new(self.config)
   self.showContextLines = self.config.setting("editor.text.context-lines", bool)
 
   self.setDocument(document)

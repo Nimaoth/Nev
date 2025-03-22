@@ -3,7 +3,7 @@ import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
 import scripting/[expose, scripting_base]
 import app_interface, text/text_editor, popup, events,
-  selector_popup_builder, dispatch_tables, layout, service
+  selector_popup_builder, dispatch_tables, layout, service, config_provider
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 
@@ -379,7 +379,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.textEditor.usage = "search-bar"
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
-  popup.textEditor.lineNumbers = api.LineNumbers.None.some
+  popup.textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   popup.textEditor.document.singleLine = true
   popup.textEditor.disableScrolling = true
   popup.textEditor.disableCompletions = true
@@ -402,7 +402,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.previewEditor = newTextEditor(previewDocument, services)
     popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
-    popup.previewEditor.lineNumbers = api.LineNumbers.None.some
+    popup.previewEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
     popup.previewEditor.disableCompletions = true
     popup.previewEditor.cursorMargin = 0.0.some
 

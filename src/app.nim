@@ -144,6 +144,9 @@ type
     nextPossibleInputs*: seq[tuple[input: string, description: string, continues: bool]]
     showNextPossibleInputs*: bool
 
+    uiSettings*: UiSettings
+    generalSettings*: GeneralSettings
+
 var gEditor* {.exportc.}: App = nil
 
 proc handleLog(self: App, level: Level, args: openArray[string])
@@ -421,8 +424,7 @@ proc loadSettingsFrom*(self: App, directory: string,
           # echo &"  file {filename} is new"
           var name = name & "-" & filename.splitFile.name
           name = name.replace("-settings", "")
-          let store = ConfigStore.new(nil, name, jsonex)
-          store.filename = filename
+          let store = ConfigStore.new(name, filename, settings = jsonex)
           store.originalText = settings[i].get
           self.config.stores[filename] = store
           newStores.add(store)
@@ -688,6 +690,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   await self.loadConfigFrom(homeConfigDir, "home")
   log lvlInfo, &"Finished loading app and user settings"
 
+  self.uiSettings = UiSettings.new(self.config.runtime)
+  self.generalSettings = GeneralSettings.new(self.config.runtime)
+
   self.applySettingsFromAppOptions()
 
   self.theme = defaultTheme()
@@ -705,7 +710,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.renderHeader = false
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
   self.commands.commandLineEditor.TextDocumentEditor.disableScrolling = true
-  self.commands.commandLineEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
+  self.commands.commandLineEditor.TextDocumentEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   self.commands.commandLineEditor.TextDocumentEditor.hideCursorWhenInactive = true
   self.commands.commandLineEditor.TextDocumentEditor.cursorMargin = 0.0.some
   self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
@@ -789,11 +794,11 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
 
-  let closeUnusedDocumentsTimerS = self.config.runtime.get("editor.close-unused-documents-timer", 10)
+  let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
 
-  let showNextPossibleInputsDelay = self.config.runtime.get("ui.which-key-delay", 500)
+  let showNextPossibleInputsDelay = self.uiSettings.whichKeyDelay.get()
   self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
     self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
     self.platform.requestRender()
@@ -804,7 +809,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   # if self.runtime.get("command-server.port", Port.none).getSome(port):
   #   asyncSpawn self.listenForConnection(port)
 
-  if self.config.getFlag("editor.restore-open-workspaces", true):
+  if self.generalSettings.restoreOpenWorkspaces.get():
     for i, wf in state.workspaceFolders:
       log(lvlInfo, fmt"Restoring workspace")
       self.workspace.restore(wf.settings)
@@ -820,8 +825,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     self.config.groups.add(workspaceConfigDir)
     await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-  let themeName = self.config.runtime.get("ui.theme", "app://themes/tokyo-night-color-theme.json")
-  await self.setTheme(themeName)
+  await self.setTheme(self.uiSettings.theme.get())
 
   self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
     for e in events:
@@ -832,6 +836,15 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
       else:
         discard
+
+  self.vfs.watch appConfigDir, proc(events: seq[PathEvent]) =
+    asyncSpawn self.loadConfigFrom(appConfigDir, "app")
+
+  self.vfs.watch homeConfigDir, proc(events: seq[PathEvent]) =
+    asyncSpawn self.loadConfigFrom(homeConfigDir, "home")
+
+  self.vfs.watch workspaceConfigDir, proc(events: seq[PathEvent]) =
+    asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace")
 
   asyncSpawn self.finishInitialization(state)
 
@@ -888,7 +901,7 @@ proc saveAppState*(self: App)
 proc printStatistics*(self: App)
 
 proc shutdown*(self: App) =
-  if self.config.runtime.get("editor.print-statistics-on-shutdown", false):
+  if self.generalSettings.printStatisticsOnShutdown.get():
     self.printStatistics()
 
   self.saveAppState()
@@ -1511,6 +1524,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
   popup.previewScale = previewScale
   popup.previewEditor.config.set("editor.text.context-lines", false)
 
+  # todo: remove the listener when closed
   proc updateListener() =
     if state.changedEventSource != nil:
       state.changedEventSource.onConfigChanged.unsubscribe(state.changedHandle)
@@ -1518,7 +1532,10 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
     state.changedEventSource = state.stores[state.index]
     state.changedHandle = state.changedEventSource.onConfigChanged.subscribe proc(key: string) =
-      log lvlWarn, &"Setting changed '{key}', retrigger"
+      if popup.previewEditor == nil:
+        return
+      if popup.focusPreview:
+        return
       source.retrigger()
 
   updateListener()
@@ -1543,7 +1560,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     prefix.add store.name
     prefix.add "."
     popup.textEditor.clearOverlays(overlayIdPrefix)
-    popup.textEditor.addOverlay(point(0, 0)...point(0, 0), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
+    popup.textEditor.addOverlay(((0, 0), (0, 0)), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
 
   popup.addCustomCommand "reload-store", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
@@ -1614,13 +1631,16 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
 
     let store = state.stores[state.index]
     let key = item.displayName
-    let value = store.get(key, bool)
-    store.set(key, not value)
+    let value = store.get(key, JsonNodeEx)
+    if value.kind == JBool:
+      store.set(key, not value.getBool())
 
-    if state.targetEditor != nil:
-      state.targetEditor.markDirty()
-    for editor in self.layout.visibleEditors:
-      editor.markDirty()
+      if state.targetEditor != nil:
+        state.targetEditor.markDirty()
+      for editor in self.layout.visibleEditors:
+        editor.markDirty()
+    else:
+      log lvlError, &"Failed to toggle setting '{key}', not a bool: {value}"
 
     return true
 
@@ -1962,7 +1982,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
 
   let workspace = self.workspace
 
-  let maxResults = self.config.runtime.get("editor.max-search-results", 1000)
+  let maxResults = self.generalSettings.maxSearchResults.get()
   let source = newWorkspaceSearchDataSource(workspace, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
@@ -1994,8 +2014,8 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     self.platform.requestRender()
 
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
-    let maxResults = self.config.runtime.get("editor.max-search-results", 1000)
-    let maxLen = self.config.runtime.get("editor.max-search-result-display-len", 1000)
+    let maxResults = self.generalSettings.maxSearchResults.get()
+    let maxLen = self.generalSettings.maxSearchResultDisplayLen.get()
     return self.workspace.searchWorkspaceItemList(query, maxResults, maxLen).await
 
   let source = newAsyncCallbackDataSource(getItems)
@@ -2427,7 +2447,7 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
     result.add self.modeEventHandler
 
 proc clearInputHistoryDelayed*(self: App) =
-  let clearInputHistoryDelay = self.config.runtime.get("editor.clear-input-history-delay", 3000)
+  let clearInputHistoryDelay = self.generalSettings.clearInputHistoryDelay.get()
   if self.clearInputHistoryTask.isNil:
     self.clearInputHistoryTask = startDelayed(clearInputHistoryDelay, repeat=false):
       self.inputHistory.setLen 0
@@ -2437,7 +2457,7 @@ proc clearInputHistoryDelayed*(self: App) =
     self.clearInputHistoryTask.reschedule()
 
 proc recordInputToHistory*(self: App, input: string) =
-  let recordInput = self.config.runtime.get("editor.record-input-history", false)
+  let recordInput = self.generalSettings.recordInputHistory.get()
   if not recordInput:
     return
 
@@ -2487,11 +2507,11 @@ proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handle
       cmp(a.input, b.input)
 
 proc updateNextPossibleInputs*(self: App) =
-  let whichKeyInProgressOnly = not self.config.runtime.get("ui.which-key-no-progress", false)
+  let whichKeyInProgressOnly = not self.uiSettings.whichKeyNoProgress.get()
   self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
-    self.showNextPossibleInputsTask.interval = self.config.runtime.get("ui.which-key-delay", 500)
+    self.showNextPossibleInputsTask.interval = self.uiSettings.whichKeyDelay.get()
     self.showNextPossibleInputsTask.reschedule()
 
   elif self.nextPossibleInputs.len == 0:

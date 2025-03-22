@@ -41,7 +41,7 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   editor.setMode("insert")
   editor.disableCompletions = false
   editor.disableScrolling = true
-  editor.lineNumbers = api.LineNumbers.None.some
+  editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
   editor.clearOverlays(overlayIdPrefix)
   if prefix != "":
@@ -62,7 +62,7 @@ proc commandLineResult*(self: CommandService, value: string) {.expose("commands"
   editor.setMode("normal")
   editor.disableCompletions = false
   editor.disableScrolling = false
-  editor.lineNumbers = api.LineNumbers.Absolute.some
+  editor.uiSettings.lineNumbers.set(api.LineNumbers.Absolute)
   editor.document.setReadOnly(true)
   self.events.rebuildCommandToKeysMap()
   self.platform.requestRender()
@@ -74,7 +74,7 @@ proc exitCommandLine*(self: CommandService) {.expose("commands").} =
   editor.document.content = ""
   editor.hideCompletions()
   editor.disableScrolling = true
-  editor.lineNumbers = api.LineNumbers.None.some
+  editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
   self.commandLineInputMode = false
   self.commandLineResultMode = false

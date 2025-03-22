@@ -1,6 +1,6 @@
 {
     "$schema": "settings.schema.json",
-    "lsp": {
+    "+lsp": {
         "cpp": {
             "path": "clangd",
             "args": [
@@ -87,7 +87,7 @@
         }
     },
 
-    "language-mappings": {
+    "+language-mappings": {
         "\\..(agda|lagda)$": "agda",
         "\\..(c|cc|h|inc)$": "c",
         "\\..sh$": "bash",
@@ -130,7 +130,7 @@
         "..+/include/c\\+\\+(/..+?)+/[a-z0-9_]+$": "cpp"
     },
 
-    "languages": {
+    "+languages": {
         "command-line": {
             "completionWordChars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"]
         },
@@ -582,8 +582,8 @@
         }
     },
 
-    "editor": {
-        "text": {
+    "+editor": {
+        "+text": {
             "auto-start-language-server": true,
             "triple-click-command": "extend-select-move",
             "triple-click-command-args": [
@@ -603,7 +603,7 @@
         "max-views": 2
     },
 
-    "text": {
+    "+text": {
         "reload-diff": true,
         "reload-diff-timeout": 250,
         "format-on-save": false,
@@ -616,8 +616,8 @@
         }
     },
 
-    "debugger": {
-        "type": {
+    "+debugger": {
+        "+type": {
             "lldb-dap": {
                 "connection": "stdio",
                 "path": "lldb-dap",
@@ -635,9 +635,9 @@
         }
     },
 
-    "ui": {
-        "background": {
-            "transparent": false
+    "+ui": {
+        "+background": {
+            "transparent": true
         },
         "theme": "app://themes/tokyo-night-color-theme.json",
         "smooth-scroll": true,
@@ -646,7 +646,7 @@
         "which-key-height": 6
     },
 
-    "platform": {
+    "+platform": {
         "terminal-sleep-threshold": 5
     },
 

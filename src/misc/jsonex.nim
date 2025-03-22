@@ -1,4 +1,4 @@
-import std/[hashes, tables, strutils, lexbase, streams, macros, parsejson, json, sets, strtabs, uri]
+import std/[hashes, tables, strutils, lexbase, streams, macros, parsejson, json, sets, strtabs, uri, typetraits, enumutils]
 
 import std/options # xxx remove this dependency using same approach as https://github.com/nim-lang/Nim/pull/14563
 import std/private/since
@@ -1160,10 +1160,6 @@ proc to*[T](node: JsonNodeEx, t: typedesc[T]): T =
 
 
 ##########################
-
-
-proc distinctBase(T: typedesc, recursive: static bool = true): typedesc {.magic: "TypeTrait".}
-template distinctBase[T](a: T, recursive: static bool = true): untyped = distinctBase(typeof(a), recursive)(a)
 
 macro getDiscriminants(a: typedesc): seq[string] =
   ## return the discriminant keys

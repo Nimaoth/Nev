@@ -641,8 +641,7 @@ proc newTextDocument*(
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
-  self.config = ConfigStore.new(self.configService.runtime, "document/" & self.filename)
-  self.config.filename = &"settings://document/{self.filename}"
+  self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
 
   if language.getSome(language):
     self.languageId = language
@@ -651,7 +650,8 @@ proc newTextDocument*(
       self.languageId = it
 
   if self.languageId != "":
-    if (let value = self.config.get("languages." & self.languageId, newJNull()); value.kind == JObject):
+    let value = self.config.get("languages." & self.languageId, newJexNull())
+    if value.kind == JObject:
       try:
         self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
         if value.hasKey("indent"):
@@ -1075,6 +1075,9 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
       return LanguageServer.none
 
   if not self.createLanguageServer:
+    return LanguageServer.none
+
+  if self.languageId == "":
     return LanguageServer.none
 
   let url = self.config.get("editor.text.languages-server.url", "")
