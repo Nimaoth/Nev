@@ -572,6 +572,7 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
       self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
 
   self.updateInlayHintsAfterChange()
+  self.document.resolveDiagnosticAnchors()
   let visibleRange = self.visibleTextRange.toRange
   let bufferRange = self.lastInlayHintBufferRange
   if visibleRange.a < bufferRange.a or visibleRange.b > bufferRange.b:

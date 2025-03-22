@@ -272,38 +272,42 @@ proc desc*(self: ConfigStore, pretty = false): string =
   result.add ")"
 
 proc firstGroupConfigStore*(self: ConfigService): ConfigStore =
-  if self.groups.len > 0:
-    let group = self.groups[0]
+  for group in self.groups:
     if group notin self.storeGroups:
-      return nil
+      continue
     let stores = self.storeGroups[group]
     if stores.len == 0:
-      return nil
+      continue
     return stores[0]
 
   return nil
 
 proc lastGroupConfigStore*(self: ConfigService): ConfigStore =
-  if self.groups.len > 0:
-    let group = self.groups[^1]
+  for i in countdown(self.groups.high, 0):
+    let group = self.groups[i]
     if group notin self.storeGroups:
-      return nil
+      continue
     let stores = self.storeGroups[group]
     if stores.len == 0:
-      return nil
+      continue
     return stores[^1]
 
   return nil
 
 proc reconnectGroups*(self: ConfigService) =
+  var lastGroup = self.groups[0]
   for i in 1..self.groups.high:
     let childGroup = self.groups[i]
-    let parentGroup = self.groups[i - 1]
 
-    let child = self.storeGroups[childGroup][0]
-    let parent = self.storeGroups[parentGroup][^1]
+    if childGroup notin self.storeGroups:
+      continue
 
-    child.setParent(parent)
+    if lastGroup in self.storeGroups:
+      let child = self.storeGroups[childGroup][0]
+      let parent = self.storeGroups[lastGroup][^1]
+      child.setParent(parent)
+
+    lastGroup = childGroup
 
   let first = self.firstGroupConfigStore()
   if first != nil:

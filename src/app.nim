@@ -447,7 +447,11 @@ proc loadSettingsFrom*(self: App, directory: string,
     let parent = newStores[i - 1]
     child.setParent(parent)
 
-  self.config.storeGroups[directory] = newStores
+  if newStores.len > 0:
+    self.config.storeGroups[directory] = newStores
+  else:
+    self.config.storeGroups.del(directory)
+
   self.config.reconnectGroups()
 
 proc loadKeybindings*(self: App, directory: string,

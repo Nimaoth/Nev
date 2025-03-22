@@ -86,6 +86,7 @@ type
     highlightQuery*: TSQuery
     errorQuery: TSQuery
 
+    connectedToLanguageServer*: bool
     languageServer*: Option[LanguageServer]
     languageServerFuture*: Option[Future[Option[LanguageServer]]]
 
@@ -1065,12 +1066,20 @@ proc connectLanguageServer*(self: TextDocument) {.async.} =
   discard await self.getLanguageServer()
 
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
+  if self.requiresLoad or self.isLoadingAsync:
+    return LanguageServer.none
+
   if self.languageServer.isSome:
+    if not self.connectedToLanguageServer:
+      return LanguageServer.none
     return self.languageServer
 
   if self.languageServerFuture.getSome(fut):
     try:
-      return fut.await
+      let ls = fut.await
+      if not self.connectedToLanguageServer:
+        return LanguageServer.none
+      return ls
     except:
       return LanguageServer.none
 
@@ -1092,6 +1101,7 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     let languageServerFuture = getOrCreateLanguageServer(self.languageId, self.filename, workspaces, config, self.workspace.some)
 
   self.languageServerFuture = languageServerFuture.some
+  self.connectedToLanguageServer = false
   try:
     self.languageServer = await languageServerFuture
   except CatchableError:
@@ -1131,6 +1141,8 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
 
     self.onLanguageServerAttached.invoke (self, ls)
 
+  if not self.connectedToLanguageServer:
+    return LanguageServer.none
   return self.languageServer
 
 proc clearDiagnostics*(self: TextDocument) =

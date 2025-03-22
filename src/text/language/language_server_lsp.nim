@@ -1,6 +1,6 @@
 import std/[strutils, options, json, tables, uri, strformat, sequtils, typedthreads]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process, jsonex]
+import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process, jsonex, rope_utils]
 import language_server_base, app_interface, config_provider, lsp_client, document, service, vfs, vfs_service
 import workspaces/workspace as ws
 
@@ -243,7 +243,7 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
 
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getDefinition('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -266,7 +266,7 @@ method getDeclaration*(self: LanguageServerLSP, filename: string, location: Curs
 
   let response = await self.client.getDeclaration(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getDeclaration('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -289,7 +289,7 @@ method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: C
 
   let response = await self.client.getTypeDefinitions(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getTypeDefinition('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -312,7 +312,7 @@ method getImplementation*(self: LanguageServerLSP, filename: string, location: C
 
   let response = await self.client.getImplementation(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getImplementation('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -335,7 +335,7 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
 
   let response = await self.client.getReferences(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getReferences('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -359,7 +359,7 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
 method switchSourceHeader*(self: LanguageServerLSP, filename: string): Future[Option[string]] {.async.} =
   let response = await self.client.switchSourceHeader(filename)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in switchSourceHeader('{filename}'): {response.error}")
     return string.none
 
   if response.isCanceled:
@@ -380,7 +380,7 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
 
   let response = await self.client.getHover(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getHover('{filename}', {location}): {response.error}")
     return string.none
 
   if response.isCanceled:
@@ -426,7 +426,7 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
 
   let response = await self.client.getInlayHints(filename, selection)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getInlayHints('{filename}', {selection}): {response.error}")
     return response.to(seq[language_server_base.InlayHint])
 
   if response.isCanceled:
@@ -485,7 +485,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
   let response = await self.client.getSymbols(filename)
 
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getSymbols('{filename}'): {response.error}")
     return completions
 
   if response.isCanceled:
@@ -534,7 +534,7 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
 
   let response = await self.client.getWorkspaceSymbols(query)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getWorkspaceSymbols('{query}'): {response.error}")
     return completions
 
   if response.isCanceled:
@@ -588,7 +588,7 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
 
   let response = await self.client.getDiagnostics(filename)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getDiagnostics('{filename}'): {response.error}")
     return response.to(seq[lsp_types.Diagnostic])
 
   if response.isCanceled:
@@ -618,15 +618,17 @@ method connect*(self: LanguageServerLSP, document: Document) =
 
   let document = document.TextDocument
 
-  log lvlInfo, fmt"Connecting document (loadingAsync: {document.isLoadingAsync}) '{document.filename}'"
+  log lvlInfo, fmt"Connecting document (loadingAsync: {document.isLoadingAsync}, requiresLoad: {document.requiresLoad}) '{document.filename}'"
 
   if document.requiresLoad or document.isLoadingAsync:
     var handle = new Id
     handle[] = document.onLoaded.subscribe proc(document: TextDocument): void =
       document.onLoaded.unsubscribe handle[]
-      asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.localizedPath, document.contentString)
+      asyncSpawn self.client.notifyOpenedTextDocumentMain(self.languageId, document.localizedPath, document.contentString)
+      document.connectedToLanguageServer = true
   else:
-    asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.localizedPath, document.contentString)
+    asyncSpawn self.client.notifyOpenedTextDocumentMain(self.languageId, document.localizedPath, document.contentString)
+    document.connectedToLanguageServer = true
 
   let onEditHandle = document.onEdit.subscribe proc(args: auto): void {.gcsafe, raises: [].} =
     # debugf"TEXT INSERTED {args.document.localizedPath}:{args.location}: {args.text}"
@@ -636,16 +638,20 @@ method connect*(self: LanguageServerLSP, document: Document) =
     let localizedPath = args.document.localizedPath
 
     if self.fullDocumentSync:
-      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (localizedPath, version, @[], args.document.contentString)
+      asyncSpawn self.client.notifyTextDocumentChangedMain(localizedPath, version, args.document.contentString)
     else:
       var c = args.document.buffer.visibleText.cursorT(Point)
       # todo: currently relies on edits being sorted
       let changes = args.edits.mapIt(block:
         c.seekForward(Point.init(it.new.first.line, it.new.first.column))
         let text = c.slice(Point.init(it.new.last.line, it.new.last.column))
-        TextDocumentContentChangeEvent(range: language_server_base.toLspRange(it.old), text: $text)
+        let old = it.old.toRange
+        var oldAdjusted: rope.Range[Point]
+        oldAdjusted.a = it.new.first.toPoint
+        oldAdjusted.b = oldAdjusted.a + (old.b - old.a).toPoint
+        TextDocumentContentChangeEvent(range: language_server_base.toLspRange(oldAdjusted.toSelection), text: $text)
       )
-      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (localizedPath, version, changes, "")
+      asyncSpawn self.client.notifyTextDocumentChangedMain(localizedPath, version, changes)
 
   self.documentHandles.add (document.Document, onEditHandle)
 
@@ -665,8 +671,7 @@ method disconnect*(self: LanguageServerLSP, document: Document) {.gcsafe, raises
     self.documentHandles.removeSwap i
     break
 
-  # asyncSpawn self.client.notifyClosedTextDocument(document.localizedPath)
-  asyncSpawn self.client.notifyTextDocumentClosedChannel.send(document.localizedPath)
+  asyncSpawn self.client.notifyClosedTextDocumentMain(document.localizedPath)
 
   if self.documentHandles.len == 0:
     self.stop()
