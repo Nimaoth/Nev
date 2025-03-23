@@ -709,6 +709,9 @@ proc set*[T](self: Setting[T], value: T) =
   self.store.set(self.key, value)
 
 proc getAllConfigKeys*(node: JsonNodeEx, prefix: string, res: var seq[tuple[key: string, value: JsonNodeEx]]) =
+  if node == nil:
+    return
+
   case node.kind
   of JObject:
     if prefix.len > 0:

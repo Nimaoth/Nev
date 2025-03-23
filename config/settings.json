@@ -637,7 +637,7 @@
 
     "+ui": {
         "+background": {
-            "transparent": true
+            "transparent": false
         },
         "theme": "app://themes/tokyo-night-color-theme.json",
         "smooth-scroll": true,
