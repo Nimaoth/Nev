@@ -182,7 +182,9 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
     logScope lvlInfo, &"[saveFile] '{path}'"
     # todo: reimplement async
     let dir = path.splitPath.head
-    createDir(dir)
+    if not dirExists(dir):
+      logScope lvlInfo, &"[saveFile] Create directory '{dir}'"
+      createDir(dir)
 
     let s = openFileStream(path, fmWrite, 1024)
     defer:
@@ -191,13 +193,10 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
     # var file = openAsync(path, fmWrite)
     var t = startTimer()
     for chunk in content.iterateChunks:
-      # await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
       s.writeData(chunk.startPtr, chunk.chars.len)
       if t.elapsed.ms > 5:
         await sleepAsync(10.milliseconds)
         t = startTimer()
-
-    # file.close()
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
