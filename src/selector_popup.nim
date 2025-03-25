@@ -404,7 +404,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.previewEditor.renderHeader = true
     popup.previewEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
     popup.previewEditor.disableCompletions = true
-    popup.previewEditor.cursorMargin = 0.0.some
+    popup.previewEditor.settings.cursorMargin.set(0.0)
 
     discard popup.previewEditor.onMarkedDirty.subscribe () =>
       popup.markDirty()

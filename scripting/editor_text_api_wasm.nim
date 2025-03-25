@@ -1673,34 +1673,6 @@ proc updateCommandCount*(self: TextDocumentEditor; digit: int) {.gcsafe,
       argsJsonString.cstring)
 
 
-proc editor_text_setFlag_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc setFlag*(self: TextDocumentEditor; name: string; value: bool) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add name.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setFlag_void_TextDocumentEditor_string_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_getFlag_bool_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc getFlag*(self: TextDocumentEditor; name: string): bool {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add name.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_getFlag_bool_TextDocumentEditor_string_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
 proc editor_text_runAction_Option_JsonNode_TextDocumentEditor_string_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
 proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): Option[
@@ -2319,6 +2291,19 @@ proc updateInlayHints*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_text_printText_void_TextDocumentEditor_bool_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc printText*(self: TextDocumentEditor; highlight: bool = true;
+                space: string = "") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add highlight.toJson()
+  argsJson.add space.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_printText_void_TextDocumentEditor_bool_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_setReadOnly_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) {.gcsafe, raises: [].} =
@@ -2474,6 +2459,16 @@ proc recordCurrentCommand*(self: TextDocumentEditor;
   argsJson.add registers.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_recordCurrentCommand_void_TextDocumentEditor_seq_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_runControlClickCommand_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc runControlClickCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_runControlClickCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
 

@@ -20,7 +20,8 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
-  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
+  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
+  Command, WorkspaceEdit
 
 import nimsumtree/[buffer, clock, static_array, rope]
 from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
@@ -47,6 +48,74 @@ type
     args: JsonNode
   CommandHistory = object
     commands: seq[Command]
+
+declareSettings ColorHighlightSettings, "":
+  ## Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language
+  ## in `text.color-highlight.{language-id}.`
+  declare enabled, bool, false
+
+declareSettings TextEditorSettings, "text":
+  use colorHighlight, ColorHighlightSettings
+
+  ## How often the editor will check for unused documents and close them, in seconds.
+  declare inclusiveSelection, bool, false
+
+  ## How many characters wide a tab is. This is used when neither `text.tab-width` or `languages.*.tab-width` are set.
+  declare tabWidthDefault, int, 4
+
+  ## How many characters wide a tab is. This overrides the per language tab width settings `text.tab-width-default` and `languages.*.tab-width`.
+  ## This is primarily intended to be set on specific editor configs to override the global or language default.
+  declare tabWidth, Option[int], nil
+
+  ## Whether `text.cursor-margin` is relative to the screen height (0-1) or an absolute number of lines.
+  declare cursorMarginRelative, bool, true
+
+  ## How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
+  ## depending on `text.cursor-margin-relative`.
+  declare cursorMargin, float, 0.15
+
+  ## How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
+  ## depending on `text.cursor-margin-relative`.
+  declare scrollSpeed, float, 40
+
+  ## How many milliseconds after hovering a word the lsp hover request is sent.
+  declare hoverDelay, int, 200
+
+  ## How many milliseconds after hovering a word the lsp hover request is sent.
+  declare autoWrap, bool, true
+
+  ## Default mode to set when opening/creating text documents.
+  declare defaultMode, string, ""
+
+  ## Maximum number of results to display for regex based workspace symbol search.
+  declare searchWorkspaceRegexMaxResults, int, 50_000
+
+  ## Maximum number of locations to highlight choose cursor mode.
+  declare chooseCursorMax, int, 300
+
+  ## Command to run after control clicking on some text.
+  declare controlClickCommand, string, "goto-definition"
+
+  ## Arguments to the command which is run when control clicking on some text.
+  declare controlClickCommandArgs, JsonNode, newJArray()
+
+  ## Command to run after single clicking on some text.
+  declare singleClickCommand, string, ""
+
+  ## Arguments to the command which is run when single clicking on some text.
+  declare singleClickCommandArgs, JsonNode, newJArray()
+
+  ## Command to run after double clicking on some text.
+  declare doubleClickCommand, string, "extend-select-move"
+
+  ## Arguments to the command which is run when double clicking on some text.
+  declare doubleClickCommandArgs, JsonNode, %[newJString("word"), newJBool(true)]
+
+  ## Command to run after triple clicking on some text.
+  declare tripleClickCommand, string, "extend-select-move"
+
+  ## Arguments to the command which is run when triple clicking on some text.
+  declare tripleClickCommandArgs, JsonNode, %[newJString("line"), newJBool(true)]
 
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
@@ -91,8 +160,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
                                                # the document is loaded
   selectionHistory: Deque[Selections]
   dontRecordSelectionHistory: bool
-
-  cursorMargin*: Option[float]
 
   cursorHistories*: seq[seq[Vec2]]
 
@@ -205,6 +272,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   showContextLines*: Setting[bool]
   uiSettings*: UiSettings
   debugSettings*: DebugSettings
+  settings*: TextEditorSettings
 
 type
   TextDocumentEditorService* = ref object of Service
@@ -363,7 +431,7 @@ proc clampSelection*(self: TextDocumentEditor) =
   self.markDirty()
 
 proc useInclusiveSelections*(self: TextDocumentEditor): bool =
-  self.config.get("editor.text.inclusive-selection", false)
+  self.settings.inclusiveSelection.get()
 
 proc startBlinkCursorTask(self: TextDocumentEditor) =
   if not self.blinkCursor:
@@ -533,6 +601,11 @@ proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
       else:
         self.inlayHints.removeSwap(i)
 
+proc tabWidth*(self: TextDocumentEditor): int =
+  if self.settings.tabWidth.get().getSome(tabWidth):
+    return tabWidth
+  return self.document.tabWidth
+
 proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.document.isNil:
     return
@@ -543,12 +616,11 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     self.document.requiresLoad = false
 
   # todo: this should account for the line number width
-  var wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 4, 10)
+  var wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 6, 10)
   if self.diffDocument.isNotNil:
     wrapWidth = wrapWidth div 2 - 2
 
-  let tabWidth = self.config.get("text.tab-width", self.document.tabWidth)
-  self.displayMap.tabMap.setTabWidth(tabWidth)
+  self.displayMap.setTabWidth(self.tabWidth())
 
   if self.displayMap.remoteId != self.document.buffer.remoteId:
     self.displayMap.setBuffer(self.document.buffer.snapshot.clone())
@@ -725,14 +797,14 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   let targetDisplayLine = displayPoint.row.int
   let targetLineY = targetDisplayLine.float32 * textHeight + self.interpolatedScrollOffset
 
-  let configMarginRelative = self.config.get("text.cursor-margin-relative", true)
-  let configMargin = self.cursorMargin.get(self.config.get("text.cursor-margin", 0.2))
+  let configMarginRelative = self.settings.cursorMarginRelative.get()
+  let configMargin = self.settings.cursorMargin.get()
   let margin = if margin.getSome(margin):
     clamp(margin, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
   elif configMarginRelative:
     clamp(configMargin, 0.0, 1.0) * 0.5 * self.lastContentBounds.h
   else:
-    clamp(configMargin, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
+    clamp(configMargin * textHeight, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
 
   let center = case scrollBehaviour.get(self.defaultScrollBehaviour):
     of CenterAlways: true
@@ -857,7 +929,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   if self.disableScrolling:
     return
 
-  let scrollAmount = scroll.y * self.config.get("text.scroll-speed", 40.0)
+  let scrollAmount = scroll.y * self.settings.scrollSpeed.get()
   # todo
   # if not self.lastCompletionsWidget.isNil and
   #     self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
@@ -1591,7 +1663,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
         # todo: don't use getLine
         let line = $self.document.getLine(selection.last.line)
         let indent = indentForNewLine(self.document.languageConfig, line, self.document.indentStyle,
-          self.document.tabWidth, selection.last.column)
+          self.tabWidth(), selection.last.column)
         texts[i] = "\n" & indent
 
   elif autoIndent and (text == "}" or text == ")" or text == "]"):
@@ -2501,13 +2573,6 @@ proc setCommandCountRestore*(self: TextDocumentEditor, count: int) {.expose("edi
 proc updateCommandCount*(self: TextDocumentEditor, digit: int) {.expose("editor.text").} =
   self.commandCount = self.commandCount * 10 + digit
 
-proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("editor.text").} =
-  self.config.set("editor.text." & name, value)
-  self.markDirty()
-
-proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
-  return self.config.get("editor.text." & name, false)
-
 proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.
     expose("editor.text").} =
   # echo "runAction ", action, ", ", $args
@@ -3402,7 +3467,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
   else:
     let searchString = self.config.get(&"languages.{self.document.languageId}.search-regexes.workspace-symbols", newJexString(""))
     let rgLanguageId = self.config.get(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
-    let maxResults = self.config.get(&"text.search-workspace-regex-max-results", 50_000)
+    let maxResults = self.settings.searchWorkspaceRegexMaxResults.get()
 
     log lvlInfo, &"Find workspace symbols using regex '{searchString}'"
     let customArgs = @["--type", rgLanguageId, "--only-matching"]
@@ -3610,7 +3675,8 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         var data = snippet.get.createSnippetData(cursorEditSelections, variables, indents)
         let indent = self.document.indentStyle.getString()
         for i, insertText in cursorInsertTexts.mpairs:
-          insertText = data.text.indentExtraLines(self.document.getIndentLevelForLine(cursorEditSelections[i].first.line), indent)
+          let indentLevel = self.document.getIndentLevelForLine(cursorEditSelections[i].first.line, self.tabWidth)
+          insertText = data.text.indentExtraLines(indentLevel, indent)
         snippetData = data.some
       except CatchableError:
         discard
@@ -3718,7 +3784,7 @@ proc hideHoverDelayed*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.showHoverTask.isNotNil:
     self.showHoverTask.pause()
 
-  let hoverDelayMs = self.config.get("text.hover-delay", 200)
+  let hoverDelayMs = self.settings.hoverDelay.get()
   if self.hideHoverTask.isNil:
     self.hideHoverTask = startDelayed(hoverDelayMs, repeat=false):
       self.hideHover()
@@ -3733,7 +3799,7 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   if self.hideHoverTask.isNotNil:
     self.hideHoverTask.pause()
 
-  let hoverDelayMs = self.config.get("text.hover-delay", 200)
+  let hoverDelayMs = self.settings.hoverDelay.get()
   if self.showHoverTask.isNil:
     self.showHoverTask = startDelayed(hoverDelayMs, repeat=false):
       self.showHoverFor(self.currentHoverLocation)
@@ -3754,7 +3820,7 @@ proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
   while node != tree.root:
     var r = node.getRange.toSelection
     # echo &"getContextLines {cursor}, last: {lastColumn}, node: {r.first}, -> {result}"
-    let indent = self.document.getIndentLevelForLine(r.first.line)
+    let indent = self.document.getIndentLevelForLine(r.first.line, self.tabWidth)
     if r.first.line != cursor.line and (result.len == 0 or r.first.line != result.last):
       if result.len > 0 and indent == lastColumn:
         result[result.high] = r.first.line
@@ -3871,7 +3937,7 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text"
   self.currentCommandHistory.commands.setLen 0
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
-  let max = self.config.get("text.choose-cursor-max", 300)
+  let max = self.settings.chooseCursorMax.get()
   for chunk in self.lastRenderedChunks:
     let str = self.document.contentString((chunk.range.a.toCursor, chunk.range.b.toCursor))
     var i = 0
@@ -4014,25 +4080,30 @@ proc recordCurrentCommand*(self: TextDocumentEditor, registers: seq[string] = @[
   else:
     self.registers.recordingCommands
 
+proc runControlClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let commandName = self.settings.controlClickCommand.get()
+  let args = self.settings.controlClickCommandArgs.get()
+  if commandName.len == 0:
+    return
+  discard self.runAction(commandName, args)
+
 proc runSingleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.config.get("editor.text.single-click-command", "")
-  let args = self.config.get("editor.text.single-click-command-args", newJArray())
+  let commandName = self.settings.singleClickCommand.get()
+  let args = self.settings.singleClickCommandArgs.get()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runDoubleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.config.get("editor.text.double-click-command", "extend-select-move")
-  let args = self.config.get("editor.text.double-click-command-args",
-    %[newJString("word"), newJBool(true)])
+  let commandName = self.settings.doubleClickCommand.get()
+  let args = self.settings.doubleClickCommandArgs.get()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runTripleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.config.get("editor.text.triple-click-command", "extend-select-move")
-  let args = self.config.get("editor.text.triple-click-command-args",
-    %[newJString("line"), newJBool(true)])
+  let commandName = self.settings.tripleClickCommand.get()
+  let args = self.settings.tripleClickCommandArgs.get()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
@@ -4189,17 +4260,12 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
 
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
   self.displayMap.edit(self.document.buffer.snapshot.clone(), edits)
-  if self.config.get("text.auto-wrap", true):
+  if self.settings.autoWrap.get():
     self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
-  let enableColorHighlight = self.config.get(&"text.color-highlight.enabled", true)
-  # debugf"updateColorOverlays {enableColorHighlight}"
-  if not enableColorHighlight:
-    return
-
-  let colorHighlight = self.config.get(&"text.color-highlight.{self.document.languageId}", newJObject())
-  if colorHighlight.kind != JObject:
+  let colorHighlight = self.config.get(&"text.color-highlight.{self.document.languageId}")
+  if colorHighlight == nil or colorHighlight.kind != JObject:
     return
 
   type
@@ -4424,6 +4490,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.uiSettings = UiSettings.new(self.config)
   self.debugSettings = DebugSettings.new(self.config)
+  self.settings = TextEditorSettings.new(self.config)
   self.showContextLines = self.config.setting("editor.text.context-lines", bool)
 
   self.setDocument(document)
@@ -4445,7 +4512,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
-  self.setMode(self.config.get("editor.text.default-mode", ""))
+  self.setMode(self.settings.defaultMode.get())
 
   return self
 

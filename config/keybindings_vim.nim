@@ -797,8 +797,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   setOption "editor.text.cursor.movement.", "last"
   setOption "editor.text.cursor.movement.normal", "last"
   setOption "editor.text.cursor.wide.", true
-  setOption "editor.text.default-mode", "normal"
-  setOption "editor.text.inclusive-selection", false
+  setOption "text.default-mode", "normal"
+  setOption "text.inclusive-selection", false
 
   setHandleInputs "editor.text.normal", false
   setOption "editor.text.cursor.wide.normal", true
@@ -852,22 +852,22 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     case newMode
     of "normal":
       setSessionData "editor.text.vim-motion-action", "vim-select-last-cursor"
-      setOption "editor.text.inclusive-selection", false
+      setOption "text.inclusive-selection", false
       vimMotionNextMode[editor.id] = "normal"
       editor.selections = editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
       editor.saveCurrentCommandHistory()
       editor.hideCompletions()
 
     of "insert":
-      setOption "editor.text.inclusive-selection", false
+      setOption "text.inclusive-selection", false
       setSessionData "editor.text.vim-motion-action", ""
       vimMotionNextMode[editor.id] = "insert"
 
     of "visual":
-      setOption "editor.text.inclusive-selection", true
+      setOption "text.inclusive-selection", true
 
     else:
-      setOption "editor.text.inclusive-selection", false
+      setOption "text.inclusive-selection", false
 
   addTextCommand "#count", "<-1-9><o-0-9>", ""
   addCommand "#count", "<-1-9><o-0-9>", ""

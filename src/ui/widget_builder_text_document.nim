@@ -926,7 +926,7 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
   selectionsNode.markDirty(builder)
   currentNode.markDirty(builder)
 
-  proc handleMouseEvent(self: TextDocumentEditor, btn: MouseButton, pos: Vec2, drag: bool) =
+  proc handleMouseEvent(self: TextDocumentEditor, btn: MouseButton, pos: Vec2, mods: set[Modifier], drag: bool) =
     if self.document.isNil:
       return
 
@@ -937,7 +937,8 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
     if index + 1 < state.chunkBounds.len and pos.y >= state.chunkBounds[index].bounds.yh and pos.y < state.chunkBounds[index + 1].bounds.yh:
       index += 1
 
-    self.lastPressedMouseButton = btn
+    if not drag:
+      self.lastPressedMouseButton = btn
 
     if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
       return
@@ -974,7 +975,10 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
       self.dragStartSelection = self.selection
 
       if btn == MouseButton.Left:
-        self.runSingleClickCommand()
+        if mods == {Control}:
+          self.runControlClickCommand()
+        else:
+          self.runSingleClickCommand()
       elif btn == DoubleClick:
         self.runDoubleClickCommand()
       elif btn == TripleClick:
@@ -986,9 +990,9 @@ proc createTextLinesNew(self: TextDocumentEditor, builder: UINodeBuilder, app: A
 
   builder.panel(&{UINodeFlag.FillX, FillY}):
     onClickAny btn:
-      self.handleMouseEvent(btn, pos, drag = false)
+      self.handleMouseEvent(btn, pos, modifiers, drag = false)
     onDrag MouseButton.Left:
-      self.handleMouseEvent(MouseButton.Left, pos, drag = true)
+      self.handleMouseEvent(MouseButton.Left, pos, modifiers, drag = true)
 
   # Get center line
   if not state.cursorOnScreen:

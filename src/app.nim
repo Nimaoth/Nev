@@ -716,7 +716,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.TextDocumentEditor.disableScrolling = true
   self.commands.commandLineEditor.TextDocumentEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   self.commands.commandLineEditor.TextDocumentEditor.hideCursorWhenInactive = true
-  self.commands.commandLineEditor.TextDocumentEditor.cursorMargin = 0.0.some
+  self.commands.commandLineEditor.TextDocumentEditor.settings.cursorMargin.set(0.0)
   self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
   discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
   self.editors.commandLineEditor = self.commands.commandLineEditor
@@ -1508,13 +1508,20 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     for (key, value) in settings.getAllKeys():
       let valueStr = $value
       let sourceStore = self.config.getStoreForId(value.userData)
+      let desc = self.config.getSettingDescription(key)
+      var data = ""
+      if desc.getSome(desc):
+        data.add desc.docs.split("\n").mapIt("// " & it).join("\n")
+        data.add "\n"
+      data.add value.pretty(printUserData = printUserData)
+
       let detail = if sourceStore != nil:
         &"{sourceStore.name}\t{sourceStore.detail}"
       else:
         &"{store.name}\t{store.detail}"
       items.add FinderItem(
         displayName: key,
-        data: value.pretty(printUserData = printUserData),
+        data: data,
         detail: detail,
       )
 

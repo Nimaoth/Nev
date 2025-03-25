@@ -20,6 +20,9 @@ type
     storesByName*: Table[string, ConfigStore]
     groups*: seq[string]
 
+    settingDescriptions: seq[SettingDescription]
+    settingDescriptionsIndices: Table[string, int]
+
   ConfigStore* = ref object
     id: int
     parent*: ConfigStore
@@ -66,15 +69,12 @@ proc camelCaseToHyphenCase(str: string): string =
 
 var settingGroupDescriptions {.compileTime.} = initTable[string, SettingGroupDescription]()
 var settingDescriptionsIndices {.compileTime.} = initTable[string, int]()
-var settingDescriptions {.compileTime.} = newSeq[SettingDescription]()
+var settingDescriptions* {.compileTime.} = newSeq[SettingDescription]()
+var getSettingDescriptions*: proc(): seq[SettingDescription] {.gcsafe, raises: [].}
 
 template setSettingDefault(index: int, defaultValue: untyped) =
   static:
-    let v = defaultValue
-    when (typeof(v) is ref) or (typeof(v) is ptr):
-      if v == nil:
-        {.error: "Invalid default value, can't be nil: " & settingDescriptions[index].name.}
-    settingDescriptions[index].default = $v.toJsonEx
+    settingDescriptions[index].default = $defaultValue.toJsonEx
 
 proc joinSettingKey*(a, b: string): string =
   if a.len > 0 and b.len > 0:
@@ -131,11 +131,7 @@ proc declareSettingsImpl(name: NimNode, prefix: string, body: NimNode): NimNode 
       let typ = node[2]
       let default = node[3]
 
-      if default.repr == "nil":
-        error &"Invalid default value, can't be nil: {name.repr}", default
-        continue
-
-      var s = SettingDescription(name: settingName, prefix: prefix, fullName: fullName, typ: typ.repr)
+      var s = SettingDescription(name: settingName, prefix: prefix, fullName: fullName, typ: typ.repr, default: "null")
 
       let docsString = if docs != nil:
         docs.strVal
@@ -157,9 +153,10 @@ proc declareSettingsImpl(name: NimNode, prefix: string, body: NimNode): NimNode 
         genAst(name, settingName, typ, store, res, prefixArg):
           res.name = store.setting(joinSettingKey(prefixArg, settingName), typ)
 
-      setDefaultNodes.add block:
-        genAst(index = settingDescriptions.high, default):
-          setSettingDefault(index, default)
+      if default.repr != "nil":
+        setDefaultNodes.add block:
+          genAst(index = settingDescriptions.high, default):
+            setSettingDefault(index, default)
 
       docs = nil
       continue
@@ -242,12 +239,27 @@ proc new*(_: typedesc[ConfigStore], name, filename: string, parent: ConfigStore 
 
 method init*(self: ConfigService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"ConfigService.init"
+  {.gcsafe.}:
+    for desc in getSettingDescriptions():
+      self.settingDescriptions.add desc
+      self.settingDescriptionsIndices[desc.fullName] = self.settingDescriptions.high
+
+  echo self.settingDescriptions
+  echo self.settingDescriptionsIndices
   self.base = ConfigStore.new("base", "settings://base")
   {.cast(gcsafe).}:
     setAllDefaults(self.base)
   self.runtime = ConfigStore.new("runtime", "settings://runtime")
   self.runtime.setParent(self.base)
   return ok()
+
+proc getSettingDescription*(self: ConfigService, key: string): Option[SettingDescription] =
+  self.settingDescriptionsIndices.withValue(key, val):
+    return self.settingDescriptions[val[]].some
+  for desc in self.settingDescriptions:
+    if desc.fullName == key:
+      return desc.some
+  return SettingDescription.none
 
 proc removeStore*(self: ConfigService, store: ConfigStore) =
   store.setParent(nil)
@@ -611,6 +623,8 @@ proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
       elif T is JsonNodeEx:
         return value
       else:
+        if value.kind == JNull:
+          return defaultValue
         return value.jsonTo(T)
     except Exception as e:
       let t = $T
@@ -826,6 +840,11 @@ template defineSetAllDefaultSettings*(): untyped =
     echo "=========== All settings ==========="
     for i, desc in settingDescriptions:
       echo i, ": ", desc
+
+  proc getSettingDescriptionsImpl(): seq[SettingDescription] =
+    const settingDescriptionsTemp = settingDescriptions
+    return settingDescriptionsTemp
+  getSettingDescriptions = getSettingDescriptionsImpl
 
 declareSettings BackgroundSettings, "":
   ## If true the background is transparent.

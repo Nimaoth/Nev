@@ -229,6 +229,14 @@ proc edit*(self: DisplayMap, buffer: sink BufferSnapshot, edits: openArray[tuple
 proc update*(self: DisplayMap, wrapWidth: int, force: bool = false) =
   self.wrapMap.update(wrapWidth, force)
 
+proc setTabWidth*(self: DisplayMap, tabWidth: int, force: bool = false) =
+  if tabWidth == self.tabMap.snapshot.tabWidth:
+    return
+  self.tabMap.setTabWidth(tabWidth)
+  self.wrapMap.clear()
+  self.diffMap.clear()
+  self.onUpdated.invoke (self,)
+
 proc seek*(self: var DisplayChunkIterator, displayPoint: DisplayPoint) =
   self.diffChunks.seek(displayPoint.DiffPoint)
   self.displayChunk = DisplayChunk.none

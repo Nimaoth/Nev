@@ -5,7 +5,7 @@ logCategory "language-config"
 
 type
   TextLanguageConfig* = ref object
-    tabWidth*: int = 4
+    tabWidth*: Option[int]
     indentAfter*: seq[string]
     lineComment*: Option[string]
     blockComment*: Option[(string, string)]
@@ -18,9 +18,7 @@ proc fromJsonExHook*(self: var TextLanguageConfig, node: JsonNodeEx, opt = Jopti
     new self
   try:
     if node.hasKey("tabWidth"):
-      self.tabWidth = node["tabWidth"].num.int
-    else:
-      self.tabWidth = 4
+      self.tabWidth = node["tabWidth"].num.int.some
 
     if node.hasKey("indentAfter"):
       let arr = node["indentAfter"]

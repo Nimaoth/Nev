@@ -27,6 +27,14 @@ logCategory "text-document"
 {.push gcsafe.}
 {.push raises: [].}
 
+declareSettings TextSettings, "text":
+  ## How many characters wide a tab is. This is used when neither `text.tab-width` or `languages.*.tab-width` are set.
+  declare tabWidthDefault, int, 4
+
+  ## How many characters wide a tab is. This overrides the per language tab width settings `text.tab-width-default` and `languages.*.tabWidth`.
+  ## This is primarily intended to be set on specific editor configs to override the global or language default.
+  declare tabWidth, Option[int], nil
+
 type
 
   TextDocumentChange = object
@@ -102,6 +110,8 @@ type
     treesitterParserCursor: RopeCursor ## Used during treesitter parsing to avoid constant seeking
 
     checkpoints: Table[TransactionId, seq[string]]
+
+    settings*: TextSettings
 
 var allTextDocuments*: seq[TextDocument] = @[]
 
@@ -643,6 +653,7 @@ proc newTextDocument*(
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
   self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
+  self.settings = TextSettings.new(self.config)
 
   if language.getSome(language):
     self.languageId = language
@@ -658,9 +669,10 @@ proc newTextDocument*(
         if value.hasKey("indent"):
           case value["indent"].str:
           of "spaces":
+            let defaultTabWidth = self.settings.tabWidthDefault.get()
             self.indentStyle = IndentStyle(
               kind: Spaces,
-              spaces: self.languageConfig.map((c) => c.tabWidth).get(4)
+              spaces: self.languageConfig.map((c) => c.tabWidth.get(defaultTabWidth)).get(defaultTabWidth)
             )
           of "tabs":
             self.indentStyle = IndentStyle(kind: Tabs)
@@ -781,11 +793,9 @@ proc autoDetectIndentStyle(self: TextDocument) =
     if self.languageConfig.isNone:
       self.languageConfig = TextLanguageConfig().some
 
-    if minIndent == int.high:
-      minIndent = self.tabWidth
-
-    self.languageConfig.get.tabWidth = minIndent
-    self.indentStyle = IndentStyle(kind: Spaces, spaces: minIndent)
+    if minIndent != int.high:
+      self.languageConfig.get.tabWidth = minIndent.some
+      self.indentStyle = IndentStyle(kind: Spaces, spaces: minIndent)
 
   # log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
@@ -1153,7 +1163,11 @@ proc clearDiagnostics*(self: TextDocument) =
   self.updateDiagnosticEndPoints()
 
 proc tabWidth*(self: TextDocument): int =
-  return self.languageConfig.map(c => c.tabWidth).get(4)
+  if self.settings.tabWidth.get().getSome(tabWidth):
+    return tabWidth
+  if self.languageConfig.getSome(c) and c.tabWidth.getSome(tabWidth):
+    return tabWidth
+  return self.settings.tabWidthDefault.get(4)
 
 proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   if cursor.column == 0:
@@ -1210,18 +1224,18 @@ proc lastNonWhitespace*(str: string): int =
       break
     result -= 1
 
-proc getIndentLevelForLine*(self: TextDocument, line: int): int =
+proc getIndentLevelForLine*(self: TextDocument, line: int, tabWidth: int): int =
   if line < 0 or line >= self.numLines:
     return 0
 
-  let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
+  let indentWidth = self.indentStyle.indentWidth(tabWidth)
 
   var c = self.rope.cursorT(Point.init(line, 0))
   var indent = 0
   while not c.atEnd:
     case c.currentRune
     of '\t'.Rune:
-      indent += tabWidthAt(indent, self.tabWidth)
+      indent += tabWidthAt(indent, tabWidth)
     of ' '.Rune:
       indent += 1
     else:
@@ -1230,33 +1244,6 @@ proc getIndentLevelForLine*(self: TextDocument, line: int): int =
 
   indent = indent div indentWidth
   return indent
-
-proc getIndentLevelForLineInSpaces*(self: TextDocument, line: int, offset: int = 0): int =
-  let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
-  if line < 0 or line >= self.numLines:
-    return 0
-  return max((self.getIndentLevelForLine(line) + offset) * indentWidth, 0)
-
-proc getIndentLevelForClosestLine*(self: TextDocument, line: int): int =
-  const maxTries = 50
-
-  var tries = 0
-  for i in line..self.numLines - 1:
-    if self.lineLength(i) > 0:
-      return self.getIndentLevelForLine(i)
-    inc tries
-    if tries == maxTries:
-      break
-
-  tries = 0
-  for i in countdown(line - 1, 0):
-    if self.lineLength(i) > 0:
-      return self.getIndentLevelForLine(i)
-    inc tries
-    if tries == maxTries:
-      break
-
-  return 0
 
 proc traverse*(line, column: int, text: openArray[char]): (int, int) =
   var line = line
