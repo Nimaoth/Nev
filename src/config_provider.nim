@@ -244,8 +244,6 @@ method init*(self: ConfigService): Future[Result[void, ref CatchableError]] {.as
       self.settingDescriptions.add desc
       self.settingDescriptionsIndices[desc.fullName] = self.settingDescriptions.high
 
-  echo self.settingDescriptions
-  echo self.settingDescriptionsIndices
   self.base = ConfigStore.new("base", "settings://base")
   {.cast(gcsafe).}:
     setAllDefaults(self.base)
