@@ -715,6 +715,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
   self.commands.commandLineEditor.TextDocumentEditor.disableScrolling = true
   self.commands.commandLineEditor.TextDocumentEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
+  self.commands.commandLineEditor.TextDocumentEditor.settings.highlightMatches.enable.set(false)
   self.commands.commandLineEditor.TextDocumentEditor.hideCursorWhenInactive = true
   self.commands.commandLineEditor.TextDocumentEditor.settings.cursorMargin.set(0.0)
   self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin

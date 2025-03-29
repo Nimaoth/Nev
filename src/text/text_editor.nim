@@ -34,6 +34,7 @@ logCategory "texted"
 
 let searchResultsId = newId()
 let errorNodesHighlightId = newId()
+let wordHighlightId = newId()
 
 const overlayIdPrefix* = 12
 const overlayIdColorHighlight* = 13
@@ -51,10 +52,29 @@ type
 declareSettings ColorHighlightSettings, "":
   ## Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language
   ## in `text.color-highlight.{language-id}.`
-  declare enabled, bool, false
+  declare enable, bool, false
+
+declareSettings MatchingWordHighlightSettings, "":
+  ## Enable highlighting of text matching the current selection or word containing the cursor (if the selection is empty).
+  declare enable, bool, true
+
+  ## How long after moving the cursor matching text is highlighted.
+  declare delay, int, 250
+
+  ## Don't higlight matching text if the selection spans more bytes than this.
+  declare maxSelectionLength, int, 1024
+
+  ## Don't higlight matching text if the selection spans more lines than this.
+  declare maxSelectionLines, int, 5
+
+  ## Don't highlight matching text in files above this size (in bytes).
+  declare maxFileSize, int, 1024*1024*100
 
 declareSettings TextEditorSettings, "text":
   use colorHighlight, ColorHighlightSettings
+
+  ## Settings for highlighting text matching the current selection or word containing the cursor.
+  use highlightMatches, MatchingWordHighlightSettings
 
   ## How often the editor will check for unused documents and close them, in seconds.
   declare inclusiveSelection, bool, false
@@ -169,6 +189,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   searchResults*: seq[Range[Point]]
   isUpdatingSearchResults: bool
   lastSearchResultUpdate: tuple[buffer: BufferId, version: Global, searchQuery: string]
+  isUpdatingMatchingWordHighlights: bool
 
   styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
 
@@ -187,6 +208,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   cursorVisible*: bool = true
   blinkCursor: bool = true
   blinkCursorTask: DelayedTask
+  updateMatchingWordsTask: DelayedTask
 
   # hover
   showHoverTask: DelayedTask    # for showing hover info after a delay
@@ -366,6 +388,7 @@ proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapM
 proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
 proc updateEventHandlers(self: TextDocumentEditor)
 proc updateModeEventHandlers(self: TextDocumentEditor)
+proc updateMatchingWordHighlight(self: TextDocumentEditor)
 
 proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
   includeAfter: bool = true, wrap: bool = true): Selection
@@ -416,6 +439,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
 
   self.showHover = false
   self.hideCompletions()
+  self.updateMatchingWordHighlight()
   # self.document.addNextCheckpoint("move")
 
   self.markDirty()
@@ -3941,7 +3965,7 @@ proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.inlayHintsTask.reschedule()
 
 proc setReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
-  ## Sets the interal readOnly flag, but doesn't not change permissions of the underlying file
+  ## Sets the internal readOnly flag, but doesn't not change permissions of the underlying file
   self.document.setReadOnly(readOnly)
   self.markDirty()
 
@@ -4319,6 +4343,82 @@ proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Sele
   if self.settings.wrapLines.get():
     self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
+proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
+  if self.isUpdatingMatchingWordHighlights:
+    return
+  self.isUpdatingMatchingWordHighlights = true
+  defer:
+    self.isUpdatingMatchingWordHighlights = false
+
+  while true:
+    if self.document.rope.len > self.settings.highlightMatches.maxFileSize.get():
+      return
+
+    let oldSelection = self.selection.normalized
+    if oldSelection.last.line - oldSelection.first.line > self.settings.highlightMatches.maxSelectionLines.get():
+      return
+
+    let (selection, inclusive) = if oldSelection.isEmpty:
+      var s = self.vimMotionWord(oldSelection.last).normalized
+      const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
+      if self.document.rope.charAt(s.first.toPoint) notin AlphaNumeric:
+        let prev = (oldSelection.last.line, oldSelection.last.column - 1)
+        if s.first.column > 0 and self.document.rope.charAt(prev.toPoint) in AlphaNumeric:
+          s = self.vimMotionWord(prev).normalized
+        else:
+          self.clearCustomHighlights(wordHighlightId)
+          return
+      if self.document.rope.charAt(s.first.toPoint) notin AlphaNumeric:
+        self.clearCustomHighlights(wordHighlightId)
+        return
+      (s, true)
+    else:
+      (oldSelection.normalized, self.useInclusiveSelections)
+
+    let startByte = self.document.rope.pointToOffset(selection.first.toPoint)
+    let endByte = self.document.rope.pointToOffset(selection.last.toPoint)
+    assert endByte >= startByte
+
+    if endByte - startByte > self.settings.highlightMatches.maxSelectionLength.get():
+      return
+
+    let text = self.document.contentString(selection, inclusive)
+    let regex = text.escapeRegex
+
+    try:
+      let version = self.document.buffer.version
+      let rope = self.document.rope.clone()
+      let ranges = await findAllAsync(rope.slice(int), regex)
+      if self.document.isNil:
+        return
+      if self.document.buffer.version != version or self.selection != oldSelection:
+        continue
+
+      self.clearCustomHighlights(wordHighlightId)
+      for r in ranges:
+        self.addCustomHighlight(wordHighlightId, r.toSelection, "matching-text-highlight")
+
+      break
+    except Exception as e:
+      log lvlError, &"Failed to find matching words: {e.msg}"
+
+proc updateMatchingWordHighlight(self: TextDocumentEditor) =
+  if not self.settings.highlightMatches.enable.get():
+    self.clearCustomHighlights(wordHighlightId)
+    return
+
+  if self.isUpdatingMatchingWordHighlights:
+    return
+
+  if self.updateMatchingWordsTask.isNil:
+    self.updateMatchingWordsTask = startDelayed(2, repeat=false):
+      if self.document.isNil:
+        return
+      asyncSpawn self.updateMatchingWordHighlightAsync()
+
+  self.updateMatchingWordsTask.interval = self.settings.highlightMatches.delay.get()
+  self.updateMatchingWordsTask.schedule()
+
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
   let colorHighlight = self.config.get(&"text.color-highlight.{self.document.languageId}")
   if colorHighlight == nil or colorHighlight.kind != JObject:
@@ -4327,7 +4427,7 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
   type
     ColorType = enum Hex = "hex", Float1 = "float1", Float256 = "float256"
     ColorHighlightConfig = object
-      enabled: bool = false
+      enable: bool = false
       regex: string = "(#[0-9a-fA-F]{6})|(#[0-9a-fA-F]{8})"
       kind: ColorType = Hex
 
@@ -4335,7 +4435,7 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
 
   try:
     let config = colorHighlight.jsonTo(ColorHighlightConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true))
-    if not config.enabled:
+    if not config.enable:
       return
     let rope = self.document.rope.clone()
     let colorRanges = await findAllAsync(rope.slice(int), config.regex)

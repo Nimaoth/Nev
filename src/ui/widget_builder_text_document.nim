@@ -1012,11 +1012,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.layout.tryActivateEditor(self)
     self.markDirty()
 
+  let textNode = currentNode
   builder.panel(&{UINodeFlag.FillX, FillY}):
     onClickAny btn:
-      self.handleMouseEvent(btn, pos, modifiers, drag = false)
+      self.handleMouseEvent(btn, pos - vec2(textNode.x, 0), modifiers, drag = false)
     onDrag MouseButton.Left:
-      self.handleMouseEvent(MouseButton.Left, pos, modifiers, drag = true)
+      self.handleMouseEvent(MouseButton.Left, pos - vec2(textNode.x, 0), modifiers, drag = true)
 
   # Get center line
   if not state.cursorOnScreen:

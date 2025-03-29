@@ -607,9 +607,9 @@
         "reload-diff": true,
         "reload-diff-timeout": 250,
         "format-on-save": false,
-        "color-highlight": {
+        "+color-highlight": {
             "json": {
-                "enabled": true,
+                "enable": true,
                 "regex": "(#[0-9a-fA-F]{6})|(#[0-9a-fA-F]{8})",
                 "kind": "hex"
             }

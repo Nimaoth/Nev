@@ -380,6 +380,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
+  popup.textEditor.settings.highlightMatches.enable.set(false)
   popup.textEditor.document.singleLine = true
   popup.textEditor.disableScrolling = true
   popup.textEditor.disableCompletions = true

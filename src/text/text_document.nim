@@ -27,13 +27,26 @@ logCategory "text-document"
 {.push gcsafe.}
 {.push raises: [].}
 
+declareSettings TrimTrailingWhitespaceSettings, "":
+  ## If true trailing whitespace is deleted when saving files.
+  declare enabled, bool, true
+
+  ## Don't trim trailing whitespace when filesize is above this limit.
+  declare maxSize, int, 1000000
+
 declareSettings TextSettings, "text":
+  ##
+  use trimTrailingWhitespace, TrimTrailingWhitespaceSettings
+
   ## How many characters wide a tab is. This is used when neither `text.tab-width` or `languages.*.tab-width` are set.
   declare tabWidthDefault, int, 4
 
   ## How many characters wide a tab is. This overrides the per language tab width settings `text.tab-width-default` and `languages.*.tabWidth`.
   ## This is primarily intended to be set on specific editor configs to override the global or language default.
   declare tabWidth, Option[int], nil
+
+  ## If true then configured language servers are automatically started when opening a file of the specific language for the first time.
+  declare autoStartLanguageServer, bool, true
 
 type
 
@@ -679,7 +692,7 @@ proc newTextDocument*(
       except CatchableError:
         discard
 
-  let autoStartServer = self.config.get("editor.text.auto-start-language-server", false)
+  let autoStartServer = self.settings.autoStartLanguageServer.get()
 
   self.content = content
   self.languageServer = languageServer.mapIt(it)
@@ -720,8 +733,8 @@ proc saveAsync*(self: TextDocument) {.async.} =
     if self.staged:
       return
 
-    let trimTrailingWhitespace = self.config.get("text.trim-trailing-whitespace.enabled", true)
-    let maxFileSizeForTrim = self.config.get("text.trim-trailing-whitespace.max-size", 1000000)
+    let trimTrailingWhitespace = self.settings.trimTrailingWhitespace.enabled.get()
+    let maxFileSizeForTrim = self.settings.trimTrailingWhitespace.maxSize.get()
     if trimTrailingWhitespace:
       if self.rope.len <= maxFileSizeForTrim:
         self.trimTrailingWhitespace()
