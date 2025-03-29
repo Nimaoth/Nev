@@ -173,8 +173,8 @@ method init*(self: GuiPlatform) =
 
     self.window.onScroll = proc() =
       inc self.eventCounter
-      if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, {}):
-        self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, {})
+      if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers):
+        self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers)
 
     self.window.onMouseMove = proc() =
       # inc self.eventCounter

@@ -1,4 +1,4 @@
-import std/[options, tables, sugar]
+import std/[options, tables, sugar, strformat]
 import nimsumtree/[rope, buffer, clock]
 import misc/[custom_async, custom_unicode, util, event, rope_utils]
 import syntax_map, overlay_map, tab_map, wrap_map, diff_map

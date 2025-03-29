@@ -81,8 +81,11 @@ declareSettings TextEditorSettings, "text":
   ## How many milliseconds after hovering a word the lsp hover request is sent.
   declare hoverDelay, int, 200
 
-  ## How many milliseconds after hovering a word the lsp hover request is sent.
-  declare autoWrap, bool, true
+  ## Enable line wrapping.
+  declare wrapLines, bool, true
+
+  ## How many characters from the right edge to start wrapping text.
+  declare wrapMargin, int, 1
 
   ## Default mode to set when opening/creating text documents.
   declare defaultMode, string, ""
@@ -217,8 +220,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   bScrollToEndOnInsert*: bool = false
 
   disableScrolling*: bool
-  scrollOffset*: float
-  interpolatedScrollOffset*: float
+  scrollOffset*: Vec2
+  interpolatedScrollOffset*: Vec2
 
   currentCenterCursor*: Cursor # Cursor representing the center of the screen
   currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
@@ -471,7 +474,7 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.signs.clear()
     self.showHover = false
     self.inlayHints.setLen 0
-    self.scrollOffset = 0
+    self.scrollOffset = vec2(0, 0)
     self.currentSnippetData = SnippetData.none
 
 proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
@@ -606,6 +609,24 @@ proc tabWidth*(self: TextDocumentEditor): int =
     return tabWidth
   return self.document.tabWidth
 
+proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
+  # line numbers
+  let lineNumbers = self.uiSettings.lineNumbers.get()
+  let maxLineNumber = case lineNumbers
+    of LineNumbers.Absolute: self.document.numLines
+    of LineNumbers.Relative: 99
+    else: 0
+  let maxLineNumberLen = ($maxLineNumber).len + 1
+
+  let lineNumberPadding = self.platform.charWidth
+  return if lineNumbers != LineNumbers.None:
+    vec2(maxLineNumberLen.float32 * self.platform.charWidth + lineNumberPadding, self.platform.totalLineHeight)
+  else:
+    vec2()
+
+proc lineNumberWidth*(self: TextDocumentEditor): float =
+  return self.lineNumberBounds.x.ceil
+
 proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.document.isNil:
     return
@@ -616,9 +637,15 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
     self.document.requiresLoad = false
 
   # todo: this should account for the line number width
-  var wrapWidth = max(floor(bounds.w / self.platform.charWidth).int - 6, 10)
-  if self.diffDocument.isNotNil:
-    wrapWidth = wrapWidth div 2 - 2
+  let wrapWidth = if self.settings.wrapLines.get():
+    let wrapMargin = self.settings.wrapMargin.get()
+    let lineNumberWidth = self.lineNumberWidth()
+    var wrapWidth = max(floor((bounds.w - lineNumberWidth) / self.platform.charWidth).int - wrapMargin, 10)
+    if self.diffDocument.isNotNil:
+      wrapWidth = max(floor((bounds.w / 2 - lineNumberWidth) / self.platform.charWidth).int - wrapMargin, 10)
+    wrapWidth
+  else:
+    0
 
   self.displayMap.setTabWidth(self.tabWidth())
 
@@ -793,9 +820,11 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
 
   let targetPoint = cursor.toPoint
   let textHeight = self.platform.totalLineHeight
+  let charWidth = self.platform.charWidth
   let displayPoint = self.displayMap.toDisplayPoint(targetPoint)
   let targetDisplayLine = displayPoint.row.int
-  let targetLineY = targetDisplayLine.float32 * textHeight + self.interpolatedScrollOffset
+  let targetLineY = targetDisplayLine.float32 * textHeight + self.interpolatedScrollOffset.y
+  let targetColumnX = displayPoint.column.float32 * charWidth + self.interpolatedScrollOffset.x
 
   let configMarginRelative = self.settings.cursorMarginRelative.get()
   let configMargin = self.settings.cursorMargin.get()
@@ -806,30 +835,52 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
   else:
     clamp(configMargin * textHeight, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
 
-  let center = case scrollBehaviour.get(self.defaultScrollBehaviour):
+  # todo: make this configurable
+  let marginX = charWidth * 5
+
+  let centerY = case scrollBehaviour.get(self.defaultScrollBehaviour):
     of CenterAlways: true
     of CenterOffscreen: targetLineY < 0 or targetLineY + textHeight > self.lastContentBounds.h
     of CenterMargin: targetLineY < margin or targetLineY + textHeight > self.lastContentBounds.h - margin
     of ScrollToMargin: false
     of TopOfScreen: false
 
-  self.nextScrollBehaviour = if center:
+  let centerX = case scrollBehaviour.get(self.defaultScrollBehaviour):
+    of CenterAlways: true
+    of CenterOffscreen: targetColumnX < 0 or targetColumnX + charWidth > self.lastContentBounds.w
+    of CenterMargin: targetColumnX < marginX or targetColumnX + charWidth > self.lastContentBounds.w - marginX
+    of ScrollToMargin: false
+    of TopOfScreen: false
+
+  self.nextScrollBehaviour = if centerY:
     CenterAlways.some
   else:
     scrollBehaviour
 
-  if center:
-    self.scrollOffset = self.lastContentBounds.h * relativePosition - textHeight * 0.5 - targetDisplayLine.float * textHeight
-
+  if centerY:
+    self.scrollOffset.y = self.lastContentBounds.h * relativePosition - textHeight * 0.5 - targetDisplayLine.float * textHeight
   else:
     case scrollBehaviour.get(self.defaultScrollBehaviour)
     of TopOfScreen:
-      self.scrollOffset = margin - targetDisplayLine.float * textHeight
+      self.scrollOffset.y = margin - targetDisplayLine.float * textHeight
     else:
       if targetLineY < margin:
-        self.scrollOffset = margin - targetDisplayLine.float * textHeight
+        self.scrollOffset.y = margin - targetDisplayLine.float * textHeight
       elif targetLineY + textHeight > self.lastContentBounds.h - margin:
-        self.scrollOffset = self.lastContentBounds.h - margin - textHeight - targetDisplayLine.float * textHeight
+        self.scrollOffset.y = self.lastContentBounds.h - margin - textHeight - targetDisplayLine.float * textHeight
+
+  if self.scrollOffset.x != 0 or not self.settings.wrapLines.get():
+    if centerX:
+      self.scrollOffset.x = self.lastContentBounds.w * 0.5 - (displayPoint.column.float + 0.5) * charWidth
+    else:
+      case scrollBehaviour.get(self.defaultScrollBehaviour)
+      of TopOfScreen:
+        self.scrollOffset.x = self.lastContentBounds.w * 0.5 - (displayPoint.column.float + 0.5) * charWidth
+      else:
+        if targetColumnX < marginX:
+          self.scrollOffset.x = marginX - displayPoint.column.float * charWidth
+        elif targetColumnX + charWidth > self.lastContentBounds.w - marginX:
+          self.scrollOffset.x = self.lastContentBounds.w - marginX - charWidth - displayPoint.column.float * charWidth
 
   self.markDirty()
 
@@ -929,7 +980,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   if self.disableScrolling:
     return
 
-  let scrollAmount = scroll.y * self.settings.scrollSpeed.get()
+  let scrollAmount = scroll * self.settings.scrollSpeed.get()
   # todo
   # if not self.lastCompletionsWidget.isNil and
   #     self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
@@ -997,7 +1048,7 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
 
 proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[DisplayPoint] =
   assert self.numDisplayLines > 0
-  let baseLine = int(-self.interpolatedScrollOffset / self.platform.totalLineHeight)
+  let baseLine = int(-self.interpolatedScrollOffset.y / self.platform.totalLineHeight)
   var displayRange: Range[DisplayPoint]
   displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
   displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines).uint32
@@ -1879,7 +1930,13 @@ proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: b
 proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
     return
-  self.scrollOffset += amount
+  self.scrollOffset.y += amount
+  self.markDirty()
+
+proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
+  if self.disableScrolling:
+    return
+  self.scrollOffset.x += amount * self.platform.charWidth
   self.markDirty()
 
 proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").} =
@@ -1888,7 +1945,7 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
   if self.disableScrolling:
     return
 
-  self.scrollOffset += self.platform.totalLineHeight * amount.float
+  self.scrollOffset.y += self.platform.totalLineHeight * amount.float
 
   self.markDirty()
 
@@ -2514,7 +2571,7 @@ proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBe
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float,
     cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
-  self.scrollOffset = offset - displayPoint.row.float * self.platform.totalLineHeight
+  self.scrollOffset.y = offset - displayPoint.row.float * self.platform.totalLineHeight
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 {.expose("editor.text").} =
@@ -4260,7 +4317,7 @@ proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDoc
 
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
   self.displayMap.edit(self.document.buffer.snapshot.clone(), edits)
-  if self.settings.autoWrap.get():
+  if self.settings.wrapLines.get():
     self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
 
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
@@ -4404,17 +4461,17 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
     if displayMap.endDisplayPoint.row != self.lastEndDisplayPoint.row:
       self.lastEndDisplayPoint = displayMap.endDisplayPoint
       self.updateTargetColumn()
-      # let oldScrollOffset = self.scrollOffset
+      # let oldScrollOffset = self.scrollOffset.y
 
       if self.targetPoint.getSome(point):
         self.scrollToCursor(point.toCursor, self.targetLineMargin, self.nextScrollBehaviour, self.targetLineRelativeY)
       else:
         self.scrollOffset = self.interpolatedScrollOffset
 
-      # let oldInterpolatedScrollOffset = self.interpolatedScrollOffset
+      # let oldInterpolatedScrollOffset = self.interpolatedScrollOffset.y
       let displayPoint = self.displayMap.toDisplayPoint(self.currentCenterCursor.toPoint)
-      self.interpolatedScrollOffset = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
-      # debugf"handleDisplayMapUpdated {self.getFileName()}: {oldScrollOffset} -> {self.scrollOffset}, {oldInterpolatedScrollOffset} -> {self.interpolatedScrollOffset}, target {self.targetPoint}"
+      self.interpolatedScrollOffset.y = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
+      # debugf"handleDisplayMapUpdated {self.getFileName()}: {oldScrollOffset} -> {self.scrollOffset}, {oldInterpolatedScrollOffset} -> {self.interpolatedScrollOffset.y}, target {self.targetPoint}"
 
     self.markDirty()
   elif displayMap == self.diffDisplayMap:

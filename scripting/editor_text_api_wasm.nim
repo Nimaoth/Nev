@@ -982,6 +982,18 @@ proc scrollText*(self: TextDocumentEditor; amount: float32) {.gcsafe, raises: []
       argsJsonString.cstring)
 
 
+proc editor_text_scrollTextHorizontal_void_TextDocumentEditor_float32_wasm(
+    arg: cstring): cstring {.importc.}
+proc scrollTextHorizontal*(self: TextDocumentEditor; amount: float32) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add amount.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_scrollTextHorizontal_void_TextDocumentEditor_float32_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_scrollLines_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
     importc.}
 proc scrollLines*(self: TextDocumentEditor; amount: int) {.gcsafe, raises: [].} =

@@ -617,7 +617,6 @@ proc clearUnusedChildrenAndGetBounds*(builder: UINodeBuilder, node: UINode, last
 proc postLayout*(builder: UINodeBuilder, node: UINode)
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode)
 proc relayout*(builder: UINodeBuilder, node: UINode)
-proc preLayout*(builder: UINodeBuilder, node: UINode)
 
 proc preLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "preLayout"
@@ -1025,12 +1024,15 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
     elif LayoutVertical in node.parent.flags:
       node.pivot.y = 0
 
+  if inX.isSome: node.boundsRaw.x = inX.get
+  if inY.isSome: node.boundsRaw.y = inY.get
+
   builder.preLayout(node)
 
   if inX.isSome: node.boundsRaw.x = inX.get
-  if inY.isSome: node.boundsRaw.y = inY.get.roundPositive
+  if inY.isSome: node.boundsRaw.y = inY.get
   if inW.isSome: node.boundsRaw.w = inW.get
-  if inH.isSome: node.boundsRaw.h = inH.get.roundPositive
+  if inH.isSome: node.boundsRaw.h = inH.get
   if inPivot.isSome: node.pivot = inPivot.get
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"

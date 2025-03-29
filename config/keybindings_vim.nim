@@ -1100,11 +1100,13 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.updateTargetColumn()
 
   # Scrolling
-  addTextCommand "", "<C-e>", "scroll-lines", 2
+  addTextCommand "", "<C-e>", "scroll-lines", -2
+  addTextCommand "", "<CS-e>", "scroll-text-horizontal", -4
   addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorVisualLine(editor.screenLineCount div 2, count, center=true)
   addSubCommandWithCountBlock "", "move", "<PAGE_DOWN>": editor.vimMoveCursorVisualLine(editor.screenLineCount, count, center=true)
 
-  addTextCommand "", "<C-y>", "scroll-lines", -2
+  addTextCommand "", "<C-y>", "scroll-lines", 2
+  addTextCommand "", "<CS-y>", "scroll-text-horizontal", 4
   addSubCommandWithCountBlock "", "move", "<C-u>": editor.vimMoveCursorVisualLine(-editor.screenLineCount div 2, count, center=true)
   addSubCommandWithCountBlock "", "move", "<PAGE_UP>": editor.vimMoveCursorVisualLine(-editor.screenLineCount, count, center=true)
 
