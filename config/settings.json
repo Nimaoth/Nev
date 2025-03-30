@@ -169,11 +169,11 @@
             ],
             "lineComment": "#",
             "search-regexes": {
-                "goto-definition": "((proc|method|func|template|macro|iterator|type|^var|^let) [[0]]\\b)|(\\b[[0]]\\b.*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))|((type |  +)\\b[[0]]\\b\\*?( \\{.*?)?:.+[^,;]$)",
-                "symbols": "((proc|method|func|template|macro|iterator|type) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))",
+                "goto-definition": "((proc|method|func|template|macro|iterator|type|declare|declareSettings|^var|^let) [[0]]\\b)|(\\b[[0]]\\b.*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))|((type |  +)\\b[[0]]\\b\\*?( \\{.*?)?:.+[^,;]$)",
+                "symbols": "((proc|method|func|template|macro|iterator|type|declare|declareSettings) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))",
                 "workspace-symbols": {
                     "Class": "(\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|distinct)",
-                    "Function": "((proc|func|template|macro|iterator|type) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (proc))",
+                    "Function": "((proc|func|template|macro|iterator|type|declare|declareSettings) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (proc))",
                     "Method": "((method) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))",
                     "Enum": "(\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (enum)"
                 }
@@ -589,8 +589,20 @@
         "nim-paths": {
             "text.treesitter.language": "nim"
         },
+        "json": {
+            "text.color-highlight": {
+                "enable": true,
+                "regex": "(#[0-9a-fA-F]{6})|(#[0-9a-fA-F]{8})",
+                "kind": "hex"
+            }
+        },
         "nim": {
             "+text": {
+                "color-highlight": {
+                    "enable": false,
+                    "regex": "color\\((\\d+(\\.\\d+)?(,\\s*))(\\d+(\\.\\d+)?(,\\s*))(\\d+(\\.\\d+)?)\\)",
+                    "kind": "float1"
+                },
                 "treesitter": "alaviss/tree-sitter-nim",
                 "formatter.command": ["nph"],
                 "tab-width": 2,
@@ -608,7 +620,7 @@
                 "search-regexes": {
                     "goto-definition": "((proc|method|func|template|macro|iterator|type|declare|declareSettings|^var|^let) [[0]]\\b)|(\\b[[0]]\\b.*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))|((type |  +)\\b[[0]]\\b\\*?( \\{.*?)?:.+[^,;]$)",
                     "symbols": "((proc|method|func|template|macro|iterator|type|declare|declareSettings) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))",
-                    "workspace-symbols": {
+                    "workspace-symbols-by-kind": {
                         "Class": "(\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|distinct)",
                         "Function": "((proc|func|template|macro|iterator|type|declare|declareSettings) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (proc))",
                         "Method": "((method) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))",

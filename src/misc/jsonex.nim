@@ -1310,7 +1310,10 @@ proc fromJsonEx*[T](a: var T, b: JsonNodeEx, opt = Joptions()) {.raises: [ValueE
   elif T is distinct:
     when nimvm:
       # bug, potentially related to https://github.com/nim-lang/Nim/issues/12282
-      a = T(jsonTo(b, distinctBase(T)))
+      when distinctBase(T) is JsonNodeEx:
+        a = T(b)
+      else:
+        a = T(jsonTo(b, distinctBase(T)))
     else:
       a.distinctBase.fromJsonEx(b)
   elif T is string|SomeNumber: a = to(b,T)

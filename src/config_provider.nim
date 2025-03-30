@@ -55,9 +55,14 @@ type
     default*: string
     docs*: string
 
+  RegexSetting* = distinct JsonNodeEx
+
 proc toJsonExHook*[T](a: Setting[T]): JsonNodeEx {.raises: [].} =
   let v = a.get()
   return v.toJsonEx()
+
+proc fromJsonHook*(t: var RegexSetting, jsonNode: JsonNodeEx) =
+  t = jsonNode.RegexSetting
 
 proc camelCaseToHyphenCase(str: string): string =
   for c in str:
@@ -694,6 +699,9 @@ proc decodeRegex*(value: JsonNodeEx, default: string = ""): string =
     log lvlError, &"Invalid regex value: {value}, expected string | array[string]"
     return default
 
+proc decodeRegex*(value: RegexSetting, default: string = ""): string =
+  return value.JsonNodeEx.decodeRegex(default)
+
 proc getRegexValue*(self: ConfigStore, path: string, default: string = ""): string =
   let value = self.get(path, JsonNodeEx, nil)
   if value == nil:
@@ -755,6 +763,24 @@ proc get*[T](self: Setting[T]): T =
 
 proc set*[T](self: Setting[T], value: T) =
   self.store.set(self.key, value)
+
+proc getRegex*(self: Setting[RegexSetting], default: string = ""): string =
+  let value = self.get().JsonNodeEx
+  if value == nil:
+    return default
+  return value.decodeRegex(default)
+
+proc getRegex*(self: Setting[Option[RegexSetting]]): Option[string] =
+  let value = self.get()
+  if value.isNone:
+    return string.none
+  return value.get.decodeRegex("").some
+
+proc getRegex*(self: Setting[Option[RegexSetting]], default: string): string =
+  let value = self.get()
+  if value.isNone:
+    return default
+  return value.get.decodeRegex(default)
 
 proc getAllConfigKeys*(node: JsonNodeEx, prefix: string, res: var seq[tuple[key: string, value: JsonNodeEx]]) =
   if node == nil:

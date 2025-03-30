@@ -33,7 +33,6 @@ export text_document, document_editor, id, Bias
 logCategory "texted"
 
 let searchResultsId = newId()
-let errorNodesHighlightId = newId()
 let wordHighlightId = newId()
 
 const overlayIdPrefix* = 12
@@ -49,10 +48,14 @@ type
   CommandHistory = object
     commands: seq[Command]
 
+  ColorType = enum Hex = "hex", Float1 = "float1", Float256 = "float256"
+
 declareSettings ColorHighlightSettings, "":
   ## Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language
   ## in `text.color-highlight.{language-id}.`
   declare enable, bool, false
+  declare regex, RegexSetting, "(#[0-9a-fA-F]{6})|(#[0-9a-fA-F]{8})"
+  declare kind, ColorType, ColorType.Hex
 
 declareSettings MatchingWordHighlightSettings, "":
   ## Enable highlighting of text matching the current selection or word containing the cursor (if the selection is empty).
@@ -70,11 +73,42 @@ declareSettings MatchingWordHighlightSettings, "":
   ## Don't highlight matching text in files above this size (in bytes).
   declare maxFileSize, int, 1024*1024*100
 
+declareSettings SearchRegexSettings, "":
+  ## Override the ripgrep language name. By default the documents language id is used.
+  declare rgLanguage, Option[string], nil
+
+  ## Regex to use when using the goto-definition feature.
+  declare gotoDefinition, Option[RegexSetting], nil
+
+  ## Regex to use when using the goto-declaration feature.
+  declare gotoDeclaration, Option[RegexSetting], nil
+
+  ## Regex to use when using the goto-type-definition feature.
+  declare gotoTypeDefinition, Option[RegexSetting], nil
+
+  ## Regex to use when using the goto-implementation feature.
+  declare gotoImplementation, Option[RegexSetting], nil
+
+  ## Regex to use when using the goto-references feature.
+  declare gotoReferences, Option[RegexSetting], nil
+
+  ## Regex to use when using the symbols feature.
+  declare symbols, Option[RegexSetting], nil
+
+  ## Regex to use when using the workspace-symbols feature.
+  declare workspaceSymbols, Option[RegexSetting], nil
+
+  ## Regex to use when using the workspace-symbols feature.
+  declare workspaceSymbolsByKind, Option[Table[string, RegexSetting]], nil
+
 declareSettings TextEditorSettings, "text":
   use colorHighlight, ColorHighlightSettings
 
   ## Settings for highlighting text matching the current selection or word containing the cursor.
   use highlightMatches, MatchingWordHighlightSettings
+
+  ## Configure search regexes.
+  use searchRegexes, SearchRegexSettings
 
   ## How often the editor will check for unused documents and close them, in seconds.
   declare inclusiveSelection, bool, false
@@ -153,6 +187,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   vfs: VFS
   commands*: CommandService
   configService*: ConfigService
+  configChanged: bool = false
 
   document*: TextDocument
   snapshot: BufferSnapshot
@@ -389,6 +424,7 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
 proc updateEventHandlers(self: TextDocumentEditor)
 proc updateModeEventHandlers(self: TextDocumentEditor)
 proc updateMatchingWordHighlight(self: TextDocumentEditor)
+proc updateColorOverlays(self: TextDocumentEditor) {.async.}
 
 proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
   includeAfter: bool = true, wrap: bool = true): Selection
@@ -685,13 +721,9 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.document.rope.len > 1:
     self.displayMap.update(wrapWidth)
 
-  if self.config.get("editor.text.highlight-treesitter-errors", true):
-    # todo: when disabling editor.text.highlight-treesitter-errors we should clear them once aswell
-    self.clearCustomHighlights(errorNodesHighlightId)
-    let errorNodes = self.document.getErrorNodesInRange(
-      self.visibleTextRange(buffer = 10))
-    for node in errorNodes:
-      self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
+  if self.configChanged:
+    self.configChanged = false
+    asyncSpawn self.updateColorOverlays()
 
   self.updateInlayHintsAfterChange()
   self.document.resolveDiagnosticAnchors()
@@ -3209,15 +3241,15 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
 
     discard self.layout.pushSelectorPopup(builder)
 
-proc gotoRegexLocation(self: TextDocumentEditor, regexTemplate: string): Future[void] {.async.} =
+proc gotoRegexLocation(self: TextDocumentEditor, regexTemplate: Option[string]): Future[void] {.async.} =
   let s = self.getSelectionForMove(self.selection.last, "word")
   let text = self.document.contentString(s)
-  let searchString = if regexTemplate.len > 0:
+  let searchString = if regexTemplate.getSome(regexTemplate):
     regexTemplate.replace("[[0]]", text)
   else:
     "\\b" & text & "\\b"
 
-  let rgLanguageId = self.config.get(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
+  let rgLanguageId = self.settings.searchRegexes.rgLanguage.get().get(self.document.languageId)
   log lvlInfo, &"Find '{text}' using regex '{searchString}'"
   let customArgs = @["--type", rgLanguageId, "--only-matching"]
   let searchResults = self.workspace.searchWorkspace(searchString, 100, customArgs).await
@@ -3241,7 +3273,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.config.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-definition")
+    let t = self.settings.searchRegexes.gotoDefinition.getRegex()
     await self.gotoRegexLocation(t)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3256,7 +3288,7 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.config.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-declaration")
+    let t = self.settings.searchRegexes.gotoDeclaration.getRegex()
     await self.gotoRegexLocation(t)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3271,7 +3303,7 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.config.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-type-definition")
+    let t = self.settings.searchRegexes.gotoTypeDefinition.getRegex()
     await self.gotoRegexLocation(t)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3286,7 +3318,7 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.config.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-implementation")
+    let t = self.settings.searchRegexes.gotoImplementation.getRegex()
     await self.gotoRegexLocation(t)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3301,7 +3333,7 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
   else:
-    let t = self.config.getRegexValue(&"languages.{self.document.languageId}.search-regexes.goto-references")
+    let t = self.settings.searchRegexes.gotoReferences.getRegex()
     await self.gotoRegexLocation(t)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -3452,11 +3484,13 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
     self.openSymbolSelectorPopup(symbols, navigateOnSelect=true)
 
   else:
-    let searchString = self.config.getRegexValue(&"languages.{self.document.languageId}.search-regexes.symbols")
+    let searchString = self.settings.searchRegexes.symbols.getRegex()
+    if searchString.isNone:
+      return
 
-    log lvlInfo, &"Find symbols using regex '{searchString}'"
+    log lvlInfo, &"Find symbols using regex '{searchString.get}'"
     let rope = self.document.rope.clone()
-    let searchResults = await findAllAsync(rope.slice(int), searchString)
+    let searchResults = await findAllAsync(rope.slice(int), searchString.get)
     if self.document.isNil:
       return
 
@@ -3545,20 +3579,10 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     discard self.layout.pushSelectorPopup(builder)
 
   else:
-    let searchString = self.config.get(&"languages.{self.document.languageId}.search-regexes.workspace-symbols", newJexString(""))
-    let rgLanguageId = self.config.get(&"languages.{self.document.languageId}.search-regexes.rg-language", self.document.languageId)
-    let maxResults = self.settings.searchWorkspaceRegexMaxResults.get()
-
-    log lvlInfo, &"Find workspace symbols using regex '{searchString}'"
-    let customArgs = @["--type", rgLanguageId, "--only-matching"]
-
-    let searchStrings = if searchString.kind == JString:
-      @[(SymbolType.Unknown, searchString.str)]
-    elif searchString.kind == JArray:
-      @[(SymbolType.Unknown, searchString.decodeRegex())]
-    elif searchString.kind == JObject:
+    let searchStringByKind = self.settings.searchRegexes.workspaceSymbolsByKind.get()
+    let searchStrings = if searchStringByKind.isSome:
       var searchStrings: seq[(SymbolType, string)]
-      for sk, searchString in searchString.fields.pairs:
+      for sk, searchString in searchStringByKind.get.pairs:
         let r = searchString.decodeRegex()
         if r.len == 0:
           continue
@@ -3566,20 +3590,27 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
           let symbolType = parseEnum[SymbolType](sk)
           searchStrings.add (symbolType, r)
         except Exception as e:
-          log lvlInfo, &"Invalid symbol kind '{sk}' in config {searchString}: {e.msg}"
+          log lvlInfo, &"Invalid symbol kind '{sk}' in config {r}: {e.msg}"
 
       searchStrings
 
+    elif self.settings.searchRegexes.workspaceSymbols.getRegex().getSome(regex):
+      @[(SymbolType.Unknown, regex)]
     else:
       @[]
 
-    var locations: seq[Symbol]
+    if searchStrings.len == 0:
+      return
 
+    let rgLanguageId = self.settings.searchRegexes.rgLanguage.get().get(self.document.languageId)
+    let maxResults = self.settings.searchWorkspaceRegexMaxResults.get()
+    let customArgs = @["--type", rgLanguageId, "--only-matching"]
     let futures = collect:
       for (symbolType, searchString) in searchStrings:
         self.workspace.searchWorkspace(searchString, maxResults, customArgs)
 
-    var res = futures.allFinished.await.mapIt(it.read)
+    let res = futures.allFinished.await.mapIt(it.read)
+    var locations: seq[Symbol]
     for i in 0..res.high:
       for info in res[i]:
         let cursor = (info.line - 1, info.column)
@@ -4422,25 +4453,17 @@ proc updateMatchingWordHighlight(self: TextDocumentEditor) =
   self.updateMatchingWordsTask.schedule()
 
 proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
-  let colorHighlight = self.config.get(&"text.color-highlight.{self.document.languageId}")
-  if colorHighlight == nil or colorHighlight.kind != JObject:
+  if not self.settings.colorHighlight.enable.get():
+    self.displayMap.overlay.clear(overlayIdColorHighlight)
     return
 
-  type
-    ColorType = enum Hex = "hex", Float1 = "float1", Float256 = "float256"
-    ColorHighlightConfig = object
-      enable: bool = false
-      regex: string = "(#[0-9a-fA-F]{6})|(#[0-9a-fA-F]{8})"
-      kind: ColorType = Hex
-
+  let regex = self.settings.colorHighlight.regex.getRegex()
+  let kind = self.settings.colorHighlight.kind.get()
   let floatRegex = re"(\d+(\.\d+)?)"
 
   try:
-    let config = colorHighlight.jsonTo(ColorHighlightConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true))
-    if not config.enable:
-      return
     let rope = self.document.rope.clone()
-    let colorRanges = await findAllAsync(rope.slice(int), config.regex)
+    let colorRanges = await findAllAsync(rope.slice(int), regex)
     if self.document.isNil:
       return
 
@@ -4448,7 +4471,7 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
     self.displayMap.overlay.clear(overlayIdColorHighlight)
     for r in colorRanges:
       let text = rope[r]
-      let color = case config.kind
+      let color = case kind
       of Hex: $text
       of Float1:
         var c = color(0, 0, 0)
@@ -4644,6 +4667,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}")
   discard self.config.onConfigChanged.subscribe proc(key: string) =
     # Keep this simple and cheap, this is called often
+    self.configChanged = true
     self.markDirty()
 
   self.uiSettings = UiSettings.new(self.config)
