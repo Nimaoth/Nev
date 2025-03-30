@@ -4283,9 +4283,11 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
       return res.some
   except:
     let argsText = if args.isNil: "nil" else: $args
-    log(lvlError, fmt"Failed to dispatch action '{action} {argsText}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to dispatch command '{action} {argsText}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
+    return JsonNode.none
 
+  log lvlError, fmt"Unknown command '{action}'"
   return JsonNode.none
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
@@ -4321,7 +4323,7 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
 
       return self.handleActionInternal(action, args)
     except CatchableError:
-      log(lvlError, fmt"handleAction: {action}, Failed to parse args: '{arg}'")
+      log(lvlError, fmt"handleCommmand: {action}, Failed to parse args: '{arg}'")
       return JsonNode.none
   except:
     discard

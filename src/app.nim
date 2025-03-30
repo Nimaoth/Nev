@@ -1694,6 +1694,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
       return true
     except Exception as e:
       log lvlError, &"Failed to update setting '{key}' to '{value}': {e.msg}"
+      return true
 
   popup.addCustomCommand "delete-setting", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
@@ -2264,7 +2265,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "refresh", proc(popup: SelectorPopup, args: JsonNode): bool =
     source.retrigger()
-    return false
+    return true
 
   popup.addCustomCommand "enter-normalized", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
@@ -2284,7 +2285,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         currentDirectory[] = path
       popup.textEditor.document.content = ""
       source.retrigger()
-      return false
+    return true
 
   popup.addCustomCommand "go-up", proc(popup: SelectorPopup, args: JsonNode): bool =
     let parent = currentDirectory[].parentDirectory
@@ -2306,6 +2307,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
       log lvlInfo, fmt"Add workspace folder: {currentDirectory[]} -> {path}"
       self.workspace.addWorkspaceFolder(path)
       source.retrigger()
+    return true
 
   popup.addCustomCommand "remove-workspace-folder", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
@@ -2329,6 +2331,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
           self.createFile(path)
         else:
           self.createFile(dir // path)
+    return true
 
   self.layout.pushPopup popup
 
@@ -2861,11 +2864,11 @@ addGlobalDispatchTable "editor", genDispatchTable("editor")
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
   let t = startTimer()
   if not self.registers.bIsReplayingCommands:
-    log lvlInfo, &"[handleAction] '{action} {arg}'"
+    log lvlInfo, &"[handleCommand] '{action} {arg}'"
   defer:
     if not self.registers.bIsReplayingCommands:
       let elapsed = t.elapsed
-      log lvlInfo, &"[handleAction] '{action} {arg}' took {elapsed.ms} ms"
+      log lvlInfo, &"[handleCommand] '{action} {arg}' took {elapsed.ms} ms -> {result}"
 
   try:
     if record:
@@ -2883,14 +2886,14 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
       if self.getActiveEditor().getSome(editor):
         return editor.handleAction(action[1..^1], arg, record=false)
 
-      log lvlError, fmt"No current view"
+      log lvlError, fmt"No active editor"
       return JsonNode.none
 
     if action.startsWith("^"): # active popup action
       if self.layout.popups.len > 0:
         return self.layout.popups[^1].handleAction(action[1..^1], arg)
 
-      log lvlError, fmt"No current view"
+      log lvlError, fmt"No popup"
       return JsonNode.none
 
     {.gcsafe.}:
@@ -2912,18 +2915,21 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
           if res.isNotNil:
             return res.some
     except CatchableError:
-      log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
     try:
-      return dispatch(action, args)
+      result = dispatch(action, args)
+      if result.isSome:
+        return
     except CatchableError:
-      log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
   except:
     discard
 
+  log lvlError, fmt"Unknown command '{action}'"
   return JsonNode.none
 
 template generatePluginBindings*(): untyped =

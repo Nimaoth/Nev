@@ -311,11 +311,12 @@ method handleAction*(self: SelectorPopup, action: string, arg: string): Option[J
     if res2.isSome:
       return res2
 
-    return JsonNode.none
   except:
-    log lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}"
+    log lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}"
     log lvlError, getCurrentException().getStackTrace()
+    return JsonNode.none
 
+  log lvlError, fmt"Unknown command '{action}'"
   return JsonNode.none
 
 proc handleTextChanged*(self: SelectorPopup) =

@@ -7,7 +7,7 @@ import workspaces/workspace
 import finder/[finder, previewer, file_previewer]
 import platform/[platform]
 import service, dispatch_tables, platform_service
-import selector_popup, vcs, layout
+import selector_popup, vcs, layout, vfs
 from scripting_api import SelectionCursor, ScrollSnapBehaviour
 
 logCategory "vcs_api"
@@ -29,8 +29,10 @@ proc getChangedFilesFromGitAsync(self: VCSService, workspace: Workspace, all: bo
       let fileInfos = await vcs.getChangedFiles()
 
       for info in fileInfos:
+        var info = info
         let (directory, name) = info.path.splitPath
         var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
+        info.path = self.vfs.normalize(info.path)
 
         if relativeDirectory == ".":
           relativeDirectory = ""
@@ -80,8 +82,9 @@ proc stageSelectedFileAsync(popup: SelectorPopup, self: VCSService,
     return
   debugf"staged selected {fileInfo}"
 
-  if self.getVcsForFile(fileInfo.path).getSome(vcs):
-    let res = await vcs.stageFile(fileInfo.path)
+  let localizedPath = self.vfs.localize(fileInfo.path)
+  if self.getVcsForFile(localizedPath).getSome(vcs):
+    let res = await vcs.stageFile(localizedPath)
     debugf"add finished: {res}"
     if popup.textEditor.isNil:
       return
@@ -101,8 +104,9 @@ proc unstageSelectedFileAsync(popup: SelectorPopup, self: VCSService,
     return
   debugf"unstaged selected {fileInfo}"
 
-  if self.getVcsForFile(fileInfo.path).getSome(vcs):
-    let res = await vcs.unstageFile(fileInfo.path)
+  let localizedPath = self.vfs.localize(fileInfo.path)
+  if self.getVcsForFile(localizedPath).getSome(vcs):
+    let res = await vcs.unstageFile(localizedPath)
     debugf"unstage finished: {res}"
     if popup.textEditor.isNil:
       return
@@ -122,8 +126,9 @@ proc revertSelectedFileAsync(popup: SelectorPopup, self: VCSService,
     return
   debugf"revert-selected {fileInfo}"
 
-  if self.getVcsForFile(fileInfo.path).getSome(vcs):
-    let res = await vcs.revertFile(fileInfo.path)
+  let localizedPath = self.vfs.localize(fileInfo.path)
+  if self.getVcsForFile(localizedPath).getSome(vcs):
+    let res = await vcs.revertFile(localizedPath)
     debugf"revert finished: {res}"
     if popup.textEditor.isNil:
       return
@@ -166,10 +171,10 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       return true
 
     if fileInfo.stagedStatus != None:
-      asyncSpawn self.diffStagedFileAsync(workspace, fileInfo.path)
+      asyncSpawn self.diffStagedFileAsync(workspace, self.vfs.localize(fileInfo.path))
 
     else:
-      let currentVersionEditor = self.services.getService(LayoutService).get.openWorkspaceFile(fileInfo.path)
+      let currentVersionEditor = self.services.getService(LayoutService).get.openWorkspaceFile(self.vfs.localize(fileInfo.path))
       if currentVersionEditor.getSome(editor):
         if editor of TextDocumentEditor:
           editor.TextDocumentEditor.updateDiff()
@@ -219,7 +224,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       return true
     debugf"diff-staged {fileInfo}"
 
-    asyncSpawn self.diffStagedFileAsync(workspace, fileInfo.path)
+    asyncSpawn self.diffStagedFileAsync(workspace, self.vfs.localize(fileInfo.path))
     return true
 
   popup.addCustomCommand "prev-change", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -229,6 +234,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
     popup.previewEditor.scrollToCursor(SelectionCursor.Last)
     popup.previewEditor.centerCursor()
     popup.previewEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+    return true
 
   popup.addCustomCommand "next-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
@@ -237,6 +243,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
     popup.previewEditor.scrollToCursor(SelectionCursor.Last)
     popup.previewEditor.centerCursor()
     popup.previewEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+    return true
 
   popup.addCustomCommand "stage-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
@@ -245,11 +252,13 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       asyncSpawn popup.previewEditor.unstageSelectedAsync()
     else:
       asyncSpawn popup.previewEditor.stageSelectedAsync()
+    return true
 
   popup.addCustomCommand "revert-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
     asyncSpawn popup.previewEditor.revertSelectedAsync()
+    return true
 
   let layout = self.services.getService(LayoutService).get
   layout.pushPopup popup

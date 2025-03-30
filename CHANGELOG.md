@@ -33,6 +33,9 @@
 
 - Added option to disable line wrapping
 - Added horizontal scrolling
+- Added highlighting of all instances of text matching the current selection
+- Added toast messages for errors
+- Refactored settings
 
 ### Vim
 - Fixed ctrl+w and ctrl+u in insert mode
