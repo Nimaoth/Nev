@@ -515,6 +515,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.document = document
   self.snapshot = document.buffer.snapshot.clone()
   self.displayMap.setBuffer(self.snapshot.clone())
+  self.config.setParent(self.document.config)
 
   self.onEditHandle = document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =>
     self.handleEdits(arg.edits)
@@ -1148,8 +1149,7 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     return 0
 
 proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.async.} =
-  let config = self.config.get("treesitter.javascript", newJexObject())
-  let l = self.vfs.getTreesitterLanguage("javascript", config).await
+  let l = self.vfs.getTreesitterLanguage("javascript").await
   if l.getSome(l):
     withParser(p):
       p.setLanguage(l)
@@ -1736,7 +1736,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       for i, selection in selections:
         # todo: don't use getLine
         let line = $self.document.getLine(selection.last.line)
-        let indent = indentForNewLine(self.document.languageConfig, line, self.document.indentStyle,
+        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.indentStyle,
           self.tabWidth(), selection.last.column)
         texts[i] = "\n" & indent
 
@@ -4358,7 +4358,7 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
     if oldSelection.last.line - oldSelection.first.line > self.settings.highlightMatches.maxSelectionLines.get():
       return
 
-    let (selection, inclusive) = if oldSelection.isEmpty:
+    let (selection, inclusive, addWordBoundary) = if oldSelection.isEmpty:
       var s = self.vimMotionWord(oldSelection.last).normalized
       const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
       if self.document.rope.charAt(s.first.toPoint) notin AlphaNumeric:
@@ -4371,9 +4371,9 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
       if self.document.rope.charAt(s.first.toPoint) notin AlphaNumeric:
         self.clearCustomHighlights(wordHighlightId)
         return
-      (s, true)
+      (s, true, true)
     else:
-      (oldSelection.normalized, self.useInclusiveSelections)
+      (oldSelection.normalized, self.useInclusiveSelections, false)
 
     let startByte = self.document.rope.pointToOffset(selection.first.toPoint)
     let endByte = self.document.rope.pointToOffset(selection.last.toPoint)
@@ -4383,7 +4383,9 @@ proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
       return
 
     let text = self.document.contentString(selection, inclusive)
-    let regex = text.escapeRegex
+    var regex = text.escapeRegex
+    if addWordBoundary:
+      regex = "\\b" & regex & "\\b"
 
     try:
       let version = self.document.buffer.version

@@ -34,9 +34,71 @@ declareSettings TrimTrailingWhitespaceSettings, "":
   ## Don't trim trailing whitespace when filesize is above this limit.
   declare maxSize, int, 1000000
 
+declareSettings FormatSettings, "":
+  ## If true run the formatter when saving.
+  declare onSave, bool, false
+
+  ## Command to run. First entry is path to the formatter program, subsequent entries are passed as arguments to the formatter.
+  declare command, seq[string], newSeq[string]()
+
+declareSettings IndentDetectionSettings, "":
+  ## Enable auto detecting the indent style when opening files.
+  declare enable, bool, true
+
+  ## How many indent characters to process when detecting the indent style. Increase this if it fails for files which start with many unindented lines.
+  declare samples, int, 50
+
+  ## Max number of milliseconds to spend trying to detect the indent style.
+  declare timeout, int, 20
+
+declareSettings DiffReloadSettings, "":
+  ## When reloading a file the editor will compute the diff between the file on disk and the in memory document,
+  ## and then apply the diff to the in memory version so it matches the content on disk.
+  ## This can reduce memory usage when reloading files often (although it increases memory usage while reloading and increases load times).
+  ## It's also better for collaboration as it doesn't affect the entire file.
+  declare enable, bool, true
+
+  ## Max number of milliseconds to use for diffing. If the timeout is exceeded then the file will be reloaded normally.
+  declare timeout, int, 250
+
+declareSettings DiagnosticsSettings, "":
+  ## Enable diagnostics. Also requires a language server which supports diagnostics.
+  declare enable, bool, true
+
+  ## How many snapshots to keep when editing. Snapshots are used to fix up diagnostic locations when receiving diagnostics
+  ## for an older version of the document (e.g when you continue editing and the languages doesn't respond fast enough).
+  ## You might want to increase this if you are using a language server which is very slow and you want diagnostics to
+  ## show up even when you're actively typing (diagnostics received for old document versions are discarded).
+  declare snapshotHistory, int, 5
+
+declareSettings TreesitterSettings, "":
+  ## Enable parsing code into ASTs using treesitter. Also requires a treesitter parser for a specific language.
+  declare enable, bool, true
+
+  ## Override the path to the treesitter parser (.dll/.so/.wasm). By default
+  declare path, Option[string], nil
+
+  ## Override the language name used for choosing the treesitter parser. If not set then the documents language id is used.
+  declare language, Option[string], nil
+
 declareSettings TextSettings, "text":
   ##
   use trimTrailingWhitespace, TrimTrailingWhitespaceSettings
+
+  ## Settings for code formatting.
+  use formatter, FormatSettings
+
+  ## Settings for automatically detecting the indent style of files.
+  use indentDetection, IndentDetectionSettings
+
+  ## Settings for the diff reload feature.
+  use diffReload, DiffReloadSettings
+
+  ## Settings for diagnostics.
+  use diagnostics, DiagnosticsSettings
+
+  ## Settings for treesitter.
+  use treesitter, TreesitterSettings
 
   ## How many characters wide a tab is. This is used when neither `text.tab-width` or `languages.*.tab-width` are set.
   declare tabWidthDefault, int, 4
@@ -47,6 +109,12 @@ declareSettings TextSettings, "text":
 
   ## If true then configured language servers are automatically started when opening a file of the specific language for the first time.
   declare autoStartLanguageServer, bool, true
+
+  ## String which starts a line comment
+  declare lineComment, Option[string], nil
+
+  ## When you insert a new line, if the current line ends with one of these strings then the new line will be indented.
+  declare indentAfter, Option[seq[string]], nil
 
 type
 
@@ -91,7 +159,7 @@ type
     changesAsync: seq[TextDocumentChange]
 
     configService: ConfigService
-    config: ConfigStore
+    config*: ConfigStore
     languageConfig*: Option[TextLanguageConfig]
     indentStyle*: IndentStyle
     createLanguageServer*: bool = true
@@ -323,6 +391,7 @@ proc languageId*(self: TextDocument): string =
 proc `languageId=`*(self: TextDocument, languageId: string) =
   if self.mLanguageId != languageId:
     self.mLanguageId = languageId
+    self.config.setParent(self.configService.getLanguageStore(self.mLanguageId))
     if not self.requiresLoad:
       self.reloadTreesitterLanguage()
 
@@ -500,7 +569,7 @@ proc rebuildBuffer*(self: TextDocument, replicaId: ReplicaId, bufferId: BufferId
   self.notifyRequestRerender()
 
 proc recordSnapshotForDiagnostics(self: TextDocument) =
-  let diagnosticHistoryMaxLength = self.config.get("text.diagnostic-snapshot-history", 5)
+  let diagnosticHistoryMaxLength = self.settings.diagnostics.snapshotHistory.get()
   self.diagnosticSnapshots.add(self.buffer.snapshot.clone())
   while self.diagnosticSnapshots.len > diagnosticHistoryMaxLength:
     self.diagnosticSnapshots.removeShift(0)
@@ -588,9 +657,9 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
     return
 
   let prevLanguageId = self.languageId
-  let config = self.config.get("treesitter." & self.languageId, newJexObject())
-  let treesitterLanguageName = self.config.get(&"languages.{self.languageId}.treesitter-language-name", self.languageId)
-  var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, config)
+  let pathOverride = self.settings.treesitter.path.get()
+  let treesitterLanguageName = self.settings.treesitter.language.get().get(self.languageId)
+  var language = await getTreesitterLanguage(self.vfs, treesitterLanguageName, pathOverride)
 
   if prevLanguageId != self.languageId:
     return
@@ -604,6 +673,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   self.currentTree.delete()
 
   # todo: this awaits, check if still current request afterwards
+  # todo: allow specifying queries in home and workspace config
   let highlightQueryPath = &"app://languages/{treesitterLanguageName}/queries/highlights.scm"
   if language.get.queryFile(self.vfs, "highlight", highlightQueryPath).await.getSome(query):
     if prevLanguageId != self.languageId:
@@ -752,7 +822,7 @@ proc saveAsync*(self: TextDocument) {.async.} =
     self.lastSavedRevision = self.undoableRevision
     self.onSaved.invoke()
 
-    if self.config.get("text.format-on-save", false):
+    if self.settings.formatter.onSave.get():
       asyncSpawn self.format(runOnTempFile = false)
   except IOError as e:
     log lvlError, &"Failed to save file '{self.filename}': {e.msg}"
@@ -772,8 +842,11 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
   asyncSpawn self.saveAsync()
 
 proc autoDetectIndentStyle(self: TextDocument) =
-  let maxSamples = self.config.get("text.auto-detect-indent.samples", 50)
-  let maxTime = self.config.get("text.auto-detect-indent.timeout", 20.0)
+  if not self.settings.indentDetection.enable.get():
+    return
+
+  let maxSamples = self.settings.indentDetection.samples.get()
+  let maxTime = self.settings.indentDetection.timeout.get().float64
 
   var containsTab = false
   var linePos = Point.init(0, 0)
@@ -813,8 +886,8 @@ proc autoDetectIndentStyle(self: TextDocument) =
   # log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
 proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.} =
-  if self.config.get("text.reload-diff", true):
-    let diffTimeout = self.config.get("text.reload-diff-timeout", 250)
+  if self.settings.diffReload.enable.get():
+    let diffTimeout = self.settings.diffReload.timeout.get()
     let t = startTimer()
 
     try:
@@ -834,7 +907,7 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.
 
         discard self.edit(selections, [], texts)
 
-      if self.config.get("text.reload-diff-check", false):
+      when defined(appCheckDiffReload):
         if $self.rope != $rope:
           log lvlError, &"Failed diff: {self.rope.len} != {rope.len}"
           self.replaceAll(rope.move)
@@ -953,11 +1026,12 @@ method load*(self: TextDocument, filename: string = "") =
 
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
   try:
-    let formatterConfig = self.config.get(&"languages.{self.languageId}.formatter", newJNull())
-    let (formatterPath, formatterArgs) = if formatterConfig.kind == JString:
-      (formatterConfig.getStr, @[])
-    else:
-      (formatterConfig["path"].jsonTo(string), formatterConfig.fields.getOrDefault("args", newJArray()).jsonTo(seq[string]))
+    let command = self.settings.formatter.command.get()
+    if command.len == 0:
+      return
+
+    let formatterPath = command[0]
+    let formatterArgs = command[1..^1]
 
     log lvlInfo, &"Format document '{self.filename}' with '{formatterPath} {formatterArgs}'"
 
@@ -1088,6 +1162,35 @@ proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
 proc connectLanguageServer*(self: TextDocument) {.async.} =
   discard await self.getLanguageServer()
 
+proc handleDiagnosticsReceived(self: TextDocument, diagnostics: lsp_types.PublicDiagnosticsParams) =
+  if not self.settings.diagnostics.enable.get():
+    self.clearDiagnostics()
+    return
+
+  let uri = diagnostics.uri.decodeUrl.parseUri
+  if uri.path.normalizePathUnix != self.localizedPath:
+    return
+
+  let version = diagnostics.version.mapIt(self.buffer.history.versions.get(it)).flatten
+  if version.getSome(version) and not version.observedAll(self.lastDiagnosticVersion):
+    log lvlWarn, &"Got diagnostics older that the current. Current {self.lastDiagnosticVersion}, received {version}"
+    return
+
+  if version.getSome(version):
+    self.lastDiagnosticVersion = version
+
+  var snapshot: Option[BufferSnapshot] = BufferSnapshot.none
+  for i in 0..self.diagnosticSnapshots.high:
+    if self.diagnosticSnapshots[i].version.some == version:
+      snapshot = self.diagnosticSnapshots[i].clone().some
+      break
+
+  if snapshot.isNone and version.isSome:
+    log lvlWarn, &"Got diagnostics for old version {version.get}, currently on {self.buffer.version}, ignore"
+    return
+
+  self.setCurrentDiagnostics(diagnostics.diagnostics, snapshot)
+
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
   if self.requiresLoad or self.isLoadingAsync:
     return LanguageServer.none
@@ -1112,16 +1215,9 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   if self.languageId == "":
     return LanguageServer.none
 
-  let url = self.config.get("editor.text.languages-server.url", "")
-  let port = self.config.get("editor.text.languages-server.port", 0)
-  let config = if url != "" and port != 0:
-    (url, port).some
-  else:
-    (string, int).none
-
   let workspaces = @[self.workspace.getWorkspacePath()]
   {.gcsafe.}:
-    let languageServerFuture = getOrCreateLanguageServer(self.languageId, self.filename, workspaces, config, self.workspace.some)
+    let languageServerFuture = getOrCreateLanguageServer(self.languageId, self.filename, workspaces, (string, int).none, self.workspace.some)
 
   self.languageServerFuture = languageServerFuture.some
   self.connectedToLanguageServer = false
@@ -1140,27 +1236,7 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     ls.connect(self)
 
     self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
-      let uri = diagnostics.uri.decodeUrl.parseUri
-      if uri.path.normalizePathUnix == self.localizedPath:
-        let version = diagnostics.version.mapIt(self.buffer.history.versions.get(it)).flatten
-        if version.getSome(version) and not version.observedAll(self.lastDiagnosticVersion):
-          log lvlWarn, &"Got diagnostics older that the current. Current {self.lastDiagnosticVersion}, received {version}"
-          return
-
-        if version.getSome(version):
-          self.lastDiagnosticVersion = version
-
-        var snapshot: Option[BufferSnapshot] = BufferSnapshot.none
-        for i in 0..self.diagnosticSnapshots.high:
-          if self.diagnosticSnapshots[i].version.some == version:
-            snapshot = self.diagnosticSnapshots[i].clone().some
-            break
-
-        if snapshot.isNone and version.isSome:
-          log lvlWarn, &"Got diagnostics for old version {version.get}, currently on {self.buffer.version}, ignore"
-          return
-
-        self.setCurrentDiagnostics(diagnostics.diagnostics, snapshot)
+      self.handleDiagnosticsReceived(diagnostics)
 
     self.onLanguageServerAttached.invoke (self, ls)
 
@@ -1169,10 +1245,11 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   return self.languageServer
 
 proc clearDiagnostics*(self: TextDocument) =
+  if self.currentDiagnostics.len == 0:
+    return
   self.diagnosticsPerLine.clear()
   self.currentDiagnostics.setLen 0
   self.currentDiagnosticsAnchors.setLen 0
-
   self.updateDiagnosticEndPoints()
 
 proc tabWidth*(self: TextDocument): int =
@@ -1448,14 +1525,18 @@ proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
   self.nextCheckpoints.incl checkpoint
 
 proc isLineCommented*(self: TextDocument, line: int): bool =
-  return self.rope.lineStartsWith(line, self.languageConfig.get.lineComment.get, ignoreWhitespace = true)
+  let lineComment = self.settings.lineComment.get()
+  if lineComment.isNone:
+    return false
+  return self.rope.lineStartsWith(line, lineComment.get, ignoreWhitespace = true)
 
 proc getLineCommentRange*(self: TextDocument, line: int): Selection =
-  if line > self.numLines - 1 or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
+  let lineComment = self.settings.lineComment.get()
+  if line > self.numLines - 1 or self.languageConfig.isNone or lineComment.isNone:
     return (line, 0).toSelection
 
   # todo: use RopeCursor
-  let prefix = self.languageConfig.get.lineComment.get
+  let prefix = lineComment.get
   let index = self.getLine(line).find(prefix)
   if index == -1:
     return (line, 0).toSelection
@@ -1473,7 +1554,8 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
   if self.languageConfig.isNone:
     return
 
-  if self.languageConfig.get.lineComment.isNone:
+  let lineComment = self.settings.lineComment.get()
+  if lineComment.isNone:
     return
 
   let mergedSelections = self.clampAndMergeSelections(selections).mergeLines
@@ -1501,7 +1583,7 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
           insertSelections.add self.getLineCommentRange(l)
 
   if comment:
-    let prefix = self.languageConfig.get.lineComment.get & " "
+    let prefix = lineComment.get & " "
     discard self.edit(insertSelections, selections, [prefix])
   else:
     discard self.edit(insertSelections, selections, [""])

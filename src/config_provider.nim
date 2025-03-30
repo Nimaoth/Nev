@@ -74,7 +74,7 @@ var getSettingDescriptions*: proc(): seq[SettingDescription] {.gcsafe, raises: [
 
 template setSettingDefault(index: int, defaultValue: untyped) =
   static:
-    settingDescriptions[index].default = $defaultValue.toJsonEx
+    settingDescriptions[index].default = $defaultValue.toJsonEx()
 
 proc joinSettingKey*(a, b: string): string =
   if a.len > 0 and b.len > 0:
@@ -217,6 +217,8 @@ var setAllDefaults: proc(store: ConfigStore) {.raises: [].} = nil
 proc setUserData(node: JsonNodeEx, userData: int)
 proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx)
 proc setParent*(self: ConfigStore, parent: ConfigStore)
+proc setSettings*(self: ConfigStore, settings: JsonNodeEx)
+proc get*(self: ConfigStore, key: string): JsonNodeEx
 
 func serviceName*(_: typedesc[ConfigService]): string = "ConfigService"
 
@@ -269,6 +271,40 @@ proc addStore*(self: ConfigService, name, filename: string, parent: ConfigStore 
   result = ConfigStore.new(name, filename, parent, settings)
   self.stores[filename] = result
   self.storesByName[name] = result
+
+proc getLanguageStore*(self: ConfigService, languageId: string): ConfigStore =
+  let path = "languages/" & languageId
+  if self.stores.contains(path):
+    return self.stores[path]
+
+  let prefix = "lang." & languageId
+  let store = self.addStore(languageId, path, self.runtime)
+  let v = store.parent.get(prefix)
+  if v != nil:
+    store.setSettings(v)
+  store.parent.onConfigChanged.unsubscribe(store.parentChangedHandle)
+  store.parentChangedHandle = store.parent.onConfigChanged.subscribe proc(key: string) =
+    if key.startsWith(prefix) or key == "lang" or key == "":
+      let v = store.parent.get(prefix)
+      if v != nil:
+        store.setSettings(v)
+      else:
+        store.setSettings(newJexObject())
+    else:
+      var val = store.settings
+      var extend = val.extend
+      for keyRaw in key.splitOpenArray('.'):
+        if isNil(val) or val.kind != JObject:
+          val = nil
+          break
+        val = val.fields.getOrDefault(keyRaw.p.toOpenArray(0, keyRaw.len - 1))
+        if val != nil:
+          extend = extend and val.extend
+
+      if val == nil or extend:
+        store.onConfigChanged.invoke(key)
+
+  return store
 
 proc desc*(self: ConfigStore, pretty = false): string =
   result = &"CS({self.name}@{self.revision}"
@@ -381,7 +417,7 @@ proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx) =
         prevI = i + 1
         i = key.findSep(prevI)
 
-      var extend = false
+      var extend = field.extend
       if key[prevI] == '+':
         extend = true
         inc prevI

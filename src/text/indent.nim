@@ -40,7 +40,7 @@ proc indentLevelForLine*(line: string, tabWidth: int, indentWidth: int): int =
   return len div indentWidth
 
 proc indentForNewLine*(
-  languageConfig: Option[TextLanguageConfig],
+  indentAfter: Option[seq[string]],
   line: string,
   indentStyle: IndentStyle,
   tabWidth: int,
@@ -49,8 +49,8 @@ proc indentForNewLine*(
   let indentWidth = indentStyle.indentWidth(tabWidth)
   var indentLevel = indentLevelForLine(line, tabWidth, indentWidth)
 
-  if line.len > 0 and languageConfig.getSome(languageConfig):
-    for suffix in languageConfig.indentAfter:
+  if line.len > 0 and indentAfter.getSome(indentAfter):
+    for suffix in indentAfter:
       if line[0..<column].endsWith(suffix):
         inc indentLevel
         break
