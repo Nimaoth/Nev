@@ -1,5 +1,88 @@
 {
     "$schema": "settings.schema.json",
+
+    "+ui": {
+        "theme": "app://themes/tokyo-night-color-theme.json",
+    },
+
+    "+platform": {
+        "terminal-sleep-threshold": 5
+    },
+
+    "keybindings": {
+        "preset": "vim"
+    },
+
+    "wasm-plugin-post-load-commands": [
+        "load-configured-keybindings"
+    ],
+
+    "wasm-plugin-post-reload-commands": [
+        "load-configured-keybindings"
+    ],
+
+    "+language-mappings": {
+        "\\..(agda|lagda)$": "agda",
+        "\\..(c|cc|h|inc)$": "c",
+        "\\..sh$": "bash",
+        "\\..cs$": "c_sharp",
+        "\\..(cpp|tcc|hpp)$": "cpp",
+        "\\..css$": "css",
+        "\\..go$": "go",
+        "\\..hs$": "haskell",
+        "\\..(html|htmx)$": "html",
+        "\\..java$": "java",
+        "\\..(js|jsx)$": "javascript",
+        "\\..json$": "json",
+        "\\..nev-session$": "json",
+        "\\..lock$": "json",
+        "\\..yml$": "yaml",
+        "\\..clangd$": "yaml",
+        "\\..nix$": "nix",
+        "\\..wit$": "wit",
+        "\\..ocaml$": "ocaml",
+        "\\..php$": "php",
+        "\\..(py|pyi)$": "python",
+        "\\..ruby$": "ruby",
+        "\\..rs$": "rust",
+        "\\..scala$": "scala",
+        "\\..(ts|tsx)$": "typescript",
+        "\\..(nim|nims|nimble)$": "nim",
+        "\\..zig$": "zig",
+        "\\..odin$": "odin",
+        "\\..md$": "markdown",
+        "\\..scm$": "query",
+        "\\..toml$": "toml",
+        "\\..ps1$": "powershell",
+        "\\..wat$": "elisp",
+        "\\..talon$": "talon",
+        "\\..lua$": "lua",
+        "\\..log$": "log",
+        "nimble..*?\\..paths$": "nim-paths",
+        "/(vector|string|thread|iostream)$": "cpp",
+        "..+/MSVC/..+/include(/..+?)*/[a-z0-9_]+$": "cpp",
+        "..+/include/c\\+\\+(/..+?)+/[a-z0-9_]+$": "cpp"
+    },
+
+    "+debugger": {
+        "+type": {
+            "lldb-dap": {
+                "connection": "stdio",
+                "path": "lldb-dap",
+                "args": []
+            },
+            "lldb-dap-tcp-launch": {
+                "connection": "tcp",
+                "path": "lldb-dap"
+            },
+            "lldb": {
+                "connection": "tcp",
+                "port": 0,
+                "path": "lldb-dap"
+            }
+        }
+    },
+
     "+lsp": {
         "cpp": {
             "path": "clangd",
@@ -85,49 +168,6 @@
             ],
             "settings": {}
         }
-    },
-
-    "+language-mappings": {
-        "\\..(agda|lagda)$": "agda",
-        "\\..(c|cc|h|inc)$": "c",
-        "\\..sh$": "bash",
-        "\\..cs$": "c_sharp",
-        "\\..(cpp|tcc|hpp)$": "cpp",
-        "\\..css$": "css",
-        "\\..go$": "go",
-        "\\..hs$": "haskell",
-        "\\..(html|htmx)$": "html",
-        "\\..java$": "java",
-        "\\..(js|jsx)$": "javascript",
-        "\\..json$": "json",
-        "\\..nev-session$": "json",
-        "\\..lock$": "json",
-        "\\..yml$": "yaml",
-        "\\..clangd$": "yaml",
-        "\\..nix$": "nix",
-        "\\..wit$": "wit",
-        "\\..ocaml$": "ocaml",
-        "\\..php$": "php",
-        "\\..(py|pyi)$": "python",
-        "\\..ruby$": "ruby",
-        "\\..rs$": "rust",
-        "\\..scala$": "scala",
-        "\\..(ts|tsx)$": "typescript",
-        "\\..(nim|nims|nimble)$": "nim",
-        "\\..zig$": "zig",
-        "\\..odin$": "odin",
-        "\\..md$": "markdown",
-        "\\..scm$": "query",
-        "\\..toml$": "toml",
-        "\\..ps1$": "powershell",
-        "\\..wat$": "elisp",
-        "\\..talon$": "talon",
-        "\\..lua$": "lua",
-        "\\..log$": "log",
-        "nimble..*?\\..paths$": "nim-paths",
-        "/(vector|string|thread|iostream)$": "cpp",
-        "..+/MSVC/..+/include(/..+?)*/[a-z0-9_]+$": "cpp",
-        "..+/include/c\\+\\+(/..+?)+/[a-z0-9_]+$": "cpp"
     },
 
     "+lang": {
@@ -681,78 +721,5 @@
                 ]
             }
         }
-
     },
-
-    "+editor": {
-        "+text": {
-            "auto-start-language-server": true,
-            "triple-click-command": "extend-select-move",
-            "triple-click-command-args": [
-                "line",
-                true
-            ],
-            "whitespace": {
-                "char": "·"
-            },
-        },
-        "restore-open-workspaces": true,
-        "restore-open-editors": true,
-        "frame-time-smoothing": 0.8,
-        "close-unused-documents-timer": 10,
-        "max-views": 2
-    },
-
-    "+text": {
-        "diff-reload": {
-            "enable": true,
-            "timeout": 250
-        }
-    },
-
-    "+debugger": {
-        "+type": {
-            "lldb-dap": {
-                "connection": "stdio",
-                "path": "lldb-dap",
-                "args": []
-            },
-            "lldb-dap-tcp-launch": {
-                "connection": "tcp",
-                "path": "lldb-dap"
-            },
-            "lldb": {
-                "connection": "tcp",
-                "port": 0,
-                "path": "lldb-dap"
-            }
-        }
-    },
-
-    "+ui": {
-        "+background": {
-            "transparent": false
-        },
-        "theme": "app://themes/tokyo-night-color-theme.json",
-        "smooth-scroll": true,
-        "cursor-trail": 2,
-        "which-key-delay": 250,
-        "which-key-height": 6
-    },
-
-    "+platform": {
-        "terminal-sleep-threshold": 5
-    },
-
-    "keybindings": {
-        "preset": "vim"
-    },
-
-    "wasm-plugin-post-load-commands": [
-        "load-configured-keybindings"
-    ],
-
-    "wasm-plugin-post-reload-commands": [
-        "load-configured-keybindings"
-    ]
 }

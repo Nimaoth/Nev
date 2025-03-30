@@ -374,3 +374,10 @@ iterator splitOpenArray*(s: string, sep: char, maxsplit: int = -1): tuple[p: ptr
     if splits == 0: break
     dec(splits)
     inc(last, 1)
+
+template boolLock*(l): untyped =
+  if l:
+    return
+  l = true
+  defer:
+    l = false

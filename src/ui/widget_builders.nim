@@ -4,7 +4,7 @@ import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger, widget_library]
-import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service
+import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
 
 when enableAst:
   import ui/[widget_builder_model_document]
@@ -26,6 +26,8 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
   let builder = self.platform.builder
   builder.panel(rootFlags): # fullscreen overlay
+
+    self.preRender(currentNode.bounds)
 
     var overlays: seq[OverlayFunction]
     var mainBounds: Rect
@@ -98,12 +100,32 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     for i, popup in self.layout.popups:
       overlays.add popup.createUI(builder, self)
 
+    let textColor = self.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+    let paddingX = builder.charWidth
+    let paddingY = builder.charWidth
+    builder.panel(&{FillX, LayoutVerticalReverse}, x = currentNode.w * 0.7, y = mainBounds.y + paddingY, h = mainBounds.h - paddingY * 2):
+      let backgroundColor = self.theme.color("editor.background", color(25/255, 25/255, 40/255))
+
+      for i in countdown(self.toast.toasts.high, 0):
+        let toast {.cursor.} = self.toast.toasts[i]
+        let color = self.theme.tokenColor(toast.color, textColor)
+        builder.panel(&{SizeToContentY, LayoutVertical, FillBackground}, pivot = vec2(0, 1), w = currentNode.w - paddingX, backgroundColor = headerColor):
+          builder.panel(&{FillX}, h = paddingY)
+          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, x = paddingX, text = toast.title, textColor = color)
+          builder.panel(&{FillX}, h = paddingY)
+          builder.panel(&{SizeToContentY, DrawText, TextWrap}, x = paddingX, w = currentNode.w - paddingX * 2, text = toast.message, textColor = textColor)
+          builder.panel(&{FillX}, h = paddingY)
+          builder.panel(&{FillBackground}, x = paddingX, w = (currentNode.w - paddingX * 2) * (1 - toast.progress), h = max(0.1 * builder.textHeight, 1), backgroundColor = color)
+          builder.panel(&{FillX}, h = paddingY)
+
+        if i > 0:
+          builder.panel(&{FillX}, h = paddingY)
+
     for overlay in overlays:
       overlay()
 
     if self.showNextPossibleInputs:
       let inputLines = self.uiSettings.whichKeyHeight.get()
-      let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
       let continuesTextColor = self.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
       let keysTextColor = self.theme.tokenColor("number", color(225/255, 200/255, 200/255))
       builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, inputLines, mainBounds)

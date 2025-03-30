@@ -147,6 +147,11 @@ method init*(self: GuiPlatform) =
       let arrangement = font.typeset(text, snapToPixel = false)
       result = arrangement.layoutBounds().x
 
+    self.builder.textBoundsImpl = proc(node: UINode): Vec2 =
+      let font = self.getFont(self.ctx.fontSize, node.flags)
+      let arrangement = font.typeset(node.text, bounds = node.bounds.wh, wrap = TextWrap in node.flags, snapToPixel = false)
+      result = arrangement.layoutBounds()
+
     self.window.onFocusChange = proc() =
       inc self.eventCounter
       self.currentModifiers = {}

@@ -11,7 +11,7 @@ import input, events, document, document_editor, popup, dispatch_tables, theme, 
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
-import service, layout, session, command_service
+import service, layout, session, command_service, toast
 
 import nimsumtree/[rope]
 
@@ -103,6 +103,7 @@ type
     registers: Registers
     vfsService*: VFSService
     commands*: CommandService
+    toast*: ToastService
 
     workspace*: Workspace
     vfs*: VFS
@@ -143,6 +144,8 @@ type
     showNextPossibleInputsTask: DelayedTask
     nextPossibleInputs*: seq[tuple[input: string, description: string, continues: bool]]
     showNextPossibleInputs*: bool
+
+    reloadThemeFromConfig: bool
 
     uiSettings*: UiSettings
     generalSettings*: GeneralSettings
@@ -200,6 +203,7 @@ proc setLocationList(self: App, list: seq[FinderItem],
 proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: []).} =
   if not force and self.theme.isNotNil and self.theme.path == path:
     return
+  self.reloadThemeFromConfig = false
   if theme.loadFromFile(self.vfs, path).await.getSome(theme):
     log(lvlInfo, fmt"Loaded theme {path}")
     self.theme = theme
@@ -378,8 +382,13 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
   except CatchableError:
     log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
 
-proc loadSettingsFrom*(self: App, directory: string,
-    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}, name: string) {.async.} =
+proc preRender*(self: App, bounds: Rect) =
+  if self.reloadThemeFromConfig:
+    self.reloadThemeFromConfig = false
+    asyncSpawn self.setTheme(self.uiSettings.theme.get())
+
+proc loadSettingsFrom*(self: App, directory: string, changedFiles: seq[string] = @[], name: string,
+    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
 
   {.gcsafe.}:
     let filenames = [
@@ -400,58 +409,48 @@ proc loadSettingsFrom*(self: App, directory: string,
 
   if directory notin self.config.storeGroups:
     self.config.storeGroups[directory] = @[]
-  var oldStores = self.config.storeGroups[directory]
-  var deletedStores = oldStores
-  var addedStores = newSeq[ConfigStore]()
-  var newStores = newSeq[ConfigStore]()
-
-  # echo &"loadSettingsFrom {directory}, oldStores: {oldStores.mapIt(it.desc)}"
+  var deletedStores = self.config.storeGroups[directory]
+  var stores = newSeq[ConfigStore]()
 
   for i in 0..<filenames.len:
     if settings[i].isSome:
       let filename = filenames[i]
-      log lvlInfo, &"Apply settings from {filename}"
+      log lvlInfo, &"Apply settings from {filename}, changed: {changedFiles}"
       var jsonex: JsonNodeEx = nil
       try:
         jsonex = settings[i].get.parseJsonex()
       except CatchableError:
         log(lvlError, &"Failed to load settings from {filename}: {getCurrentExceptionMsg()}")
 
+      let name = filename.splitPath.tail
+
       if filename in self.config.stores:
-        # echo &"  file {filename} was reloaded"
         let store = self.config.stores[filename]
-        if jsonex != nil:
+        if jsonex != nil and (changedFiles.len == 0 or name in changedFiles):
           store.setSettings(jsonex)
           store.originalText = settings[i].get
-        newStores.add(store)
+        stores.add(store)
         deletedStores.del(store)
       elif jsonex != nil:
-        # echo &"  file {filename} is new"
         var name = name & "-" & filename.splitFile.name
         name = name.replace("-settings", "")
         let store = ConfigStore.new(name, filename, settings = jsonex)
         store.originalText = settings[i].get
         self.config.stores[filename] = store
-        newStores.add(store)
-        addedStores.add(store)
+        stores.add(store)
 
-
-  # echo &"loadSettingsFrom {directory}, deletedStores: {deletedStores.mapIt(it.desc)}"
   for store in deletedStores:
     store.parent = nil
     store.setSettings(newJexObject())
     store.onConfigChanged.invoke("")
 
-  # echo &"loadSettingsFrom {directory}, addedStores: {addedStores.mapIt(it.desc)}"
-  # echo &"loadSettingsFrom {directory}, newStores: {newStores.mapIt(it.desc)}"
-
-  for i in 1..newStores.high:
-    let child = newStores[i]
-    let parent = newStores[i - 1]
+  for i in 1..stores.high:
+    let child = stores[i]
+    let parent = stores[i - 1]
     child.setParent(parent)
 
-  if newStores.len > 0:
-    self.config.storeGroups[directory] = newStores
+  if stores.len > 0:
+    self.config.storeGroups[directory] = stores
   else:
     self.config.storeGroups.del(directory)
 
@@ -498,9 +497,9 @@ proc loadConfigFileFrom(self: App, context: string, path: string):
 
   return string.none
 
-proc loadConfigFrom*(self: App, root: string, name: string) {.async.} =
+proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.} =
   await allFutures(
-    self.loadSettingsFrom(root, loadConfigFileFrom, name),
+    self.loadSettingsFrom(root, changedFiles, name, loadConfigFileFrom),
     self.loadKeybindings(root, loadConfigFileFrom)
   )
 
@@ -672,6 +671,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.vfsService = services.getService(VFSService).get
   self.workspace = services.getService(Workspace).get
   self.commands = services.getService(CommandService).get
+  self.toast = services.getService(ToastService).get
   self.vfs = self.vfsService.vfs
 
   self.platform.fontSize = 16
@@ -817,14 +817,13 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   # if self.runtime.get("command-server.port", Port.none).getSome(port):
   #   asyncSpawn self.listenForConnection(port)
 
-  if self.generalSettings.restoreOpenWorkspaces.get():
-    for i, wf in state.workspaceFolders:
-      log(lvlInfo, fmt"Restoring workspace")
-      self.workspace.restore(wf.settings)
+  for i, wf in state.workspaceFolders:
+    log(lvlInfo, fmt"Restoring workspace")
+    self.workspace.restore(wf.settings)
 
-      if i == 0:
-        self.config.groups.add(workspaceConfigDir)
-        await self.loadConfigFrom(workspaceConfigDir, "workspace")
+    if i == 0:
+      self.config.groups.add(workspaceConfigDir)
+      await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.path == "":
@@ -835,24 +834,35 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   await self.setTheme(self.uiSettings.theme.get())
 
-  self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
-    for e in events:
-      case e.action
-      of Modify:
-        if "app://themes" // e.name == self.theme.path:
-          asyncSpawn self.setTheme(self.theme.path, force = true)
+  if self.generalSettings.watchTheme.get():
+    self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
+      for e in events:
+        case e.action
+        of Modify:
+          if "app://themes" // e.name == self.theme.path:
+            asyncSpawn self.setTheme(self.theme.path, force = true)
 
-      else:
-        discard
+        else:
+          discard
 
-  self.vfs.watch appConfigDir, proc(events: seq[PathEvent]) =
-    asyncSpawn self.loadConfigFrom(appConfigDir, "app")
+  if self.generalSettings.watchAppConfig.get():
+    self.vfs.watch appConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
 
-  self.vfs.watch homeConfigDir, proc(events: seq[PathEvent]) =
-    asyncSpawn self.loadConfigFrom(homeConfigDir, "home")
+  if self.generalSettings.watchUserConfig.get():
+    self.vfs.watch homeConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
 
-  self.vfs.watch workspaceConfigDir, proc(events: seq[PathEvent]) =
-    asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace")
+  if self.generalSettings.watchWorkspaceConfig.get():
+    self.vfs.watch workspaceConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
+
+  let onRuntimeConfigChangedHandle = self.config.runtime.onConfigChanged.subscribe proc(key: string) =
+    if key == "" or key == "ui" or key == "ui.theme":
+      self.reloadThemeFromConfig = true
 
   asyncSpawn self.finishInitialization(state)
 
@@ -870,7 +880,7 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
     except CatchableError as e:
       log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
-  elif self.config.getFlag("editor.restore-open-editors", true):
+  else:
     for editorState in state.openEditors:
       let view = self.layout.createView(editorState.filename)
       if view.isNil:
@@ -953,6 +963,10 @@ proc handleLog(self: App, level: Level, args: openArray[string]) =
 
   else:
     self.logBuffer.add str
+
+  if level == lvlError:
+    let str = substituteLog("", level, args)
+    self.toast.showToast("Error", str, "error")
 
 proc getEditor(): Option[App] =
   {.gcsafe.}:

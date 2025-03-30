@@ -936,7 +936,7 @@ declareSettings UiSettings, "ui":
   declare theme, string, "app://themes/tokyo-night-color-theme.json"
 
   ## After how many milliseconds the which key window opens.
-  declare whichKeyDelay, int, 500
+  declare whichKeyDelay, int, 250
 
   ## If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown).
   declare whichKeyNoProgress, bool, false
@@ -984,6 +984,9 @@ declareSettings UiSettings, "ui":
   ## How line numbers should be displayed. Can be "absolute", "relative", "none".
   declare lineNumbers, LineNumbers, LineNumbers.Absolute
 
+  ## How long toasts are displayed for, in milliseconds.
+  declare toastDuration, int, 8000
+
   # ## How long the cursor trail is. Set to 0 to disable cursor trail.
   # declare inclusiveSelection, int, 2
 
@@ -1022,8 +1025,17 @@ declareSettings GeneralSettings, "editor":
   ## Whether the editor shows a history of the last few pressed buttons in the status bar.
   declare recordInputHistory, bool, false
 
-  ## todo
-  declare restoreOpenWorkspaces, bool, true
+  ## Watch the theme directory for changes to the theme.
+  declare watchTheme, bool, true
+
+  ## Watch the config files in the app directory and automatically reload them when they change.
+  declare watchAppConfig, bool, true
+
+  ## Watch the config files in the user directory and automatically reload them when they change.
+  declare watchUserConfig, bool, true
+
+  ## Watch the config files in the workspace directory and automatically reload them when they change.
+  declare watchWorkspaceConfig, bool, true
 
 declareSettings DebugSettings, "debug":
   ## Log how long it takes to generate the render commands for a text editor.

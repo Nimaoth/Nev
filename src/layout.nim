@@ -32,6 +32,7 @@ type
     platform: Platform
     workspace: Workspace
     config: ConfigService
+    uiSettings: UiSettings
     editors: DocumentEditorService
     vfs: VFS
     popups*: seq[Popup]
@@ -68,6 +69,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
   self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
   self.workspace = self.services.getService(Workspace).get
+  self.uiSettings = UiSettings.new(self.config.runtime)
   return ok()
 
 method activate*(view: EditorView) =
@@ -153,7 +155,7 @@ proc `currentView=`*(self: LayoutService, newIndex: int, addToHistory = true) =
   self.updateActiveEditor(addToHistory)
 
 proc addView*(self: LayoutService, view: View, addToHistory = true, append = false) =
-  let maxViews = self.config.runtime.get("editor.max-views", int.high)
+  let maxViews = self.uiSettings.maxViews.get()
 
   while maxViews > 0 and self.views.len > maxViews:
     self.views[self.views.high].deactivate()
@@ -309,7 +311,7 @@ proc setMaxViews*(self: LayoutService, maxViews: int, openExisting: bool = false
   ## Closes any views that exceed the new limit
 
   log lvlInfo, fmt"[setMaxViews] {maxViews}"
-  self.config.runtime.set("editor.max-views", maxViews)
+  self.uiSettings.maxViews.set(maxViews)
   while maxViews > 0 and self.views.len > maxViews:
     self.views[self.views.high].deactivate()
     self.hiddenViews.add self.views.pop()

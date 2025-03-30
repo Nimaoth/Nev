@@ -179,6 +179,13 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
 
     return true
 
+  popup.addCustomCommand "refresh", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    source.retrigger()
+    return true
+
   popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
@@ -235,17 +242,14 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
     if popup.textEditor.isNil:
       return false
     if popup.previewEditor.document.staged:
-      popup.previewEditor.unstageSelectedAsync().thenIt:
-        source.retrigger()
+      asyncSpawn popup.previewEditor.unstageSelectedAsync()
     else:
-      popup.previewEditor.stageSelectedAsync().thenIt:
-        source.retrigger()
+      asyncSpawn popup.previewEditor.stageSelectedAsync()
 
   popup.addCustomCommand "revert-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    popup.previewEditor.revertSelectedAsync().thenIt:
-      source.retrigger()
+    asyncSpawn popup.previewEditor.revertSelectedAsync()
 
   let layout = self.services.getService(LayoutService).get
   layout.pushPopup popup

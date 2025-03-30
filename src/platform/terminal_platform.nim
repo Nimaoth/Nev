@@ -120,6 +120,8 @@ var wideNarrowSet = initHashSet[Rune]()
 for r in wideNarrow.runes:
   wideNarrowSet.incl r
 
+proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) {.gcsafe.}
+
 proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int] {.gcsafe.} =
   if r.int <= 127:
     return (1, 1)
@@ -173,6 +175,49 @@ method init*(self: TerminalPlatform) =
     self.builder.textWidthStringImpl = proc(text: string): float32 {.gcsafe, raises: [].} =
       for r in text.runes:
         result += r.runeProps.displayWidth.float32
+
+    self.builder.textBoundsImpl = proc(node: UINode): Vec2 {.gcsafe, raises: [].} =
+      try:
+        let lineLen = round(node.bounds.w).RuneCount
+        let wrap = TextWrap in node.flags
+        var yOffset = 0.0
+        for line in node.text.splitLines:
+          let runeLen = line.runeLen
+          if wrap and runeLen > lineLen:
+            var startByte = 0
+            var startRune = 0.RuneIndex
+
+            while startByte < line.len:
+              var endByte = startByte
+              var endRune = startRune
+              var currentRuneLen = 0.RuneCount
+
+              while true:
+                let (bytes, runes) = line.nextWrapBoundary(endByte, lineLen - currentRuneLen)
+                if currentRuneLen + runes >= lineLen.RuneIndex or bytes == 0:
+                  break
+
+                endByte += bytes
+                endRune += runes
+                currentRuneLen += runes
+
+              if startByte >= line.len or endByte > line.len:
+                break
+
+              yOffset += 1
+
+              if startByte == endByte:
+                break
+
+              startByte = endByte
+              startRune = endRune
+
+          else:
+            yOffset += 1
+        return vec2(node.bounds.w, yOffset)
+      except:
+        return vec2(1, 1)
+
   except:
     discard
 
@@ -482,7 +527,7 @@ proc writeLine(self: TerminalPlatform, pos: Vec2, text: string, italic: bool) =
     if x >= mask.xw.int:
       break
 
-proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) =
+proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) {.gcsafe.} =
   var len = 0.RuneCount
   var bytes = 0
   while start + bytes < str.len and len < maxLen:
