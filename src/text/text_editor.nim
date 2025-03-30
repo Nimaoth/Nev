@@ -140,6 +140,9 @@ declareSettings TextEditorSettings, "text":
   ## How many characters from the right edge to start wrapping text.
   declare wrapMargin, int, 1
 
+  ## Show lines containing parent nodes (like function, type, if/for etc) at the top of the window.
+  declare contextLines, bool, true
+
   ## Default mode to set when opening/creating text documents.
   declare defaultMode, string, ""
 
@@ -328,7 +331,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   onSearchResultsUpdated*: Event[TextDocumentEditor]
 
-  showContextLines*: Setting[bool]
   uiSettings*: UiSettings
   debugSettings*: DebugSettings
   settings*: TextEditorSettings
@@ -4673,7 +4675,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.uiSettings = UiSettings.new(self.config)
   self.debugSettings = DebugSettings.new(self.config)
   self.settings = TextEditorSettings.new(self.config)
-  self.showContextLines = self.config.setting("editor.text.context-lines", bool)
 
   self.setDocument(document)
 

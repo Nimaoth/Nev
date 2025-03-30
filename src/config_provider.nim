@@ -54,6 +54,7 @@ type
     typ*: string
     default*: string
     docs*: string
+    noInit*: bool
 
   RegexSetting* = distinct JsonNodeEx
 
@@ -89,7 +90,7 @@ proc joinSettingKey*(a, b: string): string =
   else:
     return b
 
-proc declareSettingsImpl(name: NimNode, prefix: string, body: NimNode): NimNode {.compileTime.} =
+proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], body: NimNode): NimNode {.compileTime.} =
   if name.repr in settingGroupDescriptions:
     error "Duplicate setting group " & name.repr, name
     return
@@ -136,7 +137,7 @@ proc declareSettingsImpl(name: NimNode, prefix: string, body: NimNode): NimNode 
       let typ = node[2]
       let default = node[3]
 
-      var s = SettingDescription(name: settingName, prefix: prefix, fullName: fullName, typ: typ.repr, default: "null")
+      var s = SettingDescription(name: settingName, prefix: prefix, fullName: fullName, typ: typ.repr, default: "null", noInit: noInit)
 
       let docsString = if docs != nil:
         docs.strVal
@@ -155,8 +156,8 @@ proc declareSettingsImpl(name: NimNode, prefix: string, body: NimNode): NimNode 
       typeNode[0][2][2].add nnkIdentDefs.newTree(name.postfix("*"), nnkBracketExpr.newTree(bindSym"Setting", typ), newEmptyNode())
 
       newNode[6].add block:
-        genAst(name, settingName, typ, store, res, prefixArg):
-          res.name = store.setting(joinSettingKey(prefixArg, settingName), typ)
+        genAst(fieldName = name, settingName, typ, store, res, prefixArg):
+          res.fieldName = store.setting(joinSettingKey(prefixArg, settingName), typ)
 
       if default.repr != "nil":
         setDefaultNodes.add block:
@@ -176,10 +177,16 @@ proc declareSettingsImpl(name: NimNode, prefix: string, body: NimNode): NimNode 
         continue
 
       for i in settingGroupDescriptions[typ.repr].settings:
-        var s = settingDescriptions[i]
-
-        s.prefix = fullName
-        s.fullName = s.prefix & "." & s.name
+        let p = settingDescriptions[i]
+        var s = SettingDescription(
+          name: p.name,
+          prefix: fullName,
+          fullName: fullName & "." & p.name,
+          typ: p.typ,
+          default: p.default,
+          docs: p.docs,
+          noInit: noInit,
+        )
 
         settingDescriptions.add(s)
         desc.settings.add settingDescriptions.high
@@ -193,8 +200,8 @@ proc declareSettingsImpl(name: NimNode, prefix: string, body: NimNode): NimNode 
 
       let settingName = name.repr.camelCaseToHyphenCase
       newNode[6].add block:
-        genAst(name, typ, store, res, prefixArg, settingName):
-          res.name = typ.new(store, joinSettingKey(prefixArg, settingName))
+        genAst(fieldName = name, typ, store, res, prefixArg, settingName):
+          res.fieldName = typ.new(store, joinSettingKey(prefixArg, settingName))
 
       continue
 
@@ -212,7 +219,10 @@ proc declareSettingsImpl(name: NimNode, prefix: string, body: NimNode): NimNode 
   result = nnkStmtList.newTree(typeNode, newNode, setDefaultNodes)
 
 macro declareSettings*(name: untyped, prefix: static string, body: untyped) =
-  return declareSettingsImpl(name, prefix, body)
+  return declareSettingsImpl(name, prefix, false, body)
+
+macro declareSettingsTemplate*(name: untyped, prefix: static string, body: untyped) =
+  return declareSettingsImpl(name, prefix, true, body)
 
 var setAllDefaults: proc(store: ConfigStore) {.raises: [].} = nil
 
@@ -764,6 +774,12 @@ proc get*[T](self: Setting[T]): T =
 proc set*[T](self: Setting[T], value: T) =
   self.store.set(self.key, value)
 
+proc get*[T](self: Setting[Option[T]], default: T): T =
+  let v = self.get()
+  if v.isSome:
+    return v.get
+  return default
+
 proc getRegex*(self: Setting[RegexSetting], default: string = ""): string =
   let value = self.get().JsonNodeEx
   if value == nil:
@@ -885,7 +901,7 @@ addGlobalDispatchTable "config", genDispatchTable("config")
 proc setAllDefaultsImpl(store: ConfigStore, descriptions: seq[SettingDescription]) {.raises: [].} =
   for setting in descriptions:
     try:
-      if setting.name.contains("*") or setting.prefix == "":
+      if setting.name.contains("*") or setting.prefix == "" or setting.noInit:
         continue
       store.set(setting.fullname, setting.default.parseJsonEx())
     except Exception as e:

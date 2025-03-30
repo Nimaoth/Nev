@@ -71,7 +71,7 @@ declareSettings DiagnosticsSettings, "":
   ## show up even when you're actively typing (diagnostics received for old document versions are discarded).
   declare snapshotHistory, int, 5
 
-declareSettings TreesitterSettings, "":
+declareSettingsTemplate TreesitterSettings, "text.treesitter":
   ## Enable parsing code into ASTs using treesitter. Also requires a treesitter parser for a specific language.
   declare enable, bool, true
 
@@ -80,6 +80,12 @@ declareSettings TreesitterSettings, "":
 
   ## Override the language name used for choosing the treesitter parser. If not set then the documents language id is used.
   declare language, Option[string], nil
+
+  ## Path relative to the repository root where queries are located. If not set then the editor will look for the queries.
+  declare queries, Option[string], nil
+
+  ## Path relative to the repository root where queries are located. If not set then the editor will look for the queries.
+  declare repository, Option[string], nil
 
 declareSettings TextSettings, "text":
   ##

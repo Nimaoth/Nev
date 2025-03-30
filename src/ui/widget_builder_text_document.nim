@@ -614,7 +614,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
 
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
-  let showContextLines = not renderDiff and self.showContextLines.get(false)
+  let showContextLines = not renderDiff and self.settings.contextLines.get()
 
   let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background"], backgroundColor.lighten(0.05))

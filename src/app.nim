@@ -410,28 +410,31 @@ proc loadSettingsFrom*(self: App, directory: string,
   for i in 0..<filenames.len:
     if settings[i].isSome:
       let filename = filenames[i]
+      log lvlInfo, &"Apply settings from {filename}"
+      var jsonex: JsonNodeEx = nil
       try:
-        log lvlInfo, &"Apply settings from {filename}"
-        let jsonex = settings[i].get.parseJsonex()
-        if filename in self.config.stores:
-          # echo &"  file {filename} was reloaded"
-          let store = self.config.stores[filename]
-          store.setSettings(jsonex)
-          store.originalText = settings[i].get
-          newStores.add(store)
-          deletedStores.del(store)
-        else:
-          # echo &"  file {filename} is new"
-          var name = name & "-" & filename.splitFile.name
-          name = name.replace("-settings", "")
-          let store = ConfigStore.new(name, filename, settings = jsonex)
-          store.originalText = settings[i].get
-          self.config.stores[filename] = store
-          newStores.add(store)
-          addedStores.add(store)
-
+        jsonex = settings[i].get.parseJsonex()
       except CatchableError:
         log(lvlError, &"Failed to load settings from {filename}: {getCurrentExceptionMsg()}")
+
+      if filename in self.config.stores:
+        # echo &"  file {filename} was reloaded"
+        let store = self.config.stores[filename]
+        if jsonex != nil:
+          store.setSettings(jsonex)
+          store.originalText = settings[i].get
+        newStores.add(store)
+        deletedStores.del(store)
+      elif jsonex != nil:
+        # echo &"  file {filename} is new"
+        var name = name & "-" & filename.splitFile.name
+        name = name.replace("-settings", "")
+        let store = ConfigStore.new(name, filename, settings = jsonex)
+        store.originalText = settings[i].get
+        self.config.stores[filename] = store
+        newStores.add(store)
+        addedStores.add(store)
+
 
   # echo &"loadSettingsFrom {directory}, deletedStores: {deletedStores.mapIt(it.desc)}"
   for store in deletedStores:
@@ -2056,21 +2059,30 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
-proc installTreesitterParserAsync*(self: App, language: string, host: string) {.async.} =
+proc installTreesitterParserAsync*(self: App, languageOrRepoName: string, host: string) {.async.} =
   try:
-    let (language, repo) = if (let i = language.find("/"); i != -1):
+    var language = languageOrRepoName
+    var repo = ""
+
+    if (let i = languageOrRepoName.find("/"); i != -1):
       let first = i + 1
-      let k = language.find("/", first)
+      let k = languageOrRepoName.find("/", first)
       let last = if k == -1:
-        language.len
+        languageOrRepoName.len
       else:
         k
 
-      (language[first..<last].replace("tree-sitter-", "").replace("-", "_"), language)
-    else:
-      (language, self.config.runtime.get(&"languages.{language}.treesitter", ""))
+      language = languageOrRepoName[first..<last].replace("tree-sitter-", "").replace("-", "_")
+      repo = languageOrRepoName
 
-    let queriesSubDir = self.config.runtime.get(&"languages.{language}.treesitter-queries", "").catch("")
+    let treesitterSettings = TreesitterSettings.new(self.config.getLanguageStore(language))
+
+    if repo == "":
+      repo = treesitterSettings.repository.get().getOr:
+        log lvlError, &"No repository was configured for language '{language}'. You can specify a repository using 'lang.{language}.{treesitterSettings.repository.key}'"
+        return
+
+    let queriesSubDir = treesitterSettings.queries.get("")
 
     log lvlInfo, &"Install treesitter parser for {language} from {repo}"
     let parts = repo.split("/")
@@ -2120,7 +2132,7 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
       log lvlInfo, &"tree-sitter build --wasm {repoPath}:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
 
   except:
-    log lvlError, &"Failed to install treesitter parser for {language}: {getCurrentExceptionMsg()}"
+    log lvlError, &"Failed to install treesitter parser for {languageOrRepoName}: {getCurrentExceptionMsg()}"
 
 proc installTreesitterParser*(self: App, language: string, host: string = "github.com") {.
     expose("editor").} =
