@@ -7,8 +7,11 @@
 - Clone the repository
 - Run `nimble setup`
 
-By default builds will not include the ast language framework.
-To enable these features pass `-D:enableAst=true` respectively.
+The ast language framework is does not compile on the current main branch, I will continue work on this at some later point.
+
+## Compile errors
+If you get a compile error, try building with `--passC:-Wno-incompatible-pointer-types`, e.g:
+`nimble buildDesktop --passC:-Wno-incompatible-pointer-types -d:appBuildWasmtime --forceBuild --app:gui -D:forceLogToFile -D:enableGui=true`
 
 ## Desktop version
 - Use `nimble buildDesktop` or `nimble build` to compile the desktop version of the editor.
