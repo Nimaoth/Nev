@@ -4054,17 +4054,36 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text"
   self.currentCommandHistory.commands.setLen 0
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
+  let wordRunes {.cursor.} = self.document.settings.completionWordChars.get()
+  let rope {.cursor.} = self.document.rope
+
   let max = self.settings.chooseCursorMax.get()
   for chunk in self.lastRenderedChunks:
+    var startsWithWord = true
+    if chunk.range.a.column > 0:
+      let currentIsWord = rope.runeAt(chunk.range.a) in wordRunes
+      let prevIsWord = rope.runeAt(rope.clipPoint(point(chunk.range.a.row, chunk.range.a.column - 1), Bias.Left)) in wordRunes
+      if prevIsWord == currentIsWord:
+        startsWithWord = false
+
     let str = self.document.contentString((chunk.range.a.toCursor, chunk.range.b.toCursor))
     var i = 0
-    while i < str.len and str[i] == ' ':
-      inc i
+    while i < str.len:
+      while i < str.len and str[i] == ' ':
+        inc i
+        startsWithWord = true
 
-    if i + 1 < str.len:
-      result.add (chunk.range.a + point(0, i)).toCursor
-      if result.len >= max:
-        break
+      var endIndex = str.find(' ', i)
+      if endIndex == -1:
+        endIndex = str.len
+
+      if startsWithWord and endIndex - i >= 2:
+        result.add (chunk.range.a + point(0, i)).toCursor
+        if result.len >= max:
+          break
+
+      i = endIndex
+      startsWithWord = true
 
 proc getCombinationsOfLength*(self: TextDocumentEditor, keys: openArray[string],
     disallowedPairs: HashSet[string], length: int, disallowDoubles: bool): seq[string] =

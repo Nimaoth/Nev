@@ -2303,19 +2303,6 @@ proc updateInlayHints*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_text_printText_void_TextDocumentEditor_bool_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc printText*(self: TextDocumentEditor; highlight: bool = true;
-                space: string = "") {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add highlight.toJson()
-  argsJson.add space.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_printText_void_TextDocumentEditor_bool_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_text_setReadOnly_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) {.gcsafe, raises: [].} =

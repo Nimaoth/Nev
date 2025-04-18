@@ -9,7 +9,7 @@ It also aims to provide tools for writing code out of the box, like Git integrat
 
 I'm also experimenting with a programming languange system where instead of writing the source code as plain text,
 the abstract syntac tree (AST) is edited directly (or rather through _projections_, which are still trees).
-This feature is not included in release builds, and has to enabled by compiling with `-D:enableAst=true`.
+This feature is not included in release builds, and has to enabled by compiling with `-D:enableAst=true` (note that it doesn't compile with the latest version, I will continue work on this at a later stage, for now the focus is on making this a good text editor for "normal" programming languages).
 
 ## Features
 - Vim motions (incomplete)
@@ -20,7 +20,15 @@ This feature is not included in release builds, and has to enabled by compiling 
 - [Sessions](docs/sessions.md)
 - [WASM plugins](docs/configuration.md)
 - Basic git integration (list/diff/add/stage/unstage/revert changed files)
-- Basic collaborative editing (only two p2p clients supported)
+- And many more smaller features...
+
+## Planned features
+- Collaborative editing (the foundation is exists already, the editor is using CRDTs based on [Zeds](https://github.com/zed-industries/zed) implementation, but actually connecting to other people is still missing)
+- Create custom UI in plugins
+- Fine grained permissions for plugins
+- Builtin terminal
+- Generic tree/table view with fuzzy searching, collapsing nodes, support for large trees. This will be used for e.g. file tree, document symbol outlines, type hierarchies, etc.
+- Helix motions
 
 ## Installation
 Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build from source](docs/building_from_source.md)
@@ -33,9 +41,9 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Dion Systems Editor](https://dion.systems/gallery.html)
 
 ## Important notes if you intend to use it
-- Current only UTF-8 encoded files are supported
+- Currently only UTF-8 encoded files are supported
 - Carriage return (`0xD`) will be removed when loading, and not added back when saving.
-- Language servers, debug adapters have to installed manually at the moment, treesitter parsers require [emscripten](https://github.com/emscripten-core/emscripten)
+- Language servers and debug adapters have to installed manually at the moment, treesitter parsers require [emscripten](https://github.com/emscripten-core/emscripten)
 - Read the [docs](docs/getting_started.md)
 
 ## Docs
