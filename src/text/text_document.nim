@@ -27,6 +27,9 @@ logCategory "text-document"
 {.push gcsafe.}
 {.push raises: [].}
 
+proc typeNameToJson*(T: typedesc[IndentStyleKind]): string =
+  return "\"tabs\" | \"spaces\""
+
 declareSettings TrimTrailingWhitespaceSettings, "":
   ## If true trailing whitespace is deleted when saving files.
   declare enabled, bool, true

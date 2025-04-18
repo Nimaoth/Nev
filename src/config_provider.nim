@@ -1,4 +1,4 @@
-import std/[json, options, strutils, tables, enumerate, sequtils, macros, genasts, sets, typetraits]
+import std/[json, options, strutils, tables, enumerate, sequtils, macros, genasts, sets, typetraits, strformat, algorithm, macrocache]
 import misc/[traits, util, event, custom_async, custom_logger, myjsonutils, jsonex, id, timer, custom_unicode]
 import scripting/expose
 import platform/platform
@@ -52,6 +52,7 @@ type
     prefix*: string
     name*: string
     typ*: string
+    typeName*: string
     default*: string
     docs*: string
     noInit*: bool
@@ -59,6 +60,8 @@ type
   RegexSetting* = distinct JsonNodeEx
 
   RuneSetSetting* = distinct HashSet[Rune]
+
+const defaultToJsonOptions = ToJsonOptions(enumMode: joptEnumString, jsonNodeMode: joptJsonNodeAsRef)
 
 proc `in`*(r: Rune, set: RuneSetSetting): bool =
   type Base = HashSet[Rune]
@@ -79,7 +82,7 @@ proc fromJsonExHook*(t: var RuneSetSetting, jsonNode: JsonNodeEx) =
 
 proc toJsonExHook*[T](a: Setting[T]): JsonNodeEx {.raises: [].} =
   let v = a.get()
-  return v.toJsonEx()
+  return v.toJsonEx(defaultToJsonOptions)
 
 proc fromJsonExHook*(t: var RegexSetting, jsonNode: JsonNodeEx) =
   t = jsonNode.RegexSetting
@@ -94,12 +97,13 @@ proc camelCaseToHyphenCase(str: string): string =
 
 var settingGroupDescriptions {.compileTime.} = initTable[string, SettingGroupDescription]()
 var settingDescriptionsIndices {.compileTime.} = initTable[string, int]()
+var settingToJsonTypeNames {.compileTime.} = initTable[string, string]()
 var settingDescriptions* {.compileTime.} = newSeq[SettingDescription]()
 var getSettingDescriptions*: proc(): seq[SettingDescription] {.gcsafe, raises: [].}
 
 template setSettingDefault(index: int, defaultValue: untyped) =
   static:
-    settingDescriptions[index].default = $defaultValue.toJsonEx()
+    settingDescriptions[index].default = $defaultValue.toJsonEx(defaultToJsonOptions)
 
 proc joinSettingKey*(a, b: string): string =
   if a.len > 0 and b.len > 0:
@@ -108,6 +112,37 @@ proc joinSettingKey*(a, b: string): string =
     return a
   else:
     return b
+
+proc typeNameToJson*(T: typedesc): string =
+  return $T
+
+proc typeNameToJson*(T: typedesc[JsonNode]): string =
+  return "any"
+
+proc typeNameToJson*(T: typedesc[RegexSetting]): string =
+  return "regex"
+
+proc typeNameToJson*(T: typedesc[LineNumbers]): string =
+  return "\"none\" | \"absolute\" | \"relative\""
+
+proc typeNameToJson*(T: typedesc[RuneSetSetting]): string =
+  return "(string | string[])[]"
+
+proc typeNameToJson*[K](T: typedesc[seq[K]]): string =
+  let subTypeName = typeNameToJson(K)
+  if subTypeName.find(" ") != -1 and not subTypeName.endsWith(")") and not subTypeName.endsWith("]") and not subTypeName.endsWith("}"):
+    return "(" & subTypeName & ")[]"
+  else:
+    return subTypeName & "[]"
+
+proc typeNameToJson*[K](T: typedesc[Option[K]]): string =
+  return typeNameToJson(K) & " | null"
+
+proc typeNameToJson*[K](T: typedesc[Table[string, K]]): string =
+  return "{ [key: string]: " & typeNameToJson(K) & " }"
+
+macro addJsonTypeName(key: static[string], name: static[string]) =
+  settingToJsonTypeNames[key] = name
 
 proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], body: NimNode): NimNode {.compileTime.} =
   if name.repr in settingGroupDescriptions:
@@ -183,6 +218,12 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
           genAst(index = settingDescriptions.high, default):
             setSettingDefault(index, default)
 
+      setDefaultNodes.add block:
+        genAst(index = settingDescriptions.high, fullName, typ):
+          addJsonTypeName(fullName, typeNameToJson(typ))
+          static:
+            settingDescriptions[index].typeName = typeNameToJson(typ)
+
       docs = nil
       continue
 
@@ -211,9 +252,12 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
         desc.settings.add settingDescriptions.high
         settingDescriptionsIndices[s.name] = settingDescriptions.high
 
-        # setDefaultNodes.add block:
-        #   genAst(index = settingDescriptions.high, default):
-        #     setSettingDefault(index, default)
+        setDefaultNodes.add block:
+          genAst(fullName2 = s.fullName, subName = p.name, index = settingDescriptions.high):
+            static:
+              if settingToJsonTypeNames.contains(subName):
+                settingToJsonTypeNames[fullName2] = settingToJsonTypeNames[subName]
+                settingDescriptions[index].typeName = settingToJsonTypeNames[subName]
 
       typeNode[0][2][2].add nnkIdentDefs.newTree(name.postfix("*"), typ, newEmptyNode())
 
@@ -619,7 +663,7 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
       return
 
     if i == key.len:
-      let jsonValue = when T is JsonNodeEx: value else: value.toJsonEx
+      let jsonValue = when T is JsonNodeEx: value else: value.toJsonEx(defaultToJsonOptions)
       if subKey in node.fields:
         if node.fields[subKey] == jsonValue:
           return
@@ -856,7 +900,7 @@ proc setOption*(self: ConfigService, option: string, value: JsonNode, override: 
   if self.isNil:
     return
 
-  self.runtime.set(option, value.toJsonEx)
+  self.runtime.set(option, value.toJsonEx(defaultToJsonOptions))
   self.onConfigChanged.invoke()
   self.services.getService(PlatformService).get.platform.requestRender(true)
 
@@ -884,7 +928,7 @@ proc setAllDefaultsImpl(store: ConfigStore, descriptions: seq[SettingDescription
     try:
       if setting.name.contains("*") or setting.prefix == "" or setting.noInit:
         continue
-      store.set(setting.fullname, setting.default.parseJsonEx())
+      store.set(setting.fullName, setting.default.parseJsonEx())
     except Exception as e:
       log lvlError, &"Failed to set default for setting '{setting.name}': {e.msg}\n{setting.default}"
 
@@ -902,6 +946,40 @@ template defineSetAllDefaultSettings*(): untyped =
     const settingDescriptionsTemp = settingDescriptions
     return settingDescriptionsTemp
   getSettingDescriptions = getSettingDescriptionsImpl
+
+  proc generateDocs() =
+    var text = """
+# Incompleted list of all settings
+
+For examples and default values see [here](../config/settings.json)
+
+| Key | Type | Default | Description |
+| ----------- | --- | --- | ------ |
+"""
+
+    var sortedDescriptions = descriptions
+    let typeNames = settingToJsonTypeNames
+
+    proc escape(s: string): string = s.replace("|", "\\|")
+
+    sortedDescriptions.sort(proc(a, b: auto): int = cmp(a.fullName, b.fullName))
+    var lastFullName = ""
+    for desc in sortedDescriptions:
+      if desc.name.contains("*") or desc.prefix == "" or desc.noInit or desc.fullName == lastFullName:
+        continue
+      lastFullName = desc.fullName
+
+      let docs = desc.docs.replace("\n", " ")
+      var typeName = desc.typ
+      if typeNames.contains(desc.fullName):
+        typeName = typeNames[desc.fullName]
+
+      text.add "| `" & desc.fullName & "` | " & typeName.escape() & " | " & desc.default.escape() & " | " & docs.escape() & " |\n"
+
+    writeFile("docs/settings.gen.md", text)
+
+  static:
+    generateDocs()
 
 declareSettings BackgroundSettings, "":
   ## If true the background is transparent.
@@ -962,7 +1040,7 @@ declareSettings UiSettings, "ui":
   ## How long the cursor trail is. Set to 0 to disable cursor trail.
   declare cursorTrailLength, int, 2
 
-  ## How line numbers should be displayed. Can be "absolute", "relative", "none".
+  ## How line numbers should be displayed.
   declare lineNumbers, LineNumbers, LineNumbers.Absolute
 
   ## How long toasts are displayed for, in milliseconds.
@@ -1026,5 +1104,4 @@ declareSettings DebugSettings, "debug":
   declare drawTextChunks, bool, false
 
 when isMainModule:
-
   defineSetAllDefaultSettings()

@@ -1531,6 +1531,10 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
       if desc.getSome(desc):
         data.add desc.docs.split("\n").mapIt("// " & it).join("\n")
         data.add "\n"
+        if desc.typeName != "":
+          data.add "// Type: "
+          data.add desc.typeName
+          data.add "\n"
       data.add value.pretty(printUserData = printUserData)
 
       let detail = if sourceStore != nil:

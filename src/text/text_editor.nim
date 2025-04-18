@@ -48,13 +48,23 @@ type
   CommandHistory = object
     commands: seq[Command]
 
-  ColorType = enum Hex = "hex", Float1 = "float1", Float256 = "float256"
+  ColorType* = enum Hex = "hex", Float1 = "float1", Float255 = "float255"
+
+proc typeNameToJson*(T: typedesc[ColorType]): string =
+  return "\"hex\" | \"float1\" | \"float255\""
 
 declareSettings ColorHighlightSettings, "":
   ## Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language
   ## in `text.color-highlight.{language-id}.`
   declare enable, bool, false
-  declare regex, RegexSetting, "(#[0-9a-fA-F]{6})|(#[0-9a-fA-F]{8})"
+
+  ## Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind.
+  declare regex, RegexSetting, "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})"
+
+  ## How to interpret the number.
+  ## "hex" means the number is written as either 6 or 8 hex characters, e.g. ABBACA7.
+  ## "float1" means the number is a float with 0 being black and 1 being white.
+  ## "float255" means the number is a float or int with 0 being black and 255 being white.
   declare kind, ColorType, ColorType.Hex
 
 declareSettings MatchingWordHighlightSettings, "":
@@ -98,7 +108,7 @@ declareSettings SearchRegexSettings, "":
   ## Regex to use when using the workspace-symbols feature.
   declare workspaceSymbols, Option[RegexSetting], nil
 
-  ## Regex to use when using the workspace-symbols feature.
+  ## Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex.
   declare workspaceSymbolsByKind, Option[Table[string, RegexSetting]], nil
 
 declareSettings TextEditorSettings, "text":
@@ -4470,7 +4480,11 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
     for r in colorRanges:
       let text = rope[r]
       let color = case kind
-      of Hex: $text
+      of Hex:
+        if text.startsWith("#"):
+          $text
+        else:
+          "#" & $text
       of Float1:
         var c = color(0, 0, 0)
         let text = $text
@@ -4480,14 +4494,14 @@ proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
           c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat
           c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat
         "#" & c.toHex
-      of Float256:
+      of Float255:
         var c = color(0, 0, 0)
         let text = $text
         let numbers = text.findAllBounds(0, floatRegex)
         if numbers.len >= 3:
-          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat / 256.0
-          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat / 256.0
-          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 256.0
+          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat / 255.0
+          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat / 255.0
+          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 255.0
         "#" & c.toHex
 
       self.displayMap.overlay.addOverlay(r.a...r.a, "■", overlayIdColorHighlight, color)

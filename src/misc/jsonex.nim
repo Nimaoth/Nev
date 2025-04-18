@@ -1385,7 +1385,8 @@ proc toJsonEx*[T](a: T, opt = initToJsonOptions()): JsonNodeEx {.raises: [].} =
   ## .. note:: With `-d:nimPreviewJsonutilsHoleyEnum`, `toJsonEx` now can
   ##    serialize/deserialize holey enums as regular enums (via `ord`) instead of as strings.
   ##    It is expected that this behavior becomes the new default in upcoming versions.
-  when compiles(toJsonExHook(a)): result = toJsonExHook(a)
+  when compiles(toJsonExHook(a, opt)): result = toJsonExHook(a, opt)
+  elif compiles(toJsonExHook(a)): result = toJsonExHook(a)
   elif T is object | tuple:
     when T is object or isNamedTuple(T):
       result = newJexObject()
@@ -1447,7 +1448,7 @@ proc fromJsonExHook*[K: string|cstring, V](t: var (Table[K, V] | OrderedTable[K,
   for k, v in jsonNode:
     t[k] = jsonTo(v, V, opt)
 
-proc toJsonExHook*[K: string|cstring, V](t: (Table[K, V] | OrderedTable[K, V])): JsonNodeEx =
+proc toJsonExHook*[K: string|cstring, V](t: (Table[K, V] | OrderedTable[K, V]), opt = initToJsonOptions()): JsonNodeEx =
   ## Enables `toJsonEx` for `Table` and `OrderedTable` types.
   ##
   ## See also:
@@ -1467,7 +1468,7 @@ proc toJsonExHook*[K: string|cstring, V](t: (Table[K, V] | OrderedTable[K, V])):
   result = newJexObject()
   for k, v in pairs(t):
     # not sure if $k has overhead for string
-    result[(when K is string: k else: $k)] = toJsonEx(v)
+    result[(when K is string: k else: $k)] = toJsonEx(v, opt)
 
 proc fromJsonExHook*[A](s: var SomeSet[A], jsonNode: JsonNodeEx, opt = Joptions()) =
   ## Enables `fromJsonEx` for `HashSet` and `OrderedSet` types.
@@ -1489,7 +1490,7 @@ proc fromJsonExHook*[A](s: var SomeSet[A], jsonNode: JsonNodeEx, opt = Joptions(
   for v in jsonNode:
     incl(s, jsonTo(v, A, opt))
 
-proc toJsonExHook*[A](s: SomeSet[A]): JsonNodeEx =
+proc toJsonExHook*[A](s: SomeSet[A], opt = initToJsonOptions()): JsonNodeEx =
   ## Enables `toJsonEx` for `HashSet` and `OrderedSet` types.
   ##
   ## See also:
@@ -1501,7 +1502,7 @@ proc toJsonExHook*[A](s: SomeSet[A]): JsonNodeEx =
 
   result = newJexArray()
   for k in s:
-    add(result, toJsonEx(k))
+    add(result, toJsonEx(k, opt))
 
 proc fromJsonExHook*[T](self: var Option[T], jsonNode: JsonNodeEx, opt = Joptions()) =
   ## Enables `fromJsonEx` for `Option` types.
@@ -1521,7 +1522,7 @@ proc fromJsonExHook*[T](self: var Option[T], jsonNode: JsonNodeEx, opt = Joption
   else:
     self = none[T]()
 
-proc toJsonExHook*[T](self: Option[T]): JsonNodeEx =
+proc toJsonExHook*[T](self: Option[T], opt = initToJsonOptions()): JsonNodeEx =
   ## Enables `toJsonEx` for `Option` types.
   ##
   ## See also:
@@ -1534,7 +1535,7 @@ proc toJsonExHook*[T](self: Option[T]): JsonNodeEx =
     assert $toJsonEx(optNone) == "null"
 
   if isSome(self):
-    toJsonEx(get(self))
+    toJsonEx(get(self), opt)
   else:
     newJexNull()
 
@@ -1556,7 +1557,7 @@ proc fromJsonExHook*(a: var StringTableRef, b: JsonNodeEx, opt = Joptions()) =
   let b2 = b["table"]
   for k,v in b2: a[k] = jsonTo(v, string, opt = Joptions())
 
-proc toJsonExHook*(a: StringTableRef): JsonNodeEx =
+proc toJsonExHook*(a: StringTableRef, opt = initToJsonOptions()): JsonNodeEx =
   ## Enables `toJsonEx` for `StringTableRef` type.
   ##
   ## See also:
@@ -1569,9 +1570,9 @@ proc toJsonExHook*(a: StringTableRef): JsonNodeEx =
     assert toJsonEx(t) == parseJsonex(jsonStr)
 
   result = newJexObject()
-  result["mode"] = toJsonEx($a.mode)
+  result["mode"] = toJsonEx($a.mode, opt)
   let t = newJexObject()
-  for k,v in a: t[k] = toJsonEx(v)
+  for k,v in a: t[k] = toJsonEx(v, opt)
   result["table"] = t
 
 proc fromJsonExHook*(a: var Uri, b: JsonNodeEx, opt = Joptions()) =
@@ -1582,13 +1583,13 @@ proc fromJsonExHook*(a: var Uri, b: JsonNodeEx, opt = Joptions()) =
 
   a = jsonTo(b, string, opt = Joptions()).parseUri
 
-proc toJsonExHook*(a: Uri): JsonNodeEx =
+proc toJsonExHook*(a: Uri, opt = initToJsonOptions()): JsonNodeEx =
   ## Enables `toJsonEx` for `Uri` type.
   ##
   ## See also:
   ## * `fromJsonExHook proc<#fromJsonExHook,Uri,JsonNodeEx>`_
 
-  return ($a).toJsonEx
+  return ($a).toJsonEx(opt)
 
 proc toJexArray*(arr: openArray[JsonNodeEx]): JsonNodeEx =
   result = newJexArray()
@@ -1618,18 +1619,18 @@ proc toJson*(node: JsonNodeEx): JsonNode =
   of JNull:
     result = newJNull()
 
-proc toJsonEx*(node: JsonNode): JsonNodeEx =
+proc toJsonEx*(node: JsonNode, opt = initToJsonOptions()): JsonNodeEx =
   if node == nil:
     return nil
   case node.kind
   of JObject:
     result = newJexObject()
     for (key, value) in node.fields.pairs:
-      result[key] = value.toJsonEx
+      result[key] = value.toJsonEx(opt)
   of JArray:
     result = newJexArray()
     for value in node.elems:
-      result.elems.add value.toJsonEx
+      result.elems.add value.toJsonEx(opt)
   of JString:
     result = newJexString(node.str)
   of JInt:
