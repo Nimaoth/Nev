@@ -139,7 +139,11 @@ This command opens a finder which allows you to search through and change all se
 Boolean settings can be toggled `<C-t>`. Other settings can be changed by changing the value in the preview and saving.
 
 Use `C-h` and `C-f` to move to the parent/child store. The search bar shows which store is currently shown.
+
 Use `C-g` to toggle between showing the merged settings up to (and including) the current store, or only the settings in the current store. The search bar shows whether the merged or raw settings are shown.
+
+Use `C-c` to clear the value of a setting (e.g. if you overrode a setting in the runtime store and you want to revert it back to the default).
+
 
 ![Gif showing how to use the settings browser](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/settings_browser1.gif)
 

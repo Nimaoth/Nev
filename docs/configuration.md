@@ -24,7 +24,7 @@ Additionally to the `settings.json` and `keybindings.json` files, the editor als
 - `settings-{backend}.json`
 - `settings-{platform}-{backend}.json`
 
-`{platform}` is one of (`windows`, `linux`, `wasm`, `js`, `other`) and `{backend}` is one of (`gui`, `terminal`, `browser`)
+`{platform}` is one of (`windows`, `linux`, `other`) and `{backend}` is one of (`gui`, `terminal`, `browser`)
 
 These additional settings files are useful for having different cofiguration on different operating systems
 (e.g. different paths to LSP executables)
