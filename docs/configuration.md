@@ -26,7 +26,7 @@ Additionally to the `settings.json` and `keybindings.json` files, the editor als
 
 `{platform}` is one of (`windows`, `linux`, `other`) and `{backend}` is one of (`gui`, `terminal`, `browser`)
 
-These additional settings files are useful for having different cofiguration on different operating systems
+These additional settings files are useful for having different configuration on different operating systems
 (e.g. different paths to LSP executables)
 
 The `keybindings*.json` files can only bind existing commands (builtin or from plugins).
@@ -38,7 +38,7 @@ Settings are internally stored in stores, where each settings store consists of 
 
 Setting stores can override or extend the settings from the parent. Some stores are loaded from a file, some are only in memory.
 
-Setting stores form a tree, with the base store at the root and indidual text editors (for individual files) as leaves.
+Setting stores form a tree, with the base store at the root and individual text editors (for individual files) as leaves.
 
 When the application reads the value of a setting, depending on the context it reads it from either an editor store, document store, language store or the runtime store.
 
@@ -252,7 +252,7 @@ The following special keys are defined:
 To specify that a modifier should be held down together with another key you need to used `<XXX-YYY>`, where `XXX` is any combination of modifiers
 (`S` = shift, `C` = control, `A` = alt) and `YYY` is either a single ascii character for the key, or one of the special keys (e.g. `ENTER`).
 
-If you use a upper case ascii character as key then this automatically means it uses shift, so `A` is equivalent to `<S-a>` and `<S-A>`
+If you use an upper case ascii character as key then this automatically means it uses shift, so `A` is equivalent to `<S-a>` and `<S-A>`
 
 Some examples:
 
