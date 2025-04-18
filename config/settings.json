@@ -173,7 +173,7 @@
     "+lang": {
         "command-line": {
             "+text": {
-                "completionWordChars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"]
+                "completion-word-chars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"]
             }
         },
         "html": {
@@ -181,7 +181,7 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-html",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ">"
                 ]
             }
@@ -191,12 +191,12 @@
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-query",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": ";"
+                "line-comment": ";"
             }
         },
         "nim": {
@@ -239,7 +239,7 @@
                 "formatter": "nph",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
@@ -248,7 +248,7 @@
                     "enum",
                     "object"
                 ],
-                "lineComment": "#"
+                "line-comment": "#"
             }
         },
         "python": {
@@ -256,14 +256,14 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-python",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "#"
+                "line-comment": "#"
             }
         },
         "javascript": {
@@ -271,15 +271,15 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-javascript",
                 "tab-width": 4,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ],
@@ -291,15 +291,15 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-typescript/typescript",
                 "tab-width": 4,
                 "indent": "tab",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ]
@@ -310,15 +310,15 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-typescript/tsx",
                 "tab-width": 4,
                 "indent": "tab",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ]
@@ -329,7 +329,7 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-rust",
                 "tab-width": 4,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
@@ -337,8 +337,8 @@
                     "["
                 ],
                 "ignoreContextLineRegex": "\\W*(where|\\{|\\)).*",
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ]
@@ -349,15 +349,15 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-c",
                 "tab-width": 4,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ],
@@ -382,15 +382,15 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-cpp",
                 "tab-width": 4,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ]
@@ -401,15 +401,15 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-c-sharp",
                 "tab-width": 4,
                 "indent": "tab",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ]
@@ -420,15 +420,15 @@
                 "treesitter.repository": "tree-sitter/tree-sitter-java",
                 "tab-width": 4,
                 "indent": "tab",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ]
@@ -439,14 +439,14 @@
                 "treesitter.repository": "maxxnino/tree-sitter-zig",
                 "tab-width": 4,
                 "indent": "tab",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
+                "line-comment": "//",
                 "search-regexes": {
                     "goto-definition": [
                         "fn \\b[[0]]\\b",
@@ -468,15 +468,15 @@
                 "treesitter.repository": "ap29600/tree-sitter-odin",
                 "tab-width": 4,
                 "indent": "tab",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/",
                 ],
@@ -487,12 +487,12 @@
                 "treesitter.repository": "maxxnino/tree-sitter-json",
                 "tab-width": 4,
                 "indent": "tab",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "{",
                     "[",
                 ],
-                "lineComment": "//",
+                "line-comment": "//",
                 "color-highlight": {
                     "enable": true,
                     "regex": "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})",
@@ -505,12 +505,12 @@
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-yaml",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "{",
                     "["
                 ],
-                "lineComment": "#"
+                "line-comment": "#"
             }
         },
         "markdown": {
@@ -520,7 +520,7 @@
                 "treesitter.queries": "tree-sitter-markdown/queries",
                 "tab-width": 2,
                 "indent": "spaces",
-                "blockComment": [ "<!--", "-->" ]
+                "block-comment": [ "<!--", "-->" ]
             }
         },
         "markdown_inline": {
@@ -529,7 +529,7 @@
                 "treesitter.queries": "tree-sitter-markdown-inline/queries",
                 "tab-width": 2,
                 "indent": "spaces",
-                "blockComment": [ "<!--", "-->" ]
+                "block-comment": [ "<!--", "-->" ]
             }
         },
         "scala": {
@@ -597,7 +597,7 @@
                 "treesitter.repository": "airbus-cert/tree-sitter-powershell",
                 "tab-width": 4,
                 "indent": "spaces",
-                "lineComment": "#"
+                "line-comment": "#"
             }
         },
         "css": {
@@ -635,13 +635,13 @@
                 "treesitter.repository": "wenkokke/tree-sitter-talon",
                 "tab-width": 4,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "#"
+                "line-comment": "#"
             }
         },
         "nix": {
@@ -649,14 +649,14 @@
                 "treesitter.repository": "nix-community/tree-sitter-nix",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "#"
+                "line-comment": "#"
             }
         },
         "commonlisp": {
@@ -664,13 +664,13 @@
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-commonlisp",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": ";",
-                "blockComment": [
+                "line-comment": ";",
+                "block-comment": [
                     "(;",
                     ";)"
                 ]
@@ -681,12 +681,12 @@
                 "treesitter.repository": "Wilfred/tree-sitter-elisp",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": ";"
+                "line-comment": ";"
             }
         },
         "lua": {
@@ -694,12 +694,12 @@
                 "treesitter.repository": "tjdevries/tree-sitter-lua",
                 "tab-width": 4,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "--"
+                "line-comment": "--"
             }
         },
         "wit": {
@@ -707,19 +707,19 @@
                 "treesitter.repository": "liamwh/tree-sitter-wit",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indentAfter": [
+                "indent-after": [
                     ":",
                     "=",
                     "(",
                     "{",
                     "["
                 ],
-                "lineComment": "//",
-                "blockComment": [
+                "line-comment": "//",
+                "block-comment": [
                     "/*",
                     "*/"
                 ]
             }
-        }
+        },
     },
 }

@@ -5,7 +5,7 @@ import patty, bumpy
 import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, rope_utils, async_process, jsonex]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
-import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, service, vfs, vfs_service
+import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service
 import syntax_map
 import pkg/[chroma, results]
 
@@ -19,7 +19,6 @@ import nimsumtree/[buffer, clock, static_array, rope, clone]
 import nimsumtree/sumtree except Cursor, mapIt
 
 from language/lsp_types as lsp_types import nil
-
 export document, document_editor, id
 
 logCategory "text-document"
