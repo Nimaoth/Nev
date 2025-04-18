@@ -4001,6 +4001,91 @@ proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
   else:
     self.inlayHintsTask.reschedule()
 
+import std/terminal
+import std/colors as std_colors
+import syntax_map
+import theme
+
+proc printText[T](iter: var T, theme: Theme, highlight: bool = true) =
+  # echo self.displayMap.overlay.snapshot.renderString
+
+  iter.seekLine(0)
+
+  let textColor = theme.color("editor.foreground", color(1, 1, 1))
+
+  var lastColor = std_colors.rgb(255, 255, 255)
+  var last = point(0, 0)
+
+  try:
+    if highlight:
+      stdout.write(ansiForegroundColorCode(lastColor))
+
+    proc printChunk(chunk: StyledChunk) =
+      while chunk.point.row > last.row:
+        stdout.write("\n")
+        last += point(1, 0)
+
+      let textColor = if chunk.scope.len == 0: textColor else: theme.tokenColor(chunk.scope, textColor)
+      let color = std_colors.rgb(int(textColor.r * 255), int(textColor.g * 255), int(textColor.b * 255))
+      if highlight and color != lastColor:
+        lastColor = color
+        stdout.write(ansiForegroundColorCode(lastColor))
+
+      for c in chunk.toOpenArray:
+        stdout.write(c)
+
+    for chunk in styledChunks(iter):
+      printChunk(chunk)
+
+  except IOError:
+    discard
+
+proc printText*(self: TextDocumentEditor, highlight: bool = true, space: string = "") {.expose("editor.text").} =
+  let theme = ({.gcsafe.}: gTheme)
+  case space
+  of "":
+    var iter = ChunkIterator.init(self.displayMap.buffer.visibleText)
+    printText(iter, theme, highlight)
+
+  of "styled":
+    var iter = StyledChunkIterator.init(self.displayMap.buffer.visibleText)
+    if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
+      iter.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    printText(iter, theme, highlight)
+
+  of "overlay":
+    var iter = self.displayMap.overlay.snapshot.iter()
+    if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
+      iter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    printText(iter, theme, highlight)
+
+  of "tab":
+    var iter = self.displayMap.tabMap.snapshot.iter()
+    if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
+      iter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    printText(iter, theme, highlight)
+
+  of "wrap":
+    var iter = self.displayMap.wrapMap.snapshot.iter()
+    if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
+      iter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    printText(iter, theme, highlight)
+
+  of "diff":
+    var iter = self.displayMap.diffMap.snapshot.iter()
+    if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
+      iter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    printText(iter, theme, highlight)
+
+  of "display":
+    var iter = self.displayMap.iter()
+    if self.document.tsTree.isNotNil and self.document.highlightQuery.isNotNil and highlight:
+      iter.styledChunks.highlighter = Highlighter(query: self.document.highlightQuery, tree: self.document.tsTree).some
+    printText(iter, theme, highlight)
+
+  else:
+    log lvlError, &"printText: Unknown space '{space}'"
+
 proc setReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
   ## Sets the internal readOnly flag, but doesn't not change permissions of the underlying file
   self.document.setReadOnly(readOnly)

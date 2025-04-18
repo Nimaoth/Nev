@@ -982,3 +982,56 @@ proc renderString*(self: OverlayMapSnapshot): string =
       last += overlayPoint(1, 0)
     for c in chunk.toOpenArray:
       result.add c
+
+type
+  OverlayChunksState = object
+    ropeChunksState: RopeChunksState
+    seekPoint: Option[Point]
+    seekOverlayPoint: Option[OverlayPoint]
+    nextPoint: Point
+    nextOverlayPoint: Point
+
+  OverlayChunkIterator2* = object
+    overlayMap: OverlayMapSnapshot
+    iter: iterator(overlayMap: OverlayMapSnapshot, state: var OverlayChunksState): OverlayChunk {.gcsafe, raises: [].}
+    state: OverlayChunksState
+    done: bool
+
+iterator overlayChunks*(map: OverlayMapSnapshot, state: var OverlayChunksState): OverlayChunk =
+  let rope = map.buffer.visibleText.clone()
+  for chunk in ropeChunksC(rope, state.ropeChunksState):
+    yield OverlayChunk(
+      styledChunk: InputChunk(chunk: chunk),
+      overlayPoint: chunk.point.OverlayPoint,
+    )
+
+iterator overlayChunks*(map: OverlayMapSnapshot): OverlayChunk =
+  var state = OverlayChunksState()
+  for chunk in overlayChunks(map, state):
+    yield chunk
+
+iterator overlayChunksC(overlayMap: OverlayMapSnapshot, state: var OverlayChunksState): OverlayChunk {.closure.} =
+  for chunk in overlayChunks(overlayMap, state):
+    yield chunk
+
+proc init*(_: typedesc[OverlayChunkIterator2], overlayMap: sink OverlayMapSnapshot): OverlayChunkIterator2 =
+  result.overlayMap = overlayMap
+  result.iter = overlayChunksC
+
+proc seek*(self: var OverlayChunkIterator2, point: Point) =
+  self.state.seekPoint = point.some
+
+proc seek*(self: var OverlayChunkIterator2, point: OverlayPoint) =
+  self.state.seekOverlayPoint = point.some
+
+proc next*(self: var OverlayChunkIterator2): Option[OverlayChunk] =
+  if self.done:
+    return OverlayChunk.none
+
+  let chunk = self.iter(self.overlayMap, self.state)
+  if finished(self.iter):
+    self.done = true
+    return OverlayChunk.none
+
+  return chunk.some
+
