@@ -298,6 +298,16 @@ template softAssert*(condition: bool, message: string): untyped =
 func removeSwap*[T](s: var seq[T]; index: int) = s.del(index)
 func removeShift*[T](s: var seq[T]; index: int) = s.delete(index)
 
+func removeSwap*[T](s: var seq[T]; item: T) =
+  let index = s.find(item)
+  if index != -1:
+    s.del(index)
+
+func removeShift*[T](s: var seq[T]; item: T) =
+  let index = s.find(item)
+  if index != -1:
+    s.delete(index)
+
 func indentExtraLines*(s: string, count: Natural, padding: string = " "): string =
   ## Indents each line except the first in `s` by `count` amount of `padding`.
   ##
@@ -346,3 +356,28 @@ func endsWith*[T](s, suffix: openArray[T]): bool =
     if s[i+j] != suffix[i]: return false
     inc(i)
   if i >= suffixLen: return true
+
+iterator splitOpenArray*(s: string, sep: char, maxsplit: int = -1): tuple[p: ptr UncheckedArray[char], len: int] =
+  var last = 0
+  var splits = maxsplit
+
+  while last <= len(s):
+    var first = last
+    while last < len(s) and s[last] != sep:
+      inc(last)
+    if splits == 0: last = len(s)
+    let p = if s.len > 0:
+      cast[ptr UncheckedArray[char]](cast[int](s[0].addr) + first)
+    else:
+      nil
+    yield (p, last - first)
+    if splits == 0: break
+    dec(splits)
+    inc(last, 1)
+
+template boolLock*(l): untyped =
+  if l:
+    return
+  l = true
+  defer:
+    l = false

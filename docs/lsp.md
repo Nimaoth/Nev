@@ -8,9 +8,7 @@ Language servers currently have to be installed manually. If you already have a 
 
 Configuration for language servers should be put in the user settings (`~/.nev/settings.json`) or the workspace settings (`{workspace_dir}/.nev/settings.json`)
 
-Some language servers are already configured in the [app settings](../config/settings.json), so when you add you're own language server configuration make sure to use `"+lsp"` to extend the lsp configurations, unless you want to completely override the defaults.
-
-Some languages are already configured so if you have the binary in the PATH then you shouldn't need to configure anything (except maybe custom workspace configuration).
+Some language servers are already configured in the [app settings](../config/settings.json), so when you add you're own language server configuration make sure to use `"+lsp"` to extend the lsp configurations, unless you want to completely override the defaults:
 - `nim`: `nimlangserver`
 - `C`: `clangd`
 - `C++`: `clangd`
@@ -114,3 +112,44 @@ The completion engine takes possible completions from all providers and sorts/fi
 
 Currently this is not configurable yet, but later on the providers will be configurable and accessible to plugins.
 Plugins will also be able to create new completion providers.
+
+## Regex based language features
+
+Nev supports certain features (e.g. goto definition) by using regex based search if no language server is available.
+This allows you get decent support for LSP features without having to install an LSP, or if no LSP is available for your language.
+
+This feature currently requires [ripgrep](https://github.com/BurntSushi/ripgrep) to be installed.
+
+Here is an example configuration for Nim which defines two regexes, one for goto definition and one to find symbols in the current file:
+
+
+```json
+// ~/.nev/settings.json
+{
+    "+languages": {
+        "+nim": {
+            "search-regexes": {
+                "symbols": "proc \\b[a-zA-Z0-9_]+\\b",
+                "goto-definition": "proc \\b[[0]]\\b", // [[0]] will be replaced by the word under the cursor when searching
+                "goto-declaration": "...",
+                "goto-type-definition": "...",
+                "goto-implementation": "...",
+                "goto-references": "...",
+                "workspace-symbols": {
+                    "Class": "...",
+                    "Function": "..."
+                    // Other lsp symbol kinds, like Class, Function, Method, Enum, ...
+                }
+            }
+        },
+    }
+}
+```
+
+Given this configuration, when you press `gs` (in normal mode) in a nim file, the editor will use the regex `languages.nim.search-regexes.symbols` to search the current file and display the results in a popup.
+
+When you press `gd` (in normal mode) in a nim file, the editor will use the regex `languages.nim.search-regexes.goto-definition` to search all workspaces. If only one result is found, the editor will open it immediately, otherwise all results are displayed in a popup.
+
+For `goto-definition`, `goto-declaration`, `goto-type-definition`, `goto-implementation` and `goto-references` the regex is a template, and any instances of the string `[[0]]` will be replaced by the word under the cursor.
+
+Currently there are some regexes configured for Nim, C and Zig.

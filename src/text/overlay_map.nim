@@ -641,6 +641,9 @@ proc clear*(self: var OverlayMapSnapshot, id: int = -1): Patch[OverlayPoint] =
   return patch
 
 proc clear*(self: OverlayMap, id: int = -1) =
+  let idCounts = self.snapshot.map.summary.idCounts
+  if id notin 0..<idCounts.len or idCounts[id] == 0:
+    return
   let old = self.snapshot.clone()
   let patch = self.snapshot.clear(id)
   self.onUpdated.invoke (self, old, patch)

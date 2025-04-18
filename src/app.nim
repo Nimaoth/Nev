@@ -1,6 +1,6 @@
 import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex, custom_unicode]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform]
@@ -11,7 +11,7 @@ import input, events, document, document_editor, popup, dispatch_tables, theme, 
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
-import service, layout, session, command_service
+import service, layout, session, command_service, toast
 
 import nimsumtree/[rope]
 
@@ -103,6 +103,7 @@ type
     registers: Registers
     vfsService*: VFSService
     commands*: CommandService
+    toast*: ToastService
 
     workspace*: Workspace
     vfs*: VFS
@@ -143,6 +144,11 @@ type
     showNextPossibleInputsTask: DelayedTask
     nextPossibleInputs*: seq[tuple[input: string, description: string, continues: bool]]
     showNextPossibleInputs*: bool
+
+    reloadThemeFromConfig: bool
+
+    uiSettings*: UiSettings
+    generalSettings*: GeneralSettings
 
 var gEditor* {.exportc.}: App = nil
 
@@ -197,6 +203,7 @@ proc setLocationList(self: App, list: seq[FinderItem],
 proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: []).} =
   if not force and self.theme.isNotNil and self.theme.path == path:
     return
+  self.reloadThemeFromConfig = false
   if theme.loadFromFile(self.vfs, path).await.getSome(theme):
     log(lvlInfo, fmt"Loaded theme {path}")
     self.theme = theme
@@ -207,7 +214,7 @@ proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: [
   self.platform.requestRender(redrawEverything=true)
 
 proc runConfigCommands(self: App, key: string) =
-  let startupCommands = self.config.getOption(key, newJArray())
+  let startupCommands = self.config.runtime.get(key, newJArray())
   if startupCommands.isNil or startupCommands.kind != JArray:
     return
 
@@ -258,8 +265,8 @@ proc setupDefaultKeybindings(self: App) =
   let selectorPopupConfig = self.events.getEventHandlerConfig("popup.selector")
 
   self.setHandleInputs("editor.text", true)
-  self.config.setOption[:string]("editor.text.cursor.movement.", "both")
-  self.config.setOption[:bool]("editor.text.cursor.wide.", false)
+  self.config.runtime.set("editor.text.cursor.movement.", "both")
+  self.config.runtime.set("editor.text.cursor.wide.", false)
 
   editorConfig.addCommand("", "<C-x><C-x>", "quit")
   editorConfig.addCommand("", "<CAS-r>", "reload-plugin")
@@ -375,7 +382,12 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
   except CatchableError:
     log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
 
-proc loadSettingsFrom*(self: App, directory: string,
+proc preRender*(self: App, bounds: Rect) =
+  if self.reloadThemeFromConfig:
+    self.reloadThemeFromConfig = false
+    asyncSpawn self.setTheme(self.uiSettings.theme.get())
+
+proc loadSettingsFrom*(self: App, directory: string, changedFiles: seq[string] = @[], name: string,
     loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
 
   {.gcsafe.}:
@@ -395,15 +407,54 @@ proc loadSettingsFrom*(self: App, directory: string,
 
   assert filenames.len == settings.len
 
+  if directory notin self.config.storeGroups:
+    self.config.storeGroups[directory] = @[]
+  var deletedStores = self.config.storeGroups[directory]
+  var stores = newSeq[ConfigStore]()
+
   for i in 0..<filenames.len:
     if settings[i].isSome:
+      let filename = filenames[i]
+      log lvlInfo, &"Apply settings from {filename}, changed: {changedFiles}"
+      var jsonex: JsonNodeEx = nil
       try:
-        log lvlInfo, &"Apply settings from {filenames[i]}"
-        let json = settings[i].get.parseJson()
-        self.config.setOption("", json, override=false)
-
+        jsonex = settings[i].get.parseJsonex()
       except CatchableError:
-        log(lvlError, &"Failed to load settings from {filenames[i]}: {getCurrentExceptionMsg()}")
+        log(lvlError, &"Failed to load settings from {filename}: {getCurrentExceptionMsg()}")
+
+      let name = filename.splitPath.tail
+
+      if filename in self.config.stores:
+        let store = self.config.stores[filename]
+        if jsonex != nil and (changedFiles.len == 0 or name in changedFiles):
+          store.setSettings(jsonex)
+          store.originalText = settings[i].get
+        stores.add(store)
+        deletedStores.del(store)
+      elif jsonex != nil:
+        var name = name & "-" & filename.splitFile.name
+        name = name.replace("-settings", "")
+        let store = ConfigStore.new(name, filename, settings = jsonex)
+        store.originalText = settings[i].get
+        self.config.stores[filename] = store
+        stores.add(store)
+
+  for store in deletedStores:
+    store.parent = nil
+    store.setSettings(newJexObject())
+    store.onConfigChanged.invoke("")
+
+  for i in 1..stores.high:
+    let child = stores[i]
+    let parent = stores[i - 1]
+    child.setParent(parent)
+
+  if stores.len > 0:
+    self.config.storeGroups[directory] = stores
+  else:
+    self.config.storeGroups.del(directory)
+
+  self.config.reconnectGroups()
 
 proc loadKeybindings*(self: App, directory: string,
     loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
@@ -446,9 +497,9 @@ proc loadConfigFileFrom(self: App, context: string, path: string):
 
   return string.none
 
-proc loadConfigFrom*(self: App, root: string) {.async.} =
+proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.} =
   await allFutures(
-    self.loadSettingsFrom(root, loadConfigFileFrom),
+    self.loadSettingsFrom(root, changedFiles, name, loadConfigFileFrom),
     self.loadKeybindings(root, loadConfigFileFrom)
   )
 
@@ -542,7 +593,7 @@ proc loadConfigFrom*(self: App, root: string) {.async.} =
 #               continue
 
 #             log lvlInfo, &"Set {setting}"
-#             self.config.setOption(path, value)
+#             self.config.runtime.set(path, value)
 #           else:
 #             discard self.layout.openFile(message)
 
@@ -566,7 +617,7 @@ proc applySettingsFromAppOptions(self: App) =
       continue
 
     log lvlInfo, &"Set {setting}"
-    self.config.setOption(path, value)
+    self.config.runtime.set(path, value)
 
 proc runEarlyCommandsFromAppOptions(self: App) =
   log lvlInfo, &"Run early commands provided through command line"
@@ -620,6 +671,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.vfsService = services.getService(VFSService).get
   self.workspace = services.getService(Workspace).get
   self.commands = services.getService(CommandService).get
+  self.toast = services.getService(ToastService).get
   self.vfs = self.vfsService.vfs
 
   self.platform.fontSize = 16
@@ -639,9 +691,14 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.setupDefaultKeybindings()
 
-  await self.loadConfigFrom(appConfigDir)
-  await self.loadConfigFrom(homeConfigDir)
+  self.config.groups.add(appConfigDir)
+  await self.loadConfigFrom(appConfigDir, "app")
+  self.config.groups.add(homeConfigDir)
+  await self.loadConfigFrom(homeConfigDir, "home")
   log lvlInfo, &"Finished loading app and user settings"
+
+  self.uiSettings = UiSettings.new(self.config.runtime)
+  self.generalSettings = GeneralSettings.new(self.config.runtime)
 
   self.applySettingsFromAppOptions()
 
@@ -660,9 +717,10 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.renderHeader = false
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
   self.commands.commandLineEditor.TextDocumentEditor.disableScrolling = true
-  self.commands.commandLineEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
+  self.commands.commandLineEditor.TextDocumentEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
+  self.commands.commandLineEditor.TextDocumentEditor.settings.highlightMatches.enable.set(false)
   self.commands.commandLineEditor.TextDocumentEditor.hideCursorWhenInactive = true
-  self.commands.commandLineEditor.TextDocumentEditor.cursorMargin = 0.0.some
+  self.commands.commandLineEditor.TextDocumentEditor.settings.cursorMargin.set(0.0)
   self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
   discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
   self.editors.commandLineEditor = self.commands.commandLineEditor
@@ -744,11 +802,11 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
 
-  let closeUnusedDocumentsTimerS = self.config.getOption("editor.close-unused-documents-timer", 10)
+  let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
 
-  let showNextPossibleInputsDelay = self.config.getOption("ui.which-key-delay", 500)
+  let showNextPossibleInputsDelay = self.uiSettings.whichKeyDelay.get()
   self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
     self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
     self.platform.requestRender()
@@ -756,33 +814,55 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.runEarlyCommandsFromAppOptions()
   self.runConfigCommands("startup-commands")
 
-  # if self.getOption("command-server.port", Port.none).getSome(port):
+  # if self.runtime.get("command-server.port", Port.none).getSome(port):
   #   asyncSpawn self.listenForConnection(port)
 
-  if self.config.getFlag("editor.restore-open-workspaces", true):
-    for wf in state.workspaceFolders:
-      log(lvlInfo, fmt"Restoring workspace")
-      self.workspace.restore(wf.settings)
-      await self.loadConfigFrom(workspaceConfigDir)
+  for i, wf in state.workspaceFolders:
+    log(lvlInfo, fmt"Restoring workspace")
+    self.workspace.restore(wf.settings)
+
+    if i == 0:
+      self.config.groups.add(workspaceConfigDir)
+      await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.path == "":
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
     self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
-    await self.loadConfigFrom(workspaceConfigDir)
+    self.config.groups.add(workspaceConfigDir)
+    await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-  let themeName = self.config.getOption("ui.theme", "app://themes/tokyo-night-color-theme.json")
-  await self.setTheme(themeName)
+  await self.setTheme(self.uiSettings.theme.get())
 
-  self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
-    for e in events:
-      case e.action
-      of Modify:
-        if "app://themes" // e.name == self.theme.path:
-          asyncSpawn self.setTheme(self.theme.path, force = true)
+  if self.generalSettings.watchTheme.get():
+    self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
+      for e in events:
+        case e.action
+        of Modify:
+          if "app://themes" // e.name == self.theme.path:
+            asyncSpawn self.setTheme(self.theme.path, force = true)
 
-      else:
-        discard
+        else:
+          discard
+
+  if self.generalSettings.watchAppConfig.get():
+    self.vfs.watch appConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
+
+  if self.generalSettings.watchUserConfig.get():
+    self.vfs.watch homeConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
+
+  if self.generalSettings.watchWorkspaceConfig.get():
+    self.vfs.watch workspaceConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
+
+  let onRuntimeConfigChangedHandle = self.config.runtime.onConfigChanged.subscribe proc(key: string) =
+    if key == "" or key == "ui" or key == "ui.theme":
+      self.reloadThemeFromConfig = true
 
   asyncSpawn self.finishInitialization(state)
 
@@ -800,7 +880,7 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
     except CatchableError as e:
       log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
-  elif self.config.getFlag("editor.restore-open-editors", true):
+  else:
     for editorState in state.openEditors:
       let view = self.layout.createView(editorState.filename)
       if view.isNil:
@@ -839,7 +919,7 @@ proc saveAppState*(self: App)
 proc printStatistics*(self: App)
 
 proc shutdown*(self: App) =
-  if self.config.getOption("editor.print-statistics-on-shutdown", false):
+  if self.generalSettings.printStatisticsOnShutdown.get():
     self.printStatistics()
 
   self.saveAppState()
@@ -883,6 +963,10 @@ proc handleLog(self: App, level: Level, args: openArray[string]) =
 
   else:
     self.logBuffer.add str
+
+  if level == lvlError:
+    let str = substituteLog("", level, args)
+    self.toast.showToast("Error", str, "error")
 
 proc getEditor(): Option[App] =
   {.gcsafe.}:
@@ -1385,21 +1469,82 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
   self.layout.pushPopup popup
 
-proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
+proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.5) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
   let dataPreviewer = newDataPreviewer(self.services, language="javascript".some)
   let previewer = dataPreviewer.Previewer.toDisposableRef.some
 
+  var state: ref tuple[
+    index: int,
+    stores: seq[ConfigStore],
+    merged: bool,
+    targetEditor: DocumentEditor,
+    changedEventSource: ConfigStore,
+    changedHandle: Id]
+  new(state)
+  state.merged = true
+
+  if includeActiveEditor and self.getActiveEditor().getSome(editor):
+    state.targetEditor = editor
+    for s in editor.config.parentStores:
+      state.stores.add(s)
+  else:
+    for s in self.config.runtime.parentStores:
+      state.stores.add(s)
+
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+    proc printUserData(node: JsonNodeEx): string =
+      let sourceStore = self.config.getStoreForId(node.userData)
+      if sourceStore != nil:
+        return sourceStore.name
+
+    let store = state.stores[state.index]
+    let settings = if state.merged:
+      store.mergedSettings
+    else:
+      store.settings
+
+    let data = if state.merged or store.originalText.len == 0:
+      settings.pretty(printUserData = printUserData)
+    else:
+      store.originalText
+
+    let detail = if state.merged:
+      store.name & " merged\t" & store.filename
+    else:
+      store.name & " raw\t" & store.filename
+
     var items = newSeq[FinderItem]()
-    for (key, value) in self.config.getAllConfigKeys():
+    items.add FinderItem(
+      displayName: "",
+      data: data,
+      detail: detail,
+    )
+
+    for (key, value) in settings.getAllKeys():
       let valueStr = $value
+      let sourceStore = self.config.getStoreForId(value.userData)
+      let desc = self.config.getSettingDescription(key)
+      var data = ""
+      if desc.getSome(desc):
+        data.add desc.docs.split("\n").mapIt("// " & it).join("\n")
+        data.add "\n"
+        if desc.typeName != "":
+          data.add "// Type: "
+          data.add desc.typeName
+          data.add "\n"
+      data.add value.pretty(printUserData = printUserData)
+
+      let detail = if sourceStore != nil:
+        &"{sourceStore.name}\t{sourceStore.detail}"
+      else:
+        &"{store.name}\t{store.detail}"
       items.add FinderItem(
         displayName: key,
-        data: value.pretty,
-        detail: valueStr[0..min(valueStr.high, 50)],
+        data: data,
+        detail: detail,
       )
 
     return items
@@ -1410,13 +1555,105 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
   popup.scale.x = scaleX
   popup.scale.y = scaleY
   popup.previewScale = previewScale
+  popup.previewEditor.config.set("editor.text.context-lines", false)
+
+  # todo: remove the listener when closed
+  proc updateListener() =
+    if state.changedEventSource != nil:
+      state.changedEventSource.onConfigChanged.unsubscribe(state.changedHandle)
+      state.changedEventSource = nil
+
+    state.changedEventSource = state.stores[state.index]
+    state.changedHandle = state.changedEventSource.onConfigChanged.subscribe proc(key: string) =
+      if popup.previewEditor == nil:
+        return
+      if popup.focusPreview:
+        return
+      source.retrigger()
+
+  updateListener()
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     return true
 
   popup.handleItemSelected = proc(item: FinderItem) =
-    let path = "settings://" & item.displayName.replace('.', '/')
+    let store = state.stores[state.index]
+    let path = if item.displayName.len == 0 and not state.merged and store.originalText.len > 0:
+      store.filename
+    elif item.displayName.len > 0:
+      "settings://" // store.name // item.displayName.replace('.', '/')
+    else:
+      "settings://" // store.name
     dataPreviewer.setPath(path)
+
+    var prefix = ""
+    if store.detail != "":
+      prefix.add "(" & store.detail & ") "
+    prefix.add if state.merged: "(merged) " else: "(raw) "
+    prefix.add store.name
+    prefix.add "."
+    popup.textEditor.clearOverlays(overlayIdPrefix)
+    popup.textEditor.addOverlay(((0, 0), (0, 0)), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
+
+  popup.addCustomCommand "reload-store", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let store = state.stores[state.index]
+    self.vfs.read(store.filename).thenItOrElse:
+      if popup.textEditor.isNil:
+        return
+
+      try:
+        let content = it
+        let jsonex = content.parseJsonex()
+        store.setSettings(jsonex)
+      except Exception as e:
+        log lvlError, &"Failed to reload settings store '{store.name}': {e.msg}"
+    do:
+      let e = err
+      log lvlError, &"Failed to reload settings store '{store.name}': {e.msg}"
+
+    return true
+
+  popup.addCustomCommand "show-preview-editor-settings", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.previewEditor.isNil:
+      return false
+    state.targetEditor = popup.previewEditor
+    state.stores.setLen(0)
+    for s in popup.previewEditor.config.parentStores:
+      state.stores.add(s)
+    state.index = 0
+    updateListener()
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "toggle-merged", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    state.merged = not state.merged
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "prev-store", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    dec state.index
+    if state.index < 0:
+      state.index = state.stores.high
+    updateListener()
+    source.retrigger()
+    return true
+
+  popup.addCustomCommand "next-store", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+    inc state.index
+    if state.index >= state.stores.len:
+      state.index = 0
+    updateListener()
+    source.retrigger()
+    return true
 
   popup.addCustomCommand "toggle-flag", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
@@ -1425,9 +1662,19 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
     let item = popup.getSelectedItem().getOr:
       return true
 
+    let store = state.stores[state.index]
     let key = item.displayName
-    self.config.toggleFlag(key)
-    source.retrigger()
+    let value = store.get(key, JsonNodeEx)
+    if value.kind == JBool:
+      store.set(key, not value.getBool())
+
+      if state.targetEditor != nil:
+        state.targetEditor.markDirty()
+      for editor in self.layout.visibleEditors:
+        editor.markDirty()
+    else:
+      log lvlError, &"Failed to toggle setting '{key}', not a bool: {value}"
+
     return true
 
   popup.addCustomCommand "update-setting", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -1437,15 +1684,38 @@ proc browseSettings*(self: App, scaleX: float = 0.8, scaleY: float = 0.8, previe
     let item = popup.getSelectedItem().getOr:
       return true
 
+    let store = state.stores[state.index]
     let key = item.displayName
     let value = popup.previewEditor.document.contentString
     try:
-      let valueJson = value.parseJson
-      self.config.asConfigProvider.setValue(key, valueJson)
-      source.retrigger()
+      let valueJson = value.parseJsonEx
+      store.set(key, valueJson)
+
+      if state.targetEditor != nil:
+        state.targetEditor.markDirty()
+      for editor in self.layout.visibleEditors:
+        editor.markDirty()
       return true
     except Exception as e:
       log lvlError, &"Failed to update setting '{key}' to '{value}': {e.msg}"
+      return true
+
+  popup.addCustomCommand "delete-setting", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let store = state.stores[state.index]
+    let key = item.displayName
+    store.clear(key)
+
+    if state.targetEditor != nil:
+      state.targetEditor.markDirty()
+    for editor in self.layout.visibleEditors:
+      editor.markDirty()
+    return true
 
   self.layout.pushPopup popup
 
@@ -1746,7 +2016,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
 
   let workspace = self.workspace
 
-  let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
+  let maxResults = self.generalSettings.maxSearchResults.get()
   let source = newWorkspaceSearchDataSource(workspace, maxResults)
   var finder = newFinder(source, filterAndSort=true)
 
@@ -1778,8 +2048,8 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     self.platform.requestRender()
 
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
-    let maxResults = self.config.getOption[:int]("editor.max-search-results", 1000)
-    let maxLen = self.config.getOption[:int]("editor.max-search-result-display-len", 1000)
+    let maxResults = self.generalSettings.maxSearchResults.get()
+    let maxLen = self.generalSettings.maxSearchResultDisplayLen.get()
     return self.workspace.searchWorkspaceItemList(query, maxResults, maxLen).await
 
   let source = newAsyncCallbackDataSource(getItems)
@@ -1808,21 +2078,30 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
-proc installTreesitterParserAsync*(self: App, language: string, host: string) {.async.} =
+proc installTreesitterParserAsync*(self: App, languageOrRepoName: string, host: string) {.async.} =
   try:
-    let (language, repo) = if (let i = language.find("/"); i != -1):
+    var language = languageOrRepoName
+    var repo = ""
+
+    if (let i = languageOrRepoName.find("/"); i != -1):
       let first = i + 1
-      let k = language.find("/", first)
+      let k = languageOrRepoName.find("/", first)
       let last = if k == -1:
-        language.len
+        languageOrRepoName.len
       else:
         k
 
-      (language[first..<last].replace("tree-sitter-", "").replace("-", "_"), language)
-    else:
-      (language, self.config.getOption(&"languages.{language}.treesitter", ""))
+      language = languageOrRepoName[first..<last].replace("tree-sitter-", "").replace("-", "_")
+      repo = languageOrRepoName
 
-    let queriesSubDir = self.config.getOption(&"languages.{language}.treesitter-queries", "").catch("")
+    let treesitterSettings = TreesitterSettings.new(self.config.getLanguageStore(language))
+
+    if repo == "":
+      repo = treesitterSettings.repository.get().getOr:
+        log lvlError, &"No repository was configured for language '{language}'. You can specify a repository using 'lang.{language}.{treesitterSettings.repository.key}'"
+        return
+
+    let queriesSubDir = treesitterSettings.queries.get("")
 
     log lvlInfo, &"Install treesitter parser for {language} from {repo}"
     let parts = repo.split("/")
@@ -1872,7 +2151,7 @@ proc installTreesitterParserAsync*(self: App, language: string, host: string) {.
       log lvlInfo, &"tree-sitter build --wasm {repoPath}:\nstdout:{output.indent(1)}\nstderr:\n{err.indent(1)}\nend"
 
   except:
-    log lvlError, &"Failed to install treesitter parser for {language}: {getCurrentExceptionMsg()}"
+    log lvlError, &"Failed to install treesitter parser for {languageOrRepoName}: {getCurrentExceptionMsg()}"
 
 proc installTreesitterParser*(self: App, language: string, host: string = "github.com") {.
     expose("editor").} =
@@ -1990,7 +2269,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "refresh", proc(popup: SelectorPopup, args: JsonNode): bool =
     source.retrigger()
-    return false
+    return true
 
   popup.addCustomCommand "enter-normalized", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
@@ -2010,7 +2289,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         currentDirectory[] = path
       popup.textEditor.document.content = ""
       source.retrigger()
-      return false
+    return true
 
   popup.addCustomCommand "go-up", proc(popup: SelectorPopup, args: JsonNode): bool =
     let parent = currentDirectory[].parentDirectory
@@ -2032,6 +2311,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
       log lvlInfo, fmt"Add workspace folder: {currentDirectory[]} -> {path}"
       self.workspace.addWorkspaceFolder(path)
       source.retrigger()
+    return true
 
   popup.addCustomCommand "remove-workspace-folder", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.getSelectedItem().getSome(item):
@@ -2055,6 +2335,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
           self.createFile(path)
         else:
           self.createFile(dir // path)
+    return true
 
   self.layout.pushPopup popup
 
@@ -2114,15 +2395,15 @@ proc reloadPluginAsync*(self: App) {.async.} =
     self.runConfigCommands("plugin-post-reload-commands")
 
 proc reloadConfigAsync*(self: App) {.async.} =
-  await self.loadConfigFrom(appConfigDir)
-  await self.loadConfigFrom(homeConfigDir)
-  await self.loadConfigFrom(workspaceConfigDir)
+  await self.loadConfigFrom(appConfigDir, "app")
+  await self.loadConfigFrom(homeConfigDir, "home")
+  await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
 proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
   ## Reloads settings.json and keybindings.json from the app directory, home directory and workspace
   log lvlInfo, &"Reload config"
   if clearOptions:
-    self.config.settings = newJObject()
+    self.config.runtime.setSettings(newJexObject())
   asyncSpawn self.reloadConfigAsync()
 
 proc reloadPlugin*(self: App) {.expose("editor").} =
@@ -2192,7 +2473,7 @@ proc getContextWithMode(self: App, context: string): string {.expose("editor").}
 proc currentEventHandlers*(self: App): seq[EventHandler] =
   result = @[self.eventHandler]
 
-  let modeOnTop = self.config.getOption[:bool](self.getContextWithMode("editor.custom-mode-on-top"), true)
+  let modeOnTop = self.config.runtime.get(self.getContextWithMode("editor.custom-mode-on-top"), true)
   if not self.modeEventHandler.isNil and not modeOnTop:
     result.add self.modeEventHandler
 
@@ -2211,7 +2492,7 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
     result.add self.modeEventHandler
 
 proc clearInputHistoryDelayed*(self: App) =
-  let clearInputHistoryDelay = self.config.getOption[:int]("editor.clear-input-history-delay", 3000)
+  let clearInputHistoryDelay = self.generalSettings.clearInputHistoryDelay.get()
   if self.clearInputHistoryTask.isNil:
     self.clearInputHistoryTask = startDelayed(clearInputHistoryDelay, repeat=false):
       self.inputHistory.setLen 0
@@ -2221,7 +2502,7 @@ proc clearInputHistoryDelayed*(self: App) =
     self.clearInputHistoryTask.reschedule()
 
 proc recordInputToHistory*(self: App, input: string) =
-  let recordInput = self.config.getOption[:bool]("editor.record-input-history", true)
+  let recordInput = self.generalSettings.recordInputHistory.get()
   if not recordInput:
     return
 
@@ -2271,11 +2552,11 @@ proc getNextPossibleInputs*(self: App, inProgressOnly: bool, filter: proc(handle
       cmp(a.input, b.input)
 
 proc updateNextPossibleInputs*(self: App) =
-  let whichKeyInProgressOnly = not self.config.asConfigProvider.getValue("ui.which-key-no-progress", false)
+  let whichKeyInProgressOnly = not self.uiSettings.whichKeyNoProgress.get()
   self.nextPossibleInputs = self.getNextPossibleInputs(whichKeyInProgressOnly)
 
   if self.nextPossibleInputs.len > 0 and not self.showNextPossibleInputs:
-    self.showNextPossibleInputsTask.interval = self.config.getOption("ui.which-key-delay", 500)
+    self.showNextPossibleInputsTask.interval = self.uiSettings.whichKeyDelay.get()
     self.showNextPossibleInputsTask.reschedule()
 
   elif self.nextPossibleInputs.len == 0:
@@ -2541,7 +2822,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Event Handlers: {self.events.eventHandlerConfigs.len}\n"
         # events.eventHandlerConfigs: Table[string, EventHandlerConfig]
 
-      result.add &"Options: {self.config.settings.pretty.len}\n"
       result.add &"Callbacks: {self.plugins.callbacks.len}\n"
       result.add &"Script Actions: {self.plugins.scriptActions.len}\n"
 
@@ -2588,11 +2868,11 @@ addGlobalDispatchTable "editor", genDispatchTable("editor")
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
   let t = startTimer()
   if not self.registers.bIsReplayingCommands:
-    log lvlInfo, &"[handleAction] '{action} {arg}'"
+    log lvlInfo, &"[handleCommand] '{action} {arg}'"
   defer:
     if not self.registers.bIsReplayingCommands:
       let elapsed = t.elapsed
-      log lvlInfo, &"[handleAction] '{action} {arg}' took {elapsed.ms} ms"
+      log lvlInfo, &"[handleCommand] '{action} {arg}' took {elapsed.ms} ms -> {result}"
 
   try:
     if record:
@@ -2610,7 +2890,14 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
       if self.getActiveEditor().getSome(editor):
         return editor.handleAction(action[1..^1], arg, record=false)
 
-      log lvlError, fmt"No current view"
+      log lvlError, fmt"No active editor"
+      return JsonNode.none
+
+    if action.startsWith("^"): # active popup action
+      if self.layout.popups.len > 0:
+        return self.layout.popups[^1].handleAction(action[1..^1], arg)
+
+      log lvlError, fmt"No popup"
       return JsonNode.none
 
     {.gcsafe.}:
@@ -2632,18 +2919,21 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
           if res.isNotNil:
             return res.some
     except CatchableError:
-      log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
     try:
-      return dispatch(action, args)
+      result = dispatch(action, args)
+      if result.isSome:
+        return
     except CatchableError:
-      log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
   except:
     discard
 
+  log lvlError, fmt"Unknown command '{action}'"
   return JsonNode.none
 
 template generatePluginBindings*(): untyped =

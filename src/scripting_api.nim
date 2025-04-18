@@ -28,7 +28,7 @@ type Selection* = tuple[first, last: Cursor]
 type RuneCursor* = tuple[line: int, column: RuneIndex]
 type RuneSelection* = tuple[first, last: RuneCursor]
 type SelectionCursor* = enum Config = "config", Both = "both", First = "first", Last = "last", LastToFirst = "last-to-first"
-type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relative"
+type LineNumbers* = enum None = "none", Absolute = "absolute", Relative = "relative"
 type Backend* = enum Gui = "gui", Terminal = "terminal", Browser = "browser"
 
 type ScrollBehaviour* = enum

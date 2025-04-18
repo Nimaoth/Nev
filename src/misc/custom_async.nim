@@ -76,12 +76,28 @@ template readFinished*[T: not void](fut: Future[T]): lent T =
   except:
     raiseAssert("Failed to read unfinished future")
 
-proc thenAsync*[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}) {.async.} =
-  await f
+proc thenAsync[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}) {.async.} =
+  when T is void:
+    await f
+  else:
+    discard await f
   cb(f)
 
-proc then*[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}) =
+proc thenOrElseAsync[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}, errCb: proc(f: Future[T], e: ref Exception) {.gcsafe, raises: [].}) {.async.} =
+  try:
+    when T is void:
+      await f
+    else:
+      discard await f
+    cb(f)
+  except Exception as e:
+    errCb(f, e)
+
+proc then[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}) =
   asyncSpawn f.thenAsync(cb)
+
+proc thenOrElse[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}, errCb: proc(f: Future[T], e: ref Exception) {.gcsafe, raises: [].}) =
+  asyncSpawn f.thenOrElseAsync(cb, errCb)
 
 template thenIt*[T](f: Future[T], body: untyped): untyped =
   proc cb(ff: Future[T]) {.gcsafe, raises: [].} =
@@ -90,3 +106,19 @@ template thenIt*[T](f: Future[T], body: untyped): untyped =
     body
 
   f.then(cb)
+
+template thenItOrElse*[T](f: Future[T], body: untyped, errBody: untyped): untyped =
+  proc errCb(ff: Future[T], e: ref Exception) {.gcsafe, raises: [].} =
+    let err {.inject.} = e
+    errBody
+
+  proc cb(ff: Future[T]) {.gcsafe, raises: [].} =
+    try:
+      when T isnot void:
+        let it {.inject.} = ff.read
+
+      body
+    except Exception as e:
+      errCb(ff, e)
+
+  f.thenOrElse(cb, errCb)
