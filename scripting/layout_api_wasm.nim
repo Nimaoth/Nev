@@ -125,15 +125,16 @@ proc closeView*(index: int; keepHidden: bool = true; restoreHidden: bool = true)
       argsJsonString.cstring)
 
 
-proc layout_closeCurrentView_void_LayoutService_bool_bool_wasm(arg: cstring): cstring {.
+proc layout_closeCurrentView_void_LayoutService_bool_bool_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc closeCurrentView*(keepHidden: bool = true; restoreHidden: bool = true) {.
-    gcsafe, raises: [].} =
+proc closeCurrentView*(keepHidden: bool = true; restoreHidden: bool = true;
+                       closeOpenPopup: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add keepHidden.toJson()
   argsJson.add restoreHidden.toJson()
+  argsJson.add closeOpenPopup.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_closeCurrentView_void_LayoutService_bool_bool_wasm(
+  let res {.used.} = layout_closeCurrentView_void_LayoutService_bool_bool_bool_wasm(
       argsJsonString.cstring)
 
 

@@ -1,4 +1,4 @@
-import std/[options]
+import std/[options, json]
 import vmath, bumpy
 import misc/[event, id]
 import events, input
@@ -56,3 +56,5 @@ import document_editor
 
 method getActiveEditor*(self: Popup): Option[DocumentEditor] {.base.} =
   discard
+
+method handleAction*(self: Popup, action: string, arg: string): Option[JsonNode] {.base, gcsafe, raises: [].} = JsonNode.none

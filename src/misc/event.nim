@@ -1,5 +1,7 @@
 import id, util
 
+export id
+
 {.push gcsafe.}
 {.push raises: [].}
 

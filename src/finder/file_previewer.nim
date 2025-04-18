@@ -140,6 +140,9 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
     of FileKind.File:
       try:
         self.vfs.readRope(path, content.addr).await
+      except InvalidUtf8Error as e:
+        log lvlWarn, &"Failed to load file: {e.msg}"
+        content = Rope.new(e.msg)
       except IOError as e:
         log lvlError, &"Failed to load file: {e.msg}"
         content = Rope.new(e.msg)

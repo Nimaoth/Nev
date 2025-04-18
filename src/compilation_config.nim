@@ -1,4 +1,4 @@
-import std/strutils
+import std/[strutils, strformat]
 
 const exposeScriptingApi* {.booldefine.}: bool = false
 const enableGui* {.booldefine.}: bool = false
@@ -11,6 +11,12 @@ const appName* {.strdefine.}: string = "nev"
 
 const treesitterBuiltins {.strdefine.}: string = ""
 const builtinTreesitterLanguages: seq[string] = treesitterBuiltins.split(",")
+
+const configDirName* = "." & appName
+const defaultSessionName* = &".{appName}-session"
+const appConfigDir* = "app://config"
+const homeConfigDir* = "home://" & configDirName
+const workspaceConfigDir* = "ws0://" & configDirName
 
 func useBuiltinTreesitterLanguage*(name: string): bool = builtinTreesitterLanguages.contains(name)
 

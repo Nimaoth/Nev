@@ -225,7 +225,6 @@ proc setInput*(self: WrapMap, input: sink InputMapSnapshot) =
   if self.snapshot.buffer.remoteId == input.buffer.remoteId and self.snapshot.buffer.version == input.buffer.version and self.snapshot.input.version == input.version:
     return
 
-  self.wrapWidth = 0
   let endPoint = input.endOutputPoint
   self.snapshot = WrapMapSnapshot(
     map: SumTree[WrapMapChunk].new([WrapMapChunk(src: endPoint, dst: endPoint.WrapPoint)]),
@@ -579,7 +578,9 @@ proc clear*(self: var WrapMapSnapshot) =
     version: self.version + 1)
 
 proc clear*(self: WrapMap) =
+  let oldSnapshot = self.snapshot.clone()
   self.snapshot.clear()
+  self.onUpdated.invoke((self, oldSnapshot))
 
 proc update*(self: WrapMap, wrapWidth: int, force: bool = false) =
   if not force and self.wrapWidth == wrapWidth:
@@ -587,7 +588,10 @@ proc update*(self: WrapMap, wrapWidth: int, force: bool = false) =
 
   logMapUpdate &"WrapMap.updateWidth {self.snapshot.desc}, {self.wrapWidth} -> {wrapWidth}, force = {force}"
   self.wrapWidth = wrapWidth
-  asyncSpawn self.updateAsync()
+  if self.wrapWidth != 0:
+    asyncSpawn self.updateAsync()
+  else:
+    self.clear()
 
 proc update*(self: WrapMap, input: sink InputMapSnapshot, force: bool = false) =
   # logMapUpdate &"WrapMap.updateInput {self.snapshot.buffer.remoteId}@{self.snapshot.buffer.version} -> {input.buffer.remoteId}@{input.buffer.version}, {self.snapshot.input.map.summary} -> {input.map.summary}, force = {force}"

@@ -31,12 +31,15 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
 
   var useActive = false
   if self.documents.getDocument(filename).getSome(document) and document of TextDocument:
-    if document.TextDocument.rope.startsWith("."):
+    if document.TextDocument.rope.startsWith(".") or document.TextDocument.rope.startsWith("^"):
       useActive = true
 
   var completions: seq[CompletionItem]
   if useActive:
-    let currentNamespace = layout.getActiveViewEditor().mapIt(it.getNamespace)
+    let currentNamespace = if layout.popups.len > 0:
+      "popup.selector".some
+    else:
+      layout.getActiveViewEditor().mapIt(it.getNamespace)
     {.gcsafe.}:
       for table in activeDispatchTables.mitems:
         if not table.global and table.namespace.some != currentNamespace:

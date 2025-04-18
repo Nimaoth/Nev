@@ -3,7 +3,7 @@ import vmath, bumpy
 import misc/[event, custom_logger, id, custom_async, util, array_set]
 import platform/[platform]
 import scripting/expose
-import document, events, input, service, platform_service, dispatch_tables
+import document, events, input, service, platform_service, dispatch_tables, config_provider
 
 from scripting_api import EditorId, newEditorId
 
@@ -23,6 +23,7 @@ type
     mDirty: bool ## Set to true to trigger rerender
     active: bool
     onActiveChanged*: Event[DocumentEditor]
+    config*: ConfigStore
 
   DocumentFactory* = ref object of RootObj
   DocumentEditorFactory* = ref object of RootObj
