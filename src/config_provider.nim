@@ -949,7 +949,7 @@ template defineSetAllDefaultSettings*(): untyped =
 
   proc generateDocs() =
     var text = """
-# Incompleted list of all settings
+# List of (most) settings
 
 For examples and default values see [here](../config/settings.json)
 

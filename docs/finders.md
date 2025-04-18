@@ -72,7 +72,7 @@ Custom commands:
 
 The following GIF shows an example of using this command after making some modifications to a file.
 
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git.gif)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git.gif)
 
 ## `explore-files <path>`
 ### Custom context: `popup.selector.file-explorer`
@@ -92,7 +92,7 @@ Custom commands:
 The default confirm behaviour is to enter folders and open files.
 The preview shows the file content for files and the list of sub files/folders for folders.
 
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/explore-files.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/explore-files.png)
 
 ## `explore-workspace`
 ### Custom context: `popup.selector.file-explorer`
@@ -127,13 +127,21 @@ The columns are:
 - Context
 - Raw command that will be executed
 
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/browse-keybinds-command.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/browse-keybinds-command.png)
 
 To search for a key combination simply prefix the search with `|`. This isn't strictly necessary but will improve search results.
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/browse-keybinds-key.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/browse-keybinds-key.png)
 
 ## `browse-settings`
 
-This command opens a finder which allows you to search through all settings currently known (settings are known if some feature reads/writes the value of the setting)
-If the setting is a boolean you can toggle it with `<C-t>`. Other settings can be changed by changing the value in th
-preview and saving.
+This command opens a finder which allows you to search through and change all settings.
+
+Boolean settings can be toggled `<C-t>`. Other settings can be changed by changing the value in the preview and saving.
+
+Use `C-h` and `C-f` to move to the parent/child store. The search bar shows which store is currently shown.
+Use `C-g` to toggle between showing the merged settings up to (and including) the current store, or only the settings in the current store. The search bar shows whether the merged or raw settings are shown.
+
+![Gif showing how to use the settings browser](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/settings_browser1.gif)
+
+Here is an example of using the settings browser to look into different setting stores and switching between the merged and raw values:
+![Gif showing using the settings browser to see different setting stores](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/settings_browser2.gif)
