@@ -21,35 +21,6 @@
             ]
         },
 
-        "+nim": {
-            "settings": {
-                "project": [],
-                "xprojectMapping": [],
-                "test-project": "",
-                "buildOnSave": false,
-                "buildCommand": "c",
-                "runOutputDirectory": "",
-                "lintOnSave": true,
-                "enableNimsuggest": false,
-                "useNimsuggestCheck": false,
-                "logNimsuggest": true,
-                "licenseString": "",
-                "nimsuggestRestartTimeout": 10,
-                "nimprettyIndent": 0,
-                "nimprettyMaxLineLen": 80,
-                "inlayHints": {
-                    "typeHints": {
-                        "enable": true
-                    },
-                    "exceptionHints": {
-                        "enable": true,
-                        "hintStringLeft": "🔔",
-                        "hintStringRight": ""
-                    }
-                }
-            }
-        },
-
         "+rust": {
             "rust-analyzer": {
                 "linkedProjects": ["temp/rust_test/Cargo.toml"]
