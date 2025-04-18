@@ -1,5 +1,5 @@
 import std/[json, tables]
-import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching]
+import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, jsonex]
 import language/[lsp_types]
 import completion, text_document
 import config_provider
@@ -11,7 +11,7 @@ type
     document: TextDocument
     unfilteredCompletions: seq[CompletionItem]
     didCacheCompletionItems: bool = false
-    configProvider: ConfigProvider
+    configStore: ConfigStore
     onConfigChangedHandle: Id
 
 proc invalidateCompletionItemCache(self: CompletionProviderSnippet) =
@@ -21,7 +21,7 @@ proc invalidateCompletionItemCache(self: CompletionProviderSnippet) =
 proc cacheCompletionItems(self: CompletionProviderSnippet) =
   self.didCacheCompletionItems = true
   try:
-    let snippets = self.configProvider.getValue("snippets." & self.document.languageId, newJObject())
+    let snippets = self.configStore.get("snippets." & self.document.languageId, newJexObject())
     for (name, definition) in snippets.fields.pairs:
       # todo: handle language scope
       # let scopes = definition["scope"].getStr.split(",")
@@ -76,13 +76,13 @@ method forceUpdateCompletions*(provider: CompletionProviderSnippet) =
   provider.updateFilterText()
   provider.refilterCompletions()
 
-proc newCompletionProviderSnippet*(configProvider: ConfigProvider, document: TextDocument):
+proc newCompletionProviderSnippet*(configStore: ConfigStore, document: TextDocument):
     CompletionProviderSnippet =
 
-  let self = CompletionProviderSnippet(configProvider: configProvider, document: document)
+  let self = CompletionProviderSnippet(configStore: configStore, document: document)
 
   # todo: unsubscribe
-  self.onConfigChangedHandle = configProvider.onConfigChanged[].subscribe proc() =
+  self.onConfigChangedHandle = configStore.onConfigChanged.subscribe proc(key: string) =
     self.invalidateCompletionItemCache()
 
   self

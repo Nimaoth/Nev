@@ -1497,6 +1497,25 @@ proc getOrDefault*[A, B](t: OrderedTable[A, B], key: A): B =
   result = default(B)
   getOrDefaultImpl(t, key)
 
+proc getOrDefault*[B](t: OrderedTable[string, B], key: openArray[char]): B =
+  ## Retrieves the value at `t[key]` if `key` is in `t`. Otherwise, the
+  ## default initialization value for type `B` is returned (e.g. 0 for any
+  ## integer type).
+  ##
+  ## See also:
+  ## * `[] proc<#[],OrderedTable[A,B],A>`_ for retrieving a value of a key
+  ## * `hasKey proc<#hasKey,OrderedTable[A,B],A>`_
+  ## * `hasKeyOrPut proc<#hasKeyOrPut,OrderedTable[A,B],A,B>`_
+  ## * `mgetOrPut proc<#mgetOrPut,OrderedTable[A,B],A,B>`_
+  ## * `getOrDefault proc<#getOrDefault,OrderedTable[A,B],A,B>`_ to return
+  ##   a custom value if the key doesn't exist
+  runnableExamples:
+    let a = {'a': 5, 'b': 9}.toOrderedTable
+    doAssert a.getOrDefault('a') == 5
+    doAssert a.getOrDefault('z') == 0
+  result = default(B)
+  getOrDefaultImpl(t, key)
+
 proc getOrDefault*[A, B](t: OrderedTable[A, B], key: A, default: B): B =
   ## Retrieves the value at `t[key]` if `key` is in `t`.
   ## Otherwise, `default` is returned.

@@ -31,6 +31,12 @@
   - Added ability to stage/unstage/revert individual changes, from git view or while diff is open
 - Added expression evaluation for basic arithmetic like 1+2, and keybindings that add/subtract from a number at the cursor location
 
+- Added option to disable line wrapping
+- Added horizontal scrolling
+- Added highlighting of all instances of text matching the current selection
+- Added toast messages for errors
+- Refactored settings
+
 ### Vim
 - Fixed ctrl+w and ctrl+u in insert mode
 - Escape now needs to be pressed twice to cancel the command line or popups, pressing it once goes to normal mode instead

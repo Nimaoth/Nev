@@ -236,47 +236,14 @@
         "sha1": "ba179f34b0513ebd1615076f07b61e2e217bd228"
       }
     },
-    "macosutils": {
-      "version": "0.3.2",
-      "vcsRevision": "bb2c2ca53b6650a4a82f63db09b527e6fd570ac8",
-      "url": "https://github.com/elcritch/macosutils",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "2ff214486d4f013395554aff38b7309d33b62a3c"
-      }
-    },
-    "winim": {
-      "version": "3.9.4",
-      "vcsRevision": "6fdee629140baa0d7060ddf86662457d11f50d35",
-      "url": "https://github.com/khchen/winim",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "4b7c430159be2e8b2dc4b663a9b19f7678b58f87"
-      }
-    },
-    "dmon": {
-      "version": "0.4.0",
-      "vcsRevision": "b068e274bd5a45e44ef91a337261dd3eee7423b5",
-      "url": "https://github.com/elcritch/dmon-nim",
-      "downloadMethod": "git",
-      "dependencies": [
-        "macosutils",
-        "winim"
-      ],
-      "checksums": {
-        "sha1": "fdc44b446b2ed5473a04fcb628e499bb5fd12a6c"
-      }
-    },
     "fsnotify": {
-      "version": "0.1.5",
-      "vcsRevision": "66cdc17abc11ca2b9c609d463339e62cd5a0424f",
+      "version": "0.1.6",
+      "vcsRevision": "0484be9ff57a935893ae8207b5222176edb8e3e9",
       "url": "https://github.com/Nimaoth/fsnotify",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "cb0ac0956c3d42951a778ea338b2163ca5de6a9c"
+        "sha1": "8ab5cd1ff0629ac8073a55ee7e14e07ac9c46b7f"
       }
     },
     "fusion": {
@@ -478,6 +445,16 @@
       ],
       "checksums": {
         "sha1": "1323a96835a262ff58f626bc463069e753b77560"
+      }
+    },
+    "winim": {
+      "version": "3.9.4",
+      "vcsRevision": "6fdee629140baa0d7060ddf86662457d11f50d35",
+      "url": "https://github.com/khchen/winim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "4b7c430159be2e8b2dc4b663a9b19f7678b58f87"
       }
     }
   },

@@ -314,7 +314,7 @@ proc edit*(self: var DiffMapSnapshot, buffer: sink InputMapSnapshot, patch: Patc
   discard
 
 proc edit*(self: DiffMap, input: sink InputMapSnapshot, patch: Patch[InputPoint]) =
-  # echo &"edit diff map, {self.snapshot.input.map.summary} -> {input.map.summary}, {patch}"
+  logMapUpdate &"DiffMap.edit {self.snapshot.desc} -> {input.desc} | {patch}"
   if self.snapshot.mappings.isSome:
     self.snapshot = createDiffMap(input.ensureMove, self.snapshot.mappings.get, self.snapshot.otherInput, self.snapshot.reverse)
   else:

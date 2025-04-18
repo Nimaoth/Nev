@@ -98,6 +98,7 @@ type
 
     textWidthImpl*: proc(node: UINode): float32 {.gcsafe, raises: [].}
     textWidthStringImpl*: proc(text: string): float32 {.gcsafe, raises: [].}
+    textBoundsImpl*: proc(node: UINode): Vec2 {.gcsafe, raises: [].}
     useInvalidation*: bool = false
 
     currentChild*: UINode = nil
@@ -241,6 +242,12 @@ proc textWidth*(builder: UINodeBuilder, text: string): float32 {.inline.} =
     builder.textWidth(text.runeLen.int)
 
 proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = roundPositive(builder.lineHeight + builder.lineGap)
+
+proc textBounds*(builder: UINodeBuilder, node: UINode): Vec2 {.inline.} =
+  if TextWrap in node.flags and builder.textBoundsImpl.isNotNil:
+    builder.textBoundsImpl(node)
+  else:
+    vec2(builder.textWidth(node.mTextRuneLen), builder.textHeight)
 
 proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool {.gcsafe, raises: [].}): Option[UINode]
@@ -617,7 +624,6 @@ proc clearUnusedChildrenAndGetBounds*(builder: UINodeBuilder, node: UINode, last
 proc postLayout*(builder: UINodeBuilder, node: UINode)
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode)
 proc relayout*(builder: UINodeBuilder, node: UINode)
-proc preLayout*(builder: UINodeBuilder, node: UINode)
 
 proc preLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "preLayout"
@@ -661,12 +667,18 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
   if node.flags.all &{SizeToContentY, FillY}:
     if DrawText in node.flags:
-      node.boundsRaw.h = max(parent.h - node.y, builder.textHeight).roundPositive
+      if TextWrap in node.flags:
+        node.boundsRaw.h = max(parent.h - node.y, builder.textBounds(node).y).roundPositive
+      else:
+        node.boundsRaw.h = max(parent.h - node.y, builder.textHeight).roundPositive
     else:
       node.boundsRaw.h = (parent.h - node.y).roundPositive
   elif SizeToContentY in node.flags:
     if DrawText in node.flags:
-      node.boundsRaw.h = builder.textHeight.roundPositive
+      if TextWrap in node.flags:
+        node.boundsRaw.h = builder.textBounds(node).y.roundPositive
+      else:
+        node.boundsRaw.h = builder.textHeight.roundPositive
   elif FillY in node.flags:
     if LayoutVerticalReverse in parent.flags:
       node.boundsRaw.h = node.boundsRaw.y.roundPositive
@@ -738,7 +750,10 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
     else: 0
 
     let strHeight = if DrawText in node.flags:
-      builder.textHeight
+      if TextWrap in node.flags:
+        builder.textBounds(node).y
+      else:
+        builder.textHeight
     else: 0
 
     node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).roundPositive
@@ -1025,12 +1040,17 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
     elif LayoutVertical in node.parent.flags:
       node.pivot.y = 0
 
+  if inX.isSome: node.boundsRaw.x = inX.get
+  if inY.isSome: node.boundsRaw.y = inY.get
+  if inW.isSome: node.boundsRaw.w = inW.get
+  if inH.isSome: node.boundsRaw.h = inH.get
+
   builder.preLayout(node)
 
   if inX.isSome: node.boundsRaw.x = inX.get
-  if inY.isSome: node.boundsRaw.y = inY.get.roundPositive
+  if inY.isSome: node.boundsRaw.y = inY.get
   if inW.isSome: node.boundsRaw.w = inW.get
-  if inH.isSome: node.boundsRaw.h = inH.get.roundPositive
+  if inH.isSome: node.boundsRaw.h = inH.get
   if inPivot.isSome: node.pivot = inPivot.get
 
   assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"

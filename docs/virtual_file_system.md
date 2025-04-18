@@ -17,7 +17,7 @@ By default Nev creates a VFS hierarchy which contains the local file system unde
 
 To explore the entire VFS in the builtin file explorer you can run the command `explore-file "" true` (to see some more info about the VFSs) or just `explore-files`
 
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/vfs.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/vfs.png)
 
 You can also see the VFS hierarchy by running the command `dump-vfs-hierarchy`, which will output something like this to the log file:
 ```
@@ -35,7 +35,7 @@ VFS()
 ```
 
 Here is a visual representation of what the above VFS hierarchy:
-![VFS graph](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/graph.png)
+![VFS graph](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/graph.png)
 
 With the given VFS, the following paths would refer to these files:
 

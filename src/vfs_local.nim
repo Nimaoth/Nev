@@ -45,7 +45,7 @@ method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent])
   log lvlInfo, &"Register watcher for local file system at '{path}'"
   self.subscribe(path, cb)
 
-proc loadFileThread(args: tuple[path: string, data: ptr string, flags: set[ReadFlag]]): bool =
+proc loadFileThread(args: tuple[path: string, data: ptr string, invalidUtf8Error: ptr bool, flags: set[ReadFlag]]): bool =
   try:
     args.data[] = readFile(args.path)
 
@@ -53,6 +53,7 @@ proc loadFileThread(args: tuple[path: string, data: ptr string, flags: set[ReadF
       let invalidUtf8Index = args.data[].validateUtf8
       if invalidUtf8Index >= 0:
         args.data[] = &"Invalid utf-8 byte at {invalidUtf8Index}"
+        args.invalidUtf8Error[] = true
         return false
 
     return true
@@ -72,9 +73,13 @@ method readImpl*(self: VFSLocal, path: string, flags: set[ReadFlag]): Future[str
   try:
     # logScope lvlInfo, &"[loadFile] '{path}'"
     var data = ""
-    let ok = await spawnAsync(loadFileThread, (path, data.addr, flags))
+    var invalidUtf8Error = false
+    let ok = await spawnAsync(loadFileThread, (path, data.addr, invalidUtf8Error.addr, flags))
     if not ok:
-      raise newException(IOError, data)
+      if invalidUtf8Error:
+        raise newException(InvalidUtf8Error, data)
+      else:
+        raise newException(IOError, data)
 
     return data.move
   except:
@@ -122,7 +127,7 @@ proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref C
     if res.isSome:
       args.data[] = res.take
     else:
-      args.err[] = newException(IOError, &"Invalid utf-8 byte at {errorIndex}")
+      args.err[] = newException(InvalidUtf8Error, &"Invalid utf-8 byte at {errorIndex}")
 
     args.threadDone[].store(true)
 
@@ -153,8 +158,13 @@ method readRopeImpl*(self: VFSLocal, path: string, rope: ptr Rope): Future[void]
           discard
 
     if err != nil:
-      raise newException(IOError, err.msg, err)
+      if err of IOError:
+        raise err
+      else:
+        raise newException(IOError, err.msg, err)
 
+  except IOError as e:
+    raise e
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
@@ -182,7 +192,9 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
     logScope lvlInfo, &"[saveFile] '{path}'"
     # todo: reimplement async
     let dir = path.splitPath.head
-    createDir(dir)
+    if not dirExists(dir):
+      logScope lvlInfo, &"[saveFile] Create directory '{dir}'"
+      createDir(dir)
 
     let s = openFileStream(path, fmWrite, 1024)
     defer:
@@ -191,13 +203,10 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
     # var file = openAsync(path, fmWrite)
     var t = startTimer()
     for chunk in content.iterateChunks:
-      # await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
       s.writeData(chunk.startPtr, chunk.chars.len)
       if t.elapsed.ms > 5:
         await sleepAsync(10.milliseconds)
         t = startTimer()
-
-    # file.close()
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
@@ -252,8 +261,12 @@ proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string, 
         directoryListing.files.add name
       of pcDir:
         directoryListing.folders.add name
+      of pcLinkToFile:
+        directoryListing.files.add name
+      of pcLinkToDir:
+        directoryListing.folders.add name
       else:
-        log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {name}"
+        log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for '{name}'"
 
   except OSError:
     discard

@@ -14,6 +14,7 @@ const debugLogVfs* = false
 
 type
   FileNotFoundError* = object of IOError
+  InvalidUtf8Error* = object of IOError
 
   DirectoryListing* = object
     files*: seq[string]

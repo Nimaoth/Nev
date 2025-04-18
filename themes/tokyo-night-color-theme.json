@@ -31,6 +31,8 @@
     },
     "semanticClass": "tokyo-night",
     "colors": {
+        "matching-text-highlight": "#79494956",
+
         "foreground": "#787c99",
         "descriptionForeground": "#515670",
         "focusBorder": "#545c7e33",

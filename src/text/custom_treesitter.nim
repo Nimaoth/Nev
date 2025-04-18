@@ -1,5 +1,5 @@
 import std/[options, json, tables]
-import misc/[custom_logger, custom_async, util, custom_unicode]
+import misc/[custom_logger, custom_async, util, custom_unicode, jsonex]
 import vfs
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
@@ -419,7 +419,7 @@ proc getLanguageWasmStore(): ptr TSWasmStore =
 
   return wasmStore
 
-proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+proc loadLanguageDynamically*(vfs: VFS, languageId: string, pathOverride: Option[string]): Future[Option[TSLanguage]] {.async.} =
   try:
     const fileExtension = when defined(windows):
       "dll"
@@ -429,17 +429,19 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): F
     var candidates: seq[tuple[path: string, ctor: string]] = @[]
 
     proc addCandidate(path: string) {.gcsafe, async: (raises: []).} =
-      let path = "app://" & path
-      if vfs.getFileKind(path).await.mapIt(it == FileKind.File).get(false):
-        let ctor = if path.endsWith(".wasm"):
-          languageId
-        else:
-          &"tree_sitter_{languageId}"
-        candidates.add (path, ctor)
+      for base in ["app://", homeConfigDir]:
+        let path = base & path
+        if vfs.getFileKind(path).await.mapIt(it == FileKind.File).get(false):
+          let ctor = if path.endsWith(".wasm"):
+            languageId
+          else:
+            &"tree_sitter_{languageId}"
+          candidates.add (path, ctor)
 
-    if config.hasKey("path"):
-      await addCandidate config["path"].getStr
+    if pathOverride.getSome(path):
+      await addCandidate path
     else:
+      # todo: rename directory from languages to treesitter
       await addCandidate &"languages/tree-sitter-{languageId}.wasm"
       await addCandidate &"languages/{languageId}.wasm"
       await addCandidate &"languages/tree-sitter-{languageId}.{fileExtension}"
@@ -520,8 +522,8 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): F
 var loadedLanguages: Table[string, TSLanguage]
 var loadingLanguages: Table[string, Future[Option[TSLanguage]]]
 
-proc loadLanguage(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
-  let language = await loadLanguageDynamically(vfs, languageId, config)
+proc loadLanguage(vfs: VFS, languageId: string, pathOverride: Option[string]): Future[Option[TSLanguage]] {.async.} =
+  let language = await loadLanguageDynamically(vfs, languageId, pathOverride)
   if language.isSome:
     return language
 
@@ -563,8 +565,8 @@ proc unloadTreesitterLanguage*(languageId: string) {.gcsafe, raises: [].} =
     loadedLanguages.del(languageId)
     loadingLanguages.del(languageId)
 
-proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
-  # log lvlInfo, &"getTreesitterLanguage {languageId}: {config}"
+proc getTreesitterLanguage*(vfs: VFS, languageId: string, pathOverride: Option[string] = string.none): Future[Option[TSLanguage]] {.async.} =
+  # log lvlInfo, &"getTreesitterLanguage {languageId}: {pathOverride}"
   let loadingLanguages = ({.gcsafe.}: loadingLanguages.addr)
   let loadedLanguages = ({.gcsafe.}: loadedLanguages.addr)
   if loadingLanguages[].contains(languageId):
@@ -575,7 +577,7 @@ proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNode): Fut
     return loadedLanguages[][languageId].some
 
   else:
-    loadingLanguages[][languageId] = loadLanguage(vfs, languageId, config)
+    loadingLanguages[][languageId] = loadLanguage(vfs, languageId, pathOverride)
     let language = await loadingLanguages[][languageId]
     if language.getSome(language):
       loadedLanguages[][languageId] = language

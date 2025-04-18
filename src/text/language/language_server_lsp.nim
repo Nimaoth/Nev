@@ -1,6 +1,6 @@
 import std/[strutils, options, json, tables, uri, strformat, sequtils, typedthreads]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process]
+import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id, response, async_process, jsonex, rope_utils]
 import language_server_base, app_interface, config_provider, lsp_client, document, service, vfs, vfs_service
 import workspaces/workspace as ws
 
@@ -41,15 +41,17 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
 
   {.gcsafe.}:
     let config = gServices.getService(ConfigService).get
-    let workspaceConfigName = config.getOption("lsp." & self.languageId & ".workspace-configuration-name", "settings")
+    let workspaceConfigName = config.runtime.get("lsp." & self.languageId & ".workspace-configuration-name", "settings")
 
     for item in params.items:
       # todo: implement scopeUri support
       if item.section.isNone:
+        let key = ["lsp", self.languageId, workspaceConfigName].filterIt(it.len > 0).join(".")
+        res.add config.runtime.get(key, newJNull())
         continue
 
       let key = ["lsp", self.languageId, workspaceConfigName, item.section.get].filterIt(it.len > 0).join(".")
-      res.add config.getOption(key, newJNull())
+      res.add config.runtime.get(key, newJNull())
 
   return res
 
@@ -115,14 +117,14 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
 
     let configs = services.getService(ConfigService).get
 
-    let config = configs.getOption("lsp." & languageId, newJObject())
-    if config.isNil:
+    let config = configs.runtime.get("lsp." & languageId, newJexNull())
+    if config.isNil or config.kind == JNull:
       return LanguageServer.none
 
     log lvlInfo, fmt"Starting language server for {languageId} with config {config}"
 
     if not config.hasKey("path"):
-      log lvlError, &"Missing path in config for language server {languageId}"
+      log lvlError, &"Missing path in config for language server '{languageId}'"
       return LanguageServer.none
 
     let exePath = config["path"].jsonTo(string)
@@ -131,8 +133,8 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     else:
       @[]
 
-    let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJNull()).jsonTo(string).catch("settings")
-    let userOptions = configs.getOption(
+    let initializationOptionsName = config.fields.getOrDefault("initialization-options-name", newJexNull()).jsonTo(string).catch("settings")
+    let userOptions = configs.runtime.get(
       "lsp." & languageId & "." & initializationOptionsName, newJNull())
 
     let workspaceInfo = if workspace.getSome(workspace):
@@ -163,7 +165,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       lsp.serverCapabilities = capabilities
       lsp.initializedFuture.complete(true)
 
-      let initialConfig = config.fields.getOrDefault("initial-configuration", newJNull())
+      let initialConfig = config.fields.getOrDefault("initial-configuration", newJexNull()).toJson
       if initialConfig.kind != JNull:
         asyncSpawn client.notifyConfigurationChangedChannel.send(initialConfig)
 
@@ -234,11 +236,14 @@ template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
     else:
       newSeq[Definition]()
 
+# todo: change return type to Response[seq[Definition]]
 method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
-  debugf"[getDefinition] {filename}"
+  if self.serverCapabilities.definitionProvider.isNone:
+    return @[]
+
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getDefinition('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -252,11 +257,16 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
     log(lvlError, "No definitions found")
   return res
 
+# todo: change return type to Response[seq[Definition]]
 method getDeclaration*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
+
+  if self.serverCapabilities.declarationProvider.isNone:
+    return @[]
+
   let response = await self.client.getDeclaration(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getDeclaration('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -270,11 +280,16 @@ method getDeclaration*(self: LanguageServerLSP, filename: string, location: Curs
     log(lvlError, "No declaration found")
   return res
 
+# todo: change return type to Response[seq[Definition]]
 method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
+
+  if self.serverCapabilities.typeDefinitionProvider.isNone:
+    return @[]
+
   let response = await self.client.getTypeDefinitions(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getTypeDefinition('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -288,11 +303,16 @@ method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: C
     log(lvlError, "No type definitions found")
   return res
 
+# todo: change return type to Response[seq[Definition]]
 method getImplementation*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
+
+  if self.serverCapabilities.implementationProvider.isNone:
+    return @[]
+
   let response = await self.client.getImplementation(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getImplementation('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -306,11 +326,16 @@ method getImplementation*(self: LanguageServerLSP, filename: string, location: C
     log(lvlError, "No implementations found")
   return res
 
+# todo: change return type to Response[seq[Definition]]
 method getReferences*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
+
+  if self.serverCapabilities.referencesProvider.isNone:
+    return @[]
+
   let response = await self.client.getReferences(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getReferences('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -334,7 +359,7 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
 method switchSourceHeader*(self: LanguageServerLSP, filename: string): Future[Option[string]] {.async.} =
   let response = await self.client.switchSourceHeader(filename)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in switchSourceHeader('{filename}'): {response.error}")
     return string.none
 
   if response.isCanceled:
@@ -346,11 +371,16 @@ method switchSourceHeader*(self: LanguageServerLSP, filename: string): Future[Op
 
   return response.result.decodeUrl.parseUri.path.normalizePathUnix.some
 
+# todo: change return type to Response
 method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Option[string]] {.async.} =
+
+  if self.serverCapabilities.hoverProvider.isNone:
+    return string.none
+
   let response = await self.client.getHover(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getHover('{filename}', {location}): {response.error}")
     return string.none
 
   if response.isCanceled:
@@ -396,7 +426,7 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
 
   let response = await self.client.getInlayHints(filename, selection)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getInlayHints('{filename}', {selection}): {response.error}")
     return response.to(seq[language_server_base.InlayHint])
 
   if response.isCanceled:
@@ -444,14 +474,18 @@ proc toInternalSymbolKind(symbolKind: SymbolKind): SymbolType =
   except:
     return SymbolType.Unknown
 
+# todo: change return type to Response
 method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
+
+  if self.serverCapabilities.documentSymbolProvider.isNone:
+    return completions
 
   debugf"[getSymbols] {filename}"
   let response = await self.client.getSymbols(filename)
 
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getSymbols('{filename}'): {response.error}")
     return completions
 
   if response.isCanceled:
@@ -491,12 +525,16 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
 
   return completions
 
+# todo: change return type to Response
 method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
 
+  if self.serverCapabilities.workspaceSymbolProvider.isNone:
+    return completions
+
   let response = await self.client.getWorkspaceSymbols(query)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getWorkspaceSymbols('{query}'): {response.error}")
     return completions
 
   if response.isCanceled:
@@ -550,7 +588,7 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
 
   let response = await self.client.getDiagnostics(filename)
   if response.isError:
-    log(lvlError, &"Error: {response.error}")
+    log(lvlError, &"Error in getDiagnostics('{filename}'): {response.error}")
     return response.to(seq[lsp_types.Diagnostic])
 
   if response.isCanceled:
@@ -567,6 +605,8 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
 
 method getCompletions*(self: LanguageServerLSP, filename: string, location: Cursor):
     Future[Response[CompletionList]] {.async.} =
+  if self.serverCapabilities.completionProvider.isNone:
+    return success(CompletionList())
   let localizedPath = self.vfs.localize(filename)
   return await self.client.getCompletions(localizedPath, location.line, location.column)
 
@@ -578,15 +618,17 @@ method connect*(self: LanguageServerLSP, document: Document) =
 
   let document = document.TextDocument
 
-  log lvlInfo, fmt"Connecting document (loadingAsync: {document.isLoadingAsync}) '{document.filename}'"
+  log lvlInfo, fmt"Connecting document (loadingAsync: {document.isLoadingAsync}, requiresLoad: {document.requiresLoad}) '{document.filename}'"
 
   if document.requiresLoad or document.isLoadingAsync:
     var handle = new Id
     handle[] = document.onLoaded.subscribe proc(document: TextDocument): void =
       document.onLoaded.unsubscribe handle[]
-      asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.localizedPath, document.contentString)
+      asyncSpawn self.client.notifyOpenedTextDocumentMain(self.languageId, document.localizedPath, document.contentString)
+      document.connectedToLanguageServer = true
   else:
-    asyncSpawn self.client.notifyTextDocumentOpenedChannel.send (self.languageId, document.localizedPath, document.contentString)
+    asyncSpawn self.client.notifyOpenedTextDocumentMain(self.languageId, document.localizedPath, document.contentString)
+    document.connectedToLanguageServer = true
 
   let onEditHandle = document.onEdit.subscribe proc(args: auto): void {.gcsafe, raises: [].} =
     # debugf"TEXT INSERTED {args.document.localizedPath}:{args.location}: {args.text}"
@@ -596,16 +638,20 @@ method connect*(self: LanguageServerLSP, document: Document) =
     let localizedPath = args.document.localizedPath
 
     if self.fullDocumentSync:
-      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (localizedPath, version, @[], args.document.contentString)
+      asyncSpawn self.client.notifyTextDocumentChangedMain(localizedPath, version, args.document.contentString)
     else:
       var c = args.document.buffer.visibleText.cursorT(Point)
       # todo: currently relies on edits being sorted
       let changes = args.edits.mapIt(block:
         c.seekForward(Point.init(it.new.first.line, it.new.first.column))
         let text = c.slice(Point.init(it.new.last.line, it.new.last.column))
-        TextDocumentContentChangeEvent(range: language_server_base.toLspRange(it.old), text: $text)
+        let old = it.old.toRange
+        var oldAdjusted: rope.Range[Point]
+        oldAdjusted.a = it.new.first.toPoint
+        oldAdjusted.b = oldAdjusted.a + (old.b - old.a).toPoint
+        TextDocumentContentChangeEvent(range: language_server_base.toLspRange(oldAdjusted.toSelection), text: $text)
       )
-      asyncSpawn self.client.notifyTextDocumentChangedChannel.send (localizedPath, version, changes, "")
+      asyncSpawn self.client.notifyTextDocumentChangedMain(localizedPath, version, changes)
 
   self.documentHandles.add (document.Document, onEditHandle)
 
@@ -625,8 +671,7 @@ method disconnect*(self: LanguageServerLSP, document: Document) {.gcsafe, raises
     self.documentHandles.removeSwap i
     break
 
-  # asyncSpawn self.client.notifyClosedTextDocument(document.localizedPath)
-  asyncSpawn self.client.notifyTextDocumentClosedChannel.send(document.localizedPath)
+  asyncSpawn self.client.notifyClosedTextDocumentMain(document.localizedPath)
 
   if self.documentHandles.len == 0:
     self.stop()

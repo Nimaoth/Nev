@@ -132,16 +132,16 @@ CS(layer1@1)
 =================== setting layer2.d.c.f
 --- testSetting CS(layer2@0, CS(layer1@1)).d.c.f, cache: none(JsonNodeEx), layers: @[]
 10
-new layers: @[(0, Extend, "CS(layer2@0, CS(layer1@1))"), (1, Override, "CS(layer1@1)")]
---- testSetting CS(layer2@0, CS(layer1@1)).d.c.f, cache: some(10), layers: @[(0, Extend, "CS(layer2@0, CS(layer1@1))"), (1, Override, "CS(layer1@1)")]
+new layers: @[(0, Override, "CS(layer2@0, CS(layer1@1))")]
+--- testSetting CS(layer2@0, CS(layer1@1)).d.c.f, cache: some(10), layers: @[(0, Override, "CS(layer2@0, CS(layer1@1))")]
 10
-new layers: @[(0, Extend, "CS(layer2@0, CS(layer1@1))"), (1, Override, "CS(layer1@1)")]
---- testSetting CS(layer2@1, CS(layer1@1)).d.c.f, cache: some(10), layers: @[(0, Extend, "CS(layer2@1, CS(layer1@1))"), (1, Override, "CS(layer1@1)")]
+new layers: @[(0, Override, "CS(layer2@0, CS(layer1@1))")]
+--- testSetting CS(layer2@1, CS(layer1@1)).d.c.f, cache: some(10), layers: @[(0, Override, "CS(layer2@1, CS(layer1@1))")]
 113
-new layers: @[(1, Extend, "CS(layer2@1, CS(layer1@1))"), (1, Override, "CS(layer1@1)")]
---- testSetting CS(layer2@1, CS(layer1@1)).d.c.f, cache: some(113), layers: @[(1, Extend, "CS(layer2@1, CS(layer1@1))"), (1, Override, "CS(layer1@1)")]
+new layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
+--- testSetting CS(layer2@1, CS(layer1@1)).d.c.f, cache: some(113), layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
 113
-new layers: @[(1, Extend, "CS(layer2@1, CS(layer1@1))"), (1, Override, "CS(layer1@1)")]
+new layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
 =================== setting layer2.a
 --- testSetting CS(layer2@1, CS(layer1@1)).a, cache: none(JsonNodeEx), layers: @[]
 2

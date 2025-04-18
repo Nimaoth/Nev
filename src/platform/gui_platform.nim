@@ -147,6 +147,11 @@ method init*(self: GuiPlatform) =
       let arrangement = font.typeset(text, snapToPixel = false)
       result = arrangement.layoutBounds().x
 
+    self.builder.textBoundsImpl = proc(node: UINode): Vec2 =
+      let font = self.getFont(self.ctx.fontSize, node.flags)
+      let arrangement = font.typeset(node.text, bounds = node.bounds.wh, wrap = TextWrap in node.flags, snapToPixel = false)
+      result = arrangement.layoutBounds()
+
     self.window.onFocusChange = proc() =
       inc self.eventCounter
       self.currentModifiers = {}
@@ -173,8 +178,8 @@ method init*(self: GuiPlatform) =
 
     self.window.onScroll = proc() =
       inc self.eventCounter
-      if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, {}):
-        self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, {})
+      if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers):
+        self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers)
 
     self.window.onMouseMove = proc() =
       # inc self.eventCounter
@@ -641,7 +646,7 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
           platform.boxy.drawImage($rune, pos, color)
 
       if TextDrawSpaces in flags:
-        const spaceRune = "·".runeAt(0)
+        let spaceRune = renderCommands.space
         for i, rune in arrangement.runes:
           let (rune, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
           drawRune(i, rune, color)
@@ -672,7 +677,7 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
         platform.boxy.drawImage($rune, pos, color)
 
       if TextDrawSpaces in flags:
-        const spaceRune = "·".runeAt(0)
+        let spaceRune = renderCommands.space
         for i in indices.runes:
           let rune = renderCommands.arrangement.runes[i]
           let (rune2, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)

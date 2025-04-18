@@ -50,61 +50,61 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 ## Screenshots
 
 ### Nev running inside Windows Terminal -> WSL -> Zellij with transparent background
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/transparent_background.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/transparent_background.png)
 
 ---
 
 ### LSP integration
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp.gif)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp.gif)
 
 ---
 
 ### Git integration
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git.gif)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git.gif)
 
 ---
 
 ### Debugging support (breakpoints aren't rendered correctly in the gif because of recording with asciinema and they use unicode symbols, see screenshot above)
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/debug.gif)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/debug.gif)
 
 ---
 
 ### Global and open file finders (and more)
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/finders.gif)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/finders.gif)
 
 ---
 
 ### Global search
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/search.gif)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/search.gif)
 
 ---
 
 ### Themes
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/themes.gif)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/themes.gif)
 
 ---
 
 ### LSP completions
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp_completions.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_completions.png)
 
 ---
 
 ### Diagnostics, inlay hints and hover information
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp_diagnostics_inlay_hints_hover.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_diagnostics_inlay_hints_hover.png)
 
 ---
 
 ### Fuzzy search for document symbols
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp_document_symbols.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/lsp_document_symbols.png)
 
 ---
 
 ### View changed/added files in git, and open the diff for files directly, or stage/unstage/revert them
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git_changed_files.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_changed_files.png)
 
 ---
 
 ### View the git diff in the editor
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git_diff.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/git_diff.png)
 
 ---

@@ -56,7 +56,9 @@ proc to*(a: Response[JsonNode], T: typedesc): Response[T] =
         return Response[T](id: a.id, kind: ResponseKind.Error, error: error)
 
 proc to*[K](a: Response[K], T: typedesc): Response[T] =
-  when T is JsonNode:
+  when T is K and K is T:
+    return a
+  elif T is JsonNode:
     return a
   else:
     case a.kind:

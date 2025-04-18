@@ -41,11 +41,11 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   editor.setMode("insert")
   editor.disableCompletions = false
   editor.disableScrolling = true
-  editor.lineNumbers = api.LineNumbers.None.some
+  editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
-  editor.clearOverlays(5)
+  editor.clearOverlays(overlayIdPrefix)
   if prefix != "":
-    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), prefix, 5, scope = "comment", bias = Bias.Left)
+    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
   self.events.rebuildCommandToKeysMap()
   self.platform.requestRender()
 
@@ -62,7 +62,7 @@ proc commandLineResult*(self: CommandService, value: string) {.expose("commands"
   editor.setMode("normal")
   editor.disableCompletions = false
   editor.disableScrolling = false
-  editor.lineNumbers = api.LineNumbers.Absolute.some
+  editor.uiSettings.lineNumbers.set(api.LineNumbers.Absolute)
   editor.document.setReadOnly(true)
   self.events.rebuildCommandToKeysMap()
   self.platform.requestRender()
@@ -74,7 +74,7 @@ proc exitCommandLine*(self: CommandService) {.expose("commands").} =
   editor.document.content = ""
   editor.hideCompletions()
   editor.disableScrolling = true
-  editor.lineNumbers = api.LineNumbers.None.some
+  editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
   self.commandLineInputMode = false
   self.commandLineResultMode = false
@@ -108,7 +108,7 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
   for command in commands:
     self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.insert command, 1
 
-  let maxHistorySize = self.config.getValue("editor.command-line.history-size", 100)
+  let maxHistorySize = self.config.get("editor.command-line.history-size", 100)
   if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len > maxHistorySize:
     self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.setLen maxHistorySize
 
