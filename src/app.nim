@@ -54,7 +54,6 @@ type OpenEditor = object
 type
   # todo: this isn't necessary anymore
   OpenWorkspace = object
-    id*: string
     name*: string
     settings*: JsonNode
 
@@ -67,7 +66,7 @@ type EditorState = object
   fontBoldItalic: string
   fallbackFonts: seq[string]
   layout: string
-  workspaceFolders: seq[OpenWorkspace]
+  workspaceFolder: OpenWorkspace
   openEditors: seq[OpenEditor]
   hiddenEditors: seq[OpenEditor]
   commandHistory: seq[string]
@@ -329,6 +328,14 @@ proc restoreStateFromConfig*(self: App, state: ptr EditorState) {.async: (raises
     let stateJson = self.vfs.read(self.sessionFile).await.parseJson
 
     state[] = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+
+    if stateJson.hasKey("workspaceFolders"):
+      try:
+        log lvlError, &"Old session file found"
+        state[].workspaceFolder = stateJson["workspaceFolders"][0].jsonTo(OpenWorkspace, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+      except:
+        discard
+
     log(lvlInfo, fmt"Restoring session {self.sessionFile}")
 
     if not state[].layout.isEmptyOrWhitespace:
@@ -817,13 +824,11 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   # if self.runtime.get("command-server.port", Port.none).getSome(port):
   #   asyncSpawn self.listenForConnection(port)
 
-  for i, wf in state.workspaceFolders:
-    log(lvlInfo, fmt"Restoring workspace")
-    self.workspace.restore(wf.settings)
-
-    if i == 0:
-      self.config.groups.add(workspaceConfigDir)
-      await self.loadConfigFrom(workspaceConfigDir, "workspace")
+  log(lvlInfo, fmt"Restoring workspace")
+  if state.workspaceFolder.settings != nil:
+    self.workspace.restore(state.workspaceFolder.settings)
+    self.config.groups.add(workspaceConfigDir)
+    await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.path == "":
@@ -1087,8 +1092,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   #   state.layout = "fibonacci"
 
   # Save open workspace folders
-  state.workspaceFolders.add OpenWorkspace(
-    id: $self.workspace.id,
+  state.workspaceFolder = OpenWorkspace(
     name: self.workspace.name,
     settings: self.workspace.settings
   )

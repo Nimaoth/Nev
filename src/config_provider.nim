@@ -937,10 +937,10 @@ template defineSetAllDefaultSettings*(): untyped =
   setAllDefaults = proc(store: ConfigStore) {.raises: [].} =
     setAllDefaultsImpl(store, descriptions)
 
-  static:
-    echo "=========== All settings ==========="
-    for i, desc in settingDescriptions:
-      echo i, ": ", desc
+  # static:
+  #   echo "=========== All settings ==========="
+  #   for i, desc in settingDescriptions:
+  #     echo i, ": ", desc
 
   proc getSettingDescriptionsImpl(): seq[SettingDescription] =
     const settingDescriptionsTemp = settingDescriptions
