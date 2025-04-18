@@ -99,6 +99,7 @@ type
     GetSymbol
     GetDiagnostic
     GetCompletion
+    GetCodeActions
 
   LSPClientRequestKind* = enum
     Request
@@ -121,6 +122,7 @@ type
     of GetSymbol: getSymbol*: Response[WorkspaceSymbolResponse]
     of GetDiagnostic: getDiagnostic*: Response[DocumentDiagnosticResponse]
     of GetCompletion: getCompletion*: Response[CompletionResponse]
+    of GetCodeActions: getCodeActions*: Response[CodeActionResponse]
 
   LSPClientRequest = object
     id: int
@@ -155,6 +157,7 @@ type
     activeWorkspaceSymbolsRequests: Table[int, tuple[meth: string, future: Future[Response[WorkspaceSymbolResponse]]]] # Main thread
     activeDiagnosticsRequests: Table[int, tuple[meth: string, future: Future[Response[DocumentDiagnosticResponse]]]] # Main thread
     activeCompletionsRequests: Table[int, tuple[meth: string, future: Future[Response[CompletionResponse]]]] # Main thread
+    activeCodeActionRequests: Table[int, tuple[meth: string, future: Future[Response[CodeActionResponse]]]] # Main thread
     requestsPerMethod: Table[string, seq[int]]
     canceledRequests: HashSet[int]
     idToMethod: Table[int, string]
@@ -263,6 +266,7 @@ proc deinit*(client: LSPClient) =
   client.activeWorkspaceSymbolsRequests.clear()
   client.activeDiagnosticsRequests.clear()
   client.activeCompletionsRequests.clear()
+  client.activeCodeActionRequests.clear()
   client.requestsPerMethod.clear()
   client.canceledRequests.clear()
   client.isInitialized = false
@@ -455,6 +459,7 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
     of GetSymbol: dispatch(client.activeWorkspaceSymbolsRequests, response.getSymbol)
     of GetDiagnostic: dispatch(client.activeDiagnosticsRequests, response.getDiagnostic)
     of GetCompletion: dispatch(client.activeCompletionsRequests, response.getCompletion)
+    of GetCodeActions: dispatch(client.activeCodeActionRequests, response.getCodeActions)
 
   log lvlInfo, &"handleResponses: client gone"
 
@@ -503,6 +508,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     of "workspace/symbol": cancel(client.activeWorkspaceSymbolsRequests, WorkspaceSymbolResponse)
     of "textDocument/diagnostic": cancel(client.activeDiagnosticsRequests, DocumentDiagnosticResponse)
     of "textDocument/completion": cancel(client.activeCompletionsRequests, CompletionResponse)
+    of "textDocument/codeAction": cancel(client.activeCodeActionRequests, CodeActionResponse)
     else: continue
 
     client.activeRequests.del id
@@ -574,7 +580,6 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
         },
         "references": %*{},
         "codeAction": %*{
-          "linkSupport": true,
         },
         "rename": %*{
           "linkSupport": true,
@@ -937,6 +942,42 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
   return errorResponse[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
+proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int), (int, int))): Future[Response[CodeActionResponse]] {.async.} =
+  debugf"[getCodeActions] {filename.absolutePath}:{selection}"
+  client.cancelAllOf("textDocument/codeAction")
+
+  let params = %*{
+    "textDocument": TextDocumentIdentifier(uri: $filename.toUri),
+    "range": Range(
+      start: Position(
+        line: selection[0][0],
+        character: selection[0][1],
+      ),
+      `end`: Position(
+        line: selection[1][0],
+        character: selection[1][1],
+      ),
+    ),
+    "context": CodeActionContext(
+      # triggerKind: CodeActionTriggerKind.Automatic.some,
+    ),
+  }
+
+  return await client.sendRequest(client.activeCodeActionRequests.addr, "textDocument/codeAction", params)
+  # return response.to CodeActionResponse
+
+  # if response.isError or response.isCanceled:
+  #   return response.to CodeActionResponse
+
+  # let parsedResponse = response.result
+  # if parsedResponse.asCompletionItemSeq().getSome(items):
+  #   return CompletionList(isIncomplete: false, items: items).success
+  # if parsedResponse.asCompletionList().getSome(list):
+  #   return list.success
+
+  # debugf"[getCodeActions] {filename}:{line}:{column}: no code actions found"
+  # return errorResponse[CodeActionResponse](-1, fmt"[getCodeActions] {filename}:{line}:{column}: no completions found")
+
 proc handleWorkspaceConfigurationRequest(client: LSPClient, id: int, params: ConfigurationParams) {.async, gcsafe.} =
   debugf"handleWorkspaceConfigurationRequest {id}, {params}"
   await client.workspaceConfigurationRequestChannel.send(params)
@@ -1035,6 +1076,8 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
               id: id, kind: GetDiagnostic, getDiagnostic: parsedResponse.to(DocumentDiagnosticResponse)))
           of "textDocument/completion": await client.responseChannel.send(LSPClientResponse(
               id: id, kind: GetCompletion, getCompletion: parsedResponse.to(CompletionResponse)))
+          of "textDocument/codeAction": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetCodeActions, getCodeActions: parsedResponse.to(CodeActionResponse)))
 
         else:
           log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")

@@ -610,6 +610,13 @@ method getCompletions*(self: LanguageServerLSP, filename: string, location: Curs
   let localizedPath = self.vfs.localize(filename)
   return await self.client.getCompletions(localizedPath, location.line, location.column)
 
+method getCodeActions*(self: LanguageServerLSP, filename: string, selection: Selection):
+    Future[Response[lsp_types.CodeActionResponse]] {.async.} =
+  if self.serverCapabilities.codeActionProvider.isNone:
+    return success(lsp_types.CodeActionResponse.default)
+  let localizedPath = self.vfs.localize(filename)
+  return await self.client.getCodeActions(localizedPath, selection)
+
 import text/[text_editor, text_document]
 
 method connect*(self: LanguageServerLSP, document: Document) =
