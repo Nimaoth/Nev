@@ -20,7 +20,8 @@ import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
-  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
+  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
+  Command, WorkspaceEdit
 
 import nimsumtree/[buffer, clock, static_array, rope]
 from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
@@ -3990,6 +3991,51 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
       self.markDirty()
 
+proc updateCodeActionsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
+  if self.document.isNil:
+    return
+
+  if self.document.getLanguageServer().await.getSome(ls):
+    if self.document.isNil:
+      return
+
+    let screenLineCount = self.screenLineCount
+    let visibleRangeHalf = self.visibleTextRange(screenLineCount div 2)
+    let visibleRange = self.visibleTextRange(screenLineCount)
+    let snapshot = self.document.buffer.snapshot.clone()
+    let codeActions: Response[CodeActionResponse] = await ls.getCodeActions(self.document.localizedPath, visibleRange)
+    if self.document.isNil:
+      return
+
+    # echo &"-> {codeActions}"
+
+    # # todo: detect if canceled instead
+    # if codeActions.isSuccess:
+    #   template getBias(hint: untyped): Bias =
+    #     if hint.paddingRight:
+    #       Bias.Right
+    #     else:
+    #       Bias.Left
+
+    #   self.codeActions = codeActions.result.mapIt (snapshot.anchorAt(it.location.toPoint, it.getBias), it)
+    #   self.lastInlayHintTimestamp = snapshot.version
+    #   self.updateInlayHintsAfterChange()
+    #   self.lastInlayHintDisplayRange = visibleRange.toRange
+    #   self.lastInlayHintBufferRange = visibleRangeHalf.toRange
+
+    #   self.displayMap.overlay.clear(overlayIdInlayHint)
+    #   for hint in self.codeActions:
+    #     let point = hint.hint.location.toPoint
+    #     let bias = hint.hint.getBias
+    #     if hint.hint.paddingLeft:
+    #       self.displayMap.overlay.addOverlay(point...point, " " & hint.hint.label, overlayIdInlayHint, "comment", bias)
+    #     elif hint.hint.paddingRight:
+    #       self.displayMap.overlay.addOverlay(point...point, hint.hint.label & " ", overlayIdInlayHint, "comment", bias)
+    #     else:
+    #       self.displayMap.overlay.addOverlay(point...point, hint.hint.label, overlayIdInlayHint, "comment", bias)
+
+    #   self.markDirty()
+
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.clearDiagnostics()
   self.markDirty()
@@ -3998,6 +4044,7 @@ proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
       asyncSpawn self.updateInlayHintsAsync()
+      # asyncSpawn self.updateCodeActionsAsync()
   else:
     self.inlayHintsTask.reschedule()
 
