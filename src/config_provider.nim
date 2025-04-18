@@ -1,5 +1,5 @@
-import std/[json, options, strutils, tables, enumerate, sequtils, macros, genasts]
-import misc/[traits, util, event, custom_async, custom_logger, myjsonutils, jsonex, id, timer]
+import std/[json, options, strutils, tables, enumerate, sequtils, macros, genasts, sets, typetraits]
+import misc/[traits, util, event, custom_async, custom_logger, myjsonutils, jsonex, id, timer, custom_unicode]
 import scripting/expose
 import platform/platform
 import service, platform_service, dispatch_tables
@@ -39,7 +39,7 @@ type
   Setting*[T] = ref object
     store*: ConfigStore
     cache*: Option[T]
-    layers*: seq[ConfigStoreLayer]
+    revision*: int
     key*: string
 
   ConfigStoreLayer = tuple[revision: int, kind: ConfigLayerKind, store: ConfigStore]
@@ -58,11 +58,30 @@ type
 
   RegexSetting* = distinct JsonNodeEx
 
+  RuneSetSetting* = distinct HashSet[Rune]
+
+proc `in`*(r: Rune, set: RuneSetSetting): bool =
+  type Base = HashSet[Rune]
+  set.Base.contains(r)
+
+proc `in`*(c: char, set: RuneSetSetting): bool =
+  c.Rune in set
+
+proc fromJsonExHook*(t: var RuneSetSetting, jsonNode: JsonNodeEx) =
+  var runes = initHashSet[Rune]()
+  for s in jsonNode:
+    if s.kind == JString:
+      runes.incl s.str.runeAt(0)
+    if s.kind == JArray:
+      for r in s[0].str.runeAt(0)..s[1].str.runeAt(0):
+        runes.incl r
+  t = runes.RuneSetSetting
+
 proc toJsonExHook*[T](a: Setting[T]): JsonNodeEx {.raises: [].} =
   let v = a.get()
   return v.toJsonEx()
 
-proc fromJsonHook*(t: var RegexSetting, jsonNode: JsonNodeEx) =
+proc fromJsonExHook*(t: var RegexSetting, jsonNode: JsonNodeEx) =
   t = jsonNode.RegexSetting
 
 proc camelCaseToHyphenCase(str: string): string =
@@ -460,6 +479,7 @@ proc setParent*(self: ConfigStore, parent: ConfigStore) =
 
     if self.parent != nil:
       self.parentChangedHandle = self.parent.onConfigChanged.subscribe proc(key: string) =
+        inc self.revision
         var val = self.settings
         var extend = val.extend
         for keyRaw in key.splitOpenArray('.'):
@@ -722,53 +742,14 @@ proc setting*(self: ConfigStore, key: string, T: typedesc): Setting[T] =
   return Setting[T](store: self, key: key)
 
 var logSetting* = false
-proc cacheValue[T](self: Setting[T]) =
-  self.layers.setLen(0)
-  let value = self.store.getImpl(self.key, self.layers, collectLayers = true)
-  if value == nil:
-    self.cache = T.default.some
-  else:
-    try:
-      self.cache = value.jsonTo(T).some
-    except Exception as e:
-      let t = $T
-      log lvlError, &"Failed to cache setting '{self.key}' of type {t}: {e.msg} ({value})"
-
-proc get*[T](self: Setting[T], default: T): T =
+proc get*[T](self: Setting[T], default: T): lent T =
+  if self.cache.isSome and self.revision == self.store.revision:
+    return self.cache.get
   self.cache = self.store.get(self.key, default).some
+  self.revision = self.store.revision
   return self.cache.get
-  # defer:
-  #   let rawSetting = self.store.get(self.key, T)
-  #   if rawSetting != result:
-  #     log lvlError, &"Setting {self.store.desc}.{self.key} not invalidated correctly: {rawSetting} != {result}\n{self.layers}"
-  #     self.cache = rawSetting.some
-  #     result = rawSetting
 
-  # if self.cache.isNone:
-  #   self.cacheValue()
-  #   return self.cache.get(default)
-
-  # # Check if cache valid
-  # for i, store in enumerate(self.store.parentStores(includeSelf = true)):
-  #   if i >= self.layers.len:
-  #     self.cacheValue()
-  #     return self.cache.get(default)
-
-  #   let layer = self.layers[i]
-  #   if store == layer.store and store.revision == layer.revision and layer.kind == Override:
-  #     return self.cache.get
-  #   elif store != layer.store or (store.revision != layer.revision and layer.kind in {Extend, Override}):
-  #     self.cacheValue()
-  #     return self.cache.get(default)
-  #   elif store != layer.store or (store.revision != layer.revision and layer.kind in {Unchanged}):
-  #     var tempLayers = newSeq[ConfigStoreLayer]()
-  #     if layer.store.getImpl(self.key, tempLayers, recurse = false) != nil:
-  #       self.cacheValue()
-  #       return self.cache.get(default)
-
-  # return default
-
-proc get*[T](self: Setting[T]): T =
+proc get*[T](self: Setting[T]): lent T =
   return self.get(T.default)
 
 proc set*[T](self: Setting[T], value: T) =

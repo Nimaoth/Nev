@@ -857,8 +857,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           color: backgroundColor.lighten(0.05)))
         addedCursorLineBackground = true
 
-      if state.chunkBounds.len > 1000000:
-        assert false, "Rendering too much text, your font size is too small or there is a bug"
+      if state.chunkBounds.len > 10000:
+        log lvlError, "Rendering too much text, your font size is too small or there is a bug"
+        break
 
       case drawChunk(chunk, state)
       of Continue: discard
@@ -908,6 +909,10 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           contextLinesState.addedLineNumber = false
           continue
 
+        if contextLinesState.chunkBounds.len > 10000:
+          log lvlError, "Rendering too much text, your font size is too small or there is a bug"
+          break
+
         case drawChunk(chunk, contextLinesState)
         of Continue: discard
         of ContinueNextLine: discard
@@ -916,6 +921,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     if renderDiff:
       startScissor(diffState.bounds)
       while diffIter.next().getSome(chunk):
+        if diffState.chunkBounds.len > 10000:
+          log lvlError, "Rendering too much text, your font size is too small or there is a bug"
+          break
         case drawChunk(chunk, diffState)
         of Continue: discard
         of ContinueNextLine: diffIter.seekLine(chunk.displayPoint.row.int + 1)

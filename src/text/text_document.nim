@@ -106,12 +106,8 @@ declareSettings TextSettings, "text":
   ## Settings for treesitter.
   use treesitter, TreesitterSettings
 
-  ## How many characters wide a tab is. This is used when neither `text.tab-width` or `languages.*.tab-width` are set.
-  declare tabWidthDefault, int, 4
-
-  ## How many characters wide a tab is. This overrides the per language tab width settings `text.tab-width-default` and `languages.*.tabWidth`.
-  ## This is primarily intended to be set on specific editor configs to override the global or language default.
-  declare tabWidth, Option[int], nil
+  ## How many characters wide a tab is.
+  declare tabWidth, int, 4
 
   ## If true then configured language servers are automatically started when opening a file of the specific language for the first time.
   declare autoStartLanguageServer, bool, true
@@ -121,6 +117,12 @@ declareSettings TextSettings, "text":
 
   ## When you insert a new line, if the current line ends with one of these strings then the new line will be indented.
   declare indentAfter, Option[seq[string]], nil
+
+  ##
+  declare completionWordChars, RuneSetSetting, %%*[["a", "z"], ["A", "Z"], ["0", "9"], "_"]
+
+  ## Whether to used spaces or tabs for indentation.
+  declare indent, IndentStyleKind, IndentStyleKind.Spaces
 
 type
 
@@ -166,8 +168,6 @@ type
 
     configService: ConfigService
     config*: ConfigStore
-    languageConfig*: Option[TextLanguageConfig]
-    indentStyle*: IndentStyle
     createLanguageServer*: bool = true
     completionTriggerCharacters*: set[char] = {}
 
@@ -739,8 +739,6 @@ proc newTextDocument*(
   self.isBackedByFile = load
   self.requiresLoad = load
 
-  self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
-
   self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
   self.settings = TextSettings.new(self.config)
 
@@ -749,24 +747,6 @@ proc newTextDocument*(
   else:
     getLanguageForFile(self.config, filename).applyIt:
       self.languageId = it
-
-  if self.languageId != "":
-    let value = self.config.get("languages." & self.languageId, newJexNull())
-    if value.kind == JObject:
-      try:
-        self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
-        if value.hasKey("indent"):
-          case value["indent"].str:
-          of "spaces":
-            let defaultTabWidth = self.settings.tabWidthDefault.get()
-            self.indentStyle = IndentStyle(
-              kind: Spaces,
-              spaces: self.languageConfig.map((c) => c.tabWidth.get(defaultTabWidth)).get(defaultTabWidth)
-            )
-          of "tabs":
-            self.indentStyle = IndentStyle(kind: Tabs)
-      except CatchableError:
-        discard
 
   let autoStartServer = self.settings.autoStartLanguageServer.get()
 
@@ -880,16 +860,13 @@ proc autoDetectIndentStyle(self: TextDocument) =
     c.seekForward(linePos)
 
   if containsTab:
-    self.indentStyle = IndentStyle(kind: Tabs)
+    self.settings.indent.set(Tabs)
   else:
-    if self.languageConfig.isNone:
-      self.languageConfig = TextLanguageConfig().some
-
     if minIndent != int.high:
-      self.languageConfig.get.tabWidth = minIndent.some
-      self.indentStyle = IndentStyle(kind: Spaces, spaces: minIndent)
+      self.settings.tabWidth.set(minIndent)
+      self.settings.indent.set(Spaces)
 
-  # log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
+  # log lvlInfo, &"[Text_document] Detected indent: {self.settings.indent.get()}, {self.settings.tabWidth.get()}"
 
 proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.} =
   if self.settings.diffReload.enable.get():
@@ -1259,11 +1236,7 @@ proc clearDiagnostics*(self: TextDocument) =
   self.updateDiagnosticEndPoints()
 
 proc tabWidth*(self: TextDocument): int =
-  if self.settings.tabWidth.get().getSome(tabWidth):
-    return tabWidth
-  if self.languageConfig.getSome(c) and c.tabWidth.getSome(tabWidth):
-    return tabWidth
-  return self.settings.tabWidthDefault.get(4)
+  return self.settings.tabWidth.get()
 
 proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   if cursor.column == 0:
@@ -1272,13 +1245,13 @@ proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   # todo: don't use get line
   let line = $self.getLine(cursor.line)
 
-  let identChars = self.languageConfig.mapIt(it.completionWordChars).get(IdentChars)
+  let identRunes {.cursor.} = self.settings.completionWordChars.get()
 
   var column = min(cursor.column, line.len)
   while column > 0:
     let prevColumn = line.runeStart(column - 1)
     let r = line.runeAt(prevColumn)
-    if (r.int <= char.high.int and r.char in identChars) or r.isAlpha:
+    if (r.int <= char.high.int and r in identRunes) or r.isAlpha:
       column = prevColumn
       continue
     break
@@ -1320,11 +1293,19 @@ proc lastNonWhitespace*(str: string): int =
       break
     result -= 1
 
+proc getIndentString*(self: TextDocument): string =
+  getIndentString(self.settings.indent.get(), self.settings.tabWidth.get())
+
+proc getIndentColumns*(self: TextDocument): int =
+  case self.settings.indent.get()
+  of Tabs: return 1
+  of Spaces: return self.settings.tabWidth.get()
+
 proc getIndentLevelForLine*(self: TextDocument, line: int, tabWidth: int): int =
   if line < 0 or line >= self.numLines:
     return 0
 
-  let indentWidth = self.indentStyle.indentWidth(tabWidth)
+  let indentWidth = self.settings.tabWidth.get()
 
   var c = self.rope.cursorT(Point.init(line, 0))
   var indent = 0
@@ -1538,7 +1519,7 @@ proc isLineCommented*(self: TextDocument, line: int): bool =
 
 proc getLineCommentRange*(self: TextDocument, line: int): Selection =
   let lineComment = self.settings.lineComment.get()
-  if line > self.numLines - 1 or self.languageConfig.isNone or lineComment.isNone:
+  if line > self.numLines - 1 or lineComment.isNone:
     return (line, 0).toSelection
 
   # todo: use RopeCursor
@@ -1556,9 +1537,6 @@ proc getLineCommentRange*(self: TextDocument, line: int): Selection =
 
 proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selection] =
   result = selections
-
-  if self.languageConfig.isNone:
-    return
 
   let lineComment = self.settings.lineComment.get()
   if lineComment.isNone:

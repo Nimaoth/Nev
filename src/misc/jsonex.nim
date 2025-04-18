@@ -169,9 +169,9 @@ proc `%%`*(n: BiggestInt): JsonNodeEx =
 proc `%%`*(n: float): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JFloat JsonNodeEx`.
   runnableExamples:
-    assert $(%[NaN, Inf, -Inf, 0.0, -0.0, 1.0, 1e-2]) == """["nan","inf","-inf",0.0,-0.0,1.0,0.01]"""
-    assert (%NaN).kind == JString
-    assert (%0.0).kind == JFloat
+    assert $(%%[NaN, Inf, -Inf, 0.0, -0.0, 1.0, 1e-2]) == """["nan","inf","-inf",0.0,-0.0,1.0,0.01]"""
+    assert (%%NaN).kind == JString
+    assert (%%0.0).kind == JFloat
   # for those special cases, we could also have used `newJexRawNumber` but then
   # it would've been inconsisten with the case of `parseJsonex` vs `%%` for representing them.
   if n != n: newJexString("nan")
@@ -194,17 +194,17 @@ template `%%`*(j: JsonNodeEx): JsonNodeEx = j
 proc `%%`*[T](elements: openArray[T]): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JArray JsonNodeEx`
   result = newJexArray()
-  for elem in elements: result.add(%elem)
+  for elem in elements: result.add(%%elem)
 
 proc `%%`*[T](table: Table[string, T]|OrderedTable[string, T]): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JObject JsonNodeEx`.
   result = newJexObject()
-  for k, v in table: result[k] = %v
+  for k, v in table: result[k] = %%v
 
 proc `%%`*[T](opt: Option[T]): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JNull JsonNodeEx`
   ## if `opt` is empty, otherwise it delegates to the underlying value.
-  if opt.isSome: %opt.get else: newJexNull()
+  if opt.isSome: %%opt.get else: newJexNull()
 
 when false:
   # For 'consistency' we could do this, but that only pushes people further
@@ -213,7 +213,7 @@ when false:
   proc `%%`*(elements: set[bool]): JsonNodeEx =
     ## Generic constructor for JSON data. Creates a new `JObject JsonNodeEx`.
     ## This can only be used with the empty set `{}` and is supported
-    ## to prevent the gotcha `%*{}` which used to produce an empty
+    ## to prevent the gotcha `%%*{}` which used to produce an empty
     ## JSON array.
     result = newJexObject()
     assert false notin elements, "usage error: only empty sets allowed"
@@ -227,19 +227,19 @@ proc `[]=`*(obj: JsonNodeEx, key: string, val: JsonNodeEx) {.inline.} =
 proc `%%`*[T: object](o: T): JsonNodeEx =
   ## Construct JsonNodeEx from tuples and objects.
   result = newJexObject()
-  for k, v in o.fieldPairs: result[k] = %v
+  for k, v in o.fieldPairs: result[k] = %%v
 
 proc `%%`*(o: ref object): JsonNodeEx =
   ## Generic constructor for JSON data. Creates a new `JObject JsonNodeEx`
   if o.isNil:
     result = newJexNull()
   else:
-    result = %(o[])
+    result = %%(o[])
 
 proc `%%`*(o: enum): JsonNodeEx =
   ## Construct a JsonNodeEx that represents the specified enum value as a
   ## string. Creates a new `JString JsonNodeEx`.
-  result = %($o)
+  result = %%($o)
 
 proc toJsonExImpl(x: NimNode): NimNode =
   case x.kind

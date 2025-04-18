@@ -179,7 +179,7 @@
         "html": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-html",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     ">"
@@ -189,7 +189,7 @@
         "query": {
             "+text": {
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-query",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     "(",
@@ -237,7 +237,7 @@
                 "treesitter.repository": "alaviss/tree-sitter-nim",
                 "treesitter.language": "nim",
                 "formatter": "nph",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -254,7 +254,7 @@
         "python": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-python",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -269,7 +269,7 @@
         "javascript": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-javascript",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -289,7 +289,7 @@
         "typescript": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-typescript/typescript",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "tab",
                 "indentAfter": [
                     ":",
@@ -308,7 +308,7 @@
         "tsx": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-typescript/tsx",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "tab",
                 "indentAfter": [
                     ":",
@@ -327,7 +327,7 @@
         "rust": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-rust",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -347,7 +347,7 @@
         "c": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-c",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -380,7 +380,7 @@
         "cpp": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-cpp",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -399,7 +399,7 @@
         "c_sharp": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-c-sharp",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "tab",
                 "indentAfter": [
                     ":",
@@ -418,7 +418,7 @@
         "java": {
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-java",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "tab",
                 "indentAfter": [
                     ":",
@@ -437,7 +437,7 @@
         "zig": {
             "+text": {
                 "treesitter.repository": "maxxnino/tree-sitter-zig",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "tab",
                 "indentAfter": [
                     ":",
@@ -466,7 +466,7 @@
         "odin": {
             "+text": {
                 "treesitter.repository": "ap29600/tree-sitter-odin",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "tab",
                 "indentAfter": [
                     ":",
@@ -485,7 +485,7 @@
         "json": {
             "+text": {
                 "treesitter.repository": "maxxnino/tree-sitter-json",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "tab",
                 "indentAfter": [
                     ":",
@@ -503,7 +503,7 @@
         "yaml": {
             "+text": {
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-yaml",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -518,7 +518,7 @@
                 "context-lines": false,
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
                 "treesitter.queries": "tree-sitter-markdown/queries",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "blockComment": [ "<!--", "-->" ]
             }
@@ -527,7 +527,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown-inline",
                 "treesitter.queries": "tree-sitter-markdown-inline/queries",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "blockComment": [ "<!--", "-->" ]
             }
@@ -595,7 +595,7 @@
         "powershell": {
             "+text": {
                 "treesitter.repository": "airbus-cert/tree-sitter-powershell",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "spaces",
                 "lineComment": "#"
             }
@@ -633,7 +633,7 @@
         "talon": {
             "+text": {
                 "treesitter.repository": "wenkokke/tree-sitter-talon",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -647,7 +647,7 @@
         "nix": {
             "+text": {
                 "treesitter.repository": "nix-community/tree-sitter-nix",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",
@@ -662,7 +662,7 @@
         "commonlisp": {
             "+text": {
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-commonlisp",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     "(",
@@ -679,7 +679,7 @@
         "elisp": {
             "+text": {
                 "treesitter.repository": "Wilfred/tree-sitter-elisp",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     "(",
@@ -692,7 +692,7 @@
         "lua": {
             "+text": {
                 "treesitter.repository": "tjdevries/tree-sitter-lua",
-                "tabWidth": 4,
+                "tab-width": 4,
                 "indent": "spaces",
                 "indentAfter": [
                     "(",
@@ -705,7 +705,7 @@
         "wit": {
             "+text": {
                 "treesitter.repository": "liamwh/tree-sitter-wit",
-                "tabWidth": 2,
+                "tab-width": 2,
                 "indent": "spaces",
                 "indentAfter": [
                     ":",

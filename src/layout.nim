@@ -261,14 +261,14 @@ proc getHiddenViewForEditor*(self: LayoutService, editorId: EditorId): Option[in
 
 proc pushPopup*(self: LayoutService, popup: Popup) =
   popup.init()
-  self.popups.add popup
+  self.popups.add(popup)
   discard popup.onMarkedDirty.subscribe () => self.platform.requestRender()
   self.platform.requestRender()
 
-proc popPopup*(self: LayoutService, popup: Popup) =
-  if self.popups.len > 0 and self.popups[self.popups.high] == popup:
-    popup.deinit()
-    discard self.popups.pop
+proc popPopup*(self: LayoutService, popup: Popup = nil) =
+  if self.popups.len > 0 and (popup == nil or self.popups[self.popups.high] == popup):
+    self.popups[self.popups.high].deinit()
+    discard self.popups.pop()
   self.platform.requestRender()
 
 proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
@@ -554,9 +554,12 @@ proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bo
 
   return true
 
-proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, restoreHidden: bool = true) {.expose("layout").} =
-  self.closeView(self.currentView, keepHidden, restoreHidden)
-  self.currentView = self.currentView.clamp(0, self.views.len - 1)
+proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, restoreHidden: bool = true, closeOpenPopup: bool = true) {.expose("layout").} =
+  if closeOpenPopup and self.popups.len > 0:
+    self.popPopup()
+  else:
+    self.closeView(self.currentView, keepHidden, restoreHidden)
+    self.currentView = self.currentView.clamp(0, self.views.len - 1)
 
 proc closeOtherViews*(self: LayoutService, keepHidden: bool = true) {.expose("layout").} =
   ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.

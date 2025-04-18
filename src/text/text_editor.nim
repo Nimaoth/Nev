@@ -113,12 +113,8 @@ declareSettings TextEditorSettings, "text":
   ## How often the editor will check for unused documents and close them, in seconds.
   declare inclusiveSelection, bool, false
 
-  ## How many characters wide a tab is. This is used when neither `text.tab-width` or `languages.*.tab-width` are set.
-  declare tabWidthDefault, int, 4
-
-  ## How many characters wide a tab is. This overrides the per language tab width settings `text.tab-width-default` and `languages.*.tab-width`.
-  ## This is primarily intended to be set on specific editor configs to override the global or language default.
-  declare tabWidth, Option[int], nil
+  ## How many characters wide a tab is.
+  declare tabWidth, int, 4
 
   ## Whether `text.cursor-margin` is relative to the screen height (0-1) or an absolute number of lines.
   declare cursorMarginRelative, bool, true
@@ -667,9 +663,10 @@ proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
         self.inlayHints.removeSwap(i)
 
 proc tabWidth*(self: TextDocumentEditor): int =
-  if self.settings.tabWidth.get().getSome(tabWidth):
-    return tabWidth
-  return self.document.tabWidth
+  result = self.settings.tabWidth.get()
+  if result == 0:
+    log lvlError, &"Invalid tab width of 0 for editor '{self.getFileName()}'"
+    return 4
 
 proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
   # line numbers
@@ -1713,15 +1710,13 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.
   var c = self.document.rope.cursorT(cursor.toPoint)
   c.seekPrevRune()
   let previousRune = c.currentRune()
-  let wordChars = self.document.languageConfig.mapIt(it.completionWordChars).get(IdentChars)
+  let wordRunes {.cursor.} = self.document.settings.completionWordChars.get()
   let extraTriggerChars = if self.document.completionTriggerCharacters.len > 0:
     self.document.completionTriggerCharacters
   else:
     {'.'}
 
-  let allTriggerChars = wordChars + extraTriggerChars
-
-  if previousRune.int <= char.high.int and previousRune.char in allTriggerChars:
+  if previousRune.int <= char.high.int and (previousRune in wordRunes or previousRune.char in extraTriggerChars):
     return true
 
   if previousRune.isAlpha:
@@ -1770,8 +1765,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       for i, selection in selections:
         # todo: don't use getLine
         let line = $self.document.getLine(selection.last.line)
-        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.indentStyle,
-          self.tabWidth(), selection.last.column)
+        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.settings.indent.get(), self.document.settings.tabWidth.get(), selection.last.column)
         texts[i] = "\n" & indent
 
   elif autoIndent and (text == "}" or text == ")" or text == "]"):
@@ -1842,7 +1836,7 @@ proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
           continue
       linesToIndent.incl l
 
-  let indent = self.document.indentStyle.getString()
+  let indent = self.document.getIndentString()
   var indentSelections: Selections = @[]
   for l in linesToIndent:
     indentSelections.add (l, 0).toSelection
@@ -1852,9 +1846,9 @@ proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var selections = self.selections
   for s in selections.mitems:
     if s.first.line in linesToIndent:
-      s.first.column += self.document.indentStyle.indentColumns
+      s.first.column += self.document.getIndentColumns()
     if s.last.line in linesToIndent:
-      s.last.column += self.document.indentStyle.indentColumns
+      s.last.column += self.document.getIndentColumns()
   self.selections = selections
 
 proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1871,10 +1865,10 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   var indentSelections: Selections = @[]
   for l in linesToIndent:
-    case self.document.indentStyle.kind
+    case self.document.settings.indent.get()
     of Spaces:
       let firstNonWhitespace = self.document.rope.indentBytes(l)
-      indentSelections.add ((l, 0), (l, min(self.document.indentStyle.indentColumns, firstNonWhitespace)))
+      indentSelections.add ((l, 0), (l, min(self.document.getIndentColumns(), firstNonWhitespace)))
     of Tabs:
       indentSelections.add ((l, 0), (l, 1))
 
@@ -1883,16 +1877,16 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   for s in selections.mitems:
     if s.first.line in linesToIndent:
-      s.first.column = max(0, s.first.column - self.document.indentStyle.indentColumns)
+      s.first.column = max(0, s.first.column - self.document.getIndentColumns())
     if s.last.line in linesToIndent:
-      s.last.column = max(0, s.last.column - self.document.indentStyle.indentColumns)
+      s.last.column = max(0, s.last.column - self.document.getIndentColumns())
   self.selections = selections
 
 proc insertIndent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var insertTexts = newSeq[string]()
 
   # todo: for spaces, calculate alignment
-  let indent = self.document.indentStyle.getString()
+  let indent = self.document.getIndentString()
   for selection in self.selections:
     insertTexts.add indent
 
@@ -3786,9 +3780,9 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
       let indents = cursorEditSelections.mapIt(self.document.rope.indentBytes(it.first.line))
       try:
         var data = snippet.get.createSnippetData(cursorEditSelections, variables, indents)
-        let indent = self.document.indentStyle.getString()
+        let indent = self.document.getIndentString()
         for i, insertText in cursorInsertTexts.mpairs:
-          let indentLevel = self.document.getIndentLevelForLine(cursorEditSelections[i].first.line, self.tabWidth)
+          let indentLevel = self.document.getIndentLevelForLine(cursorEditSelections[i].first.line, self.document.tabWidth())
           insertText = data.text.indentExtraLines(indentLevel, indent)
         snippetData = data.some
       except CatchableError:
@@ -3933,7 +3927,7 @@ proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
   while node != tree.root:
     var r = node.getRange.toSelection
     # echo &"getContextLines {cursor}, last: {lastColumn}, node: {r.first}, -> {result}"
-    let indent = self.document.getIndentLevelForLine(r.first.line, self.tabWidth)
+    let indent = self.document.getIndentLevelForLine(r.first.line, self.document.tabWidth())
     if r.first.line != cursor.line and (result.len == 0 or r.first.line != result.last):
       if result.len > 0 and indent == lastColumn:
         result[result.high] = r.first.line

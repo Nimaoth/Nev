@@ -271,6 +271,7 @@ proc setTabWidth*(self: TabMap, tabWidth: int) =
 
   logMapUpdate &"TabMap.setWrapWidth {self.snapshot.desc} -> {tabWidth}"
 
+  let old = self.snapshot.clone()
   self.snapshot = TabMapSnapshot(
     version: self.snapshot.version + 1,
     input: self.snapshot.input.clone(),
@@ -279,8 +280,8 @@ proc setTabWidth*(self: TabMap, tabWidth: int) =
   )
 
   # todo
-  # let patch = initPatch([initEdit(tabPoint(0, 0)...old.endTabPoint, tabPoint(0, 0)...self.snapshot.endTabPoint)])
-  # self.onUpdated.invoke (self, old, patch)
+  let patch = initPatch([initEdit(tabPoint(0, 0)...old.endTabPoint, tabPoint(0, 0)...self.snapshot.endTabPoint)])
+  self.onUpdated.invoke (self, old, patch)
 
 proc update*(self: TabMap, input: sink InputMapSnapshot, force: bool = false) =
   if not force and self.snapshot.buffer.remoteId == input.buffer.remoteId and self.snapshot.buffer.version == input.buffer.version and self.snapshot.input.version == input.version:

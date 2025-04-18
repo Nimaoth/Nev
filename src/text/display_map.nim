@@ -174,12 +174,18 @@ proc handleTabMapUpdated(self: DisplayMap, tabMap: TabMap, old: TabMapSnapshot, 
     return
 
   logMapUpdate &"DisplayMap.handleTabMapUpdated, {patch}\n {self.tabMap.snapshot}"
-  let wrapPatch = self.wrapMap.edit(tabMap.snapshot.clone(), patch)
-  self.diffMap.edit(self.wrapMap.snapshot.clone(), wrapPatch)
-  self.tabMap.update(self.overlay.snapshot.clone(), force = true)
-  self.wrapMap.update(self.tabMap.snapshot.clone(), force = true)
-  self.diffMap.update(self.wrapMap.snapshot.clone(), force = true)
-  self.onUpdated.invoke (self,)
+  if self.tabMap.snapshot.tabWidth != old.tabWidth:
+    self.wrapMap.setInput(self.tabMap.snapshot.clone())
+    self.diffMap.setInput(self.wrapMap.snapshot.clone())
+    self.wrapMap.update(self.tabMap.snapshot.clone(), force = true)
+    self.diffMap.update(self.wrapMap.snapshot.clone(), force = true)
+    self.onUpdated.invoke (self,)
+  else:
+    let wrapPatch = self.wrapMap.edit(tabMap.snapshot.clone(), patch)
+    self.diffMap.edit(self.wrapMap.snapshot.clone(), wrapPatch)
+    self.wrapMap.update(self.tabMap.snapshot.clone(), force = true)
+    self.diffMap.update(self.wrapMap.snapshot.clone(), force = true)
+    self.onUpdated.invoke (self,)
 
 proc handleWrapMapUpdated(self: DisplayMap, wrapMap: WrapMap, old: WrapMapSnapshot) =
   assert wrapMap == self.wrapMap
@@ -233,9 +239,6 @@ proc setTabWidth*(self: DisplayMap, tabWidth: int, force: bool = false) =
   if tabWidth == self.tabMap.snapshot.tabWidth:
     return
   self.tabMap.setTabWidth(tabWidth)
-  self.wrapMap.clear()
-  self.diffMap.clear()
-  self.onUpdated.invoke (self,)
 
 proc seek*(self: var DisplayChunkIterator, displayPoint: DisplayPoint) =
   self.diffChunks.seek(displayPoint.DiffPoint)
