@@ -100,6 +100,12 @@ type
     GetDiagnostic
     GetCompletion
 
+  LSPClientRequestKind* = enum
+    Request
+    NotifyOpened
+    NotifyClosed
+    NotifyChanged
+
   LSPClientResponse* = object
     id*: int
     case kind*: LSPClientResponseKind
@@ -118,8 +124,19 @@ type
 
   LSPClientRequest = object
     id: int
-    meth: string
-    body: JsonNode
+    path: string
+    content: string
+    case kind*: LSPClientRequestKind
+    of Request:
+      meth: string
+      body: JsonNode
+    of NotifyOpened:
+      languageId: string
+    of NotifyClosed:
+      discard
+    of NotifyChanged:
+      version: int
+      changes: seq[TextDocumentContentChangeEvent]
 
   LSPClientObject* = object
     languageId*: string
@@ -166,12 +183,14 @@ type
     symbolsResponseChannel*: AsyncChannel[Response[DocumentSymbolResponse]]
     requestChannel*: AsyncChannel[LSPClientRequest]
     responseChannel*: AsyncChannel[LSPClientResponse]
-    notifyTextDocumentOpenedChannel*: AsyncChannel[tuple[languageId: string, path: string, content: string]]
-    notifyTextDocumentClosedChannel*: AsyncChannel[string]
     notifyConfigurationChangedChannel*: AsyncChannel[JsonNode]
-    notifyTextDocumentChangedChannel*: AsyncChannel[tuple[path: string, version: int, changes: seq[TextDocumentContentChangeEvent], content: string]]
 
   LSPClient* = ptr LSPClientObject
+
+proc notifyOpenedTextDocument(client: LSPClient, languageId: string, path: string, content: string) {.async.}
+proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.}
+proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, changes: seq[TextDocumentContentChangeEvent]) {.async.}
+proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, content: string) {.async.}
 
 proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, serverExecutablePath: string, workspaces: seq[string], args: seq[string], languagesServer: Option[(string, int)] = (string, int).none): LSPClient =
   var client = cast[LSPClient](allocShared0(sizeof(LSPClientObject)))
@@ -192,10 +211,7 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     symbolsResponseChannel: newAsyncChannel[Response[DocumentSymbolResponse]](),
     requestChannel: newAsyncChannel[LSPClientRequest](),
     responseChannel: newAsyncChannel[LSPClientResponse](),
-    notifyTextDocumentOpenedChannel: newAsyncChannel[tuple[languageId: string, path: string, content: string]](),
-    notifyTextDocumentClosedChannel: newAsyncChannel[string](),
     notifyConfigurationChangedChannel: newAsyncChannel[JsonNode](),
-    notifyTextDocumentChangedChannel: newAsyncChannel[tuple[path: string, version: int, changes: seq[TextDocumentContentChangeEvent], content: string]](),
   )
 
   return client
@@ -377,8 +393,19 @@ proc handleRequests(client: LSPClient) {.async, gcsafe.} =
 
     debugf"handleRequest: {request}"
 
-    client.idToMethod[request.id] = request.meth
-    await client.sendRPC(request.meth, request.body, request.id.some)
+    case request.kind
+    of Request:
+      client.idToMethod[request.id] = request.meth
+      await client.sendRPC(request.meth, request.body, request.id.some)
+    of NotifyOpened:
+      await client.notifyOpenedTextDocument(request.languageId, request.path, request.content)
+    of NotifyClosed:
+      await client.notifyClosedTextDocument(request.path)
+    of NotifyChanged:
+      if request.changes.len > 0:
+        await client.notifyTextDocumentChanged(request.path, request.version, request.changes)
+      else:
+        await client.notifyTextDocumentChanged(request.path, request.version, request.content)
 
   log lvlInfo, &"handleRequests: client gone"
 
@@ -445,7 +472,7 @@ proc sendRequest[T](client: LSPClient, requests: ptr Table[int, tuple[meth: stri
     client.requestsPerMethod[meth] = @[]
   client.requestsPerMethod[meth].add id
 
-  await client.requestChannel.send(LSPClientRequest(id: id, meth: meth, body: params))
+  await client.requestChannel.send(LSPClientRequest(kind: Request, id: id, meth: meth, body: params))
   return await requestFuture
 
 proc cancelAllOf*(client: LSPClient, meth: string) =
@@ -663,6 +690,19 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
     return client.initializedChannel.send(ServerCapabilities.none)
 
   client.connection = connection
+
+proc notifyOpenedTextDocumentMain*(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
+  await client.requestChannel.send(LSPClientRequest(kind: NotifyOpened, languageId: languageId, path: path, content: content))
+
+proc notifyClosedTextDocumentMain*(client: LSPClient, path: string) {.async.} =
+  await client.requestChannel.send(LSPClientRequest(kind: NotifyClosed, path: path))
+
+proc notifyTextDocumentChangedMain*(client: LSPClient, path: string, version: int,
+  changes: seq[TextDocumentContentChangeEvent]) {.async.} =
+  await client.requestChannel.send(LSPClientRequest(kind: NotifyChanged, path: path, version: version, changes: changes))
+
+proc notifyTextDocumentChangedMain*(client: LSPClient, path: string, version: int, content: string) {.async.} =
+  await client.requestChannel.send(LSPClientRequest(kind: NotifyChanged, path: path, version: version, content: content))
 
 proc notifyOpenedTextDocument(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
   let params = %*{
@@ -944,7 +984,7 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
           let params = response["params"].jsonTo(ConfigurationParams, JOptions(allowMissingKeys: true, allowExtraKeys: true))
           asyncSpawn client.handleWorkspaceConfigurationRequest(id, params)
         else:
-          log lvlWarn, fmt"[run] Received request with id {id} and method {meth} but don't know how to handle it"
+          log lvlWarn, &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
           discard
 
       else:
@@ -1022,39 +1062,6 @@ proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
 
 addGlobalDispatchTable "lsp", genDispatchTable("lsp")
 
-proc handleNotifiesOpened(client: LSPClient) {.async, gcsafe.} =
-  while client != nil:
-    let (languageId, path, content) = client.notifyTextDocumentOpenedChannel.recv().await.getOr:
-      log lvlInfo, &"handleNotifiesOpened: channel closed"
-      return
-
-    await client.notifyOpenedTextDocument(languageId, path, content)
-
-  log lvlInfo, &"handleNotifiesOpened: client gone"
-
-proc handleNotifiesClosed(client: LSPClient) {.async, gcsafe.} =
-  while client != nil:
-    let path = client.notifyTextDocumentClosedChannel.recv().await.getOr:
-      log lvlInfo, &"handleNotifiesClosed: channel closed"
-      return
-
-    await client.notifyClosedTextDocument(path)
-
-  log lvlInfo, &"handleNotifiesClosed: client gone"
-
-proc handleNotifiesChanged(client: LSPClient) {.async, gcsafe.} =
-  while client != nil:
-    let (path, version, changes, content) = client.notifyTextDocumentChangedChannel.recv().await.getOr:
-      log lvlInfo, &"handleNotifiesChanged: channel closed"
-      return
-
-    if changes.len > 0:
-      await client.notifyTextDocumentChanged(path, version, changes)
-    else:
-      await client.notifyTextDocumentChanged(path, version, content)
-
-  log lvlInfo, &"handleNotifiesChanged: client gone"
-
 proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
   while client != nil:
     let value = client.notifyConfigurationChangedChannel.recv().await.getOr:
@@ -1079,9 +1086,6 @@ proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
 
   asyncSpawn client.connect()
   asyncSpawn client.runAsync()
-  asyncSpawn client.handleNotifiesOpened()
-  asyncSpawn client.handleNotifiesClosed()
-  asyncSpawn client.handleNotifiesChanged()
   asyncSpawn client.handleNotifiesConfigurationChanged()
   asyncSpawn client.handleRequests()
 

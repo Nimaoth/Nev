@@ -3,7 +3,7 @@ import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
 import scripting/[expose, scripting_base]
 import app_interface, text/text_editor, popup, events,
-  selector_popup_builder, dispatch_tables, layout, service
+  selector_popup_builder, dispatch_tables, layout, service, config_provider
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 
@@ -285,10 +285,10 @@ proc setFocusPreview*(self: SelectorPopup, focus: bool) {.expose("popup.selector
 genDispatcher("popup.selector")
 addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
 
-proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
+method handleAction*(self: SelectorPopup, action: string, arg: string): Option[JsonNode] {.gcsafe, raises: [].} =
   # debugf"SelectorPopup.handleAction {action} '{arg}'"
   if self.textEditor.isNil:
-    return
+    return JsonNode.none
 
   try:
     if self.customCommands.contains(action):
@@ -296,25 +296,28 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
       for a in newStringStream(arg).parseJsonFragments():
         args.add a
       if self.customCommands[action](self, args):
-        return Handled
+        return newJNull().some
 
     var args = newJArray()
     args.add api.SelectorPopup(id: self.id).toJson
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.plugins.invokeAnyCallback(action, args).isNotNil:
-      return Handled
+    let res1 = self.plugins.invokeAnyCallback(action, args)
+    if res1.isNotNil:
+      return res1.some
 
-    if dispatch(action, args).isSome:
-      return Handled
+    let res2 = dispatch(action, args)
+    if res2.isSome:
+      return res2
 
-    return Ignored
   except:
-    log lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}"
+    log lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}"
     log lvlError, getCurrentException().getStackTrace()
+    return JsonNode.none
 
-  return Failed
+  log lvlError, fmt"Unknown command '{action}'"
+  return JsonNode.none
 
 proc handleTextChanged*(self: SelectorPopup) =
   if self.textEditor.isNil:
@@ -377,7 +380,8 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.textEditor.usage = "search-bar"
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
-  popup.textEditor.lineNumbers = api.LineNumbers.None.some
+  popup.textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
+  popup.textEditor.settings.highlightMatches.enable.set(false)
   popup.textEditor.document.singleLine = true
   popup.textEditor.disableScrolling = true
   popup.textEditor.disableCompletions = true
@@ -400,9 +404,9 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.previewEditor = newTextEditor(previewDocument, services)
     popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
-    popup.previewEditor.lineNumbers = api.LineNumbers.None.some
+    popup.previewEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
     popup.previewEditor.disableCompletions = true
-    popup.previewEditor.cursorMargin = 0.0.some
+    popup.previewEditor.settings.cursorMargin.set(0.0)
 
     discard popup.previewEditor.onMarkedDirty.subscribe () =>
       popup.markDirty()
@@ -414,20 +418,29 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
 
   assignEventHandler(popup.eventHandler, popup.events.getEventHandlerConfig("popup.selector")):
     onAction:
-      popup.handleAction action, arg
+      if popup.handleAction(action, arg).isSome:
+        Handled
+      else:
+        Ignored
     onInput:
       Ignored
 
   assignEventHandler(popup.previewEventHandler, popup.events.getEventHandlerConfig("popup.selector.preview")):
     onAction:
-      popup.handleAction action, arg
+      if popup.handleAction(action, arg).isSome:
+        Handled
+      else:
+        Ignored
     onInput:
       Ignored
 
   if scopeName.isSome:
      assignEventHandler(popup.customEventHandler, popup.events.getEventHandlerConfig("popup.selector." & scopeName.get)):
       onAction:
-        popup.handleAction action, arg
+        if popup.handleAction(action, arg).isSome:
+          Handled
+        else:
+          Ignored
       onInput:
         Ignored
 

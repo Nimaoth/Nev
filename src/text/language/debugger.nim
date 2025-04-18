@@ -1,5 +1,5 @@
 import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
-import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
+import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex]
 import scripting/[expose, scripting_base]
 import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view, session, document_editor, layout, platform_service
 import text/text_editor
@@ -695,12 +695,12 @@ template tryGet(json: untyped, field: untyped, T: untyped, default: untyped, els
 proc createConnectionWithType(self: Debugger, name: string): Future[Option[Connection]] {.async.} =
   log lvlInfo, &"Try create debugger connection '{name}'"
 
-  let config = self.config.getOption[:JsonNode]("debugger.type." & name, newJNull())
+  let config = self.config.runtime.get("debugger.type." & name, newJexNull())
   if config.isNil or config.kind != JObject:
     log lvlError, &"No/invalid debugger type configuration with name '{name}' found: {config}"
     return Connection.none
 
-  let connectionType = config.tryGet("connection", DebuggerConnectionKind, "stdio".newJString):
+  let connectionType = config.tryGet("connection", DebuggerConnectionKind, "stdio".newJexString):
     log lvlError, &"No/invalid debugger connection type in {config.pretty}"
     return Connection.none
 
@@ -710,7 +710,7 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
     # todo
 
     # if config.hasKey("path"):
-    #   let path = config.tryGet("path", string, newJNull()):
+    #   let path = config.tryGet("path", string, newJexNull()):
     #     log lvlError, &"No/invalid debugger executable path in {config.pretty}"
     #     return Connection.none
 
@@ -724,19 +724,19 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
     #   return newAsyncSocketConnection("127.0.0.1", port.Port).await.Connection.some
 
     # else:
-    #   let host = config.tryGet("host", string, "127.0.0.1".newJString):
+    #   let host = config.tryGet("host", string, "127.0.0.1".newJexString):
     #     log lvlError, &"No/invalid debugger host in {config.pretty}"
     #     return Connection.none
-    #   let port = config.tryGet("port", int, 5678.newJInt):
+    #   let port = config.tryGet("port", int, 5678.newJexInt):
     #     log lvlError, &"No/invalid debugger port in {config.pretty}"
     #     return Connection.none
     #   return newAsyncSocketConnection(host, port.Port).await.Connection.some
 
   of Stdio:
-    let exePath = config.tryGet("path", string, newJNull()):
+    let exePath = config.tryGet("path", string, newJexNull()):
       log lvlError, &"No/invalid debugger path in {config.pretty}"
       return Connection.none
-    let args = config.tryGet("args", seq[string], newJArray()):
+    let args = config.tryGet("args", seq[string], newJexArray()):
       log lvlError, &"No/invalid debugger args in {config.pretty}"
       return Connection.none
     return newAsyncProcessConnection(exePath, args).await.Connection.some
@@ -935,18 +935,18 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   assert self.client.isNone
   log lvlInfo, &"[runConfigurationAsync] Launch '{name}'"
 
-  let config = self.config.getOption[:JsonNode]("debugger.configuration." & name, newJNull())
+  let config = self.config.runtime.get("debugger.configuration." & name, newJexNull())
   if config.isNil or config.kind != JObject:
     log lvlError, &"No/invalid configuration with name '{name}' found: {config}"
     self.debuggerState = DebuggerState.None
     return
 
-  let request = config.tryGet("request", string, "launch".newJString):
+  let request = config.tryGet("request", string, "launch".newJexString):
     log lvlError, &"No/invalid debugger request in {config.pretty}"
     self.debuggerState = DebuggerState.None
     return
 
-  let typ = config.tryGet("type", string, newJNull()):
+  let typ = config.tryGet("type", string, newJexNull()):
     log lvlError, &"No/invalid debugger type in {config.pretty}"
     self.debuggerState = DebuggerState.None
     return
@@ -971,10 +971,10 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
 
   case request
   of "launch":
-    await client.launch(config)
+    await client.launch(config.toJson)
 
   of "attach":
-    await client.attach(config)
+    await client.attach(config.toJson)
 
   else:
     log lvlError, &"Invalid request type '{request}', expected 'launch' or 'attach'"
@@ -1011,7 +1011,7 @@ proc chooseRunConfiguration(self: Debugger) {.expose("debugger").} =
   builder.scaleX = 0.5
   builder.scaleY = 0.5
 
-  let config = self.config.getOption[:JsonNode]("debugger.configuration", newJObject())
+  let config = self.config.runtime.get("debugger.configuration", newJexObject())
   if config.kind != JObject:
     log lvlError, &"No/invalid debugger configuration: {config}"
     return

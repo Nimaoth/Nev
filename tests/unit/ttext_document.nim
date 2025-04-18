@@ -11,23 +11,15 @@ import misc/[util, traits]
 import text/text_document
 import config_provider, scripting_api
 
-type MockConfigProvider = ref object
-
-implTrait ConfigProvider, MockConfigProvider:
-  proc getConfigValue(self: MockConfigProvider, path: string): Option[JsonNode] = discard
-  proc setConfigValue(self: MockConfigProvider, path: string, value: JsonNode) = discard
-
-var mockConfigProvider = MockConfigProvider()
-
 suite "Text Document":
 
   test "create document":
-    let document = newTextDocument(mockConfigProvider.asConfigProvider, "", "abc", false)
+    let document = newTextDocument("", "abc", false)
     check document.isNotNil
     check document.contentString == "abc"
 
   test "insert text":
-    let document = newTextDocument(mockConfigProvider.asConfigProvider, "", "abc", false)
+    let document = newTextDocument("", "abc", false)
     check document.contentString == "abc"
 
     let selection = (0, 3).toSelection
@@ -37,7 +29,7 @@ suite "Text Document":
     check document.contentString == "abcdef"
 
   test "delete text":
-    let document = newTextDocument(mockConfigProvider.asConfigProvider, "", "abcdef", false)
+    let document = newTextDocument("", "abcdef", false)
     check document.contentString == "abcdef"
 
     let selection = ((0, 2), (0, 5))

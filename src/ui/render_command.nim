@@ -82,6 +82,7 @@ type
     arrangements*: seq[RenderCommandArrangement]
     commands*: seq[RenderCommand]
     spacesColor*: Color
+    space*: Rune = ' '.Rune
 
   FontInfo* = object
     advance*: proc(r: Rune): float {.gcsafe, raises: [].}

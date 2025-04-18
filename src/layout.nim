@@ -32,6 +32,7 @@ type
     platform: Platform
     workspace: Workspace
     config: ConfigService
+    uiSettings: UiSettings
     editors: DocumentEditorService
     vfs: VFS
     popups*: seq[Popup]
@@ -68,6 +69,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
   self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
   self.workspace = self.services.getService(Workspace).get
+  self.uiSettings = UiSettings.new(self.config.runtime)
   return ok()
 
 method activate*(view: EditorView) =
@@ -153,7 +155,7 @@ proc `currentView=`*(self: LayoutService, newIndex: int, addToHistory = true) =
   self.updateActiveEditor(addToHistory)
 
 proc addView*(self: LayoutService, view: View, addToHistory = true, append = false) =
-  let maxViews = self.config.getOption[:int]("editor.max-views", int.high)
+  let maxViews = self.uiSettings.maxViews.get()
 
   while maxViews > 0 and self.views.len > maxViews:
     self.views[self.views.high].deactivate()
@@ -259,18 +261,24 @@ proc getHiddenViewForEditor*(self: LayoutService, editorId: EditorId): Option[in
 
 proc pushPopup*(self: LayoutService, popup: Popup) =
   popup.init()
-  self.popups.add popup
+  self.popups.add(popup)
   discard popup.onMarkedDirty.subscribe () => self.platform.requestRender()
   self.platform.requestRender()
 
-proc popPopup*(self: LayoutService, popup: Popup) =
-  if self.popups.len > 0 and self.popups[self.popups.high] == popup:
-    popup.deinit()
-    discard self.popups.pop
+proc popPopup*(self: LayoutService, popup: Popup = nil) =
+  if self.popups.len > 0 and (popup == nil or self.popups[self.popups.high] == popup):
+    self.popups[self.popups.high].deinit()
+    discard self.popups.pop()
   self.platform.requestRender()
 
 proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
   self.pushSelectorPopupImpl(self, builder)
+
+iterator visibleEditors*(self: LayoutService): DocumentEditor =
+  ## Returns a list of all editors which are currently shown
+  for view in self.views:
+    if view of EditorView:
+      yield view.EditorView.editor
 
 ###########################################################################
 
@@ -303,7 +311,7 @@ proc setMaxViews*(self: LayoutService, maxViews: int, openExisting: bool = false
   ## Closes any views that exceed the new limit
 
   log lvlInfo, fmt"[setMaxViews] {maxViews}"
-  self.config.setOption[:int]("editor.max-views", maxViews)
+  self.uiSettings.maxViews.set(maxViews)
   while maxViews > 0 and self.views.len > maxViews:
     self.views[self.views.high].deactivate()
     self.hiddenViews.add self.views.pop()
@@ -546,9 +554,12 @@ proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bo
 
   return true
 
-proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, restoreHidden: bool = true) {.expose("layout").} =
-  self.closeView(self.currentView, keepHidden, restoreHidden)
-  self.currentView = self.currentView.clamp(0, self.views.len - 1)
+proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, restoreHidden: bool = true, closeOpenPopup: bool = true) {.expose("layout").} =
+  if closeOpenPopup and self.popups.len > 0:
+    self.popPopup()
+  else:
+    self.closeView(self.currentView, keepHidden, restoreHidden)
+    self.currentView = self.currentView.clamp(0, self.views.len - 1)
 
 proc closeOtherViews*(self: LayoutService, keepHidden: bool = true) {.expose("layout").} =
   ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
