@@ -91,9 +91,9 @@ proc updateWordCache(self: CompletionProviderDocument) {.async.} =
     if self.document.isNil:
       return
 
-    self.wordCache = data.wordCache
     let newId = (self.document.buffer.version, self.document.buffer.remoteId)
     if oldId == newId:
+      self.wordCache = data.wordCache
       inc self.revision
       asyncSpawn self.refilterCompletions()
       return

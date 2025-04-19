@@ -243,7 +243,7 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
 
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error in getDefinition('{filename}', {location}): {response.error}")
+    log(lvlWarn, &"Error in getDefinition('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -254,7 +254,7 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
 
   let res = parsedResponse.locationsResponseToDefinitions()
   if res.len == 0:
-    log(lvlError, "No definitions found")
+    log(lvlWarn, "No definitions found")
   return res
 
 # todo: change return type to Response[seq[Definition]]
@@ -266,7 +266,7 @@ method getDeclaration*(self: LanguageServerLSP, filename: string, location: Curs
 
   let response = await self.client.getDeclaration(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error in getDeclaration('{filename}', {location}): {response.error}")
+    log(lvlWarn, &"Error in getDeclaration('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -277,7 +277,7 @@ method getDeclaration*(self: LanguageServerLSP, filename: string, location: Curs
 
   let res = parsedResponse.locationsResponseToDefinitions()
   if res.len == 0:
-    log(lvlError, "No declaration found")
+    log(lvlWarn, "No declaration found")
   return res
 
 # todo: change return type to Response[seq[Definition]]
@@ -289,7 +289,7 @@ method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: C
 
   let response = await self.client.getTypeDefinitions(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error in getTypeDefinition('{filename}', {location}): {response.error}")
+    log(lvlWarn, &"Error in getTypeDefinition('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -300,7 +300,7 @@ method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: C
 
   let res = parsedResponse.locationsResponseToDefinitions()
   if res.len == 0:
-    log(lvlError, "No type definitions found")
+    log(lvlWarn, "No type definitions found")
   return res
 
 # todo: change return type to Response[seq[Definition]]
@@ -312,7 +312,7 @@ method getImplementation*(self: LanguageServerLSP, filename: string, location: C
 
   let response = await self.client.getImplementation(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error in getImplementation('{filename}', {location}): {response.error}")
+    log(lvlWarn, &"Error in getImplementation('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -323,7 +323,7 @@ method getImplementation*(self: LanguageServerLSP, filename: string, location: C
 
   let res = parsedResponse.locationsResponseToDefinitions()
   if res.len == 0:
-    log(lvlError, "No implementations found")
+    log(lvlWarn, "No implementations found")
   return res
 
 # todo: change return type to Response[seq[Definition]]
@@ -335,7 +335,7 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
 
   let response = await self.client.getReferences(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error in getReferences('{filename}', {location}): {response.error}")
+    log(lvlWarn, &"Error in getReferences('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
 
   if response.isCanceled:
@@ -353,13 +353,13 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
       )
     return res
 
-  log(lvlError, "No references found")
+  log(lvlWarn, "No references found")
   return newSeq[Definition]()
 
 method switchSourceHeader*(self: LanguageServerLSP, filename: string): Future[Option[string]] {.async.} =
   let response = await self.client.switchSourceHeader(filename)
   if response.isError:
-    log(lvlError, &"Error in switchSourceHeader('{filename}'): {response.error}")
+    log(lvlWarn, &"Error in switchSourceHeader('{filename}'): {response.error}")
     return string.none
 
   if response.isCanceled:
@@ -380,7 +380,7 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
 
   let response = await self.client.getHover(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error in getHover('{filename}', {location}): {response.error}")
+    log(lvlWarn, &"Error in getHover('{filename}', {location}): {response.error}")
     return string.none
 
   if response.isCanceled:
@@ -426,7 +426,7 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
 
   let response = await self.client.getInlayHints(filename, selection)
   if response.isError:
-    log(lvlError, &"Error in getInlayHints('{filename}', {selection}): {response.error}")
+    log(lvlWarn, &"Error in getInlayHints('{filename}', {selection}): {response.error}")
     return response.to(seq[language_server_base.InlayHint])
 
   if response.isCanceled:
@@ -485,7 +485,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
   let response = await self.client.getSymbols(filename)
 
   if response.isError:
-    log(lvlError, &"Error in getSymbols('{filename}'): {response.error}")
+    log(lvlWarn, &"Error in getSymbols('{filename}'): {response.error}")
     return completions
 
   if response.isCanceled:
@@ -534,7 +534,7 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
 
   let response = await self.client.getWorkspaceSymbols(query)
   if response.isError:
-    log(lvlError, &"Error in getWorkspaceSymbols('{query}'): {response.error}")
+    log(lvlWarn, &"Error in getWorkspaceSymbols('{query}'): {response.error}")
     return completions
 
   if response.isCanceled:
@@ -551,7 +551,7 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
       elif r.location.asUriObject().getSome(uri):
         (self.toVfsPath(uri.uri), Cursor.none)
       else:
-        log lvlError, fmt"Failed to parse workspace symbol location: {r.location}"
+        log lvlWarn, fmt"Failed to parse workspace symbol location: {r.location}"
         continue
 
       let symbolKind = r.kind.toInternalSymbolKind
@@ -575,7 +575,7 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
       )
 
   else:
-    log lvlError, &"Failed to parse getWorkspaceSymbols response"
+    log lvlWarn, &"Failed to parse getWorkspaceSymbols response"
 
   return completions
 
@@ -588,7 +588,7 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
 
   let response = await self.client.getDiagnostics(filename)
   if response.isError:
-    log(lvlError, &"Error in getDiagnostics('{filename}'): {response.error}")
+    log(lvlWarn, &"Error in getDiagnostics('{filename}'): {response.error}")
     return response.to(seq[lsp_types.Diagnostic])
 
   if response.isCanceled:

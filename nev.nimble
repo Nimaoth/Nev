@@ -42,7 +42,7 @@ requires "https://github.com/Nimaoth/nimwasmtime >= 0.2.1"
 requires "https://github.com/Nimaoth/nimsumtree >= 0.5.5"
 
 # Use this to include all treesitter languages (takes longer to download)
-requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.10"
+requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.11"
 
 # Use these to only install specific treesitter languages. These don't work with the lock file
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.3"
