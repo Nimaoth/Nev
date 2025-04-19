@@ -23,8 +23,6 @@ import nimsumtree/[buffer, rope]
 
 logCategory "widget_builder_text"
 
-proc sign(v: Vec2): Vec2 = vec2(v.x.sign, v.y.sign)
-
 type CursorLocationInfo* = tuple[node: UINode, text: string, bounds: Rect, original: Cursor]
 
 type
@@ -621,7 +619,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
   let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
   var changedTextBackgroundColor = app.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
-  let commentColor = app.theme.tokenColor("comment", textColor)
 
   let cursorLine = self.selection.last.line
   let cursorDisplayLine = self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int

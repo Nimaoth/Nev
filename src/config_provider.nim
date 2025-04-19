@@ -1,5 +1,5 @@
-import std/[json, options, strutils, tables, enumerate, sequtils, macros, genasts, sets, typetraits, strformat, algorithm, macrocache]
-import misc/[traits, util, event, custom_async, custom_logger, myjsonutils, jsonex, id, timer, custom_unicode]
+import std/[json, options, strutils, tables, macros, genasts, sets, typetraits, strformat, algorithm, macrocache]
+import misc/[util, event, custom_async, custom_logger, myjsonutils, jsonex, id, timer, custom_unicode]
 import scripting/expose
 import platform/platform
 import service, platform_service, dispatch_tables
@@ -147,12 +147,10 @@ macro addJsonTypeName(key: static[string], name: static[string]) =
 proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], body: NimNode): NimNode {.compileTime.} =
   if name.repr in settingGroupDescriptions:
     error "Duplicate setting group " & name.repr, name
-    return
 
   let declare = ident"declare"
   let use = ident"use"
   let store = genSym(nskParam, "store")
-  let store2 = genSym(nskParam, "store")
   let prefixArg = genSym(nskParam, "prefix")
   let res = genSym(nskVar, "res")
 
@@ -193,11 +191,6 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
 
       var s = SettingDescription(name: settingName, prefix: prefix, fullName: fullName, typ: typ.repr, default: "null", noInit: noInit)
 
-      let docsString = if docs != nil:
-        docs.strVal
-      else:
-        ""
-
       if docs != nil:
         s.docs = docs.strVal
 
@@ -234,7 +227,6 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
 
       if typ.repr notin settingGroupDescriptions:
         error "Unknown setting type " & typ.repr, typ
-        continue
 
       for i in settingGroupDescriptions[typ.repr].settings:
         let p = settingDescriptions[i]
@@ -603,8 +595,6 @@ proc clear*(self: ConfigStore, key: string) =
   if i == -1:
     i = key.len
 
-  var extended = false
-
   var node = self.settings
   while prevI < key.len:
     var extend = true
@@ -638,8 +628,6 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
   var i = key.find('.')
   if i == -1:
     i = key.len
-
-  var extended = false
 
   var node = self.settings
   while prevI <= key.len:

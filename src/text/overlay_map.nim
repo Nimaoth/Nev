@@ -335,7 +335,6 @@ proc editImpl(self: var OverlayMapSnapshot, buffer: sink InputMapSnapshot, patch
 
   var newMap = SumTree[OverlayMapChunk].new()
   var c = self.map.initCursor(OverlayMapChunkSummary)
-  var currentChunk = OverlayMapChunk()
 
   logOverlayMapUpdate &"OverlayMapSnapshot.edit {self.buffer.remoteId}@{self.buffer.version} -> {buffer.remoteId}@{buffer.version} | {patch}, {byteEditAbsolute}"
   logEdit &"  old overlay map: {self}"
@@ -816,12 +815,12 @@ proc next*(self: var OverlayChunkIterator): Option[OverlayChunk] =
     logIter &" Overlay.next cursor: {self.overlayMapCursor.startPos}...{self.overlayMapCursor.endPos},   {item[]}"
     case item.kind
     of OverlayMapChunkKind.String:
-      let (line, offset, runeOffset) = if self.subIterKind == OverlayMapChunkKind.String:
+      let (line, offset, _) = if self.subIterKind == OverlayMapChunkKind.String:
         (self.stringLine, self.stringOffset, self.stringRuneOffset)
       else:
         (0, 0, 0)
 
-      logIter &"  String overlay: {line}, {offset}, {runeOffset}"
+      logIter &"  String overlay: {line}, {offset}"
 
       let nl = item.text.find('\n', offset)
       let endOffset = if nl == -1:

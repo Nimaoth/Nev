@@ -1008,7 +1008,6 @@ proc initFromJson[T](dst: var Option[T]; jsonNode: JsonNodeEx; jsonPath: var str
     initFromJson(dst.get, jsonNode, jsonPath)
 
 macro assignDistinctImpl[T: distinct](dst: var T;jsonNode: JsonNodeEx; jsonPath: var string) =
-  let typInst = getTypeInst(dst)
   let typImpl = getTypeImpl(dst)
   let baseTyp = typImpl[0]
 

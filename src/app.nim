@@ -865,7 +865,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
 
-  let onRuntimeConfigChangedHandle = self.config.runtime.onConfigChanged.subscribe proc(key: string) =
+  discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
     if key == "" or key == "ui" or key == "ui.theme":
       self.reloadThemeFromConfig = true
 
@@ -1528,7 +1528,6 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     )
 
     for (key, value) in settings.getAllKeys():
-      let valueStr = $value
       let sourceStore = self.config.getStoreForId(value.userData)
       let desc = self.config.getSettingDescription(key)
       var data = ""
