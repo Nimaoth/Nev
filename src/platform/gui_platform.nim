@@ -75,6 +75,12 @@ method init*(self: GuiPlatform) =
     self.focused = self.window.focused
     self.vsync = true
 
+    try:
+      let icon = readImage("res/icon.png")
+      self.window.icon = icon
+    except:
+      discard
+
     # Use virtual key codes so that we can take into account the keyboard language
     # and the behaviour is more consistent with the browser/terminal.
     # todo: is this necessary on linux?
