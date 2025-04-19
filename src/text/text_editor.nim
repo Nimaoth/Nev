@@ -133,10 +133,6 @@ declareSettings TextEditorSettings, "text":
   ## depending on `text.cursor-margin-relative`.
   declare cursorMargin, float, 0.15
 
-  ## How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
-  ## depending on `text.cursor-margin-relative`.
-  declare scrollSpeed, float, 40
-
   ## How many milliseconds after hovering a word the lsp hover request is sent.
   declare hoverDelay, int, 200
 
@@ -1045,7 +1041,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   if self.disableScrolling:
     return
 
-  let scrollAmount = scroll * self.settings.scrollSpeed.get()
+  let scrollAmount = scroll * self.uiSettings.scrollSpeed.get()
   # todo
   # if not self.lastCompletionsWidget.isNil and
   #     self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
