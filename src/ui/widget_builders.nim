@@ -104,8 +104,6 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     let paddingX = builder.charWidth
     let paddingY = builder.charWidth
     builder.panel(&{FillX, LayoutVerticalReverse}, x = currentNode.w * 0.7, y = mainBounds.y + paddingY, h = mainBounds.h - paddingY * 2):
-      let backgroundColor = self.theme.color("editor.background", color(25/255, 25/255, 40/255))
-
       for i in countdown(self.toast.toasts.high, 0):
         let toast {.cursor.} = self.toast.toasts[i]
         let color = self.theme.tokenColor(toast.color, textColor)

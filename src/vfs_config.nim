@@ -1,4 +1,4 @@
-import std/[options, strutils, json, tables]
+import std/[options, json, tables]
 import nimsumtree/[rope]
 import misc/[custom_async, custom_logger, util, myjsonutils, jsonex]
 import vfs
