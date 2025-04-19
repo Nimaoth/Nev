@@ -236,7 +236,7 @@ method init*(self: ModelDocumentEditorService): Future[Result[void, ref Catchabl
 method canOpenFile*(self: ModelDocumentFactory, path: string): bool =
   return path.endsWith(".ast-model")
 
-method createDocument*(self: ModelDocumentFactory, services: Services, path: string): Document =
+method createDocument*(self: ModelDocumentFactory, services: Services, path: string, load: bool): Document =
   let fs = ({.gcsafe.}: fs)
   let workspace = ({.gcsafe.}: gWorkspace)
 

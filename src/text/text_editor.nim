@@ -358,8 +358,8 @@ method init*(self: TextDocumentEditorService): Future[Result[void, ref Catchable
 method canOpenFile*(self: TextDocumentFactory, path: string): bool =
   return true
 
-method createDocument*(self: TextDocumentFactory, services: Services, path: string): Document =
-  return newTextDocument(services, path, app=false, load=true)
+method createDocument*(self: TextDocumentFactory, services: Services, path: string, load: bool): Document =
+  return newTextDocument(services, path, app=false, load=load)
 
 method canEditDocument*(self: TextDocumentEditorFactory, document: Document): bool =
   return document of TextDocument

@@ -55,7 +55,7 @@ method init*(self: DocumentEditorService): Future[Result[void, ref CatchableErro
   return ok()
 
 method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
-method createDocument*(self: DocumentFactory, services: Services, path: string): Document {.base, gcsafe, raises: [].} = discard
+method createDocument*(self: DocumentFactory, services: Services, path: string, load: bool): Document {.base, gcsafe, raises: [].} = discard
 
 method canEditDocument*(self: DocumentEditorFactory, document: Document): bool {.base, gcsafe, raises: [].} = discard
 method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor {.base, gcsafe, raises: [].} = discard
@@ -184,7 +184,7 @@ proc openDocument*(self: DocumentEditorService, path: string, appFile = false, l
     var document: Document = nil
     for factory in self.documentFactories:
       if factory.canOpenFile(path):
-        document = factory.createDocument(self.services, path)
+        document = factory.createDocument(self.services, path, load)
         break
 
     if document == nil:
