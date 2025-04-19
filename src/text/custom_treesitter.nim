@@ -58,6 +58,8 @@ when useBuiltinTreesitterLanguage("typescript"):
   import treesitter_typescript/treesitter_typescript/typescript
 when useBuiltinTreesitterLanguage("json"):
   import treesitter_json/treesitter_json/json
+when useBuiltinTreesitterLanguage("markdown"):
+  import treesitter_markdown/treesitter_markdown/markdown
 
 type TSQuery* = ref object
   impl: ptr ts.TSQuery
@@ -557,6 +559,7 @@ proc loadLanguage(vfs: VFS, languageId: string, pathOverride: Option[string]): F
   of "nim": tryGetLanguage(treeSitterNim)
   of "zig": tryGetLanguage(treeSitterZig)
   of "json": tryGetLanguage(treeSitterJson)
+  of "markdown": tryGetLanguage(treeSitterMarkdown)
   else:
     TSLanguage.none
 

@@ -481,7 +481,6 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
   if not client.requestsPerMethod.contains(meth):
     return
 
-  var futures: seq[(int, Future[Response[JsonNode]])]
   for id in client.requestsPerMethod[meth]:
     template cancel(requests, typ: untyped): untyped =
       defer: requests.del(id)
@@ -509,9 +508,6 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     client.canceledRequests.incl id
 
   client.requestsPerMethod[meth].setLen 0
-
-  for (id, future) in futures:
-    future.complete canceled[JsonNode]()
 
 proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.} =
   var workspacePath = if client.workspaceFolders.len > 0:
