@@ -1,15 +1,9 @@
 {
-    "+text": {
-        "scroll-speed": 3,
-        "scroll-margin": 0.5,
-        "scroll-margin-relative": true
-    },
     "+model": {
         "scroll-speed": 3,
-        "scroll-margin": 0.5,
-        "scroll-margin-relative": true
     },
     "+ui": {
+        "scroll-speed": 3,
         "smooth-scroll": false,
         "cursor-trail": 0
     }
