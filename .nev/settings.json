@@ -1,6 +1,7 @@
 {
     "$schema": "../config/settings.schema.json",
     "+lsp": {
+        "nim": null,
 
         "+cpp": {
             "args": [
