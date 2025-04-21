@@ -215,7 +215,22 @@ method deleteImpl*(self: VFSLocal, path: string): Future[bool] {.async: (raises:
     return false
 
   logScope lvlInfo, &"[deleteFile] '{path}'"
+  if dirExists(path):
+    try:
+      removeDir(path)
+      return true
+    except:
+      return false
   return tryRemoveFile(path)
+
+method createDirImpl*(self: VFSLocal, path: string): Future[void] {.async: (raises: [IOError]).} =
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+
+  try:
+    createDir(path)
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 method getFileKindImpl*(self: VFSLocal, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   if fileExists(path):
