@@ -158,7 +158,7 @@ type
     change*: TextDocumentSyncKind
     willSave*: Option[bool]
     willSaveWaitUntil*: Option[bool]
-    save*: Option[TextDocumentSyncOptionsSave]
+    save*: JsonNode
 
   CompletionItemOptions* = object
     labelDetailsSupport*: bool
