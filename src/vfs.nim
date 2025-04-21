@@ -261,6 +261,7 @@ method readRopeImpl*(self: VFSInMemory, path: string, rope: ptr Rope): Future[vo
     debugf"VFSInMemory.read({path})"
   self.files.withValue(path, file):
     rope[] = Rope.new(file[])
+    return
   raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
 
 method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
