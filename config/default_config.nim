@@ -196,7 +196,11 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "popup.selector.file-explorer", "<C-a>", "add-workspace-folder"
   addCommand "popup.selector.file-explorer", "<C-x>", "remove-workspace-folder"
   addCommand "popup.selector.file-explorer", "<C-f>", "create-file"
+  addCommand "popup.selector.file-explorer", "<C-g>f", "create-file"
+  addCommand "popup.selector.file-explorer", "<C-g>d", "create-directory"
+  addCommand "popup.selector.file-explorer", "<C-g>x", "delete-file-or-dir"
   addCommand "popup.selector.file-explorer", "<C-u>", "refresh"
+  addCommandDescription "popup.selector.file-explorer", "<C-g>", "File operations"
 
   addCommand "popup.selector.settings", "<C-t>", "toggle-flag"
   addCommand "popup.selector.settings", "<C-s>", "update-setting"

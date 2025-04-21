@@ -2340,6 +2340,32 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
           self.createFile(dir // path)
     return true
 
+  popup.addCustomCommand "create-directory", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    self.commands.openCommandLine "", proc(command: Option[string]): Option[string] =
+      if command.getSome(path):
+        let pathAbs = if path.isAbsolute: path else: dir // path
+        self.vfs.createDir(pathAbs).thenItOrElse:
+          source.retrigger()
+        do:
+          let e = err
+          log lvlError, &"Failed to create directory '{pathAbs}': {e.msg}"
+    return true
+
+  popup.addCustomCommand "delete-file-or-dir", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      self.vfs.delete(fileInfo.path).thenItOrElse:
+        source.retrigger()
+      do:
+        let e = err
+        log lvlError, &"Failed to delete '{fileInfo.path}': {e.msg}"
+    return true
+
   self.layout.pushPopup popup
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =

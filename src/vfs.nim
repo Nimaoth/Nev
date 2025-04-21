@@ -48,6 +48,7 @@ proc readRope*(self: VFS, path: string, rope: ptr Rope): Future[void] {.async: (
 proc write*(self: VFS, path: string, content: string): Future[void] {.async: (raises: [IOError]).}
 proc write*(self: VFS, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).}
 proc delete*(self: VFS, path: string): Future[bool] {.async: (raises: []).}
+proc createDir*(self: VFS, path: string): Future[void] {.async: (raises: [IOError]).}
 proc getFileKind*(self: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).}
 proc getFileAttributes*(self: VFS, path: string): Future[Option[FileAttributes]] {.async: (raises: []).}
 proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.async: (raises: [IOError]).}
@@ -154,6 +155,9 @@ method writeImpl*(self: VFS, path: string, content: sink RopeSlice[int]): Future
 method deleteImpl*(self: VFS, path: string): Future[bool] {.base, async: (raises: []).} =
   return false
 
+method createDirImpl*(self: VFS, path: string): Future[void] {.base, async: (raises: [IOError]).} =
+  discard
+
 method getFileKindImpl*(self: VFS, path: string): Future[Option[FileKind]] {.base, async: (raises: []).} =
   return FileKind.none
 
@@ -223,6 +227,9 @@ method writeImpl*(self: VFSLink, path: string, content: sink RopeSlice[int]): Fu
 method deleteImpl*(self: VFSLink, path: string): Future[bool] {.async: (raises: []).} =
   await self.target.delete(self.targetPrefix // path)
 
+method createDirImpl*(self: VFSLink, path: string): Future[void] {.async: (raises: [IOError]).} =
+  await self.target.createDir(self.targetPrefix // path)
+
 method getFileKindImpl*(self: VFSLink, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   return self.target.getFileKind(path).await
 
@@ -278,6 +285,9 @@ method deleteImpl*(self: VFSInMemory, path: string): Future[bool] {.async: (rais
   if path in self.files:
     self.files.del(path)
     return true
+
+method createDirImpl*(self: VFSInMemory, path: string): Future[void] {.async: (raises: [IOError]).} =
+  discard
 
 method getFileKindImpl*(self: VFSInMemory, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   if path in self.files:
@@ -373,6 +383,10 @@ proc delete*(self: VFS, path: string): Future[bool] {.async: (raises: []).} =
     debugf"[{self.name}] '{self.prefix}' delete({path})"
   let (vfs, path) = self.getVFS(path)
   await vfs.deleteImpl(path)
+
+proc createDir*(self: VFS, path: string): Future[void] {.async: (raises: [IOError]).} =
+  let (vfs, path) = self.getVFS(path)
+  await vfs.createDirImpl(path)
 
 proc getFileKind*(self: VFS, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   let (vfs, path) = self.getVFS(path)
