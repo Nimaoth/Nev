@@ -114,6 +114,19 @@ The first two are equivalent and extend the object `a` and set/override the key 
 The third variant overrides the entire object `a` with a new one containing only the key `b`.
 
 When a config file is loaded all keys containing a period will be expanded to the full object form.
+To escape the period simply use two periods (`..`).
+
+### Changing settings per language
+
+Some settings can be overridden per language. The exact list of settings is not documented (as it depends on how it's used in the editor),
+but if in doubt just try overriding it.
+
+To change a setting for e.g. Nim, prefix the setting name with `lang.nim`. So let's say I want to disable line wrapping only for Nim files.
+The setting for line wrapping is `text.wrap-lines`. So to change it for Nim, just use:
+
+```json
+"lang.nim.text.wrap-lines": false
+```
 
 ## Keybindings
 Keybindings which just map to existing commands can be specified in a `keybindings.json` file alongside the `settings.json` files. They works the same as the settings (i.e. they also support platform/backend variants and can be placed in the app/user/workspace config directories)
