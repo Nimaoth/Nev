@@ -7,6 +7,19 @@ import std/[threadpool]
 
 logCategory "asyncprocess"
 
+# Create a job which is used to kill assigned sub processes when the editor is closed.
+when defined(windows):
+  import winim/[lean]
+  const JobObjectExtendedLimitInformation: DWORD = 9
+  let jobObject = CreateJobObjectA(nil, nil)
+  var limitInformation = JOBOBJECT_EXTENDED_LIMIT_INFORMATION(
+    BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION(
+      LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    ),
+  )
+  const length = sizeof(limitInformation)
+  discard SetInformationJobObject(jobObject, JobObjectExtendedLimitInformation, limitInformation.addr, length.DWORD)
+
 type AsyncChannel*[T] = ref object
   chan: ptr Channel[T]
   closed: bool
@@ -29,6 +42,7 @@ type AsyncProcess* = ref object
   readerFlowVar: FlowVarBase
   errorReaderFlowVar: FlowVarBase
   writerFlowVar: FlowVarBase
+  killOnExit: bool = false
 
 proc isAlive*(process: AsyncProcess): bool =
   return process.process.isNotNil and process.process.running
@@ -329,6 +343,10 @@ proc start*(process: AsyncProcess): bool =
     log(lvlError, fmt"Failed to start {process.name}: {e.msg}")
     return false
 
+  when defined(windows):
+    if process.killOnExit:
+      discard AssignProcessToJobObject(jobObject, process.process.osProcessHandle())
+
   process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))
   process.inputStreamChannel[].send process.process.outputStream()
 
@@ -368,7 +386,7 @@ proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
     if not process.onRestarted.isNil:
       process.onRestarted().await
 
-proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true): AsyncProcess {.gcsafe.} =
+proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true, killOnExit = false): AsyncProcess {.gcsafe.} =
   let process = AsyncProcess()
   process.name = name
   process.args = @args
@@ -376,6 +394,7 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
   process.input = newAsyncChannel[char]()
   process.error = newAsyncChannel[char]()
   process.output = newAsyncChannel[Option[string]]()
+  process.killOnExit = killOnExit
 
   process.inputStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
   process.inputStreamChannel[].open()
