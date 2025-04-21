@@ -1515,10 +1515,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     of "{", "}": ("{", "}")
     of "[", "]": ("[", "]")
     of "<", ">": ("<", ">")
-    of "\"": ("\"", "\"")
-    of "'": ("'", "'")
     else:
-      return
+      (c, c)
 
     var insertSelections: Selections = @[]
     var insertTexts: seq[string] = @[]
@@ -1645,23 +1643,25 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   addTextCommand "", "M", "enter-choose-cursor-mode", "vim-handle-select-word"
 
-  addTextCommandBlock "", "gt":
-    editor.selection = editor.getNextDiagnostic(editor.selection.last, 1).first.toSelection
+  addTextCommandBlockDesc "", "gt", "Goto next diagnostic":
+    let severity = getOption("text.jump-diagnostic-severity", 1)
+    editor.selection = editor.getNextDiagnostic(editor.selection.last, severity).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  addTextCommandBlock "", "gn":
-    editor.selection = editor.getPrevDiagnostic(editor.selection.last, 1).first.toSelection
+  addTextCommandBlockDesc "", "gn", "Goto prev diagnostic":
+    let severity = getOption("text.jump-diagnostic-severity", 1)
+    editor.selection = editor.getPrevDiagnostic(editor.selection.last, severity).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-  addTextCommandBlock "", "gf":
+  addTextCommandBlockDesc "", "gf", "Goto next change":
     editor.selection = editor.getNextChange(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
     editor.centerCursor()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  addTextCommandBlock "", "gh":
+  addTextCommandBlockDesc "", "gh", "Goto prev change":
     editor.selection = editor.getPrevChange(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
     editor.centerCursor()
