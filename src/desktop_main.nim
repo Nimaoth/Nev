@@ -413,7 +413,7 @@ proc run(app: App, plat: Platform, backend: Backend) =
     {.gcsafe.}:
       logger.flush()
 
-import service
+import service, text/language/language_server_lsp
 gServices = Services()
 gServices.addBuiltinServices()
 
@@ -431,6 +431,11 @@ proc main() =
     app.shutdown()
     log lvlInfo, "Shutting down platform"
     plat.deinit()
+
+    deinitLanguageServers()
+
+    # Give language server threads some time to deinit properly before force quitting.
+    sleep(100)
   except:
     discard
 

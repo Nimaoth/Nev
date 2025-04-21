@@ -142,7 +142,9 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     else:
       ws.WorkspaceInfo.none
 
-    var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, languagesServer)
+    let killOnExit = config.fields.getOrDefault("kill-on-exit", newJexBool(true)).jsonTo(bool).catch(true)
+
+    var client = newLSPClient(workspaceInfo, userOptions, exePath, workspaces, args, languagesServer, killOnExit)
     client.languageId = languageId
 
     var lsp = LanguageServerLSP(client: client, languageId: languageId)
@@ -194,8 +196,7 @@ proc toVfsPath(self: LanguageServerLSP, lspPath: string): string =
 method start*(self: LanguageServerLSP): Future[void] = discard
 method stop*(self: LanguageServerLSP) {.gcsafe, raises: [].} =
   log lvlInfo, fmt"Stopping language server for '{self.languageId}'"
-  # self.client.deinit()
-  # todo: properly deinit client
+  asyncSpawn self.client.stop()
   self.client = nil
 
 method getCompletionTriggerChars*(self: LanguageServerLSP): set[char] =
