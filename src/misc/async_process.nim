@@ -12,11 +12,8 @@ when defined(windows):
   import winim/[lean]
   const JobObjectExtendedLimitInformation: DWORD = 9
   let jobObject = CreateJobObjectA(nil, nil)
-  var limitInformation = JOBOBJECT_EXTENDED_LIMIT_INFORMATION(
-    BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION(
-      LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    ),
-  )
+  var limitInformation: JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+  limitInformation.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
   const length = sizeof(limitInformation)
   discard SetInformationJobObject(jobObject, JobObjectExtendedLimitInformation, limitInformation.addr, length.DWORD)
 
