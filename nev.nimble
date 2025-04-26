@@ -17,7 +17,7 @@ bin           = @["nev"]
 requires "nim >= 2.0.0"
 requires "nimgen >= 0.5.4"
 requires "https://github.com/Nimaoth/vmath#661bdaa"
-requires "https://github.com/Nimaoth/pixie >= 5.0.9"
+requires "https://github.com/Nimaoth/pixie >= 5.0.10"
 requires "chroma >= 0.2.7"
 requires "winim >= 3.9.4"
 requires "fusion >= 1.2"
@@ -40,6 +40,7 @@ requires "https://github.com/Nimaoth/boxy >= 0.4.4"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.20"
 requires "https://github.com/Nimaoth/nimwasmtime >= 0.2.1"
 requires "https://github.com/Nimaoth/nimsumtree >= 0.5.6"
+requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 
 # Use this to include all treesitter languages (takes longer to download)
 requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.11"
