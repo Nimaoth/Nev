@@ -28,6 +28,8 @@ var languageServers = initTable[string, LanguageServerLSP]()
 proc deinitLanguageServers*() =
   {.gcsafe.}:
     for languageServer in languageServers.values:
+      if languageServer.client == nil:
+        continue
       languageServer.stop()
 
     languageServers.clear()
@@ -179,13 +181,15 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
         if syncOptions.change == TextDocumentSyncKind.Full:
           lsp.fullDocumentSync = true
 
+      {.gcsafe.}:
+        return languageServers[languageId].LanguageServer.some
+
     else:
       lsp.initializedFuture.complete(false)
       lsp.stop()
+      {.gcsafe.}:
+        languageServers.del(languageId)
       return LanguageServer.none
-
-    {.gcsafe.}:
-      return languageServers[languageId].LanguageServer.some
   except:
     return LanguageServer.none
 
