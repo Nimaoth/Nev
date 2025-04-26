@@ -56,6 +56,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.search-regexes.goto-references` | regex \| null | null | Regex to use when using the goto-references feature. |
 | `text.search-regexes.goto-type-definition` | regex \| null | null | Regex to use when using the goto-type-definition feature. |
 | `text.search-regexes.rg-language` | string \| null | null | Override the ripgrep language name. By default the documents language id is used. |
+| `text.search-regexes.show-only-matching-part` | bool | true | If true then the search results will only show the part of a line that matched the regex. If false then the entire line is shown. |
 | `text.search-regexes.symbols` | regex \| null | null | Regex to use when using the symbols feature. |
 | `text.search-regexes.workspace-symbols` | regex \| null | null | Regex to use when using the workspace-symbols feature. |
 | `text.search-regexes.workspace-symbols-by-kind` | { [key: string]: regex } \| null | null | Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex. |
