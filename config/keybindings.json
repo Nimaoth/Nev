@@ -1,2 +1,10 @@
 {
+    "popup.selector.settings": {
+        "<C-h>": "prev-store",
+        "<C-f>": "next-store",
+        "<C-g>": "toggle-merged",
+        "<C-k>": "show-preview-editor-settings",
+        "<C-c>": "delete-setting",
+        "<C-r>": "reload-store"
+    }
 }

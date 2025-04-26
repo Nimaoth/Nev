@@ -290,7 +290,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-typescript/typescript",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -309,7 +309,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-typescript/tsx",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -400,7 +400,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-c-sharp",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -419,7 +419,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-java",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -438,7 +438,7 @@
             "+text": {
                 "treesitter.repository": "maxxnino/tree-sitter-zig",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -467,7 +467,7 @@
             "+text": {
                 "treesitter.repository": "ap29600/tree-sitter-odin",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -486,7 +486,7 @@
             "+text": {
                 "treesitter.repository": "maxxnino/tree-sitter-json",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "{",
