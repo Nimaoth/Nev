@@ -12,7 +12,7 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
-import config_provider, service, layout, platform_service, vfs, vfs_service, command_service
+import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
 import diff
 import workspaces/workspace
 import finder/[previewer, finder]
@@ -1173,6 +1173,13 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     of "-": -a
     else: a
 
+  of "parenthesized_expression":
+    checkRes c.gotoFirstChild()
+    checkRes c.gotoNextSibling()
+    let a = c.evaluateJsNode(rope, floatingPoint)
+    checkRes c.gotoParent()
+    return a
+
   of "number":
     let valStr = $rope.slice(node.getRange.toSelection.toRange)
     if valStr.contains("."):
@@ -1644,6 +1651,8 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
   let selectionRange = self.selection.tsRange
   let node = self.document.tsTree.root.descendantForRange(selectionRange)
 
+  if self.services.getService(ToastService).getSome(toasts):
+    toasts.showToast("Treesitter tree", $node, "info")
   log lvlInfo, $node
 
 proc selectParentCurrentTs*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
