@@ -36,7 +36,7 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
     Future[seq[JsonNode]] {.gcsafe, async.} =
   var res = newSeq[JsonNode]()
 
-  logScope lvlInfo, &"handleWorkspaceConfigurationRequest {params}"
+  # logScope lvlInfo, &"handleWorkspaceConfigurationRequest {params}"
   # todo: this function is quite slow (up to 100ms)
 
   {.gcsafe.}:
