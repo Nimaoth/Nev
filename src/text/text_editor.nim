@@ -87,6 +87,10 @@ declareSettings SearchRegexSettings, "":
   ## Override the ripgrep language name. By default the documents language id is used.
   declare rgLanguage, Option[string], nil
 
+  ## If true then the search results will only show the part of a line that matched the regex.
+  ## If false then the entire line is shown.
+  declare showOnlyMatchingPart, bool, true
+
   ## Regex to use when using the goto-definition feature.
   declare gotoDefinition, Option[RegexSetting], nil
 
@@ -3615,7 +3619,9 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
 
     let rgLanguageId = self.settings.searchRegexes.rgLanguage.get().get(self.document.languageId)
     let maxResults = self.settings.searchWorkspaceRegexMaxResults.get()
-    let customArgs = @["--type", rgLanguageId, "--only-matching"]
+    var customArgs = @["--type", rgLanguageId]
+    if self.settings.searchRegexes.showOnlyMatchingPart.get():
+      customArgs.add("--only-matching")
     let futures = collect:
       for (symbolType, searchString) in searchStrings:
         self.workspace.searchWorkspace(searchString, maxResults, customArgs)
