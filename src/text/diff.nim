@@ -358,7 +358,7 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool] = nil, enableCan
   if a.len == 0:
     return RopeDiff[T](edits: @[(T.default...T.default, T.default...T.fromSummary(b.summary, ()), b)])
   if b.len == 0:
-    return RopeDiff[T](edits: @[(T.default...T.fromSummary(b.summary, ()), T.default...T.default, Rope.new().slice(T))])
+    return RopeDiff[T](edits: @[(T.default...T.fromSummary(a.summary, ()), T.default...T.default, Rope.new().slice(T))])
 
   let a = a.slice(0.Count...a.summary.len)
   let b = b.slice(0.Count...b.summary.len)
