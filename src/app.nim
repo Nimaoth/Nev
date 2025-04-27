@@ -1033,9 +1033,15 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
   if workspace:
     await self.loadKeybindings(workspaceConfigDir, loadConfigFileFrom)
 
-proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false)
+proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false, wait: bool = false)
     {.expose("editor").} =
-  asyncSpawn self.reapplyConfigKeybindingsAsync(app, home, workspace)
+  if wait:
+    try:
+      waitFor self.reapplyConfigKeybindingsAsync(app, home, workspace)
+    except:
+      discard
+  else:
+    asyncSpawn self.reapplyConfigKeybindingsAsync(app, home, workspace)
 
 proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], workingDir: string = "") {.expose("editor").} =
   proc handleOutput(line: string) {.gcsafe.} =
