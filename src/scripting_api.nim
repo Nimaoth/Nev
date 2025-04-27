@@ -46,6 +46,14 @@ type ScrollSnapBehaviour* = enum
 
 type ToggleBool* = enum False, True, Toggle
 
+type RunShellCommandOptions* = object
+  shell*: string = "default"
+  initialValue*: string = ""
+  prompt*: string = "> "
+  showInCommandLine*: bool = true
+  appendAndShowInFile*: bool = false
+  filename*: string = "ed://.shell-command-results"
+
 converter toToggleBool*(b: bool): ToggleBool =
   if b:
     True

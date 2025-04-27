@@ -20,16 +20,18 @@ proc getOptionJson*(path: string; default: JsonNode = newJNull()): JsonNode {.
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_reapplyConfigKeybindings_void_App_bool_bool_bool_wasm(arg: cstring): cstring {.
-    importc.}
+proc editor_reapplyConfigKeybindings_void_App_bool_bool_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
 proc reapplyConfigKeybindings*(app: bool = false; home: bool = false;
-                               workspace: bool = false) {.gcsafe, raises: [].} =
+                               workspace: bool = false; wait: bool = false) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add app.toJson()
   argsJson.add home.toJson()
   argsJson.add workspace.toJson()
+  argsJson.add wait.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_reapplyConfigKeybindings_void_App_bool_bool_bool_wasm(
+  let res {.used.} = editor_reapplyConfigKeybindings_void_App_bool_bool_bool_bool_wasm(
       argsJsonString.cstring)
 
 

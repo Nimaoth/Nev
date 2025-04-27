@@ -4,7 +4,7 @@ from scripting_api as api import nil
 import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, async_process]
 import scripting/[expose]
 import platform/[platform]
-import events
+import events, vfs, layout
 import dispatch_tables, config_provider, service
 import language_server_command_line
 
@@ -49,26 +49,6 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   self.events.rebuildCommandToKeysMap()
   self.platform.requestRender()
 
-proc commandLineResult*(self: CommandService, value: string) {.expose("commands").} =
-  let editor = self.commandLineEditor.TextDocumentEditor
-  editor.document.content = value
-  if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
-    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
-  self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = ""
-  self.currentHistoryEntry = 0
-  self.commandLineInputMode = false
-  self.commandLineResultMode = true
-  self.commandHandler = nil
-  editor.setMode("normal")
-  editor.disableCompletions = false
-  editor.disableScrolling = false
-  editor.uiSettings.lineNumbers.set(api.LineNumbers.Absolute)
-  editor.document.setReadOnly(true)
-  self.events.rebuildCommandToKeysMap()
-  self.platform.requestRender()
-
-commandLineImpl = commandLine
-
 proc exitCommandLine*(self: CommandService) {.expose("commands").} =
   let editor = self.commandLineEditor.TextDocumentEditor
   editor.document.content = ""
@@ -86,6 +66,45 @@ proc exitCommandLine*(self: CommandService) {.expose("commands").} =
   except Exception as e:
     log lvlError, &"exitCommandLine: {e.msg}"
   self.platform.requestRender()
+
+proc commandLineResult*(self: CommandService, value: string, showInCommandLine: bool = false,
+    appendAndShowInFile: bool = false, filename: string = "ed://.shell-command-results") {.expose("commands").} =
+  let editor = self.commandLineEditor.TextDocumentEditor
+  if showInCommandLine:
+    editor.document.content = value
+    if self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len == 0:
+      self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.add ""
+    self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[0] = ""
+    self.currentHistoryEntry = 0
+    self.commandLineInputMode = false
+    self.commandLineResultMode = true
+    self.commandHandler = nil
+    editor.setMode("normal")
+    editor.disableCompletions = false
+    editor.disableScrolling = false
+    editor.uiSettings.lineNumbers.set(api.LineNumbers.Absolute)
+    editor.document.setReadOnly(true)
+    editor.selection = (0, 0).toSelection
+    editor.scrollToCursor(scrollBehaviour = ScrollBehaviour.TopOfScreen.some)
+    self.events.rebuildCommandToKeysMap()
+    self.platform.requestRender()
+
+  else:
+    self.exitCommandLine()
+
+  if appendAndShowInFile and filename.len > 0:
+    self.shellCommandOutput.add("\n")
+    self.shellCommandOutput.add(value)
+    editor.vfs.write(filename, self.shellCommandOutput).thenIt:
+      let layout = self.services.getService(LayoutService).get
+      discard layout.openFile(filename)
+
+proc clearCommandLineResults*(self: CommandService) {.expose("commands").} =
+  let editor = self.commandLineEditor.TextDocumentEditor
+  self.shellCommandOutput = Rope.new("")
+  asyncSpawn editor.vfs.write("ed://.shell-command-results", self.shellCommandOutput)
+
+commandLineImpl = commandLine
 
 proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
   defer:
@@ -121,7 +140,7 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
       allResults.add res
 
   if allResults.len > 0:
-    self.commandLineResult(allResults)
+    self.commandLineResult(allResults, showInCommandLine = true, appendAndShowInFile = false)
   return true
 
 proc selectPreviousCommandInHistory*(self: CommandService) {.expose("commands").} =
@@ -160,10 +179,19 @@ proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
   editor.moveLast("file", Both)
   self.platform.requestRender()
 
-proc runProcessAndShowResultAsync(self: CommandService, command: string) {.async.} =
+proc runProcessAndShowResultAsync(self: CommandService, command: string, options: RunShellCommandOptions) {.async.} =
   log lvlInfo, &"Run shell command '{command}'"
   try:
-    let (output, err) = await runProcessAsyncOutput(command, eval = true)
+    type ShellOptions = object
+      command: string
+      args: seq[string]
+      eval: bool = false
+
+    let shell = self.config.get("editor.shells." & options.shell, newJObject()).jsonTo(ShellOptions, JOptions(allowMissingKeys: true))
+    let (output, err) = if shell.eval:
+      await runProcessAsyncOutput(shell.command & " " & command, eval = true)
+    else:
+      await runProcessAsyncOutput(shell.command, args = shell.args & @[command], eval = false)
     var text = "Output:"
     if output.len > 0:
       text.add "\n"
@@ -174,15 +202,27 @@ proc runProcessAndShowResultAsync(self: CommandService, command: string) {.async
       text.add err
 
     if output.len > 0 or err.len > 0:
-      self.commandLineResult(output)
+      self.commandLineResult(output, showInCommandLine = options.showInCommandLine, appendAndShowInFile = options.appendAndShowInFile, options.filename)
   except Exception as e:
     log lvlError, &"Failed to run shell command '{command}': {e.msg}\n{e.getStackTrace()}"
-    self.commandLineResult(e.msg)
+    self.commandLineResult(e.msg, showInCommandLine = true, appendAndShowInFile = false)
 
-proc runShellCommand*(self: CommandService, initialValue: string = "") {.expose("commands").} =
-  self.commandLine(initialValue, prefix = "> ")
+proc runShellCommand*(self: CommandService, options: RunShellCommandOptions = RunShellCommandOptions()) {.expose("commands").} =
+  ## Opens the command line where you can enter a shell command.
+  ## The command is run using the specified shell, which can be configured using `editor.shells.xyz`.
+  ## `options.shell`               - Name of the shell (not the exe name). If the name is `xyz` then the configuration for the shell is in `editor.shells.xyz`.
+  ## `options.initialValue`        - Initial text to put in the command line, after the prompt.
+  ## `options.prompt`              - Text to show as prompt in the command line. Default: `> `
+  ## `options.showInCommandLine`   - If true then the result will be displayed in the command line editor itself, which e.g. doesn't
+  ##                                 allow you to search in there. Default: true
+  ## `options.appendAndShowInFile` - If true then the result will be appended to an in memory file and shown in a regular text editor. Default: false
+  ## `options.filename`            - Path of the file where the output is appended. Default: `ed://.shell-command-results`
+
+  log lvlInfo, &"runShellCommand '{options}'"
+
+  self.commandLine(options.initialValue, prefix = options.prompt)
   self.commandHandler = proc(command: Option[string]): Option[string] =
     if command.getSome(command):
-      asyncSpawn self.runProcessAndShowResultAsync(command)
+      asyncSpawn self.runProcessAndShowResultAsync(command, options)
 
 addGlobalDispatchTable "commands", genDispatchTable("commands")

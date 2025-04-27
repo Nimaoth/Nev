@@ -58,6 +58,7 @@
         "\\..talon$": "talon",
         "\\..lua$": "lua",
         "\\..log$": "log",
+        "\\..shell-command-results$": "shell-command-results",
         "nimble..*?\\..paths$": "nim-paths",
         "/(vector|string|thread|iostream)$": "cpp",
         "..+/MSVC/..+/include(/..+?)*/[a-z0-9_]+$": "cpp",
@@ -630,6 +631,11 @@
                 "treesitter.repository": "Tudyx/tree-sitter-log"
             }
         },
+        "shell-command-results": {
+            "+text": {
+                "auto-reload": true,
+            },
+        },
         "talon": {
             "+text": {
                 "treesitter.repository": "wenkokke/tree-sitter-talon",
@@ -721,5 +727,11 @@
                 ]
             }
         },
+    },
+
+    "editor.shells.powershell": {
+        "command": "powershell",
+        "args": ["-Command"],
+        "eval": false,
     },
 }
