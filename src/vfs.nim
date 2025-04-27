@@ -1,6 +1,6 @@
 import std/[options, strutils, tables, os, random]
 import nimsumtree/rope
-import misc/[custom_async, util, custom_logger, cancellation_token, regex]
+import misc/[custom_async, util, custom_logger, cancellation_token, regex, id]
 import fsnotify
 
 export fsnotify.PathEvent, fsnotify.FileEventAction
@@ -35,12 +35,25 @@ type
   VFSNull* = ref object of VFS
     discard
 
+  VFSInMemoryItemKind* {.pure.} = enum String, Rope
+  VFSInMemoryItem* = object
+    case kind: VFSInMemoryItemKind
+    of VFSInMemoryItemKind.String:
+      text: string
+    of VFSInMemoryItemKind.Rope:
+      rope: Rope
+
   VFSInMemory* = ref object of VFS
-    files: Table[string, string]
+    files: Table[string, VFSInMemoryItem]
+    handlers: Table[string, seq[(Id, proc(events: seq[PathEvent]) {.gcsafe, raises: [].})]]
 
   VFSLink* = ref object of VFS
     target*: VFS
     targetPrefix*: string
+
+  VFSWatchHandle* = object
+    vfs: VFS
+    id: Id
 
   FindFilesOptions* = object
     maxDepth*: int = int.high
@@ -140,7 +153,7 @@ proc `//`*(a: string, b: string): string =
     result.add("/")
     result.add(b)
 
-proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, string]())
+proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, VFSInMemoryItem]())
 
 method name*(self: VFS): string {.base.} = &"VFS({self.prefix})"
 
@@ -171,7 +184,10 @@ method getFileAttributesImpl*(self: VFS, path: string): Future[Option[FileAttrib
 method setFileAttributesImpl*(self: VFS, path: string, attributes: FileAttributes): Future[void] {.base, async: (raises: [IOError]).} =
   discard
 
-method watchImpl*(self: VFS, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) {.base.} =
+method watchImpl*(self: VFS, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id {.base.} =
+  idNone()
+
+method unwatchImpl*(self: VFS, id: Id) {.base.} =
   discard
 
 method getVFSImpl*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string] {.base.} =
@@ -264,26 +280,49 @@ method readImpl*(self: VFSInMemory, path: string, flags: set[ReadFlag]): Future[
   when debugLogVfs:
     debugf"VFSInMemory.read({path})"
   self.files.withValue(path, file):
-    return file[]
+    case file[].kind
+    of VFSInMemoryItemKind.String:
+      return file[].text
+    of VFSInMemoryItemKind.Rope:
+      return $file[].rope
   raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
 
 method readRopeImpl*(self: VFSInMemory, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).} =
   when debugLogVfs:
     debugf"VFSInMemory.read({path})"
   self.files.withValue(path, file):
-    rope[] = Rope.new(file[])
+    case file[].kind
+    of VFSInMemoryItemKind.String:
+      rope[] = Rope.new(file[].text)
+    of VFSInMemoryItemKind.Rope:
+      rope[] = file[].rope
     return
   raise newException(IOError, "VFSInMemory: File not found '" & path & "'")
+
+proc handleFileChanged(self: VFSInMemory, path: string, existedBefore: bool) =
+  if path in self.handlers:
+    let action = if existedBefore:
+      FileEventAction.Modify
+    else:
+      FileEventAction.Create
+    let events = @[(path, action, "")]
+    let handlers = self.handlers[path]
+    for (_, handler) in handlers:
+      handler(events)
 
 method writeImpl*(self: VFSInMemory, path: string, content: string): Future[void] {.async: (raises: [IOError]).} =
   when debugLogVfs:
     debugf"VFSInMemory.write({path})"
-  self.files[path] = content
+  let existedBefore = path in self.files
+  self.files[path] = VFSInMemoryItem(kind: VFSInMemoryItemKind.String, text: content)
+  self.handleFileChanged(path, existedBefore)
 
 method writeImpl*(self: VFSInMemory, path: string, content: sink RopeSlice[int]): Future[void] {.async: (raises: [IOError]).} =
   when debugLogVfs:
     debugf"VFSInMemory.write({path})"
-  self.files[path] = $content
+  let existedBefore = path in self.files
+  self.files[path] = VFSInMemoryItem(kind: VFSInMemoryItemKind.Rope, rope: content.toRope)
+  self.handleFileChanged(path, existedBefore)
 
 method deleteImpl*(self: VFSInMemory, path: string): Future[bool] {.async: (raises: []).} =
   if path in self.files:
@@ -307,6 +346,23 @@ method getDirectoryListingImpl*(self: VFSInMemory, path: string): Future[Directo
   for file in self.files.keys:
     if file.startsWith(path):
       result.files.add file
+
+method watchImpl*(self: VFSInMemory, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
+  if not self.handlers.contains(path):
+    self.handlers[path] = @[]
+
+  let id = newId()
+  self.handlers[path].add((id, cb))
+  return id
+
+method unwatchImpl*(self: VFSInMemory, id: Id) =
+  for entry in self.handlers.mpairs:
+    var i = 0
+    for handlerId, handler in entry[1].mitems:
+      if handlerId == id:
+        entry[1].removeShift(i)
+        return
+      inc i
 
 method copyFileImpl*(self: VFSInMemory, src: string, dest: string): Future[void] {.async: (raises: [IOError]).} =
   if src in self.files:
@@ -404,9 +460,20 @@ proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Fu
   let (vfs, path) = self.getVFS(path)
   await vfs.setFileAttributesImpl(path, attributes)
 
-proc watch*(self: VFS, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+proc watch*(self: VFS, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): VFSWatchHandle =
   let (vfs, path) = self.getVFS(path)
-  vfs.watchImpl(path, cb)
+  return VFSWatchHandle(vfs: vfs, id: vfs.watchImpl(path, cb))
+
+proc isBound*(self: var VFSWatchHandle): bool =
+  return self.id != idNone()
+
+proc unwatch*(self: var VFSWatchHandle) =
+  if self.id == idNone():
+    return
+  assert self.vfs != nil
+  self.vfs.unwatchImpl(self.id)
+  self.vfs = nil
+  self.id = idNone()
 
 proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).} =
   let (vfs, relativePath) = self.getVFS(path)

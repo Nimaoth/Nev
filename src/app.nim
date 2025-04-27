@@ -882,7 +882,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   await self.setTheme(self.uiSettings.theme.get())
 
   if self.generalSettings.watchTheme.get():
-    self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
+    discard self.vfs.watch("app://themes", proc(events: seq[PathEvent]) =
       for e in events:
         case e.action
         of Modify:
@@ -891,21 +891,25 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
         else:
           discard
+    )
 
   if self.generalSettings.watchAppConfig.get():
-    self.vfs.watch appConfigDir, proc(events: seq[PathEvent]) =
+    discard self.vfs.watch(appConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
+    )
 
   if self.generalSettings.watchUserConfig.get():
-    self.vfs.watch homeConfigDir, proc(events: seq[PathEvent]) =
+    discard self.vfs.watch(homeConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
+    )
 
   if self.generalSettings.watchWorkspaceConfig.get():
-    self.vfs.watch workspaceConfigDir, proc(events: seq[PathEvent]) =
+    discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
+    )
 
   discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
     if key == "" or key == "ui" or key == "ui.theme":
