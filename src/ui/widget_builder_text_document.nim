@@ -504,7 +504,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           fillRect(cursorBounds, cursorForegroundColor)
           if isThickCursor:
             let currentRune = self.document.runeAt(s.last)
-            if currentRune != 0.Rune:
+            if currentRune != 0.Rune and currentRune.int >= ' '.int:
               drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
 
         self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
