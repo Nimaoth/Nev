@@ -1,4 +1,4 @@
-import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex]
 import ui/node
@@ -927,7 +927,10 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
     try:
-      discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+      let path = os.absolutePath(filePath).normalizePathUnix
+      if self.vfs.getFileKind(path).await.getSome(kind):
+        if kind == FileKind.File:
+          discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
     except CatchableError as e:
       log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
@@ -1357,15 +1360,38 @@ proc vsync*(self: App, enabled: bool) {.expose("editor").} =
   self.platform.setVsync(enabled)
 
 proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
-  let exe = paramStr(0)
-  if session.endsWith(sessionExtension):
-    let workingDir = session.splitPath.head
-    let process = startProcess(exe, args = @["--session=" & session], workingDir = workingDir, options = {poDontInheritHandles})
-  else:
-    let workingDir = session
-    let process = startProcess(exe, workingDir = workingDir, options = {poDontInheritHandles})
-  if close:
-    self.quit()
+  try:
+    let exe = paramStr(0)
+    log lvlInfo, &"loadSessionAsync '{session}', close = {close}, exe = '{exe}'"
+    let (args, workingDir) = if session.endsWith(sessionExtension):
+      (@["--session=" & session], session.splitPath.head)
+    else:
+      (@[session], session)
+
+    var customCommandKey = ""
+    var customCommand = ""
+    var customArgs = newSeq[string]()
+    if self.generalSettings.openSession.useTmuxOrZellij.get():
+      if existsEnv("TMUX"):
+        customCommand = self.config.runtime.get("editor.open-session.tmux.command", "")
+        customArgs = self.config.runtime.get("editor.open-session.tmux.args", newSeq[string]())
+      elif existsEnv("ZELLIJ"):
+        customCommand = self.config.runtime.get("editor.open-session.zellij.command", "")
+        customArgs = self.config.runtime.get("editor.open-session.zellij.args", newSeq[string]())
+
+    if customCommand.len == 0:
+      customCommand = self.generalSettings.openSession.command.get("")
+      customArgs = self.generalSettings.openSession.args.get(@[])
+
+    if customCommand.len > 0:
+      let process = startProcess(customCommand, args = customArgs & @[exe] & args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
+
+    else:
+      let process = startProcess(exe, args = args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
+    if close:
+      self.quit()
+  except:
+    log lvlError, &"Failed to load session '{session}': {getCurrentExceptionMsg()}"
 
 proc openSession*(self: App, root: string = "home://", preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
