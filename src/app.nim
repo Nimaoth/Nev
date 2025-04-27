@@ -2642,6 +2642,8 @@ proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   let sessionFile = if sessionFile == "": defaultSessionName else: sessionFile
   try:
     self.sessionFile = os.absolutePath(sessionFile).normalizePathUnix
+    if self.generalSettings.keepSessionHistory.get():
+      await self.addSessionToRecentSessions(self.sessionFile)
     self.saveAppState()
     self.requestRender()
   except Exception as e:
