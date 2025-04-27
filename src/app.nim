@@ -1361,12 +1361,13 @@ proc vsync*(self: App, enabled: bool) {.expose("editor").} =
 
 proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
   try:
+    let path = self.vfs.localize(session)
     let exe = paramStr(0)
-    log lvlInfo, &"loadSessionAsync '{session}', close = {close}, exe = '{exe}'"
-    var (args, workingDir) = if session.endsWith(sessionExtension):
-      (@["--session=" & session], session.splitPath.head)
+    log lvlInfo, &"loadSessionAsync '{path}', close = {close}, exe = '{exe}'"
+    var (args, workingDir) = if path.endsWith(sessionExtension):
+      (@["--session=" & path], path.splitPath.head)
     else:
-      (@[session], session)
+      (@[path], path)
 
     var customCommandKey = ""
     var customCommand = ""
