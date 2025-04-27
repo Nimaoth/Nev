@@ -17,6 +17,34 @@ To use a different session you can use `-s` like this: `nev -s:foo.nev-session`.
 
 If you launch with a file path (like `nev foo.txt`) then it will only open that file, but not load a session.
 
+## Opening sessions
+
+- Nev keeps track of recently opened sessions in `~/.nev/sessions.json`
+- You can open the last session you opened using `nev --restore-session` or `nev -e`
+- You can open a session from your history using the `open-recent-session` command.
+- You can open a session using the `open-session` command. This command takes a root directory and will
+  search for `.nev-session` files in that directory and subdirectories and allow you to pick from the found sessions.
+
+When opening a session, Nev will start a new process for the new session.
+By default the command it runs to open the new session is `nev --session=...`.
+`nev` in this case refers to the own executable, so if e.g. on windows you run the GUI version (`nevg`) it will run `nevg --session=...`.
+
+On Windows this will mean it opens a new window if you run the GUI version.
+
+On Linux, if you use `tmux` or `zellij`, Nev will open the new instance in a new pane by default.
+This is done using the commands specified in `editor.open-session.tmux` and `editor.open-session.zellij`.
+The default configuration looks like this:
+```json
+"editor.open-session.tmux": {
+    "command": "tmux",
+    "args": ["split-window"]
+},
+"editor.open-session.zellij": {
+    "command": "zellij",
+    "args": ["run", "--"]
+}
+```
+
 ### Workspace
 
 Session files contain the configuration of a [workspace](workspaces.md). The recommended way to change workspace settings
