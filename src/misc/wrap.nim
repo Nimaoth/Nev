@@ -42,7 +42,9 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
 
     let tempArg2 = genAst(jsonArg, index, mappedArgumentType, newName = def.name.repr.newLit):
       if index < jsonArg.elems.len:
-        jsonArg[index].jsonTo(mappedArgumentType, JOptions(allowExtraKeys: true))
+        var a = mappedArgumentType.default
+        a.fromJson(jsonArg[index], JOptions(allowExtraKeys: true, allowMissingKeys: true))
+        a
       else:
         raise newException(JsonCallError, "Missing argument " & $(index + 1) & " for call to " & newName)
 
@@ -140,7 +142,9 @@ proc createJsonWrapper*(fun: NimNode, typ: NimNode, newName: NimNode): NimNode =
 
     let tempArg2 = genAst(jsonArg, index, mappedArgumentType, name = typ.repr.newLit):
       if index < jsonArg.elems.len:
-        jsonArg[index].jsonTo(mappedArgumentType, JOptions(allowExtraKeys: true))
+        var a = mappedArgumentType.default
+        a.fromJson(jsonArg[index], JOptions(allowExtraKeys: true, allowMissingKeys: true))
+        a
       else:
         raise newException(JsonCallError, "Missing argument " & $(index + 1) & " for call to " & name)
 

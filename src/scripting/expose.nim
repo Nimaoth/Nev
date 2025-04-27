@@ -205,7 +205,9 @@ macro expose*(moduleName: static string, def: untyped): untyped =
                 raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
           else:
             if `jsonArg`.len > `index`:
-              `jsonArg`[`index`].jsonTo `mappedArgumentType`
+              var a = `mappedArgumentType`.default
+              a.fromJson(`jsonArg`[`index`], JOptions(allowExtraKeys: true, allowMissingKeys: true))
+              a
             else:
               `default`
     else:
@@ -224,7 +226,9 @@ macro expose*(moduleName: static string, def: untyped): untyped =
                 raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
           else:
             if `jsonArg`.len > `index`:
-              `jsonArg`[`index`].jsonTo `mappedArgumentType`
+              var a = `mappedArgumentType`.default
+              a.fromJson(`jsonArg`[`index`], JOptions(allowExtraKeys: true, allowMissingKeys: true))
+              a
             else:
               raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
 
