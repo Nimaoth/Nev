@@ -28,6 +28,9 @@
 - Added toast messages for errors
 - Added commands to create/delete files/directories in file explorer.
 - Reworked settings
+- Recent sessions, finders to open recent sessions or find sessions
+- Open session in new pane in tmux or zellij
+- Shell command line: Run shell commands and show the output in a text editor. Not a full terminal, but good enough for some things.
 - Many small fixes and improvements
 
 ### Vim

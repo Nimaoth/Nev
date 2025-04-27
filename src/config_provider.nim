@@ -976,6 +976,17 @@ declareSettings BackgroundSettings, "":
   ## How much to change the brightness for inactive views.
   declare inactiveBrightnessChange, float, -0.025
 
+declareSettings OpenSessionSettings, "":
+  ## If true then Nev will detect if it's running inside tmux or zellij (by using environment variables)
+  ## and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij`
+  declare useTmuxOrZellij, bool, true
+
+  ## Command to use when opening a session in a new window.
+  declare command, Option[string], nil
+
+  ## Command arguments to use when opening a session in a new window.
+  declare args, Option[seq[string]], nil
+
 declareSettings UiSettings, "ui":
   use background, BackgroundSettings
 
@@ -1050,6 +1061,8 @@ declareSettings UiSettings, "ui":
 #   declare languages, Table[string, LanguageSettings], initTable[string, LanguageSettings]()
 
 declareSettings GeneralSettings, "editor":
+  use openSession, OpenSessionSettings
+
   ## How often the editor will check for unused documents and close them, in seconds.
   declare closeUnusedDocumentsTimer, int, 10
 

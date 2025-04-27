@@ -5,6 +5,6 @@
     "+ui": {
         "scroll-speed": 3,
         "smooth-scroll": false,
-        "cursor-trail": 0
+        "cursor-trail-length": 0
     }
 }
