@@ -12,22 +12,31 @@ import keybindings_normal
 
 proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
   let keybindings = getOption("keybindings.preset", "")
-  let reapplyApp = getOption("keybindings.reapply-app", false)
+  let reapplyApp = getOption("keybindings.reapply-app", true)
   let reapplyHome = getOption("keybindings.reapply-home", true)
   let reapplyWorkspace = getOption("keybindings.reapply-workspace", true)
   infof"loadConfiguredKeybindings {keybindings}"
+
+  clearCommands "editor"
+  clearCommands "editor.model.completion"
+  clearCommands "editor.model.goto"
+  clearCommands "command-line-low"
+  clearCommands "command-line-high"
+  clearCommands "popup.selector"
+  reapplyConfigKeybindings(reapplyApp, false, false, wait = true)
+
   case keybindings
   of "vim":
-    loadDefaultKeybindings(true)
+    loadDefaultKeybindings(false)
     loadVimKeybindings()
   of "vscode":
-    loadDefaultKeybindings(true)
+    loadDefaultKeybindings(false)
     loadVSCodeKeybindings()
 
   when enableAst:
     loadModelKeybindings()
 
-  reapplyConfigKeybindings(reapplyApp, reapplyHome, reapplyWorkspace)
+  reapplyConfigKeybindings(false, reapplyHome, reapplyWorkspace)
 
 if getBackend() == Terminal:
   # Disable animations in terminal because they don't look great
