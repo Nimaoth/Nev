@@ -1084,6 +1084,10 @@ declareSettings GeneralSettings, "editor":
   ## Watch the config files in the workspace directory and automatically reload them when they change.
   declare watchWorkspaceConfig, bool, true
 
+  ## If true then the editor will keep a history of opened sessions in home://.nev/sessions.json,
+  ## which enables features like opening a recent session or opening the last session.
+  declare keepSessionHistory, bool, true
+
 declareSettings DebugSettings, "debug":
   ## Log how long it takes to generate the render commands for a text editor.
   declare logTextRenderTime, bool, false

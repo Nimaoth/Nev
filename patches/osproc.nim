@@ -55,6 +55,7 @@ type
     poDaemon            ## Windows: The program creates no Window.
                         ## Unix: Start the program as a daemon. This is still
                         ## work in progress!
+    poDontInheritHandles ## Windows: Don't inherit handles in the child process
 
   ProcessObj = object of RootObj
     when defined(windows):
@@ -725,7 +726,8 @@ when defined(windows) and not defined(useNimRtl):
     var wwd = newWideCString(wd)
     var flags = NORMAL_PRIORITY_CLASS or CREATE_UNICODE_ENVIRONMENT
     if poDaemon in options: flags = flags or CREATE_NO_WINDOW
-    success = winlean.createProcessW(nil, tmp, nil, nil, 1, flags,
+    let inheritHandles: WINBOOL = if poDontInheritHandles in options: 0 else: 1
+    success = winlean.createProcessW(nil, tmp, nil, nil, inheritHandles, flags,
       ee, wwd, si, procInfo)
     let lastError = osLastError()
 

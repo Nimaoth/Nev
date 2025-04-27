@@ -66,6 +66,7 @@ Options:
   -w, --no-wasm          Don't load wasm plugins
   -c, --no-config        Don't load json config files.
   -s, --session          Load a specific session.
+  -e, --restore-session  Load the last session which was opened.
   --attach               Open the passed files in an existing instance if it already exists.
   --clean                Don't load any configs/sessions/plugins
   --ts-mem-tracking      Enable treesitter memory tracking (for debugging)
@@ -142,6 +143,9 @@ block: ## Parse command line options
 
       of "no-attach":
         attach = false.some
+
+      of "restore-session", "e":
+        opts.restoreLastSession = true
 
       of "attach":
         attach = true.some

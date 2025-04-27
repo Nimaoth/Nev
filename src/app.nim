@@ -1,4 +1,4 @@
-import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex]
 import ui/node
@@ -31,7 +31,8 @@ from scripting_api import Backend
 logCategory "app"
 
 const configDirName = "." & appName
-const defaultSessionName = &".{appName}-session"
+const sessionExtension = &".{appName}-session"
+const defaultSessionName = sessionExtension
 const appConfigDir = "app://config"
 const homeConfigDir = "home://" & configDirName
 const workspaceConfigDir = "ws0://" & configDirName
@@ -323,8 +324,42 @@ proc setupDefaultKeybindings(self: App) =
   selectorPopupConfig.addCommand("", "<C-u>", "prev-x")
   selectorPopupConfig.addCommand("", "<C-d>", "next-x")
 
+proc getRecentSessions(self: App): Future[seq[string]] {.async.} =
+  try:
+    let lastSessionsJson = await self.vfs.read(homeConfigDir // "sessions.json")
+    let lastSessions = lastSessionsJson.parseJson()
+    if lastSessions.kind != JArray:
+      log lvlError, &"Failed to restore last session: sessions.json must contain an array of strings"
+      return @[]
+
+    for session in lastSessions.elems:
+      if session.kind != JString:
+        log lvlError, &"sessions.json contains invalid session: {session}. Expected string."
+        continue
+
+      result.add session.getStr()
+
+  except:
+    log lvlError, &"Failed to restore last session: {getCurrentExceptionMsg()}"
+    return @[]
+
+proc addSessionToRecentSessions(self: App, session: string) {.async.} =
+  try:
+    var recentSessions = await self.getRecentSessions()
+    let i = recentSessions.find(session)
+    if i != -1:
+      recentSessions.removeShift(i)
+    recentSessions.add(session)
+    log lvlInfo, &"Add session to recent sessions: {session} -> {recentSessions.toJson.pretty}"
+    await self.vfs.write(homeConfigDir // "sessions.json", recentSessions.toJson().pretty)
+  except:
+    log lvlError, &"Failed to update recent sessions: {getCurrentExceptionMsg()}"
+
 proc restoreStateFromConfig*(self: App, state: ptr EditorState) {.async: (raises: []).} =
   try:
+    if self.generalSettings.keepSessionHistory.get():
+      await self.addSessionToRecentSessions(self.sessionFile)
+
     let stateJson = self.vfs.read(self.sessionFile).await.parseJson
 
     state[] = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
@@ -719,7 +754,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.commands.languageServerCommandLine = newLanguageServerCommandLine(self.services)
   let commandLineTextDocument = newTextDocument(self.services, language="command-line".some, languageServer=self.commands.languageServerCommandLine.some)
-  self.editors.documents.add commandLineTextDocument
   self.commands.commandLineEditor = newTextEditor(commandLineTextDocument, self.services)
   self.commands.commandLineEditor.renderHeader = false
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
@@ -730,6 +764,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.TextDocumentEditor.settings.cursorMargin.set(0.0)
   self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
   discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
+  self.editors.documents.add commandLineTextDocument
   self.editors.commandLineEditor = self.commands.commandLineEditor
   self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
     if command.isSome:
@@ -798,6 +833,13 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
           setCurrentDir(path)
           if fileExists(path // defaultSessionName):
             self.sessionFile = path // defaultSessionName
+
+    elif options.restoreLastSession:
+      let lastSessions = await self.getRecentSessions()
+      if lastSessions.len == 0:
+        log lvlError, &"Failed to restore last session: No last session found."
+      else:
+        self.sessionFile = lastSessions.last
 
     elif fileExists(defaultSessionName):
       self.sessionFile = os.absolutePath(defaultSessionName).normalizePathUnix
@@ -1303,6 +1345,87 @@ proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor")
 
 proc vsync*(self: App, enabled: bool) {.expose("editor").} =
   self.platform.setVsync(enabled)
+
+proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
+  let exe = paramStr(0)
+  if session.endsWith(sessionExtension):
+    let workingDir = session.splitPath.head
+    let process = startProcess(exe, args = @["--session=" & session], workingDir = workingDir, options = {poDontInheritHandles})
+  else:
+    let workingDir = session
+    let process = startProcess(exe, workingDir = workingDir, options = {poDontInheritHandles})
+  if close:
+    self.quit()
+
+proc openSession*(self: App, root: string = "home://", preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
+    let sessions = await self.vfs.findFiles(root, r".nev-session$", options = FindFilesOptions(maxDepth: 2))
+    var items = newSeq[FinderItem]()
+
+    for file in sessions:
+      items.add FinderItem(
+        displayName: file,
+        data: root // file,
+      )
+
+    return newItemList(items)
+
+  let source = newAsyncCallbackDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  let previewer = if preview:
+    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+  else:
+    DisposableRef[Previewer].none
+
+  var popup = newSelectorPopup(self.services, "sessions".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    asyncSpawn self.loadSessionAsync(item.data, false)
+    return true
+
+  self.layout.pushPopup popup
+
+proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
+    var items = newSeq[FinderItem]()
+
+    try:
+      let lastSessions = await self.getRecentSessions()
+      for session in lastSessions:
+        items.add FinderItem(
+          displayName: session,
+          data: session,
+        )
+
+    except:
+      log lvlError, &"Failed to restore last session: {getCurrentExceptionMsg()}"
+
+    return newItemList(items)
+
+  let source = newAsyncCallbackDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  let previewer = if preview:
+    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+  else:
+    DisposableRef[Previewer].none
+
+  var popup = newSelectorPopup(self.services, "recent-sessions".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    asyncSpawn self.loadSessionAsync(item.data, false)
+    return true
+
+  self.layout.pushPopup popup
 
 proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
@@ -2366,6 +2489,26 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
         log lvlError, &"Failed to delete '{fileInfo.path}': {e.msg}"
     return true
 
+  popup.addCustomCommand "create-new-session", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      asyncSpawn self.loadSessionAsync(fileInfo.path, false)
+    return true
+
+  popup.addCustomCommand "open-session", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      asyncSpawn self.loadSessionAsync(fileInfo.path, false)
+    return true
+
   self.layout.pushPopup popup
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
@@ -2939,7 +3082,7 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
 
             return res.some
           except JsonCallError as e:
-            log lvlError, &"Failed to dispatch '{action} {args}': {e.msg}"
+            log lvlError, &"Failed to dispatch '{action} {args}' in {t.namespace}: {e.msg}"
 
     try:
       for sc in self.plugins.scriptContexts:
