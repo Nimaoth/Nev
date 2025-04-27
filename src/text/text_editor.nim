@@ -193,7 +193,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   registers: Registers
   workspace: Workspace
   vfsService: VFSService
-  vfs: VFS
+  vfs*: VFS
   commands*: CommandService
   configService*: ConfigService
   configChanged: bool = false

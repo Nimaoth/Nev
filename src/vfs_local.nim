@@ -1,6 +1,6 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils]
 import nimsumtree/[rope, static_array]
-import misc/[custom_async, custom_logger, util, timer, regex]
+import misc/[custom_async, custom_logger, util, timer, regex, id]
 import vfs
 import fsnotify
 
@@ -34,16 +34,21 @@ proc process(self: VFSLocal) {.async.} =
     except Exception as e:
       log lvlError, &"Failed to process file watcher: {e.msg}"
 
-proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
   try:
     proc cbWrapper(events: seq[PathEvent]) {.gcsafe, raises: [].} = cb(events.deduplicate(isSorted = true))
     register(self.watcher, path, cbWrapper)
+    # todo
+    return idNone()
   except OSError as e:
     log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
+    return idNone()
 
-method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
   log lvlInfo, &"Register watcher for local file system at '{path}'"
-  self.subscribe(path, cb)
+  return self.subscribe(path, cb)
+
+# todo: unwatch
 
 proc loadFileThread(args: tuple[path: string, data: ptr string, invalidUtf8Error: ptr bool, flags: set[ReadFlag]]): bool =
   try:

@@ -9,6 +9,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.clear-input-history-delay` | int | 3000 | After how many milliseconds of no input the input history is cleared. |
 | `editor.close-unused-documents-timer` | int | 10 | How often the editor will check for unused documents and close them, in seconds. |
 | `editor.custom-mode-on-top` | bool | true | If true then the app mode event handler (if the app mode is not "") will be on top of the event handler stack, otherwise it will be at the bottom (but still above the "editor" event handler. |
+| `editor.keep-session-history` | bool | true | If true then the editor will keep a history of opened sessions in home://.nev/sessions.json, which enables features like opening a recent session or opening the last session. |
 | `editor.max-search-result-display-len` | int | 1000 | Max length of each individual search result (search results are cut off after this value). |
 | `editor.max-search-results` | int | 1000 | Max number of search results returned by global text based search. |
 | `editor.print-statistics-on-shutdown` | bool | false | If true the editor prints memory usage statistics when quitting. |
@@ -17,6 +18,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.watch-theme` | bool | true | Watch the theme directory for changes to the theme. |
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
+| `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes. |
 | `text.auto-start-language-server` | bool | true | If true then configured language servers are automatically started when opening a file of the specific language for the first time. |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
 | `text.color-highlight.enable` | bool | false | Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language in `text.color-highlight.{language-id}.` |

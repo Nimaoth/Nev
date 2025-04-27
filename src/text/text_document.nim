@@ -126,6 +126,9 @@ declareSettings TextSettings, "text":
   ## Whether to used spaces or tabs for indentation.
   declare indent, IndentStyleKind, IndentStyleKind.Spaces
 
+  ## If true then files will be automatically reloaded when the content on disk changes.
+  declare autoReload, bool, false
+
 type
 
   TextDocumentChange = object
@@ -201,6 +204,7 @@ type
     checkpoints: Table[TransactionId, seq[string]]
 
     settings*: TextSettings
+    fileWatchHandle: VFSWatchHandle
 
 var allTextDocuments*: seq[TextDocument] = @[]
 
@@ -760,6 +764,9 @@ proc newTextDocument*(
 
 method deinit*(self: TextDocument) =
   # logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
+
+  self.fileWatchHandle.unwatch()
+
   if self.currentTree.isNotNil:
     self.currentTree.delete()
   self.highlightQuery = nil
@@ -892,10 +899,10 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.
 
         discard self.edit(selections, [], texts)
 
-      when defined(appCheckDiffReload):
-        if $self.rope != $rope:
-          log lvlError, &"Failed diff: {self.rope.len} != {rope.len}"
-          self.replaceAll(rope.move)
+        when defined(appCheckDiffReload):
+          if $self.rope != $rope:
+            log lvlError, &"Failed diff: {self.rope.len} != {rope.len}: {selections}, {texts}"
+            self.replaceAll(rope.move)
 
     except AsyncTimeoutError:
       log lvlDebug, &"Timeout after {t.elapsed.ms} ms"
@@ -927,6 +934,20 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
     await self.reloadFromRope(rope.clone())
   else:
     self.content = rope.clone()
+
+  if self.settings.autoReload.get():
+    if not self.fileWatchHandle.isBound or not isReload:
+      self.fileWatchHandle.unwatch()
+      self.fileWatchHandle = self.vfs.watch(self.filename, proc(events: seq[PathEvent]) =
+        for e in events:
+          case e.action
+          of Modify:
+            asyncSpawn self.loadAsync(true)
+            break
+
+          else:
+            discard
+      )
 
   if self.vfs.getFileAttributes(self.filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
