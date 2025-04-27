@@ -120,6 +120,20 @@ type
     mouseDelta: Vec2
     mousePosClick: array[MouseButton, Vec2]
 
+    maxBounds: seq[Vec2]
+
+proc pushMaxBounds*(self: UINodeBuilder, bounds: Vec2) =
+  self.maxBounds.add(bounds)
+
+proc popMaxBounds*(self: UINodeBuilder) =
+  discard self.maxBounds.pop()
+
+proc currentMaxBounds*(self: UINodeBuilder): Vec2 =
+  if self.maxBounds.len > 0:
+    self.maxBounds.last
+  else:
+    vec2(float32.high, float32.high)
+
 let noneUserId* = UIUserId(kind: None)
 proc newPrimaryId*(id: Id = newId()): UIUserId = UIUserId(kind: Primary, id: id)
 proc newSecondaryId*(primary: Id, secondary: int32): UIUserId = UIUserId(kind: Secondary, parentId: primary, subId: secondary)

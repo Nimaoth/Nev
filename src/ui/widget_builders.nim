@@ -27,6 +27,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   let builder = self.platform.builder
   builder.panel(rootFlags): # fullscreen overlay
 
+    let rootBounds = currentNode.bounds
     self.preRender(currentNode.bounds)
 
     var overlays: seq[OverlayFunction]
@@ -57,6 +58,10 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           self.commands.commandLineEditor.active = self.commands.commandLineMode
           if self.commands.commandLineEditor.active != wasActive:
             self.commands.commandLineEditor.markDirty(notify=false)
+
+          builder.pushMaxBounds(rootBounds.wh * vec2(0.75, 0.5))
+          defer:
+            builder.popMaxBounds()
           overlays.add self.commands.commandLineEditor.createUI(builder, self)
 
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel

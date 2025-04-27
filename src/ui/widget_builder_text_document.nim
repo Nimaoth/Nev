@@ -541,13 +541,13 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   let parentWidth = if sizeToContentX:
     # todo
-    (self.document.rope.len + 1).clamp(1, 200).float * builder.charWidth
+    min((self.document.rope.len + 1).clamp(1, 200).float * builder.charWidth, builder.currentMaxBounds().x)
   else:
     currentNode.bounds.w
 
   let parentHeight = if sizeToContentY:
     # todo
-    self.numDisplayLines.clamp(1, 200).float * builder.textHeight
+    min(self.numDisplayLines.clamp(1, 200).float * builder.textHeight, builder.currentMaxBounds().y)
   else:
     currentNode.bounds.h
 

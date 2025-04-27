@@ -42,6 +42,10 @@ type
     target*: VFS
     targetPrefix*: string
 
+  FindFilesOptions* = object
+    maxDepth*: int = int.high
+    maxResults*: int = int.high
+
 proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[vfs: VFS, relativePath: string]
 proc read*(self: VFS, path: string, flags: set[ReadFlag] = {}): Future[string] {.async: (raises: [IOError]).}
 proc readRope*(self: VFS, path: string, rope: ptr Rope): Future[void] {.async: (raises: [IOError]).}
@@ -55,7 +59,7 @@ proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Fu
 proc normalize*(self: VFS, path: string): string
 proc getDirectoryListing*(self: VFS, path: string): Future[DirectoryListing] {.async: (raises: []).}
 proc copyFile*(self: VFS, src: string, dest: string): Future[void] {.async: (raises: [IOError]).}
-proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).}
+proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).}
 
 proc isVfsPath*(path: string): bool =
   let index = path.find("://")
@@ -179,7 +183,7 @@ method getDirectoryListingImpl*(self: VFS, path: string): Future[DirectoryListin
 method copyFileImpl*(self: VFS, src: string, dest: string): Future[void] {.base, async: (raises: [IOError]).} =
   discard
 
-method findFilesImpl*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.base, async: (raises: []).} =
+method findFilesImpl*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.base, async: (raises: []).} =
   return @[]
 
 proc prettyHierarchy*(self: VFS): string =
@@ -430,13 +434,13 @@ proc copyFile*(self: VFS, src: string, dest: string): Future[void] {.async: (rai
     let content = srcVfs.read(srcRelativePath, {Binary}).await
     await destVfs.write(destRelativePath, content)
 
-proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).} =
+proc findFiles*(self: VFS, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).} =
   ## Recursively searches for files in all sub directories of `root` (including `root`).
   ## Returned paths are relative to `root`
 
   # todo: support root which contains other VFSs
   let (vfs, relativePath) = self.getVFS(root)
-  return await vfs.findFilesImpl(relativePath, filenameRegex, maxResults)
+  return await vfs.findFilesImpl(relativePath, filenameRegex, maxResults, options)
 
 proc unmount*(self: VFS, prefix: string) =
   log lvlInfo, &"{self.name}: unmount '{prefix}'"
