@@ -1363,7 +1363,7 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
   try:
     let exe = paramStr(0)
     log lvlInfo, &"loadSessionAsync '{session}', close = {close}, exe = '{exe}'"
-    let (args, workingDir) = if session.endsWith(sessionExtension):
+    var (args, workingDir) = if session.endsWith(sessionExtension):
       (@["--session=" & session], session.splitPath.head)
     else:
       (@[session], session)
@@ -1371,22 +1371,26 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
     var customCommandKey = ""
     var customCommand = ""
     var customArgs = newSeq[string]()
-    if self.generalSettings.openSession.useTmuxOrZellij.get():
+    if self.getBackend() == Terminal and self.generalSettings.openSession.useTmuxOrZellij.get():
       if existsEnv("TMUX"):
         customCommand = self.config.runtime.get("editor.open-session.tmux.command", "")
         customArgs = self.config.runtime.get("editor.open-session.tmux.args", newSeq[string]())
+        args.add("--terminal")
       elif existsEnv("ZELLIJ"):
         customCommand = self.config.runtime.get("editor.open-session.zellij.command", "")
         customArgs = self.config.runtime.get("editor.open-session.zellij.args", newSeq[string]())
+        args.add("--terminal")
 
     if customCommand.len == 0:
       customCommand = self.generalSettings.openSession.command.get("")
       customArgs = self.generalSettings.openSession.args.get(@[])
 
     if customCommand.len > 0:
+      log lvlInfo, &"Run command '{customCommand} {customArgs & @[exe] & args}'"
       let process = startProcess(customCommand, args = customArgs & @[exe] & args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
 
     else:
+      log lvlInfo, &"Run command '{exe} {args}'"
       let process = startProcess(exe, args = args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
     if close:
       self.quit()
