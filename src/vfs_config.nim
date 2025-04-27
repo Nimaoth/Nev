@@ -104,7 +104,7 @@ method copyFileImpl*(self: VFSConfig, src: string, dest: string): Future[void] {
   except Exception as e:
     raise newException(IOError, &"Failed to copy file '{src}' to '{dest}': {e.msg}", e)
 
-method findFilesImpl*(self: VFSConfig, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).} =
+method findFilesImpl*(self: VFSConfig, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).} =
   var res = newSeq[string]()
   # todo
   return res

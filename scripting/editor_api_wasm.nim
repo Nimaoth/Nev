@@ -346,6 +346,37 @@ proc vsync*(enabled: bool) {.gcsafe, raises: [].} =
   let res {.used.} = editor_vsync_void_App_bool_wasm(argsJsonString.cstring)
 
 
+proc editor_openSession_void_App_string_bool_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc openSession*(root: string = "home://"; preview: bool = true;
+                  scaleX: float = 0.9; scaleY: float = 0.8;
+                  previewScale: float = 0.4) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add root.toJson()
+  argsJson.add preview.toJson()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_openSession_void_App_string_bool_float_float_float_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_openRecentSession_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc openRecentSession*(preview: bool = true; scaleX: float = 0.9;
+                        scaleY: float = 0.8; previewScale: float = 0.4) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add preview.toJson()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_openRecentSession_void_App_bool_float_float_float_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_chooseTheme_void_App_wasm(arg: cstring): cstring {.importc.}
 proc chooseTheme*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
