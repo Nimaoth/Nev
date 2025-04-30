@@ -735,4 +735,14 @@
         "args": ["-Command"],
         "eval": false,
     },
+    "editor.shells.bash": {
+        "command": "bash",
+        "args": ["-c"],
+        "eval": false,
+    },
+    "editor.shells.sh": {
+        "command": "sh",
+        "args": ["-c"],
+        "eval": false,
+    },
 }

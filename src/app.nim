@@ -1371,27 +1371,38 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
 
     var customCommandKey = ""
     var customCommand = ""
-    var customArgs = newSeq[string]()
+    var customArgsRaw = newSeq[JsonNodeEx]()
     if self.getBackend() == Terminal and self.generalSettings.openSession.useTmuxOrZellij.get():
       if existsEnv("TMUX"):
         customCommand = self.config.runtime.get("editor.open-session.tmux.command", "")
-        customArgs = self.config.runtime.get("editor.open-session.tmux.args", newSeq[string]())
+        customArgsRaw = self.config.runtime.get("editor.open-session.tmux.args", newSeq[JsonNodeEx]())
         args.add("--terminal")
       elif existsEnv("ZELLIJ"):
         customCommand = self.config.runtime.get("editor.open-session.zellij.command", "")
-        customArgs = self.config.runtime.get("editor.open-session.zellij.args", newSeq[string]())
+        customArgsRaw = self.config.runtime.get("editor.open-session.zellij.args", newSeq[JsonNodeEx]())
         args.add("--terminal")
 
     if customCommand.len == 0:
       customCommand = self.generalSettings.openSession.command.get("")
-      customArgs = self.generalSettings.openSession.args.get(@[])
+      customArgsRaw = self.generalSettings.openSession.args.get(@[])
 
     if customCommand.len > 0:
-      log lvlInfo, &"Run command '{customCommand} {customArgs & @[exe] & args}'"
-      let process = startProcess(customCommand, args = customArgs & @[exe] & args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
+      var customArgs = newSeq[string]()
+      for arg in customArgsRaw:
+        if arg.kind == JString:
+          customArgs.add arg.getStr
+        elif arg.kind == JArray and arg.elems.len == 1 and arg.elems[0].kind == JString:
+          case arg[0].getStr
+          of "exe":
+            customArgs.add exe
+          of "args":
+            customArgs.add args
+
+      log lvlInfo, &"Open session using '{customCommand} {customArgs}'"
+      let process = startProcess(customCommand, args = customArgs, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
 
     else:
-      log lvlInfo, &"Run command '{exe} {args}'"
+      log lvlInfo, &"Open session using '{exe} {args}'"
       let process = startProcess(exe, args = args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
     if close:
       self.quit()
@@ -1437,7 +1448,8 @@ proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, sc
 
     try:
       let lastSessions = await self.getRecentSessions()
-      for session in lastSessions:
+      for i in countdown(lastSessions.high, 0):
+        let session = lastSessions[i]
         items.add FinderItem(
           displayName: session,
           data: session,
