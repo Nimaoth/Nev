@@ -750,7 +750,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           for i in val[].mitems:
             let i = i
             let diagnostic {.cursor.} = self.document.currentDiagnostics[i]
-            let message = "     ■ " & diagnostic.message[0..<min(diagnostic.message.len, 100)]
+            let nlIndex = diagnostic.message.find("\n")
+            var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
+            maxIndex = min(maxIndex, 100)
+            var message = "     ■ " & diagnostic.message[0..<maxIndex]
+            if maxIndex < diagnostic.message.len:
+              message.add "..."
             let width = message.runeLen.float * builder.charWidth # todo: measure text
             let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
             of lsp_types.DiagnosticSeverity.Error: errorColor
