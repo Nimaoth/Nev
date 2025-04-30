@@ -37,13 +37,15 @@ The default configuration looks like this:
 ```json
 "editor.open-session.tmux": {
     "command": "tmux",
-    "args": ["split-window"]
+    "args": ["split-window", ["exe"] , ["args"]],
 },
 "editor.open-session.zellij": {
     "command": "zellij",
-    "args": ["run", "--"]
-}
+    "args": ["run", "--", ["exe"] , ["args"]],
+},
 ```
+
+`["exe"]` gets replaced with the path of the current Nev executable, `["args"]` gets replaced with some arguments Nev generates to open the session, which you need to forward.
 
 ### Workspace
 
