@@ -16,10 +16,10 @@
     },
     "editor.open-session.tmux": {
         "command": "tmux",
-        "args": ["split-window"],
+        "args": ["split-window", ["exe"] , ["args"]],
     },
     "editor.open-session.zellij": {
         "command": "zellij",
-        "args": ["run", "--"],
+        "args": ["run", "--", ["exe"] , ["args"]],
     },
 }

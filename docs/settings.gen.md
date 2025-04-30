@@ -12,7 +12,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.keep-session-history` | bool | true | If true then the editor will keep a history of opened sessions in home://.nev/sessions.json, which enables features like opening a recent session or opening the last session. |
 | `editor.max-search-result-display-len` | int | 1000 | Max length of each individual search result (search results are cut off after this value). |
 | `editor.max-search-results` | int | 1000 | Max number of search results returned by global text based search. |
-| `editor.open-session.args` | string[] \| null | null | Command arguments to use when opening a session in a new window. |
+| `editor.open-session.args` | JsonNodeEx[] \| null | null | Command arguments to use when opening a session in a new window. |
 | `editor.open-session.command` | string \| null | null | Command to use when opening a session in a new window. |
 | `editor.open-session.use-tmux-or-zellij` | bool | true | If true then Nev will detect if it's running inside tmux or zellij (by using environment variables) and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` |
 | `editor.print-statistics-on-shutdown` | bool | false | If true the editor prints memory usage statistics when quitting. |

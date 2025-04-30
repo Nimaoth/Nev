@@ -1,10 +1,7 @@
 {
     "editor": {
         "<SPACE>sr": "open-recent-session",
-        "!": {
-            "command": "run-shell-command",
-            "args": [{"shell": "default", "showInCommandLine": false, "appendAndShowInFile": true}]
-        }
+        "!": "run-shell-command",
     },
     "popup.selector.settings": {
         "<C-h>": "prev-store",
