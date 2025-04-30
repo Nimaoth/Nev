@@ -977,9 +977,9 @@ declareSettings BackgroundSettings, "":
   declare inactiveBrightnessChange, float, -0.025
 
 declareSettings OpenSessionSettings, "":
-  ## If true then Nev will detect if it's running inside tmux or zellij (by using environment variables)
-  ## and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij`
-  declare useTmuxOrZellij, bool, true
+  ## If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment variables)
+  ## and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-session.wezterm`
+  declare useMultiplexer, bool, true
 
   ## Command to use when opening a session in a new window.
   declare command, Option[string], nil

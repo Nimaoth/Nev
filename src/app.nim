@@ -1372,15 +1372,19 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
     var customCommandKey = ""
     var customCommand = ""
     var customArgsRaw = newSeq[JsonNodeEx]()
-    if self.getBackend() == Terminal and self.generalSettings.openSession.useTmuxOrZellij.get():
-      if existsEnv("TMUX"):
-        customCommand = self.config.runtime.get("editor.open-session.tmux.command", "")
-        customArgsRaw = self.config.runtime.get("editor.open-session.tmux.args", newSeq[JsonNodeEx]())
-        args.add("--terminal")
-      elif existsEnv("ZELLIJ"):
-        customCommand = self.config.runtime.get("editor.open-session.zellij.command", "")
-        customArgsRaw = self.config.runtime.get("editor.open-session.zellij.args", newSeq[JsonNodeEx]())
-        args.add("--terminal")
+    if self.getBackend() == Terminal and self.generalSettings.openSession.useMultiplexer.get():
+      let multiplexers = self.config.runtime.get("editor.open-session", newJexObject())
+      if multiplexers != nil and multiplexers.kind == JObject:
+        try:
+          for key, value in multiplexers.fields.pairs:
+            if value.kind == JObject and value.hasKey("env"):
+              let envName = value["env"]
+              if envName.kind == JString and existsEnv(envName.getStr):
+                customCommand = self.config.runtime.get(&"editor.open-session.{key}.command", "")
+                customArgsRaw = self.config.runtime.get(&"editor.open-session.{key}.args", newSeq[JsonNodeEx]())
+                break
+        except:
+          log lvlError, &"Invalid config 'editor.open-session': {getCurrentExceptionMsg()}"
 
     if customCommand.len == 0:
       customCommand = self.generalSettings.openSession.command.get("")

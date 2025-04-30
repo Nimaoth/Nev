@@ -745,4 +745,20 @@
         "args": ["-c"],
         "eval": false,
     },
+
+    "editor.open-session.tmux": {
+        "env": "TMUX",
+        "command": "tmux",
+        "args": ["split-window", ["exe"] , ["args"], "--terminal"],
+    },
+    "editor.open-session.zellij": {
+        "env": "ZELLIJ",
+        "command": "zellij",
+        "args": ["run", "--", ["exe"] , ["args"], "--terminal"],
+    },
+    "editor.open-session.wezterm": {
+        "env": "WEZTERM_EXECUTABLE",
+        "command": "wezterm",
+        "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
+    },
 }
