@@ -10,7 +10,7 @@ To get an overview of the project, read the [README](README.md) and [Getting Sta
 
 #### Create a new issue
 
-If you find a bug or want to request a feautre, search if an issue already exists. If a related issue doesn't exist, you can open a new issue.
+If you find a bug or want to request a feature, search if an issue already exists. If a related issue doesn't exist, you can open a new issue.
 
 For bugs please give as much information as possible.
 Please include the log file (`messages.log` in the root folder where you installed/cloned the editor) if it's a bug and the commands and their outputs in case of compile errors.
@@ -24,11 +24,11 @@ Scan through our [existing issues](https://github.com/Nimaoth/Nev/issues) to fin
 1. Fork the repository.
 2. Install Nim 2.0.6
 3. Create a working branch and start with your changes!
-4. Make sure you're changes work in the desktop/terminal version
+4. Make sure your changes work in the desktop/terminal version
 
 ### Pull Request
 
-For bugfixes, tests or small obvious features/improvements (e.g. implementing more Vim Keybindings) you can directly create a pull request.
+For bug fixes, tests or small obvious features/improvements (e.g. implementing more Vim Keybindings) you can directly create a pull request.
 For everything else please create an issue first so we can discuss if it even makes sense to include that feature and how it should work.
 
 When you're finished with the changes, create a pull request, also known as a PR.

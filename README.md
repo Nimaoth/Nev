@@ -2,14 +2,14 @@
 
 ![Build](https://github.com/Nimaoth/Nev/actions/workflows/main.yml/badge.svg?event=push)
 
-This is still very early in development and very experimental. Use at your own risk!
-
 Nev is a text editor focused on keyboard usage, customizability and speed which runs in the terminal and in a GUI.
 It also aims to provide tools for writing code out of the box, like Git integration, syntax highlighting using [Treesitter](https://tree-sitter.github.io/tree-sitter/), language integration using [LSP](https://microsoft.github.io/language-server-protocol) and debugging using [DAP](https://microsoft.github.io/debug-adapter-protocol/).
 
-I'm also experimenting with a programming languange system where instead of writing the source code as plain text,
-the abstract syntac tree (AST) is edited directly (or rather through _projections_, which are still trees).
+I'm also experimenting with a programming language system where instead of writing the source code as plain text,
+the abstract syntax tree (AST) is edited directly (or rather through _projections_, which are still trees).
 This feature is not included in release builds, and has to enabled by compiling with `-D:enableAst=true` (note that it doesn't compile with the latest version, I will continue work on this at a later stage, for now the focus is on making this a good text editor for "normal" programming languages).
+
+Nev is still relatively new, so many things are still missing or need improvement. If you want to contribute check out [this](CONTRIBUTING.md).
 
 ## Features
 - Vim motions (incomplete)
@@ -34,7 +34,7 @@ This feature is not included in release builds, and has to enabled by compiling 
 Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build from source](docs/building_from_source.md)
 
 ## Inspirations
-- [NeoVim](https://github.com/neovim/neovim)
+- [Neovim](https://github.com/neovim/neovim)
 - [Helix](https://github.com/helix-editor/helix)
 - [Zed](https://github.com/zed-industries/zed)
 - [JetBrains MPS](https://github.com/JetBrains/MPS)
@@ -53,7 +53,7 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Configuration](docs/configuration.md)
 - [Finders](docs/finders.md)
 - [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
-- [Virtual file system](docs/virtual_file_system.md)
+- [Virtual filesystem](docs/virtual_file_system.md)
 
 ## Screenshots
 
@@ -72,7 +72,7 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 
 ---
 
-### Debugging support (breakpoints aren't rendered correctly in the gif because of recording with asciinema and they use unicode symbols, see screenshot above)
+### Debugging support (breakpoints aren't rendered correctly in the GIF because of recording with asciinema and they use unicode symbols, see screenshot above)
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/debug.gif)
 
 ---
