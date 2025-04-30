@@ -26,7 +26,7 @@
         "diffEditor.changedLineBackground": "#c5c04130",
 
         "editorHoverWidget.background": "#152323",
-        "editorHoverWidget.border": "#152323",
+        "editorHoverWidget.border": "#2D4545",
         "editorSuggestWidget.background": "#152323",
         "editorSuggestWidget.border": "#152323",
         "editorSuggestWidget.selectedBackground": "#2D4545",

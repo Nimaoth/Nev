@@ -169,12 +169,24 @@ method init*(self: TerminalPlatform) =
     self.redrawEverything = true
 
     self.builder.textWidthImpl = proc(node: UINode): float32 {.gcsafe, raises: [].} =
+      var currentWidth = 0.float32
       for r in node.text.runes:
-        result += r.runeProps.displayWidth.float32
+        if r == '\n'.Rune:
+          result = max(result, currentWidth)
+          currentWidth = 0
+        else:
+          currentWidth += r.runeProps.displayWidth.float32
+      result = max(result, currentWidth)
 
     self.builder.textWidthStringImpl = proc(text: string): float32 {.gcsafe, raises: [].} =
+      var currentWidth = 0.float32
       for r in text.runes:
-        result += r.runeProps.displayWidth.float32
+        if r == '\n'.Rune:
+          result = max(result, currentWidth)
+          currentWidth = 0
+        else:
+          currentWidth += r.runeProps.displayWidth.float32
+      result = max(result, currentWidth)
 
     self.builder.textBoundsImpl = proc(node: UINode): Vec2 {.gcsafe, raises: [].} =
       try:
@@ -655,5 +667,5 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
       of RenderCommandKind.ScissorEnd:
         platform.popMask()
 
-    # if DrawBorder in node.flags:
-    #   platform.drawRect(bounds, node.borderColor)
+    if DrawBorderTerminal in node.flags:
+      platform.drawRect(bounds, node.borderColor)
