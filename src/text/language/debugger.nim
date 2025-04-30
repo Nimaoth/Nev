@@ -137,8 +137,8 @@ proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
 
   if editor.document.isLoadingAsync:
     var id = new Id
-    id[] = editor.document.onLoaded.subscribe proc(document: TextDocument) =
-      document.onLoaded.unsubscribe(id[])
+    id[] = editor.document.onLoaded.subscribe proc(args: tuple[document: TextDocument, changed: seq[Selection]]) =
+      args.document.onLoaded.unsubscribe(id[])
       self.applyBreakpointSignsToEditor(editor)
   else:
     self.applyBreakpointSignsToEditor(editor)

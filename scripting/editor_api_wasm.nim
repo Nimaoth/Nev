@@ -439,13 +439,6 @@ proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
       argsJsonString.cstring)
 
 
-proc editor_openLastEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc openLastEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openLastEditor_void_App_wasm(argsJsonString.cstring)
-
-
 proc editor_chooseOpen_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
     importc.}
 proc chooseOpen*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;

@@ -613,6 +613,27 @@ proc moveCurrentViewNext*(self: LayoutService) {.expose("layout").} =
     self.currentView = index
   self.platform.requestRender()
 
+proc openLastEditor*(self: LayoutService) {.expose("layout").} =
+  if self.hiddenViews.len > 0:
+    let view = self.hiddenViews.pop()
+    self.addView(view, addToHistory=false, append=false)
+
+proc moveCurrentViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
+  if self.views.len > 0 and self.hiddenViews.len > 0:
+    let maxViews = self.uiSettings.maxViews.get()
+    let lastView = self.hiddenViews.pop()
+    let view = self.views[self.currentView]
+    let index = (self.currentView + 1) mod maxViews
+    if index < self.views.len:
+      self.hiddenViews.add(self.views[index])
+      self.views[self.currentView] = lastView
+      self.views[index] = view
+    else:
+      self.views[self.currentView] = lastView
+      self.views.add(view)
+
+  self.platform.requestRender()
+
 proc splitView*(self: LayoutService) {.expose("layout").} =
   defer:
     self.platform.requestRender()
