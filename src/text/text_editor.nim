@@ -1085,6 +1085,9 @@ proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: 
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
   self.document.enableAutoReload(enabled)
 
+proc setLanguage(self: TextDocumentEditor, language: string) {.expose: "editor.text".} =
+  self.document.languageId = language
+
 proc getFileName(self: TextDocumentEditor): string {.expose: "editor.text".} =
   if self.document.isNil:
     return ""
