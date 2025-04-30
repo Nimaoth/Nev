@@ -135,7 +135,9 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
 
   let numLinesToShow = min(10, self.hoverText.countLines)
-  let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow.float)
+  let (top, bottom) = (
+    cursorBounds.yh.float - floor(builder.charWidth * 0.5),
+    cursorBounds.yh.float + totalLineHeight * numLinesToShow.float - floor(builder.charWidth * 0.5))
   let height = bottom - top
 
   const docsWidth = 50.0
@@ -144,13 +146,19 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   if clampedX + totalWidth > builder.root.w:
     clampedX = max(builder.root.w - totalWidth, 0)
 
+  let border = ceil(builder.charWidth * 0.5)
+
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
+  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height + border * 2, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
     hoverPanel = currentNode
+
     var textNode: UINode = nil
-    # todo: height
-    builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.hoverScrollOffset, h = 1000, text = self.hoverText, textColor = docsColor):
-      textNode = currentNode
+    builder.panel(&{SizeToContentX}, x = border, y = border, w = 0, h = height):
+      # todo: height
+      builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.hoverScrollOffset, w = 0, h = 1000, text = self.hoverText, textColor = docsColor):
+        textNode = currentNode
+
+    currentNode.w = currentNode.w + border
 
     onScroll:
       let scrollSpeed = self.config.get("text.hover-scroll-speed", 20.0)
@@ -523,7 +531,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
-          self.lastHoverLocationBounds = state.chunkBounds[lastIndexDisplay].bounds.some
+          self.lastHoverLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
 
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode,
     selectionsNode: UINode, lineNumbersNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
