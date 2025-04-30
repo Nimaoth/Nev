@@ -1911,11 +1911,6 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
 
   self.layout.pushPopup popup
 
-proc openLastEditor*(self: App) {.expose("editor").} =
-  if self.layout.hiddenViews.len > 0:
-    let view = self.layout.hiddenViews.pop()
-    self.layout.addView(view, addToHistory=false, append=false)
-
 proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("editor").} =
   defer:
     self.platform.requestRender()

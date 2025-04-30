@@ -634,6 +634,7 @@
         "shell-command-results": {
             "+text": {
                 "auto-reload": true,
+                "scroll-to-change-on-reload": "last",
             },
         },
         "talon": {

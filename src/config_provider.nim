@@ -985,7 +985,7 @@ declareSettings OpenSessionSettings, "":
   declare command, Option[string], nil
 
   ## Command arguments to use when opening a session in a new window.
-  declare args, Option[seq[string]], nil
+  declare args, Option[seq[JsonNodeEx]], nil
 
 declareSettings UiSettings, "ui":
   use background, BackgroundSettings

@@ -50,6 +50,11 @@ type
 
   ColorType* = enum Hex = "hex", Float1 = "float1", Float255 = "float255"
 
+  ScrollToChangeOnReload* {.pure.} = enum First = "first", Last = "last"
+
+proc typeNameToJson*(T: typedesc[ScrollToChangeOnReload]): string =
+  return "\"first\" | \"last\""
+
 proc typeNameToJson*(T: typedesc[ColorType]): string =
   return "\"hex\" | \"float1\" | \"float255\""
 
@@ -182,6 +187,9 @@ declareSettings TextEditorSettings, "text":
   ## Arguments to the command which is run when triple clicking on some text.
   declare tripleClickCommandArgs, JsonNode, %[newJString("line"), newJBool(true)]
 
+  ## If not null then scroll to the changed region when a file is reloaded.
+  declare scrollToChangeOnReload, Option[ScrollToChangeOnReload], nil
+
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
   editors*: DocumentEditorService
@@ -221,6 +229,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastHoverLocationBounds*: Option[Rect]
 
   selectionsBeforeReload: Selections
+  wasAtEndBeforeReload: bool = false
   selectionsInternal: Selections
   targetSelectionsInternal: Option[Selections] # The selections we want to have once
                                                # the document is loaded
@@ -423,7 +432,7 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
-proc handleTextDocumentLoaded(self: TextDocumentEditor)
+proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
 proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
 proc handleTextDocumentSaved(self: TextDocumentEditor)
 proc handleCompletionsUpdated(self: TextDocumentEditor)
@@ -573,10 +582,10 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.onRequestRerenderHandle = document.onRequestRerender.subscribe () =>
     self.markDirty()
 
-  self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) => (block:
+  self.loadedHandle = document.onLoaded.subscribe (args: tuple[document: TextDocument, changed: seq[Selection]]) => (block:
       if self.isNil or self.document.isNil:
         return
-      self.handleTextDocumentLoaded()
+      self.handleTextDocumentLoaded(args.changed)
   )
 
   self.preLoadedHandle = document.onPreLoaded.subscribe (_: TextDocument) => (block:
@@ -4571,8 +4580,9 @@ proc handleTextDocumentPreLoaded(self: TextDocumentEditor) =
     return
 
   self.selectionsBeforeReload = self.selections
+  self.wasAtEndBeforeReload = self.selectionsBeforeReload.len == 1 and self.selectionsBeforeReload[0] == self.document.lastCursor.toSelection
 
-proc handleTextDocumentLoaded(self: TextDocumentEditor) =
+proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection]) =
   if self.document.isNil:
     return
 
@@ -4588,6 +4598,17 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
       self.selection = self.document.lastCursor.toSelection
       self.scrollToCursor()
       self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+
+  elif self.settings.scrollToChangeOnReload.get().getSome(scrollToChangeOnReload):
+    case scrollToChangeOnReload
+    of ScrollToChangeOnReload.First:
+      if changes.len > 0:
+        self.selection = changes[0].first.toSelection
+        self.scrollToCursor()
+    of ScrollToChangeOnReload.Last:
+      if changes.len > 0 and self.wasAtEndBeforeReload:
+        self.selection = changes[^1].last.toSelection
+        self.scrollToCursor()
 
   elif self.selectionsBeforeReload.len > 0:
     self.selections = self.selectionsBeforeReload

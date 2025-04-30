@@ -191,6 +191,24 @@ proc moveCurrentViewNext*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc layout_openLastEditor_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc openLastEditor*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_openLastEditor_void_LayoutService_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_moveCurrentViewNextAndGoBack_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc moveCurrentViewNextAndGoBack*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_moveCurrentViewNextAndGoBack_void_LayoutService_wasm(
+      argsJsonString.cstring)
+
+
 proc layout_splitView_void_LayoutService_wasm(arg: cstring): cstring {.importc.}
 proc splitView*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()

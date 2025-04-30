@@ -627,9 +627,9 @@ method connect*(self: LanguageServerLSP, document: Document) =
 
   if document.requiresLoad or document.isLoadingAsync:
     var handle = new Id
-    handle[] = document.onLoaded.subscribe proc(document: TextDocument): void =
+    handle[] = document.onLoaded.subscribe proc(args: tuple[document: TextDocument, changed: seq[Selection]]): void =
       document.onLoaded.unsubscribe handle[]
-      asyncSpawn self.client.notifyOpenedTextDocumentMain(self.languageId, document.localizedPath, document.contentString)
+      asyncSpawn self.client.notifyOpenedTextDocumentMain(self.languageId, args.document.localizedPath, args.document.contentString)
       document.connectedToLanguageServer = true
   else:
     asyncSpawn self.client.notifyOpenedTextDocumentMain(self.languageId, document.localizedPath, document.contentString)

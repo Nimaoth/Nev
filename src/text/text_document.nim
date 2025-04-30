@@ -157,7 +157,7 @@ type
 
     onRequestRerender*: Event[void]
     onPreLoaded*: Event[TextDocument]
-    onLoaded*: Event[TextDocument]
+    onLoaded*: Event[tuple[document: TextDocument, changed: seq[Selection]]]
     onSaved*: Event[void]
     textChanged*: Event[TextDocument]
     onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
@@ -877,7 +877,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   # log lvlInfo, &"[Text_document] Detected indent: {self.settings.indent.get()}, {self.settings.tabWidth.get()}"
 
-proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.} =
+proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]] {.async.} =
   if self.settings.diffReload.enable.get():
     let diffTimeout = self.settings.diffReload.timeout.get()
     let t = startTimer()
@@ -897,12 +897,15 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.
           selections.add (a.toCursor, b.toCursor)
           texts.add edit.text.clone()
 
-        discard self.edit(selections, [], texts)
+        result = self.edit(selections, [], texts)
 
         when defined(appCheckDiffReload):
           if $self.rope != $rope:
             log lvlError, &"Failed diff: {self.rope.len} != {rope.len}: {selections}, {texts}"
             self.replaceAll(rope.move)
+            return @[((0, 0), (self.rope.endPoint.toCursor))]
+
+        return
 
     except AsyncTimeoutError:
       log lvlDebug, &"Timeout after {t.elapsed.ms} ms"
@@ -910,6 +913,8 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.
 
   else:
     self.replaceAll(rope.move)
+
+  return @[((0, 0), (self.rope.endPoint.toCursor))]
 
 proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   logScope lvlInfo, &"loadAsync '{self.filename}', reload = {isReload}"
@@ -930,10 +935,11 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
 
   self.onPreLoaded.invoke self
 
-  if isReload:
+  let changedRegions = if isReload:
     await self.reloadFromRope(rope.clone())
   else:
     self.content = rope.clone()
+    @[((0, 0), (self.rope.endPoint.toCursor))]
 
   if self.settings.autoReload.get():
     if not self.fileWatchHandle.isBound or not isReload:
@@ -956,7 +962,7 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
 
   self.lastSavedRevision = self.undoableRevision
   self.isLoadingAsync = false
-  self.onLoaded.invoke self
+  self.onLoaded.invoke (self, changedRegions)
 
 proc setReadOnly*(self: TextDocument, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
@@ -1016,7 +1022,8 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.content = content.move
 
   self.autoDetectIndentStyle()
-  self.onLoaded.invoke self
+  let changedRegions = @[((0, 0), (self.rope.endPoint.toCursor))]
+  self.onLoaded.invoke (self, changedRegions)
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
@@ -1063,7 +1070,7 @@ proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
         log lvlError, &"[format] Failed to load file {tempFile}: {e.msg}\n{e.getStackTrace()}"
         return
 
-      await self.reloadFromRope(rope.clone())
+      discard await self.reloadFromRope(rope.clone())
 
     else:
       discard await runProcessAsync(formatterPath, formatterArgs & @[self.localizedPath])

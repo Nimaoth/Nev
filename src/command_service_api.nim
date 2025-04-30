@@ -1,7 +1,7 @@
 import std/[strutils, options, json]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, async_process]
+import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, async_process, delayed_task, timer]
 import scripting/[expose]
 import platform/[platform]
 import events, vfs, layout
@@ -188,24 +188,47 @@ proc runProcessAndShowResultAsync(self: CommandService, command: string, options
       eval: bool = false
 
     let shell = self.config.get("editor.shells." & options.shell, newJObject()).jsonTo(ShellOptions, JOptions(allowMissingKeys: true))
-    let (output, err) = if shell.eval:
-      await runProcessAsyncOutput(shell.command & " " & command, eval = true)
-    else:
-      await runProcessAsyncOutput(shell.command, args = shell.args & @[command], eval = false)
-    var text = "Output:"
-    if output.len > 0:
-      text.add "\n"
-      text.add output
-    text.add "\nError:"
-    if err.len > 0:
-      text.add "\n"
-      text.add err
 
-    if output.len > 0 or err.len > 0:
-      self.commandLineResult(output, showInCommandLine = options.showInCommandLine, appendAndShowInFile = options.appendAndShowInFile, options.filename)
+    let editor = self.commandLineEditor.TextDocumentEditor
+    var flushOutputTask = startDelayedAsync(100, false):
+      try:
+        await editor.vfs.write(options.filename, self.shellCommandOutput)
+      except IOError:
+        discard
+
+    proc handleOutput(line: string) {.closure, gcsafe, raises: [].} =
+      if options.filename.len > 0:
+        self.shellCommandOutput.add("\n")
+        self.shellCommandOutput.add(line)
+        flushOutputTask.schedule()
+
+    proc handleError(line: string) {.closure, gcsafe, raises: [].} =
+      if options.filename.len > 0:
+        self.shellCommandOutput.add("\n")
+        self.shellCommandOutput.add(line)
+        flushOutputTask.schedule()
+
+    let layout = self.services.getService(LayoutService).get
+    discard layout.openFile(options.filename)
+
+    let start = startTimer()
+    var finalCommand = ""
+    if shell.eval:
+      finalCommand = shell.command & " " & command
+      await runProcessAsyncCallback(shell.command & " " & command, eval = true,
+        handleOutput=handleOutput, handleError=handleError)
+    else:
+      finalCommand = shell.command & " " & shell.args.join(" ") & " " & command
+      await runProcessAsyncCallback(shell.command, args = shell.args & @[command], eval = false,
+        handleOutput=handleOutput, handleError=handleError)
+
+    let time = start.elapsed.ms
+
+    log lvlDebug, &"Finished '{finalCommand}' took {time} ms"
+    self.shellCommandOutput.add(&"\n'{finalCommand}' took {time} ms\n")
+    flushOutputTask.schedule()
   except Exception as e:
     log lvlError, &"Failed to run shell command '{command}': {e.msg}\n{e.getStackTrace()}"
-    self.commandLineResult(e.msg, showInCommandLine = true, appendAndShowInFile = false)
 
 proc runShellCommand*(self: CommandService, options: RunShellCommandOptions = RunShellCommandOptions()) {.expose("commands").} =
   ## Opens the command line where you can enter a shell command.
@@ -213,9 +236,6 @@ proc runShellCommand*(self: CommandService, options: RunShellCommandOptions = Ru
   ## `options.shell`               - Name of the shell (not the exe name). If the name is `xyz` then the configuration for the shell is in `editor.shells.xyz`.
   ## `options.initialValue`        - Initial text to put in the command line, after the prompt.
   ## `options.prompt`              - Text to show as prompt in the command line. Default: `> `
-  ## `options.showInCommandLine`   - If true then the result will be displayed in the command line editor itself, which e.g. doesn't
-  ##                                 allow you to search in there. Default: true
-  ## `options.appendAndShowInFile` - If true then the result will be appended to an in memory file and shown in a regular text editor. Default: false
   ## `options.filename`            - Path of the file where the output is appended. Default: `ed://.shell-command-results`
 
   log lvlInfo, &"runShellCommand '{options}'"
