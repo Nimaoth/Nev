@@ -14,7 +14,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.max-search-results` | int | 1000 | Max number of search results returned by global text based search. |
 | `editor.open-session.args` | JsonNodeEx[] \| null | null | Command arguments to use when opening a session in a new window. |
 | `editor.open-session.command` | string \| null | null | Command to use when opening a session in a new window. |
-| `editor.open-session.use-tmux-or-zellij` | bool | true | If true then Nev will detect if it's running inside tmux or zellij (by using environment variables) and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` |
+| `editor.open-session.use-multiplexer` | bool | true | If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment variables) and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-session.wezterm` |
 | `editor.print-statistics-on-shutdown` | bool | false | If true the editor prints memory usage statistics when quitting. |
 | `editor.record-input-history` | bool | false | Whether the editor shows a history of the last few pressed buttons in the status bar. |
 | `editor.watch-app-config` | bool | true | Watch the config files in the app directory and automatically reload them when they change. |

@@ -14,12 +14,4 @@
         "args": ["-c"],
         "eval": false,
     },
-    "editor.open-session.tmux": {
-        "command": "tmux",
-        "args": ["split-window", ["exe"] , ["args"]],
-    },
-    "editor.open-session.zellij": {
-        "command": "zellij",
-        "args": ["run", "--", ["exe"] , ["args"]],
-    },
 }
