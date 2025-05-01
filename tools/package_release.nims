@@ -1,4 +1,4 @@
-import std/[os, parseopt, compilesettings]
+import std/[os, parseopt, compilesettings, strformat]
 
 # Helper functions
 
@@ -31,8 +31,10 @@ template catch(exp: untyped, then: untyped): untyped =
 
 ############################################################################################################
 
-const releaseWindows = "release_windows"
-const releaseLinux = "release_linux"
+const version = "0.3.0"
+const releaseWindows = &"nev-{version}-x86_64-pc-windows-gnu"
+const releaseLinux = &"nev-{version}-x86_64-unknown-linux-gnu"
+const releaseLinuxMusl = &"nev-{version}-x86_64-unknown-linux-musl"
 
 proc copySharedFilesTo(dir: string) =
   cpDir2 "config", dir
@@ -97,19 +99,19 @@ if packageWindows:
     cpFile2 "nev.exe", releaseWindows
     cpFile2 "nevt.exe", releaseWindows, optional=true
     cpFile2 "wasmtime.dll", releaseWindows, optional=true
-    # cpFile2 "tools/remote-workspace-host.exe", releaseWindows
-    # cpFile2 "tools/lsp-ws.exe", releaseWindows
 
 if packageLinux:
   echo "Package linux..."
   mkDir releaseLinux
   copySharedFilesTo releaseLinux
   if fileExists "nev":
-    cpFile2 "nevg", releaseLinux
     cpFile2 "nev", releaseLinux
-    cpFile2 "nevt", releaseLinux, optional=true
-    cpFile2 "nev-musl", releaseLinux
-    # cpFile2 "tools/remote-workspace-host", releaseLinux
-    # cpFile2 "tools/lsp-ws", releaseLinux
+    cpFile2 "nevg", releaseLinux
+
+  mkDir releaseLinuxMusl
+  copySharedFilesTo releaseLinuxMusl
+  if fileExists "nev":
+    cpFile2 "nev-musl", releaseLinuxMusl
+    mvFile(releaseLinuxMusl / "nev-musl", releaseLinuxMusl / "nev")
 
 quit exitCode
