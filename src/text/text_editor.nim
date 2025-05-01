@@ -1215,7 +1215,9 @@ proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, i
   let l = self.vfs.getTreesitterLanguage("javascript").await
   if l.getSome(l):
     withParser(p):
-      p.setLanguage(l)
+      if not p.setLanguage(l):
+        log lvlError, &"Failed to parse: couldn't set parser language"
+        return
 
       var texts: seq[string]
       for i, selection in selections:
