@@ -88,17 +88,17 @@ jobs:
       - run: ls -la release_linux
 
       # make zips
-      - name: Zip release_linux
-        uses: vimtor/action-zip@v1.2
-        with:
-          files: release_linux
-          dest: release_linux.zip
+      #- name: Zip release_linux
+      #  uses: vimtor/action-zip@v1.2
+      #  with:
+      #    files: release_linux
+      #    dest: release_linux.zip
 
       # upload artifacts
       - name: Upload release_linux
         uses: actions/upload-artifact@v4.3.3
         with:
-          name: release_linux
+          name: nev-*-x86_64-unknown-linux-*
           path: release_linux.zip
 
   build-windows:
@@ -165,7 +165,7 @@ jobs:
       - name: Upload release_windows
         uses: actions/upload-artifact@v4.3.3
         with:
-          name: release_windows
+          name: nev-*-x86_64-pc-windows-gnu
           path: release_windows.zip
 
   run-tests:
