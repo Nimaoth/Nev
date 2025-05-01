@@ -21,7 +21,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.watch-theme` | bool | true | Watch the theme directory for changes to the theme. |
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
-| `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes. |
+| `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.auto-start-language-server` | bool | true | If true then configured language servers are automatically started when opening a file of the specific language for the first time. |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
 | `text.color-highlight.enable` | bool | false | Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language in `text.color-highlight.{language-id}.` |
@@ -45,11 +45,11 @@ For examples and default values see [here](../config/settings.json)
 | `text.highlight-matches.delay` | int | 250 | How long after moving the cursor matching text is highlighted. |
 | `text.highlight-matches.enable` | bool | true | Enable highlighting of text matching the current selection or word containing the cursor (if the selection is empty). |
 | `text.highlight-matches.max-file-size` | int | 104857600 | Don't highlight matching text in files above this size (in bytes). |
-| `text.highlight-matches.max-selection-length` | int | 1024 | Don't higlight matching text if the selection spans more bytes than this. |
-| `text.highlight-matches.max-selection-lines` | int | 5 | Don't higlight matching text if the selection spans more lines than this. |
+| `text.highlight-matches.max-selection-length` | int | 1024 | Don't highlight matching text if the selection spans more bytes than this. |
+| `text.highlight-matches.max-selection-lines` | int | 5 | Don't highlight matching text if the selection spans more lines than this. |
 | `text.hover-delay` | int | 200 | How many milliseconds after hovering a word the lsp hover request is sent. |
-| `text.inclusive-selection` | bool | false | How often the editor will check for unused documents and close them, in seconds. |
-| `text.indent` | "tabs" \| "spaces" | "spaces" | Whether to used spaces or tabs for indentation. |
+| `text.inclusive-selection` | bool | false | Specifies whether a selection includes the character after the end cursor. If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello". If false then the selected text would be "Hell". If you use Vim motions then the Vim plugin manages this setting. |
+| `text.indent` | "tabs" \| "spaces" | "spaces" | Whether to used spaces or tabs for indentation. When indent detection is enabled then this only specfies the default for new files and files where the indentation type can't be detected automatically. |
 | `text.indent-after` | string[] \| null | null | When you insert a new line, if the current line ends with one of these strings then the new line will be indented. |
 | `text.indent-detection.enable` | bool | true | Enable auto detecting the indent style when opening files. |
 | `text.indent-detection.samples` | int | 50 | How many indent characters to process when detecting the indent style. Increase this if it fails for files which start with many unindented lines. |

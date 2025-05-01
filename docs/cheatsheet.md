@@ -7,7 +7,7 @@ There are also incomplete VSCode like keybindings.
 To switch to VSCode like keybindings create/extend the config file in `<USER_HOME>/.nev/settings.json` with the following:
 ```json
 {
-  "keybindings": "vscode"
+  "keybindings.preset": "vscode"
 }
 ```
 

@@ -7,7 +7,7 @@
 - Clone the repository
 - Run `nimble setup`
 
-The ast language framework is does not compile on the current main branch, I will continue work on this at some later point.
+The AST language framework does not compile on the current main branch, I will continue work on this at some later point.
 
 ## Compile errors
 If you get a compile error, try building with `--passC:-Wno-incompatible-pointer-types`, e.g:
