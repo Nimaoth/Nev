@@ -52,6 +52,7 @@ type
     targetPrefix*: string
 
   VFSWatchHandle* = object
+    path*: string
     vfs: VFS
     id: Id
 
@@ -462,7 +463,7 @@ proc setFileAttributes*(self: VFS, path: string, attributes: FileAttributes): Fu
 
 proc watch*(self: VFS, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): VFSWatchHandle =
   let (vfs, path) = self.getVFS(path)
-  return VFSWatchHandle(vfs: vfs, id: vfs.watchImpl(path, cb))
+  return VFSWatchHandle(vfs: vfs, id: vfs.watchImpl(path, cb), path: path)
 
 proc isBound*(self: var VFSWatchHandle): bool =
   return self.id != idNone()

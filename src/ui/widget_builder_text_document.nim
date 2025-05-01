@@ -867,8 +867,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           color: backgroundColor.lighten(0.05)))
         addedCursorLineBackground = true
 
+      # todo: this sometimes happens for a frame or two, probably because some data structures are in an invalid state
+      # which causes an infinte loop here.
+      # Just breaking and trying again will be fine for now, but the root cause should be fixed.
       if state.chunkBounds.len > 10000:
-        log lvlError, "Rendering too much text, your font size is too small or there is a bug"
+        log lvlWarn, "Rendering too much text, your font size is too small or there is a bug"
         break
 
       case drawChunk(chunk, state)

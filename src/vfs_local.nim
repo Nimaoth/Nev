@@ -39,7 +39,7 @@ proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {
     proc cbWrapper(events: seq[PathEvent]) {.gcsafe, raises: [].} = cb(events.deduplicate(isSorted = true))
     register(self.watcher, path, cbWrapper)
     # todo
-    return idNone()
+    return newId()
   except OSError as e:
     log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
     return idNone()

@@ -79,10 +79,10 @@ declareSettings MatchingWordHighlightSettings, "":
   ## How long after moving the cursor matching text is highlighted.
   declare delay, int, 250
 
-  ## Don't higlight matching text if the selection spans more bytes than this.
+  ## Don't highlight matching text if the selection spans more bytes than this.
   declare maxSelectionLength, int, 1024
 
-  ## Don't higlight matching text if the selection spans more lines than this.
+  ## Don't highlight matching text if the selection spans more lines than this.
   declare maxSelectionLines, int, 5
 
   ## Don't highlight matching text in files above this size (in bytes).
@@ -129,7 +129,10 @@ declareSettings TextEditorSettings, "text":
   ## Configure search regexes.
   use searchRegexes, SearchRegexSettings
 
-  ## How often the editor will check for unused documents and close them, in seconds.
+  ## Specifies whether a selection includes the character after the end cursor.
+  ## If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello".
+  ## If false then the selected text would be "Hell".
+  ## If you use Vim motions then the Vim plugin manages this setting.
   declare inclusiveSelection, bool, false
 
   ## How many characters wide a tab is.
@@ -4330,7 +4333,6 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   except:
     let argsText = if args.isNil: "nil" else: $args
     log(lvlError, fmt"Failed to dispatch command '{action} {argsText}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
     return JsonNode.none
 
   log lvlError, fmt"Unknown command '{action}'"
@@ -4595,12 +4597,6 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
     self.selections = s
     self.centerCursor()
     self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
-
-  elif self.document.autoReload:
-    if self.selection == self.selectionsBeforeReload[self.selectionsBeforeReload.high]:
-      self.selection = self.document.lastCursor.toSelection
-      self.scrollToCursor()
-      self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
   elif self.settings.scrollToChangeOnReload.get().getSome(scrollToChangeOnReload):
     case scrollToChangeOnReload
