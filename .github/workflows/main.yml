@@ -85,21 +85,20 @@ jobs:
       
       # create release packages
       - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims -l
-      - run: ls -la release_linux
 
       # make zips
-      - name: Zip release_linux
-        uses: vimtor/action-zip@v1.2
-        with:
-          files: release_linux
-          dest: release_linux.zip
+      #- name: Zip release_linux
+      #  uses: vimtor/action-zip@v1.2
+      #  with:
+      #    files: release_linux
+      #    dest: release_linux.zip
 
       # upload artifacts
       - name: Upload release_linux
         uses: actions/upload-artifact@v4.3.3
         with:
-          name: release_linux
-          path: release_linux.zip
+          path: nev-*-x86_64-unknown-linux-*
+          name: nev-linux
 
   build-windows:
     name: Build Windows
@@ -155,18 +154,18 @@ jobs:
       - run: nim ./tools/package_release.nims -w
 
       # make zips
-      - name: Zip release_windows
-        uses: vimtor/action-zip@v1.2
-        with:
-          files: release_windows
-          dest: release_windows.zip
+      #- name: Zip release_windows
+      #  uses: vimtor/action-zip@v1.2
+      #  with:
+      #    files: release_windows
+      #    dest: release_windows.zip
 
       # upload artifacts
       - name: Upload release_windows
         uses: actions/upload-artifact@v4.3.3
         with:
-          name: release_windows
-          path: release_windows.zip
+          path: nev-*-x86_64-pc-windows-gnu
+          name: nev-windows
 
   run-tests:
     name: Run tests
