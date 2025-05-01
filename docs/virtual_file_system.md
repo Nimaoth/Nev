@@ -13,7 +13,7 @@ By default Nev creates a VFS hierarchy which contains the local file system unde
 - `home://` links to the user home directory under `local://`
 - `ws0://`, `ws1://` etc. link to the workspace folders.
 - `ws://0`, `ws://1` etc. link to the workspace folders.
-- `plugs://`, contains plugin sources (if available)
+- `temp://` links to the temp directory
 
 To explore the entire VFS in the builtin file explorer you can run the command `explore-file "" true` (to see some more info about the VFSs) or just `explore-files`
 
