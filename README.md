@@ -23,7 +23,7 @@ Nev is still relatively new, so many things are still missing or need improvemen
 - And many more smaller features...
 
 ## Planned features
-- Collaborative editing (the foundation is exists already, the editor is using CRDTs based on [Zeds](https://github.com/zed-industries/zed) implementation, but actually connecting to other people is still missing)
+- Collaborative editing (the foundation exists already, the editor is using CRDTs based on [Zeds](https://github.com/zed-industries/zed) implementation)
 - Create custom UI in plugins
 - Fine grained permissions for plugins
 - Builtin terminal
@@ -38,7 +38,6 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Helix](https://github.com/helix-editor/helix)
 - [Zed](https://github.com/zed-industries/zed)
 - [JetBrains MPS](https://github.com/JetBrains/MPS)
-- [Dion Systems Editor](https://dion.systems/gallery.html)
 
 ## Important notes if you intend to use it
 - Currently only UTF-8 encoded files are supported
@@ -56,6 +55,8 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Virtual filesystem](docs/virtual_file_system.md)
 
 ## Screenshots
+
+Some of these screenshots and GIFs are quite old and things might look different.
 
 ### Nev running inside Windows Terminal -> WSL -> Zellij with transparent background
 ![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/transparent_background.png)
