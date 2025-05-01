@@ -97,8 +97,8 @@ jobs:
       - name: Upload release_linux
         uses: actions/upload-artifact@v4.3.3
         with:
-          name: nev-*-x86_64-unknown-linux-*
-          path: release_linux.zip
+          path: nev-*-x86_64-unknown-linux-*
+          name: nev-linux
 
   build-windows:
     name: Build Windows
@@ -164,8 +164,8 @@ jobs:
       - name: Upload release_windows
         uses: actions/upload-artifact@v4.3.3
         with:
-          name: nev-*-x86_64-pc-windows-gnu
-          path: release_windows.zip
+          path: nev-*-x86_64-pc-windows-gnu
+          name: nev-windows
 
   run-tests:
     name: Run tests
