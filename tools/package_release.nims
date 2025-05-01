@@ -44,17 +44,18 @@ proc copySharedFilesTo(dir: string) =
   cpDir2 "res", dir
   mkDir dir / "src"
   mkDir dir / "src/misc"
-  cpFile2 "src/scripting_api.nim", dir / "src"
   cpFile2 "src/input_api.nim", dir / "src"
-  cpFile2 "src/misc/timer.nim", dir / "src/misc"
-  cpFile2 "src/misc/id.nim", dir / "src/misc"
-  cpFile2 "src/misc/myjsonutils.nim", dir / "src/misc"
-  cpFile2 "src/misc/event.nim", dir / "src/misc"
-  cpFile2 "src/misc/util.nim", dir / "src/misc"
-  cpFile2 "src/misc/macro_utils.nim", dir / "src/misc"
-  cpFile2 "src/misc/wrap.nim", dir / "src/misc"
   cpFile2 "src/misc/custom_unicode.nim", dir / "src/misc"
   cpFile2 "src/misc/embed_source.nim", dir / "src/misc"
+  cpFile2 "src/misc/event.nim", dir / "src/misc"
+  cpFile2 "src/misc/id.nim", dir / "src/misc"
+  cpFile2 "src/misc/macro_utils.nim", dir / "src/misc"
+  cpFile2 "src/misc/myjsonutils.nim", dir / "src/misc"
+  cpFile2 "src/misc/timer.nim", dir / "src/misc"
+  cpFile2 "src/misc/util.nim", dir / "src/misc"
+  cpFile2 "src/misc/wrap.nim", dir / "src/misc"
+  cpFile2 "src/scripting_api.nim", dir / "src"
+  cpDir2 "patches", dir
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
   cpFile2 "nev.nimble", dir
