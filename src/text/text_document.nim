@@ -343,7 +343,8 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
           # We already tried to parse the current content and it failed, don't try again
           return
 
-        parser.setLanguage(self.tsLanguage)
+        if not parser.setLanguage(self.tsLanguage):
+          return
 
         var oldLanguage = self.tsLanguage
         let oldBufferId = self.buffer.remoteId
