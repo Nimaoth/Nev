@@ -114,4 +114,7 @@ if packageLinux:
     cpFile2 "nev-musl", releaseLinuxMusl
     mvFile(releaseLinuxMusl / "nev-musl", releaseLinuxMusl / "nev")
 
+  exec(&"tar -jcvf {releaseLinux}.tar {releaseLinux}")
+  exec(&"tar -jcvf {releaseLinuxMusl}.tar {releaseLinuxMusl}")
+
 quit exitCode
