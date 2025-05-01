@@ -123,10 +123,11 @@ declareSettings TextSettings, "text":
   ##
   declare completionWordChars, RuneSetSetting, %%*[["a", "z"], ["A", "Z"], ["0", "9"], "_"]
 
-  ## Whether to used spaces or tabs for indentation.
+  ## Whether to used spaces or tabs for indentation. When indent detection is enabled then this only specfies the default
+  ## for new files and files where the indentation type can't be detected automatically.
   declare indent, IndentStyleKind, IndentStyleKind.Spaces
 
-  ## If true then files will be automatically reloaded when the content on disk changes.
+  ## If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes).
   declare autoReload, bool, false
 
 type
@@ -178,8 +179,6 @@ type
 
     nextCheckpoints: seq[string]
 
-    autoReload*: bool
-
     currentContentFailedToParse: bool
     tsLanguage: TSLanguage
     currentTree: TSTree
@@ -216,6 +215,7 @@ proc resolveDiagnosticAnchors*(self: TextDocument)
 proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
+proc enableAutoReload*(self: TextDocument, enabled: bool)
 
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
@@ -942,18 +942,9 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
     @[((0, 0), (self.rope.endPoint.toCursor))]
 
   if self.settings.autoReload.get():
-    if not self.fileWatchHandle.isBound or not isReload:
-      self.fileWatchHandle.unwatch()
-      self.fileWatchHandle = self.vfs.watch(self.filename, proc(events: seq[PathEvent]) =
-        for e in events:
-          case e.action
-          of Modify:
-            asyncSpawn self.loadAsync(true)
-            break
-
-          else:
-            discard
-      )
+    self.enableAutoReload(true)
+  else:
+    self.fileWatchHandle.unwatch()
 
   if self.vfs.getFileAttributes(self.filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
@@ -968,28 +959,29 @@ proc setReadOnly*(self: TextDocument, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
   self.readOnly = readOnly
 
-proc reloadTask(self: TextDocument) {.async.} =
-  defer:
-    self.autoReload = false
-
-  # todo
-  # var lastModTime = getLastModificationTime(self.filename)
-  # while self.autoReload and not self.workspace.isNone:
-  #   var modTime = getLastModificationTime(self.filename)
-  #   # if times.`>`(modTime, lastModTime):
-  #     # lastModTime = modTime
-  #     # log lvlInfo, &"File '{self.filename}' changed on disk, reload"
-  #     # await self.loadAsync(self.workspace.get, false)
-
-  #   await sleepAsync(1000.milliseconds)
-
 proc enableAutoReload*(self: TextDocument, enabled: bool) =
-  if not self.autoReload and enabled:
-    self.autoReload = true
-    asyncSpawn self.reloadTask()
-    return
+  self.settings.autoReload.set(enabled)
+  if enabled and (not self.fileWatchHandle.isBound or self.fileWatchHandle.path != self.filename):
+    self.fileWatchHandle.unwatch()
+    self.fileWatchHandle = self.vfs.watch(self.filename, proc(events: seq[PathEvent]) =
+      if not self.isInitialized or not self.settings.autoReload.get():
+        return
+      let isDirty = self.lastSavedRevision != self.revision
+      if isDirty:
+        return
+      for e in events:
+        case e.action
+        of Modify:
+          asyncSpawn self.loadAsync(true)
+          break
 
-  self.autoReload = enabled
+        else:
+          discard
+    )
+    self.fileWatchHandle.path = self.filename
+
+  elif not enabled:
+    self.fileWatchHandle.unwatch()
 
 proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.async.} =
   ## Tries to set the underlying file permissions

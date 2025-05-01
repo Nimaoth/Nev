@@ -439,10 +439,5 @@ macro genDispatcher*(moduleName: static string): untyped =
   switch.add nnkElse.newTree(quote do: JsonNode.none)
 
   return quote do:
-    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] {.gcsafe.} =
-      try:
-        result = `switch`
-      except JsonCallError as e:
-        # todo: handle errors
-        echo e.msg
-        return JsonNode.none
+    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] {.gcsafe, raises: [JsonCallError].} =
+      result = `switch`
