@@ -9,7 +9,7 @@ If a session is opened then the session defines the workspace instead.
 To add directories to you're workspace you can either edit the session file or use the virtual file system explorer (see below).<br>
 When you add a directory to your workspace then it will be mounted in the VFS under a prefix like `ws5://` (each directory has a distinct number).
 
-**If you edit a session file while you have that session open then your changes will be override when you close Nev**
+**If you edit a session file while you have that session open then your changes will be overriden when you close Nev**
 
 Here is an example from a session file. You can add directories to "additionalPaths":
 ```json

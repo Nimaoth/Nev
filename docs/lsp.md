@@ -63,28 +63,24 @@ Some language servers are already configured in the [app settings](../config/set
                 "linkedProjects": "path/to/Cargo.toml"
             }
         },
+    },
 
-        "zig": { // Add/override nim settings
-            "path": "zls",
-            "settings": { // LSP specific configuration.
-                "zls": {
-                    "enable_snippets": true,
-                    "enable_argument_placeholders": true,
-                    "enable_build_on_save": false
-                }
+    // Or use the short form:
+    "lsp.zig": {
+        "path": "zls",
+        "settings": { // LSP specific configuration.
+            "zls": {
+                "enable_snippets": true,
+                "enable_argument_placeholders": true,
+                "enable_build_on_save": false
             }
         }
     },
 
-    "+editor": { // use `+` because we want to extend this section
-        "+text": { // use `+` because we want to extend this section
-
-            // If true then text documents immediately try to connect to or start a language server when opened.
-            // If false then text documents will only connect to or start a language server when a command is run
-            // which accesses the language server (e.g. goto-definition or goto-symbol)
-            "auto-start-language-server": false, // Default: true
-        }
-    }
+    // If true then text documents immediately try to connect to or start a language server when opened.
+    // If false then text documents will only connect to or start a language server when a command is run
+    // which accesses the language server (e.g. goto-definition or goto-symbol)
+    "text.auto-start-language-server": false, // Default: true
 }
 ```
 

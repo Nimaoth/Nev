@@ -49,16 +49,16 @@ When the application reads the value of a setting, depending on the context it r
     app://config/settings.json                          // Settings files loaded from different locations. They auto reload when the file on disk changes by default.
                ^
                |
-    app://config/settings-windows.json
+    app://config/settings-windows.json                  // Platform specific settings, if they exist.
                ^
                |
     app://config/settings-windows-gui.json
                ^
                |
-    home://.nev/settings.json
+    home://.nev/settings.json                           // User settings.
                ^
                |
-    ws0://.nev/settings.json
+    ws0://.nev/settings.json                            // Workspace settings.
                ^
                |
             runtime                                     // Runtime layer. Not backed by a file, by default changing settings at runtime changes them in here.
@@ -69,11 +69,11 @@ When the application reads the value of a setting, depending on the context it r
                ^                        ^
                |------------            |
                |           |            |
-            a.nim        b.nim        c.cpp             // Document layer. Every document has it's own settings.
+            a.nim        b.nim        c.cpp             // Document layer. Every document has it's own settings store.
                ^           ^            ^
                |           |            |-----------
                |           |            |          |
-            editor1     editor2      editor3    editor4 // Editor layer. Every editor has it's own settings.
+            editor1     editor2      editor3    editor4 // Editor layer. Every editor has it's own settings store.
 ```
 
 ### Changing settings
@@ -121,12 +121,15 @@ To escape the period simply use two periods (`..`).
 Some settings can be overridden per language. The exact list of settings is not documented (as it depends on how it's used in the editor),
 but if in doubt just try overriding it.
 
-To change a setting for e.g. Nim, prefix the setting name with `lang.nim`. So let's say I want to disable line wrapping only for Nim files.
+To change a setting for e.g. Nim, prefix the setting name with `lang.nim`. So let's say you want to disable line wrapping only for Nim files.
 The setting for line wrapping is `text.wrap-lines`. So to change it for Nim, just use:
 
 ```json
 "lang.nim.text.wrap-lines": false
 ```
+
+Language specific settings are applied in the language layer (between the runtime and document layer),
+so a language settings store for e.g. `nim` behaves as if any setting in `lang.nim` was placed at the root of the language store.
 
 ## Keybindings
 Keybindings which just map to existing commands can be specified in a `keybindings.json` file alongside the `settings.json` files. They works the same as the settings (i.e. they also support platform/backend variants and can be placed in the app/user/workspace config directories)

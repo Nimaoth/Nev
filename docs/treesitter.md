@@ -12,7 +12,9 @@ The list of builtin parsers is currently:
 - C#
 - Rust
 - Python
-- Javascript
+- JavaScript
+- JSON
+- Markdown
 
 To change the list of builtin parsers compile the editor with e.g. `-d:treesitterBuiltins=cpp,rust`
 
