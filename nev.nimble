@@ -5,7 +5,7 @@ when defined(nimsuggest):
   import system/nimscript
   var commandLineParams: seq[string]
 
-version       = "0.2.2"
+version       = "0.3.0"
 author        = "Nimaoth"
 description   = "Text Editor"
 license       = "MIT"
