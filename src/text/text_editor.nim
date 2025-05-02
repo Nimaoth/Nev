@@ -12,7 +12,7 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
-import config_provider, service, layout, platform_service, vfs, vfs_service, command_service
+import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
 import diff
 import workspaces/workspace
 import finder/[previewer, finder]
@@ -51,6 +51,11 @@ type
 
   ColorType* = enum Hex = "hex", Float1 = "float1", Float255 = "float255"
 
+  ScrollToChangeOnReload* {.pure.} = enum First = "first", Last = "last"
+
+proc typeNameToJson*(T: typedesc[ScrollToChangeOnReload]): string =
+  return "\"first\" | \"last\""
+
 proc typeNameToJson*(T: typedesc[ColorType]): string =
   return "\"hex\" | \"float1\" | \"float255\""
 
@@ -75,10 +80,10 @@ declareSettings MatchingWordHighlightSettings, "":
   ## How long after moving the cursor matching text is highlighted.
   declare delay, int, 250
 
-  ## Don't higlight matching text if the selection spans more bytes than this.
+  ## Don't highlight matching text if the selection spans more bytes than this.
   declare maxSelectionLength, int, 1024
 
-  ## Don't higlight matching text if the selection spans more lines than this.
+  ## Don't highlight matching text if the selection spans more lines than this.
   declare maxSelectionLines, int, 5
 
   ## Don't highlight matching text in files above this size (in bytes).
@@ -87,6 +92,10 @@ declareSettings MatchingWordHighlightSettings, "":
 declareSettings SearchRegexSettings, "":
   ## Override the ripgrep language name. By default the documents language id is used.
   declare rgLanguage, Option[string], nil
+
+  ## If true then the search results will only show the part of a line that matched the regex.
+  ## If false then the entire line is shown.
+  declare showOnlyMatchingPart, bool, true
 
   ## Regex to use when using the goto-definition feature.
   declare gotoDefinition, Option[RegexSetting], nil
@@ -121,7 +130,10 @@ declareSettings TextEditorSettings, "text":
   ## Configure search regexes.
   use searchRegexes, SearchRegexSettings
 
-  ## How often the editor will check for unused documents and close them, in seconds.
+  ## Specifies whether a selection includes the character after the end cursor.
+  ## If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello".
+  ## If false then the selected text would be "Hell".
+  ## If you use Vim motions then the Vim plugin manages this setting.
   declare inclusiveSelection, bool, false
 
   ## How many characters wide a tab is.
@@ -133,10 +145,6 @@ declareSettings TextEditorSettings, "text":
   ## How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
   ## depending on `text.cursor-margin-relative`.
   declare cursorMargin, float, 0.15
-
-  ## How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
-  ## depending on `text.cursor-margin-relative`.
-  declare scrollSpeed, float, 40
 
   ## How many milliseconds after hovering a word the lsp hover request is sent.
   declare hoverDelay, int, 200
@@ -183,6 +191,9 @@ declareSettings TextEditorSettings, "text":
   ## Arguments to the command which is run when triple clicking on some text.
   declare tripleClickCommandArgs, JsonNode, %[newJString("line"), newJBool(true)]
 
+  ## If not null then scroll to the changed region when a file is reloaded.
+  declare scrollToChangeOnReload, Option[ScrollToChangeOnReload], nil
+
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
   editors*: DocumentEditorService
@@ -194,7 +205,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   registers: Registers
   workspace: Workspace
   vfsService: VFSService
-  vfs: VFS
+  vfs*: VFS
   commands*: CommandService
   configService*: ConfigService
   configChanged: bool = false
@@ -222,6 +233,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastHoverLocationBounds*: Option[Rect]
 
   selectionsBeforeReload: Selections
+  wasAtEndBeforeReload: bool = false
   selectionsInternal: Selections
   targetSelectionsInternal: Option[Selections] # The selections we want to have once
                                                # the document is loaded
@@ -363,8 +375,8 @@ method init*(self: TextDocumentEditorService): Future[Result[void, ref Catchable
 method canOpenFile*(self: TextDocumentFactory, path: string): bool =
   return true
 
-method createDocument*(self: TextDocumentFactory, services: Services, path: string): Document =
-  return newTextDocument(services, path, app=false, load=true)
+method createDocument*(self: TextDocumentFactory, services: Services, path: string, load: bool): Document =
+  return newTextDocument(services, path, app=false, load=load)
 
 method canEditDocument*(self: TextDocumentEditorFactory, document: Document): bool =
   return document of TextDocument
@@ -424,7 +436,7 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
-proc handleTextDocumentLoaded(self: TextDocumentEditor)
+proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
 proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
 proc handleTextDocumentSaved(self: TextDocumentEditor)
 proc handleCompletionsUpdated(self: TextDocumentEditor)
@@ -574,10 +586,10 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.onRequestRerenderHandle = document.onRequestRerender.subscribe () =>
     self.markDirty()
 
-  self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) => (block:
+  self.loadedHandle = document.onLoaded.subscribe (args: tuple[document: TextDocument, changed: seq[Selection]]) => (block:
       if self.isNil or self.document.isNil:
         return
-      self.handleTextDocumentLoaded()
+      self.handleTextDocumentLoaded(args.changed)
   )
 
   self.preLoadedHandle = document.onPreLoaded.subscribe (_: TextDocument) => (block:
@@ -1046,7 +1058,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   if self.disableScrolling:
     return
 
-  let scrollAmount = scroll * self.settings.scrollSpeed.get()
+  let scrollAmount = scroll * self.uiSettings.scrollSpeed.get()
   # todo
   # if not self.lastCompletionsWidget.isNil and
   #     self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
@@ -1076,6 +1088,9 @@ proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: 
 
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
   self.document.enableAutoReload(enabled)
+
+proc setLanguage(self: TextDocumentEditor, language: string) {.expose: "editor.text".} =
+  self.document.languageId = language
 
 proc getFileName(self: TextDocumentEditor): string {.expose: "editor.text".} =
   if self.document.isNil:
@@ -1178,6 +1193,13 @@ proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): f
     of "-": -a
     else: a
 
+  of "parenthesized_expression":
+    checkRes c.gotoFirstChild()
+    checkRes c.gotoNextSibling()
+    let a = c.evaluateJsNode(rope, floatingPoint)
+    checkRes c.gotoParent()
+    return a
+
   of "number":
     let valStr = $rope.slice(node.getRange.toSelection.toRange)
     if valStr.contains("."):
@@ -1194,7 +1216,9 @@ proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, i
   let l = self.vfs.getTreesitterLanguage("javascript").await
   if l.getSome(l):
     withParser(p):
-      p.setLanguage(l)
+      if not p.setLanguage(l):
+        log lvlError, &"Failed to parse: couldn't set parser language"
+        return
 
       var texts: seq[string]
       for i, selection in selections:
@@ -1649,6 +1673,8 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
   let selectionRange = self.selection.tsRange
   let node = self.document.tsTree.root.descendantForRange(selectionRange)
 
+  if self.services.getService(ToastService).getSome(toasts):
+    toasts.showToast("Treesitter tree", $node, "info")
   log lvlInfo, $node
 
 proc selectParentCurrentTs*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
@@ -3611,7 +3637,9 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
 
     let rgLanguageId = self.settings.searchRegexes.rgLanguage.get().get(self.document.languageId)
     let maxResults = self.settings.searchWorkspaceRegexMaxResults.get()
-    let customArgs = @["--type", rgLanguageId, "--only-matching"]
+    var customArgs = @["--type", rgLanguageId]
+    if self.settings.searchRegexes.showOnlyMatchingPart.get():
+      customArgs.add("--only-matching")
     let futures = collect:
       for (symbolType, searchString) in searchStrings:
         self.workspace.searchWorkspace(searchString, maxResults, customArgs)
@@ -4101,17 +4129,36 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text"
   self.currentCommandHistory.commands.setLen 0
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
+  let wordRunes {.cursor.} = self.document.settings.completionWordChars.get()
+  let rope {.cursor.} = self.document.rope
+
   let max = self.settings.chooseCursorMax.get()
   for chunk in self.lastRenderedChunks:
+    var startsWithWord = true
+    if chunk.range.a.column > 0:
+      let currentIsWord = rope.runeAt(chunk.range.a) in wordRunes
+      let prevIsWord = rope.runeAt(rope.clipPoint(point(chunk.range.a.row, chunk.range.a.column - 1), Bias.Left)) in wordRunes
+      if prevIsWord == currentIsWord:
+        startsWithWord = false
+
     let str = self.document.contentString((chunk.range.a.toCursor, chunk.range.b.toCursor))
     var i = 0
-    while i < str.len and str[i] == ' ':
-      inc i
+    while i < str.len:
+      while i < str.len and str[i] == ' ':
+        inc i
+        startsWithWord = true
 
-    if i + 1 < str.len:
-      result.add (chunk.range.a + point(0, i)).toCursor
-      if result.len >= max:
-        break
+      var endIndex = str.find(' ', i)
+      if endIndex == -1:
+        endIndex = str.len
+
+      if startsWithWord and endIndex - i >= 2:
+        result.add (chunk.range.a + point(0, i)).toCursor
+        if result.len >= max:
+          break
+
+      i = endIndex
+      startsWithWord = true
 
 proc getCombinationsOfLength*(self: TextDocumentEditor, keys: openArray[string],
     disallowedPairs: HashSet[string], length: int, disallowDoubles: bool): seq[string] =
@@ -4335,7 +4382,6 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   except:
     let argsText = if args.isNil: "nil" else: $args
     log(lvlError, fmt"Failed to dispatch command '{action} {argsText}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
     return JsonNode.none
 
   log lvlError, fmt"Unknown command '{action}'"
@@ -4588,8 +4634,9 @@ proc handleTextDocumentPreLoaded(self: TextDocumentEditor) =
     return
 
   self.selectionsBeforeReload = self.selections
+  self.wasAtEndBeforeReload = self.selectionsBeforeReload.len == 1 and self.selectionsBeforeReload[0] == self.document.lastCursor.toSelection
 
-proc handleTextDocumentLoaded(self: TextDocumentEditor) =
+proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection]) =
   if self.document.isNil:
     return
 
@@ -4600,11 +4647,16 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
     self.centerCursor()
     self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
-  elif self.document.autoReload:
-    if self.selection == self.selectionsBeforeReload[self.selectionsBeforeReload.high]:
-      self.selection = self.document.lastCursor.toSelection
-      self.scrollToCursor()
-      self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+  elif self.settings.scrollToChangeOnReload.get().getSome(scrollToChangeOnReload):
+    case scrollToChangeOnReload
+    of ScrollToChangeOnReload.First:
+      if changes.len > 0:
+        self.selection = changes[0].first.toSelection
+        self.scrollToCursor()
+    of ScrollToChangeOnReload.Last:
+      if changes.len > 0 and self.wasAtEndBeforeReload:
+        self.selection = changes[^1].last.toSelection
+        self.scrollToCursor()
 
   elif self.selectionsBeforeReload.len > 0:
     self.selections = self.selectionsBeforeReload

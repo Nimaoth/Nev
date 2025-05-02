@@ -13,6 +13,7 @@ defineBitFlagSized(uint64):
     FillX
     FillY
     DrawBorder
+    DrawBorderTerminal
     FillBackground
     LogLayout
     AllowAlpha

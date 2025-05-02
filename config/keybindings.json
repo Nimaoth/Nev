@@ -1,2 +1,18 @@
 {
+    "editor": {
+        "<SPACE>sr": "open-recent-session",
+        "!": "run-shell-command",
+    },
+    "popup.selector.settings": {
+        "<C-h>": "prev-store",
+        "<C-f>": "next-store",
+        "<C-g>": "toggle-merged",
+        "<C-k>": "show-preview-editor-settings",
+        "<C-c>": "delete-setting",
+        "<C-r>": "reload-store"
+    },
+    "popup.selector.file-explorer": {
+        "<C-g>n": "create-new-session",
+        "<C-g>o": "open-session",
+    }
 }

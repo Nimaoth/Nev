@@ -16,6 +16,18 @@ proc enableAutoReload*(self: TextDocumentEditor; enabled: bool) {.gcsafe,
       argsJsonString.cstring)
 
 
+proc editor_text_setLanguage_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc setLanguage*(self: TextDocumentEditor; language: string) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add language.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setLanguage_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_getFileName_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc getFileName*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
@@ -2300,19 +2312,6 @@ proc updateInlayHints*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_updateInlayHints_void_TextDocumentEditor_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_printText_void_TextDocumentEditor_bool_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc printText*(self: TextDocumentEditor; highlight: bool = true;
-                space: string = "") {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add highlight.toJson()
-  argsJson.add space.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_printText_void_TextDocumentEditor_bool_string_wasm(
       argsJsonString.cstring)
 
 

@@ -3,7 +3,8 @@ import misc/[util, custom_logger, custom_async, custom_unicode]
 import platform/[platform]
 import text/language/[language_server_base]
 import document_editor, events
-import config_provider, service, platform_service
+import config_provider, service, platform_service, vfs_service, vfs
+import nimsumtree/rope
 
 logCategory "commands"
 
@@ -17,6 +18,7 @@ type
     events*: EventHandlerService
     platform*: Platform
     config*: ConfigStore
+    vfs*: VFS
 
     commandLineInputMode*: bool
     commandLineResultMode*: bool
@@ -32,16 +34,22 @@ type
     commandLineResultEventHandlerHigh*: EventHandler
     commandLineResultEventHandlerLow*: EventHandler
 
+    shellCommandOutput*: Rope
+
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
-addBuiltinService(CommandService, PlatformService, EventHandlerService, ConfigService)
+addBuiltinService(CommandService, PlatformService, EventHandlerService, ConfigService, DocumentEditorService, VFSService)
 
 method init*(self: CommandService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"CommandService.init"
   self.platform = self.services.getService(PlatformService).get.platform
   self.events = self.services.getService(EventHandlerService).get
   self.config = self.services.getService(ConfigService).get.runtime
+  self.vfs = self.services.getService(VFSService).get.vfs
   assert self.platform != nil
+
+  self.shellCommandOutput = Rope.new("")
+  asyncSpawn self.vfs.write("ed://.shell-command-results", "")
 
   return ok()
 

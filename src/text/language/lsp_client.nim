@@ -102,6 +102,7 @@ type
     GetCodeActions
 
   LSPClientRequestKind* = enum
+    Exit
     Request
     NotifyOpened
     NotifyClosed
@@ -129,6 +130,8 @@ type
     path: string
     content: string
     case kind*: LSPClientRequestKind
+    of Exit:
+      discard
     of Request:
       meth: string
       body: JsonNode
@@ -168,6 +171,9 @@ type
     serverCapabilities: ServerCapabilities
     fullDocumentSync*: bool = false
 
+    killOnExit*: bool = true
+    exit: bool = false
+
     # initializedFuture: Future[bool]
     onWorkspaceConfiguration*: proc(params: ConfigurationParams): Future[seq[JsonNode]] {.gcsafe.}
 
@@ -195,7 +201,7 @@ proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.}
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, changes: seq[TextDocumentContentChangeEvent]) {.async.}
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, content: string) {.async.}
 
-proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, serverExecutablePath: string, workspaces: seq[string], args: seq[string], languagesServer: Option[(string, int)] = (string, int).none): LSPClient =
+proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, serverExecutablePath: string, workspaces: seq[string], args: seq[string], languagesServer: Option[(string, int)] = (string, int).none, killOnExit = true): LSPClient =
   var client = cast[LSPClient](allocShared0(sizeof(LSPClientObject)))
   client[] = LSPClientObject(
     workspaceInfo: info,
@@ -215,6 +221,7 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     requestChannel: newAsyncChannel[LSPClientRequest](),
     responseChannel: newAsyncChannel[LSPClientResponse](),
     notifyConfigurationChangedChannel: newAsyncChannel[JsonNode](),
+    killOnExit: killOnExit,
   )
 
   return client
@@ -246,10 +253,10 @@ proc createHeader*(contentLength: int): string =
   let header = fmt"Content-Length: {contentLength}" & "\r\n\r\n"
   return header
 
-proc deinit*(client: LSPClient) =
+proc deinitThread(client: LSPClient) =
   assert client.connection.isNotNil, "LSP Client process should not be nil"
 
-  log lvlInfo, "Deinitializing LSP client"
+  log lvlInfo, "Deinitializing LSP client " & client.languageId
   client.connection.close()
   client.connection = nil
   client.nextId = 0
@@ -390,7 +397,7 @@ proc sendRequestInternal(client: LSPClient, meth: string, params: JsonNode): Fut
 proc handleRequests(client: LSPClient) {.async, gcsafe.} =
   assert not isMainThread()
 
-  while client != nil:
+  while client != nil and not client.exit:
     let request = client.requestChannel.recv().await.getOr:
       log lvlInfo, &"handleRequests: channel closed"
       return
@@ -398,6 +405,8 @@ proc handleRequests(client: LSPClient) {.async, gcsafe.} =
     debugf"handleRequest: {request}"
 
     case request.kind
+    of Exit:
+      client.exit = true
     of Request:
       client.idToMethod[request.id] = request.meth
       await client.sendRPC(request.meth, request.body, request.id.some)
@@ -412,11 +421,12 @@ proc handleRequests(client: LSPClient) {.async, gcsafe.} =
         await client.notifyTextDocumentChanged(request.path, request.version, request.content)
 
   log lvlInfo, &"handleRequests: client gone"
+  client.exit = true
 
 proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
   assert isMainThread()
 
-  while client != nil:
+  while client != nil and not client.exit:
     let response = client.responseChannel.recv().await.getOr:
       log lvlInfo, &"handleResponses: channel closed"
       return
@@ -486,7 +496,6 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
   if not client.requestsPerMethod.contains(meth):
     return
 
-  var futures: seq[(int, Future[Response[JsonNode]])]
   for id in client.requestsPerMethod[meth]:
     template cancel(requests, typ: untyped): untyped =
       defer: requests.del(id)
@@ -515,9 +524,6 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     client.canceledRequests.incl id
 
   client.requestsPerMethod[meth].setLen 0
-
-  for (id, future) in futures:
-    future.complete canceled[JsonNode]()
 
 proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.} =
   var workspacePath = if client.workspaceFolders.len > 0:
@@ -684,7 +690,7 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
   # client.initializedFuture = newFuture[bool]("client.initializedFuture")
 
   log lvlInfo, fmt"Using process '{client.serverExecutablePath} {client.args}' as LSP connection"
-  let process = startAsyncProcess(client.serverExecutablePath, client.args)
+  let process = startAsyncProcess(client.serverExecutablePath, client.args, killOnExit = client.killOnExit)
   let connection = LSPConnectionAsyncProcess(process: process)
 
   connection.process.onRestarted = proc(): Future[void] {.gcsafe.} =
@@ -695,6 +701,9 @@ proc connect*(client: LSPClient) {.async, gcsafe.} =
     return client.initializedChannel.send(ServerCapabilities.none)
 
   client.connection = connection
+
+proc stop*(client: LSPClient) {.async.} =
+  await client.requestChannel.send(LSPClientRequest(kind: Exit))
 
 proc notifyOpenedTextDocumentMain*(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
   await client.requestChannel.send(LSPClientRequest(kind: NotifyOpened, languageId: languageId, path: path, content: content))
@@ -1106,7 +1115,7 @@ proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
 addGlobalDispatchTable "lsp", genDispatchTable("lsp")
 
 proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
-  while client != nil:
+  while client != nil and not client.exit:
     let value = client.notifyConfigurationChangedChannel.recv().await.getOr:
       log lvlInfo, &"handleNotifiesConfigurationChanged: channel closed"
       return
@@ -1132,6 +1141,7 @@ proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
   asyncSpawn client.handleNotifiesConfigurationChanged()
   asyncSpawn client.handleRequests()
 
-  # todo: cleanup
-  while true:
+  while not client.exit:
     poll(10)
+
+  client.deinitThread()

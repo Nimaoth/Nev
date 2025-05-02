@@ -1,5 +1,5 @@
-import std/[json, options, strutils, tables, enumerate, sequtils, macros, genasts, sets, typetraits, strformat, algorithm, macrocache]
-import misc/[traits, util, event, custom_async, custom_logger, myjsonutils, jsonex, id, timer, custom_unicode]
+import std/[json, options, strutils, tables, macros, genasts, sets, typetraits, strformat, algorithm, macrocache]
+import misc/[util, event, custom_async, custom_logger, myjsonutils, jsonex, id, timer, custom_unicode]
 import scripting/expose
 import platform/platform
 import service, platform_service, dispatch_tables
@@ -147,12 +147,10 @@ macro addJsonTypeName(key: static[string], name: static[string]) =
 proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], body: NimNode): NimNode {.compileTime.} =
   if name.repr in settingGroupDescriptions:
     error "Duplicate setting group " & name.repr, name
-    return
 
   let declare = ident"declare"
   let use = ident"use"
   let store = genSym(nskParam, "store")
-  let store2 = genSym(nskParam, "store")
   let prefixArg = genSym(nskParam, "prefix")
   let res = genSym(nskVar, "res")
 
@@ -193,11 +191,6 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
 
       var s = SettingDescription(name: settingName, prefix: prefix, fullName: fullName, typ: typ.repr, default: "null", noInit: noInit)
 
-      let docsString = if docs != nil:
-        docs.strVal
-      else:
-        ""
-
       if docs != nil:
         s.docs = docs.strVal
 
@@ -234,7 +227,6 @@ proc declareSettingsImpl(name: NimNode, prefix: string, noInit: static[bool], bo
 
       if typ.repr notin settingGroupDescriptions:
         error "Unknown setting type " & typ.repr, typ
-        continue
 
       for i in settingGroupDescriptions[typ.repr].settings:
         let p = settingDescriptions[i]
@@ -603,8 +595,6 @@ proc clear*(self: ConfigStore, key: string) =
   if i == -1:
     i = key.len
 
-  var extended = false
-
   var node = self.settings
   while prevI < key.len:
     var extend = true
@@ -638,8 +628,6 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
   var i = key.find('.')
   if i == -1:
     i = key.len
-
-  var extended = false
 
   var node = self.settings
   while prevI <= key.len:
@@ -937,10 +925,10 @@ template defineSetAllDefaultSettings*(): untyped =
   setAllDefaults = proc(store: ConfigStore) {.raises: [].} =
     setAllDefaultsImpl(store, descriptions)
 
-  static:
-    echo "=========== All settings ==========="
-    for i, desc in settingDescriptions:
-      echo i, ": ", desc
+  # static:
+  #   echo "=========== All settings ==========="
+  #   for i, desc in settingDescriptions:
+  #     echo i, ": ", desc
 
   proc getSettingDescriptionsImpl(): seq[SettingDescription] =
     const settingDescriptionsTemp = settingDescriptions
@@ -987,6 +975,17 @@ declareSettings BackgroundSettings, "":
 
   ## How much to change the brightness for inactive views.
   declare inactiveBrightnessChange, float, -0.025
+
+declareSettings OpenSessionSettings, "":
+  ## If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment variables)
+  ## and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-session.wezterm`
+  declare useMultiplexer, bool, true
+
+  ## Command to use when opening a session in a new window.
+  declare command, Option[string], nil
+
+  ## Command arguments to use when opening a session in a new window.
+  declare args, Option[seq[JsonNodeEx]], nil
 
 declareSettings UiSettings, "ui":
   use background, BackgroundSettings
@@ -1062,6 +1061,8 @@ declareSettings UiSettings, "ui":
 #   declare languages, Table[string, LanguageSettings], initTable[string, LanguageSettings]()
 
 declareSettings GeneralSettings, "editor":
+  use openSession, OpenSessionSettings
+
   ## How often the editor will check for unused documents and close them, in seconds.
   declare closeUnusedDocumentsTimer, int, 10
 
@@ -1095,6 +1096,10 @@ declareSettings GeneralSettings, "editor":
 
   ## Watch the config files in the workspace directory and automatically reload them when they change.
   declare watchWorkspaceConfig, bool, true
+
+  ## If true then the editor will keep a history of opened sessions in home://.nev/sessions.json,
+  ## which enables features like opening a recent session or opening the last session.
+  declare keepSessionHistory, bool, true
 
 declareSettings DebugSettings, "debug":
   ## Log how long it takes to generate the render commands for a text editor.

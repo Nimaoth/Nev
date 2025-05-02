@@ -1,35 +1,40 @@
-# Workspaces
+# Workspace
 
-A workspace represents one or more directories of your project.
+The workspace is a list of directories which are part of you're project.<br>
+The workspace affects features like global search, the file selector etc. These will show/search files in all workspace directories.
 
-Every time you open the editor it will create a workspace. By default this will be a local workspace for the current working directory.
-If you use a session then the session defines the workspace instead.
+Every time you open the editor it will create a workspace. By default this will be the current working directory.
+If a session is opened then the session defines the workspace instead.
 
-There are different kinds of workspaces:
-- Local: This workspace allows you to directly access local files.
-- Remote: This is a remote workspace, so you need to run a server somewhere and then the editor will connect to that server to access the file system.
-- Github (readonly): This workspace uses a Github repository to download files.
+To add directories to you're workspace you can either edit the session file or use the virtual file system explorer (see below).<br>
+When you add a directory to your workspace then it will be mounted in the VFS under a prefix like `ws5://` (each directory has a distinct number).
 
-For now only the local workspace is ready for use (although you can see the Github workspace in action in the browser demo).
+**If you edit a session file while you have that session open then your changes will be overriden when you close Nev**
 
-To configure your workspace you need to create a [session](sessions.md) and edit workspace settings in the session file.
-
-Here is an except from a session file:
+Here is an example from a session file. You can add directories to "additionalPaths":
 ```json
 {
     // ...
-    "workspaceFolders": [ // Although this is an array only one workspace is supported.
-        {
-            "kind": 0, // 0 - Local, 1 - Remote
-            "id": "663f8b0ad15f6f2f4922322a", // Generated automatically, but currently not really used
-            "name": "My workspace", // Name, can be anything
-            "settings": {
-                "path": "/some/path", // Primary workspace folder
-                "additionalPaths": [ // Additional folders which are available for e.g. choose-file command
-                    "/some/other/path"
-                ]
-            }
+    "workspaceFolder": {
+        "name": "My workspace", // Name, can be anything
+        "settings": {
+            "path": "/some/path", // Primary workspace folder
+            "additionalPaths": [ // Additional folders which are available for e.g. choose-file command
+                "/some/other/path"
+            ]
         }
-    ]
+    }
 }
 ```
+
+## Add/Remove workspaces using the VFS explorer
+
+To add a directory to your workspace:
+1. Open the vfs explorer using either the command `explore-files` or by pressing `SPACE gv`
+2. Navigate to the directory you want to add to your workspace and select it using `C-p` and `C-n`
+3. Press `C-a` to add the selected directory to you're workspace
+
+To remove a directory from you're workspace:
+1. Open the VFS explorer
+2. Select the workspace you want to delete (workspace folders look like `ws0`, `ws1` etc)
+3. Press `C-x`

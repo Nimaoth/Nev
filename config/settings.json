@@ -58,6 +58,7 @@
         "\\..talon$": "talon",
         "\\..lua$": "lua",
         "\\..log$": "log",
+        "\\..shell-command-results$": "shell-command-results",
         "nimble..*?\\..paths$": "nim-paths",
         "/(vector|string|thread|iostream)$": "cpp",
         "..+/MSVC/..+/include(/..+?)*/[a-z0-9_]+$": "cpp",
@@ -220,7 +221,7 @@
                     "object"
                 ],
                 "line-comment": "#",
-                "search-regexes": {
+                "+search-regexes": {
                     "goto-definition": "((proc|method|func|template|macro|iterator|type|declare|declareSettings|^var|^let) [[0]]\\b)|(\\b[[0]]\\b.*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))|((type |  +)\\b[[0]]\\b\\*?( \\{.*?)?:.+[^,;]$)",
                     "symbols": "((proc|method|func|template|macro|iterator|type|declare|declareSettings) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))",
                     "workspace-symbols-by-kind": {
@@ -290,7 +291,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-typescript/typescript",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -309,7 +310,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-typescript/tsx",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -361,7 +362,7 @@
                     "/*",
                     "*/"
                 ],
-                "search-regexes": {
+                "+search-regexes": {
                     "goto-definition": [
                         "^\\s*(\\w+[\\*\\s]+)[[0]]\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
                         "^\\s*(typedef\\s+)?(struct|enum|union)\\s+[[0]]"
@@ -400,7 +401,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-c-sharp",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -419,7 +420,7 @@
             "+text": {
                 "treesitter.repository": "tree-sitter/tree-sitter-java",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -438,7 +439,7 @@
             "+text": {
                 "treesitter.repository": "maxxnino/tree-sitter-zig",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -447,7 +448,7 @@
                     "["
                 ],
                 "line-comment": "//",
-                "search-regexes": {
+                "+search-regexes": {
                     "goto-definition": [
                         "fn \\b[[0]]\\b",
                         "\\b[[0]]\\b = (struct|enum|union|@import)"
@@ -467,7 +468,7 @@
             "+text": {
                 "treesitter.repository": "ap29600/tree-sitter-odin",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "=",
@@ -486,7 +487,7 @@
             "+text": {
                 "treesitter.repository": "maxxnino/tree-sitter-json",
                 "tab-width": 4,
-                "indent": "tab",
+                "indent": "tabs",
                 "indent-after": [
                     ":",
                     "{",
@@ -630,6 +631,12 @@
                 "treesitter.repository": "Tudyx/tree-sitter-log"
             }
         },
+        "shell-command-results": {
+            "+text": {
+                "auto-reload": true,
+                "scroll-to-change-on-reload": "last",
+            },
+        },
         "talon": {
             "+text": {
                 "treesitter.repository": "wenkokke/tree-sitter-talon",
@@ -721,5 +728,37 @@
                 ]
             }
         },
+    },
+
+    "editor.shells.powershell": {
+        "command": "powershell",
+        "args": ["-Command"],
+        "eval": false,
+    },
+    "editor.shells.bash": {
+        "command": "bash",
+        "args": ["-c"],
+        "eval": false,
+    },
+    "editor.shells.sh": {
+        "command": "sh",
+        "args": ["-c"],
+        "eval": false,
+    },
+
+    "editor.open-session.tmux": {
+        "env": "TMUX",
+        "command": "tmux",
+        "args": ["split-window", ["exe"] , ["args"], "--terminal"],
+    },
+    "editor.open-session.zellij": {
+        "env": "ZELLIJ",
+        "command": "zellij",
+        "args": ["run", "--", ["exe"] , ["args"], "--terminal"],
+    },
+    "editor.open-session.wezterm": {
+        "env": "WEZTERM_EXECUTABLE",
+        "command": "wezterm",
+        "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
     },
 }

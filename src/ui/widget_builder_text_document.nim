@@ -23,8 +23,6 @@ import nimsumtree/[buffer, rope]
 
 logCategory "widget_builder_text"
 
-proc sign(v: Vec2): Vec2 = vec2(v.x.sign, v.y.sign)
-
 type CursorLocationInfo* = tuple[node: UINode, text: string, bounds: Rect, original: Cursor]
 
 type
@@ -137,7 +135,9 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
 
   let numLinesToShow = min(10, self.hoverText.countLines)
-  let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow.float)
+  let (top, bottom) = (
+    cursorBounds.yh.float - floor(builder.charWidth * 0.5),
+    cursorBounds.yh.float + totalLineHeight * numLinesToShow.float - floor(builder.charWidth * 0.5))
   let height = bottom - top
 
   const docsWidth = 50.0
@@ -146,13 +146,19 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   if clampedX + totalWidth > builder.root.w:
     clampedX = max(builder.root.w - totalWidth, 0)
 
+  let border = ceil(builder.charWidth * 0.5)
+
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
+  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height + border * 2, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
     hoverPanel = currentNode
+
     var textNode: UINode = nil
-    # todo: height
-    builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.hoverScrollOffset, h = 1000, text = self.hoverText, textColor = docsColor):
-      textNode = currentNode
+    builder.panel(&{SizeToContentX}, x = border, y = border, w = 0, h = height):
+      # todo: height
+      builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.hoverScrollOffset, w = 0, h = 1000, text = self.hoverText, textColor = docsColor):
+        textNode = currentNode
+
+    currentNode.w = currentNode.w + border
 
     onScroll:
       let scrollSpeed = self.config.get("text.hover-scroll-speed", 20.0)
@@ -506,7 +512,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           fillRect(cursorBounds, cursorForegroundColor)
           if isThickCursor:
             let currentRune = self.document.runeAt(s.last)
-            if currentRune != 0.Rune:
+            if currentRune != 0.Rune and currentRune.int >= ' '.int:
               drawText($currentRune, charBounds, cursorBackgroundColor, 0.UINodeFlags)
 
         self.lastCursorLocationBounds = (cursorBounds + currentNode.boundsAbsolute.xy).some
@@ -525,7 +531,7 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           state.cursorOnScreen = true
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
-          self.lastHoverLocationBounds = state.chunkBounds[lastIndexDisplay].bounds.some
+          self.lastHoverLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
 
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode,
     selectionsNode: UINode, lineNumbersNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
@@ -543,13 +549,13 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   let parentWidth = if sizeToContentX:
     # todo
-    (self.document.rope.len + 1).clamp(1, 200).float * builder.charWidth
+    min((self.document.rope.len + 1).clamp(1, 200).float * builder.charWidth, builder.currentMaxBounds().x)
   else:
     currentNode.bounds.w
 
   let parentHeight = if sizeToContentY:
     # todo
-    self.numDisplayLines.clamp(1, 200).float * builder.textHeight
+    min(self.numDisplayLines.clamp(1, 200).float * builder.textHeight, builder.currentMaxBounds().y)
   else:
     currentNode.bounds.h
 
@@ -621,7 +627,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
   let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
   var changedTextBackgroundColor = app.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
-  let commentColor = app.theme.tokenColor("comment", textColor)
 
   let cursorLine = self.selection.last.line
   let cursorDisplayLine = self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int
@@ -693,7 +698,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     builder: builder,
     displayMap: self.displayMap,
     bounds: rect(mainOffset, 0, width, parentHeight),
-    offset: vec2(mainOffset + scrollOffset.x, scrollOffset.y - startLineOffsetFromScrollOffset + (iter.displayPoint.row.int - startLine).float * builder.textHeight),
+    offset: vec2(mainOffset + scrollOffset.x, scrollOffset.y - startLineOffsetFromScrollOffset + (iter.displayPoint.row.int - startLine).float * builder.textHeight).floor,
     lastDisplayPoint: iter.displayPoint,
     lastDisplayEndPoint: iter.displayPoint,
     lastPoint: iter.point,
@@ -705,7 +710,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     builder: builder,
     displayMap: self.diffDisplayMap,
     bounds: rect(0, 0, width, parentHeight),
-    offset: vec2(-scrollOffset.x, scrollOffset.y - startLineOffsetFromScrollOffset + (diffIter.displayPoint.row.int - startLine).float * builder.textHeight),
+    offset: vec2(-scrollOffset.x, scrollOffset.y - startLineOffsetFromScrollOffset + (diffIter.displayPoint.row.int - startLine).float * builder.textHeight).floor,
     lastDisplayPoint: diffIter.displayPoint,
     lastDisplayEndPoint: diffIter.displayPoint,
     lastPoint: diffIter.point,
@@ -745,7 +750,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           for i in val[].mitems:
             let i = i
             let diagnostic {.cursor.} = self.document.currentDiagnostics[i]
-            let message = "     ■ " & diagnostic.message[0..<min(diagnostic.message.len, 100)]
+            let nlIndex = diagnostic.message.find("\n")
+            var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
+            maxIndex = min(maxIndex, 100)
+            var message = "     ■ " & diagnostic.message[0..<maxIndex]
+            if maxIndex < diagnostic.message.len:
+              message.add "..."
             let width = message.runeLen.float * builder.charWidth # todo: measure text
             let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
             of lsp_types.DiagnosticSeverity.Error: errorColor
@@ -857,8 +867,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           color: backgroundColor.lighten(0.05)))
         addedCursorLineBackground = true
 
+      # todo: this sometimes happens for a frame or two, probably because some data structures are in an invalid state
+      # which causes an infinte loop here.
+      # Just breaking and trying again will be fine for now, but the root cause should be fixed.
       if state.chunkBounds.len > 10000:
-        log lvlError, "Rendering too much text, your font size is too small or there is a bug"
+        log lvlWarn, "Rendering too much text, your font size is too small or there is a bug"
         break
 
       case drawChunk(chunk, state)

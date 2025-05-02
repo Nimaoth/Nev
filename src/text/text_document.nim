@@ -123,8 +123,12 @@ declareSettings TextSettings, "text":
   ##
   declare completionWordChars, RuneSetSetting, %%*[["a", "z"], ["A", "Z"], ["0", "9"], "_"]
 
-  ## Whether to used spaces or tabs for indentation.
+  ## Whether to used spaces or tabs for indentation. When indent detection is enabled then this only specfies the default
+  ## for new files and files where the indentation type can't be detected automatically.
   declare indent, IndentStyleKind, IndentStyleKind.Spaces
+
+  ## If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes).
+  declare autoReload, bool, false
 
 type
 
@@ -154,7 +158,7 @@ type
 
     onRequestRerender*: Event[void]
     onPreLoaded*: Event[TextDocument]
-    onLoaded*: Event[TextDocument]
+    onLoaded*: Event[tuple[document: TextDocument, changed: seq[Selection]]]
     onSaved*: Event[void]
     textChanged*: Event[TextDocument]
     onEdit*: Event[tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]]
@@ -174,8 +178,6 @@ type
     completionTriggerCharacters*: set[char] = {}
 
     nextCheckpoints: seq[string]
-
-    autoReload*: bool
 
     currentContentFailedToParse: bool
     tsLanguage: TSLanguage
@@ -201,6 +203,7 @@ type
     checkpoints: Table[TransactionId, seq[string]]
 
     settings*: TextSettings
+    fileWatchHandle: VFSWatchHandle
 
 var allTextDocuments*: seq[TextDocument] = @[]
 
@@ -212,6 +215,7 @@ proc resolveDiagnosticAnchors*(self: TextDocument)
 proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
+proc enableAutoReload*(self: TextDocument, enabled: bool)
 
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
@@ -339,7 +343,8 @@ proc reparseTreesitterAsync*(self: TextDocument) {.async.} =
           # We already tried to parse the current content and it failed, don't try again
           return
 
-        parser.setLanguage(self.tsLanguage)
+        if not parser.setLanguage(self.tsLanguage):
+          return
 
         var oldLanguage = self.tsLanguage
         let oldBufferId = self.buffer.remoteId
@@ -760,6 +765,9 @@ proc newTextDocument*(
 
 method deinit*(self: TextDocument) =
   # logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
+
+  self.fileWatchHandle.unwatch()
+
   if self.currentTree.isNotNil:
     self.currentTree.delete()
   self.highlightQuery = nil
@@ -870,7 +878,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   # log lvlInfo, &"[Text_document] Detected indent: {self.settings.indent.get()}, {self.settings.tabWidth.get()}"
 
-proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.} =
+proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]] {.async.} =
   if self.settings.diffReload.enable.get():
     let diffTimeout = self.settings.diffReload.timeout.get()
     let t = startTimer()
@@ -890,12 +898,15 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.
           selections.add (a.toCursor, b.toCursor)
           texts.add edit.text.clone()
 
-        discard self.edit(selections, [], texts)
+        result = self.edit(selections, [], texts)
 
-      when defined(appCheckDiffReload):
-        if $self.rope != $rope:
-          log lvlError, &"Failed diff: {self.rope.len} != {rope.len}"
-          self.replaceAll(rope.move)
+        when defined(appCheckDiffReload):
+          if $self.rope != $rope:
+            log lvlError, &"Failed diff: {self.rope.len} != {rope.len}: {selections}, {texts}"
+            self.replaceAll(rope.move)
+            return @[((0, 0), (self.rope.endPoint.toCursor))]
+
+        return
 
     except AsyncTimeoutError:
       log lvlDebug, &"Timeout after {t.elapsed.ms} ms"
@@ -903,6 +914,8 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[void] {.async.
 
   else:
     self.replaceAll(rope.move)
+
+  return @[((0, 0), (self.rope.endPoint.toCursor))]
 
 proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
   logScope lvlInfo, &"loadAsync '{self.filename}', reload = {isReload}"
@@ -923,10 +936,16 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
 
   self.onPreLoaded.invoke self
 
-  if isReload:
+  let changedRegions = if isReload:
     await self.reloadFromRope(rope.clone())
   else:
     self.content = rope.clone()
+    @[((0, 0), (self.rope.endPoint.toCursor))]
+
+  if self.settings.autoReload.get():
+    self.enableAutoReload(true)
+  else:
+    self.fileWatchHandle.unwatch()
 
   if self.vfs.getFileAttributes(self.filename).await.mapIt(it.writable).get(true):
     self.readOnly = false
@@ -935,34 +954,35 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
 
   self.lastSavedRevision = self.undoableRevision
   self.isLoadingAsync = false
-  self.onLoaded.invoke self
+  self.onLoaded.invoke (self, changedRegions)
 
 proc setReadOnly*(self: TextDocument, readOnly: bool) =
   ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
   self.readOnly = readOnly
 
-proc reloadTask(self: TextDocument) {.async.} =
-  defer:
-    self.autoReload = false
-
-  # todo
-  # var lastModTime = getLastModificationTime(self.filename)
-  # while self.autoReload and not self.workspace.isNone:
-  #   var modTime = getLastModificationTime(self.filename)
-  #   # if times.`>`(modTime, lastModTime):
-  #     # lastModTime = modTime
-  #     # log lvlInfo, &"File '{self.filename}' changed on disk, reload"
-  #     # await self.loadAsync(self.workspace.get, false)
-
-  #   await sleepAsync(1000.milliseconds)
-
 proc enableAutoReload*(self: TextDocument, enabled: bool) =
-  if not self.autoReload and enabled:
-    self.autoReload = true
-    asyncSpawn self.reloadTask()
-    return
+  self.settings.autoReload.set(enabled)
+  if enabled and (not self.fileWatchHandle.isBound or self.fileWatchHandle.path != self.filename):
+    self.fileWatchHandle.unwatch()
+    self.fileWatchHandle = self.vfs.watch(self.filename, proc(events: seq[PathEvent]) =
+      if not self.isInitialized or not self.settings.autoReload.get():
+        return
+      let isDirty = self.lastSavedRevision != self.revision
+      if isDirty:
+        return
+      for e in events:
+        case e.action
+        of Modify:
+          asyncSpawn self.loadAsync(true)
+          break
 
-  self.autoReload = enabled
+        else:
+          discard
+    )
+    self.fileWatchHandle.path = self.filename
+
+  elif not enabled:
+    self.fileWatchHandle.unwatch()
 
 proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.async.} =
   ## Tries to set the underlying file permissions
@@ -995,7 +1015,8 @@ proc setFileAndContent*[S: string | Rope](self: TextDocument, filename: string, 
   self.content = content.move
 
   self.autoDetectIndentStyle()
-  self.onLoaded.invoke self
+  let changedRegions = @[((0, 0), (self.rope.endPoint.toCursor))]
+  self.onLoaded.invoke (self, changedRegions)
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: self.vfs.normalize(filename) else: self.filename
@@ -1042,7 +1063,7 @@ proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
         log lvlError, &"[format] Failed to load file {tempFile}: {e.msg}\n{e.getStackTrace()}"
         return
 
-      await self.reloadFromRope(rope.clone())
+      discard await self.reloadFromRope(rope.clone())
 
     else:
       discard await runProcessAsync(formatterPath, formatterArgs & @[self.localizedPath])

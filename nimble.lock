@@ -64,13 +64,13 @@
       }
     },
     "zippy": {
-      "version": "0.10.12",
-      "vcsRevision": "007f70335dcd3a3ff2f9300f404ab22454dcc8c4",
-      "url": "https://github.com/guzba/zippy",
+      "version": "0.10.17",
+      "vcsRevision": "ab4d3d52e966b725cad2468aa0594da5db7fa2ac",
+      "url": "https://github.com/Nimaoth/zippy",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "88baafc3678bcd566f37efcb92b8e9357d75b294"
+        "sha1": "be016c6a727ab9f1a6ef0645cc22442b0473c294"
       }
     },
     "flatty": {
@@ -118,8 +118,8 @@
       }
     },
     "pixie": {
-      "version": "5.0.9",
-      "vcsRevision": "16d28531b59c0239e9f66d15f07e3ae6e4db0491",
+      "version": "5.0.10",
+      "vcsRevision": "7168ac52824fe2d3ad59171f8fb3b496add20e4d",
       "url": "https://github.com/Nimaoth/pixie",
       "downloadMethod": "git",
       "dependencies": [
@@ -132,7 +132,7 @@
         "crunchy"
       ],
       "checksums": {
-        "sha1": "001a5e30d0ff33f70d3dc9144a9c825a777e2316"
+        "sha1": "de520769c4dfc49ca347037c20b9e18cde18410a"
       }
     },
     "shady": {
@@ -337,23 +337,23 @@
       }
     },
     "nimsumtree": {
-      "version": "0.5.5",
-      "vcsRevision": "9173196152f8d9c80589986209880a48b4b03fe3",
+      "version": "0.5.6",
+      "vcsRevision": "c2ec0131437fdb25ebb225eb3aa016b36c8d39e5",
       "url": "https://github.com/Nimaoth/nimsumtree",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "a9a1752e17a339cfbf54ac5f33580ed54f949312"
+        "sha1": "59a92243a8551eda2ab85a1e250d2540ac02edc5"
       }
     },
     "nimtreesitter": {
-      "version": "0.1.6",
-      "vcsRevision": "8e0af3c1efecfd624a169790d29a8b5e0b11edd6",
+      "version": "0.1.11",
+      "vcsRevision": "5de1b7516a3c0c83a4fd0c2ae71c86ebd489594e",
       "url": "https://github.com/Nimaoth/nimtreesitter",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "27ee351ba63063becf7b2739597dfc778634a4f0"
+        "sha1": "fffea283daf0cca37fbd70b7f1af94de06cc613b"
       }
     },
     "nimwasmtime": {

@@ -9,14 +9,19 @@ For examples and default values see [here](../config/settings.json)
 | `editor.clear-input-history-delay` | int | 3000 | After how many milliseconds of no input the input history is cleared. |
 | `editor.close-unused-documents-timer` | int | 10 | How often the editor will check for unused documents and close them, in seconds. |
 | `editor.custom-mode-on-top` | bool | true | If true then the app mode event handler (if the app mode is not "") will be on top of the event handler stack, otherwise it will be at the bottom (but still above the "editor" event handler. |
+| `editor.keep-session-history` | bool | true | If true then the editor will keep a history of opened sessions in home://.nev/sessions.json, which enables features like opening a recent session or opening the last session. |
 | `editor.max-search-result-display-len` | int | 1000 | Max length of each individual search result (search results are cut off after this value). |
 | `editor.max-search-results` | int | 1000 | Max number of search results returned by global text based search. |
+| `editor.open-session.args` | JsonNodeEx[] \| null | null | Command arguments to use when opening a session in a new window. |
+| `editor.open-session.command` | string \| null | null | Command to use when opening a session in a new window. |
+| `editor.open-session.use-multiplexer` | bool | true | If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment variables) and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-session.wezterm` |
 | `editor.print-statistics-on-shutdown` | bool | false | If true the editor prints memory usage statistics when quitting. |
 | `editor.record-input-history` | bool | false | Whether the editor shows a history of the last few pressed buttons in the status bar. |
 | `editor.watch-app-config` | bool | true | Watch the config files in the app directory and automatically reload them when they change. |
 | `editor.watch-theme` | bool | true | Watch the theme directory for changes to the theme. |
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
+| `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.auto-start-language-server` | bool | true | If true then configured language servers are automatically started when opening a file of the specific language for the first time. |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
 | `text.color-highlight.enable` | bool | false | Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language in `text.color-highlight.{language-id}.` |
@@ -40,23 +45,24 @@ For examples and default values see [here](../config/settings.json)
 | `text.highlight-matches.delay` | int | 250 | How long after moving the cursor matching text is highlighted. |
 | `text.highlight-matches.enable` | bool | true | Enable highlighting of text matching the current selection or word containing the cursor (if the selection is empty). |
 | `text.highlight-matches.max-file-size` | int | 104857600 | Don't highlight matching text in files above this size (in bytes). |
-| `text.highlight-matches.max-selection-length` | int | 1024 | Don't higlight matching text if the selection spans more bytes than this. |
-| `text.highlight-matches.max-selection-lines` | int | 5 | Don't higlight matching text if the selection spans more lines than this. |
+| `text.highlight-matches.max-selection-length` | int | 1024 | Don't highlight matching text if the selection spans more bytes than this. |
+| `text.highlight-matches.max-selection-lines` | int | 5 | Don't highlight matching text if the selection spans more lines than this. |
 | `text.hover-delay` | int | 200 | How many milliseconds after hovering a word the lsp hover request is sent. |
-| `text.inclusive-selection` | bool | false | How often the editor will check for unused documents and close them, in seconds. |
-| `text.indent` | "tabs" \| "spaces" | "spaces" | Whether to used spaces or tabs for indentation. |
+| `text.inclusive-selection` | bool | false | Specifies whether a selection includes the character after the end cursor. If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello". If false then the selected text would be "Hell". If you use Vim motions then the Vim plugin manages this setting. |
+| `text.indent` | "tabs" \| "spaces" | "spaces" | Whether to used spaces or tabs for indentation. When indent detection is enabled then this only specfies the default for new files and files where the indentation type can't be detected automatically. |
 | `text.indent-after` | string[] \| null | null | When you insert a new line, if the current line ends with one of these strings then the new line will be indented. |
 | `text.indent-detection.enable` | bool | true | Enable auto detecting the indent style when opening files. |
 | `text.indent-detection.samples` | int | 50 | How many indent characters to process when detecting the indent style. Increase this if it fails for files which start with many unindented lines. |
 | `text.indent-detection.timeout` | int | 20 | Max number of milliseconds to spend trying to detect the indent style. |
 | `text.line-comment` | string \| null | null | String which starts a line comment |
-| `text.scroll-speed` | float | 40 | How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines, depending on `text.cursor-margin-relative`. |
+| `text.scroll-to-change-on-reload` | "first" \| "last" \| null | null | If not null then scroll to the changed region when a file is reloaded. |
 | `text.search-regexes.goto-declaration` | regex \| null | null | Regex to use when using the goto-declaration feature. |
 | `text.search-regexes.goto-definition` | regex \| null | null | Regex to use when using the goto-definition feature. |
 | `text.search-regexes.goto-implementation` | regex \| null | null | Regex to use when using the goto-implementation feature. |
 | `text.search-regexes.goto-references` | regex \| null | null | Regex to use when using the goto-references feature. |
 | `text.search-regexes.goto-type-definition` | regex \| null | null | Regex to use when using the goto-type-definition feature. |
 | `text.search-regexes.rg-language` | string \| null | null | Override the ripgrep language name. By default the documents language id is used. |
+| `text.search-regexes.show-only-matching-part` | bool | true | If true then the search results will only show the part of a line that matched the regex. If false then the entire line is shown. |
 | `text.search-regexes.symbols` | regex \| null | null | Regex to use when using the symbols feature. |
 | `text.search-regexes.workspace-symbols` | regex \| null | null | Regex to use when using the workspace-symbols feature. |
 | `text.search-regexes.workspace-symbols-by-kind` | { [key: string]: regex } \| null | null | Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex. |

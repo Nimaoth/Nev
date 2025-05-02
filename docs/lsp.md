@@ -2,13 +2,13 @@
 
 ## Installation
 
-Language servers currently have to be installed manually. If you already have a language server installed through another editor (e.g. VSCode, NeoVim etc.) then you should be able to use that version aswell.
+Language servers currently have to be installed manually. If you already have a language server installed through another editor (e.g. VSCode, NeoVim etc.) then you should be able to use that version as well.
 
 ## Configuration
 
 Configuration for language servers should be put in the user settings (`~/.nev/settings.json`) or the workspace settings (`{workspace_dir}/.nev/settings.json`)
 
-Some language servers are already configured in the [app settings](../config/settings.json), so when you add you're own language server configuration make sure to use `"+lsp"` to extend the lsp configurations, unless you want to completely override the defaults:
+Some language servers are already configured in the [app settings](../config/settings.json), so when you add you're own language server configuration make sure to use `"+lsp"` to extend the LSP configurations, unless you want to completely override the defaults:
 - `nim`: `nimlangserver`
 - `C`: `clangd`
 - `C++`: `clangd`
@@ -26,7 +26,17 @@ Some language servers are already configured in the [app settings](../config/set
             "path": "clangd", // Absolute path of the language server, or just the name if it's in the PATH
             "args": [ // List of command line arguments passed to the language server
                 "--offset-encoding=utf-8"
-            ]
+            ],
+
+
+            // Windows only:
+            // Usually an LSP server should terminate itself when the client disconnects unexpectedly (e.g. because of a crash)
+            // but some LSP servers don't do that. This setting enables using windows jobs to put LSP subprocesses into the same
+            // job as the editor, so that when the editor process terminates in any way the LSP processes will be terminated
+            // as well. If you use an LSP server which e.g. caches some things and terminating it forcefully could corrupt those
+            // caches then you should disable this.
+            // This is enabled by default.
+            "kill-on-exit": false,
         },
 
         "nim": { // Add/override nim settings
@@ -53,28 +63,24 @@ Some language servers are already configured in the [app settings](../config/set
                 "linkedProjects": "path/to/Cargo.toml"
             }
         },
+    },
 
-        "zig": { // Add/override nim settings
-            "path": "zls",
-            "settings": { // LSP specific configuration.
-                "zls": {
-                    "enable_snippets": true,
-                    "enable_argument_placeholders": true,
-                    "enable_build_on_save": false
-                }
+    // Or use the short form:
+    "lsp.zig": {
+        "path": "zls",
+        "settings": { // LSP specific configuration.
+            "zls": {
+                "enable_snippets": true,
+                "enable_argument_placeholders": true,
+                "enable_build_on_save": false
             }
         }
     },
 
-    "+editor": { // use `+` because we want to extend this section
-        "+text": { // use `+` because we want to extend this section
-
-            // If true then text documents immediately try to connect to or start a language server when opened.
-            // If false then text documents will only connect to or start a language server when a command is run
-            // which accesses the language server (e.g. goto-definition or goto-symbol)
-            "auto-start-language-server": false, // Default: true
-        }
-    }
+    // If true then text documents immediately try to connect to or start a language server when opened.
+    // If false then text documents will only connect to or start a language server when a command is run
+    // which accesses the language server (e.g. goto-definition or goto-symbol)
+    "text.auto-start-language-server": false, // Default: true
 }
 ```
 
@@ -146,9 +152,9 @@ Here is an example configuration for Nim which defines two regexes, one for goto
 }
 ```
 
-Given this configuration, when you press `gs` (in normal mode) in a nim file, the editor will use the regex `languages.nim.search-regexes.symbols` to search the current file and display the results in a popup.
+Given this configuration, when you press `gs` (in normal mode) in a Nim file, the editor will use the regex `languages.nim.search-regexes.symbols` to search the current file and display the results in a popup.
 
-When you press `gd` (in normal mode) in a nim file, the editor will use the regex `languages.nim.search-regexes.goto-definition` to search all workspaces. If only one result is found, the editor will open it immediately, otherwise all results are displayed in a popup.
+When you press `gd` (in normal mode) in a Nim file, the editor will use the regex `languages.nim.search-regexes.goto-definition` to search all workspaces. If only one result is found, the editor will open it immediately, otherwise all results are displayed in a popup.
 
 For `goto-definition`, `goto-declaration`, `goto-type-definition`, `goto-implementation` and `goto-references` the regex is a template, and any instances of the string `[[0]]` will be replaced by the word under the cursor.
 

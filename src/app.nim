@@ -1,4 +1,4 @@
-import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex]
 import ui/node
@@ -31,7 +31,8 @@ from scripting_api import Backend
 logCategory "app"
 
 const configDirName = "." & appName
-const defaultSessionName = &".{appName}-session"
+const sessionExtension = &".{appName}-session"
+const defaultSessionName = sessionExtension
 const appConfigDir = "app://config"
 const homeConfigDir = "home://" & configDirName
 const workspaceConfigDir = "ws0://" & configDirName
@@ -54,7 +55,6 @@ type OpenEditor = object
 type
   # todo: this isn't necessary anymore
   OpenWorkspace = object
-    id*: string
     name*: string
     settings*: JsonNode
 
@@ -67,7 +67,7 @@ type EditorState = object
   fontBoldItalic: string
   fallbackFonts: seq[string]
   layout: string
-  workspaceFolders: seq[OpenWorkspace]
+  workspaceFolder: OpenWorkspace
   openEditors: seq[OpenEditor]
   hiddenEditors: seq[OpenEditor]
   commandHistory: seq[string]
@@ -324,11 +324,53 @@ proc setupDefaultKeybindings(self: App) =
   selectorPopupConfig.addCommand("", "<C-u>", "prev-x")
   selectorPopupConfig.addCommand("", "<C-d>", "next-x")
 
+proc getRecentSessions(self: App): Future[seq[string]] {.async.} =
+  try:
+    let lastSessionsJson = await self.vfs.read(homeConfigDir // "sessions.json")
+    let lastSessions = lastSessionsJson.parseJson()
+    if lastSessions.kind != JArray:
+      log lvlError, &"Failed to restore last session: sessions.json must contain an array of strings"
+      return @[]
+
+    for session in lastSessions.elems:
+      if session.kind != JString:
+        log lvlError, &"sessions.json contains invalid session: {session}. Expected string."
+        continue
+
+      result.add session.getStr()
+
+  except:
+    log lvlError, &"Failed to restore last session: {getCurrentExceptionMsg()}"
+    return @[]
+
+proc addSessionToRecentSessions(self: App, session: string) {.async.} =
+  try:
+    var recentSessions = await self.getRecentSessions()
+    let i = recentSessions.find(session)
+    if i != -1:
+      recentSessions.removeShift(i)
+    recentSessions.add(session)
+    log lvlInfo, &"Add session to recent sessions: {session} -> {recentSessions.toJson.pretty}"
+    await self.vfs.write(homeConfigDir // "sessions.json", recentSessions.toJson().pretty)
+  except:
+    log lvlError, &"Failed to update recent sessions: {getCurrentExceptionMsg()}"
+
 proc restoreStateFromConfig*(self: App, state: ptr EditorState) {.async: (raises: []).} =
   try:
+    if self.generalSettings.keepSessionHistory.get():
+      await self.addSessionToRecentSessions(self.sessionFile)
+
     let stateJson = self.vfs.read(self.sessionFile).await.parseJson
 
     state[] = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+
+    if stateJson.hasKey("workspaceFolders"):
+      try:
+        log lvlError, &"Old session file found"
+        state[].workspaceFolder = stateJson["workspaceFolders"][0].jsonTo(OpenWorkspace, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+      except:
+        discard
+
     log(lvlInfo, fmt"Restoring session {self.sessionFile}")
 
     if not state[].layout.isEmptyOrWhitespace:
@@ -712,7 +754,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.commands.languageServerCommandLine = newLanguageServerCommandLine(self.services)
   let commandLineTextDocument = newTextDocument(self.services, language="command-line".some, languageServer=self.commands.languageServerCommandLine.some)
-  self.editors.documents.add commandLineTextDocument
   self.commands.commandLineEditor = newTextEditor(commandLineTextDocument, self.services)
   self.commands.commandLineEditor.renderHeader = false
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
@@ -723,6 +764,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.TextDocumentEditor.settings.cursorMargin.set(0.0)
   self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
   discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
+  self.editors.documents.add commandLineTextDocument
   self.editors.commandLineEditor = self.commands.commandLineEditor
   self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
     if command.isSome:
@@ -792,6 +834,13 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
           if fileExists(path // defaultSessionName):
             self.sessionFile = path // defaultSessionName
 
+    elif options.restoreLastSession:
+      let lastSessions = await self.getRecentSessions()
+      if lastSessions.len == 0:
+        log lvlError, &"Failed to restore last session: No last session found."
+      else:
+        self.sessionFile = lastSessions.last
+
     elif fileExists(defaultSessionName):
       self.sessionFile = os.absolutePath(defaultSessionName).normalizePathUnix
 
@@ -817,13 +866,11 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   # if self.runtime.get("command-server.port", Port.none).getSome(port):
   #   asyncSpawn self.listenForConnection(port)
 
-  for i, wf in state.workspaceFolders:
-    log(lvlInfo, fmt"Restoring workspace")
-    self.workspace.restore(wf.settings)
-
-    if i == 0:
-      self.config.groups.add(workspaceConfigDir)
-      await self.loadConfigFrom(workspaceConfigDir, "workspace")
+  log(lvlInfo, fmt"Restoring workspace")
+  if state.workspaceFolder.settings != nil:
+    self.workspace.restore(state.workspaceFolder.settings)
+    self.config.groups.add(workspaceConfigDir)
+    await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.path == "":
@@ -835,7 +882,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   await self.setTheme(self.uiSettings.theme.get())
 
   if self.generalSettings.watchTheme.get():
-    self.vfs.watch "app://themes", proc(events: seq[PathEvent]) =
+    discard self.vfs.watch("app://themes", proc(events: seq[PathEvent]) =
       for e in events:
         case e.action
         of Modify:
@@ -844,23 +891,27 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
         else:
           discard
+    )
 
   if self.generalSettings.watchAppConfig.get():
-    self.vfs.watch appConfigDir, proc(events: seq[PathEvent]) =
+    discard self.vfs.watch(appConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
+    )
 
   if self.generalSettings.watchUserConfig.get():
-    self.vfs.watch homeConfigDir, proc(events: seq[PathEvent]) =
+    discard self.vfs.watch(homeConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
+    )
 
   if self.generalSettings.watchWorkspaceConfig.get():
-    self.vfs.watch workspaceConfigDir, proc(events: seq[PathEvent]) =
+    discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
+    )
 
-  let onRuntimeConfigChangedHandle = self.config.runtime.onConfigChanged.subscribe proc(key: string) =
+  discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
     if key == "" or key == "ui" or key == "ui.theme":
       self.reloadThemeFromConfig = true
 
@@ -876,7 +927,10 @@ proc finishInitialization*(self: App, state: EditorState) {.async.} =
   # Restore open editors
   if self.appOptions.fileToOpen.getSome(filePath):
     try:
-      discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+      let path = os.absolutePath(filePath).normalizePathUnix
+      if self.vfs.getFileKind(path).await.getSome(kind):
+        if kind == FileKind.File:
+          discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
     except CatchableError as e:
       log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
@@ -986,9 +1040,15 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
   if workspace:
     await self.loadKeybindings(workspaceConfigDir, loadConfigFileFrom)
 
-proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false)
+proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false, wait: bool = false)
     {.expose("editor").} =
-  asyncSpawn self.reapplyConfigKeybindingsAsync(app, home, workspace)
+  if wait:
+    try:
+      waitFor self.reapplyConfigKeybindingsAsync(app, home, workspace)
+    except:
+      discard
+  else:
+    asyncSpawn self.reapplyConfigKeybindingsAsync(app, home, workspace)
 
 proc runExternalCommand*(self: App, command: string, args: seq[string] = @[], workingDir: string = "") {.expose("editor").} =
   proc handleOutput(line: string) {.gcsafe.} =
@@ -1087,8 +1147,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   #   state.layout = "fibonacci"
 
   # Save open workspace folders
-  state.workspaceFolders.add OpenWorkspace(
-    id: $self.workspace.id,
+  state.workspaceFolder = OpenWorkspace(
     name: self.workspace.name,
     settings: self.workspace.settings
   )
@@ -1299,6 +1358,131 @@ proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor")
 
 proc vsync*(self: App, enabled: bool) {.expose("editor").} =
   self.platform.setVsync(enabled)
+
+proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
+  try:
+    let path = self.vfs.localize(session)
+    let exe = paramStr(0)
+    log lvlInfo, &"loadSessionAsync '{path}', close = {close}, exe = '{exe}'"
+    var (args, workingDir) = if path.endsWith(sessionExtension):
+      (@["--session=" & path], path.splitPath.head)
+    else:
+      (@[path], path)
+
+    var customCommandKey = ""
+    var customCommand = ""
+    var customArgsRaw = newSeq[JsonNodeEx]()
+    if self.getBackend() == Terminal and self.generalSettings.openSession.useMultiplexer.get():
+      let multiplexers = self.config.runtime.get("editor.open-session", newJexObject())
+      if multiplexers != nil and multiplexers.kind == JObject:
+        try:
+          for key, value in multiplexers.fields.pairs:
+            if value.kind == JObject and value.hasKey("env"):
+              let envName = value["env"]
+              if envName.kind == JString and existsEnv(envName.getStr):
+                customCommand = self.config.runtime.get(&"editor.open-session.{key}.command", "")
+                customArgsRaw = self.config.runtime.get(&"editor.open-session.{key}.args", newSeq[JsonNodeEx]())
+                break
+        except:
+          log lvlError, &"Invalid config 'editor.open-session': {getCurrentExceptionMsg()}"
+
+    if customCommand.len == 0:
+      customCommand = self.generalSettings.openSession.command.get("")
+      customArgsRaw = self.generalSettings.openSession.args.get(@[])
+
+    if customCommand.len > 0:
+      var customArgs = newSeq[string]()
+      for arg in customArgsRaw:
+        if arg.kind == JString:
+          customArgs.add arg.getStr
+        elif arg.kind == JArray and arg.elems.len == 1 and arg.elems[0].kind == JString:
+          case arg[0].getStr
+          of "exe":
+            customArgs.add exe
+          of "args":
+            customArgs.add args
+
+      log lvlInfo, &"Open session using '{customCommand} {customArgs}'"
+      let process = startProcess(customCommand, args = customArgs, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
+
+    else:
+      log lvlInfo, &"Open session using '{exe} {args}'"
+      let process = startProcess(exe, args = args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
+    if close:
+      self.quit()
+  except:
+    log lvlError, &"Failed to load session '{session}': {getCurrentExceptionMsg()}"
+
+proc openSession*(self: App, root: string = "home://", preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
+    let sessions = await self.vfs.findFiles(root, r".nev-session$", options = FindFilesOptions(maxDepth: 2))
+    var items = newSeq[FinderItem]()
+
+    for file in sessions:
+      items.add FinderItem(
+        displayName: file,
+        data: root // file,
+      )
+
+    return newItemList(items)
+
+  let source = newAsyncCallbackDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  let previewer = if preview:
+    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+  else:
+    DisposableRef[Previewer].none
+
+  var popup = newSelectorPopup(self.services, "sessions".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    asyncSpawn self.loadSessionAsync(item.data, false)
+    return true
+
+  self.layout.pushPopup popup
+
+proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
+  proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
+    var items = newSeq[FinderItem]()
+
+    try:
+      let lastSessions = await self.getRecentSessions()
+      for i in countdown(lastSessions.high, 0):
+        let session = lastSessions[i]
+        items.add FinderItem(
+          displayName: session,
+          data: session,
+        )
+
+    except:
+      log lvlError, &"Failed to restore last session: {getCurrentExceptionMsg()}"
+
+    return newItemList(items)
+
+  let source = newAsyncCallbackDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  let previewer = if preview:
+    newFilePreviewer(self.vfs, self.services, reuseExistingDocuments = false).Previewer.toDisposableRef.some
+  else:
+    DisposableRef[Previewer].none
+
+  var popup = newSelectorPopup(self.services, "recent-sessions".some, finder.some, previewer)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    asyncSpawn self.loadSessionAsync(item.data, false)
+    return true
+
+  self.layout.pushPopup popup
 
 proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
@@ -1524,7 +1708,6 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     )
 
     for (key, value) in settings.getAllKeys():
-      let valueStr = $value
       let sourceStore = self.config.getStoreForId(value.userData)
       let desc = self.config.getSettingDescription(key)
       var data = ""
@@ -1743,11 +1926,6 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     return true
 
   self.layout.pushPopup popup
-
-proc openLastEditor*(self: App) {.expose("editor").} =
-  if self.layout.hiddenViews.len > 0:
-    let view = self.layout.hiddenViews.pop()
-    self.layout.addView(view, addToHistory=false, append=false)
 
 proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("editor").} =
   defer:
@@ -2337,6 +2515,52 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
           self.createFile(dir // path)
     return true
 
+  popup.addCustomCommand "create-directory", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    self.commands.openCommandLine "", proc(command: Option[string]): Option[string] =
+      if command.getSome(path):
+        let pathAbs = if path.isAbsolute: path else: dir // path
+        self.vfs.createDir(pathAbs).thenItOrElse:
+          source.retrigger()
+        do:
+          let e = err
+          log lvlError, &"Failed to create directory '{pathAbs}': {e.msg}"
+    return true
+
+  popup.addCustomCommand "delete-file-or-dir", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      self.vfs.delete(fileInfo.path).thenItOrElse:
+        source.retrigger()
+      do:
+        let e = err
+        log lvlError, &"Failed to delete '{fileInfo.path}': {e.msg}"
+    return true
+
+  popup.addCustomCommand "create-new-session", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      asyncSpawn self.loadSessionAsync(fileInfo.path, false)
+    return true
+
+  popup.addCustomCommand "open-session", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let dir = currentDirectory[]
+    if popup.getSelectedItem().getSome(item):
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      asyncSpawn self.loadSessionAsync(fileInfo.path, false)
+    return true
+
   self.layout.pushPopup popup
 
 proc exploreWorkspacePrimary*(self: App) {.expose("editor").} =
@@ -2432,6 +2656,8 @@ proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
     self.sessionFile = os.absolutePath(sessionFile).normalizePathUnix
     self.saveAppState()
     self.requestRender()
+    if self.generalSettings.keepSessionHistory.get():
+      asyncSpawn self.addSessionToRecentSessions(self.sessionFile)
   except Exception as e:
     log lvlError, &"Failed to save session: {e.msg}\n{e.getStackTrace()}"
 
@@ -2910,7 +3136,7 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
 
             return res.some
           except JsonCallError as e:
-            log lvlError, &"Failed to dispatch '{action} {args}': {e.msg}"
+            log lvlError, &"Failed to dispatch '{action} {args}' in {t.namespace}: {e.msg}"
 
     try:
       for sc in self.plugins.scriptContexts:

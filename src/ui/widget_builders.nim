@@ -27,6 +27,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   let builder = self.platform.builder
   builder.panel(rootFlags): # fullscreen overlay
 
+    let rootBounds = currentNode.bounds
     self.preRender(currentNode.bounds)
 
     var overlays: seq[OverlayFunction]
@@ -57,6 +58,10 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           self.commands.commandLineEditor.active = self.commands.commandLineMode
           if self.commands.commandLineEditor.active != wasActive:
             self.commands.commandLineEditor.markDirty(notify=false)
+
+          builder.pushMaxBounds(rootBounds.wh * vec2(0.75, 0.5))
+          defer:
+            builder.popMaxBounds()
           overlays.add self.commands.commandLineEditor.createUI(builder, self)
 
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
@@ -104,8 +109,6 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     let paddingX = builder.charWidth
     let paddingY = builder.charWidth
     builder.panel(&{FillX, LayoutVerticalReverse}, x = currentNode.w * 0.7, y = mainBounds.y + paddingY, h = mainBounds.h - paddingY * 2):
-      let backgroundColor = self.theme.color("editor.background", color(25/255, 25/255, 40/255))
-
       for i in countdown(self.toast.toasts.high, 0):
         let toast {.cursor.} = self.toast.toasts[i]
         let color = self.theme.tokenColor(toast.color, textColor)

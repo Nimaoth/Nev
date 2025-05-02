@@ -7,7 +7,7 @@ There are also incomplete VSCode like keybindings.
 To switch to VSCode like keybindings create/extend the config file in `<USER_HOME>/.nev/settings.json` with the following:
 ```json
 {
-  "keybindings": "vscode"
+  "keybindings.preset": "vscode"
 }
 ```
 
@@ -23,14 +23,18 @@ After changing the settings restart the editor.
 | Help | `<LEADER>gh` | `<C-g>h` |
 | Find file in workspace | `<LEADER>gf` | `<C-g>f` or `<C-p>` |
 | Find open file | `<LEADER>go` | `<C-g>o` |
-| File explorer for entire workspace | `<LEADER>ge` | `<C-g>e` |
+| File explorer | `<LEADER>gv` |  |
 | File explorer for primary workspace folder | `<LEADER>gw` | `<C-g>w` |
 | File explorer for app config | `<LEADER>ga` | `<C-g>a` |
 | File explorer for user config | `<LEADER>gu` | `<C-g>u` |
+| File explorer for directory containing current file | `<LEADER>gp` | |
+| Show all keybindings | `<LEADER>gk` |  |
+| Show all settings | `<LEADER>gi` |  |
 | Global search in workspace | `<LEADER>gs` | `<C-g>s` or `<CS-f>` |
 | Git changes | `<LEADER>gg` | `<C-g>g` |
-| Save file | `<LEADER>sf` | `<C-s>` |
-| Reload file from disk | `<LEADER>lf` | |
+| Run shell command | `!` | |
+| Save file | `<LEADER>fs` | `<C-s>` |
+| Reload file from disk | `<LEADER>fl` | |
 | Close popups, command line, etc | `<ESCAPE>` | `<ESCAPE>` |
 | Quit the editor | `<C-x><C-x>` | `<A-F4>` |
 

@@ -134,7 +134,7 @@ proc prev[T](c: var SeqCursor[T]) = dec(c.index)
 proc seek[T](c: var SeqCursor[T], index: int) = c.index = index
 proc slice[T](c: SeqCursor[T], first: int, last: int): seq[T] = c.data[first..<last]
 
-proc len(c: RuneCursor): int = c.data.len
+proc len(c: RuneCursor): int = c.len
 proc current[T](c: RuneCursor): lent T = c.data.toOpenArray(0, c.len - 1).runeAt(c.index)
 proc next[T](c: var RuneCursor) = c.index = c.data.toOpenArray(0, c.len - 1).nextRuneStart(c.index)
 proc prev[T](c: var RuneCursor) = c.index = c.data.toOpenArray(0, c.len - 1).runeStart(c.index - 1)
@@ -358,7 +358,7 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool] = nil, enableCan
   if a.len == 0:
     return RopeDiff[T](edits: @[(T.default...T.default, T.default...T.fromSummary(b.summary, ()), b)])
   if b.len == 0:
-    return RopeDiff[T](edits: @[(T.default...T.fromSummary(b.summary, ()), T.default...T.default, Rope.new().slice(T))])
+    return RopeDiff[T](edits: @[(T.default...T.fromSummary(a.summary, ()), T.default...T.default, Rope.new().slice(T))])
 
   let a = a.slice(0.Count...a.summary.len)
   let b = b.slice(0.Count...b.summary.len)

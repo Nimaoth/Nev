@@ -1,6 +1,6 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils]
 import nimsumtree/[rope, static_array]
-import misc/[custom_async, custom_logger, util, timer, regex]
+import misc/[custom_async, custom_logger, util, timer, regex, id]
 import vfs
 import fsnotify
 
@@ -34,16 +34,21 @@ proc process(self: VFSLocal) {.async.} =
     except Exception as e:
       log lvlError, &"Failed to process file watcher: {e.msg}"
 
-proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
   try:
     proc cbWrapper(events: seq[PathEvent]) {.gcsafe, raises: [].} = cb(events.deduplicate(isSorted = true))
     register(self.watcher, path, cbWrapper)
+    # todo
+    return newId()
   except OSError as e:
     log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
+    return idNone()
 
-method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}) =
+method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
   log lvlInfo, &"Register watcher for local file system at '{path}'"
-  self.subscribe(path, cb)
+  return self.subscribe(path, cb)
+
+# todo: unwatch
 
 proc loadFileThread(args: tuple[path: string, data: ptr string, invalidUtf8Error: ptr bool, flags: set[ReadFlag]]): bool =
   try:
@@ -215,7 +220,22 @@ method deleteImpl*(self: VFSLocal, path: string): Future[bool] {.async: (raises:
     return false
 
   logScope lvlInfo, &"[deleteFile] '{path}'"
+  if dirExists(path):
+    try:
+      removeDir(path)
+      return true
+    except:
+      return false
   return tryRemoveFile(path)
+
+method createDirImpl*(self: VFSLocal, path: string): Future[void] {.async: (raises: [IOError]).} =
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+
+  try:
+    createDir(path)
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 method getFileKindImpl*(self: VFSLocal, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   if fileExists(path):
@@ -310,8 +330,11 @@ method copyFileImpl*(self: VFSLocal, src: string, dest: string): Future[void] {.
   except Exception as e:
     raise newException(IOError, &"Failed to copy file '{src}' to '{dest}': {e.msg}", e)
 
-proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int, res: var seq[string]) =
+proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int, res: var seq[string], maxDepth: int, depth: int = 0) =
   try:
+    if depth > maxDepth:
+      return
+
     for (kind, name) in walkDir(dir, relative=true):
       case kind
       of pcFile:
@@ -321,7 +344,7 @@ proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int,
             return
 
       of pcDir:
-        findFilesRec(dir // name, relDir // name, filename, maxResults, res)
+        findFilesRec(dir // name, relDir // name, filename, maxResults, res, maxDepth, depth + 1)
         if res.len >= maxResults:
           return
       else:
@@ -330,17 +353,18 @@ proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int,
   except:
     discard
 
-proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string]]) =
+proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string], options: ptr FindFilesOptions]) =
   try:
     let filenameRegex = re(args.filename)
-    findFilesRec(args.root, "", filenameRegex, args.maxResults, args.res[])
+    findFilesRec(args.root, "", filenameRegex, args.maxResults, args.res[], args.options[].maxDepth)
   except RegexError:
     discard
 
-method findFilesImpl*(self: VFSLocal, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).} =
+method findFilesImpl*(self: VFSLocal, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).} =
   var res = newSeq[string]()
   try:
-    await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr))
+    var options = options
+    await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr, options.addr))
   except Exception as e:
     log lvlError, &"Failed to find files in {self.name}/{root}: {e.msg}"
   return res

@@ -1,9 +1,9 @@
-import std/[tables, options, json, sugar]
+import std/[options, json]
 import results
 import platform/platform
 import misc/[custom_async, custom_logger, myjsonutils, util, timer]
 import scripting/expose
-import service, platform_service, dispatch_tables, events, config_provider, vfs, vfs_service
+import service, platform_service, dispatch_tables, config_provider
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -55,7 +55,7 @@ proc updateToasts(self: ToastService) {.async.} =
 
     self.platform.requestRender(redrawEverything = removed)
 
-    await sleepAsync(15)
+    await sleepAsync(15.milliseconds)
 
 ###########################################################################
 

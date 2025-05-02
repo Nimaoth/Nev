@@ -58,6 +58,8 @@ when useBuiltinTreesitterLanguage("typescript"):
   import treesitter_typescript/treesitter_typescript/typescript
 when useBuiltinTreesitterLanguage("json"):
   import treesitter_json/treesitter_json/json
+when useBuiltinTreesitterLanguage("markdown"):
+  import treesitter_markdown/treesitter_markdown/markdown
 
 type TSQuery* = ref object
   impl: ptr ts.TSQuery
@@ -115,8 +117,8 @@ type TSTreeCursor* = ts.TSTreeCursor
 
 func `=destroy`(t: TsTree) {.raises: [].} = discard
 
-func setLanguage*(self: TSParser, language: TSLanguage) =
-  assert ts.tsParserSetLanguage(self.impl, language.impl)
+func setLanguage*(self: TSParser, language: TSLanguage): bool =
+  return ts.tsParserSetLanguage(self.impl, language.impl)
 
 func isNil*(self: TSParser): bool = self.impl.isNil
 func isNil*(self: TSTree): bool = self.impl.isNil
@@ -134,7 +136,7 @@ proc delete*(self: sink TSTree) =
   if self.impl != nil:
     ts.tsTreeDelete(self.impl)
 
-proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
+proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, logSourceOnError = true):
     Future[Option[TSQuery]] {.async.} =
 
   if self.queries.contains(id):
@@ -148,7 +150,11 @@ proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
   let query = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
 
   if queryError != ts.TSQueryErrorNone:
-    log lvlError, &"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}\n{source}"
+    if logSourceOnError:
+      log lvlError, &"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}\n{source}"
+    else:
+      log lvlError, &"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}"
+
     if cacheOnFail:
       self.queries[id] = TSQuery.none
     return TSQuery.none
@@ -158,7 +164,7 @@ proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
 proc queryFileImpl(self: TSLanguage, vfs: VFS, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
   try:
     let queryString = await vfs.read(path)
-    return await self.query(id, queryString, cacheOnFail)
+    return await self.query(id, queryString, cacheOnFail, logSourceOnError = false)
   except FileNotFoundError:
     return TSQuery.none
   except IOError as e:
@@ -531,8 +537,12 @@ proc loadLanguage(vfs: VFS, languageId: string, pathOverride: Option[string]): F
     block:
       var l: Option[TSLanguage] = TSLanguage.none
       when declared(constructor):
-        log lvlInfo, fmt"Loading builtin language"
-        l = TSLanguage(languageId: languageId, impl: constructor()).some
+        log lvlInfo, fmt"Loading builtin language '{languageId}'"
+        let languageRaw = constructor()
+        if languageRaw == nil:
+          log lvlError, &"Failed to create builtin language parser for '{languageId}'"
+        else:
+          l = TSLanguage(languageId: languageId, impl: languageRaw).some
       l
 
   return case languageId
@@ -557,6 +567,7 @@ proc loadLanguage(vfs: VFS, languageId: string, pathOverride: Option[string]): F
   of "nim": tryGetLanguage(treeSitterNim)
   of "zig": tryGetLanguage(treeSitterZig)
   of "json": tryGetLanguage(treeSitterJson)
+  of "markdown": tryGetLanguage(treeSitterMarkdown)
   else:
     TSLanguage.none
 

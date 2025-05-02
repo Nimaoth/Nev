@@ -1795,8 +1795,8 @@ proc write*(tb: var TerminalBuffer, bb: var BoxBuffer) =
           forceWrite = false
 
         var c = TerminalChar(ch: toUTF8String(boxChar).runeAt(0),
-                             fg: tb.currFg, bg: tb.currBg,
-                             fgColor: tb.currFgColor, bgColor: tb.currBgColor,
+                             fg: tb.currFg, bg: tb[x, y].bg,
+                             fgColor: tb.currFgColor, bgColor: tb[x, y].bgColor,
                              style: tb.currStyle, forceWrite: forceWrite)
         tb[x,y] = c
 
