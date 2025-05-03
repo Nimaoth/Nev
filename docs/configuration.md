@@ -34,7 +34,7 @@ To create new commands plugins have to be used.
 
 ### Overview
 
-Settings are internally stored in stores, where each settings store consists of a json object, optionally a reference to a parent store and metadata for each setting (e.g. whether the store overrides or extends a specific setting).
+Settings are internally stored in stores, where each settings store consists of a JSON object, optionally a reference to a parent store and metadata for each setting (e.g. whether the store overrides or extends a specific setting).
 
 Setting stores can override or extend the settings from the parent. Some stores are loaded from a file, some are only in memory.
 
@@ -153,14 +153,14 @@ For custom commands plugins have to be used.
 
 ## Plugins
 
-Nev currently only supports wasm plugins. It might support other plugin mechanisms in the future (e.g. native dynamic libraries or Lua)
+Nev currently only supports WASM plugins. It might support other plugin mechanisms in the future (e.g. native dynamic libraries or Lua)
 
 The editor API is exposed to plugins and can be used to create new commands, change settings, etc.
 
-WASM plugins are loaded from `{app_dir}/config/wasm`. The wasm modules have to conform to a certain
+WASM plugins are loaded from `{app_dir}/config/wasm`. The WASM modules have to conform to a certain
 API and can only use a subset of WASI right now, so it is recommended not to rely on WASI for now.
 
-In theory WASM plugins can be written in any language that supports compiling to wasm, but there
+In theory WASM plugins can be written in any language that supports compiling to WASM, but there
 are currently no C header files for the editor API, so for now the recommended way
 to write plugins is to use Nim and Emscripten.
 
@@ -218,7 +218,7 @@ You can get the current value of a setting with `proc getOption*[T](path: string
 ```
 
 # Mouse settings
-To change the behaviour of single/double/triple clicking you can specify which command should be executed after clicking:
+To change the behavior of single/double/triple clicking you can specify which command should be executed after clicking:
 
 ```nim
 # To make triple click select the entire line (this is the default behaviour), use e.g. the command 'extend-select-move "line" true':
@@ -266,9 +266,9 @@ The following special keys are defined:
 - F1, ..., F12
 
 To specify that a modifier should be held down together with another key you need to used `<XXX-YYY>`, where `XXX` is any combination of modifiers
-(`S` = shift, `C` = control, `A` = alt) and `YYY` is either a single ascii character for the key, or one of the special keys (e.g. `ENTER`).
+(`S` = shift, `C` = control, `A` = alt) and `YYY` is either a single ASCII character for the key, or one of the special keys (e.g. `ENTER`).
 
-If you use an upper case ascii character as key then this automatically means it uses shift, so `A` is equivalent to `<S-a>` and `<S-A>`
+If you use an upper case ASCII character as key then this automatically means it uses shift, so `A` is equivalent to `<S-a>` and `<S-A>`
 
 Some examples:
 
@@ -280,12 +280,23 @@ addCommand "editor", "<CS-SPACE>", "command-name" # CTRL+SHIFT+SPACE
 addCommand "editor", "SPACE<C-g>", "command-name" # SPACE, followed by CTRL+g
 ```
 
-Be careful not to to this:
+Be careful not to do bind multiple keys where one is a prefix of another in the same mode:
 
 ```nim
 addCommand "editor", "a", "command-name"
 addCommand "editor", "aa", "command-name" # Will never be used, because pressing a once will immediately execute the first binding
 ```
+
+You can define multi key keybindings with keys which produce characters (like `w`) in modes that consume input (like insert mode) while still being able to insert the original key by waiting or pressing another key which is not in the bound sequence.
+- Example: when you bind `jj` in insert mode to exit to normal mode, three things can happen:
+  - You press `j` once then after a configured delay the `j` will be inserted as text
+  - You press `j` twice in a row, faster than the configured delay, then it will exit to normal mode
+  - You press `j` once followed by another key (e.g `k`) faster than the configured delay. `j` will be inserted and
+    the next key press will be handled as usual.
+
+The delay is configured using `editor.insert-input-delay`.
+
+## Repeat keys within longer keybindings
 
 There is one special modifier `*` which means the following keys can be repeated without having to press the first keys again:
 
@@ -296,25 +307,22 @@ addCommand "editor", "<C-w><*-F>-", "change-font-size", -1
 addCommand "editor", "<C-w><*-F>+", "change-font-size", 1
 ```
 
-
-All key bindings in the same scope (e.g. `editor`) will be compiled into a state machine. When you press a key, the state machine will advance,
+All keybindings in the same scope (e.g. `editor`) will be compiled into a state machine. When you press a key, the state machine will advance,
 and if it reaches and end state it will execute the command stored in the state (with the arguments also stored in the state).
 Each `addCommand` corresponds to one end state.
 
 # Scopes/Context
-The first parameter to `addCommand` is a scope. Different scopes can have different key bindings, even conflicting ones.
+The first parameter to `addCommand` is a scope. Different scopes can have different keybindings, even conflicting ones.
 Depending on which scopes are active the corresponding commands will be executed.
-Which scopes are active depends on which editor view is selected, whether there is e.g. a auto completion window open.
+Which scopes are active depends on which editor view is selected, whether there is e.g. an auto completion window open.
 The scope stack looks like this
 At the bottom of the scope stack is always `editor`.
 - `editor`
 - `editor.<MODE>`, if the editor mode is not `""` and `editor.custom-mode-on-top` is false. `<MODE>` is the current editor mode.
 - One of the following:
-  - `commandLine`, if the editor is in commandLine mode
+  - `commandLine`, if the editor is in command line mode
 
   - If there is a popup open, then the following scopes:
-    - If the popup is a goto popup, then the following scopes:
-      - Same as a text editor (i.e. `editor.text`, etc)
     - If the popup is a selector popup, then the following scopes:
       - Same as a text editor (i.e. `editor.text`, etc)
       - `popup.selector`, always
@@ -384,7 +392,7 @@ Here is an overview of the modules:
 - `plugin_runtime`: Exports everything you need, so you can just include this in your script file.
 - `scripting_api`: Part of the editor source, defines types used by both the editor and the script, as well as some utility functions for those types.
 - `plugin_api_internal`: Ignore this. You shouldn't need to call these functions directly.
-- `editor_api`: Contains general functions like changing font size, manipulating views, opening and closing files, etc.
-- `editor_text_api`: Contains functions for interacting with a text editor (e.g. modifiying the content).
-- `editor_model_api`: Contains functions for interacting with an model editor (e.g. modifying the content).
+- `editor_api`: Contains general functions like changing font size, manipulating views, opening, and closing files, etc.
+- `editor_text_api`: Contains functions for interacting with a text editor (e.g. modifying the content).
+- `editor_model_api`: Contains functions for interacting with a model editor (e.g. modifying the content).
 - `popup_selector_api`: Contains functions for interacting with a selector popup.
