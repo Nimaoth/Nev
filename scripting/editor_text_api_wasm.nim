@@ -2233,6 +2233,20 @@ proc applyCompletion*(self: TextDocumentEditor; completion: JsonNode) {.gcsafe,
       argsJsonString.cstring)
 
 
+proc editor_text_isShowingCompletions_bool_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc isShowingCompletions*(self: TextDocumentEditor): bool {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_isShowingCompletions_bool_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc applySelectedCompletion*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
