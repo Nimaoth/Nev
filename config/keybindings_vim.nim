@@ -981,6 +981,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "completion", "<C-p>", "select-prev-completion"
   addTextCommand "completion", "<C-n>", "select-next-completion"
   addTextCommand "completion", "<C-y>", "apply-selected-completion"
+  addTextCommand "completion", "<TAB>", "apply-selected-completion"
 
   addTextCommand "", "<move>", "vim-select-last <move>"
   addTextCommand "", "<?-count>d<move>", """vim-delete-move <move> <#count>"""
