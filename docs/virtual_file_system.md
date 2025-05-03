@@ -1,9 +1,9 @@
-# Virtual file system (VFS)
+# Virtual filesystem (VFS)
 
-Nev uses a virtual file system internally. The VFS is a tree of different types of file systems (local, in-memory, remote, etc.).
+Nev uses a virtual filesystem internally. The VFS is a tree of different types of file systems (local, in-memory, remote, etc.).
 
 Here are the types of file systems that are supported:
-- `VFS` - The base type for all other file systems, which can be used as a container/folder for other VFSs.
+- `VFS` - The base type for all other filesystems, which can be used as a container/folder for other VFSs.
 - `VFSInMemory` - This file system stores files in RAM.
 - `VFSLocal` - This represents your local filesystem.
 - `VFSLink` - This file system can link into a subfolder of another file systems. Cycles are not allowed.
