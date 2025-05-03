@@ -3882,6 +3882,9 @@ proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("
   except:
     log lvlError, &"[applyCompletion] Failed to parse completion {completion}"
 
+proc isShowingCompletions*(self: TextDocumentEditor): bool {.expose("editor.text").} =
+  return self.showCompletions and self.completions.len > 0
+
 proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if not self.showCompletions:
     return

@@ -1,4 +1,4 @@
-import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc, envvars]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc, envvars, parsejson]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex]
 import ui/node
@@ -94,6 +94,9 @@ type
     lastBounds*: Rect
     closeRequested*: bool
     appOptions: AppOptions
+
+    insertInputTask: DelayedTask
+    delayedInputs: seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]
 
     services: Services
     config*: ConfigService
@@ -2791,8 +2794,25 @@ proc updateNextPossibleInputs*(self: App) =
   if self.showNextPossibleInputs:
     self.platform.requestRender()
 
+proc handleDelayedInputs*(self: App) =
+  for (handler, input, modifiers) in self.delayedInputs:
+    discard handler.handleInput(inputToString(input, {}))
+  self.delayedInputs.setLen(0)
+  self.currentEventHandlers.resetHandlers()
+  self.updateNextPossibleInputs()
+
+proc scheduleHandleDelayedInput*(self: App) =
+  let insertInputDelay = self.generalSettings.insertInputDelay.get()
+  if self.insertInputTask.isNil:
+    self.insertInputTask = startDelayed(insertInputDelay, repeat=false):
+      self.handleDelayedInputs()
+
+  else:
+    self.insertInputTask.interval = insertInputDelay
+    self.insertInputTask.reschedule()
+
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
-  # logScope lvlDebug, &"handleKeyPress {inputToString(input, modifiers)}"
+  # debugf"handleKeyPress {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
 
   for register in self.registers.recordingKeys:
@@ -2801,18 +2821,38 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
     self.registers.registers[register].text.add inputToString(input, modifiers)
 
   try:
-    case self.currentEventHandlers.handleEvent(input, modifiers)
-    of Progress:
-      self.recordInputToHistory(inputToString(input, modifiers))
-      self.platform.preventDefault()
-      self.platform.requestRender()
-    of Failed, Canceled, Handled:
-      self.recordInputToHistory(inputToString(input, modifiers) & " ")
-      self.clearInputHistoryDelayed()
-      self.platform.preventDefault()
-      self.platform.requestRender()
-    of Ignored:
-      discard
+    while true:
+      case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs)
+      of Progress:
+        if self.delayedInputs.len > 0:
+          self.scheduleHandleDelayedInput()
+
+        self.recordInputToHistory(inputToString(input, modifiers))
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Handled:
+        self.delayedInputs.setLen(0)
+        self.recordInputToHistory(inputToString(input, modifiers) & " ")
+        self.clearInputHistoryDelayed()
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Failed, Canceled:
+        if self.delayedInputs.len > 0:
+          self.handleDelayedInputs()
+          continue
+
+        self.handleDelayedInputs()
+        self.recordInputToHistory(inputToString(input, modifiers) & " ")
+        self.clearInputHistoryDelayed()
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Ignored:
+        discard
+
+      break
   except:
     discard
 
@@ -2827,19 +2867,37 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
 
   try:
     let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
-    case self.currentEventHandlers.handleEvent(input, modifiers):
-    of Progress:
-      self.recordInputToHistory(inputToString(input, modifiers))
-      self.platform.preventDefault()
-      self.platform.requestRender()
-    of Failed, Canceled, Handled:
-      self.recordInputToHistory(inputToString(input, modifiers) & " ")
-      self.clearInputHistoryDelayed()
-      self.platform.preventDefault()
-      self.platform.requestRender()
-    of Ignored:
-      discard
-      self.platform.preventDefault()
+    while true:
+      case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs):
+      of Progress:
+        if self.delayedInputs.len > 0:
+          self.scheduleHandleDelayedInput()
+
+        self.recordInputToHistory(inputToString(input, modifiers))
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Handled:
+        self.delayedInputs.setLen(0)
+        self.recordInputToHistory(inputToString(input, modifiers) & " ")
+        self.clearInputHistoryDelayed()
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Failed, Canceled:
+        if self.delayedInputs.len > 0:
+          self.handleDelayedInputs()
+          continue
+
+        self.recordInputToHistory(inputToString(input, modifiers) & " ")
+        self.clearInputHistoryDelayed()
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Ignored:
+        self.platform.preventDefault()
+
+      break
   except:
     discard
 
@@ -3023,6 +3081,9 @@ proc collectGarbage*(self: App) {.expose("editor").} =
   except:
     log lvlError, &"Failed to collect garbage: {getCurrentExceptionMsg()}"
 
+proc echoArgs*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
+  log lvlInfo, &"echoArgs: {args}"
+
 proc printStatistics*(self: App) {.expose("editor").} =
   {.gcsafe.}:
     try:
@@ -3091,6 +3152,88 @@ proc printStatistics*(self: App) {.expose("editor").} =
 genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
 
+iterator parseJsonFragmentsAndSubstituteArgs*(s: Stream, args: seq[JsonNodeEx], index: var int): JsonNodeEx =
+  var p: JsonParser
+  try:
+    p.open(s, "")
+    discard getTok(p) # read first token
+    while p.tok != tkEof:
+      if p.tok == tkError and p.buf[p.bufpos - 1] == '@':
+        if p.bufpos < p.buf.len and p.buf[p.bufpos] == '@':
+          inc p.bufpos
+          for arg in args:
+            yield arg
+
+        else:
+          var numStr = ""
+          while p.buf[p.bufpos] in {'0'..'9'}:
+            numStr.add p.buf[p.bufpos]
+            inc p.bufpos
+
+          if numStr == "":
+            while index < args.len:
+              yield args[index]
+              inc index
+
+          else:
+            index = parseInt(numStr)
+            if index < args.len:
+              yield args[index]
+              inc index
+
+        discard getTok(p) # read next token
+      else:
+        yield p.parseJsonex(false, false)
+  except:
+    discard
+  finally:
+    try:
+      p.close()
+    except:
+      discard
+
+proc handleAlias(self: App, action: string, arg: string, alias: JsonNode): Option[JsonNode] =
+  var args = newSeq[JsonNodeEx]()
+  try:
+    for a in newStringStream(arg).parseJsonexFragments():
+      args.add a
+
+  except CatchableError:
+    log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+
+  if alias.kind == JString:
+    let (action, arg) = alias.getStr.parseAction
+    var aliasArgs = newJexArray()
+    try:
+      var argIndex = 0
+      for a in newStringStream(arg).parseJsonFragmentsAndSubstituteArgs(args, argIndex):
+        aliasArgs.add a
+
+    except:
+      log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+
+    return self.handleAction(action, aliasArgs.mapIt($it).join(" "), record=false)
+
+  elif alias.kind == JArray:
+    var argIndex = 0
+    for command in alias:
+      if command.kind == JString:
+        let (action, arg) = command.getStr.parseAction
+        var aliasArgs = newJexArray()
+        try:
+          for a in newStringStream(arg).parseJsonFragmentsAndSubstituteArgs(args, argIndex):
+            aliasArgs.add a
+
+        except:
+          log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+        result = self.handleAction(action, aliasArgs.mapIt($it).join(" "), record=false)
+
+    return
+
+  else:
+    log lvlError, &"Failed to run alias '{action}': invalid configuration. Expected string | string[], got '{alias}'"
+    return JsonNode.none
+
 proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
   let t = startTimer()
   if not self.registers.bIsReplayingCommands:
@@ -3103,6 +3246,10 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
   try:
     if record:
       self.registers.recordCommand(action, arg)
+
+    let alias = self.config.runtime.get("alias." & action, newJNull())
+    if alias != nil and alias.kind != JNull:
+      return self.handleAlias(action, arg, alias)
 
     var args = newJArray()
     try:

@@ -831,6 +831,15 @@ proc collectGarbage*() {.gcsafe, raises: [].} =
   let res {.used.} = editor_collectGarbage_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_echoArgs_void_App_JsonNode_wasm(arg: cstring): cstring {.importc.}
+proc echoArgs*(args: JsonNode) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add args.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_echoArgs_void_App_JsonNode_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_printStatistics_void_App_wasm(arg: cstring): cstring {.importc.}
 proc printStatistics*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()

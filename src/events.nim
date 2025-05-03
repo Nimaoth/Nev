@@ -261,8 +261,12 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
     handlerBody
     target = handler
 
-proc resetHandler*(handler: var EventHandler) =
+proc resetHandler*(handler: EventHandler) =
   handler.states = @[]
+
+proc resetHandlers*(handlers: seq[EventHandler]) =
+  for handler in handlers:
+    handler.resetHandler()
 
 proc inProgress*(states: openArray[CommandState]): bool =
   for s in states:
@@ -279,16 +283,12 @@ proc anyInProgress*(handlers: openArray[EventHandler]): bool =
       return true
   return false
 
-proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool): EventResponse {.gcsafe.} =
+proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool, allowHandlingEvent: bool, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]): EventResponse {.gcsafe.} =
   if input != 0:
     # debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, handleInput: {handleUnknownAsInput}"
 
     # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
     # (ctrl, alt, win) then it doesn't produce input
-    if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
-      if handler.handleInput(inputToString(input, {})) == Handled:
-        return Handled
-
     let prevStates = handler.states
     handler.states = handler.dfa.stepAll(handler.states, input, modifiers)
 
@@ -297,6 +297,10 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
       # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
 
     if not handler.inProgress:
+      if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
+        if handler.handleInput(inputToString(input, {})) == Handled:
+          return Handled
+
       handler.resetHandler()
       if not prevStates.inProgress:
         return Ignored
@@ -323,19 +327,26 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
       else:
         handler.resetHandler()
 
-      let res = handler.handleAction(action, arg)
-      case res
-      of Failed: return Failed
-      of Ignored: return Ignored
-      of Canceled: return Canceled
-      of Progress: return Progress
-      of Handled:
-        if handler.inProgress:
-          return Progress
-        else:
-          return Handled
+      if allowHandlingEvent:
+        let res = handler.handleAction(action, arg)
+        case res
+        of Failed: return Failed
+        of Ignored: return Ignored
+        of Canceled: return Canceled
+        of Progress: return Progress
+        of Handled:
+          if handler.inProgress:
+            return Progress
+          else:
+            return Handled
+      else:
+        handler.resetHandler()
+        return Canceled
 
     else:
+      if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and handler.config.handleInputs:
+        delayedInputs.add (handler, input, modifiers)
+
       if not handler.handleProgress.isNil:
         handler.handleProgress(input)
       return Progress
@@ -343,7 +354,7 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
   else:
     return Failed
 
-proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers): EventResponse {.gcsafe.} =
+proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers, delayedInputs: var seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]): EventResponse {.gcsafe.} =
   let anyInProgress = handlers.anyInProgress
 
   if debugEventHandlers:
@@ -352,12 +363,13 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
   var anyProgressed = false
   var anyFailed = false
   var allowHandlingUnknownAsInput = not anyInProgress
+  var anyInProgressAbove = false
   # Go through handlers in reverse
   for i in 0..<handlers.len:
     let handlerIndex = handlers.len - i - 1
     var handler = handlers[handlerIndex]
     let response = if (anyInProgress and handler.inProgress) or (not anyInProgress and not handler.inProgress):
-      handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput)
+      handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput, not anyInProgressAbove, delayedInputs)
     else:
       Ignored
 
@@ -374,6 +386,7 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
     of Progress:
       allowHandlingUnknownAsInput = false
       anyProgressed = true
+      anyInProgressAbove = true
 
     of Failed, Canceled:
       # Process remaining handlers

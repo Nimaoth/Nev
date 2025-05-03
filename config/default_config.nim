@@ -85,7 +85,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     addCommand "editor", "2", "set-layout", "vertical"
     addCommand "editor", "3", "set-layout", "fibonacci"
     addCommand "editor", "v", "create-view"
-    addCommand "editor", "a", "create-keybind-autocomplete-view"
     addCommand "editor", "x", "close-current-view", keepHidden=true, restoreHidden=false
     addCommand "editor", "X", "close-current-view", keepHidden=false, restoreHidden=true
     addCommand "editor", "h", "prev-view"
@@ -103,7 +102,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
 
   if getBackend() != Terminal:
     addCommand "editor", "<CA-v>", "create-view"
-    addCommand "editor", "<CA-a>", "create-keybind-autocomplete-view"
     addCommand "editor", "<CA-x>", "close-current-view", true
     addCommand "editor", "<CA-X>", "close-current-view", false
     addCommand "editor", "<CA-n>", "prev-view"

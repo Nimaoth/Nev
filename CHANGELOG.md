@@ -1,8 +1,23 @@
 # Changelog
 
-## [0.3.0](https://github.com/Nimaoth/Nev/compare/v0.2.1...v0.3.0) (2025-04-21)
+## [0.4.0](https://github.com/Nimaoth/Nev/compare/v0.3.0...v0.4.0) (2025-05-01)
 
-- Removed NimScript plugins, for now only wasm plugins are supported (Lua plugins might be added later)
+- You can now define an alias for commands, with the ability to run multiple commands in one alias and forward arguments or
+  supply default arguments.
+- You can now define multi key keybindings with keys which produce characters (like `w`) in modes that consume input (like insert mode) while still being able to insert the original key by waiting or pressing another key which is not in the bound sequence.
+  - Example: when you bind `jj` in insert mode to exit to normal mode, three things can happen:
+    - You press `j` once then after a configured delay the `j` will be inserted as text
+    - You press `j` twice in a row, faster than the configured delay, then it will exit to normal mode
+    - You press `j` once followed by another key (e.g `k`) faster than the configured delay. `j` will be inserted and
+      the next key press will be handled as usual.
+
+### Bug fixes
+
+- Fixed clicking on text being off by one line in the terminal sometimes
+
+## [0.3.0](https://github.com/Nimaoth/Nev/compare/v0.2.1...v0.3.0) (2025-05-01)
+
+- Removed NimScript plugins, for now only WASM plugins are supported (Lua plugins might be added later)
 - File content is now stored as a rope CRDT instead of a string array. This allows a bunch of improvements:
   - Better performance for big files and long lines
   - Treesitter parsing is now done on a background thread

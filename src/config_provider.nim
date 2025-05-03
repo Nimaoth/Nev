@@ -1082,6 +1082,13 @@ declareSettings GeneralSettings, "editor":
   ## After how many milliseconds of no input the input history is cleared.
   declare clearInputHistoryDelay, int, 3000
 
+  ## After how many milliseconds of no input a pending input gets inserted as text, if you bind a key
+  ## which inserts text in e.g. a multi key keybinding aswell.
+  ## Say you bind `jj` to exit insert mode, then if you press `j` once and wait for this delay then it will
+  ## insert `j` into the document, but if you press `j` again it will will exit insert mode instead.
+  ## If you press another key like `k` before the time ends it will immediately insert the `j` and the `k`.
+  declare insertInputDelay, int, 100
+
   ## Whether the editor shows a history of the last few pressed buttons in the status bar.
   declare recordInputHistory, bool, false
 
