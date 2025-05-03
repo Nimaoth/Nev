@@ -95,6 +95,9 @@ type
     closeRequested*: bool
     appOptions: AppOptions
 
+    insertInputTask: DelayedTask
+    delayedInputs: seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]
+
     services: Services
     config*: ConfigService
     session*: SessionService
@@ -2791,8 +2794,25 @@ proc updateNextPossibleInputs*(self: App) =
   if self.showNextPossibleInputs:
     self.platform.requestRender()
 
+proc handleDelayedInputs*(self: App) =
+  for (handler, input, modifiers) in self.delayedInputs:
+    discard handler.handleInput(inputToString(input, {}))
+  self.delayedInputs.setLen(0)
+  self.currentEventHandlers.resetHandlers()
+  self.updateNextPossibleInputs()
+
+proc scheduleHandleDelayedInput*(self: App) =
+  let insertInputDelay = self.generalSettings.insertInputDelay.get()
+  if self.insertInputTask.isNil:
+    self.insertInputTask = startDelayed(insertInputDelay, repeat=false):
+      self.handleDelayedInputs()
+
+  else:
+    self.insertInputTask.interval = insertInputDelay
+    self.insertInputTask.reschedule()
+
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
-  # logScope lvlDebug, &"handleKeyPress {inputToString(input, modifiers)}"
+  # debugf"handleKeyPress {inputToString(input, modifiers)}"
   self.logNextFrameTime = true
 
   for register in self.registers.recordingKeys:
@@ -2801,18 +2821,38 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
     self.registers.registers[register].text.add inputToString(input, modifiers)
 
   try:
-    case self.currentEventHandlers.handleEvent(input, modifiers)
-    of Progress:
-      self.recordInputToHistory(inputToString(input, modifiers))
-      self.platform.preventDefault()
-      self.platform.requestRender()
-    of Failed, Canceled, Handled:
-      self.recordInputToHistory(inputToString(input, modifiers) & " ")
-      self.clearInputHistoryDelayed()
-      self.platform.preventDefault()
-      self.platform.requestRender()
-    of Ignored:
-      discard
+    while true:
+      case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs)
+      of Progress:
+        if self.delayedInputs.len > 0:
+          self.scheduleHandleDelayedInput()
+
+        self.recordInputToHistory(inputToString(input, modifiers))
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Handled:
+        self.delayedInputs.setLen(0)
+        self.recordInputToHistory(inputToString(input, modifiers) & " ")
+        self.clearInputHistoryDelayed()
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Failed, Canceled:
+        if self.delayedInputs.len > 0:
+          self.handleDelayedInputs()
+          continue
+
+        self.handleDelayedInputs()
+        self.recordInputToHistory(inputToString(input, modifiers) & " ")
+        self.clearInputHistoryDelayed()
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Ignored:
+        discard
+
+      break
   except:
     discard
 
@@ -2827,19 +2867,37 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
 
   try:
     let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
-    case self.currentEventHandlers.handleEvent(input, modifiers):
-    of Progress:
-      self.recordInputToHistory(inputToString(input, modifiers))
-      self.platform.preventDefault()
-      self.platform.requestRender()
-    of Failed, Canceled, Handled:
-      self.recordInputToHistory(inputToString(input, modifiers) & " ")
-      self.clearInputHistoryDelayed()
-      self.platform.preventDefault()
-      self.platform.requestRender()
-    of Ignored:
-      discard
-      self.platform.preventDefault()
+    while true:
+      case self.currentEventHandlers.handleEvent(input, modifiers, self.delayedInputs):
+      of Progress:
+        if self.delayedInputs.len > 0:
+          self.scheduleHandleDelayedInput()
+
+        self.recordInputToHistory(inputToString(input, modifiers))
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Handled:
+        self.delayedInputs.setLen(0)
+        self.recordInputToHistory(inputToString(input, modifiers) & " ")
+        self.clearInputHistoryDelayed()
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Failed, Canceled:
+        if self.delayedInputs.len > 0:
+          self.handleDelayedInputs()
+          continue
+
+        self.recordInputToHistory(inputToString(input, modifiers) & " ")
+        self.clearInputHistoryDelayed()
+        self.platform.preventDefault()
+        self.platform.requestRender()
+
+      of Ignored:
+        self.platform.preventDefault()
+
+      break
   except:
     discard
 

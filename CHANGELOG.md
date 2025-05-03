@@ -5,6 +5,10 @@
 - You can now define an alias for commands, with the ability to run multiple commands in one alias and forward arguments or
   supply default arguments.
 
+### Bug fixes
+
+- Fixed clicking on text being off by one line in the terminal sometimes
+
 ## [0.3.0](https://github.com/Nimaoth/Nev/compare/v0.2.1...v0.3.0) (2025-05-01)
 
 - Removed NimScript plugins, for now only wasm plugins are supported (Lua plugins might be added later)
