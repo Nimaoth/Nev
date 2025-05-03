@@ -9,6 +9,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.clear-input-history-delay` | int | 3000 | After how many milliseconds of no input the input history is cleared. |
 | `editor.close-unused-documents-timer` | int | 10 | How often the editor will check for unused documents and close them, in seconds. |
 | `editor.custom-mode-on-top` | bool | true | If true then the app mode event handler (if the app mode is not "") will be on top of the event handler stack, otherwise it will be at the bottom (but still above the "editor" event handler. |
+| `editor.insert-input-delay` | int | 100 | After how many milliseconds of no input a pending input gets inserted as text, if you bind a key which inserts text in e.g. a multi key keybinding aswell. Say you bind `jj` to exit insert mode, then if you press `j` once and wait for this delay then it will insert `j` into the document, but if you press `j` again it will will exit insert mode instead. If you press another key like `k` before the time ends it will immediately insert the `j` and the `k`. |
 | `editor.keep-session-history` | bool | true | If true then the editor will keep a history of opened sessions in home://.nev/sessions.json, which enables features like opening a recent session or opening the last session. |
 | `editor.max-search-result-display-len` | int | 1000 | Max length of each individual search result (search results are cut off after this value). |
 | `editor.max-search-results` | int | 1000 | Max number of search results returned by global text based search. |
