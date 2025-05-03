@@ -165,6 +165,7 @@ type
     onOperation*: Event[tuple[document: TextDocument, op: Operation]]
     onBufferChanged*: Event[tuple[document: TextDocument]]
     onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
+    onDiagnostics*: Event[tuple[document: TextDocument]]
 
     undoSelections*: Table[Lamport, Selections]
     redoSelections*: Table[Lamport, Selections]
@@ -648,6 +649,12 @@ proc runeCursorToCursor*(self: TextDocument, cursor: RuneCursor): Cursor =
 
 proc runeSelectionToSelection*(self: TextDocument, cursor: RuneSelection): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
+
+proc lspRangeToSelection*(self: TextDocument, r: lsp_types.Range): Selection =
+  let runeSelection = (
+    (r.start.line, r.start.character.RuneIndex),
+    (r.`end`.line, r.`end`.character.RuneIndex))
+  return self.runeSelectionToSelection(runeSelection) # todo
 
 proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Selection] =
   if self.errorQuery.isNil or self.tsTree.isNil:
@@ -1144,6 +1151,7 @@ proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.
     self.lastDiagnosticAnchorResolve = snapshot.version
     self.resolveDiagnosticAnchors()
 
+  self.onDiagnostics.invoke (self,)
   self.notifyRequestRerender()
 
 proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =

@@ -445,6 +445,15 @@ type
     documentChanges*: Option[JsonNode]
     changeAnnotations*: Option[JsonNode]
 
+  ApplyWorkspaceEditParams* = object
+    label*: Option[string]
+    edit*: WorkspaceEdit
+
+  ApplyWorkspaceEditResponse* = object
+    applied*: bool
+    failureReason*: Option[string]
+    failedChanged*: Option[int]
+
   InsertReplaceEdit* = object
     newText*: string
     insert*: Range
@@ -453,7 +462,7 @@ type
   Command* = object
     title*: string
     command*: string
-    argument*: seq[JsonNode]
+    arguments*: seq[JsonNode]
 
   WorkspaceFolder* = object
     uri*: string
@@ -659,10 +668,10 @@ type
     `range`*: Range
     severity*: Option[DiagnosticSeverity]
     code*: Option[JsonNode]
-    codeDescription*: CodeDescription
+    codeDescription*: Option[CodeDescription]
     source*: Option[string]
     message*: string
-    tags*: seq[DiagnosticTag]
+    tags*: Option[seq[DiagnosticTag]]
     relatedInformation*: Option[seq[DiagnosticRelatedInformation]]
     data*: Option[JsonNode]
 
@@ -706,6 +715,9 @@ type
     textDocument*: TextDocumentIdentifier
     `range`*: Range
     context*: CodeActionContext
+
+proc toJsonHook*(a: DiagnosticSeverity): JsonNode =
+  return a.int.toJson
 
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
 variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])

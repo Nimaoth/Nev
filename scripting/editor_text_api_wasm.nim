@@ -2295,6 +2295,16 @@ proc hideHoverDelayed*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_text_selectCodeAction_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc selectCodeAction*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_selectCodeAction_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_clearDiagnostics_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc clearDiagnostics*(self: TextDocumentEditor) {.gcsafe, raises: [].} =

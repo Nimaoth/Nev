@@ -1,5 +1,5 @@
 import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables,
-  deques, sets, algorithm, os]
+  deques, sets, algorithm, os, uri]
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
@@ -18,10 +18,11 @@ import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
+import workspace_edit
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
-  Command, WorkspaceEdit
+  Command, WorkspaceEdit, asCommand, asCodeAction
 
 import nimsumtree/[buffer, clock, static_array, rope]
 from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
@@ -194,6 +195,15 @@ declareSettings TextEditorSettings, "text":
   ## If not null then scroll to the changed region when a file is reloaded.
   declare scrollToChangeOnReload, Option[ScrollToChangeOnReload], nil
 
+type
+  CodeActionKind {.pure.} = enum Command, CodeAction
+  CodeActionOrCommand = object
+    case kind: CodeActionKind
+    of CodeActionKind.Command:
+      command: lsp_types.Command
+    of CodeActionKind.CodeAction:
+      action: lsp_types.CodeAction
+
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
   editors*: DocumentEditorService
@@ -282,6 +292,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastInlayHintTimestamp: Global
   lastInlayHintDisplayRange: Range[Point]
   lastInlayHintBufferRange: Range[Point]
+  codeActions: Table[int, seq[CodeActionOrCommand]]
 
   eventHandlerNames: seq[string]
   eventHandlers: seq[EventHandler]
@@ -340,6 +351,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   textInsertedHandle: Id
   textDeletedHandle: Id
   languageServerAttachedHandle: Id
+  onDiagnosticsHandle: Id
   onCompletionsUpdatedHandle: Id
   onFocusChangedHandle: Id
 
@@ -433,6 +445,7 @@ proc numDisplayLines*(self: TextDocumentEditor): int
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true, includeAfter: bool = true): Cursor
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument)
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
@@ -544,6 +557,7 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.document.onPreLoaded.unsubscribe(self.preLoadedHandle)
     self.document.onSaved.unsubscribe(self.savedHandle)
     self.document.onLanguageServerAttached.unsubscribe(self.languageServerAttachedHandle)
+    self.document.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
 
     let document = self.document
     self.document = nil
@@ -604,6 +618,10 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.languageServerAttachedHandle = document.onLanguageServerAttached.subscribe (
       arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
     self.handleLanguageServerAttached(arg.document, arg.languageServer)
+
+  self.onDiagnosticsHandle = document.onDiagnostics.subscribe (
+      arg: tuple[document: TextDocument]) =>
+    self.handleDiagnosticsChanged(arg.document)
 
   self.completionEngine = CompletionEngine()
   self.onCompletionsUpdatedHandle = self.completionEngine.onCompletionsUpdated.subscribe () =>
@@ -4019,50 +4037,198 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
       self.markDirty()
 
+proc getCurrentDiagnostics(self: TextDocumentEditor): seq[lsp_types.Diagnostic] =
+  let visibleRange = self.visibleTextRange(0)
+  for i, d in self.document.currentDiagnostics:
+    # let runeSelection = (
+    #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
+    #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
+    # let selection = self.runeSelectionToSelection(runeSelection)
+    if d.selection.first > visibleRange.last or d.selection.last < visibleRange.first:
+      continue
+
+    result.add lsp_types.Diagnostic(
+      range: lsp_types.Range(
+        start: lsp_types.Position(line: d.selection.first.line, character: d.selection.first.column),
+        `end`: lsp_types.Position(line: d.selection.last.line, character: d.selection.last.column),
+      ),
+      severity: d.severity,
+      code: d.code,
+      codeDescription: d.codeDescription,
+      source: d.source,
+      message: d.message,
+      tags: d.tags,
+      relatedInformation: d.relatedInformation,
+      data: d.data,
+    )
+
+proc lspPathToVfsPath(self: VFS, lspPath: string): string =
+  let localVfs = self.getVFS("local://").vfs # todo
+  let localPath = lspPath.decodeUrl.parseUri.path.normalizePathUnix
+  return localVfs.normalize(localPath)
+
+# proc applyWorkspaceEdit(self: TextDocumentEditor, edit: WorkspaceEdit) {.async.} =
+#   echo &"Apply workspace edit {wsEdit}"
+#   if edit.changes.getSome(changes):
+#     if changes.kind != JObject:
+#       return
+
+#     var documents = initTable[string, TextDocument]()
+#     for lspPath, editJson in changes.fields.pairs:
+#       let filename = self.vfs.lspPathToVfsPath(lspPath)
+#       if filename == self.document.filename:
+#         documents[lspPath] = self.document
+#       else:
+#         if self.editors.getOrOpenDocument(filename).getSome(doc) and doc of TextDocument:
+#           documents[lspPath] = doc.TextDocument
+
+#     for lspPath, editJson in changes.fields.pairs:
+#       let filename = self.vfs.lspPathToVfsPath(lspPath)
+#       if filename == self.document.filename:
+#         let edits = editJson.jsonTo(seq[lsp_types.TextEdit])
+#         var selections = newSeq[Selection]()
+#         var texts = newSeq[string]()
+#         for edit in edits:
+#           selections.add(self.document.lspRangeToSelection(edit.range))
+#           texts.add(edit.newText)
+
+#         self.addNextCheckpoint("insert")
+#         echo self.document.edit(selections, self.selections, texts)
+
+#       else:
+#         echo "todo: apply edit to other file: {filename}"
+#         if self.editors.getOrOpenDocument(filename).getSome(doc) and doc of TextDocument:
+#           let other = doc.TextDocument
+#           let edits = editJson.jsonTo(seq[lsp_types.TextEdit])
+#           var selections = newSeq[Selection]()
+#           var texts = newSeq[string]()
+#           for edit in edits:
+#             selections.add(other.lspRangeToSelection(edit.range))
+#             texts.add(edit.newText)
+
+#           echo other.edit(selections, self.selections, texts)
+
+proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeActionOrCommand) {.async.} =
+  if self.document.getLanguageServer().await.getSome(ls):
+    if self.document.isNil or self.document.currentDiagnostics.len == 0:
+      return
+
+    case commandOrAction.kind:
+    of CodeActionKind.Command:
+      log lvlInfo, &"Run lsp command {commandOrAction.command}"
+      let res = await ls.executeCommand(commandOrAction.command.command, commandOrAction.command.arguments)
+      if res.isError:
+        log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
+
+    of CodeActionKind.CodeAction:
+      if commandOrAction.action.edit.getSome(edit):
+        # await self.applyWorkspaceEdit(edit)
+        discard await applyWorkspaceEdit(self.editors, self.vfs, edit)
+        if self.document.isNil:
+          return
+
+      if commandOrAction.action.command.getSome(command):
+        log lvlInfo, &"Run lsp command {command}"
+        let res = await ls.executeCommand(command.command, command.arguments)
+        if res.isError:
+          log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
+
+proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection): Future[void] {.async.} =
+  # let runeSelection = (
+  #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
+  #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
+  # let selection = self.runeSelectionToSelection(runeSelection) # todo
+  let actions = await ls.getCodeActions(self.document.localizedPath, selection, @[])
+  if self.document == nil:
+    return
+
+  # proc addSign*(self: TextDocumentEditor, id: Id, line: int, text: string, group: string = "", tint: Color = color(1, 1, 1)): Id =
+  echo &"handleCodeAction {selection} -> {actions}"
+  if actions.kind == Success:
+    for actionOrCommand in actions.result:
+      if actionOrCommand.asCommand().getSome(command):
+        # echo "+++ command: ", command
+        self.codeActions.mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.Command, command: command)
+      elif actionOrCommand.asCodeAction().getSome(codeAction):
+        # echo "+++ codeAction: ", codeAction
+        self.codeActions.mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.CodeAction, action: codeAction)
+      else:
+        echo "--- unknown ", actionOrCommand
+
+  # else:
+  #   echo &"-> {actions}"
+
+  self.markDirty()
+
+proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
+  let line = self.selection.last.line
+  if not self.codeActions.contains(line):
+    if self.document.getLanguageServer().await.getSome(ls):
+      # let selection = ((line, 0), (line, self.document.lineLength(line)))
+      await self.updateCodeActionAsync(ls, self.selection)
+    else:
+      return
+  if not self.codeActions.contains(line):
+    return
+
+  var builder = SelectorPopupBuilder()
+  builder.scope = "code-actions".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.4
+
+  var res = newSeq[FinderItem]()
+  for i, commandOrAction in self.codeActions[line]:
+    case commandOrAction.kind:
+    of CodeActionKind.Command:
+      res.add FinderItem(
+        displayName: commandOrAction.command.title,
+        data: $commandOrAction.toJson,
+      )
+    of CodeActionKind.CodeAction:
+      res.add FinderItem(
+        displayName: commandOrAction.action.title,
+        data: $commandOrAction.toJson,
+      )
+
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
+
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    try:
+      let commandOrAction = item.data.parseJson.jsonTo(CodeActionOrCommand)
+      asyncSpawn self.executeCommandOrCodeAction(commandOrAction)
+    except:
+      discard
+    true
+
+  discard self.layout.pushSelectorPopup(builder)
+
+proc selectCodeAction(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.selectCodeActionAsync()
+
 proc updateCodeActionsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.isNil:
     return
 
+  self.codeActions.clear()
+
   if self.document.getLanguageServer().await.getSome(ls):
-    if self.document.isNil:
+    if self.document.isNil or self.document.currentDiagnostics.len == 0:
       return
 
     let screenLineCount = self.screenLineCount
     let visibleRangeHalf = self.visibleTextRange(screenLineCount div 2)
     let visibleRange = self.visibleTextRange(screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
-    let codeActions: Response[CodeActionResponse] = await ls.getCodeActions(self.document.localizedPath, visibleRange)
-    if self.document.isNil:
+    let diagnostics = self.getCurrentDiagnostics()
+    if diagnostics.len == 0:
       return
 
-    # echo &"-> {codeActions}"
-
-    # # todo: detect if canceled instead
-    # if codeActions.isSuccess:
-    #   template getBias(hint: untyped): Bias =
-    #     if hint.paddingRight:
-    #       Bias.Right
-    #     else:
-    #       Bias.Left
-
-    #   self.codeActions = codeActions.result.mapIt (snapshot.anchorAt(it.location.toPoint, it.getBias), it)
-    #   self.lastInlayHintTimestamp = snapshot.version
-    #   self.updateInlayHintsAfterChange()
-    #   self.lastInlayHintDisplayRange = visibleRange.toRange
-    #   self.lastInlayHintBufferRange = visibleRangeHalf.toRange
-
-    #   self.displayMap.overlay.clear(overlayIdInlayHint)
-    #   for hint in self.codeActions:
-    #     let point = hint.hint.location.toPoint
-    #     let bias = hint.hint.getBias
-    #     if hint.hint.paddingLeft:
-    #       self.displayMap.overlay.addOverlay(point...point, " " & hint.hint.label, overlayIdInlayHint, "comment", bias)
-    #     elif hint.hint.paddingRight:
-    #       self.displayMap.overlay.addOverlay(point...point, hint.hint.label & " ", overlayIdInlayHint, "comment", bias)
-    #     else:
-    #       self.displayMap.overlay.addOverlay(point...point, hint.hint.label, overlayIdInlayHint, "comment", bias)
-
-    #   self.markDirty()
+    for d in diagnostics:
+      let selection: Selection = (
+        (d.`range`.start.line, d.`range`.start.character),
+        (d.`range`.`end`.line, d.`range`.`end`.character))
+      asyncSpawn self.updateCodeActionAsync(ls, selection)
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.clearDiagnostics()
@@ -4072,7 +4238,7 @@ proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
       asyncSpawn self.updateInlayHintsAsync()
-      # asyncSpawn self.updateCodeActionsAsync()
+      asyncSpawn self.updateCodeActionsAsync()
   else:
     self.inlayHintsTask.reschedule()
 
@@ -4454,6 +4620,12 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
     .withMergeStrategy(MergeStrategy(kind: TakeAll))
     .withPriority(2)
   self.updateInlayHints()
+
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument) =
+  if document != self.document:
+    return
+
+  asyncSpawn self.updateCodeActionsAsync()
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
   if document != self.document:

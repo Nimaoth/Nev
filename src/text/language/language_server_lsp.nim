@@ -6,6 +6,7 @@ import workspaces/workspace as ws
 
 import nimsumtree/buffer
 import nimsumtree/rope except Cursor
+import text/workspace_edit
 
 logCategory "lsp"
 
@@ -57,6 +58,20 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
 
   return res
 
+proc handleApplyWorkspaceEditRequest*(self: LanguageServerLSP, params: lsp_types.ApplyWorkspaceEditParams):
+    Future[lsp_types.ApplyWorkspaceEditResponse] {.gcsafe, async.} =
+  echo &"handleApplyWorkspaceEditRequest {params}"
+
+  if applyWorkspaceEdit(nil, nil, params.edit).await:
+    return lsp_types.ApplyWorkspaceEditResponse(
+      applied: true,
+    )
+  else:
+    return lsp_types.ApplyWorkspaceEditResponse(
+      applied: false,
+      failureReason: "not implemented".some,
+    )
+
 proc handleWorkspaceConfigurationRequests(lsp: LanguageServerLSP) {.async.} =
   while lsp.client != nil:
     let params = lsp.client.workspaceConfigurationRequestChannel.recv().await.getOr:
@@ -70,6 +85,20 @@ proc handleWorkspaceConfigurationRequests(lsp: LanguageServerLSP) {.async.} =
     await lsp.client.workspaceConfigurationResponseChannel.send(response)
 
   log lvlInfo, &"handleWorkspaceConfigurationRequests: client gone"
+
+proc handleApplyWorkspaceEditRequests(lsp: LanguageServerLSP) {.async.} =
+  while lsp.client != nil:
+    let params = lsp.client.workspaceApplyEditRequestChannel.recv().await.getOr:
+      log lvlInfo, &"handleApplyWorkspaceEditRequests: channel closed"
+      return
+
+    if lsp.client.isNil:
+      break
+
+    let response = await lsp.handleApplyWorkspaceEditRequest(params)
+    await lsp.client.workspaceApplyEditResponseChannel.send(response)
+
+  log lvlInfo, &"handleApplyWorkspaceEditRequests: client gone"
 
 proc handleMessages(lsp: LanguageServerLSP) {.async.} =
   while lsp.client != nil:
@@ -157,6 +186,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     lsp.localVfs = lsp.vfs.getVFS("local://").vfs # todo
 
     asyncSpawn lsp.handleWorkspaceConfigurationRequests()
+    asyncSpawn lsp.handleApplyWorkspaceEditRequests()
     asyncSpawn lsp.handleMessages()
     asyncSpawn lsp.handleDiagnostics()
     asyncSpawn client.handleResponses()
@@ -193,7 +223,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
   except:
     return LanguageServer.none
 
-proc toVfsPath(self: LanguageServerLSP, lspPath: string): string =
+proc toVfsPath*(self: LanguageServerLSP, lspPath: string): string =
   let localPath = lspPath.decodeUrl.parseUri.path.normalizePathUnix
   return self.localVfs.normalize(localPath)
 
@@ -615,12 +645,17 @@ method getCompletions*(self: LanguageServerLSP, filename: string, location: Curs
   let localizedPath = self.vfs.localize(filename)
   return await self.client.getCompletions(localizedPath, location.line, location.column)
 
-method getCodeActions*(self: LanguageServerLSP, filename: string, selection: Selection):
+method getCodeActions*(self: LanguageServerLSP, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]):
     Future[Response[lsp_types.CodeActionResponse]] {.async.} =
   if self.serverCapabilities.codeActionProvider.isNone:
     return success(lsp_types.CodeActionResponse.default)
   let localizedPath = self.vfs.localize(filename)
-  return await self.client.getCodeActions(localizedPath, selection)
+  return await self.client.getCodeActions(localizedPath, selection, diagnostics)
+
+method executeCommand*(self: LanguageServerLSP, filename: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
+  # if self.serverCapabilities.codeActionProvider.isNone:
+  #   return success(lsp_types.CodeActionResponse.default)
+  return await self.client.executeCommand(filename, arguments)
 
 import text/[text_editor, text_document]
 

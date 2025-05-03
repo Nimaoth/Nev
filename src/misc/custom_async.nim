@@ -101,9 +101,12 @@ proc thenOrElse[T](f: Future[T], cb: proc(f: Future[T]) {.gcsafe, raises: [].}, 
 
 template thenIt*[T](f: Future[T], body: untyped): untyped =
   proc cb(ff: Future[T]) {.gcsafe, raises: [].} =
-    when T isnot void:
-      let it {.inject.} = ff.read
-    body
+    try:
+      when T isnot void:
+          let it {.inject.} = ff.read
+      body
+    except CatchableError:
+      discard
 
   f.then(cb)
 

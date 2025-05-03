@@ -4,7 +4,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import workspaces/workspace
 import document
 
-from lsp_types as lsp_types import CompletionItem
+from lsp_types as lsp_types import CompletionItem, WorkspaceEdit
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -74,10 +74,10 @@ type Diagnostic* = object
   selection*: Selection
   severity*: Option[lsp_types.DiagnosticSeverity]
   code*: Option[JsonNode]
-  codeDescription*: lsp_types.CodeDescription
+  codeDescription*: Option[lsp_types.CodeDescription]
   source*: Option[string]
   message*: string
-  tags*: seq[lsp_types.DiagnosticTag]
+  tags*: Option[seq[lsp_types.DiagnosticTag]]
   relatedInformation*: Option[seq[lsp_types.DiagnosticRelatedInformation]]
   data*: Option[JsonNode]
   removed*: bool = false
@@ -102,7 +102,8 @@ method getHover*(self: LanguageServer, filename: string, location: Cursor): Futu
 method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base, gcsafe, raises: [].} = discard
 method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = discard
 method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base, gcsafe, raises: [].} = {}
-method getCodeActions*(self: LanguageServer, filename: string, selection: Selection): Future[Response[lsp_types.CodeActionResponse]] {.base, gcsafe, raises: [].} = lsp_types.CodeActionResponse.default.success.toFuture
+method getCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.base, gcsafe, raises: [].} = lsp_types.CodeActionResponse.default.success.toFuture
+method executeCommand*(self: LanguageServer, filename: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.base, gcsafe, raises: [].} = newJObject().success.toFuture
 
 proc toLspPosition*(cursor: Cursor): lsp_types.Position = lsp_types.Position(line: cursor.line, character: cursor.column)
 proc toLspRange*(selection: Selection): lsp_types.Range = lsp_types.Range(start: selection.first.toLspPosition, `end`: selection.last.toLspPosition)
