@@ -1,6 +1,11 @@
 # Changelog
 
-## [0.3.0](https://github.com/Nimaoth/Nev/compare/v0.2.1...v0.3.0) (2025-04-21)
+## [0.4.0](https://github.com/Nimaoth/Nev/compare/v0.3.0...v0.4.0) (2025-05-01)
+
+- You can now define an alias for commands, with the ability to run multiple commands in one alias and forward arguments or
+  supply default arguments.
+
+## [0.3.0](https://github.com/Nimaoth/Nev/compare/v0.2.1...v0.3.0) (2025-05-01)
 
 - Removed NimScript plugins, for now only wasm plugins are supported (Lua plugins might be added later)
 - File content is now stored as a rope CRDT instead of a string array. This allows a bunch of improvements:

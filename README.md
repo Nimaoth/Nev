@@ -46,6 +46,7 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - Read the [docs](docs/getting_started.md)
 
 ## Docs
+- [General docs, contains things that don't fit into other files](docs/docs.md)
 - [Build from source](docs/building_from_source.md)
 - [Getting started](docs/getting_started.md)
 - [Cheatsheet](docs/cheatsheet.md)
