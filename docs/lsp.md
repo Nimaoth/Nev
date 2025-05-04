@@ -98,6 +98,7 @@ The following LSP features are currently supported:
 | `textDocument/references=` | `gr` | `<C-g><C-r>` or `<S-F12>` |  |
 | `textDocument/hover=` | `K` | `<C-g><C-k>` |  |
 | `textDocument/diagnostic=` | `H` | `<C-g><C-h>` |  |
+| `textDocument/codeAction=` | `ga` |  | Opens the code action picker for the selected diagnostic. |
 | `textDocument/switchSourceHeader=` | `go` | `<C-g><C-o>` | Only for C/C++ with `clangd` |
 | `workspace/symbol=` | `gw` | `<C-g><C-w>` or `<C-t>` |  |
 | `textDocument/inlayHints=` |  |  | No keybindings necessary |
