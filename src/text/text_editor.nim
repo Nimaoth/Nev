@@ -3231,7 +3231,7 @@ proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPrevie
     return
 
   let prevSearchQuery = self.searchQuery
-  self.commands.openCommandLine "", proc(command: Option[string]): Option[string] =
+  self.commands.openCommandLine "", "/", proc(command: Option[string]): Option[string] =
     if command.getSome(command):
       discard self.setSearchQuery(command)
       if select:
@@ -3773,6 +3773,42 @@ proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = 0.2, sort: bo
 proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose("editor.text").} =
   asyncSpawn self.gotoWorkspaceSymbolAsync(query)
 
+proc renameAsync(self: TextDocumentEditor) {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if self.document.isNil:
+    return
+
+  if languageServer.isNone:
+    log lvlError, &"Can't rename, no language server"
+    return
+
+  let commandLineEditor = self.editors.commandLineEditor.TextDocumentEditor
+  if commandLineEditor == self:
+    return
+
+  let s = self.getSelectionForMove(self.selection.last, "word")
+  let text = self.document.contentString(s)
+
+  self.commands.openCommandLine text, "new name: ", proc(newName: Option[string]): Option[string] =
+    if newName.getSome(newName):
+      let name = newName
+      languageServer.get.rename(self.document.localizedPath, self.selection.last, name).thenIt:
+        if self.document.isNil:
+          return
+
+        if it.isSuccess and it.result.getSome(edit):
+          log lvlInfo, &"Apply workspace edit for rename:\n{edit}"
+          asyncSpawn asyncDiscard applyWorkspaceEdit(self.editors, self.vfs, edit)
+        elif it.isError:
+          log lvlError, &"Failed to rename to '{name}': {it.error}"
+
+  commandLineEditor.disableCompletions = true
+  commandLineEditor.moveLast("file")
+  commandLineEditor.updateTargetColumn()
+
+proc rename*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.renameAsync()
+
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   # log lvlInfo, fmt"hideCompletions {self.document.filename}"
   self.showCompletions = false
@@ -4134,14 +4170,9 @@ proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor): seq[lsp_ty
       data: d.data,
     )
 
-proc lspPathToVfsPath(self: VFS, lspPath: string): string =
-  let localVfs = self.getVFS("local://").vfs # todo
-  let localPath = lspPath.decodeUrl.parseUri.path.normalizePathUnix
-  return localVfs.normalize(localPath)
-
 proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeActionOrCommand) {.async.} =
   if self.document.getLanguageServer().await.getSome(ls):
-    if self.document.isNil or self.document.currentDiagnostics.len == 0:
+    if self.document.isNil:
       return
 
     case commandOrAction.kind:
@@ -4163,17 +4194,18 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
         if res.isError:
           log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
 
-proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId): Future[void] {.async.} =
+proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId, addSign: bool): Future[void] {.async.} =
   # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
   let actions = await ls.getCodeActions(self.document.localizedPath, selection, @[])
   if self.document == nil or self.document.buffer.versionId != versionId:
     return
   if actions.kind == Success and actions.result.len > 0:
-    let sign = self.settings.codeActions.sign.get()
-    if sign.len > 0:
-      let signWidth = self.settings.codeActions.signWidth.get()
-      let color = self.settings.codeActions.signColor.get()
-      discard self.addSign(idNone(), selection.first.line, sign, group = "code-actions", color = color, width = signWidth)
+    if addSign:
+      let sign = self.settings.codeActions.sign.get()
+      if sign.len > 0:
+        let signWidth = self.settings.codeActions.signWidth.get()
+        let color = self.settings.codeActions.signColor.get()
+        discard self.addSign(idNone(), selection.first.line, sign, group = "code-actions", color = color, width = signWidth)
 
     for actionOrCommand in actions.result:
       if actionOrCommand.asCommand().getSome(command):
@@ -4189,7 +4221,7 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
   let line = self.selection.last.line
   if not self.codeActions.contains(line):
     if self.document.getLanguageServer().await.getSome(ls):
-      await self.updateCodeActionAsync(ls, self.selection, self.document.buffer.versionId)
+      await self.updateCodeActionAsync(ls, self.selection, self.document.buffer.versionId, addSign = false)
     else:
       log lvlError, &"Can't select code actions: No language server attached."
       return
@@ -4251,7 +4283,7 @@ proc updateCodeActionsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       let selection: Selection = (
         (d.`range`.start.line, d.`range`.start.character),
         (d.`range`.`end`.line, d.`range`.`end`.character))
-      asyncSpawn self.updateCodeActionAsync(ls, selection, versionId)
+      asyncSpawn self.updateCodeActionAsync(ls, selection, versionId, addSign = true)
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.clearDiagnostics()

@@ -3,9 +3,6 @@
         "<SPACE>sr": "open-recent-session",
         "!": "run-shell-command",
     },
-    "editor.text.normal": {
-        "ga": "select-code-action",
-    },
     "popup.selector.settings": {
         "<C-h>": "prev-store",
         "<C-f>": "next-store",

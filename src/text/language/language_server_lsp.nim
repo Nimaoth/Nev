@@ -652,6 +652,9 @@ method getCodeActions*(self: LanguageServerLSP, filename: string, selection: Sel
   let localizedPath = self.vfs.localize(filename)
   return await self.client.getCodeActions(localizedPath, selection, diagnostics)
 
+method rename*(self: LanguageServerLSP, filename: string, position: Cursor, newName: string): Future[Response[Option[lsp_types.WorkspaceEdit]]] {.async.} =
+  return await self.client.rename(filename, position, newName)
+
 method executeCommand*(self: LanguageServerLSP, filename: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
   return await self.client.executeCommand(filename, arguments)
 

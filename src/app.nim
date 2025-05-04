@@ -2509,7 +2509,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "create-file", proc(popup: SelectorPopup, args: JsonNode): bool =
     let dir = currentDirectory[]
-    self.commands.openCommandLine "", proc(command: Option[string]): Option[string] =
+    self.commands.openCommandLine "", "new file: ", proc(command: Option[string]): Option[string] =
       if command.getSome(path):
         if path.isAbsolute:
           self.createFile(path)
@@ -2519,7 +2519,7 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
 
   popup.addCustomCommand "create-directory", proc(popup: SelectorPopup, args: JsonNode): bool =
     let dir = currentDirectory[]
-    self.commands.openCommandLine "", proc(command: Option[string]): Option[string] =
+    self.commands.openCommandLine "", "new directory: ", proc(command: Option[string]): Option[string] =
       if command.getSome(path):
         let pathAbs = if path.isAbsolute: path else: dir // path
         self.vfs.createDir(pathAbs).thenItOrElse:

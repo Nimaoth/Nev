@@ -104,6 +104,7 @@ method getInlayHints*(self: LanguageServer, filename: string, selection: Selecti
 method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = discard
 method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base, gcsafe, raises: [].} = {}
 method getCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.base, gcsafe, raises: [].} = lsp_types.CodeActionResponse.default.success.toFuture
+method rename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[Option[lsp_types.WorkspaceEdit]]] {.base, gcsafe, raises: [].} = lsp_types.WorkspaceEdit.none.success.toFuture
 method executeCommand*(self: LanguageServer, filename: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.base, gcsafe, raises: [].} = newJObject().success.toFuture
 
 proc toLspPosition*(cursor: Cursor): lsp_types.Position = lsp_types.Position(line: cursor.line, character: cursor.column)

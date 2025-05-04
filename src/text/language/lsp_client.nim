@@ -100,6 +100,7 @@ type
     GetDiagnostic
     GetCompletion
     GetCodeActions
+    Rename
     ExecuteCommand
 
   LSPClientRequestKind* = enum
@@ -125,6 +126,7 @@ type
     of GetDiagnostic: getDiagnostic*: Response[DocumentDiagnosticResponse]
     of GetCompletion: getCompletion*: Response[CompletionResponse]
     of GetCodeActions: getCodeActions*: Response[CodeActionResponse]
+    of Rename: rename*: Response[JsonNode]
     of ExecuteCommand: executeCommand*: Response[JsonNode]
 
   LSPClientRequest = object
@@ -163,6 +165,7 @@ type
     activeDiagnosticsRequests: Table[int, tuple[meth: string, future: Future[Response[DocumentDiagnosticResponse]]]] # Main thread
     activeCompletionsRequests: Table[int, tuple[meth: string, future: Future[Response[CompletionResponse]]]] # Main thread
     activeCodeActionRequests: Table[int, tuple[meth: string, future: Future[Response[CodeActionResponse]]]] # Main thread
+    activeRenameRequests: Table[int, tuple[meth: string, future: Future[Response[JsonNode]]]] # Main thread
     activeExecuteCommandRequests: Table[int, tuple[meth: string, future: Future[Response[JsonNode]]]] # Main thread
     requestsPerMethod: Table[string, seq[int]]
     canceledRequests: HashSet[int]
@@ -278,6 +281,7 @@ proc deinitThread(client: LSPClient) =
   client.activeDiagnosticsRequests.clear()
   client.activeCompletionsRequests.clear()
   client.activeCodeActionRequests.clear()
+  client.activeRenameRequests.clear()
   client.activeExecuteCommandRequests.clear()
   client.requestsPerMethod.clear()
   client.canceledRequests.clear()
@@ -475,6 +479,7 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
     of GetDiagnostic: dispatch(client.activeDiagnosticsRequests, response.getDiagnostic)
     of GetCompletion: dispatch(client.activeCompletionsRequests, response.getCompletion)
     of GetCodeActions: dispatch(client.activeCodeActionRequests, response.getCodeActions)
+    of Rename: dispatch(client.activeRenameRequests, response.rename)
     of ExecuteCommand: dispatch(client.activeExecuteCommandRequests, response.executeCommand)
 
   log lvlInfo, &"handleResponses: client gone"
@@ -524,6 +529,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     of "textDocument/diagnostic": cancel(client.activeDiagnosticsRequests, DocumentDiagnosticResponse)
     of "textDocument/completion": cancel(client.activeCompletionsRequests, CompletionResponse)
     of "textDocument/codeAction": cancel(client.activeCodeActionRequests, CodeActionResponse)
+    of "textDocument/rename": cancel(client.activeRenameRequests, JsonNode)
     of "workspace/executeCommand": cancel(client.activeExecuteCommandRequests, JsonNode)
     else: continue
 
@@ -981,6 +987,19 @@ proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int)
 
   return await client.sendRequest(client.activeCodeActionRequests.addr, "textDocument/codeAction", params)
 
+proc rename*(client: LSPClient, filename: string, position: (int, int), newName: string): Future[Response[Option[WorkspaceEdit]]] {.async.} =
+  let params = RenameParams(
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
+    position: Position(
+      line: position[0],
+      character: position[1],
+    ),
+    newName: newName,
+  ).toJson
+
+  let response = await client.sendRequest(client.activeRenameRequests.addr, "textDocument/rename", params)
+  return response.to(Option[WorkspaceEdit])
+
 proc executeCommand*(client: LSPClient, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
   var params = %*{
     "command": command,
@@ -1101,6 +1120,8 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
               id: id, kind: GetCompletion, getCompletion: parsedResponse.to(CompletionResponse)))
           of "textDocument/codeAction": await client.responseChannel.send(LSPClientResponse(
               id: id, kind: GetCodeActions, getCodeActions: parsedResponse.to(CodeActionResponse)))
+          of "textDocument/rename": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: Rename, rename: parsedResponse.to(JsonNode)))
           of "workspace/executeCommand": await client.responseChannel.send(LSPClientResponse(
               id: id, kind: ExecuteCommand, executeCommand: parsedResponse.to(JsonNode)))
 
