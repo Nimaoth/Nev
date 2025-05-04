@@ -2157,6 +2157,16 @@ proc gotoWorkspaceSymbol*(self: TextDocumentEditor; query: string = "") {.
       argsJsonString.cstring)
 
 
+proc editor_text_rename_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc rename*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_rename_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_hideCompletions_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc hideCompletions*(self: TextDocumentEditor) {.gcsafe, raises: [].} =

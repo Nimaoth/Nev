@@ -35,6 +35,7 @@ type
     commandLineResultEventHandlerLow*: EventHandler
 
     shellCommandOutput*: Rope
+    prefix*: string
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
@@ -67,9 +68,9 @@ proc handleCommand*(self: CommandService, command: string): Option[string] =
 
 # todo: add prefix parameter
 var commandLineImpl*: proc(self: CommandService, initialValue: string, prefix: string) {.gcsafe, raises: [].}
-proc openCommandLine*(self: CommandService, initialValue: string = "", handler: CommandHandler = nil) =
+proc openCommandLine*(self: CommandService, initialValue: string = "", prefix: string = "", handler: CommandHandler = nil) =
   {.gcsafe.}:
-    commandLineImpl(self, initialValue, "")
+    commandLineImpl(self, initialValue, prefix)
     self.commandHandler = handler
 
 proc commandLineMode*(self: CommandService): bool = self.commandLineInputMode or self.commandLineResultMode

@@ -1425,6 +1425,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "", "gw", "goto-workspace-symbol"
   addTextCommand "", "gr", "goto-references"
   addTextCommand "", "go", "switch-source-header"
+  addTextCommand "", "ga", "select-code-action"
+  addTextCommand "", "gR", "rename"
   addTextCommand "", "K", "show-hover-for-current"
   addTextCommand "", "H", "show-diagnostics-for-current"
 

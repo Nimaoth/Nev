@@ -633,6 +633,12 @@ type
     textDocument*: TextDocumentIdentifier
     range*: Range
 
+  RenameParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    newName*: string
+
   InlayHint* = object
     position*: Position
     label*: JsonNode # string # | InlayHintLabelPart[] # todo

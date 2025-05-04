@@ -84,6 +84,7 @@ proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: VFS, wsEdit: Works
           textEditor.addNextCheckpoint("insert")
 
       discard doc.edit(selections, @[], texts)
+      doc.save()
 
       for ed in editors.getEditorsForDocument(doc):
         if ed of text_editor.TextDocumentEditor:

@@ -38,14 +38,16 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   self.commandLineInputMode = true
   self.commandLineResultMode = false
   self.commandHandler = nil
+  self.prefix = prefix
   editor.setMode("insert")
   editor.disableCompletions = false
   editor.disableScrolling = true
   editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
   editor.clearOverlays(overlayIdPrefix)
-  if prefix != "":
-    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
+  if self.prefix != "":
+    editor.clearOverlays(overlayIdPrefix)
+    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
   self.events.rebuildCommandToKeysMap()
   self.platform.requestRender()
 
@@ -159,6 +161,9 @@ proc selectPreviousCommandInHistory*(self: CommandService) {.expose("commands").
 
   editor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
   editor.moveLast("file", Both)
+  if self.prefix != "":
+    editor.clearOverlays(overlayIdPrefix)
+    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
   self.platform.requestRender()
 
 proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
@@ -177,6 +182,9 @@ proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
 
   editor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
   editor.moveLast("file", Both)
+  if self.prefix != "":
+    editor.clearOverlays(overlayIdPrefix)
+    editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
   self.platform.requestRender()
 
 proc runProcessAndShowResultAsync(self: CommandService, command: string, options: RunShellCommandOptions) {.async.} =
