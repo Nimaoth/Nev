@@ -1054,8 +1054,12 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
       "🛑"
     else:
       "B "
+    let color = if self.breakpointsEnabled and breakpoint.enabled:
+      "error"
+    else:
+      ""
     discard editor.addSign(idNone(), breakpoint.breakpoint.line - 1, sign,
-      group = "breakpoints")
+      group = "breakpoints", color = color, width = 2)
 
 proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
   ## Line is 0-based

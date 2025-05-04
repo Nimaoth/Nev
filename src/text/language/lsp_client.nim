@@ -99,6 +99,8 @@ type
     GetSymbol
     GetDiagnostic
     GetCompletion
+    GetCodeActions
+    ExecuteCommand
 
   LSPClientRequestKind* = enum
     Exit
@@ -122,6 +124,8 @@ type
     of GetSymbol: getSymbol*: Response[WorkspaceSymbolResponse]
     of GetDiagnostic: getDiagnostic*: Response[DocumentDiagnosticResponse]
     of GetCompletion: getCompletion*: Response[CompletionResponse]
+    of GetCodeActions: getCodeActions*: Response[CodeActionResponse]
+    of ExecuteCommand: executeCommand*: Response[JsonNode]
 
   LSPClientRequest = object
     id: int
@@ -158,6 +162,8 @@ type
     activeWorkspaceSymbolsRequests: Table[int, tuple[meth: string, future: Future[Response[WorkspaceSymbolResponse]]]] # Main thread
     activeDiagnosticsRequests: Table[int, tuple[meth: string, future: Future[Response[DocumentDiagnosticResponse]]]] # Main thread
     activeCompletionsRequests: Table[int, tuple[meth: string, future: Future[Response[CompletionResponse]]]] # Main thread
+    activeCodeActionRequests: Table[int, tuple[meth: string, future: Future[Response[CodeActionResponse]]]] # Main thread
+    activeExecuteCommandRequests: Table[int, tuple[meth: string, future: Future[Response[JsonNode]]]] # Main thread
     requestsPerMethod: Table[string, seq[int]]
     canceledRequests: HashSet[int]
     idToMethod: Table[int, string]
@@ -171,9 +177,6 @@ type
     killOnExit*: bool = true
     exit: bool = false
 
-    # initializedFuture: Future[bool]
-    onWorkspaceConfiguration*: proc(params: ConfigurationParams): Future[seq[JsonNode]] {.gcsafe.}
-
     userInitializationOptions*: JsonNode
     serverExecutablePath: string
     args: seq[string]
@@ -182,6 +185,8 @@ type
     initializedChannel*: AsyncChannel[Option[ServerCapabilities]]
     workspaceConfigurationRequestChannel*: AsyncChannel[ConfigurationParams]
     workspaceConfigurationResponseChannel*: AsyncChannel[seq[JsonNode]]
+    workspaceApplyEditRequestChannel*: AsyncChannel[ApplyWorkspaceEditParams]
+    workspaceApplyEditResponseChannel*: AsyncChannel[ApplyWorkspaceEditResponse]
     getCompletionsChannel*: AsyncChannel[string]
     messageChannel*: AsyncChannel[(MessageType, string)]
     diagnosticChannel*: AsyncChannel[PublicDiagnosticsParams]
@@ -210,6 +215,8 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     initializedChannel: newAsyncChannel[Option[ServerCapabilities]](),
     workspaceConfigurationRequestChannel: newAsyncChannel[ConfigurationParams](),
     workspaceConfigurationResponseChannel: newAsyncChannel[seq[JsonNode]](),
+    workspaceApplyEditRequestChannel: newAsyncChannel[ApplyWorkspaceEditParams](),
+    workspaceApplyEditResponseChannel: newAsyncChannel[ApplyWorkspaceEditResponse](),
     getCompletionsChannel: newAsyncChannel[string](),
     messageChannel: newAsyncChannel[(MessageType, string)](),
     diagnosticChannel: newAsyncChannel[PublicDiagnosticsParams](),
@@ -270,6 +277,8 @@ proc deinitThread(client: LSPClient) =
   client.activeWorkspaceSymbolsRequests.clear()
   client.activeDiagnosticsRequests.clear()
   client.activeCompletionsRequests.clear()
+  client.activeCodeActionRequests.clear()
+  client.activeExecuteCommandRequests.clear()
   client.requestsPerMethod.clear()
   client.canceledRequests.clear()
   client.isInitialized = false
@@ -465,6 +474,8 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
     of GetSymbol: dispatch(client.activeWorkspaceSymbolsRequests, response.getSymbol)
     of GetDiagnostic: dispatch(client.activeDiagnosticsRequests, response.getDiagnostic)
     of GetCompletion: dispatch(client.activeCompletionsRequests, response.getCompletion)
+    of GetCodeActions: dispatch(client.activeCodeActionRequests, response.getCodeActions)
+    of ExecuteCommand: dispatch(client.activeExecuteCommandRequests, response.executeCommand)
 
   log lvlInfo, &"handleResponses: client gone"
 
@@ -512,6 +523,8 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     of "workspace/symbol": cancel(client.activeWorkspaceSymbolsRequests, WorkspaceSymbolResponse)
     of "textDocument/diagnostic": cancel(client.activeDiagnosticsRequests, DocumentDiagnosticResponse)
     of "textDocument/completion": cancel(client.activeCompletionsRequests, CompletionResponse)
+    of "textDocument/codeAction": cancel(client.activeCodeActionRequests, CodeActionResponse)
+    of "workspace/executeCommand": cancel(client.activeExecuteCommandRequests, JsonNode)
     else: continue
 
     client.activeRequests.del id
@@ -580,7 +593,6 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
         },
         "references": %*{},
         "codeAction": %*{
-          "linkSupport": true,
         },
         "rename": %*{
           "linkSupport": true,
@@ -917,7 +929,7 @@ proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[Docum
   return await client.sendRequest(client.activeDiagnosticsRequests.addr, "textDocument/diagnostic", params)
 
 proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
-  debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
+  # debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
   client.cancelAllOf("textDocument/completion")
 
   # todo
@@ -943,13 +955,52 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   if parsedResponse.asCompletionList().getSome(list):
     return list.success
 
-  debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
+  # debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
   return errorResponse[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
+proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int), (int, int)), diagnostics: seq[Diagnostic]): Future[Response[CodeActionResponse]] {.async.} =
+  # debugf"[getCodeActions] {filename.absolutePath}:{selection}"
+
+  let params = %*{
+    "textDocument": TextDocumentIdentifier(uri: $filename.toUri),
+    "range": Range(
+      start: Position(
+        line: selection[0][0],
+        character: selection[0][1],
+      ),
+      `end`: Position(
+        line: selection[1][0],
+        character: selection[1][1],
+      ),
+    ),
+    "context": CodeActionContext(
+      triggerKind: CodeActionTriggerKind.Automatic.some,
+      diagnostics: diagnostics,
+    ).toJson,
+  }
+
+  return await client.sendRequest(client.activeCodeActionRequests.addr, "textDocument/codeAction", params)
+
+proc executeCommand*(client: LSPClient, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
+  var params = %*{
+    "command": command,
+  }
+  if arguments.len > 0:
+    params["arguments"] = arguments.toJson
+
+  return await client.sendRequest(client.activeExecuteCommandRequests.addr, "workspace/executeCommand", params)
+
 proc handleWorkspaceConfigurationRequest(client: LSPClient, id: int, params: ConfigurationParams) {.async, gcsafe.} =
-  debugf"handleWorkspaceConfigurationRequest {id}, {params}"
+  # debugf"handleWorkspaceConfigurationRequest {id}, {params}"
   await client.workspaceConfigurationRequestChannel.send(params)
   let res = await client.workspaceConfigurationResponseChannel.recv()
+
+  await client.sendResult(id, %res)
+
+proc handleApplyWorkspaceEdit(client: LSPClient, id: int, params: ApplyWorkspaceEditParams) {.async, gcsafe.} =
+  # debugf"handleApplyWorkspaceEdit {id}, {params}"
+  await client.workspaceApplyEditRequestChannel.send(params)
+  let res = await client.workspaceApplyEditResponseChannel.recv()
 
   await client.sendResult(id, %res)
 
@@ -992,8 +1043,12 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
         of "workspace/configuration":
           let params = response["params"].jsonTo(ConfigurationParams, JOptions(allowMissingKeys: true, allowExtraKeys: true))
           asyncSpawn client.handleWorkspaceConfigurationRequest(id, params)
+        of "workspace/applyEdit":
+          let params = response["params"].jsonTo(ApplyWorkspaceEditParams, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+          asyncSpawn client.handleApplyWorkspaceEdit(id, params)
         else:
           log lvlWarn, &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
+          # echo &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
           discard
 
       else:
@@ -1044,6 +1099,10 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
               id: id, kind: GetDiagnostic, getDiagnostic: parsedResponse.to(DocumentDiagnosticResponse)))
           of "textDocument/completion": await client.responseChannel.send(LSPClientResponse(
               id: id, kind: GetCompletion, getCompletion: parsedResponse.to(CompletionResponse)))
+          of "textDocument/codeAction": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetCodeActions, getCodeActions: parsedResponse.to(CodeActionResponse)))
+          of "workspace/executeCommand": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: ExecuteCommand, executeCommand: parsedResponse.to(JsonNode)))
 
         else:
           log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")

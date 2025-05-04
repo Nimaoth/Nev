@@ -1372,7 +1372,6 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
     else:
       (@[path], path)
 
-    var customCommandKey = ""
     var customCommand = ""
     var customArgsRaw = newSeq[JsonNodeEx]()
     if self.getBackend() == Terminal and self.generalSettings.openSession.useMultiplexer.get():
@@ -2531,7 +2530,6 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     return true
 
   popup.addCustomCommand "delete-file-or-dir", proc(popup: SelectorPopup, args: JsonNode): bool =
-    let dir = currentDirectory[]
     if popup.getSelectedItem().getSome(item):
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
@@ -2545,7 +2543,6 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     return true
 
   popup.addCustomCommand "create-new-session", proc(popup: SelectorPopup, args: JsonNode): bool =
-    let dir = currentDirectory[]
     if popup.getSelectedItem().getSome(item):
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
@@ -2555,7 +2552,6 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     return true
 
   popup.addCustomCommand "open-session", proc(popup: SelectorPopup, args: JsonNode): bool =
-    let dir = currentDirectory[]
     if popup.getSelectedItem().getSome(item):
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
