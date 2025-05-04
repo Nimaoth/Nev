@@ -682,7 +682,16 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       diffIter.styledChunks.highlighter = Highlighter(query: self.diffDocument.highlightQuery, tree: self.diffDocument.tsTree).some
     diffIter.seekLine(startLine)
 
+  let signShow = self.settings.signs.show.get()
   let lineNumberWidth = self.lineNumberWidth()
+  let signColumnWidth = if signShow == SignColumnShowKind.Number:
+    floor(lineNumberWidth / builder.charWidth).int - 2
+  else:
+    self.requiredSignColumnWidth()
+  let signColumnPixelWidth = if signShow == SignColumnShowKind.Number:
+    0.float
+  else:
+    signColumnWidth.float * builder.charWidth
 
   let mainOffset = if renderDiff:
     floor((parentWidth + lineNumberWidth) * 0.5)
@@ -804,7 +813,37 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       if not state.addedLineNumber:
         state.addedLineNumber = true
-        lineNumbersNode.renderCommands.drawLineNumber(state.builder, chunk.point.row.int, vec2(state.bounds.x, state.offset.y), cursorLine, lineNumbers, lineNumberBounds, textColor, state.lineNumberBackgroundColor, state.fillLineNumberBackground)
+
+        if state.fillLineNumberBackground and signShow != SignColumnShowKind.Number and signShow != SignColumnShowKind.No:
+          buildCommands(lineNumbersNode.renderCommands):
+            let bounds = rect(floor(state.bounds.x + lineNumberWidth - signColumnPixelWidth), state.offset.y, signColumnPixelWidth, builder.textHeight)
+            fillRect(bounds, state.lineNumberBackgroundColor)
+
+        var drawLineNumber = true
+        self.signs.withValue(chunk.point.row.int, value):
+          buildCommands(lineNumbersNode.renderCommands):
+            var bounds = rect(state.bounds.x + lineNumberWidth - signColumnPixelWidth, state.offset.y, signColumnPixelWidth, builder.textHeight)
+            if signShow == SignColumnShowKind.Number:
+              drawLineNumber = false
+              bounds = rect(vec2(state.bounds.x + builder.charWidth, state.offset.y), lineNumberBounds)
+
+              if state.fillLineNumberBackground:
+                fillRect(rect(vec2(state.bounds.x, state.offset.y), lineNumberBounds), state.lineNumberBackgroundColor)
+
+            var i = 0
+            for s in value[]:
+              if i + s.width > signColumnWidth:
+                break
+
+              var color = textColor
+              if s.color != "":
+                color = app.theme.tokenColor(s.color, textColor)
+              drawText(s.text, bounds, color * s.tint, 0.UINodeFlags)
+              bounds.x += builder.charWidth * s.width.float
+              i += s.width
+
+        if drawLineNumber:
+          lineNumbersNode.renderCommands.drawLineNumber(state.builder, chunk.point.row.int, vec2(state.bounds.x, state.offset.y), cursorLine, lineNumbers, lineNumberBounds - vec2(signColumnPixelWidth, 0), textColor, state.lineNumberBackgroundColor, state.fillLineNumberBackground)
 
       if chunk.len > 0:
         let font = self.platform.getFontInfo(self.platform.fontSize, 0.UINodeFlags)

@@ -14,6 +14,8 @@ const debugAllMapUpdates* = false
 var debugAllMapUpdatesRT* = true
 var debugChunkIterators* = false
 
+type BufferVersionId* = tuple[id: BufferId, version: Global]
+
 template logMapUpdate*(msg: untyped) =
   when debugAllMapUpdates:
     if debugAllMapUpdatesRT:
@@ -23,6 +25,12 @@ template logChunkIter*(msg: untyped) =
   when false:
     if debugChunkIterators:
       debugEcho msg
+
+proc versionId*(self: Buffer): BufferVersionId =
+  (self.remoteId, self.version)
+
+proc versionId*(self: BufferSnapshot): BufferVersionId =
+  (self.remoteId, self.version)
 
 func toPoint*(cursor: api.Cursor): Point = Point.init(max(cursor.line, 0), max(cursor.column, 0))
 func toPointRange*(selection: Selection): tuple[first, last: Point] = (selection.first.toPoint, selection.last.toPoint)

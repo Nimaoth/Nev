@@ -413,6 +413,16 @@ proc setMode*(self: TextDocumentEditor; mode: string) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_text_setDefaultMode_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc setDefaultMode*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setDefaultMode_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_mode_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc mode*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
@@ -2306,6 +2316,16 @@ proc hideHoverDelayed*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_hideHoverDelayed_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_selectCodeAction_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc selectCodeAction*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_selectCodeAction_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
 
