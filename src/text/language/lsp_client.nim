@@ -929,7 +929,7 @@ proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[Docum
   return await client.sendRequest(client.activeDiagnosticsRequests.addr, "textDocument/diagnostic", params)
 
 proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
-  debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
+  # debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
   client.cancelAllOf("textDocument/completion")
 
   # todo
@@ -955,12 +955,11 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   if parsedResponse.asCompletionList().getSome(list):
     return list.success
 
-  debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
+  # debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
   return errorResponse[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
 proc getCodeActions*(client: LSPClient, filename: string, selection: ((int, int), (int, int)), diagnostics: seq[Diagnostic]): Future[Response[CodeActionResponse]] {.async.} =
-  debugf"[getCodeActions] {filename.absolutePath}:{selection}"
-  # client.cancelAllOf("textDocument/codeAction")
+  # debugf"[getCodeActions] {filename.absolutePath}:{selection}"
 
   let params = %*{
     "textDocument": TextDocumentIdentifier(uri: $filename.toUri),
@@ -992,14 +991,14 @@ proc executeCommand*(client: LSPClient, command: string, arguments: seq[JsonNode
   return await client.sendRequest(client.activeExecuteCommandRequests.addr, "workspace/executeCommand", params)
 
 proc handleWorkspaceConfigurationRequest(client: LSPClient, id: int, params: ConfigurationParams) {.async, gcsafe.} =
-  debugf"handleWorkspaceConfigurationRequest {id}, {params}"
+  # debugf"handleWorkspaceConfigurationRequest {id}, {params}"
   await client.workspaceConfigurationRequestChannel.send(params)
   let res = await client.workspaceConfigurationResponseChannel.recv()
 
   await client.sendResult(id, %res)
 
 proc handleApplyWorkspaceEdit(client: LSPClient, id: int, params: ApplyWorkspaceEditParams) {.async, gcsafe.} =
-  debugf"handleApplyWorkspaceEdit {id}, {params}"
+  # debugf"handleApplyWorkspaceEdit {id}, {params}"
   await client.workspaceApplyEditRequestChannel.send(params)
   let res = await client.workspaceApplyEditResponseChannel.recv()
 

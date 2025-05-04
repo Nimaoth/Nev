@@ -653,8 +653,6 @@ method getCodeActions*(self: LanguageServerLSP, filename: string, selection: Sel
   return await self.client.getCodeActions(localizedPath, selection, diagnostics)
 
 method executeCommand*(self: LanguageServerLSP, filename: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
-  # if self.serverCapabilities.codeActionProvider.isNone:
-  #   return success(lsp_types.CodeActionResponse.default)
   return await self.client.executeCommand(filename, arguments)
 
 import text/[text_editor, text_document]

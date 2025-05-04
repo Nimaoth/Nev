@@ -9,7 +9,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.clear-input-history-delay` | int | 3000 | After how many milliseconds of no input the input history is cleared. |
 | `editor.close-unused-documents-timer` | int | 10 | How often the editor will check for unused documents and close them, in seconds. |
 | `editor.custom-mode-on-top` | bool | true | If true then the app mode event handler (if the app mode is not "") will be on top of the event handler stack, otherwise it will be at the bottom (but still above the "editor" event handler. |
-| `editor.insert-input-delay` | int | 100 | After how many milliseconds of no input a pending input gets inserted as text, if you bind a key which inserts text in e.g. a multi key keybinding aswell. Say you bind `jj` to exit insert mode, then if you press `j` once and wait for this delay then it will insert `j` into the document, but if you press `j` again it will will exit insert mode instead. If you press another key like `k` before the time ends it will immediately insert the `j` and the `k`. |
+| `editor.insert-input-delay` | int | 150 | After how many milliseconds of no input a pending input gets inserted as text, if you bind a key which inserts text in e.g. a multi key keybinding aswell. Say you bind `jj` to exit insert mode, then if you press `j` once and wait for this delay then it will insert `j` into the document, but if you press `j` again it will will exit insert mode instead. If you press another key like `k` before the time ends it will immediately insert the `j` and the `k`. |
 | `editor.keep-session-history` | bool | true | If true then the editor will keep a history of opened sessions in home://.nev/sessions.json, which enables features like opening a recent session or opening the last session. |
 | `editor.max-search-result-display-len` | int | 1000 | Max length of each individual search result (search results are cut off after this value). |
 | `editor.max-search-results` | int | 1000 | Max number of search results returned by global text based search. |
@@ -25,7 +25,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.auto-start-language-server` | bool | true | If true then configured language servers are automatically started when opening a file of the specific language for the first time. |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
-| `text.code-actions.sign` | string | "⚑" | What sign to show in lines where code actions are available. Empty string or null means no sign will be added for code actions. |
+| `text.code-actions.sign` | string | "⚑" | Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions. |
 | `text.code-actions.sign-color` | string | "info" | What color the sign for code actions should be. Can be a theme color name or hex code (e.g. `#12AB34`). |
 | `text.code-actions.sign-width` | int | 1 | How many columns the sign occupies. |
 | `text.color-highlight.enable` | bool | false | Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language in `text.color-highlight.{language-id}.` |

@@ -684,11 +684,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
   let signShow = self.settings.signs.show.get()
   let lineNumberWidth = self.lineNumberWidth()
-  let signColumnWidth = if signShow == SignColumnWidthKind.Number:
+  let signColumnWidth = if signShow == SignColumnShowKind.Number:
     floor(lineNumberWidth / builder.charWidth).int - 2
   else:
     self.requiredSignColumnWidth()
-  let signColumnPixelWidth = if signShow == SignColumnWidthKind.Number:
+  let signColumnPixelWidth = if signShow == SignColumnShowKind.Number:
     0.float
   else:
     signColumnWidth.float * builder.charWidth
@@ -814,24 +814,17 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       if not state.addedLineNumber:
         state.addedLineNumber = true
 
-        if state.fillLineNumberBackground and signShow != SignColumnWidthKind.Number and signShow != SignColumnWidthKind.No:
+        if state.fillLineNumberBackground and signShow != SignColumnShowKind.Number and signShow != SignColumnShowKind.No:
           buildCommands(lineNumbersNode.renderCommands):
             let bounds = rect(floor(state.bounds.x + lineNumberWidth - signColumnPixelWidth), state.offset.y, signColumnPixelWidth, builder.textHeight)
             fillRect(bounds, state.lineNumberBackgroundColor)
 
-        var addLineNumber = true
+        var drawLineNumber = true
         self.signs.withValue(chunk.point.row.int, value):
           buildCommands(lineNumbersNode.renderCommands):
             var bounds = rect(state.bounds.x + lineNumberWidth - signColumnPixelWidth, state.offset.y, signColumnPixelWidth, builder.textHeight)
-            case signShow
-            of SignColumnWidthKind.Auto:
-              discard
-            of SignColumnWidthKind.Yes:
-              discard
-            of SignColumnWidthKind.No:
-              discard
-            of SignColumnWidthKind.Number:
-              addLineNumber = false
+            if signShow == SignColumnShowKind.Number:
+              drawLineNumber = false
               bounds = rect(vec2(state.bounds.x + builder.charWidth, state.offset.y), lineNumberBounds)
 
               if state.fillLineNumberBackground:
@@ -845,11 +838,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
               var color = textColor
               if s.color != "":
                 color = app.theme.tokenColor(s.color, textColor)
-              drawText(s.text, bounds, color, 0.UINodeFlags)
+              drawText(s.text, bounds, color * s.tint, 0.UINodeFlags)
               bounds.x += builder.charWidth * s.width.float
               i += s.width
 
-        if addLineNumber:
+        if drawLineNumber:
           lineNumbersNode.renderCommands.drawLineNumber(state.builder, chunk.point.row.int, vec2(state.bounds.x, state.offset.y), cursorLine, lineNumbers, lineNumberBounds - vec2(signColumnPixelWidth, 0), textColor, state.lineNumberBackgroundColor, state.fillLineNumberBackground)
 
       if chunk.len > 0:

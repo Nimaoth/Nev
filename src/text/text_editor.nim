@@ -53,7 +53,7 @@ type
 
   ScrollToChangeOnReload* {.pure.} = enum First = "first", Last = "last"
 
-  SignColumnWidthKind* {.pure.} = enum Auto = "auto", Yes = "yes", No = "no", Number = "number"
+  SignColumnShowKind* {.pure.} = enum Auto = "auto", Yes = "yes", No = "no", Number = "number"
 
 proc typeNameToJson*(T: typedesc[ScrollToChangeOnReload]): string =
   return "\"first\" | \"last\""
@@ -61,7 +61,7 @@ proc typeNameToJson*(T: typedesc[ScrollToChangeOnReload]): string =
 proc typeNameToJson*(T: typedesc[ColorType]): string =
   return "\"hex\" | \"float1\" | \"float255\""
 
-proc typeNameToJson*(T: typedesc[SignColumnWidthKind]): string =
+proc typeNameToJson*(T: typedesc[SignColumnShowKind]): string =
   return "\"auto\" | \"yes\" | \"no\" | \"number\""
 
 declareSettings SignColumnSettings, "":
@@ -70,13 +70,13 @@ declareSettings SignColumnSettings, "":
   ## - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width`
   ## - no: Don't show the sign column
   ## - number: Show signs instead of the line number, no extra sign column.
-  declare show, SignColumnWidthKind, SignColumnWidthKind.Number
+  declare show, SignColumnShowKind, SignColumnShowKind.Number
 
   ## If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width.
   declare maxWidth, Option[int], 2
 
 declareSettings CodeActionSettings, "":
-  ## What sign to show in lines where code actions are available. Empty string or null means no sign will be added for code actions.
+  ## Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions.
   declare sign, string, "⚑"
 
   ## How many columns the sign occupies.
@@ -747,7 +747,7 @@ proc tabWidth*(self: TextDocumentEditor): int =
 
 proc requiredSignColumnWidth*(self: TextDocumentEditor): int =
   case self.settings.signs.show.get()
-  of SignColumnWidthKind.Auto:
+  of SignColumnShowKind.Auto:
     var width = 0
     let selection = self.visibleTextRange(1)
     for line in selection.first.line..selection.last.line:
@@ -761,15 +761,15 @@ proc requiredSignColumnWidth*(self: TextDocumentEditor): int =
       width = min(width, maxWidth)
     return width
 
-  of SignColumnWidthKind.Yes:
+  of SignColumnShowKind.Yes:
     if self.settings.signs.maxWidth.get().getSome(maxWidth):
       return maxWidth
     return 1
 
-  of SignColumnWidthKind.No:
+  of SignColumnShowKind.No:
     return 0
 
-  of SignColumnWidthKind.Number:
+  of SignColumnShowKind.Number:
     return 0
 
 proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
@@ -4108,13 +4108,9 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
       self.markDirty()
 
-proc getCurrentDiagnostics(self: TextDocumentEditor): seq[lsp_types.Diagnostic] =
+proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor): seq[lsp_types.Diagnostic] =
   let visibleRange = self.visibleTextRange(0)
   for d in self.document.currentDiagnostics.mitems:
-    # let runeSelection = (
-    #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
-    #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
-    # let selection = self.runeSelectionToSelection(runeSelection)
     if d.selection.first > visibleRange.last or d.selection.last < visibleRange.first:
       continue
 
@@ -4122,6 +4118,7 @@ proc getCurrentDiagnostics(self: TextDocumentEditor): seq[lsp_types.Diagnostic] 
       continue
     d.codeActionRequested = true
 
+    # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
     result.add lsp_types.Diagnostic(
       range: lsp_types.Range(
         start: lsp_types.Position(line: d.selection.first.line, character: d.selection.first.column),
@@ -4142,47 +4139,6 @@ proc lspPathToVfsPath(self: VFS, lspPath: string): string =
   let localPath = lspPath.decodeUrl.parseUri.path.normalizePathUnix
   return localVfs.normalize(localPath)
 
-# proc applyWorkspaceEdit(self: TextDocumentEditor, edit: WorkspaceEdit) {.async.} =
-#   echo &"Apply workspace edit {wsEdit}"
-#   if edit.changes.getSome(changes):
-#     if changes.kind != JObject:
-#       return
-
-#     var documents = initTable[string, TextDocument]()
-#     for lspPath, editJson in changes.fields.pairs:
-#       let filename = self.vfs.lspPathToVfsPath(lspPath)
-#       if filename == self.document.filename:
-#         documents[lspPath] = self.document
-#       else:
-#         if self.editors.getOrOpenDocument(filename).getSome(doc) and doc of TextDocument:
-#           documents[lspPath] = doc.TextDocument
-
-#     for lspPath, editJson in changes.fields.pairs:
-#       let filename = self.vfs.lspPathToVfsPath(lspPath)
-#       if filename == self.document.filename:
-#         let edits = editJson.jsonTo(seq[lsp_types.TextEdit])
-#         var selections = newSeq[Selection]()
-#         var texts = newSeq[string]()
-#         for edit in edits:
-#           selections.add(self.document.lspRangeToSelection(edit.range))
-#           texts.add(edit.newText)
-
-#         self.addNextCheckpoint("insert")
-#         echo self.document.edit(selections, self.selections, texts)
-
-#       else:
-#         echo "todo: apply edit to other file: {filename}"
-#         if self.editors.getOrOpenDocument(filename).getSome(doc) and doc of TextDocument:
-#           let other = doc.TextDocument
-#           let edits = editJson.jsonTo(seq[lsp_types.TextEdit])
-#           var selections = newSeq[Selection]()
-#           var texts = newSeq[string]()
-#           for edit in edits:
-#             selections.add(other.lspRangeToSelection(edit.range))
-#             texts.add(edit.newText)
-
-#           echo other.edit(selections, self.selections, texts)
-
 proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeActionOrCommand) {.async.} =
   if self.document.getLanguageServer().await.getSome(ls):
     if self.document.isNil or self.document.currentDiagnostics.len == 0:
@@ -4197,7 +4153,6 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
 
     of CodeActionKind.CodeAction:
       if commandOrAction.action.edit.getSome(edit):
-        # await self.applyWorkspaceEdit(edit)
         discard await applyWorkspaceEdit(self.editors, self.vfs, edit)
         if self.document.isNil:
           return
@@ -4209,10 +4164,7 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
           log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
 
 proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId): Future[void] {.async.} =
-  # let runeSelection = (
-  #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
-  #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
-  # let selection = self.runeSelectionToSelection(runeSelection) # todo
+  # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
   let actions = await ls.getCodeActions(self.document.localizedPath, selection, @[])
   if self.document == nil or self.document.buffer.versionId != versionId:
     return
@@ -4237,9 +4189,9 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
   let line = self.selection.last.line
   if not self.codeActions.contains(line):
     if self.document.getLanguageServer().await.getSome(ls):
-      # let selection = ((line, 0), (line, self.document.lineLength(line)))
       await self.updateCodeActionAsync(ls, self.selection, self.document.buffer.versionId)
     else:
+      log lvlError, &"Can't select code actions: No language server attached."
       return
   if not self.codeActions.contains(line):
     return
@@ -4291,11 +4243,7 @@ proc updateCodeActionsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       return
 
     let versionId = self.document.buffer.versionId
-    let screenLineCount = self.screenLineCount
-    let visibleRangeHalf = self.visibleTextRange(screenLineCount div 2)
-    let visibleRange = self.visibleTextRange(screenLineCount)
-    let snapshot = self.document.buffer.snapshot.clone()
-    let diagnostics = self.getCurrentDiagnostics()
+    let diagnostics = self.getDiagnosticsWithNoCodeActionFetched()
     if diagnostics.len == 0:
       return
 

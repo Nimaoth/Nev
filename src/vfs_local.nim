@@ -285,8 +285,6 @@ proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string, 
         directoryListing.files.add name
       of pcLinkToDir:
         directoryListing.folders.add name
-      else:
-        log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for '{name}'"
 
   except OSError:
     discard

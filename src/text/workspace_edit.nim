@@ -1,8 +1,7 @@
-import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables, deques, sets, algorithm, os, uri]
-import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex]
-import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, snippet
-import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
+import std/[options, json, tables, uri]
+import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils]
+import document, document_editor
+import service, vfs, vfs_service
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
@@ -15,7 +14,6 @@ logCategory "workspace-edit"
 proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: VFS, wsEdit: WorkspaceEdit): Future[bool] {.async: (raises: []).}
 
 import text_document, text_editor
-import service
 
 proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: VFS, wsEdit: WorkspaceEdit): Future[bool] {.async: (raises: []).} =
   let editors = if editors != nil:
@@ -52,7 +50,6 @@ proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: VFS, wsEdit: Works
 
     var queue = newSeq[tuple[doc: TextDocument, edits: seq[lsp_types.TextEdit]]]()
     for lspPath, editJson in changes.fields.pairs:
-      let filename = vfs.lspPathToVfsPath(lspPath)
       if not documents.contains(lspPath):
         continue
 
@@ -68,7 +65,7 @@ proc applyWorkspaceEdit*(editors: DocumentEditorService, vfs: VFS, wsEdit: Works
       queue.removeShift(0)
       if doc.requiresLoad or doc.isLoadingAsync:
         queue.add (doc, edits)
-        log lvlDebug, "doc '" & doc.filename & "' is still loading"
+
         try:
           await sleepAsync(1.milliseconds)
         except:

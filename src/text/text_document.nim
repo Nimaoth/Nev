@@ -654,7 +654,7 @@ proc lspRangeToSelection*(self: TextDocument, r: lsp_types.Range): Selection =
   let runeSelection = (
     (r.start.line, r.start.character.RuneIndex),
     (r.`end`.line, r.`end`.character.RuneIndex))
-  return self.runeSelectionToSelection(runeSelection) # todo
+  return self.runeSelectionToSelection(runeSelection)
 
 proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Selection] =
   if self.errorQuery.isNil or self.tsTree.isNil:
