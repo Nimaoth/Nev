@@ -1049,7 +1049,7 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
           asyncSpawn client.handleApplyWorkspaceEdit(id, params)
         else:
           log lvlWarn, &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
-          echo &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
+          # echo &"[run] Received request with id {id} and method {meth} but don't know how to handle it:\n{response}"
           discard
 
       else:

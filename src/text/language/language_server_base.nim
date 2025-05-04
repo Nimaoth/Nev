@@ -81,6 +81,7 @@ type Diagnostic* = object
   relatedInformation*: Option[seq[lsp_types.DiagnosticRelatedInformation]]
   data*: Option[JsonNode]
   removed*: bool = false
+  codeActionRequested*: bool = false
 
 var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = Workspace.none): Future[Option[LanguageServer]] {.gcsafe, raises: [].} = nil
 

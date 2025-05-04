@@ -90,18 +90,18 @@ The following LSP features are currently supported:
 
 | Feature | Vim | VSCode | Note |
 | ----------- | --- | --- | --- |
-| textDocument/definition | `gd` | `<C-g><C-d>` or `<F12>` |  |
-| textDocument/declaration | `gD` | `<C-g><CS-d>` |  |
-| textDocument/typeDefinition | `gT` | `<C-g><CS-t>` |  |
-| textDocument/implementation | `gi` | `<C-g><C-i>` |  |
-| textDocument/documentSymbol | `gs` | `<C-g><C-s>` or `<CS-o>` |  |
-| textDocument/references | `gr` | `<C-g><C-r>` or `<S-F12>` |  |
-| textDocument/hover | `K` | `<C-g><C-k>` |  |
-| textDocument/diagnostic | `H` | `<C-g><C-h>` |  |
-| textDocument/switchSourceHeader | `go` | `<C-g><C-o>` | Only for C/C++ with `clangd` |
-| workspace/symbol | `gw` | `<C-g><C-w>` or `<C-t>` |  |
-| textDocument/inlayHints |  |  | No keybindings necessary |
-| textDocument/completion |  |  | See below |
+| `textDocument/definition=` | `gd` | `<C-g><C-d>` or `<F12>` |  |
+| `textDocument/declaration=` | `gD` | `<C-g><CS-d>` |  |
+| `textDocument/typeDefinition=` | `gT` | `<C-g><CS-t>` |  |
+| `textDocument/implementation=` | `gi` | `<C-g><C-i>` |  |
+| `textDocument/documentSymbol=` | `gs` | `<C-g><C-s>` or `<CS-o>` |  |
+| `textDocument/references=` | `gr` | `<C-g><C-r>` or `<S-F12>` |  |
+| `textDocument/hover=` | `K` | `<C-g><C-k>` |  |
+| `textDocument/diagnostic=` | `H` | `<C-g><C-h>` |  |
+| `textDocument/switchSourceHeader=` | `go` | `<C-g><C-o>` | Only for C/C++ with `clangd` |
+| `workspace/symbol=` | `gw` | `<C-g><C-w>` or `<C-t>` |  |
+| `textDocument/inlayHints=` |  |  | No keybindings necessary |
+| `textDocument/completion=` |  |  | See below |
 
 ### Auto completion
 
@@ -124,7 +124,7 @@ Plugins will also be able to create new completion providers.
 Nev supports certain features (e.g. goto definition) by using regex based search if no language server is available.
 This allows you get decent support for LSP features without having to install an LSP, or if no LSP is available for your language.
 
-This feature currently requires [ripgrep](https://github.com/BurntSushi/ripgrep) to be installed.
+This feature currently requires [Ripgrep](https://github.com/BurntSushi/ripgrep) to be installed.
 
 Here is an example configuration for Nim which defines two regexes, one for goto definition and one to find symbols in the current file:
 

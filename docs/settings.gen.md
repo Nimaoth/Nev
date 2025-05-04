@@ -25,6 +25,9 @@ For examples and default values see [here](../config/settings.json)
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.auto-start-language-server` | bool | true | If true then configured language servers are automatically started when opening a file of the specific language for the first time. |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
+| `text.code-actions.sign` | string | "⚑" | What sign to show in lines where code actions are available. Empty string or null means no sign will be added for code actions. |
+| `text.code-actions.sign-color` | string | "info" | What color the sign for code actions should be. Can be a theme color name or hex code (e.g. `#12AB34`). |
+| `text.code-actions.sign-width` | int | 1 | How many columns the sign occupies. |
 | `text.color-highlight.enable` | bool | false | Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language in `text.color-highlight.{language-id}.` |
 | `text.color-highlight.kind` | "hex" \| "float1" \| "float255" | "hex" | How to interpret the number. "hex" means the number is written as either 6 or 8 hex characters, e.g. ABBACA7. "float1" means the number is a float with 0 being black and 1 being white. "float255" means the number is a float or int with 0 being black and 255 being white. |
 | `text.color-highlight.regex` | regex | "#([0-9a-fA-F]{6})\|#([0-9a-fA-F]{8})" | Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind. |
@@ -68,6 +71,8 @@ For examples and default values see [here](../config/settings.json)
 | `text.search-regexes.workspace-symbols` | regex \| null | null | Regex to use when using the workspace-symbols feature. |
 | `text.search-regexes.workspace-symbols-by-kind` | { [key: string]: regex } \| null | null | Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex. |
 | `text.search-workspace-regex-max-results` | int | 50000 | Maximum number of results to display for regex based workspace symbol search. |
+| `text.signs.max-width` | int \| null | 2 | If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width. |
+| `text.signs.show` | "auto" \| "yes" \| "no" \| "number" | "number" | Defines how the sign column is displayed. - auto: Signs are next to line numbers, width is based on amount of signs in a line. - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width` - no: Don't show the sign column - number: Show signs instead of the line number, no extra sign column. |
 | `text.single-click-command` | string | "" | Command to run after single clicking on some text. |
 | `text.single-click-command-args` | any | [] | Arguments to the command which is run when single clicking on some text. |
 | `text.tab-width` | int | 4 | How many characters wide a tab is. |

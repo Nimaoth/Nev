@@ -10,6 +10,8 @@
     - You press `j` twice in a row, faster than the configured delay, then it will exit to normal mode
     - You press `j` once followed by another key (e.g `k`) faster than the configured delay. `j` will be inserted and
       the next key press will be handled as usual.
+- Added the ability to show signs on each line in a sign column, to show breakpoints, errors, code actions, etc.
+- Added support LSP for code actions
 
 ### Bug fixes
 
@@ -24,13 +26,13 @@
   - File loading is now completely asynchronous, so no freezes when opening large files.
 - Customizable language detection using regex
 - Support WASM treesitter parsers
-- Integrate wasmtime as new WASM engine, for now only for treesitter parsers
+- Integrate Wasmtime as new WASM engine, for now only for treesitter parsers
 - Added command for installing treesitter parsers (`install-treesitter-parser`, requires `tree-sitter-cli` and `git`)
 - Added smooth scrolling
 - Added command for browsing docs (`explore-help`)
 - Added settings browser (`browse-settings`)
 - Added key binding preview while waiting for further input in longer keybindings
-- Added regex based goto-definition/goto-references/goto-symbol etc if no language server is available (requires ripgrep). Regexes can be configured per language
+- Added regex based goto-definition/goto-references/goto-symbol etc if no language server is available (requires Ripgrep). Regexes can be configured per language
 - Improved document completions to run mostly on a background thread (except filtering) and cache the entire document
 - Added inlay hints to preview colors detected using regex, e.g. "#feabee" can be detected, and an inlay hint in the corresponding color will be shown before the text. Has to be configured per language.
 - Git view improvements:

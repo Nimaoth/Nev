@@ -1087,7 +1087,7 @@ declareSettings GeneralSettings, "editor":
   ## Say you bind `jj` to exit insert mode, then if you press `j` once and wait for this delay then it will
   ## insert `j` into the document, but if you press `j` again it will will exit insert mode instead.
   ## If you press another key like `k` before the time ends it will immediately insert the `j` and the `k`.
-  declare insertInputDelay, int, 100
+  declare insertInputDelay, int, 150
 
   ## Whether the editor shows a history of the last few pressed buttons in the status bar.
   declare recordInputHistory, bool, false

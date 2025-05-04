@@ -60,8 +60,8 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
 
 proc handleApplyWorkspaceEditRequest*(self: LanguageServerLSP, params: lsp_types.ApplyWorkspaceEditParams):
     Future[lsp_types.ApplyWorkspaceEditResponse] {.gcsafe, async.} =
-  echo &"handleApplyWorkspaceEditRequest {params}"
 
+  # todo: nice error messages when failing
   if applyWorkspaceEdit(nil, nil, params.edit).await:
     return lsp_types.ApplyWorkspaceEditResponse(
       applied: true,
@@ -69,7 +69,7 @@ proc handleApplyWorkspaceEditRequest*(self: LanguageServerLSP, params: lsp_types
   else:
     return lsp_types.ApplyWorkspaceEditResponse(
       applied: false,
-      failureReason: "not implemented".some,
+      failureReason: "Internal error".some,
     )
 
 proc handleWorkspaceConfigurationRequests(lsp: LanguageServerLSP) {.async.} =

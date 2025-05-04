@@ -18,7 +18,6 @@ import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
 import overlay_map, tab_map, wrap_map, diff_map, display_map
-import workspace_edit
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
@@ -54,11 +53,37 @@ type
 
   ScrollToChangeOnReload* {.pure.} = enum First = "first", Last = "last"
 
+  SignColumnWidthKind* {.pure.} = enum Auto = "auto", Yes = "yes", No = "no", Number = "number"
+
 proc typeNameToJson*(T: typedesc[ScrollToChangeOnReload]): string =
   return "\"first\" | \"last\""
 
 proc typeNameToJson*(T: typedesc[ColorType]): string =
   return "\"hex\" | \"float1\" | \"float255\""
+
+proc typeNameToJson*(T: typedesc[SignColumnWidthKind]): string =
+  return "\"auto\" | \"yes\" | \"no\" | \"number\""
+
+declareSettings SignColumnSettings, "":
+  ## Defines how the sign column is displayed.
+  ## - auto: Signs are next to line numbers, width is based on amount of signs in a line.
+  ## - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width`
+  ## - no: Don't show the sign column
+  ## - number: Show signs instead of the line number, no extra sign column.
+  declare show, SignColumnWidthKind, SignColumnWidthKind.Number
+
+  ## If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width.
+  declare maxWidth, Option[int], 2
+
+declareSettings CodeActionSettings, "":
+  ## What sign to show in lines where code actions are available. Empty string or null means no sign will be added for code actions.
+  declare sign, string, "⚑"
+
+  ## How many columns the sign occupies.
+  declare signWidth, int, 1
+
+  ## What color the sign for code actions should be. Can be a theme color name or hex code (e.g. `#12AB34`).
+  declare signColor, string, "info"
 
 declareSettings ColorHighlightSettings, "":
   ## Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language
@@ -125,11 +150,17 @@ declareSettings SearchRegexSettings, "":
 declareSettings TextEditorSettings, "text":
   use colorHighlight, ColorHighlightSettings
 
+  ## Settings for how signs are displayed
+  use signs, SignColumnSettings
+
   ## Settings for highlighting text matching the current selection or word containing the cursor.
   use highlightMatches, MatchingWordHighlightSettings
 
   ## Configure search regexes.
   use searchRegexes, SearchRegexSettings
+
+  ## Configure code actions.
+  use codeActions, CodeActionSettings
 
   ## Specifies whether a selection includes the character after the end cursor.
   ## If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello".
@@ -198,6 +229,7 @@ declareSettings TextEditorSettings, "text":
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
+    selection: Selection
     case kind: CodeActionKind
     of CodeActionKind.Command:
       command: lsp_types.Command
@@ -261,7 +293,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
 
   customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
-  signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color]]]
+  signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]]
 
   defaultScrollBehaviour*: ScrollBehaviour = CenterOffscreen
   nextScrollBehaviour*: Option[ScrollBehaviour]
@@ -443,6 +475,8 @@ proc closeDiff*(self: TextDocumentEditor)
 proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour)
 proc numDisplayLines*(self: TextDocumentEditor): int
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true, includeAfter: bool = true): Cursor
+proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string)
+proc setDefaultMode*(self: TextDocumentEditor)
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
 proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument)
@@ -464,6 +498,8 @@ proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
   includeAfter: bool = true, wrap: bool = true): Selection
 proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
   includeAfter: bool = true, wrap: bool = true): Selection
+
+import workspace_edit
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor =
   self.document.clampCursor(cursor, includeAfter)
@@ -709,6 +745,33 @@ proc tabWidth*(self: TextDocumentEditor): int =
     log lvlError, &"Invalid tab width of 0 for editor '{self.getFileName()}'"
     return 4
 
+proc requiredSignColumnWidth*(self: TextDocumentEditor): int =
+  case self.settings.signs.show.get()
+  of SignColumnWidthKind.Auto:
+    var width = 0
+    let selection = self.visibleTextRange(1)
+    for line in selection.first.line..selection.last.line:
+      self.signs.withValue(line, value):
+        var subWidth = 0
+        for s in value[]:
+          subWidth += s.width
+        width = max(width, subWidth)
+
+    if self.settings.signs.maxWidth.get().getSome(maxWidth):
+      width = min(width, maxWidth)
+    return width
+
+  of SignColumnWidthKind.Yes:
+    if self.settings.signs.maxWidth.get().getSome(maxWidth):
+      return maxWidth
+    return 1
+
+  of SignColumnWidthKind.No:
+    return 0
+
+  of SignColumnWidthKind.Number:
+    return 0
+
 proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
   # line numbers
   let lineNumbers = self.uiSettings.lineNumbers.get()
@@ -719,10 +782,12 @@ proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
   let maxLineNumberLen = ($maxLineNumber).len + 1
 
   let lineNumberPadding = self.platform.charWidth
-  return if lineNumbers != LineNumbers.None:
+  result = if lineNumbers != LineNumbers.None:
     vec2(maxLineNumberLen.float32 * self.platform.charWidth + lineNumberPadding, self.platform.totalLineHeight)
   else:
     vec2()
+
+  result.x += self.requiredSignColumnWidth().float * self.platform.charWidth
 
 proc lineNumberWidth*(self: TextDocumentEditor): float =
   return self.lineNumberBounds.x.ceil
@@ -839,11 +904,11 @@ proc clearSigns*(self: TextDocumentEditor, group: string = "") =
   self.markDirty()
 
 proc addSign*(self: TextDocumentEditor, id: Id, line: int, text: string, group: string = "",
-    tint: Color = color(1, 1, 1)): Id =
+    tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id =
   self.signs.withValue(line, val):
-    val[].add (id, group, text, tint)
+    val[].add (id, group, text, tint, color, width)
   do:
-    self.signs[line] = @[(id, group, text, tint)]
+    self.signs[line] = @[(id, group, text, tint, color, width)]
   self.markDirty()
 
 proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
@@ -1485,6 +1550,9 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
   self.plugins.handleModeChanged(self, oldMode, self.currentMode)
 
   self.markDirty()
+
+proc setDefaultMode*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.setMode(self.settings.defaultMode.get())
 
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
   ## Returns the current mode of the text editor, or "" if there is no mode
@@ -4042,13 +4110,17 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc getCurrentDiagnostics(self: TextDocumentEditor): seq[lsp_types.Diagnostic] =
   let visibleRange = self.visibleTextRange(0)
-  for i, d in self.document.currentDiagnostics:
+  for d in self.document.currentDiagnostics.mitems:
     # let runeSelection = (
     #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
     #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
     # let selection = self.runeSelectionToSelection(runeSelection)
     if d.selection.first > visibleRange.last or d.selection.last < visibleRange.first:
       continue
+
+    if d.codeActionRequested:
+      continue
+    d.codeActionRequested = true
 
     result.add lsp_types.Diagnostic(
       range: lsp_types.Range(
@@ -4136,30 +4208,28 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
         if res.isError:
           log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
 
-proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection): Future[void] {.async.} =
+proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId): Future[void] {.async.} =
   # let runeSelection = (
   #   (d.`range`.start.line, d.`range`.start.character.RuneIndex),
   #   (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
   # let selection = self.runeSelectionToSelection(runeSelection) # todo
   let actions = await ls.getCodeActions(self.document.localizedPath, selection, @[])
-  if self.document == nil:
+  if self.document == nil or self.document.buffer.versionId != versionId:
     return
+  if actions.kind == Success and actions.result.len > 0:
+    let sign = self.settings.codeActions.sign.get()
+    if sign.len > 0:
+      let signWidth = self.settings.codeActions.signWidth.get()
+      let color = self.settings.codeActions.signColor.get()
+      discard self.addSign(idNone(), selection.first.line, sign, group = "code-actions", color = color, width = signWidth)
 
-  # proc addSign*(self: TextDocumentEditor, id: Id, line: int, text: string, group: string = "", tint: Color = color(1, 1, 1)): Id =
-  echo &"handleCodeAction {selection} -> {actions}"
-  if actions.kind == Success:
     for actionOrCommand in actions.result:
       if actionOrCommand.asCommand().getSome(command):
-        # echo "+++ command: ", command
-        self.codeActions.mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.Command, command: command)
+        self.codeActions.mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.Command, command: command, selection: selection)
       elif actionOrCommand.asCodeAction().getSome(codeAction):
-        # echo "+++ codeAction: ", codeAction
-        self.codeActions.mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.CodeAction, action: codeAction)
+        self.codeActions.mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.CodeAction, action: codeAction, selection: selection)
       else:
-        echo "--- unknown ", actionOrCommand
-
-  # else:
-  #   echo &"-> {actions}"
+        log lvlError, &"Failed to parse code action: {actionOrCommand}"
 
   self.markDirty()
 
@@ -4168,7 +4238,7 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
   if not self.codeActions.contains(line):
     if self.document.getLanguageServer().await.getSome(ls):
       # let selection = ((line, 0), (line, self.document.lineLength(line)))
-      await self.updateCodeActionAsync(ls, self.selection)
+      await self.updateCodeActionAsync(ls, self.selection, self.document.buffer.versionId)
     else:
       return
   if not self.codeActions.contains(line):
@@ -4181,6 +4251,9 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
 
   var res = newSeq[FinderItem]()
   for i, commandOrAction in self.codeActions[line]:
+    if commandOrAction.selection.first > self.selection.last or commandOrAction.selection.last < self.selection.last:
+      continue
+
     case commandOrAction.kind:
     of CodeActionKind.Command:
       res.add FinderItem(
@@ -4213,12 +4286,11 @@ proc updateCodeActionsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.isNil:
     return
 
-  self.codeActions.clear()
-
   if self.document.getLanguageServer().await.getSome(ls):
     if self.document.isNil or self.document.currentDiagnostics.len == 0:
       return
 
+    let versionId = self.document.buffer.versionId
     let screenLineCount = self.screenLineCount
     let visibleRangeHalf = self.visibleTextRange(screenLineCount div 2)
     let visibleRange = self.visibleTextRange(screenLineCount)
@@ -4231,7 +4303,7 @@ proc updateCodeActionsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       let selection: Selection = (
         (d.`range`.start.line, d.`range`.start.character),
         (d.`range`.`end`.line, d.`range`.`end`.character))
-      asyncSpawn self.updateCodeActionAsync(ls, selection)
+      asyncSpawn self.updateCodeActionAsync(ls, selection, versionId)
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.clearDiagnostics()
@@ -4628,6 +4700,8 @@ proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument) 
   if document != self.document:
     return
 
+  self.codeActions.clear()
+  self.clearSigns("code-actions")
   asyncSpawn self.updateCodeActionsAsync()
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
