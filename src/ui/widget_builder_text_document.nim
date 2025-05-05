@@ -209,6 +209,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
     let reverse = top + completionPanelHeight > completionsPanel.parent.bounds.h
+    self.completionsDrawnInReverse = reverse
 
     proc handleScroll(delta: float) =
       let scrollAmount = delta * self.uiSettings.scrollSpeed.get()

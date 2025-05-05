@@ -362,13 +362,15 @@ type TextDocumentEditor* = ref object of DocumentEditor
   selectedCompletion*: int
   completionsBaseIndex*: int
   completionsScrollOffset*: float
+  completionsDirty: bool
+  completionEngine: CompletionEngine
+  lastCompletionTrigger: (Global, Cursor)
   lastItems*: seq[tuple[index: int, bounds: Rect]]
   showCompletions*: bool
   scrollToCompletion*: Option[int]
+  completionsDrawnInReverse*: bool = false
 
   lastEndDisplayPoint: DisplayPoint
-
-  completionEngine: CompletionEngine
 
   currentSnippetData*: Option[SnippetData]
 
@@ -386,9 +388,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   onDiagnosticsHandle: Id
   onCompletionsUpdatedHandle: Id
   onFocusChangedHandle: Id
-
-  lastCompletionTrigger: (Global, Cursor)
-  completionsDirty: bool
 
   customHeader*: string
 
@@ -3762,6 +3761,11 @@ proc switchSourceHeader*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.switchSourceHeaderAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.completionEngine.isNotNil:
+    self.completionEngine.setCurrentLocations(self.selections)
+    self.completionEngine.updateCompletions()
+    self.lastCompletionTrigger = (self.document.buffer.version, self.selections[^1].last)
+  self.completionsDirty = true
   self.showCompletionWindow()
 
 proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -3830,6 +3834,18 @@ proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
+
+proc selectPrevCompletionVisual*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.completionsDrawnInReverse:
+    self.selectNextCompletion()
+  else:
+    self.selectPrevCompletion()
+
+proc selectNextCompletionVisual*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.completionsDrawnInReverse:
+    self.selectPrevCompletion()
+  else:
+    self.selectNextCompletion()
 
 proc hasTabStops*(self: TextDocumentEditor): bool {.expose("editor.text").} =
   return self.currentSnippetData.isSome
