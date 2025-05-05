@@ -247,7 +247,10 @@ proc fromJson*[T](a: var T, b: JsonNode, opt = Joptions()) {.raises: [ValueError
   elif T is bool: a = to(b,T)
   elif T is enum:
     case b.kind
-    of JInt: a = T(b.getBiggestInt())
+    of JInt:
+      let i = b.getBiggestInt()
+      checkJson i >= T.low.ord and i <= T.high.ord, "invalid enum value for " & $T & ": " & $i
+      a = T(i)
     of JString: a = parseEnum[T](b.getStr())
     else: checkJson false, $($T, " ", b)
   elif T is uint|uint64: a = T(to(b, uint64))
