@@ -11,7 +11,7 @@
     - You press `j` once followed by another key (e.g `k`) faster than the configured delay. `j` will be inserted and
       the next key press will be handled as usual.
 - Added the ability to show signs on each line in a sign column, to show breakpoints, errors, code actions, etc.
-- Added support LSP for code actions
+- Added support LSP for code actions and rename
 
 ### Bug fixes
 

@@ -2197,6 +2197,26 @@ proc selectNextCompletion*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_text_selectPrevCompletionVisual_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc selectPrevCompletionVisual*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_selectPrevCompletionVisual_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_selectNextCompletionVisual_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc selectNextCompletionVisual*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_selectNextCompletionVisual_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_hasTabStops_bool_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc hasTabStops*(self: TextDocumentEditor): bool {.gcsafe, raises: [].} =

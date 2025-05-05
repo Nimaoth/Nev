@@ -31,7 +31,7 @@ template catch(exp: untyped, then: untyped): untyped =
 
 ############################################################################################################
 
-const version = "0.3.0"
+const version = "0.4.0"
 const releaseWindows = &"nev-{version}-x86_64-pc-windows-gnu"
 const releaseLinux = &"nev-{version}-x86_64-unknown-linux-gnu"
 const releaseLinuxMusl = &"nev-{version}-x86_64-unknown-linux-musl"

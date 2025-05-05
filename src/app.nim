@@ -278,7 +278,7 @@ proc setupDefaultKeybindings(self: App) =
   editorConfig.addCommand("", "<C-w><C-x>", "close-current-view true")
   editorConfig.addCommand("", "<C-w><C-X>", "close-current-view false")
   editorConfig.addCommand("", "<C-s>", "write-file")
-  editorConfig.addCommand("", "<C-w><C-w>", "command-line")
+  editorConfig.addCommand("", "<C-b><C-b>", "command-line")
   editorConfig.addCommand("", "<C-o>", "choose-file \"new\"")
   editorConfig.addCommand("", "<C-h>", "choose-open \"new\"")
 
@@ -304,7 +304,8 @@ proc setupDefaultKeybindings(self: App) =
   textConfig.addCommand("", "<DELETE>", "delete-right")
   textConfig.addCommand("", "<ENTER>", "insert-text \"\\n\"")
   textConfig.addCommand("", "<SPACE>", "insert-text \" \"")
-  textConfig.addCommand("", "<C-k>", "get-completions")
+  textConfig.addCommand("", "<C-n>", "get-completions")
+  textConfig.addCommand("", "<C-p>", "get-completions")
 
   textConfig.addCommand("", "<C-z>", "undo")
   textConfig.addCommand("", "<C-y>", "redo")
