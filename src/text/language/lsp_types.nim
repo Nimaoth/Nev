@@ -130,6 +130,7 @@ type
     Warning = 2
     Info = 3
     Log = 4
+    Debug = 5
 
   CompletionItemTag* {.pure.} = enum
     Deprecated = 1
