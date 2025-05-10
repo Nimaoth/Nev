@@ -1,24 +1,14 @@
-import std/[options, tables, strutils, os, json]
+import std/[options, tables, strutils, os]
 import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, rope_utils, event, regex, rope_regex, myjsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
-import dispatch_tables, document_editor, service, layout, events, vfs_service, vfs, config_provider
+import document_editor, service, vfs_service, vfs, config_provider
 import text/text_document
 
 logCategory "language-server-paths"
 
-# const pathRegex = """(?:\w+:\/\/)|(?:(?:\w+:\/\/)?(?:[a-zA-Z]:(/|\\{1,})|(/|\\{1,})|\.{1,2}(/|\\{1,})|\.{0,2}(?=\w))(?:[^\\/\s\"'>\[\]:]+(/|\\{1,}))+([^\\/\s\"'>\[\]:]+(?:\.\w+)?)?)"""
-# const pathRegex = """(?:\w+:\/\/)|(?:(?:\w+:\/\/)?(?:[a-zA-Z]:(/|\\{1,2})|(/|\\{1,2})|)(?:[^\\/\s\"'>\[\]:]+(/|\\{1,2}))+([^\\/\s\"'>\[\]:]+(?:\.\w+)?)?)"""
-# const pathRegex = """(?:(?:\w+:\/\/)(?:[a-zA-Z]:(/|\\{1,2})|(/|\\{1,2})|)(?:[^\\/\s\"'>\[\]:]+(/|\\{1,2}))*([^\\/\s\"'>\[\]:]+(?:\.\w+)?)?)|(?:(?:[a-zA-Z]:(/|\\{1,2})|(/|\\{1,2})|)(?:[^\\/\s\"'>\[\]:]+(/|\\{1,2}))+([^\\/\s\"'>\[\]:]+(?:\.\w+)?)?)"""
 const pathRegex = """(?=.*[/\\])(?:(?:\w+:\/\/)?(?:[a-zA-Z]:(/|\\{1,2})|(/|\\{1,2})|)(?:[^\\/\s\"'>\[\]:]+(/|\\{1,2}))*([^\\/\s\"'>\[\]:]+(?:\.\w+)?)?)"""
-discard """C:/Users/nima"""
-discard """C:/Use"""
-discard """./text/completion.nim"""
-discard """../src/app_interface.nim"""
-discard """C:\Nev\nev.nimble"""
-discard """app://src/language_server_command_line.nim"""
-discard """nimble://"""
 
 type
   LanguageServerPaths* = ref object of LanguageServer
@@ -50,7 +40,6 @@ func serviceName*(_: typedesc[LanguageServerPathsService]): string = "LanguageSe
 addBuiltinService(LanguageServerPathsService, VFSService, DocumentEditorService)
 
 method init*(self: LanguageServerPathsService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
-  log lvlInfo, &"LanguageServerPathsService.init"
   self.languageServer = newLanguageServerPaths(self.services)
   discard self.languageServer.documents.onEditorRegistered.subscribe proc(editor: DocumentEditor) =
     let doc = editor.getDocument()
@@ -62,7 +51,7 @@ method init*(self: LanguageServerPathsService): Future[Result[void, ref Catchabl
   return ok()
 
 method getDefinition*(self: LanguageServerPaths, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
-  debugf"getDefinition '{filename}', {location}"
+  # debugf"getDefinition '{filename}', {location}"
   var definitions = newSeq[Definition]()
   if self.documents.getDocument(filename).getSome(doc) and doc of TextDocument:
     let textDoc = doc.TextDocument
@@ -105,8 +94,7 @@ method getDefinition*(self: LanguageServerPaths, filename: string, location: Cur
 method getCompletionTriggerChars*(self: LanguageServer): set[char] {.gcsafe, raises: [].} = {'a'..'z', 'A'..'Z', '0'..'9', '/', '\\', ':', '-', '_', '.'}
 
 method getCompletions*(self: LanguageServerPaths, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
-  debugf"LanguageServerPaths.getCompletions '{filename}', {location}"
-  let vfs = self.services.getService(VfsService).get.vfs
+  # debugf"LanguageServerPaths.getCompletions '{filename}', {location}"
 
   var completions = newSeq[CompletionItem]()
 
