@@ -276,7 +276,8 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
   if self.serverCapabilities.definitionProvider.isNone:
     return @[]
 
-  let response = await self.client.getDefinition(filename, location.line, location.column)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getDefinition(localizedPath, location.line, location.column)
   if response.isError:
     log(lvlWarn, &"Error in getDefinition('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
@@ -288,8 +289,6 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
   let parsedResponse = response.result
 
   let res = parsedResponse.locationsResponseToDefinitions()
-  if res.len == 0:
-    log(lvlWarn, "No definitions found")
   return res
 
 # todo: change return type to Response[seq[Definition]]
@@ -299,7 +298,8 @@ method getDeclaration*(self: LanguageServerLSP, filename: string, location: Curs
   if self.serverCapabilities.declarationProvider.isNone:
     return @[]
 
-  let response = await self.client.getDeclaration(filename, location.line, location.column)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getDeclaration(localizedPath, location.line, location.column)
   if response.isError:
     log(lvlWarn, &"Error in getDeclaration('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
@@ -311,8 +311,6 @@ method getDeclaration*(self: LanguageServerLSP, filename: string, location: Curs
   let parsedResponse = response.result
 
   let res = parsedResponse.locationsResponseToDefinitions()
-  if res.len == 0:
-    log(lvlWarn, "No declaration found")
   return res
 
 # todo: change return type to Response[seq[Definition]]
@@ -322,7 +320,8 @@ method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: C
   if self.serverCapabilities.typeDefinitionProvider.isNone:
     return @[]
 
-  let response = await self.client.getTypeDefinitions(filename, location.line, location.column)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getTypeDefinitions(localizedPath, location.line, location.column)
   if response.isError:
     log(lvlWarn, &"Error in getTypeDefinition('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
@@ -334,8 +333,6 @@ method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: C
   let parsedResponse = response.result
 
   let res = parsedResponse.locationsResponseToDefinitions()
-  if res.len == 0:
-    log(lvlWarn, "No type definitions found")
   return res
 
 # todo: change return type to Response[seq[Definition]]
@@ -345,7 +342,8 @@ method getImplementation*(self: LanguageServerLSP, filename: string, location: C
   if self.serverCapabilities.implementationProvider.isNone:
     return @[]
 
-  let response = await self.client.getImplementation(filename, location.line, location.column)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getImplementation(localizedPath, location.line, location.column)
   if response.isError:
     log(lvlWarn, &"Error in getImplementation('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
@@ -357,8 +355,6 @@ method getImplementation*(self: LanguageServerLSP, filename: string, location: C
   let parsedResponse = response.result
 
   let res = parsedResponse.locationsResponseToDefinitions()
-  if res.len == 0:
-    log(lvlWarn, "No implementations found")
   return res
 
 # todo: change return type to Response[seq[Definition]]
@@ -368,7 +364,8 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
   if self.serverCapabilities.referencesProvider.isNone:
     return @[]
 
-  let response = await self.client.getReferences(filename, location.line, location.column)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getReferences(localizedPath, location.line, location.column)
   if response.isError:
     log(lvlWarn, &"Error in getReferences('{filename}', {location}): {response.error}")
     return newSeq[Definition]()
@@ -388,11 +385,11 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
       )
     return res
 
-  log(lvlWarn, "No references found")
   return newSeq[Definition]()
 
 method switchSourceHeader*(self: LanguageServerLSP, filename: string): Future[Option[string]] {.async.} =
-  let response = await self.client.switchSourceHeader(filename)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.switchSourceHeader(localizedPath)
   if response.isError:
     log(lvlWarn, &"Error in switchSourceHeader('{filename}'): {response.error}")
     return string.none
@@ -413,7 +410,8 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
   if self.serverCapabilities.hoverProvider.isNone:
     return string.none
 
-  let response = await self.client.getHover(filename, location.line, location.column)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getHover(localizedPath, location.line, location.column)
   if response.isError:
     log(lvlWarn, &"Error in getHover('{filename}', {location}): {response.error}")
     return string.none
@@ -459,7 +457,8 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
   if self.serverCapabilities.inlayHintProvider.isNone:
     return success[seq[language_server_base.InlayHint]](@[])
 
-  let response = await self.client.getInlayHints(filename, selection)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getInlayHints(localizedPath, selection)
   if response.isError:
     log(lvlWarn, &"Error in getInlayHints('{filename}', {selection}): {response.error}")
     return response.to(seq[language_server_base.InlayHint])
@@ -517,7 +516,8 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
     return completions
 
   debugf"[getSymbols] {filename}"
-  let response = await self.client.getSymbols(filename)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getSymbols(localizedPath)
 
   if response.isError:
     log(lvlWarn, &"Error in getSymbols('{filename}'): {response.error}")
@@ -621,7 +621,8 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string):
   if self.serverCapabilities.diagnosticProvider.isNone:
     return success[seq[lsp_types.Diagnostic]](@[])
 
-  let response = await self.client.getDiagnostics(filename)
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getDiagnostics(localizedPath)
   if response.isError:
     log(lvlWarn, &"Error in getDiagnostics('{filename}'): {response.error}")
     return response.to(seq[lsp_types.Diagnostic])
@@ -652,11 +653,15 @@ method getCodeActions*(self: LanguageServerLSP, filename: string, selection: Sel
   let localizedPath = self.vfs.localize(filename)
   return await self.client.getCodeActions(localizedPath, selection, diagnostics)
 
-method rename*(self: LanguageServerLSP, filename: string, position: Cursor, newName: string): Future[Response[Option[lsp_types.WorkspaceEdit]]] {.async.} =
-  return await self.client.rename(filename, position, newName)
+method rename*(self: LanguageServerLSP, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.async.} =
+  let localizedPath = self.vfs.localize(filename)
+  let res = await self.client.rename(localizedPath, position, newName)
+  if res.isSuccess and res.result.getSome(edit):
+    return success(@[edit])
+  return res.to(seq[lsp_types.WorkspaceEdit])
 
-method executeCommand*(self: LanguageServerLSP, filename: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
-  return await self.client.executeCommand(filename, arguments)
+method executeCommand*(self: LanguageServerLSP, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
+  return await self.client.executeCommand(command, arguments)
 
 import text/[text_editor, text_document]
 

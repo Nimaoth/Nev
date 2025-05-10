@@ -2,16 +2,34 @@ import std/[options, json]
 import misc/[custom_async, custom_logger, event, response]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
-import document
+import document, document_editor, config_provider, service
 
 from lsp_types as lsp_types import CompletionItem, WorkspaceEdit
+
+logCategory "language-server-base"
 
 {.push gcsafe.}
 {.push raises: [].}
 
 type LanguageServer* = ref object of RootObj
+  priority*: int
   onMessage*: Event[tuple[verbosity: lsp_types.MessageType, message: string]]
   onDiagnostics*: Event[lsp_types.PublicDiagnosticsParams]
+
+type
+  LanguageServerService* = ref object of Service
+    documents: DocumentEditorService
+    config: ConfigStore
+
+func serviceName*(_: typedesc[LanguageServerService]): string = "LanguageServerService"
+
+addBuiltinService(LanguageServerService, DocumentEditorService, ConfigService)
+
+method init*(self: LanguageServerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"LanguageServerService.init"
+  self.documents = self.services.getService(DocumentEditorService).get
+  self.config = self.services.getService(ConfigService).get.runtime
+  return ok()
 
 type SymbolType* {.pure.} = enum
   Unknown = 0
@@ -85,27 +103,27 @@ type Diagnostic* = object
 
 var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = Workspace.none): Future[Option[LanguageServer]] {.gcsafe, raises: [].} = nil
 
-method start*(self: LanguageServer): Future[void] {.base, gcsafe, raises: [].} = discard
+method start*(self: LanguageServer): Future[void] {.base, gcsafe, raises: [].} = doneFuture()
 method stop*(self: LanguageServer) {.base, gcsafe, raises: [].} = discard
 method deinit*(self: LanguageServer) {.base, gcsafe, raises: [].} = discard
 method connect*(self: LanguageServer, document: Document) {.base, gcsafe, raises: [].} = discard
 method disconnect*(self: LanguageServer, document: Document) {.base, gcsafe, raises: [].} = discard
-method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
-method getDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
-method getImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
-method getTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
-method getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = discard
-method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base, gcsafe, raises: [].} = discard
-method getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base, gcsafe, raises: [].} = discard
-method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = discard
-method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = discard
-method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base, gcsafe, raises: [].} = discard
-method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base, gcsafe, raises: [].} = discard
-method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = discard
+method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
+method getDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
+method getImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
+method getTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
+method getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base, gcsafe, raises: [].} = newSeq[Definition]().toFuture
+method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base, gcsafe, raises: [].} = Option[string].default.toFuture
+method getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base, gcsafe, raises: [].} = Response[lsp_types.CompletionList].default.toFuture
+method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
+method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
+method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base, gcsafe, raises: [].} = Option[string].default.toFuture
+method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base, gcsafe, raises: [].} = seq[language_server_base.InlayHint].default.success.toFuture
+method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = seq[lsp_types.Diagnostic].default.success.toFuture
 method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base, gcsafe, raises: [].} = {}
 method getCodeActions*(self: LanguageServer, filename: string, selection: Selection, diagnostics: seq[lsp_types.Diagnostic]): Future[Response[lsp_types.CodeActionResponse]] {.base, gcsafe, raises: [].} = lsp_types.CodeActionResponse.default.success.toFuture
-method rename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[Option[lsp_types.WorkspaceEdit]]] {.base, gcsafe, raises: [].} = lsp_types.WorkspaceEdit.none.success.toFuture
-method executeCommand*(self: LanguageServer, filename: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.base, gcsafe, raises: [].} = newJObject().success.toFuture
+method rename*(self: LanguageServer, filename: string, position: Cursor, newName: string): Future[Response[seq[lsp_types.WorkspaceEdit]]] {.base, gcsafe, raises: [].} = newSeq[lsp_types.WorkspaceEdit]().success.toFuture
+method executeCommand*(self: LanguageServer, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.base, gcsafe, raises: [].} = errorResponse[JsonNode](0, "Command not found: " & command).toFuture
 
 proc toLspPosition*(cursor: Cursor): lsp_types.Position = lsp_types.Position(line: cursor.line, character: cursor.column)
 proc toLspRange*(selection: Selection): lsp_types.Range = lsp_types.Range(start: selection.first.toLspPosition, `end`: selection.last.toLspPosition)

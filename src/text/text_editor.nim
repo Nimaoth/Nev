@@ -3380,12 +3380,12 @@ proc gotoRegexLocation(self: TextDocumentEditor, regexTemplate: Option[string]):
   await self.gotoLocationAsync(locations)
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = self.document.languageServer
+  let languageServer = await self.document.getLanguageServer()
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getDefinition(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getDefinition(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
     await self.gotoLocationAsync(locations)
@@ -3395,12 +3395,12 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoRegexLocation(t)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = self.document.languageServer
+  let languageServer = await self.document.getLanguageServer()
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getDeclaration(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getDeclaration(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
     await self.gotoLocationAsync(locations)
@@ -3410,12 +3410,12 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoRegexLocation(t)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = self.document.languageServer
+  let languageServer = await self.document.getLanguageServer()
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getTypeDefinition(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getTypeDefinition(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
     await self.gotoLocationAsync(locations)
@@ -3425,12 +3425,12 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoRegexLocation(t)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = self.document.languageServer
+  let languageServer = await self.document.getLanguageServer()
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getImplementation(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getImplementation(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
     await self.gotoLocationAsync(locations)
@@ -3440,12 +3440,12 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoRegexLocation(t)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = self.document.languageServer
+  let languageServer = await self.document.getLanguageServer()
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getReferences(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getReferences(self.document.filename, self.selection.last)
     if self.document.isNil:
       return
     await self.gotoLocationAsync(locations)
@@ -3455,12 +3455,12 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoRegexLocation(t)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = self.document.languageServer
+  let languageServer = await self.document.getLanguageServer()
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let filename = await ls.switchSourceHeader(self.document.localizedPath)
+    let filename = await ls.switchSourceHeader(self.document.filename)
     if self.document.isNil:
       return
     if filename.getSome(filename):
@@ -3588,12 +3588,12 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
   discard self.layout.pushSelectorPopup(builder)
 
 proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = self.document.languageServer
+  let languageServer = await self.document.getLanguageServer()
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let symbols = await ls.getSymbols(self.document.localizedPath)
+    let symbols = await ls.getSymbols(self.document.filename)
     if self.document.isNil:
       return
     if symbols.len == 0:
@@ -3796,13 +3796,14 @@ proc renameAsync(self: TextDocumentEditor) {.async.} =
   self.commands.openCommandLine text, "new name: ", proc(newName: Option[string]): Option[string] =
     if newName.getSome(newName):
       let name = newName
-      languageServer.get.rename(self.document.localizedPath, self.selection.last, name).thenIt:
+      languageServer.get.rename(self.document.filename, self.selection.last, name).thenIt:
         if self.document.isNil:
           return
 
-        if it.isSuccess and it.result.getSome(edit):
-          log lvlInfo, &"Apply workspace edit for rename:\n{edit}"
-          asyncSpawn asyncDiscard applyWorkspaceEdit(self.editors, self.vfs, edit)
+        if it.isSuccess and it.result.len > 0:
+          log lvlInfo, &"Apply workspace edit for rename:\n{it.result[0]}"
+          # todo: handle multiple workspace edits by allowing to choose one.
+          asyncSpawn asyncDiscard applyWorkspaceEdit(self.editors, self.vfs, it.result[0])
         elif it.isError:
           log lvlError, &"Failed to rename to '{name}': {it.error}"
 
@@ -3917,9 +3918,13 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         editSelection = selection
         editSelection.last = cursor
 
-      for s in self.selections:
-        cursorEditSelections.add self.document.getCompletionSelectionAt(s.last)
-        cursorInsertTexts.add edit.newText
+      for i, s in self.selections:
+        if i < self.selections.high:
+          cursorEditSelections.add self.document.getCompletionSelectionAt(s.last)
+          cursorInsertTexts.add edit.newText
+
+      cursorEditSelections.add editSelection
+      cursorInsertTexts.add edit.newText
 
     elif edit.asInsertReplaceEdit().isSome:
       return
@@ -3993,7 +3998,8 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   self.currentSnippetData = snippetData
   self.selectNextTabStop()
 
-  self.hideCompletions()
+  # todo: sometimes I want to auto show, sometimes I don't
+  self.autoShowCompletions()
 
 proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("editor.text").} =
   try:
@@ -4034,7 +4040,7 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
     return
 
   if languageServer.getSome(ls):
-    let hoverInfo = await ls.getHover(self.document.localizedPath, cursor)
+    let hoverInfo = await ls.getHover(self.document.filename, cursor)
     if self.document.isNil:
       return
     if hoverInfo.getSome(hoverInfo):
@@ -4129,7 +4135,7 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
     let visibleRangeHalf = self.visibleTextRange(screenLineCount div 2)
     let visibleRange = self.visibleTextRange(screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
-    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.localizedPath, visibleRange)
+    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.filename, visibleRange)
     if self.document.isNil:
       return
 
@@ -4212,7 +4218,7 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
 
 proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId, addSign: bool): Future[void] {.async.} =
   # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
-  let actions = await ls.getCodeActions(self.document.localizedPath, selection, @[])
+  let actions = await ls.getCodeActions(self.document.filename, selection, @[])
   if self.document == nil or self.document.buffer.versionId != versionId:
     return
   if actions.kind == Success and actions.result.len > 0:

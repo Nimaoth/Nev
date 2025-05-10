@@ -1,6 +1,6 @@
 import std/[options, tables]
 import nimsumtree/rope
-import misc/[custom_logger, custom_async, util, response]
+import misc/[custom_logger, custom_async, util, response, rope_utils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import dispatch_tables, document_editor, service, layout, events
@@ -29,12 +29,26 @@ method getDefinition*(self: LanguageServerCommandLine, filename: string, locatio
 method getCompletions*(self: LanguageServerCommandLine, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   let layout = self.services.getService(LayoutService).get
 
+  var completions: seq[CompletionItem]
+
   var useActive = false
   if self.documents.getDocument(filename).getSome(document) and document of TextDocument:
-    if document.TextDocument.rope.startsWith(".") or document.TextDocument.rope.startsWith("^"):
+    let textDoc = document.TextDocument
+    if textDoc.rope.startsWith(".") or document.TextDocument.rope.startsWith("^"):
       useActive = true
 
-  var completions: seq[CompletionItem]
+    let rope = textDoc.rope
+
+    if location.line >= rope.lines:
+      return CompletionList(items: completions).success
+
+    if location.column > rope.lineLen(location.line):
+      return CompletionList(items: completions).success
+
+    let spaceIndex = rope.slice(point(location.line, 0)...location.toPoint).find(" ")
+    if spaceIndex >= 0:
+      return CompletionList(items: completions).success
+
   if useActive:
     let currentNamespace = if layout.popups.len > 0:
       "popup.selector".some

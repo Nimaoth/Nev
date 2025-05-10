@@ -5,7 +5,7 @@ import patty, bumpy
 import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, rope_utils, async_process, jsonex]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
-import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service
+import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
 import syntax_map
 import pkg/[chroma, results]
 
@@ -165,6 +165,7 @@ type
     onOperation*: Event[tuple[document: TextDocument, op: Operation]]
     onBufferChanged*: Event[tuple[document: TextDocument]]
     onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
+    onLanguageServerDetached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
     onDiagnostics*: Event[tuple[document: TextDocument]]
 
     undoSelections*: Table[Lamport, Selections]
@@ -189,6 +190,7 @@ type
     connectedToLanguageServer*: bool
     languageServer*: Option[LanguageServer]
     languageServerFuture*: Option[Future[Option[LanguageServer]]]
+    languageServerList*: LanguageServerList
 
     diagnosticsPerLine*: Table[int, seq[int]]
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
@@ -217,6 +219,8 @@ proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
 proc enableAutoReload*(self: TextDocument, enabled: bool)
+proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer)
+proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer)
 
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
@@ -752,6 +756,7 @@ proc newTextDocument*(
   self.filename = self.vfs.normalize(filename)
   self.isBackedByFile = load
   self.requiresLoad = load
+  self.languageServerList = newLanguageServerList()
 
   self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
   self.settings = TextSettings.new(self.config)
@@ -766,6 +771,8 @@ proc newTextDocument*(
 
   self.content = content
   self.languageServer = languageServer.mapIt(it)
+  if self.languageServer.isSome:
+    self.addLanguageServer(self.languageServer.get)
 
   if self.languageServer.isNone and createLanguageServer and autoStartServer:
     asyncSpawn self.connectLanguageServer()
@@ -783,6 +790,7 @@ method deinit*(self: TextDocument) =
   if self.languageServer.getSome(ls):
     ls.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
     ls.disconnect(self)
+    self.removeLanguageServer(ls)
     self.languageServer = LanguageServer.none
 
   {.gcsafe.}:
@@ -1205,7 +1213,24 @@ proc handleDiagnosticsReceived(self: TextDocument, diagnostics: lsp_types.Public
 
   self.setCurrentDiagnostics(diagnostics.diagnostics, snapshot)
 
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
+proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer) =
+  self.languageServerList.languageServers.add(languageServer)
+  self.languageServerList.languageServers.sort((a, b) => cmp(a.priority, b.priority))
+  self.completionTriggerCharacters = {}
+  for ls in self.languageServerList.languageServers:
+    self.completionTriggerCharacters.incl ls.getCompletionTriggerChars()
+  self.onLanguageServerAttached.invoke (self, languageServer)
+
+proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer) =
+  let index = self.languageServerList.languageServers.find(languageServer)
+  if index != -1:
+    self.languageServerList.languageServers.removeShift(index)
+    self.onLanguageServerDetached.invoke (self, languageServer)
+
+proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
+  self.languageServerList.languageServers.find(languageServer) != -1
+
+proc getLanguageServerImpl(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
   if self.requiresLoad or self.isLoadingAsync:
     return LanguageServer.none
 
@@ -1241,22 +1266,28 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     self.languageServer = LanguageServer.none
 
   if not self.isInitialized:
+    if self.languageServer.isSome:
+      self.removeLanguageServer(self.languageServer.get)
     self.languageServer = LanguageServer.none
     return LanguageServer.none
 
   if self.languageServer.getSome(ls):
-    self.completionTriggerCharacters = ls.getCompletionTriggerChars()
-
     ls.connect(self)
 
     self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       self.handleDiagnosticsReceived(diagnostics)
 
-    self.onLanguageServerAttached.invoke (self, ls)
+    self.addLanguageServer(ls)
 
   if not self.connectedToLanguageServer:
     return LanguageServer.none
   return self.languageServer
+
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
+  discard await self.getLanguageServerImpl()
+  if self.languageServerList.languageServers.len > 0:
+    return self.languageServerList.LanguageServer.some
+  return LanguageServer.none
 
 proc clearDiagnostics*(self: TextDocument) =
   if self.currentDiagnostics.len == 0:
@@ -1277,11 +1308,12 @@ proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   let line = $self.getLine(cursor.line)
 
   let identRunes {.cursor.} = self.settings.completionWordChars.get()
-
+  let lspCompletionChars = self.completionTriggerCharacters
   var column = min(cursor.column, line.len)
   while column > 0:
     let prevColumn = line.runeStart(column - 1)
     let r = line.runeAt(prevColumn)
+    # if (r.int <= char.high.int and r in identRunes) or r.isAlpha or (r.int < 128 and r.char in lspCompletionChars):
     if (r.int <= char.high.int and r in identRunes) or r.isAlpha:
       column = prevColumn
       continue
