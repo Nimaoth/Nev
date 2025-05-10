@@ -1,5 +1,5 @@
 import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables,
-  deques, sets, algorithm, os, uri]
+  deques, sets, algorithm, os]
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
