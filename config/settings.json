@@ -168,7 +168,9 @@
                 "--stdio"
             ],
             "settings": {}
-        }
+        },
+
+        "paths.languages": ["markdown", "command-line", "json"],
     },
 
     "+lang": {
