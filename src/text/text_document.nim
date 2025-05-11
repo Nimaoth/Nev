@@ -29,6 +29,38 @@ logCategory "text-document"
 proc typeNameToJson*(T: typedesc[IndentStyleKind]): string =
   return "\"tabs\" | \"spaces\""
 
+declareSettings SearchRegexSettings, "":
+  ## Override the ripgrep language name. By default the documents language id is used.
+  declare rgLanguage, Option[string], nil
+
+  ## If true then the search results will only show the part of a line that matched the regex.
+  ## If false then the entire line is shown.
+  declare showOnlyMatchingPart, bool, true
+
+  ## Regex to use when using the goto-definition feature.
+  declare gotoDefinition, Option[RegexSetting], nil
+
+  ## Regex to use when using the goto-declaration feature.
+  declare gotoDeclaration, Option[RegexSetting], nil
+
+  ## Regex to use when using the goto-type-definition feature.
+  declare gotoTypeDefinition, Option[RegexSetting], nil
+
+  ## Regex to use when using the goto-implementation feature.
+  declare gotoImplementation, Option[RegexSetting], nil
+
+  ## Regex to use when using the goto-references feature.
+  declare gotoReferences, Option[RegexSetting], nil
+
+  ## Regex to use when using the symbols feature.
+  declare symbols, Option[RegexSetting], nil
+
+  ## Regex to use when using the workspace-symbols feature.
+  declare workspaceSymbols, Option[RegexSetting], nil
+
+  ## Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex.
+  declare workspaceSymbolsByKind, Option[Table[string, RegexSetting]], nil
+
 declareSettings TrimTrailingWhitespaceSettings, "":
   ## If true trailing whitespace is deleted when saving files.
   declare enabled, bool, true
@@ -92,6 +124,9 @@ declareSettingsTemplate TreesitterSettings, "text.treesitter":
 declareSettings TextSettings, "text":
   ##
   use trimTrailingWhitespace, TrimTrailingWhitespaceSettings
+
+  ## Configure search regexes.
+  use searchRegexes, SearchRegexSettings
 
   ## Settings for code formatting.
   use formatter, FormatSettings
@@ -1214,17 +1249,14 @@ proc handleDiagnosticsReceived(self: TextDocument, diagnostics: lsp_types.Public
   self.setCurrentDiagnostics(diagnostics.diagnostics, snapshot)
 
 proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer) =
-  self.languageServerList.languageServers.add(languageServer)
-  self.languageServerList.languageServers.sort((a, b) => cmp(a.priority, b.priority))
+  self.languageServerList.addLanguageServer(languageServer)
   self.completionTriggerCharacters = {}
   for ls in self.languageServerList.languageServers:
     self.completionTriggerCharacters.incl ls.getCompletionTriggerChars()
   self.onLanguageServerAttached.invoke (self, languageServer)
 
 proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer) =
-  let index = self.languageServerList.languageServers.find(languageServer)
-  if index != -1:
-    self.languageServerList.languageServers.removeShift(index)
+  if self.languageServerList.removeLanguageServer(languageServer):
     self.onLanguageServerDetached.invoke (self, languageServer)
 
 proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =

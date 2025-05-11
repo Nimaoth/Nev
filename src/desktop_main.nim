@@ -250,6 +250,7 @@ import vcs/vcs_api
 import wasm3, wasm3/[wasm3c, wasmconversions]
 import selector_popup, collab, layout, config_provider, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, command_service_api, toast
 import language_server_paths
+import language_server_regex
 import plugin_api/[process]
 
 generatePluginBindings()

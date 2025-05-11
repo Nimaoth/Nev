@@ -29,6 +29,7 @@ proc newLanguageServerPaths(services: Services): LanguageServerPaths =
   server.documents = services.getService(DocumentEditorService).get
   server.vfs = services.getService(VFSService).get.vfs
   server.config = services.getService(ConfigService).get.runtime
+  server.capabilities.completionProvider = lsp_types.CompletionOptions().some
   try:
     server.pathRegex = re(pathRegex)
   except:

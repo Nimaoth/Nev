@@ -184,6 +184,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
       languageServers[languageId] = lsp
     lsp.vfs = services.getService(VFSService).get.vfs
     lsp.localVfs = lsp.vfs.getVFS("local://").vfs # todo
+    lsp.refetchWorkspaceSymbolsOnQueryChange = true
 
     asyncSpawn lsp.handleWorkspaceConfigurationRequests()
     asyncSpawn lsp.handleApplyWorkspaceEditRequests()
@@ -197,6 +198,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
     let serverCapabilities = client.initializedChannel.recv().await.get(ServerCapabilities.none)
     if serverCapabilities.getSome(capabilities):
       lsp.serverCapabilities = capabilities
+      lsp.capabilities = capabilities
       lsp.initializedFuture.complete(true)
 
       let initialConfig = config.fields.getOrDefault("initial-configuration", newJexNull()).toJson
@@ -561,7 +563,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
   return completions
 
 # todo: change return type to Response
-method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[Symbol]] {.async.} =
+method getWorkspaceSymbols*(self: LanguageServerLSP, filename: string, query: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
 
   if self.serverCapabilities.workspaceSymbolProvider.isNone:

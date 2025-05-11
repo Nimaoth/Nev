@@ -62,7 +62,7 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
   elif completions.isCanceled:
     discard
   else:
-    log lvlError, fmt"Failed to get completions: {completions.error}"
+    log lvlWarn, fmt"Failed to get completions: {completions.error}"
     self.unfilteredCompletions = @[]
     self.refilterCompletions()
 
