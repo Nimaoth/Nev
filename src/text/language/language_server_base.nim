@@ -4,7 +4,8 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import workspaces/workspace
 import document, document_editor, config_provider, service
 
-from lsp_types as lsp_types import CompletionItem, WorkspaceEdit
+from lsp_types as lsp_types import CompletionItem, WorkspaceEdit, ServerCapabilities
+export ServerCapabilities
 
 logCategory "language-server-base"
 
@@ -15,6 +16,8 @@ type LanguageServer* = ref object of RootObj
   priority*: int
   onMessage*: Event[tuple[verbosity: lsp_types.MessageType, message: string]]
   onDiagnostics*: Event[lsp_types.PublicDiagnosticsParams]
+  capabilities*: ServerCapabilities
+  refetchWorkspaceSymbolsOnQueryChange*: bool = false
 
 type
   LanguageServerService* = ref object of Service
@@ -116,7 +119,7 @@ method getReferences*(self: LanguageServer, filename: string, location: Cursor):
 method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base, gcsafe, raises: [].} = Option[string].default.toFuture
 method getCompletions*(self: LanguageServer, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base, gcsafe, raises: [].} = Response[lsp_types.CompletionList].default.toFuture
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
-method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
+method getWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base, gcsafe, raises: [].} = Option[string].default.toFuture
 method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base, gcsafe, raises: [].} = seq[language_server_base.InlayHint].default.success.toFuture
 method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = seq[lsp_types.Diagnostic].default.success.toFuture

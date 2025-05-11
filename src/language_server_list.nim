@@ -1,4 +1,4 @@
-import std/[options, tables, json]
+import std/[options, tables, json, sequtils, algorithm, sugar]
 import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -13,6 +13,24 @@ type
 proc newLanguageServerList*(): LanguageServerList =
   var server = new LanguageServerList
   return server
+
+proc updateRefetchWorkspaceSymbolsOnQueryChange*(self: LanguageServerList) =
+  self.refetchWorkspaceSymbolsOnQueryChange = false
+  for ls in self.languageServers:
+    if ls.refetchWorkspaceSymbolsOnQueryChange:
+      self.refetchWorkspaceSymbolsOnQueryChange = true
+      break
+
+proc addLanguageServer*(self: LanguageServerList, languageServer: LanguageServer) =
+  self.languageServers.add(languageServer)
+  self.languageServers.sort((a, b) => cmp(a.priority, b.priority))
+
+proc removeLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool =
+  let index = self.languageServers.find(languageServer)
+  if index != -1:
+    self.languageServers.removeShift(index)
+    return true
+  return false
 
 template merge(T: untyped, subCall: untyped, name: untyped): untyped =
   block:
@@ -100,8 +118,8 @@ method getCompletions*(self: LanguageServerList, filename: string, location: Cur
 method getSymbols*(self: LanguageServerList, filename: string): Future[seq[Symbol]] {.async.} =
   return merge(Symbol, ls.getSymbols(filename), "getSymbols")
 
-method getWorkspaceSymbols*(self: LanguageServerList, query: string): Future[seq[Symbol]] {.async.} =
-  return merge(Symbol, ls.getWorkspaceSymbols(query), "getWorkspaceSymbols")
+method getWorkspaceSymbols*(self: LanguageServerList, filename: string, query: string): Future[seq[Symbol]] {.async.} =
+  return merge(Symbol, ls.getWorkspaceSymbols(filename, query), "getWorkspaceSymbols")
 
 method getHover*(self: LanguageServerList, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   return mergeOption(string, ls.getHover(filename, location), "getHover")
