@@ -756,24 +756,25 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
         state.addedLineNumber = false
 
       while state.lastDisplayPoint.row < chunk.displayPoint.row:
-        self.document.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
-          for i in val[].mitems:
-            let i = i
-            let diagnostic {.cursor.} = self.document.currentDiagnostics[i]
-            let nlIndex = diagnostic.message.find("\n")
-            var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
-            maxIndex = min(maxIndex, 100)
-            var message = "     ■ " & diagnostic.message[0..<maxIndex]
-            if maxIndex < diagnostic.message.len:
-              message.add "..."
-            let width = message.runeLen.float * builder.charWidth # todo: measure text
-            let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
-            of lsp_types.DiagnosticSeverity.Error: errorColor
-            of lsp_types.DiagnosticSeverity.Warning: warningColor
-            of lsp_types.DiagnosticSeverity.Information: informationColor
-            of lsp_types.DiagnosticSeverity.Hint: hintColor
-            drawText(message, rect(state.offset.x, state.offset.y, width, builder.textHeight), color, 0.UINodeFlags)
-            state.offset.x += width
+        for diagnosticsData in self.document.diagnosticsPerLS.mitems:
+          diagnosticsData.diagnosticsPerLine.withValue(state.lastPoint.row.int, val):
+            for i in val[].mitems:
+              let i = i
+              let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[i]
+              let nlIndex = diagnostic.message.find("\n")
+              var maxIndex = if nlIndex != -1: nlIndex else: diagnostic.message.len
+              maxIndex = min(maxIndex, 100)
+              var message = "     ■ " & diagnostic.message[0..<maxIndex]
+              if maxIndex < diagnostic.message.len:
+                message.add "..."
+              let width = message.runeLen.float * builder.charWidth # todo: measure text
+              let color = case diagnostic.severity.get(lsp_types.DiagnosticSeverity.Hint)
+              of lsp_types.DiagnosticSeverity.Error: errorColor
+              of lsp_types.DiagnosticSeverity.Warning: warningColor
+              of lsp_types.DiagnosticSeverity.Information: informationColor
+              of lsp_types.DiagnosticSeverity.Hint: hintColor
+              drawText(message, rect(state.offset.x, state.offset.y, width, builder.textHeight), color, 0.UINodeFlags)
+              state.offset.x += width
 
         if state.lastDisplayEndPoint.column == 0:
           if state.displayMap.diffMap.snapshot.isEmptySpace(state.lastDisplayPoint.DiffPoint):

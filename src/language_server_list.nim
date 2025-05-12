@@ -3,12 +3,15 @@ import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
+import document
 
 logCategory "language-server-list"
 
 type
+  MergeStrategy = enum First, All, FirstThenTimeout, AnyThenTimeout
   LanguageServerList* = ref object of LanguageServer
     languageServers*: seq[LanguageServer]
+    timeout: int
 
 proc newLanguageServerList*(): LanguageServerList =
   var server = new LanguageServerList
@@ -21,9 +24,12 @@ proc updateRefetchWorkspaceSymbolsOnQueryChange*(self: LanguageServerList) =
       self.refetchWorkspaceSymbolsOnQueryChange = true
       break
 
-proc addLanguageServer*(self: LanguageServerList, languageServer: LanguageServer) =
+proc addLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool =
+  if languageServer in self.languageServers:
+    return false
   self.languageServers.add(languageServer)
   self.languageServers.sort((a, b) => cmp(a.priority, b.priority))
+  return true
 
 proc removeLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool =
   let index = self.languageServers.find(languageServer)
@@ -93,6 +99,14 @@ template mergeResponse(T: untyped, subCall: untyped, name: untyped): untyped =
 
     res.success
 
+method connect*(self: LanguageServerList, document: Document) {.gcsafe, raises: [].} =
+  for ls in self.languageServers:
+    ls.connect(document)
+
+method disconnect*(self: LanguageServerList, document: Document) {.gcsafe, raises: [].} =
+  for ls in self.languageServers:
+    ls.disconnect(document)
+
 method getDefinition*(self: LanguageServerList, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   return merge(Definition, ls.getDefinition(filename, location), "getDefinition")
 
@@ -143,19 +157,21 @@ method rename*(self: LanguageServerList, filename: string, position: Cursor, new
 method executeCommand*(self: LanguageServerList, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
   var futs = newSeq[Future[Response[JsonNode]]]()
   var futsTimeout = newSeq[Future[bool]]()
-  for lss in self.languageServers:
-    let ls {.inject.} = lss
-    let fut = ls.executeCommand(command, arguments)
-    futs.add fut
-    futsTimeout.add fut.withTimeout(500.milliseconds)
-
-  await allFutures(futsTimeout)
+  for ls in self.languageServers:
+    if ls.capabilities.executeCommandProvider.isSome and command in ls.capabilities.executeCommandProvider.get.commands:
+      let fut = ls.executeCommand(command, arguments)
+      futs.add fut
+      futsTimeout.add fut.withTimeout(1000.milliseconds)
 
   var res = errorResponse[JsonNode](0, "Command not found: " & command)
-  for fut in futs:
-    if fut.completed:
-      res = fut.read()
-      if res.isSuccess:
-        return res
+
+  if futs.len > 0:
+    await allFutures(futsTimeout)
+
+    for fut in futs:
+      if fut.completed:
+        res = fut.read()
+        if res.isSuccess:
+          return res
 
   return res

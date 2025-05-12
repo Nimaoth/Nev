@@ -76,11 +76,6 @@ Some language servers are already configured in the [app settings](../config/set
             }
         }
     },
-
-    // If true then text documents immediately try to connect to or start a language server when opened.
-    // If false then text documents will only connect to or start a language server when a command is run
-    // which accesses the language server (e.g. goto-definition or goto-symbol)
-    "text.auto-start-language-server": false, // Default: true
 }
 ```
 

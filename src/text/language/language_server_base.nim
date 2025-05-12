@@ -13,6 +13,7 @@ logCategory "language-server-base"
 {.push raises: [].}
 
 type LanguageServer* = ref object of RootObj
+  name*: string
   priority*: int
   onMessage*: Event[tuple[verbosity: lsp_types.MessageType, message: string]]
   onDiagnostics*: Event[lsp_types.PublicDiagnosticsParams]

@@ -266,9 +266,6 @@
                 "^\\+?text$": {
                     "type": "object",
                     "properties": {
-                        "auto-start-language-server": {
-                            "type": "boolean"
-                        },
                         "triple-click-command": {
                             "type": "string"
                         },

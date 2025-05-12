@@ -148,7 +148,7 @@ type
       changes: seq[TextDocumentContentChangeEvent]
 
   LSPClientObject* = object
-    languageId*: string
+    name*: string
     connection: LSPConnection
     nextId: int
     activeRequests: Table[int, tuple[meth: string, future: Future[Response[JsonNode]]]] # Worker Thread
@@ -183,7 +183,6 @@ type
     userInitializationOptions*: JsonNode
     serverExecutablePath: string
     args: seq[string]
-    languagesServer: Option[(string, int)] = (string, int).none
 
     initializedChannel*: AsyncChannel[Option[ServerCapabilities]]
     workspaceConfigurationRequestChannel*: AsyncChannel[ConfigurationParams]
@@ -206,7 +205,7 @@ proc notifyClosedTextDocument(client: LSPClient, path: string) {.async.}
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, changes: seq[TextDocumentContentChangeEvent]) {.async.}
 proc notifyTextDocumentChanged(client: LSPClient, path: string, version: int, content: string) {.async.}
 
-proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, serverExecutablePath: string, workspaces: seq[string], args: seq[string], languagesServer: Option[(string, int)] = (string, int).none, killOnExit = true): LSPClient =
+proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, serverExecutablePath: string, workspaces: seq[string], args: seq[string], killOnExit = true): LSPClient =
   var client = cast[LSPClient](allocShared0(sizeof(LSPClientObject)))
   client[] = LSPClientObject(
     workspaceInfo: info,
@@ -214,7 +213,6 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
     serverExecutablePath: serverExecutablePath,
     workspaceFolders: workspaces,
     args: args,
-    languagesServer: languagesServer,
     initializedChannel: newAsyncChannel[Option[ServerCapabilities]](),
     workspaceConfigurationRequestChannel: newAsyncChannel[ConfigurationParams](),
     workspaceConfigurationResponseChannel: newAsyncChannel[seq[JsonNode]](),
@@ -263,7 +261,7 @@ proc createHeader*(contentLength: int): string =
 proc deinitThread(client: LSPClient) =
   assert client.connection.isNotNil, "LSP Client process should not be nil"
 
-  log lvlInfo, "Deinitializing LSP client " & client.languageId
+  log lvlInfo, "Deinitializing LSP client " & client.name
   client.connection.close()
   client.connection = nil
   client.nextId = 0
@@ -1162,7 +1160,7 @@ proc handleNotifiesConfigurationChanged(client: LSPClient) {.async, gcsafe.} =
   log lvlInfo, &"handleNotifiesConfigurationChanged: client gone"
 
 proc lspClientRunner*(client: LSPClient) {.thread, nimcall.} =
-  logFileName = getAppDir() / &"/logs/lsp.{client.languageId}.log"
+  logFileName = getAppDir() / &"/logs/lsp.{client.name}.log"
   try:
     createDir(getAppDir() / "logs")
     file = open(logFileName, fmWrite)

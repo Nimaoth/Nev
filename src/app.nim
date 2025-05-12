@@ -756,8 +756,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 
-  self.commands.languageServerCommandLine = newLanguageServerCommandLine(self.services)
-  let commandLineTextDocument = newTextDocument(self.services, language="command-line".some, languageServer=self.commands.languageServerCommandLine.some)
+  self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
+  let commandLineTextDocument = newTextDocument(self.services, language="command-line".some)
   self.commands.commandLineEditor = newTextEditor(commandLineTextDocument, self.services)
   self.commands.commandLineEditor.renderHeader = false
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
@@ -997,8 +997,6 @@ proc shutdown*(self: App) =
 
   if self.wasmScriptContext.isNotNil:
     self.wasmScriptContext.deinit()
-
-  self.commands.languageServerCommandLine.stop()
 
   {.gcsafe.}:
     gAppInterface = nil
