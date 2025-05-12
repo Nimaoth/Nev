@@ -40,7 +40,7 @@ method init*(self: LanguageServerCommandLineService): Future[Result[void, ref Ca
     let doc = editor.getDocument()
     if doc of TextDocument:
       let textDoc = doc.TextDocument
-      let languages = self.config.get("lsp-command-line.languages", newSeq[string]())
+      let languages = self.config.get("lsp.command-line.languages", newSeq[string]())
       if textDoc.languageId in languages and not textDoc.hasLanguageServer(self.languageServer):
         discard textDoc.addLanguageServer(self.languageServer)
   return ok()

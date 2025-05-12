@@ -22,6 +22,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.watch-theme` | bool | true | Watch the theme directory for changes to the theme. |
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
+| `lsp-merge.timeout` | int | 10000 | Timeout for LSP requests in milliseconds |
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
 | `text.code-actions.sign` | string | "⚑" | Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions. |

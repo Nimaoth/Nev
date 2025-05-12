@@ -56,11 +56,19 @@ proc updateLanguageServersForDocument(self: LanguageServerLspService, doc: TextD
   var languageServers = newSeq[LanguageServerLSP]()
   for name, config in lsps.fields.pairs:
     try:
+      if config.kind != JObject:
+        if config.kind != JNull:
+          log lvlError, &"Invalid LSP config (expected object): {config}"
+        continue
+
+      if not config.hasKey("command"):
+        continue
+
       type LspConfig = object
         languages: seq[string]
 
       let lspConfig = config.jsonTo(LspConfig, Joptions(allowExtraKeys: true, allowMissingKeys: false))
-      if languageId in lspConfig.languages:
+      if languageId in lspConfig.languages or "*" in lspConfig.languages:
         if self.getOrCreateLanguageServerLSP(name).await.getSome(ls):
           languageServers.add(ls)
     except:
