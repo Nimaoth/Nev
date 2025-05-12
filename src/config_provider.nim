@@ -730,7 +730,7 @@ proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
     except Exception as e:
       let t = $T
       let p = value.pretty
-      log lvlError, &"Failed to get setting as type {t}: {e.msg}\n{p}"
+      log lvlError, &"[{self.name}] Failed to get setting '{key}' as type {t}: {e.msg}\n{p}"
       return defaultValue
   else:
     return defaultValue

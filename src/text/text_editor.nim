@@ -197,6 +197,7 @@ declareSettings TextEditorSettings, "text":
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
+    languageServerName: string
     selection: Selection
     case kind: CodeActionKind
     of CodeActionKind.Command:
@@ -292,7 +293,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastInlayHintTimestamp: Global
   lastInlayHintDisplayRange: Range[Point]
   lastInlayHintBufferRange: Range[Point]
-  codeActions: Table[int, seq[CodeActionOrCommand]]
+  lastDiagnosticsVersions: Table[string, int]
+  codeActions: Table[string, Table[int, seq[CodeActionOrCommand]]] # LS name -> line -> code actions
 
   eventHandlerNames: seq[string]
   eventHandlers: seq[EventHandler]
@@ -446,7 +448,7 @@ proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string)
 proc setDefaultMode*(self: TextDocumentEditor)
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
-proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument)
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
 proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
@@ -623,14 +625,14 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
     self.handleLanguageServerAttached(arg.document, arg.languageServer)
 
   self.onDiagnosticsHandle = document.onDiagnostics.subscribe (
-      arg: tuple[document: TextDocument]) =>
-    self.handleDiagnosticsChanged(arg.document)
+      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
+    self.handleDiagnosticsChanged(arg.document, arg.languageServer)
 
   self.completionEngine = CompletionEngine()
   self.onCompletionsUpdatedHandle = self.completionEngine.onCompletionsUpdated.subscribe () =>
     self.handleCompletionsUpdated()
 
-  if self.document.languageServer.getSome(ls):
+  if self.document.getLanguageServer().getSome(ls):
     self.handleLanguageServerAttached(self.document, ls)
 
   if self.document.createLanguageServer:
@@ -2174,29 +2176,30 @@ proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 
   var i = 0
   for line in countdown(cursor.line, 0):
-    self.document.diagnosticsPerLine.withValue(line, val):
-      let diagnosticsOnCurrentLine {.cursor.} = val[]
-      for k in countdown(diagnosticsOnCurrentLine.high, 0):
-        let diagnosticIndex = diagnosticsOnCurrentLine[k]
-        if diagnosticIndex > self.document.currentDiagnostics.high:
-          continue
+    for diagnosticsData in self.document.diagnosticsPerLS.mitems:
+      diagnosticsData.diagnosticsPerLine.withValue(line, val):
+        let diagnosticsOnCurrentLine {.cursor.} = val[]
+        for k in countdown(diagnosticsOnCurrentLine.high, 0):
+          let diagnosticIndex = diagnosticsOnCurrentLine[k]
+          if diagnosticIndex > diagnosticsData.currentDiagnostics.high:
+            continue
 
-        let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndex]
-        if diagnostic.removed:
-          continue
+          let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[diagnosticIndex]
+          if diagnostic.removed:
+            continue
 
-        if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
-          continue
+          if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
+            continue
 
-        let selection = diagnostic.selection
+          let selection = diagnostic.selection
 
-        if selection.last < cursor:
-          if i == offset:
-            if includeAfter:
-              return selection
-            else:
-              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
-          inc i
+          if selection.last < cursor:
+            if i == offset:
+              if includeAfter:
+                return selection
+              else:
+                return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
+            inc i
 
   let nextSearchStart = (self.lineCount, 0)
   if cursor != nextSearchStart:
@@ -2213,27 +2216,28 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 
   var i = 0
   for line in cursor.line..<self.document.numLines:
-    self.document.diagnosticsPerLine.withValue(line, val):
-      for diagnosticIndex in val[]:
-        if diagnosticIndex > self.document.currentDiagnostics.high:
-          continue
+    for diagnosticsData in self.document.diagnosticsPerLS.mitems:
+      diagnosticsData.diagnosticsPerLine.withValue(line, val):
+        for diagnosticIndex in val[]:
+          if diagnosticIndex > diagnosticsData.currentDiagnostics.high:
+            continue
 
-        let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndex]
-        if diagnostic.removed:
-          continue
+          let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[diagnosticIndex]
+          if diagnostic.removed:
+            continue
 
-        if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
-          continue
+          if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
+            continue
 
-        let selection = diagnostic.selection
+          let selection = diagnostic.selection
 
-        if cursor < selection.first:
-          if i == offset:
-            if includeAfter:
-              return selection
-            else:
-              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
-          inc i
+          if cursor < selection.first:
+            if i == offset:
+              if includeAfter:
+                return selection
+              else:
+                return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
+            inc i
 
   if cursor != (0, 0):
     let wrapped = self.getNextDiagnostic((0, 0), severity, offset - i,
@@ -3328,7 +3332,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
     discard self.layout.pushSelectorPopup(builder)
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3339,7 +3343,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3350,7 +3354,7 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3361,7 +3365,7 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3372,7 +3376,7 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3383,7 +3387,7 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     await self.gotoLocationAsync(locations)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3516,7 +3520,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
   discard self.layout.pushSelectorPopup(builder)
 
 proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3555,7 +3559,7 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
     )
     inc index
 
-  debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
+  # debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
 
   items.setLen(index)
   self.onItemsChanged.invoke items
@@ -3576,14 +3580,15 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
   self.query = query
 
   if self.delayedTask.isNil:
-    self.delayedTask = startDelayed(200, repeat=false):
+    asyncSpawn self.getWorkspaceSymbols()
+    self.delayedTask = startDelayedPaused(200, repeat=false):
       asyncSpawn self.getWorkspaceSymbols()
   else:
     if self.languageServer.refetchWorkspaceSymbolsOnQueryChange:
       self.delayedTask.reschedule()
 
 proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3639,7 +3644,7 @@ proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose
   asyncSpawn self.gotoWorkspaceSymbolAsync(query)
 
 proc renameAsync(self: TextDocumentEditor) {.async.} =
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3896,7 +3901,7 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
   if self.hideHoverTask.isNotNil:
     self.hideHoverTask.pause()
 
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
@@ -3988,7 +3993,7 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.isNil:
     return
 
-  if self.document.getLanguageServer().await.getSome(ls):
+  if self.document.getLanguageServer().getSome(ls):
     if self.document.isNil:
       return
 
@@ -4027,34 +4032,39 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
 
       self.markDirty()
 
-proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor): seq[lsp_types.Diagnostic] =
+proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServer): seq[lsp_types.Diagnostic] =
+  let codeActions = self.codeActions.mgetOrPut(languageServer.name).addr
   let visibleRange = self.visibleTextRange(0)
-  for d in self.document.currentDiagnostics.mitems:
-    if d.selection.first > visibleRange.last or d.selection.last < visibleRange.first:
+  for diagnosticsData in self.document.diagnosticsPerLS.mitems:
+    if languageServer != nil and diagnosticsData.languageServer != languageServer:
       continue
 
-    if d.codeActionRequested:
-      continue
-    d.codeActionRequested = true
+    for d in diagnosticsData.currentDiagnostics.mitems:
+      if d.selection.first > visibleRange.last or d.selection.last < visibleRange.first:
+        continue
 
-    # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
-    result.add lsp_types.Diagnostic(
-      range: lsp_types.Range(
-        start: lsp_types.Position(line: d.selection.first.line, character: d.selection.first.column),
-        `end`: lsp_types.Position(line: d.selection.last.line, character: d.selection.last.column),
-      ),
-      severity: d.severity,
-      code: d.code,
-      codeDescription: d.codeDescription,
-      source: d.source,
-      message: d.message,
-      tags: d.tags,
-      relatedInformation: d.relatedInformation,
-      data: d.data,
-    )
+      if codeActions[].contains(d.selection.first.line):
+        continue
+      codeActions[][d.selection.first.line] = @[]
+
+      # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
+      result.add lsp_types.Diagnostic(
+        range: lsp_types.Range(
+          start: lsp_types.Position(line: d.selection.first.line, character: d.selection.first.column),
+          `end`: lsp_types.Position(line: d.selection.last.line, character: d.selection.last.column),
+        ),
+        severity: d.severity,
+        code: d.code,
+        codeDescription: d.codeDescription,
+        source: d.source,
+        message: d.message,
+        tags: d.tags,
+        relatedInformation: d.relatedInformation,
+        data: d.data,
+      )
 
 proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeActionOrCommand) {.async.} =
-  if self.document.getLanguageServer().await.getSome(ls):
+  if self.document.getLanguageServer().getSome(ls):
     if self.document.isNil:
       return
 
@@ -4077,10 +4087,13 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
         if res.isError:
           log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
 
-proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId, addSign: bool): Future[void] {.async.} =
+proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId,
+    diagnosticsVersion: int, addSign: bool): Future[void] {.async.} =
   # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
+  let codeActions = self.codeActions.mgetOrPut(ls.name).addr
   let actions = await ls.getCodeActions(self.document.filename, selection, @[])
-  if self.document == nil or self.document.buffer.versionId != versionId:
+  let lastDiagnosticsVersion = self.lastDiagnosticsVersions.getOrDefault(ls.name, 0)
+  if self.document == nil or self.document.buffer.versionId != versionId or lastDiagnosticsVersion != diagnosticsVersion:
     return
   if actions.kind == Success and actions.result.len > 0:
     if addSign:
@@ -4088,13 +4101,13 @@ proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selecti
       if sign.len > 0:
         let signWidth = self.settings.codeActions.signWidth.get()
         let color = self.settings.codeActions.signColor.get()
-        discard self.addSign(idNone(), selection.first.line, sign, group = "code-actions", color = color, width = signWidth)
+        discard self.addSign(idNone(), selection.first.line, sign, group = "code-actions-" & ls.name, color = color, width = signWidth)
 
     for actionOrCommand in actions.result:
       if actionOrCommand.asCommand().getSome(command):
-        self.codeActions.mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.Command, command: command, selection: selection)
+        codeActions[].mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.Command, command: command, selection: selection, languageServerName: ls.name)
       elif actionOrCommand.asCodeAction().getSome(codeAction):
-        self.codeActions.mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.CodeAction, action: codeAction, selection: selection)
+        codeActions[].mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.CodeAction, action: codeAction, selection: selection, languageServerName: ls.name)
       else:
         log lvlError, &"Failed to parse code action: {actionOrCommand}"
 
@@ -4102,13 +4115,42 @@ proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selecti
 
 proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
   let line = self.selection.last.line
-  if not self.codeActions.contains(line):
-    if self.document.getLanguageServer().await.getSome(ls):
-      await self.updateCodeActionAsync(ls, self.selection, self.document.buffer.versionId, addSign = false)
+  var res = newSeq[FinderItem]()
+
+  proc collectCodeActions() =
+    for codeActions in self.codeActions.mvalues:
+      if line notin codeActions:
+        continue
+
+      for i, commandOrAction in codeActions[line]:
+        if commandOrAction.selection.first > self.selection.last or commandOrAction.selection.last < self.selection.last:
+          continue
+
+        case commandOrAction.kind:
+        of CodeActionKind.Command:
+          res.add FinderItem(
+            displayName: commandOrAction.command.title,
+            data: $commandOrAction.toJson,
+          )
+        of CodeActionKind.CodeAction:
+          res.add FinderItem(
+            displayName: commandOrAction.action.title,
+            data: $commandOrAction.toJson,
+          )
+
+  collectCodeActions()
+
+  if res.len == 0:
+    if self.document.getLanguageServer().getSome(ls):
+      let lastDiagnosticsVersion = self.lastDiagnosticsVersions.getOrDefault(ls.name, 0)
+      await self.updateCodeActionAsync(ls, self.selection, self.document.buffer.versionId, lastDiagnosticsVersion, addSign = false)
     else:
       log lvlError, &"Can't select code actions: No language server attached."
       return
-  if not self.codeActions.contains(line):
+
+    collectCodeActions()
+
+  if res.len == 0:
     return
 
   var builder = SelectorPopupBuilder()
@@ -4116,26 +4158,8 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
   builder.scaleX = 0.4
   builder.scaleY = 0.4
 
-  var res = newSeq[FinderItem]()
-  for i, commandOrAction in self.codeActions[line]:
-    if commandOrAction.selection.first > self.selection.last or commandOrAction.selection.last < self.selection.last:
-      continue
-
-    case commandOrAction.kind:
-    of CodeActionKind.Command:
-      res.add FinderItem(
-        displayName: commandOrAction.command.title,
-        data: $commandOrAction.toJson,
-      )
-    of CodeActionKind.CodeAction:
-      res.add FinderItem(
-        displayName: commandOrAction.action.title,
-        data: $commandOrAction.toJson,
-      )
-
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
-
   builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
     try:
       let commandOrAction = item.data.parseJson.jsonTo(CodeActionOrCommand)
@@ -4149,24 +4173,28 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
 proc selectCodeAction(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.selectCodeActionAsync()
 
-proc updateCodeActionsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
+proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: LanguageServer): Future[void] {.async.} =
   if self.document.isNil:
     return
 
-  if self.document.getLanguageServer().await.getSome(ls):
-    if self.document.isNil or self.document.currentDiagnostics.len == 0:
-      return
+  let languageServers = if languageServer.isNotNil:
+    @[languageServer]
+  else:
+    self.document.languageServerList.languageServers
 
+  for ls in languageServers:
     let versionId = self.document.buffer.versionId
-    let diagnostics = self.getDiagnosticsWithNoCodeActionFetched()
+    let diagnostics = self.getDiagnosticsWithNoCodeActionFetched(ls)
     if diagnostics.len == 0:
       return
+
+    let diagnosticsVersion = self.lastDiagnosticsVersions.getOrDefault(ls.name, 0)
 
     for d in diagnostics:
       let selection: Selection = (
         (d.`range`.start.line, d.`range`.start.character),
         (d.`range`.`end`.line, d.`range`.`end`.character))
-      asyncSpawn self.updateCodeActionAsync(ls, selection, versionId, addSign = true)
+      asyncSpawn self.updateCodeActionAsync(ls, selection, versionId, diagnosticsVersion, addSign = true)
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.clearDiagnostics()
@@ -4176,9 +4204,26 @@ proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
       asyncSpawn self.updateInlayHintsAsync()
-      asyncSpawn self.updateCodeActionsAsync()
+      asyncSpawn self.updateCodeActionsAsync(nil)
   else:
     self.inlayHintsTask.reschedule()
+
+proc lspInfo(self: TextDocumentEditor) {.expose("editor.text").} =
+  var builder = SelectorPopupBuilder()
+  builder.scope = "lsp-info".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.4
+
+  var res = newSeq[FinderItem]()
+  for ls in self.document.languageServerList.languageServers:
+    res.add FinderItem(
+      displayName: ls.name,
+    )
+
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
+
+  discard self.layout.pushSelectorPopup(builder)
 
 proc setReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
   ## Sets the internal readOnly flag, but doesn't not change permissions of the underlying file
@@ -4561,13 +4606,14 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
 
   self.updateInlayHints()
 
-proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument) =
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer) =
   if document != self.document:
     return
 
-  self.codeActions.clear()
-  self.clearSigns("code-actions")
-  asyncSpawn self.updateCodeActionsAsync()
+  self.lastDiagnosticsVersions.mgetOrPut(languageServer.name).inc
+  self.codeActions.mgetOrPut(languageServer.name).clear()
+  self.clearSigns("code-actions-" & languageServer.name)
+  asyncSpawn self.updateCodeActionsAsync(languageServer)
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
   if document != self.document:

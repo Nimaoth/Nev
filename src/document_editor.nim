@@ -45,12 +45,10 @@ type
 
 func serviceName*(_: typedesc[DocumentEditorService]): string = "DocumentEditorService"
 
-addBuiltinService(DocumentEditorService, PlatformService)
+addBuiltinService(DocumentEditorService)
 
 method init*(self: DocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"DocumentEditorService.init"
-  self.platform = self.services.getService(PlatformService).get.platform
-  assert self.platform != nil
   self.pinnedEditors = initHashSet[EditorId]()
   return ok()
 
@@ -206,6 +204,13 @@ proc getOrOpenDocument*(self: DocumentEditorService, path: string, appFile = fal
 
   return self.openDocument(path, appFile, load)
 
+proc getPlatform*(self: DocumentEditorService): Platform =
+  if self.platform == nil:
+    if self.services.getService(PlatformService).getSome(platformService):
+      self.platform = platformService.platform
+
+  return self.platform
+
 proc createEditorForDocument*(self: DocumentEditorService, document: Document): Option[DocumentEditor] =
   for factory in self.editorFactories:
     if factory.canEditDocument(document):
@@ -216,7 +221,10 @@ proc createEditorForDocument*(self: DocumentEditorService, document: Document): 
     log lvlError, &"Failed to create editor for document '{document.filename}'"
     return
 
-  discard result.get.onMarkedDirty.subscribe () => self.platform.requestRender()
+  discard result.get.onMarkedDirty.subscribe proc() =
+    let platform = self.getPlatform()
+    if platform.isNotNil:
+      platform.requestRender()
 
 proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
   # log lvlInfo, fmt"tryCloseDocument: '{document.filename}'"

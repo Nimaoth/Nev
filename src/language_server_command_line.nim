@@ -1,26 +1,49 @@
 import std/[options, tables]
 import nimsumtree/rope
-import misc/[custom_logger, custom_async, util, response, rope_utils]
+import misc/[custom_logger, custom_async, util, response, rope_utils, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
-import dispatch_tables, document_editor, service, layout, events
+import dispatch_tables, document_editor, service, layout, events, config_provider
 import text/text_document
 
 logCategory "language-server-command-line"
 
-type LanguageServerCommandLine* = ref object of LanguageServer
-  services: Services
-  documents: DocumentEditorService
-  events: EventHandlerService
-  files: Table[string, string]
-  commandHistory*: seq[string]
+type
+  LanguageServerCommandLine* = ref object of LanguageServer
+    services: Services
+    documents: DocumentEditorService
+    events: EventHandlerService
+    files: Table[string, string]
+    commandHistory*: seq[string]
 
-proc newLanguageServerCommandLine*(services: Services): LanguageServer =
+  LanguageServerCommandLineService* = ref object of Service
+    languageServer*: LanguageServerCommandLine
+    config: ConfigStore
+
+proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine =
   var server = new LanguageServerCommandLine
+  server.name = "command-line"
   server.services = services
   server.events = services.getService(EventHandlerService).get
   server.documents = services.getService(DocumentEditorService).get
+  server.capabilities.completionProvider = lsp_types.CompletionOptions().some
   return server
+
+func serviceName*(_: typedesc[LanguageServerCommandLineService]): string = "LanguageServerCommandLineService"
+
+addBuiltinService(LanguageServerCommandLineService, DocumentEditorService, EventHandlerService)
+
+method init*(self: LanguageServerCommandLineService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  self.languageServer = newLanguageServerCommandLine(self.services)
+  self.config = self.services.getService(ConfigService).get.runtime
+  discard self.languageServer.documents.onEditorRegistered.subscribe proc(editor: DocumentEditor) =
+    let doc = editor.getDocument()
+    if doc of TextDocument:
+      let textDoc = doc.TextDocument
+      let languages = self.config.get("lsp-command-line.languages", newSeq[string]())
+      if textDoc.languageId in languages and not textDoc.hasLanguageServer(self.languageServer):
+        discard textDoc.addLanguageServer(self.languageServer)
+  return ok()
 
 method getDefinition*(self: LanguageServerCommandLine, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =

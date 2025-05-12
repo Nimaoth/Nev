@@ -185,7 +185,6 @@ if not disableLogging: ## Enable loggers
 import misc/[timer, custom_async]
 import platform/[platform]
 import ui/widget_builders
-import text/language/language_server
 import app, platform_service
 
 # import asynctools/asyncipc

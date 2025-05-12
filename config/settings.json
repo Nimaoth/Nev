@@ -85,22 +85,14 @@
     },
 
     "+lsp": {
-        "cpp": {
-            "path": "clangd",
-            "args": [
-                "--offset-encoding=utf-8"
-            ]
+        "clangd": {
+            "languages": ["c", "cpp"],
+            "command": ["clangd", "--offset-encoding=utf-8"],
         },
 
-        "c": {
-            "path": "clangd",
-            "args": [
-                "--offset-encoding=utf-8"
-            ]
-        },
-
-        "zig": {
-            "path": "zls",
+        "zls": {
+            "languages": ["zig"],
+            "command": ["zls"],
             "settings": {
                 "zls": {
                     "enable_snippets": true,
@@ -127,51 +119,64 @@
             }
         },
 
-        "odin": {
-            "path": "ols"
+        "ols": {
+            "languages": ["odin"],
+            "command": ["ols"],
         },
 
-        "rust": {
-            "path": "rust-analyzer",
+        "rust-analyzer": {
+            "languages": ["rust"],
+            "command": ["rust-analyzer"],
             "initialization-options-name": "rust-analyzer",
             "initial-configuration": "",
             "workspace-configuration-name": "",
             "rust-analyzer": {}
         },
 
-        "c_sharp": {
-            "path": "OmniSharp"
+        "OmniSharp": {
+            "languages": ["c_sharp"],
+            "command": ["OmniSharp"],
         },
 
-        "javascript": {
-            "path": "typescript-language-server",
-            "args": ["--stdio"]
+        "typescript-language-server": {
+            "languages": ["typescript", "javascript"],
+            "command": ["typescript-language-server"],
         },
 
-        "typescript": {
-            "path": "typescript-language-server",
-            "args": ["--stdio"]
+        "vscode-json-languageserver": {
+            "languages": ["json"],
+            "command": ["vscode-json-languageserver"],
         },
 
-        "json": {
-            "path": "vscode-json-languageserver",
-            "args": ["--stdio"]
+        "pylspython": {
+            "languages": ["python"],
+            "command": ["pylsp"],
         },
 
-        "python": {
-            "path": "pylsp"
-        },
-
-        "nim": {
-            "path": "nimlangserver",
-            "args": [
-                "--stdio"
-            ],
+        "nimlangserver": {
+            "languages": ["nim"],
+            "command": ["nimlangserver", "--stdio"],
             "settings": {}
         },
 
-        "paths.languages": ["markdown", "command-line", "json"],
+        "harper-ls": {
+            "languages": ["markdown"],
+            "command": ["harper-ls", "--stdio"],
+            "settings": {
+                "harper-ls": {
+                },
+            },
+        },
+
+        "lua-language-server": {
+            "languages": ["lua"],
+            "command": ["lua-language-server"],
+        },
     },
+
+    "lsp-command-line.languages": ["command-line", "markdown"],
+    "lsp-paths.languages": ["markdown", "command-line", "json", "nim", "c"],
+    "lsp-regex.languages": ["nim"],
 
     "+lang": {
         "command-line": {
@@ -225,6 +230,7 @@
                 "line-comment": "#",
                 "+search-regexes": {
                     "goto-definition": "((proc|method|func|template|macro|iterator|type|declare|declareSettings|^var|^let) [[0]]\\b)|(\\b[[0]]\\b.*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))|((type |  +)\\b[[0]]\\b\\*?( \\{.*?)?:.+[^,;]$)",
+                    "goto-implementation": "object of [[0]]",
                     "symbols": "((proc|method|func|template|macro|iterator|type|declare|declareSettings) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))",
                     "workspace-symbols-by-kind": {
                         "Class": "(\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|distinct)",

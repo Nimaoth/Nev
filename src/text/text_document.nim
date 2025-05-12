@@ -146,9 +146,6 @@ declareSettings TextSettings, "text":
   ## How many characters wide a tab is.
   declare tabWidth, int, 4
 
-  ## If true then configured language servers are automatically started when opening a file of the specific language for the first time.
-  declare autoStartLanguageServer, bool, true
-
   ## String which starts a line comment
   declare lineComment, Option[string], nil
 
@@ -201,7 +198,8 @@ type
     onBufferChanged*: Event[tuple[document: TextDocument]]
     onLanguageServerAttached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
     onLanguageServerDetached*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
-    onDiagnostics*: Event[tuple[document: TextDocument]]
+    onDiagnostics*: Event[tuple[document: TextDocument, languageServer: LanguageServer]]
+    onLanguageChanged*: Event[tuple[document: TextDocument]]
 
     undoSelections*: Table[Lamport, Selections]
     redoSelections*: Table[Lamport, Selections]
@@ -222,18 +220,12 @@ type
     highlightQuery*: TSQuery
     errorQuery: TSQuery
 
-    connectedToLanguageServer*: bool
-    languageServer*: Option[LanguageServer]
-    languageServerFuture*: Option[Future[Option[LanguageServer]]]
     languageServerList*: LanguageServerList
 
-    diagnosticsPerLine*: Table[int, seq[int]]
+    diagnosticsPerLS*: seq[DiagnosticsData] ## Diagnostics per language server
+    languageServerDiagnosticsIndex*: Table[string, int] ## Diagnostics per language server
     diagnosticEndPoints*: seq[DiagnosticEndPoint]
-    currentDiagnostics*: seq[Diagnostic]
-    currentDiagnosticsAnchors: seq[Range[Anchor]]
-    onDiagnosticsHandle: Id
-    lastDiagnosticVersion: Global # todo: reset at appropriate times
-    lastDiagnosticAnchorResolve: Global # todo: reset at appropriate times
+    onDiagnosticsHandles: Table[string, (LanguageServer, Id)]
     diagnosticSnapshots: seq[BufferSnapshot] # todo: reset at appropriate times
 
     treesitterParserCursor: RopeCursor ## Used during treesitter parsing to avoid constant seeking
@@ -243,10 +235,18 @@ type
     settings*: TextSettings
     fileWatchHandle: VFSWatchHandle
 
+  DiagnosticsData = object
+    languageServer*: LanguageServer
+    currentDiagnostics*: seq[Diagnostic]
+    currentDiagnosticsAnchors: seq[Range[Anchor]]
+    diagnosticsPerLine*: Table[int, seq[int]]
+    lastDiagnosticVersion: Global # todo: reset at appropriate times
+    lastDiagnosticAnchorResolve: Global # todo: reset at appropriate times
+
 var allTextDocuments*: seq[TextDocument] = @[]
 
 proc reloadTreesitterLanguage*(self: TextDocument)
-proc clearDiagnostics*(self: TextDocument)
+proc clearDiagnostics*(self: TextDocument, languageServerName: string = "")
 proc numLines*(self: TextDocument): int {.noSideEffect.}
 proc handlePatch(self: TextDocument, oldText: Rope, patch: Patch[uint32])
 proc resolveDiagnosticAnchors*(self: TextDocument)
@@ -254,8 +254,8 @@ proc recordSnapshotForDiagnostics(self: TextDocument)
 proc addTreesitterChange(self: TextDocument, startByte: int, oldEndByte: int, newEndByte: int, startPoint: Point, oldEndPoint: Point, newEndPoint: Point)
 proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.}
 proc enableAutoReload*(self: TextDocument, enabled: bool)
-proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer)
-proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer)
+proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool
+proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool
 
 func rope*(self: TextDocument): lent Rope = self.buffer.snapshot.visibleText
 
@@ -275,9 +275,6 @@ method getStatisticsString*(self: TextDocument): string =
     result.add &"Fragment: {fragmentStats}\n"
     result.add &"Insertion: {insertionStats}\n"
     result.add &"Undo: {undoStats}\n"
-
-    result.add &"Diagnostics per line: {self.diagnosticsPerLine.len}\n"
-    result.add &"Diagnostics: {self.currentDiagnostics.len}"
   except:
     discard
 
@@ -321,8 +318,6 @@ proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true)
 
 proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: bool = true): Selection = (self.clampCursor(selection.first, includeAfter), self.clampCursor(selection.last, includeAfter))
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]]
-proc connectLanguageServer*(self: TextDocument) {. async.}
 proc trimTrailingWhitespace*(self: TextDocument)
 
 proc notifyTextChanged*(self: TextDocument) =
@@ -447,6 +442,7 @@ proc `languageId=`*(self: TextDocument, languageId: string) =
     self.config.setParent(self.configService.getLanguageStore(self.mLanguageId))
     if not self.requiresLoad:
       self.reloadTreesitterLanguage()
+    self.onLanguageChanged.invoke (self,)
 
 func contentString*(self: TextDocument): string =
   if self.rope.tree.isNil:
@@ -779,6 +775,7 @@ proc newTextDocument*(
     allTextDocuments.add result
 
   var self = result
+  self.id = newId().DocumentId
   self.isInitialized = true
   self.currentTree = TSTree()
   self.appFile = app
@@ -802,18 +799,14 @@ proc newTextDocument*(
     getLanguageForFile(self.config, filename).applyIt:
       self.languageId = it
 
-  let autoStartServer = self.settings.autoStartLanguageServer.get()
-
   self.content = content
-  self.languageServer = languageServer.mapIt(it)
-  if self.languageServer.isSome:
-    self.addLanguageServer(self.languageServer.get)
-
-  if self.languageServer.isNone and createLanguageServer and autoStartServer:
-    asyncSpawn self.connectLanguageServer()
+  if languageServer.isSome:
+    discard self.addLanguageServer(languageServer.get)
 
 method deinit*(self: TextDocument) =
   # logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
+  if not self.isInitialized:
+    return
 
   self.fileWatchHandle.unwatch()
 
@@ -822,11 +815,11 @@ method deinit*(self: TextDocument) =
   self.highlightQuery = nil
   self.errorQuery = nil
 
-  if self.languageServer.getSome(ls):
-    ls.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
-    ls.disconnect(self)
-    self.removeLanguageServer(ls)
-    self.languageServer = LanguageServer.none
+  if self.languageServerList.isNotNil:
+    self.languageServerList.disconnect(self)
+
+  for (ls, id) in self.onDiagnosticsHandles.values:
+    ls.onDiagnostics.unsubscribe(id)
 
   {.gcsafe.}:
     let i = allTextDocuments.find(self)
@@ -1124,22 +1117,23 @@ proc format*(self: TextDocument, runOnTempFile: bool): Future[void] {.async.} =
 
 proc updateDiagnosticEndPoints(self: TextDocument) =
   self.diagnosticEndPoints.setLen(0)
-  for i, d in self.currentDiagnostics:
-    let severity = d.severity.get(lsp_types.DiagnosticSeverity.Hint)
-    self.diagnosticEndPoints.add DiagnosticEndPoint(severity: severity, point: d.selection.first.toPoint, start: true)
-    self.diagnosticEndPoints.add DiagnosticEndPoint(severity: severity, point: d.selection.last.toPoint, start: false)
+  for diagnostics in self.diagnosticsPerLS.mitems:
+    for i, d in diagnostics.currentDiagnostics:
+      let severity = d.severity.get(lsp_types.DiagnosticSeverity.Hint)
+      self.diagnosticEndPoints.add DiagnosticEndPoint(severity: severity, point: d.selection.first.toPoint, start: true)
+      self.diagnosticEndPoints.add DiagnosticEndPoint(severity: severity, point: d.selection.last.toPoint, start: false)
 
   self.diagnosticEndPoints.sort proc(a, b: DiagnosticEndPoint): int = cmp(a.point, b.point)
 
-proc resolveDiagnosticAnchors*(self: TextDocument) =
+proc resolveDiagnosticAnchors*(self: var DiagnosticsData, buffer: sink BufferSnapshot) =
   if self.currentDiagnostics.len == 0:
     return
 
-  if self.lastDiagnosticAnchorResolve == self.buffer.version:
+  if self.lastDiagnosticAnchorResolve == buffer.version:
     return
 
-  let snapshot = self.buffer.snapshot.clone()
-  self.lastDiagnosticAnchorResolve = self.buffer.version
+  let snapshot = buffer.clone()
+  self.lastDiagnosticAnchorResolve = buffer.version
   self.diagnosticsPerLine.clear()
 
   for i in countdown(self.currentDiagnostics.high, 0):
@@ -1155,86 +1149,106 @@ proc resolveDiagnosticAnchors*(self: TextDocument) =
     for line in d.selection.first.line..d.selection.last.line:
       self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
 
+proc resolveDiagnosticAnchors*(self: TextDocument) =
+  for diagnostics in self.diagnosticsPerLS.mitems:
+    diagnostics.resolveDiagnosticAnchors(self.buffer.snapshot.clone())
   self.updateDiagnosticEndPoints()
 
-proc setCurrentDiagnostics(self: TextDocument, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
+proc setCurrentDiagnostics(self: TextDocument, languageServer: LanguageServer, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink Option[BufferSnapshot]) =
 
   let snapshot = snapshot.take(self.buffer.snapshot.clone())
 
-  self.currentDiagnostics.setLen diagnostics.len
-  self.currentDiagnosticsAnchors.setLen diagnostics.len
-  self.diagnosticsPerLine.clear()
+  if languageServer.name notin self.languageServerDiagnosticsIndex:
+    self.diagnosticsPerLS.add DiagnosticsData(languageServer: languageServer)
+    self.languageServerDiagnosticsIndex[languageServer.name] = self.diagnosticsPerLS.high
 
-  for i, d in diagnostics:
-    let runeSelection = (
-      (d.`range`.start.line, d.`range`.start.character.RuneIndex),
-      (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
-    let selection = self.runeSelectionToSelection(runeSelection)
+  proc setDiagnostics(diagnosticsData: var DiagnosticsData, diagnostics: openArray[lsp_types.Diagnostic], snapshot: sink BufferSnapshot) =
 
-    self.currentDiagnostics[i] = language_server_base.Diagnostic(
-      selection: selection,
-      severity: d.severity,
-      code: d.code,
-      codeDescription: d.codeDescription,
-      source: d.source,
-      message: d.message,
-      tags: d.tags,
-      relatedInformation: d.relatedInformation,
-      data: d.data,
-    )
+    diagnosticsData.currentDiagnostics.setLen diagnostics.len
+    diagnosticsData.currentDiagnosticsAnchors.setLen diagnostics.len
+    diagnosticsData.diagnosticsPerLine.clear()
 
-    self.currentDiagnosticsAnchors[i] = snapshot.anchorAt(selection.toRange, Right, Left)
+    for i, d in diagnostics:
+      let runeSelection = (
+        (d.`range`.start.line, d.`range`.start.character.RuneIndex),
+        (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))
+      let selection = self.runeSelectionToSelection(runeSelection)
 
-    for line in selection.first.line..selection.last.line:
-      self.diagnosticsPerLine.mgetOrPut(line, @[]).add i
+      diagnosticsData.currentDiagnostics[i] = language_server_base.Diagnostic(
+        selection: selection,
+        severity: d.severity,
+        code: d.code,
+        codeDescription: d.codeDescription,
+        source: d.source,
+        message: d.message,
+        tags: d.tags,
+        relatedInformation: d.relatedInformation,
+        data: d.data,
+      )
+
+      diagnosticsData.currentDiagnosticsAnchors[i] = snapshot.anchorAt(selection.toRange, Right, Left)
+
+      for line in selection.first.line..selection.last.line:
+        diagnosticsData.diagnosticsPerLine.mgetOrPut(line, @[]).add i
+
+    # diagnosticsData.updateDiagnosticEndPoints()
+
+    if snapshot.version != self.buffer.version:
+      diagnosticsData.lastDiagnosticAnchorResolve = snapshot.version
+      diagnosticsData.resolveDiagnosticAnchors(snapshot)
 
   self.updateDiagnosticEndPoints()
 
-  if snapshot.version != self.buffer.version:
-    self.lastDiagnosticAnchorResolve = snapshot.version
-    self.resolveDiagnosticAnchors()
+  if languageServer.name notin self.languageServerDiagnosticsIndex:
+    self.diagnosticsPerLS.add DiagnosticsData(languageServer: languageServer)
+    self.languageServerDiagnosticsIndex[languageServer.name] = self.diagnosticsPerLS.high
 
-  self.onDiagnostics.invoke (self,)
+  self.diagnosticsPerLS[self.languageServerDiagnosticsIndex[languageServer.name]].setDiagnostics(diagnostics, snapshot)
+
+  self.onDiagnostics.invoke (self, languageServer)
   self.notifyRequestRerender()
 
 proc updateDiagnosticsAsync*(self: TextDocument): Future[void] {.async.} =
-  let languageServer = await self.getLanguageServer()
-  if languageServer.getSome(ls):
-    let snapshot = self.buffer.snapshot.clone()
-    let diagnostics = await ls.getDiagnostics(self.filename)
+  discard
+  # todo
+  # if self.languageServerList.languageServers.len > 0:
+  #   let snapshot = self.buffer.snapshot.clone()
+  #   let diagnostics = await self.languageServerList.getDiagnostics(self.filename)
 
-    if not self.isInitialized:
-      return
+  #   if not self.isInitialized:
+  #     return
 
-    if not diagnostics.isSuccess:
-      return
+  #   if not diagnostics.isSuccess:
+  #     return
 
-    if not snapshot.version.observedAll(self.lastDiagnosticVersion):
-      log lvlWarn, &"Got diagnostics older that the current. Current {self.lastDiagnosticVersion}, received {snapshot.version}"
-      return
+  #   if not snapshot.version.observedAll(self.lastDiagnosticVersion):
+  #     log lvlWarn, &"Got diagnostics older that the current. Current {self.lastDiagnosticVersion}, received {snapshot.version}"
+  #     return
 
-    self.lastDiagnosticVersion = snapshot.version
-    self.setCurrentDiagnostics(diagnostics.result, snapshot.some)
+  #   self.lastDiagnosticVersion = snapshot.version
+  #   self.setCurrentDiagnostics(ls, diagnostics.result, snapshot.some)
 
-proc connectLanguageServer*(self: TextDocument) {.async.} =
-  discard await self.getLanguageServer()
-
-proc handleDiagnosticsReceived(self: TextDocument, diagnostics: lsp_types.PublicDiagnosticsParams) =
+proc handleDiagnosticsReceived(self: TextDocument, languageServer: LanguageServer, diagnostics: lsp_types.PublicDiagnosticsParams) =
   if not self.settings.diagnostics.enable.get():
-    self.clearDiagnostics()
+    self.clearDiagnostics(languageServer.name)
     return
 
   let uri = diagnostics.uri.decodeUrl.parseUri
   if uri.path.normalizePathUnix != self.localizedPath:
     return
 
+  if languageServer.name notin self.languageServerDiagnosticsIndex:
+    self.diagnosticsPerLS.add DiagnosticsData(languageServer: languageServer)
+    self.languageServerDiagnosticsIndex[languageServer.name] = self.diagnosticsPerLS.high
+
+  let diagnosticsData = self.diagnosticsPerLS[self.languageServerDiagnosticsIndex[languageServer.name]].addr
   let version = diagnostics.version.mapIt(self.buffer.history.versions.get(it)).flatten
-  if version.getSome(version) and not version.observedAll(self.lastDiagnosticVersion):
-    log lvlWarn, &"Got diagnostics older that the current. Current {self.lastDiagnosticVersion}, received {version}"
+  if version.getSome(version) and not version.observedAll(diagnosticsData[].lastDiagnosticVersion):
+    log lvlWarn, &"Got diagnostics older than the current. Current {diagnosticsData[].lastDiagnosticVersion}, received {version}"
     return
 
   if version.getSome(version):
-    self.lastDiagnosticVersion = version
+    diagnosticsData[].lastDiagnosticVersion = version
 
   var snapshot: Option[BufferSnapshot] = BufferSnapshot.none
   for i in 0..self.diagnosticSnapshots.high:
@@ -1246,87 +1260,63 @@ proc handleDiagnosticsReceived(self: TextDocument, diagnostics: lsp_types.Public
     log lvlWarn, &"Got diagnostics for old version {version.get}, currently on {self.buffer.version}, ignore"
     return
 
-  self.setCurrentDiagnostics(diagnostics.diagnostics, snapshot)
+  self.setCurrentDiagnostics(languageServer, diagnostics.diagnostics, snapshot)
 
-proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer) =
-  self.languageServerList.addLanguageServer(languageServer)
+proc addLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
+  # log lvlInfo, &"Attach language server '{languageServer.name}' to '{self.filename}'"
+  if not self.languageServerList.addLanguageServer(languageServer):
+    return false
+  languageServer.connect(self)
+
+  # todo: only do that if language server supports sending diagnostics
+  # if languageServer.capabilities.diagnosticProvider.isSome:
+  let onDiagnosticsHandle = languageServer.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
+    self.handleDiagnosticsReceived(languageServer, diagnostics)
+  self.onDiagnosticsHandles[languageServer.name] = (languageServer, onDiagnosticsHandle)
+
   self.completionTriggerCharacters = {}
   for ls in self.languageServerList.languageServers:
     self.completionTriggerCharacters.incl ls.getCompletionTriggerChars()
   self.onLanguageServerAttached.invoke (self, languageServer)
 
-proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer) =
+  return true
+
+proc removeLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
+  if languageServer.name in self.onDiagnosticsHandles:
+    languageServer.onDiagnostics.unsubscribe(self.onDiagnosticsHandles[languageServer.name][1])
+    self.onDiagnosticsHandles.del(languageServer.name)
+
   if self.languageServerList.removeLanguageServer(languageServer):
+    log lvlWarn, &"Detach language server '{languageServer.name}' from '{self.filename}'"
     self.onLanguageServerDetached.invoke (self, languageServer)
+    return true
+  return false
 
 proc hasLanguageServer*(self: TextDocument, languageServer: LanguageServer): bool =
   self.languageServerList.languageServers.find(languageServer) != -1
 
-proc getLanguageServerImpl(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
-  if self.requiresLoad or self.isLoadingAsync:
-    return LanguageServer.none
-
-  if self.languageServer.isSome:
-    if not self.connectedToLanguageServer:
-      return LanguageServer.none
-    return self.languageServer
-
-  if self.languageServerFuture.getSome(fut):
-    try:
-      let ls = fut.await
-      if not self.connectedToLanguageServer:
-        return LanguageServer.none
-      return ls
-    except:
-      return LanguageServer.none
-
-  if not self.createLanguageServer:
-    return LanguageServer.none
-
-  if self.languageId == "":
-    return LanguageServer.none
-
-  let workspaces = @[self.workspace.getWorkspacePath()]
-  {.gcsafe.}:
-    let languageServerFuture = getOrCreateLanguageServer(self.languageId, self.filename, workspaces, (string, int).none, self.workspace.some)
-
-  self.languageServerFuture = languageServerFuture.some
-  self.connectedToLanguageServer = false
-  try:
-    self.languageServer = await languageServerFuture
-  except CatchableError:
-    self.languageServer = LanguageServer.none
-
-  if not self.isInitialized:
-    if self.languageServer.isSome:
-      self.removeLanguageServer(self.languageServer.get)
-    self.languageServer = LanguageServer.none
-    return LanguageServer.none
-
-  if self.languageServer.getSome(ls):
-    ls.connect(self)
-
-    self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
-      self.handleDiagnosticsReceived(diagnostics)
-
-    self.addLanguageServer(ls)
-
-  if not self.connectedToLanguageServer:
-    return LanguageServer.none
-  return self.languageServer
-
-proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
-  discard await self.getLanguageServerImpl()
+proc getLanguageServer*(self: TextDocument): Option[LanguageServer] =
   if self.languageServerList.languageServers.len > 0:
     return self.languageServerList.LanguageServer.some
   return LanguageServer.none
 
-proc clearDiagnostics*(self: TextDocument) =
-  if self.currentDiagnostics.len == 0:
-    return
-  self.diagnosticsPerLine.clear()
-  self.currentDiagnostics.setLen 0
-  self.currentDiagnosticsAnchors.setLen 0
+proc clearDiagnostics*(self: TextDocument, languageServerName: string = "") =
+  if languageServerName == "":
+    for diagnostics in self.diagnosticsPerLS.mitems:
+      if diagnostics.currentDiagnostics.len == 0:
+        continue
+      diagnostics.diagnosticsPerLine.clear()
+      diagnostics.currentDiagnostics.setLen 0
+      diagnostics.currentDiagnosticsAnchors.setLen 0
+  elif languageServerName in self.languageServerDiagnosticsIndex:
+    let index = self.languageServerDiagnosticsIndex[languageServerName]
+    let diagnostics = self.diagnosticsPerLS[index].addr
+    if diagnostics[].currentDiagnostics.len == 0:
+      return
+    diagnostics[].diagnosticsPerLine.clear()
+    diagnostics[].currentDiagnostics.setLen 0
+    diagnostics[].currentDiagnosticsAnchors.setLen 0
+
   self.updateDiagnosticEndPoints()
 
 proc tabWidth*(self: TextDocument): int =

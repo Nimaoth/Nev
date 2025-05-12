@@ -1,7 +1,10 @@
-import misc/util
+import misc/[util, id]
 import vfs
 
+defineUniqueId(DocumentId)
+
 type Document* = ref object of RootObj
+  id*: DocumentId
   appFile*: bool                        ## Whether this is an application file (e.g. stored in local storage on the browser)
   isBackedByFile*: bool = false
   requiresLoad*: bool = false           ## Whether the document content has not been scheduled for loading yet.

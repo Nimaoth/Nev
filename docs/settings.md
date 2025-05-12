@@ -5,7 +5,6 @@ For examples and default values see [here](../config/settings.json)
 
 | Key | Type | Default | Description |
 | ----------- | --- | --- | ------ |
-| `editor.text.auto-start-language-server` | bool | true | If true then documents automatically start and connect to a language server if one is configured for the language. |
 | `editor.text.triple-click-command` | string | "extend-select-move" | Command to execute when triple clicking |
 | `editor.text.triple-click-command-args` | array | ["line", true] | Arguments to pass to the command when triple clicking |
 | `editor.text.whitespace.char` | char | "·" | The character to use to rendering spaces |

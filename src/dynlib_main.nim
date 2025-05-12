@@ -43,7 +43,6 @@ import vmath
 import misc/[util, timer, custom_async]
 import platform/platform
 import ui/widget_builders
-import text/language/language_server
 import app
 
 import platform/[platform_externc]

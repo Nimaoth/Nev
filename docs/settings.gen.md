@@ -23,7 +23,6 @@ For examples and default values see [here](../config/settings.json)
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
-| `text.auto-start-language-server` | bool | true | If true then configured language servers are automatically started when opening a file of the specific language for the first time. |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
 | `text.code-actions.sign` | string | "⚑" | Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions. |
 | `text.code-actions.sign-color` | string | "info" | What color the sign for code actions should be. Can be a theme color name or hex code (e.g. `#12AB34`). |

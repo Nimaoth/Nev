@@ -1,28 +1,11 @@
 {
     "$schema": "../config/settings.schema.json",
     "+lsp": {
-        "nim": null,
+        "nimlangserver": null,
 
-        "+cpp": {
-            "args": [
-                "--offset-encoding=utf-8",
-                "--background-index",
-                "--limit-results=100",
-                "--limit-references=2000",
-                "--clang-tidy"
-            ]
-        },
+        "clangd.command": ["clangd", "--offset-encoding=utf-8", "--background-index", "--limit-results=100", "--limit-references=2000", "--clang-tidy"],
 
-        "+c": {
-            "args": [
-                "--offset-encoding=utf-8",
-                "--background-index",
-                "--limit-results=100",
-                "--limit-references=2000"
-            ]
-        },
-
-        "+rust": {
+        "+rust-analyzer": {
             "rust-analyzer": {
                 "linkedProjects": ["temp/rust_test/Cargo.toml"]
             }
