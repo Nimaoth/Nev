@@ -12,6 +12,9 @@
       the next key press will be handled as usual.
 - Added the ability to show signs on each line in a sign column, to show breakpoints, errors, code actions, etc.
 - Added support LSP for code actions and rename
+- Added support for multiple language servers attached to one document
+- Added builtin language server to provide auto completion and goto definition for paths
+- Changed how language servers are configured.
 
 ### Bug fixes
 

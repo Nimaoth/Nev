@@ -172,11 +172,21 @@
             "languages": ["lua"],
             "command": ["lua-language-server"],
         },
+
+        "paths": {
+            "languages": ["markdown", "command-line"],
+            "priority": -1,
+        },
+
+        "regex": {
+            "languages": [],
+            "priority": -2,
+        },
+
+        "command-line.languages": ["command-line"],
     },
 
-    "lsp-command-line.languages": ["command-line", "markdown"],
-    "lsp-paths.languages": ["markdown", "command-line", "json", "nim", "c"],
-    "lsp-regex.languages": ["nim"],
+    "lsp-merge.timeout": 10000,
 
     "+lang": {
         "command-line": {
@@ -503,7 +513,7 @@
                 ],
                 "line-comment": "//",
                 "color-highlight": {
-                    "enable": true,
+                    "enable": false,
                     "regex": "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})",
                     "kind": "hex",
                 },
@@ -524,6 +534,11 @@
         },
         "markdown": {
             "+text": {
+                "color-highlight": {
+                    "enable": false,
+                    "regex": "#([0-9a-fA-F]{6})",
+                    "kind": "hex",
+                },
                 "context-lines": false,
                 "treesitter.repository": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
                 "treesitter.queries": "tree-sitter-markdown/queries",

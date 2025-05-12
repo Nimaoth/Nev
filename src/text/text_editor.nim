@@ -3992,6 +3992,8 @@ proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
 proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.isNil:
     return
+  if self.document.requiresLoad or self.document.isLoadingAsync:
+    return
 
   if self.document.getLanguageServer().getSome(ls):
     if self.document.isNil:
@@ -4173,12 +4175,15 @@ proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
 proc selectCodeAction(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.selectCodeActionAsync()
 
-proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: LanguageServer): Future[void] {.async.} =
+proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: Option[LanguageServer]): Future[void] {.async.} =
   if self.document.isNil:
     return
 
-  let languageServers = if languageServer.isNotNil:
-    @[languageServer]
+  if self.document.requiresLoad or self.document.isLoadingAsync:
+    return
+
+  let languageServers = if languageServer.getSome(ls):
+    @[ls]
   else:
     self.document.languageServerList.languageServers
 
@@ -4204,7 +4209,7 @@ proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
       asyncSpawn self.updateInlayHintsAsync()
-      asyncSpawn self.updateCodeActionsAsync(nil)
+      asyncSpawn self.updateCodeActionsAsync(LanguageServer.none)
   else:
     self.inlayHintsTask.reschedule()
 
@@ -4613,7 +4618,7 @@ proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, 
   self.lastDiagnosticsVersions.mgetOrPut(languageServer.name).inc
   self.codeActions.mgetOrPut(languageServer.name).clear()
   self.clearSigns("code-actions-" & languageServer.name)
-  asyncSpawn self.updateCodeActionsAsync(languageServer)
+  asyncSpawn self.updateCodeActionsAsync(languageServer.some)
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
   if document != self.document:

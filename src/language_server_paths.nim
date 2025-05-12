@@ -47,8 +47,8 @@ method init*(self: LanguageServerPathsService): Future[Result[void, ref Catchabl
     let doc = editor.getDocument()
     if doc of TextDocument:
       let textDoc = doc.TextDocument
-      let languages = self.languageServer.config.get("lsp-paths.languages", newSeq[string]())
-      if textDoc.languageId in languages and not textDoc.hasLanguageServer(self.languageServer):
+      let languages = self.languageServer.config.get("lsp.paths.languages", newSeq[string]())
+      if textDoc.languageId in languages or "*" in languages:
         discard textDoc.addLanguageServer(self.languageServer)
   return ok()
 
@@ -65,7 +65,7 @@ method getDefinition*(self: LanguageServerPaths, filename: string, location: Cur
     if location.column > lineLen or lineLen > 512:
       return definitions
 
-    let pathRegex = textDoc.config.get("lsp-paths.regex", pathRegex)
+    let pathRegex = textDoc.config.get("lsp.paths.regex", pathRegex)
     let text = rope.slice(point(location.line, 0)...point(location.line, lineLen)).toRope
     let bounds = await findAllAsync(text.slice(int), pathRegex)
     for b in bounds:
@@ -110,7 +110,7 @@ method getCompletions*(self: LanguageServerPaths, filename: string, location: Cu
     if range.b.column - range.a.column > 512:
       return CompletionList(items: completions).success
 
-    let pathRegex = textDoc.config.get("lsp-paths.regex", pathRegex)
+    let pathRegex = textDoc.config.get("lsp.paths.regex", pathRegex)
     let text = rope.slice(range).toRope
     let bounds = await findAllAsync(text.slice(int), pathRegex)
     for b in bounds:

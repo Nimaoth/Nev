@@ -788,10 +788,10 @@ proc newTextDocument*(
   self.filename = self.vfs.normalize(filename)
   self.isBackedByFile = load
   self.requiresLoad = load
-  self.languageServerList = newLanguageServerList()
 
   self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
   self.settings = TextSettings.new(self.config)
+  self.languageServerList = newLanguageServerList(self.config)
 
   if language.getSome(language):
     self.languageId = language
