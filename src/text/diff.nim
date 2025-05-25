@@ -125,7 +125,7 @@ type
     index: int
 
   RopeCursorWrapper = object
-    cursor: RopeSliceCursor[Count, Count]
+    cursor: RopeSliceCursor[int, int]
 
 proc len(c: SeqCursor): int = c.data.len
 proc current[T](c: SeqCursor[T]): lent T = c.data[c.index]
@@ -144,16 +144,16 @@ proc seek[T](c: var RuneCursor, index: int) = c.index = index
 proc `=copy`*(a: var RopeCursorWrapper, b: RopeCursorWrapper) {.error.}
 proc `=dup`*(a: RopeCursorWrapper): RopeCursorWrapper {.error.}
 
-proc len(c: RopeCursorWrapper): int = c.cursor.ropeSlice.summary.len.int
-proc current(c: RopeCursorWrapper): Rune = c.cursor.currentRune()
-proc next(c: var RopeCursorWrapper) = c.cursor.seekNextRune()
-proc prev(c: var RopeCursorWrapper) = c.cursor.seekPrevRune()
+proc len(c: RopeCursorWrapper): int = c.cursor.ropeSlice.summary.bytes
+proc current(c: RopeCursorWrapper): char = c.cursor.currentChar()
+proc next(c: var RopeCursorWrapper) = c.cursor.seekNextChar()
+proc prev(c: var RopeCursorWrapper) = c.cursor.seekPrevChar()
 proc seek(c: var RopeCursorWrapper, index: int) =
   var distance = c.cursor.position.int - index
   if distance > 0:
     c.cursor.resetCursor()
-  c.cursor.seekForward(index.Count)
-proc slice(c: RopeCursorWrapper, first, last: int): RopeSlice[Count] = c.cursor.ropeSlice.slice(first.Count...last.Count)
+  c.cursor.seekForward(index)
+proc slice(c: RopeCursorWrapper, first, last: int): RopeSlice[int] = c.cursor.ropeSlice.slice(first...last)
 
 proc clone*[T](diff: RopeDiff[T]): RopeDiff[T] =
   result.edits.setLen(diff.edits.len)
@@ -360,10 +360,10 @@ proc diff*[T](a, b: sink RopeSlice[T], cancel: ptr Atomic[bool] = nil, enableCan
   if b.len == 0:
     return RopeDiff[T](edits: @[(T.default...T.fromSummary(a.summary, ()), T.default...T.default, Rope.new().slice(T))])
 
-  let a = a.slice(0.Count...a.summary.len)
-  let b = b.slice(0.Count...b.summary.len)
-  var dataA = initDiffData[T, RopeCursorWrapper](RopeCursorWrapper(cursor: a.cursor(Count)))
-  var dataB = initDiffData[T, RopeCursorWrapper](RopeCursorWrapper(cursor: b.cursor(Count)))
+  let a = a.slice(0...a.summary.bytes)
+  let b = b.slice(0...b.summary.bytes)
+  var dataA = initDiffData[T, RopeCursorWrapper](RopeCursorWrapper(cursor: a.cursor(int)))
+  var dataB = initDiffData[T, RopeCursorWrapper](RopeCursorWrapper(cursor: b.cursor(int)))
   let max = dataA.len + dataB.len + 1
   var downVector = newSeq[int](max * 2 + 2)
   var upVector = newSeq[int](max * 2 + 2)
