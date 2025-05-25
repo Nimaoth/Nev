@@ -3543,9 +3543,6 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
   var items = newItemList(symbols.len)
   var index = 0
   for symbol in symbols:
-    if self.workspace.ignorePath(symbol.filename):
-      continue
-
     let relPath = self.workspace.getRelativePathSync(symbol.filename).get(symbol.filename)
 
     items[index] = FinderItem(
