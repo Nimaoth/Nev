@@ -163,6 +163,7 @@ method getCompletions*(self: LanguageServerPaths, filename: string, location: Cu
         completions.add CompletionItem(
           label: name & divider,
           kind: CompletionKind.Class,
+          showCompletionsAgain: true.some,
           textEdit: lsp_types.TextEdit(
             range: replaceRange.toSelection.toLspRange,
             newText: name & divider,

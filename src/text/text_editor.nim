@@ -1808,15 +1808,14 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.
   else:
     {'.'}
 
-  if previousRune.int <= char.high.int and (previousRune in wordRunes or previousRune.char in extraTriggerChars):
-    return true
-
-  if previousRune.isAlpha:
+  if previousRune in wordRunes or (previousRune.int <= char.high.int and previousRune.char in extraTriggerChars):
     return true
 
   return false
 
 proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.disableCompletions:
+    return
   if self.shouldShowCompletionsAt(self.selection.last):
     self.showCompletionWindow()
   else:
@@ -1913,8 +1912,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
   self.updateTargetColumn(Last)
 
-  if not self.disableCompletions:
-    self.autoShowCompletions()
+  self.autoShowCompletions()
 
 proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()
@@ -2748,8 +2746,7 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
 
-  if not self.disableCompletions:
-    self.autoShowCompletions()
+  self.autoShowCompletions()
 
 proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
   var selections = self.selections
@@ -2760,8 +2757,7 @@ proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose(
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections).mapIt(self.clampSelection(it, includeAfter))
 
-  if not self.disableCompletions:
-    self.autoShowCompletions()
+  self.autoShowCompletions()
 
 proc getCommandCount*(self: TextDocumentEditor): int {.expose("editor.text").} =
   return self.commandCount
@@ -3864,8 +3860,8 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   self.currentSnippetData = snippetData
   self.selectNextTabStop()
 
-  # todo: sometimes I want to auto show, sometimes I don't
-  self.autoShowCompletions()
+  if completion.item.showCompletionsAgain.get(false):
+    self.autoShowCompletions()
 
 proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("editor.text").} =
   try:
