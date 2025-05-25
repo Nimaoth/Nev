@@ -1361,10 +1361,12 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommandBlock "insert", "<C-w>":
     let selections = editor.applyMove(editor.selections, "vim-word", true, true, 1, which = SelectionCursor.Last.some)
     editor.selections = editor.delete(selections)
+    editor.autoShowCompletions()
 
   addTextCommandBlock "insert", "<C-u>":
     let selections = editor.applyMove(editor.selections, "vim-line", true, true, 1, which = SelectionCursor.Last.some)
     editor.selections = editor.delete(selections)
+    editor.autoShowCompletions()
 
   addTextCommand "insert", "<C-t>", "vim-indent"
   addTextCommand "insert", "<C-d>", "vim-unindent"

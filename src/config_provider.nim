@@ -63,6 +63,8 @@ type
 
 const defaultToJsonOptions = ToJsonOptions(enumMode: joptEnumString, jsonNodeMode: joptJsonNodeAsRef)
 
+proc `$`*(self: RuneSetSetting): string {.borrow.}
+
 proc `in`*(r: Rune, set: RuneSetSetting): bool =
   type Base = HashSet[Rune]
   set.Base.contains(r)

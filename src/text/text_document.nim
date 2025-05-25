@@ -1326,22 +1326,18 @@ proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
   if cursor.column == 0:
     return cursor.toSelection
 
-  # todo: don't use get line
-  let line = $self.getLine(cursor.line)
+  var c = self.rope.cursorT(cursor.toPoint)
 
   let identRunes {.cursor.} = self.settings.completionWordChars.get()
-  let lspCompletionChars = self.completionTriggerCharacters
-  var column = min(cursor.column, line.len)
-  while column > 0:
-    let prevColumn = line.runeStart(column - 1)
-    let r = line.runeAt(prevColumn)
-    # if (r.int <= char.high.int and r in identRunes) or r.isAlpha or (r.int < 128 and r.char in lspCompletionChars):
-    if (r.int <= char.high.int and r in identRunes) or r.isAlpha:
-      column = prevColumn
-      continue
-    break
+  var column = c.position.column
+  while c.position.column > 0:
+    c.seekPrevRune()
+    if c.currentRune in identRunes:
+      column = c.position.column
+    else:
+      break
 
-  return ((cursor.line, column), cursor)
+  result = ((cursor.line, column.int), cursor)
 
 proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
   result = Selection.none

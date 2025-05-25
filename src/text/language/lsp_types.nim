@@ -504,6 +504,7 @@ type
     command*: seq[Command]
     score*: Option[float]
     data*: Option[JsonNode]
+    showCompletionsAgain*: Option[bool]
 
   CompletionList* = object
     isIncomplete*: bool
