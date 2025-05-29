@@ -244,6 +244,7 @@ when enableAst:
 import text/text_editor
 import text/language/lsp_client
 import text/language/debugger
+import vterm
 import scripting/scripting_base
 import vcs/vcs_api
 import wasm3, wasm3/[wasm3c, wasmconversions]

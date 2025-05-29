@@ -1207,6 +1207,9 @@ proc setHandleInputs*(self: App, context: string, value: bool) {.expose("editor"
 proc setHandleActions*(self: App, context: string, value: bool) {.expose("editor").} =
   self.events.getEventHandlerConfig(context).setHandleActions(value)
 
+proc setHandleKeys*(self: App, context: string, value: bool) {.expose("editor").} =
+  self.events.getEventHandlerConfig(context).setHandleKeys(value)
+
 proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("editor").} =
   self.events.getEventHandlerConfig(context).setConsumeAllActions(value)
 

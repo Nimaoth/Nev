@@ -914,7 +914,7 @@ type
     forceWrite*: bool
     previousWideGlyph: bool
 
-  TerminalBuffer* = ref object
+  TerminalBuffer* = object
     ## A virtual terminal buffer of a fixed width and height. It remembers the
     ## current color and style settings and the current cursor position.
     ##
@@ -1045,7 +1045,7 @@ proc clear*(tb: var TerminalBuffer, ch: string = " ") =
   ## the `fgNone` and `bgNone` attributes.
   tb.fill(0, 0, tb.width-1, tb.height-1, ch)
 
-proc initTerminalBuffer(tb: var TerminalBuffer, width, height: Natural) =
+proc initTerminalBuffer*(tb: var TerminalBuffer, width, height: Natural) =
   ## Initializes a new terminal buffer object of a fixed `width` and `height`.
   tb.width = width
   tb.height = height
@@ -1054,11 +1054,11 @@ proc initTerminalBuffer(tb: var TerminalBuffer, width, height: Natural) =
   tb.currFg = fgNone
   tb.currStyle = {}
 
-proc newTerminalBuffer*(width, height: Natural): TerminalBuffer =
+proc newTerminalBuffer*(width, height: Natural): ref TerminalBuffer =
   ## Creates a new terminal buffer of a fixed `width` and `height`.
   var tb = new TerminalBuffer
-  tb.initTerminalBuffer(width, height)
-  tb.clear()
+  tb[].initTerminalBuffer(width, height)
+  tb[].clear()
   result = tb
 
 func width*(tb: TerminalBuffer): Natural =
@@ -1102,12 +1102,12 @@ proc copyFrom*(tb: var TerminalBuffer, src: TerminalBuffer) =
   ## destination buffer, the copied area is clipped to the destination area.
   tb.copyFrom(src, 0, 0, src.width, src.height, 0, 0)
 
-proc newTerminalBufferFrom*(src: TerminalBuffer): TerminalBuffer =
+proc newTerminalBufferFrom*(src: TerminalBuffer): ref TerminalBuffer =
   ## Creates a new terminal buffer with the dimensions of the `src` buffer and
   ## copies its contents into the new buffer.
   var tb = new TerminalBuffer
-  tb.initTerminalBuffer(src.width, src.height)
-  tb.copyFrom(src)
+  tb[].initTerminalBuffer(src.width, src.height)
+  tb[].copyFrom(src)
   result = tb
 
 proc setCursorPos*(tb: var TerminalBuffer, x, y: Natural) =
@@ -1301,7 +1301,7 @@ proc write*(tb: var TerminalBuffer, s: string) =
   write(tb, tb.currX, tb.currY, s)
 
 var
-  gPrevTerminalBuffer {.threadvar.}: TerminalBuffer
+  gPrevTerminalBuffer {.threadvar.}: ref TerminalBuffer
   gCurrBg {.threadvar.}: BackgroundColor
   gCurrBgColor {.threadvar.}: Color
   gCurrFg {.threadvar.}: ForegroundColor
@@ -1414,9 +1414,9 @@ proc displayDiff(tb: TerminalBuffer) =
     # in the case of partial updates.
     for x in 0..<tb.width:
       if x + 1 < tb.width:
-        if tb[x + 1, y].previousWideGlyph or gPrevTerminalBuffer[x + 1, y].previousWideGlyph:
+        if tb[x + 1, y].previousWideGlyph or gPrevTerminalBuffer[][x + 1, y].previousWideGlyph:
           containsWideGlyph = true
-      if tb[x, y] != gPrevTerminalBuffer[x, y]:
+      if tb[x, y] != gPrevTerminalBuffer[][x, y]:
         anyChanged = true
       if containsWideGlyph and anyChanged:
         break
@@ -1429,7 +1429,7 @@ proc displayDiff(tb: TerminalBuffer) =
       for x in 0..<tb.width:
         let c {.cursor.} = tb[x,y]
         defer:
-          gPrevTerminalBuffer[x, y] = c
+          gPrevTerminalBuffer[][x, y] = c
 
         if c.ch == 0.Rune:
           inc additionalSpaces
@@ -1451,13 +1451,13 @@ proc displayDiff(tb: TerminalBuffer) =
       for x in 0..<tb.width:
         let c {.cursor.} = tb[x, y]
         defer:
-          gPrevTerminalBuffer[x, y] = c
+          gPrevTerminalBuffer[][x, y] = c
 
         if c.ch == 0.Rune:
           inc additionalSpaces
           continue
 
-        if c == gPrevTerminalBuffer[x, y]:
+        if c == gPrevTerminalBuffer[][x, y]:
           continue
 
         if y != bufYPos or x != bufXPos:

@@ -3,7 +3,7 @@ import misc/[custom_logger, rect_utils]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
-  widget_builder_debugger, widget_library]
+  widget_builder_debugger, widget_builder_terminal, widget_library]
 import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
 
 when enableAst:

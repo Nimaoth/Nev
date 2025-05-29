@@ -27,6 +27,7 @@ type
     commands: Table[string, Table[string, Command]]
     handleActions*: bool
     handleInputs*: bool
+    handleKeys*: bool
     consumeAllActions*: bool
     consumeAllInput*: bool
     revision: int
@@ -43,6 +44,7 @@ type
     handleInput*: proc(input: string): EventResponse {.gcsafe, raises: [].}
     handleProgress*: proc(input: int64) {.gcsafe, raises: [].}
     handleCanceled*: proc(input: int64) {.gcsafe, raises: [].}
+    handleKey*: proc(input: int64, mods: Modifiers): EventResponse {.gcsafe, raises: [].}
 
   CommandKeyInfo* = object
     keys*: string
@@ -72,6 +74,7 @@ func newEventHandlerConfig*(context: string, parent: EventHandlerConfig = nil): 
   result.parent = parent
   result.handleActions = true
   result.handleInputs = false
+  result.handleKeys = false
   result.context = context
 
 proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]]) =
@@ -128,6 +131,10 @@ proc dfa*(handler: EventHandler): CommandDFA =
 
 proc setHandleInputs*(config: EventHandlerConfig, value: bool) =
   config.handleInputs = value
+  config.revision += 1
+
+proc setHandleKeys*(config: EventHandlerConfig, value: bool) =
+  config.handleKeys = value
   config.revision += 1
 
 proc setHandleActions*(config: EventHandlerConfig, value: bool) =
@@ -215,6 +222,15 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
         let input {.inject, used.} = i
         canceledBody
 
+    template onKey(onKeyBody: untyped): untyped {.used.} =
+      handler.handleKey = proc(i: int64, m: Modifiers): EventResponse {.gcsafe, raises: [].} =
+        if handler.config.handleKeys:
+          let input {.inject, used.} = i
+          let mods {.inject, used.} = m
+          return onKeyBody
+        else:
+          return Ignored
+
     handlerBody
     handler
 
@@ -258,6 +274,15 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
         let input {.inject, used.} = i
         canceledBody
 
+    template onKey(onKeyBody: untyped): untyped {.used.} =
+      handler.handleKey = proc(i: int64, m: Modifiers): EventResponse {.gcsafe, raises: [].} =
+        if handler.config.handleKeys:
+          let input {.inject, used.} = i
+          let mods {.inject, used.} = m
+          return onKeyBody
+        else:
+          return Ignored
+
     handlerBody
     target = handler
 
@@ -299,6 +324,10 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
     if not handler.inProgress:
       if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
         if handler.handleInput(inputToString(input, {})) == Handled:
+          return Handled
+
+      elif handler.handleKey != nil:
+        if handler.handleKey(input, modifiers) == Handled:
           return Handled
 
       handler.resetHandler()

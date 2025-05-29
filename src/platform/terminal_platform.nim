@@ -165,7 +165,8 @@ method init*(self: TerminalPlatform) =
       result.x = text.len.float
       result.y = 1
 
-    self.buffer = newTerminalBuffer(terminalWidth(), terminalHeight())
+    self.buffer.initTerminalBuffer(terminalWidth(), terminalHeight())
+    self.buffer.clear()
     self.redrawEverything = true
 
     self.builder.textWidthImpl = proc(node: UINode): float32 {.gcsafe, raises: [].} =
@@ -450,7 +451,8 @@ method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
       if self.sizeChanged:
         let (w, h) = (terminalWidth(), terminalHeight())
         log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
-        self.buffer = newTerminalBuffer(w, h)
+        self.buffer.initTerminalBuffer(w, h)
+        self.buffer.clear()
         self.redrawEverything = true
 
       if self.builder.root.lastSizeChange == self.builder.frameIndex:

@@ -153,6 +153,17 @@ proc setHandleActions*(context: string; value: bool) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_setHandleKeys_void_App_string_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setHandleKeys*(context: string; value: bool) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add context.toJson()
+  argsJson.add value.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_setHandleKeys_void_App_string_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_setConsumeAllActions_void_App_string_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc setConsumeAllActions*(context: string; value: bool) {.gcsafe, raises: [].} =

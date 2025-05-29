@@ -814,6 +814,15 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   setOption "editor.text.cursor.wide.visual-line", true
   setOption "editor.text.cursor.movement.visual-line", "last"
 
+  setHandleInputs "terminal", false
+  setHandleKeys "terminal", false
+
+  setHandleInputs "terminal.normal", false
+  setHandleKeys "terminal.normal", false
+
+  setHandleInputs "terminal.insert", true
+  setHandleKeys "terminal.insert", true
+
   addModeChangedHandler onModeChangedHandle, proc(editor, oldMode, newMode: auto) {.gcsafe, raises: [].} =
     if not editor.getCurrentEventHandlers().contains("editor.text"):
       return
