@@ -6,7 +6,7 @@ import platform/[platform, tui]
 import ui/[widget_builders_base, widget_library]
 import app, theme, view
 import text/text_editor
-import config_provider, vterm
+import config_provider, terminal_service
 
 from std/colors as colors import nil
 
@@ -79,7 +79,22 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
           builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
 
         # Body
-        builder.panel(sizeFlags + &{FillBackground}, backgroundColor = backgroundColor):
+        builder.panel(sizeFlags + &{FillBackground, MouseHover}, backgroundColor = backgroundColor):
+          onScroll:
+            self.handleScroll(delta.y.int, modifiers)
+          currentNode.handlePressed = proc(node: UINode, btn: input.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
+            let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
+            self.handleClick(btn, true, modifiers, cellPos.x.int, cellPos.y.int)
+            return true
+          currentNode.handleReleased = proc(node: UINode, btn: input.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
+            let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
+            self.handleClick(btn, false, modifiers, cellPos.x.int, cellPos.y.int)
+            return true
+          currentNode.handleDrag = proc(node: UINode, btn: input.MouseButton, modifiers: set[Modifier], pos: Vec2, d: Vec2): bool =
+            let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
+            self.handleDrag(btn, cellPos.x.int, cellPos.y.int, modifiers)
+            return true
+
           let bounds = currentNode.bounds
           self.setSize((bounds.w / builder.charWidth).floor.int, (bounds.h / builder.textHeight).floor.int)
 
@@ -140,7 +155,8 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                     drawText($cell.ch, cellBounds, fgColor, &{TextDrawSpaces})
 
                 # if line.len > 0:
-                #   drawText(line, rect(0, row.float * builder.textHeight, 1000, builder.textHeight), textColor, &{TextDrawSpaces})
+                  # echo line
+                  # drawText(line, rect(0, row.float * builder.textHeight, 1000, builder.textHeight), textColor, &{TextDrawSpaces})
 
               if self.mode != "normal" and self.terminal.cursor.visible:
                 let cursorBounds = rect(
