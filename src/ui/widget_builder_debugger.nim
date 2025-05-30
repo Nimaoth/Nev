@@ -286,7 +286,7 @@ proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
 
 method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   let dirty = self.dirty
-  self.dirty = false
+  self.resetDirty()
 
   let transparentBackground = app.config.runtime.get("ui.background.transparent", false)
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))

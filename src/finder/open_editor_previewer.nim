@@ -10,6 +10,7 @@ type
   OpenEditorPreviewer* = ref object of Previewer
     services*: Services
     editors*: DocumentEditorService
+    editor*: DocumentEditor
 
 proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
   new result
@@ -27,6 +28,7 @@ method delayPreview*(self: OpenEditorPreviewer) =
 method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: DocumentEditor) =
   # logScope lvlInfo, &"previewItem {item}"
 
+  self.editor = editor
   if not (editor of TextDocumentEditor):
     return
 

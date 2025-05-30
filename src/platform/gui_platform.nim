@@ -616,13 +616,20 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
   else:
     VerticalAlignment.TopAlign
 
+  proc tintRune(r: Rune): bool =
+    return true
+
   # todo: convert typeset to not use strings to avoid copying
   try:
     let font = platform.getFont(platform.ctx.fontSize, flags)
 
     if arrangementIndex == -1 or arrangementIndex >= uint32.high.int:
       let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
-      template drawRune(i: int, rune: Rune, color: Color): untyped =
+      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+        let color = if tintRune(rune):
+          inColor
+        else:
+          color(1, 1, 1)
         if rune.int < platform.asciiGlyphCache.len:
           if platform.asciiGlyphCache[rune.int].len == 0:
             var path = font.typeface.getGlyphPath(rune)
@@ -669,7 +676,11 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
       let indices {.cursor.} = renderCommands.arrangements[arrangementIndex]
       let solidPaint = ({.cast(gcsafe).}: solidPaint)
       solidPaint.color = color(1, 1, 1)
-      template drawRune(i: int, rune: Rune, color: Color): untyped =
+      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+        let color = if tintRune(rune):
+          inColor
+        else:
+          color(1, 1, 1)
         if not platform.glyphCache.contains(rune):
           var path = typeface.getGlyphPath(rune)
           let rect = renderCommands.arrangement.selectionRects[i]

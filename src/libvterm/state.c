@@ -2194,8 +2194,6 @@ int vterm_state_set_termprop(VTermState *state, VTermProp prop, VTermValue *val)
     return 1;
   case VTERM_PROP_CURSORVISIBLE:
     state->mode.cursor_visible = val->boolean;
-    if(state->callbacks && state->callbacks->movecursor)
-      (*state->callbacks->movecursor)(state->pos, state->pos, state->mode.cursor_visible, state->cbdata);
     return 1;
   case VTERM_PROP_CURSORBLINK:
     state->mode.cursor_blink = val->boolean;

@@ -6,7 +6,7 @@ import platform/[platform, tui]
 import ui/[widget_builders_base, widget_library]
 import app, theme, view
 import text/text_editor
-import config_provider, terminal_service
+import config_provider, terminal_service, terminal_previewer
 
 from std/colors as colors import nil
 
@@ -19,9 +19,13 @@ logCategory "widget_builder_terminal"
 
 var uiUserId = newId()
 
+method createUI*(self: TerminalPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  if self.view != nil:
+    result.add self.view.createUI(builder, app)
+
 method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   let dirty = self.dirty
-  self.dirty = false
+  self.resetDirty()
 
   let uiSettings = UISettings.new(app.config.runtime)
   let inactiveBrightnessChange = uiSettings.background.inactiveBrightnessChange.get()
@@ -32,11 +36,13 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
 
   let transparentBackground = app.config.runtime.get("ui.background.transparent", false)
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  let cursorColor = textColor
   var activeBackgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 40/255))
   activeBackgroundColor.a = 1
   # let selectedBackgroundColor = app.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
   let selectedBackgroundColor = color(0.6, 0.4, 0.2) # todo
+
+  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
+  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
 
   if transparentBackground:
     backgroundColor.a = 0
@@ -45,7 +51,11 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
     backgroundColor.a = 1
     activeBackgroundColor.a = 1
 
-  let headerColor = app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255)).withAlpha(1)
+  let headerColor = if self.active:
+    app.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1)
+  else:
+    app.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1).lighten(inactiveBrightnessChange)
+
   let activeHeaderColor = app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)).withAlpha(1)
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
@@ -62,6 +72,8 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
   else:
     sizeFlags.incl FillY
 
+  let drawCursor = self.mode != "normal" and self.terminal.cursor.visible
+
   var res: seq[OverlayFunction] = @[]
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = uiUserId.newPrimaryId):
@@ -74,7 +86,14 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
         builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
             backgroundColor = headerColor):
 
-          var text = &"Terminal - " & self.mode
+          var text = &"Terminal"
+          if self.terminal.exitCode.getSome(exitCode):
+            text.add " - Exit Code: "
+            text.add $exitCode
+
+          if self.mode != "":
+            text.add " - "
+            text.add self.mode
 
           builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
 
@@ -104,14 +123,10 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
               let width = self.terminal.terminalBuffer.width
               let height = self.terminal.terminalBuffer.height
 
+              # todo: batch cells with same style
               for row in 0..<height:
-                var line = ""
                 for col in 0..<width:
                   let cell {.cursor.} = self.terminal.terminalBuffer[col, row]
-                  if cell.ch != 0.Rune:
-                    line.add $cell.ch
-                  else:
-                    line.add " "
 
                   let cellBounds = rect(
                     col.float * builder.charWidth, row.float * builder.textHeight, builder.charWidth, builder.textHeight)
@@ -151,18 +166,24 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                     let (r, g, b) = colors.extractRGB(cell.fgColor)
                     fgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
 
+                  if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
+                    var cursorBounds = rect(
+                      self.terminal.cursor.col.float * builder.charWidth, self.terminal.cursor.row.float * builder.textHeight,
+                      builder.charWidth, builder.textHeight)
+
+                    case self.terminal.cursor.shape
+                    of CursorShape.Block:
+                      fgColor = cursorBackgroundColor
+                    of CursorShape.Underline:
+                      cursorBounds.y += cursorBounds.h * 0.9
+                      cursorBounds.h *= 0.1
+                    of CursorShape.BarLeft:
+                      cursorBounds.w *= 0.1
+
+                    fillRect(cursorBounds, cursorForegroundColor)
+
                   if cell.ch != 0.Rune:
                     drawText($cell.ch, cellBounds, fgColor, &{TextDrawSpaces})
-
-                # if line.len > 0:
-                  # echo line
-                  # drawText(line, rect(0, row.float * builder.textHeight, 1000, builder.textHeight), textColor, &{TextDrawSpaces})
-
-              if self.mode != "normal" and self.terminal.cursor.visible:
-                let cursorBounds = rect(
-                  self.terminal.cursor.col.float * builder.charWidth, self.terminal.cursor.row.float * builder.textHeight,
-                  builder.charWidth * 0.1, builder.textHeight)
-                fillRect(cursorBounds, cursorColor)
 
           currentNode.markDirty(builder)
 

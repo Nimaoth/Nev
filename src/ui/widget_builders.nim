@@ -15,6 +15,7 @@ when enableAst:
 logCategory "widget_builder"
 
 method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  self.resetDirty()
   self.editor.createUI(builder, app)
 
 proc updateWidgetTree*(self: App, frameIndex: int) =

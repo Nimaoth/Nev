@@ -1,12 +1,12 @@
 import std/[strutils, sugar, sequtils]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, fuzzy_matching]
+import misc/[util, custom_logger, fuzzy_matching, disposable_ref]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_library]
 import text/text_editor
 import app, selector_popup, theme
-import finder/finder
+import finder/[finder, previewer, file_previewer, open_editor_previewer]
 import config_provider, events
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
@@ -31,6 +31,14 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
       builder.panel(&{FillY}, w = builder.charWidth * 4)
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = item.detail,
         textColor = textColor.darken(0.2))
+
+method createUI*(self: FilePreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  if self.editor.isNotNil:
+    result.add self.editor.createUI(builder, app)
+
+method createUI*(self: OpenEditorPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  if self.editor.isNotNil:
+    result.add self.editor.createUI(builder, app)
 
 method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   # let dirty = self.dirty
@@ -168,7 +176,11 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
               w = bounds.w * previewScale, h = bounds.h):
 
             self.previewEditor.active = self.focusPreview
-            result.add self.previewEditor.createUI(builder, app)
+
+            if self.previewView != nil:
+              result.add self.previewView.createUI(builder, app)
+            elif self.previewer.isSome:
+              result.add self.previewer.get.get.createUI(builder, app)
 
     if sizeToContentY:
       currentNode.h = currentNode.last.h

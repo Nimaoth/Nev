@@ -418,12 +418,23 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
           # todo: line
           self.addCommandScript(scope, "", keys, name, args, source = (filename, 0, 0))
 
+        elif command.kind == JArray:
+          if command.elems.len > 0:
+            let name = command[0].getStr
+            let args = command.elems[1..^1].mapIt($it).join(" ")
+            self.addCommandScript(scope, "", keys, name, args, source = (filename, 0, 0))
+          else:
+            log lvlError, &"Invalid command in keybinding settings '{filename}': Array must not be empty for '{scope}.{keys}'"
+
         elif command.kind == JObject:
           let name = command["command"].getStr
           let args = command["args"].elems.mapIt($it).join(" ")
           let description = command.fields.getOrDefault("description", newJString("")).getStr
           # todo: line
           self.addCommandScript(scope, "", keys, name, args, description, source = (filename, 0, 0))
+
+        else:
+          log lvlError, &"Invalid command in keybinding settings '{filename}': Expected string | array | object for '{scope}.{keys}'"
 
   except CatchableError:
     log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
@@ -1939,30 +1950,28 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     var items = newSeq[FinderItem]()
     let allViews = self.layout.views & self.layout.hiddenViews
     for i in countdown(allViews.high, 0):
-      if not (allViews[i] of EditorView):
-        continue
+      if allViews[i] of EditorView:
+        let view = allViews[i].EditorView
+        let document = view.editor.getDocument
+        let path = document.filename
+        let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
+        let dirtyMarker = if isDirty: "*" else: " "
+        let activeMarker = if i == self.layout.currentView:
+          "#"
+        elif i < self.layout.views.len:
+          "👁"
+        else:
+          " "
 
-      let view = allViews[i].EditorView
-      let document = view.editor.getDocument
-      let path = document.filename
-      let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
-      let dirtyMarker = if isDirty: "*" else: " "
-      let activeMarker = if i == self.layout.currentView:
-        "#"
-      elif i < self.layout.views.len:
-        "👁"
-      else:
-        " "
+        let (directory, name) = path.splitPath
+        let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
 
-      let (directory, name) = path.splitPath
-      let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
-
-      items.add FinderItem(
-        displayName: activeMarker & dirtyMarker & name,
-        filterText: name,
-        data: $view.editor.id,
-        detail: relativeDirectory,
-      )
+        items.add FinderItem(
+          displayName: activeMarker & dirtyMarker & name,
+          filterText: name,
+          data: $view.editor.id,
+          detail: relativeDirectory,
+        )
 
     return items
 

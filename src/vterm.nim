@@ -277,6 +277,12 @@ type
     VTERM_ATTR_SMALL_MASK = 1 shl 10, VTERM_ATTR_BASELINE_MASK = 1 shl 11,
     VTERM_ALL_ATTRS_MASK = (1 shl 12) - 1
 
+
+const
+  VTERM_PROP_CURSORSHAPE_BLOCK* = 1
+  VTERM_PROP_CURSORSHAPE_UNDERLINE* = 2
+  VTERM_PROP_CURSORSHAPE_BAR_LEFT* = 3
+
 ########## VTerm ###########
 proc new*(_: typedesc[VTerm], rows, cols: c_int): ptr VTerm {.importc: "vterm_new".}
 proc writeInput*(vt: ptr VTerm; bytes: cstring; len: csize_t): csize_t {.importc: "vterm_input_write".}

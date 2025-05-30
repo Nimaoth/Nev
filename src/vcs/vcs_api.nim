@@ -156,8 +156,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   let source = newAsyncCallbackDataSource () => self.getChangedFilesFromGitAsync(workspace, all)
   var finder = newFinder(source, filterAndSort=true)
 
-  let previewer = newFilePreviewer(self.vfs, self.services,
-    openNewDocuments=true)
+  let previewer = newFilePreviewer(self.vfs, self.services, openNewDocuments=true)
 
   var popup = newSelectorPopup(self.services, "git".some, finder.some, previewer.Previewer.toDisposableRef.some)
 

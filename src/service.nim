@@ -28,6 +28,7 @@ type
 var gServices*: Services
 
 method init*(self: Service): Future[Result[void, ref CatchableError]] {.base, async: (raises: []).} = discard
+method deinit*(self: Service) {.base.} = discard
 
 proc waitForServices*(self: Services) =
   while true:
@@ -43,6 +44,9 @@ proc waitForServices*(self: Services) =
     poll()
 
   log lvlInfo, &"Finished initializing services"
+
+proc deinit*(self: Services) =
+  discard
 
 proc getService*(self: Services, name: string, state: Option[ServiceState] = ServiceState.none): Option[Service] =
   if state.get(Running) == Running:
