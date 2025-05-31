@@ -86,9 +86,6 @@ method deinit*(self: SelectorPopup) {.gcsafe, raises: [].} =
 
   self.editors.closeEditor(self.textEditor)
 
-  if self.previewView.isNotNil:
-    self.previewView.close()
-
   if self.previewEditor.isNotNil:
     self.editors.closeEditor(self.previewEditor)
 
