@@ -851,6 +851,14 @@ proc echoArgs*(args: JsonNode) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_all_void_App_JsonNode_wasm(arg: cstring): cstring {.importc.}
+proc all*(args: JsonNode) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add args.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_all_void_App_JsonNode_wasm(argsJsonString.cstring)
+
+
 proc editor_printStatistics_void_App_wasm(arg: cstring): cstring {.importc.}
 proc printStatistics*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()

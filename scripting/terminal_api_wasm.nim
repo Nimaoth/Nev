@@ -27,6 +27,20 @@ proc createTerminal*(command: string = "";
       argsJsonString.cstring)
 
 
+proc terminal_runInTerminal_void_TerminalService_string_string_CreateTerminalOptions_wasm(
+    arg: cstring): cstring {.importc.}
+proc runInTerminal*(shell: string; command: string;
+                    options: CreateTerminalOptions = CreateTerminalOptions()) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add shell.toJson()
+  argsJson.add command.toJson()
+  argsJson.add options.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = terminal_runInTerminal_void_TerminalService_string_string_CreateTerminalOptions_wasm(
+      argsJsonString.cstring)
+
+
 proc terminal_scrollTerminal_void_TerminalService_int_wasm(arg: cstring): cstring {.
     importc.}
 proc scrollTerminal*(amount: int) {.gcsafe, raises: [].} =

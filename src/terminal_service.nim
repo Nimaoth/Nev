@@ -1,9 +1,9 @@
-import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors]
+import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, atomics]
 import vmath
 import winim/lean
 import nimsumtree/[arc, rope]
 import misc/[async_process, custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref]
-import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup
+import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs
 import scripting/expose
 import platform/[tui, platform]
 import finder/[finder, previewer]
@@ -103,49 +103,7 @@ proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX =
     raiseOSError(osLastError())
 
 type
-  FileHandleStream = ref object of StreamObj
-    handle: Handle
-    atTheEnd: bool
-
-proc closeHandleCheck(handle: Handle) {.inline.} =
-  if handle.CloseHandle() == 0:
-    raiseOSError(osLastError())
-
-proc fileClose[T: Handle | FileHandle](h: var T) {.inline.} =
-  if h > 4:
-    closeHandleCheck(h)
-    h = INVALID_HANDLE_VALUE.T
-
-proc hsClose(s: Stream) =
-  FileHandleStream(s).handle.fileClose()
-
-proc hsAtEnd(s: Stream): bool = return FileHandleStream(s).atTheEnd
-
-proc hsReadData(s: Stream, buffer: pointer, bufLen: int): int =
-  var s = FileHandleStream(s)
-  if s.atTheEnd: return 0
-  var br: int32
-  var a = ReadFile(s.handle, buffer, bufLen.cint, addr br, nil)
-  # TRUE and zero bytes returned (EOF).
-  # TRUE and n (>0) bytes returned (good data).
-  # FALSE and bytes returned undefined (system error).
-  if a == 0 and br != 0: raiseOSError(osLastError())
-  s.atTheEnd = br == 0 #< bufLen
-  result = br
-
-proc hsWriteData(s: Stream, buffer: pointer, bufLen: int) =
-  var s = FileHandleStream(s)
-  var bytesWritten: int32
-  var a = WriteFile(s.handle, buffer, bufLen.cint,
-                            addr bytesWritten, nil)
-  if a == 0: raiseOSError(osLastError())
-
-proc newFileHandleStream(handle: Handle): owned FileHandleStream =
-  result = FileHandleStream(handle: handle, closeImpl: hsClose, atEndImpl: hsAtEnd,
-    readDataImpl: hsReadData, writeDataImpl: hsWriteData)
-
-type
-  InputEventKind {.pure.} = enum Text, Key, MouseMove, MouseClick, Scroll, Size, Terminate #, RequestRope
+  InputEventKind {.pure.} = enum Text, Key, MouseMove, MouseClick, Scroll, Size, Terminate, RequestRope
   InputEvent = object
     modifiers: Modifiers
     row: int
@@ -166,11 +124,11 @@ type
       discard # use row, col
     of InputEventKind.Terminate:
       discard
-    # of InputEventKind.RequestRope:
-    #   rope: ptr Rope
+    of InputEventKind.RequestRope:
+      rope: pointer # ptr Rope, but Nim complains about destructors?
 
   CursorShape* {.pure.} = enum Block, Underline, BarLeft
-  OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, Terminated # , Rope
+  OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, Terminated, Rope
   OutputEvent = object
     case kind: OutputEventKind
     of OutputEventKind.TerminalBuffer:
@@ -187,8 +145,8 @@ type
       shape: CursorShape
     of OutputEventKind.Terminated:
       exitCode: int
-    # of OutputEventKind.Rope:
-    #   rope: ptr Rope
+    of OutputEventKind.Rope:
+      rope: pointer # ptr Rope, but Nim complains about destructors?
 
   ThreadState = object
     vterm: ptr VTerm
@@ -230,7 +188,7 @@ type
 
     # Events
     onTerminated: Event[int]
-    # onRope: Event[Rope]
+    onRope: Event[ptr Rope]
     onUpdated: Event[void]
 
     # Windows specific stuff
@@ -276,6 +234,10 @@ proc createRope*(state: var ThreadState): Rope =
 
       if r != 0.Rune:
         rope.add $r
+
+    rope.add "\n"
+
+  return rope
 
 proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
   result.initTerminalBuffer(state.width, state.height)
@@ -354,9 +316,9 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
       of OutputEventKind.Terminated:
         terminal.exitCode = event.exitCode.some
         terminal.onTerminated.invoke(event.exitCode)
-      # of OutputEventKind.Rope:
-      #   let rope = event.rope[]
-      #   terminal.onRope.invoke(rope)
+      of OutputEventKind.Rope:
+        let rope = cast[ptr Rope](event.rope)
+        terminal.onRope.invoke(rope)
 
       updated = true
 
@@ -407,14 +369,15 @@ proc handleInputEvents(state: var ThreadState) =
       of InputEventKind.Terminate:
         state.terminateRequested = true
 
-      # of InputEventKind.RequestRope:
-      #   event.rope[] = state.createRope()
-      #   state.outputChannel[].send OutputEvent(kind: OutputEventKind.Rope, rope: event.rope)
+      of InputEventKind.RequestRope:
+        let rope = cast[ptr Rope](event.rope)
+        rope[] = state.createRope()
+        state.outputChannel[].send OutputEvent(kind: OutputEventKind.Rope, rope: event.rope)
 
     except:
       echo &"Failed to send input: {getCurrentExceptionMsg()}"
 
-proc handleProcessOutput(state: var ThreadState, buffer: var string, outputReadStream: var FileHandleStream) =
+proc handleProcessOutput(state: var ThreadState, buffer: var string) =
   template handleData(data: untyped, bytesToWrite: int): untyped =
     let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
     if written != bytesToWrite:
@@ -477,25 +440,8 @@ proc handleProcessOutput(state: var ThreadState, buffer: var string, outputReadS
   else:
     raiseOSError(error)
 
-  # var bytesAvailable: DWORD = 0
-  # if PeekNamedPipe(state.outputReadHandle, nil, 0, nil, bytesAvailable.addr, nil) == 0:
-  #   echo "Failed to peek named pipe", newOSError(osLastError()).msg
-
-  # if bytesAvailable > 0:
-  #   buffer.setLen(bytesAvailable)
-  #   outputReadStream.readStr(buffer.len, buffer)
-  #   let written = state.vterm.writeInput(buffer.cstring, buffer.len.csize_t).int
-  #   if written != buffer.len:
-  #     echo "fix me: vterm.nim.terminalThread vterm.writeInput"
-  #     assert written == buffer.len, "fix me: vterm.nim.terminalThread vterm.writeInput"
-
-  #   state.screen.flushDamage()
-  # state.dirty = true
-
 proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   var state = s
-
-  var outputReadStream = newFileHandleStream(FileHandle(state.outputReadHandle))
 
   proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
     var str = newSeq[uint8]()
@@ -575,7 +521,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
     state.vterm.key(INPUT_ENTER.inputToVtermKey, {}.toVtermModifiers)
 
   var buffer = ""
-  while not outputReadStream.atEnd:
+  while true:
     var handles = [state.inputWriteEvent, state.outputReadEvent, state.processInfo.hProcess]
     let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
     if res == WAIT_FAILED:
@@ -596,12 +542,11 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
           # Process ended
           var exitCode: DWORD = 0
           discard GetExitCodeProcess(state.processInfo.hProcess, exitCode.addr)
-          echo "Shell process ended with exit code ", exitCode
           state.processTerminated = true
           state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode.int)
           break
 
-    state.handleProcessOutput(buffer, outputReadStream)
+    state.handleProcessOutput(buffer)
     state.handleInputEvents()
 
     if state.dirty:
@@ -614,10 +559,14 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   echo "terminal thread done"
   echo "============================================"
 
+proc sendEvent(self: Terminal, event: InputEvent) =
+  self.inputChannel[].send(event)
+  discard SetEvent(self.inputWriteEvent)
+
 proc terminate*(self: Terminal) =
   log lvlInfo, &"Close terminal '{self.command}'"
   ClosePseudoConsole(self.hpcon)
-  self.inputChannel[].send(InputEvent(kind: InputEventKind.Terminate))
+  self.sendEvent(InputEvent(kind: InputEventKind.Terminate))
 
 proc createTerminal*(self: TerminalService, width: int, height: int, command: string, autoRunCommand: string = ""): Terminal =
   var
@@ -769,26 +718,21 @@ template withActiveView*(self: TerminalService, view: TerminalView, body: untype
 
 proc handleInput(self: TerminalService, view: TerminalView, input: string) =
   debugf"handleInput '{input}'"
-  view.terminal.inputChannel[].send(InputEvent(kind: InputEventKind.Text, text: input))
-  discard SetEvent(view.terminal.inputWriteEvent)
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.Text, text: input))
 
 proc handleKey(self: TerminalService, view: TerminalView, input: int64, modifiers: Modifiers) =
   debugf"handleKey '{inputToString(input, modifiers)}'"
-  view.terminal.inputChannel[].send(InputEvent(kind: InputEventKind.Key, input: input, modifiers: modifiers))
-  discard SetEvent(view.terminal.inputWriteEvent)
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.Key, input: input, modifiers: modifiers))
 
 proc handleScroll*(view: TerminalView, deltaY: int, modifiers: Modifiers) =
-  view.terminal.inputChannel[].send(InputEvent(kind: InputEventKind.Scroll, deltaY: deltaY, modifiers: modifiers))
-  discard SetEvent(view.terminal.inputWriteEvent)
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.Scroll, deltaY: deltaY, modifiers: modifiers))
 
 proc handleClick*(view: TerminalView, button: input.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) =
   debugf"handleClick '{button}'"
-  view.terminal.inputChannel[].send(InputEvent(kind: InputEventKind.MouseClick, row: row, col: col, button: button, pressed: pressed, modifiers: modifiers))
   discard SetEvent(view.terminal.inputWriteEvent)
 
 proc handleDrag*(view: TerminalView, button: input.MouseButton, col: int, row: int, modifiers: Modifiers) =
-  view.terminal.inputChannel[].send(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col, modifiers: modifiers))
-  discard SetEvent(view.terminal.inputWriteEvent)
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col, modifiers: modifiers))
 
 proc updateModeEventHandlers(self: TerminalService, view: TerminalView) =
   if view.mode.len == 0:
@@ -815,8 +759,7 @@ proc setSize*(self: TerminalView, width: int, height: int) =
   if self.size != (width, height):
     self.size = (width, height)
     if self.terminal != nil:
-      self.terminal.inputChannel[].send(InputEvent(kind: InputEventKind.Size, row: height, col: width))
-      discard SetEvent(self.terminal.inputWriteEvent)
+      self.terminal.sendEvent(InputEvent(kind: InputEventKind.Size, row: height, col: width))
 
 type CreateTerminalOptions* = object
   autoRunCommand*: string = ""
@@ -903,6 +846,18 @@ proc createTerminal*(self: TerminalService, command: string = "", options: Creat
   ## `closeOnTerminate` Close the terminal when the process ends.
   self.layout.addView(self.createTerminalView(command, options))
 
+proc runInTerminal*(self: TerminalService, shell: string, command: string, options: CreateTerminalOptions = CreateTerminalOptions()) {.expose("terminal").} =
+  for view in self.terminals.values:
+    if view.terminal.command == shell:
+      self.handleInput(view, command)
+      self.handleKey(view, INPUT_ENTER, {})
+      self.layout.showView(view)
+      return
+
+  var options = options
+  options.autoRunCommand = command
+  self.createTerminal(shell, options)
+
 proc scrollTerminal*(self: TerminalService, amount: int) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
     view.handleScroll(amount, {})
@@ -916,16 +871,29 @@ proc sendTerminalInputAndSetMode*(self: TerminalService, input: string, mode: st
   self.sendTerminalInput(input)
   self.setTerminalMode(mode)
 
-proc requestEditBuffer*(self: TerminalView) =
-  discard
-  # self.terminal.inputChannel[].send(InputEvent(kind: InputEventKind.RequestRope))
-  # if self.getActiveView().getSome(view):
-  #   view.requestEditBuffer()
+proc requestEditBuffer*(self: TerminalView) {.async.} =
+  var rope: Rope = Rope.new()
+  let ropePtr = rope.addr
+  self.terminal.sendEvent(InputEvent(kind: InputEventKind.RequestRope, rope: ropePtr))
+
+  var waiting = true
+  let handle = self.terminal.onRope.subscribe proc(r: ptr Rope) =
+    if r != ropePtr:
+      return
+    waiting = false
+
+  while waiting:
+    await sleepAsync(30.milliseconds)
+
+  self.terminal.onRope.unsubscribe(handle)
+
+  let path = &"ed://{self.terminal.id}.terminal-output"
+  await self.terminals.services.getService(VFSService).get.vfs.write(path, rope)
+  discard self.terminals.layout.openFile(path)
 
 proc editTerminalBuffer*(self: TerminalService) {.expose("terminal").} =
-  discard
-  # if self.getActiveView().getSome(view):
-  #   view.requestEditBuffer()
+  if self.getActiveView().getSome(view):
+    asyncSpawn view.requestEditBuffer()
 
 # todo: move dependencies of terminal_previewer out of this file into separate file
 import terminal_previewer

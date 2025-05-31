@@ -3091,6 +3091,15 @@ proc collectGarbage*(self: App) {.expose("editor").} =
 proc echoArgs*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
   log lvlInfo, &"echoArgs: {args}"
 
+proc all*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
+  log lvlInfo, &"run all commands: {args}"
+  if args.kind == JArray:
+    for command in args.elems:
+      if command.kind == JArray and command.len > 0:
+        let action = command[0].getStr
+        let arg = command.elems[1..^1].mapIt($it).join(" ")
+        discard self.handleAction(action, arg, record=false)
+
 proc printStatistics*(self: App) {.expose("editor").} =
   {.gcsafe.}:
     try:
