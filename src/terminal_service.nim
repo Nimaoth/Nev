@@ -598,9 +598,9 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
         kind: OutputEventKind.TerminalBuffer,
         buffer: state.createTerminalBuffer())
 
-  echo "============================================"
-  echo "terminal thread done"
-  echo "============================================"
+  # echo "============================================"
+  # echo "terminal thread done"
+  # echo "============================================"
 
 proc sendEvent(self: Terminal, event: InputEvent) =
   self.inputChannel[].send(event)
