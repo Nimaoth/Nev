@@ -138,9 +138,10 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                   let cellBounds = rect(
                     col.float * builder.charWidth, row.float * builder.textHeight, builder.charWidth, builder.textHeight)
 
+                  var bg = cell.bg
                   var bgColor = color(0, 0, 0)
 
-                  case cell.bg
+                  case bg
                   of bgNone: discard
                   of bgBlack: bgColor = color(0, 0, 0)
                   of bgRed: bgColor = color(1, 0, 0)
@@ -153,9 +154,6 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                   of bgRGB:
                     let (r, g, b) = colors.extractRGB(cell.bgColor)
                     bgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
-
-                  if cell.bg != bgNone:
-                    fillRect(cellBounds, bgColor)
 
                   var fgColor = textColor
 
@@ -172,6 +170,37 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                   of fgRGB:
                     let (r, g, b) = colors.extractRGB(cell.fgColor)
                     fgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
+
+                  if styleReverse in cell.style:
+                    case cell.fg
+                    of fgNone:
+                      bgColor = textColor
+                    else:
+                      bgColor = fgColor
+
+                    bg = bgRGB
+                    fgColor = cursorBackgroundColor
+
+                  if bg != bgNone:
+                    fillRect(cellBounds, bgColor)
+
+                  var textFlags = 0.UINodeFlags
+
+                  if styleUnderscore in cell.style:
+                    textFlags.incl TextUndercurl
+
+                  if styleItalic in cell.style:
+                    textFlags.incl TextItalic
+
+                  if styleBlink in cell.style:
+                    textFlags.incl TextBold
+
+                  if styleDim in cell.style:
+                    fgColor = fgColor.darken(0.2)
+
+                  if styleStrikethrough in cell.style:
+                    # todo: make this work in terminal platform
+                    fillRect(rect(cellBounds.x, cellBounds.y + cellBounds.h * 0.4, cellBounds.w, cellBounds.h * 0.1), fgColor)
 
                   if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
                     var cursorBounds = rect(
@@ -190,7 +219,8 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                     fillRect(cursorBounds, cursorForegroundColor)
 
                   if cell.ch != 0.Rune:
-                    drawText($cell.ch, cellBounds, fgColor, &{TextDrawSpaces})
+                    if styleHidden notin cell.style:
+                      drawText($cell.ch, cellBounds, fgColor, textFlags)
 
           currentNode.markDirty(builder)
 

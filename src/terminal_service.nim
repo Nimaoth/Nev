@@ -1,14 +1,19 @@
 import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, atomics]
 import vmath
+import chroma
 import winim/lean
 import nimsumtree/[arc, rope]
 import misc/[async_process, custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref]
-import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs
+import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
 import scripting/expose
 import platform/[tui, platform]
 import finder/[finder, previewer]
 import vterm, input, input_api
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
+
+from std/terminal import Style
+
+const bufferSize = 10 * 1024 * 1024
 
 logCategory "terminal-service"
 
@@ -103,8 +108,16 @@ proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX =
     HeapFree(GetProcessHeap(), 0, result.lpAttributeList)
     raiseOSError(osLastError())
 
+declareSettings TerminalSettings, "terminal":
+  ## Mode to enter when creating a new terminal, if no mode is specified otherwise.
+  declare defaultMode, string, "normal"
+
+  ## After how many milliseconds of no data received from a terminal it is considered idle, and can be reused
+  ## for running more commands.
+  declare idleThreshold, int, 500
+
 type
-  InputEventKind {.pure.} = enum Text, Key, MouseMove, MouseClick, Scroll, Size, Terminate, RequestRope
+  InputEventKind {.pure.} = enum Text, Key, MouseMove, MouseClick, Scroll, Size, Terminate, RequestRope, SetColorPalette
   InputEvent = object
     modifiers: Modifiers
     row: int
@@ -127,6 +140,8 @@ type
       discard
     of InputEventKind.RequestRope:
       rope: pointer # ptr Rope, but Nim complains about destructors?
+    of SetColorPalette:
+      colors: seq[tuple[r, g, b: uint8]]
 
   CursorShape* {.pure.} = enum Block, Underline, BarLeft
   OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, Terminated, Rope, Scroll
@@ -193,6 +208,7 @@ type
     autoRunCommand: string
 
     # Events
+    lastUpdateTime: Timer
     onTerminated: Event[int]
     onRope: Event[ptr Rope]
     onUpdated: Event[void]
@@ -218,7 +234,9 @@ type
     events: EventHandlerService
     config: ConfigService
     layout: LayoutService
+    themes: ThemeService
     idCounter: int = 0
+    settings: TerminalSettings
 
     terminals*: Table[int, TerminalView]
     activeView: TerminalView
@@ -298,37 +316,43 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
 
       var c = TerminalChar(
         ch: r,
-        # ch: cell.schar.Rune,
         fg: fgNone,
         bg: bgNone,
-        # style: set[Style],
-        # forceWrite: bool,
-        # previousWideGlyph bool,
       )
+
+      if cell.attrs.bold != 0: c.style.incl(terminal.Style.styleBlink)
+      if cell.attrs.italic != 0: c.style.incl(terminal.Style.styleItalic)
+      if cell.attrs.underline != 0: c.style.incl(terminal.Style.styleUnderscore)
+      # if cell.attrs.blink != 0: c.style.incl(terminal.Style.styleBlink) # todo
+      if cell.attrs.reverse != 0: c.style.incl(terminal.Style.styleReverse)
+      if cell.attrs.conceal != 0: c.style.incl(terminal.Style.styleHidden)
+      if cell.attrs.strike != 0: c.style.incl(terminal.Style.styleStrikethrough)
+      if cell.attrs.dim != 0: c.style.incl(terminal.Style.styleDim)
+
       let fg = cell.fg
       if cell.fg.isDefaultFg:
         c.fg = fgNone
-        c.fgColor = rgb(0, 0, 0)
+        c.fgColor = colors.rgb(0, 0, 0)
       elif cell.fg.isRGB:
         c.fg = fgRGB
-        c.fgColor = rgb(cell.fg.rgb.red, cell.fg.rgb.green, cell.fg.rgb.blue)
+        c.fgColor = colors.rgb(cell.fg.rgb.red, cell.fg.rgb.green, cell.fg.rgb.blue)
       elif cell.fg.isIndexed:
         c.fg = fgRGB
         let idx = cell.fg.indexed.idx
         state.screen.convertColorToRgb(cell.fg.addr)
-        c.fgColor = rgb(cell.fg.rgb.red, cell.fg.rgb.green, cell.fg.rgb.blue)
+        c.fgColor = colors.rgb(cell.fg.rgb.red, cell.fg.rgb.green, cell.fg.rgb.blue)
 
       if cell.bg.isDefaultBg:
         c.bg = bgNone
-        c.bgColor = rgb(0, 0, 0)
+        c.bgColor = colors.rgb(0, 0, 0)
       elif cell.bg.isRGB:
         c.bg = bgRGB
-        c.bgColor = rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
+        c.bgColor = colors.rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
       elif cell.bg.isIndexed:
         c.bg = bgRGB
         let idx = cell.bg.indexed.idx
         state.screen.convertColorToRgb(cell.bg.addr)
-        c.bgColor = rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
+        c.bgColor = colors.rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
 
       result[col, scrolledRow] = c
 
@@ -364,6 +388,7 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
       updated = true
 
     if updated:
+      terminal.lastUpdateTime = startTimer()
       terminal.onUpdated.invoke()
 
 proc handleInputEvents(state: var ThreadState) =
@@ -417,6 +442,11 @@ proc handleInputEvents(state: var ThreadState) =
         rope[] = state.createRope()
         state.outputChannel[].send OutputEvent(kind: OutputEventKind.Rope, rope: event.rope)
 
+      of InputEventKind.SetColorPalette:
+        for i, c in event.colors:
+          state.vterm.state.setPaletteColor(i, c)
+        state.dirty = true
+
     except:
       echo &"Failed to send input: {getCurrentExceptionMsg()}"
 
@@ -460,7 +490,7 @@ proc handleProcessOutput(state: var ThreadState, buffer: var string) =
   # if bytesAvailable == 0:
   #   return
 
-  buffer.setLen(30 * 1024)
+  buffer.setLen(bufferSize)
   state.outputOverlapped.hEvent = state.outputReadEvent
   if ReadFile(state.outputReadHandle, buffer[0].addr, buffer.len.DWORD, bytesRead.addr, state.outputOverlapped.addr) != 0:
     # echo &"handleProcessOutput: {bytesRead}/{buffer.len} data received immediately (ReadFile)"
@@ -555,8 +585,20 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
     ),
   )
 
+  var selectionCallbacks = VTermSelectionCallbacks(
+    set: (proc(mask: VTermSelectionMask; frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
+      # echo &"selection set {($frag.str)[0..<frag.len.int]}"
+      discard
+    ),
+    query: (proc(mask: VTermSelectionMask; user: pointer): cint {.cdecl.} =
+      # echo "selection query"
+      discard
+    ),
+  )
+
   state.vterm.setOutputCallback(handleOutput, state.addr)
   state.vterm.screen.setCallbacks(callbacks.addr, state.addr)
+  state.vterm.state.setSelectionCallbacks(selectionCallbacks.addr, state.addr, nil, 1024)
 
   if state.autoRunCommand.len > 0:
     for r in state.autoRunCommand.runes:
@@ -632,7 +674,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
 
   let processId = GetProcessID(GetCurrentProcess()).int
   let readPipeName = newWideCString(r"\\.\pipe\nev-terminal-" & $processId & "-" & $id)
-  outputReadHandle = CreateNamedPipe(readPipeName, PIPE_ACCESS_INBOUND or FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE or PIPE_WAIT, 1, 30 * 1024, 30 * 1024, 0, sa.addr)
+  outputReadHandle = CreateNamedPipe(readPipeName, PIPE_ACCESS_INBOUND or FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE or PIPE_WAIT, 1, bufferSize, bufferSize, 0, sa.addr)
   if outputReadHandle == INVALID_HANDLE_VALUE:
     raiseOSError(osLastError(), "Failed to create named pipe for terminal")
 
@@ -743,8 +785,39 @@ method getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]
   if self.modeEventHandler != nil:
     result.add self.modeEventHandler
 
+proc setTheme(self: Terminal, theme: Theme) =
+  let colors1 = @[
+    theme.color("terminal.ansiBlack", color(0.5, 0.5, 0.5)),
+    theme.color("terminal.ansiRed", color(1.0, 0.5, 0.5)),
+    theme.color("terminal.ansiGreen", color(0.5, 1.0, 0.5)),
+    theme.color("terminal.ansiYellow", color(1.0, 1.0, 0.5)),
+    theme.color("terminal.ansiBlue", color(0.5, 0.5, 1.0)),
+    theme.color("terminal.ansiMagenta", color(1.0, 0.5, 1.0)),
+    theme.color("terminal.ansiCyan", color(0.5, 1.0, 1.0)),
+    theme.color("terminal.ansiWhite", color(1.0, 1.0, 1.0)),
+    theme.color("terminal.ansiBrightBlack", color(0.7, 0.7, 0.7)),
+    theme.color("terminal.ansiBrightRed", color(1.0, 0.7, 0.7)),
+    theme.color("terminal.ansiBrightGreen", color(0.7, 1.0, 0.7)),
+    theme.color("terminal.ansiBrightYellow", color(1.0, 1.0, 0.7)),
+    theme.color("terminal.ansiBrightBlue", color(0.7, 0.7, 1.0)),
+    theme.color("terminal.ansiBrightMagenta", color(1.0, 0.7, 1.0)),
+    theme.color("terminal.ansiBrightCyan", color(0.7, 1.0, 1.0)),
+    theme.color("terminal.ansiBrightWhite", color(1.0, 1.0, 1.0)),
+  ]
+  let colors2: seq[tuple[r, g, b: uint8]] = colors1.mapIt((
+    r: (it.r * 255).int.clamp(0, 255).uint8,
+    g: (it.g * 255).int.clamp(0, 255).uint8,
+    b: (it.b * 255).int.clamp(0, 255).uint8,
+  ))
+
+  self.sendEvent(InputEvent(kind: InputEventKind.SetColorPalette, colors: colors2))
+
+proc handleThemeChanged(self: TerminalService, theme: Theme) =
+  for view in self.terminals.values:
+    view.terminal.setTheme(theme)
+
 func serviceName*(_: typedesc[TerminalService]): string = "TerminalService"
-addBuiltinService(TerminalService, LayoutService, EventHandlerService, ConfigService)
+addBuiltinService(TerminalService, LayoutService, EventHandlerService, ConfigService, ThemeService)
 
 method init*(self: TerminalService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"TerminalService.init"
@@ -752,6 +825,10 @@ method init*(self: TerminalService): Future[Result[void, ref CatchableError]] {.
   self.events = self.services.getService(EventHandlerService).get
   self.layout = self.services.getService(LayoutService).get
   self.config = self.services.getService(ConfigService).get
+  self.themes = self.services.getService(ThemeService).get
+  discard self.themes.onThemeChanged.subscribe proc(theme: Theme) = self.handleThemeChanged(theme)
+
+  self.settings = TerminalSettings.new(self.config.runtime)
 
   return ok()
 
@@ -831,6 +908,7 @@ proc createTerminalView(self: TerminalService, command: string, options: CreateT
   try:
     let term = self.createTerminal(80, 50, command, options.autoRunCommand)
     term.group = options.group
+    term.setTheme(self.themes.theme)
 
     let view = TerminalView(terminals: self, terminal: term, closeOnTerminate: options.closeOnTerminate)
     view.initView()
@@ -854,7 +932,7 @@ proc createTerminalView(self: TerminalService, command: string, options: CreateT
       if options.mode.getSome(mode):
         view.mode = mode
       else:
-        view.mode = self.config.runtime.get("terminal.default-mode", "normal")
+        view.mode = self.settings.defaultMode.get()
       self.updateModeEventHandlers(view)
 
     discard term.onUpdated.subscribe proc() =
@@ -911,6 +989,13 @@ proc createTerminal*(self: TerminalService, command: string = "", options: Creat
   ## `closeOnTerminate` Close the terminal when the process ends.
   self.layout.addView(self.createTerminalView(command, options))
 
+proc isIdle(self: TerminalService, terminal: Terminal): bool =
+  if not terminal.cursor.visible or terminal.cursor.col == 0:
+    # Assuming that a shell never has an empty prompt and the cursor is visible when in the prompt
+    return false
+  let idleThreshold = self.settings.idleThreshold.get()
+  return terminal.lastUpdateTime.elapsed.ms.int > idleThreshold
+
 proc runInTerminal*(self: TerminalService, shell: string, command: string, options: RunInTerminalOptions = RunInTerminalOptions()) {.expose("terminal").} =
   let shellCommand = self.config.runtime.get("editor.shells." & shell & ".command", string.none)
   if shellCommand.isNone:
@@ -922,7 +1007,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
 
   if options.reuseExisting:
     for view in self.terminals.values:
-      if view.terminal.group == options.group and view.terminal.command == shellCommand.get:
+      if view.terminal.group == options.group and view.terminal.command == shellCommand.get and self.isIdle(view.terminal):
         if command.len > 0:
           self.handleInput(view, command)
           self.handleKey(view, INPUT_ENTER, {})

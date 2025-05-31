@@ -1,3 +1,4 @@
+#include "vterm.h"
 #include "vterm_internal.h"
 
 #include <stdio.h>
@@ -567,7 +568,6 @@ static void savecursor(VTermState *state, int save)
 {
   if(save) {
     state->saved.pos = state->pos;
-    printf("savecursor cursor_visible = %d (was %d)\n", state->saved.mode.cursor_visible, state->mode.cursor_visible);
     state->saved.mode.cursor_visible = state->mode.cursor_visible;
     state->saved.mode.cursor_blink   = state->mode.cursor_blink;
     state->saved.mode.cursor_shape   = state->mode.cursor_shape;
@@ -933,7 +933,10 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
 
   if(leader && leader[0]) {
     if(leader[1]) // longer than 1 char
+    {
+      DEBUG_LOG("csi leader longer than 1 char (leader '%s', intermed '%s', command '%c')\n", leader, intermed, command);
       return 0;
+    }
 
     switch(leader[0]) {
     case '?':
@@ -941,13 +944,17 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
       leader_byte = leader[0];
       break;
     default:
+      DEBUG_LOG("unknown leader (leader '%s', intermed '%s', command '%c')\n", leader, intermed, command);
       return 0;
     }
   }
 
   if(intermed && intermed[0]) {
     if(intermed[1]) // longer than 1 char
+    {
+      DEBUG_LOG("csi intermed to long (leader '%s', intermed '%s', command '%c')\n", leader, intermed, command);
       return 0;
+    }
 
     switch(intermed[0]) {
     case ' ':
@@ -958,6 +965,7 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
       intermed_byte = intermed[0];
       break;
     default:
+      DEBUG_LOG("csi unknown intermed (leader '%s', intermed '%s', command '%c')\n", leader, intermed, command);
       return 0;
     }
   }
@@ -1121,6 +1129,7 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
     case 2:
       rect.start_col = 0; rect.end_col = THISROWWIDTH(state); break;
     default:
+      DEBUG_LOG("csi unknown CSI_ARG_MISSING (leader '%s', intermed '%s', command '%c')\n", leader, intermed, command);
       return 0;
     }
 
@@ -1304,6 +1313,7 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
       break;
     /* TODO: 1, 2 and 4 aren't meaningful yet without line tab stops */
     default:
+      DEBUG_LOG("csi x67 val (leader '%s', intermed '%s', command '%c')\n", leader, intermed, command);
       return 0;
     }
     break;
@@ -1537,11 +1547,17 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
 
     break;
 
+  case 't':
+    DEBUG_LOG("csi t (leader '%s', intermed '%s', command '%c', args %d)\n", leader, intermed, command, argcount);
+    break;
+
   default:
     if(state->fallbacks && state->fallbacks->csi)
       if((*state->fallbacks->csi)(leader, args, argcount, intermed, command, state->fbdata))
         return 1;
 
+    DEBUG_LOG("csi unknown intermed | leader | command (leader '%s', intermed '%s', command '%c')\n", leader, intermed, command);
+    DEBUG_LOG("intermed_byte '%d', leader_byte '%d', command '%c' -> %d)\n", intermed_byte, leader_byte, command, intermed_byte << 16 | leader_byte << 8 | command);
     return 0;
   }
 
@@ -2346,3 +2362,4 @@ void vterm_state_send_selection(VTermState *state, VTermSelectionMask mask, VTer
       vterm_push_output_sprintf_str(vt, 0, true, "");
   }
 }
+

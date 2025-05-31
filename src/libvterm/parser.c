@@ -63,7 +63,6 @@ static void do_escape(VTerm *vt, char command)
 
 static void string_fragment(VTerm *vt, const char *str, size_t len, bool final)
 {
-  // printf("string_fragment: %.*s\n", (int)len, str);
   VTermStringFragment frag = {
     .str     = str,
     .len     = len,
@@ -113,7 +112,6 @@ size_t vterm_input_write(VTerm *vt, const char *bytes, size_t len)
 {
   size_t pos = 0;
   const char *string_start;
-  // printf("vterm_input_write %lld bytes, state = %d\n", len, vt->parser.state);
 
   switch(vt->parser.state) {
   case NORMAL:
@@ -140,7 +138,6 @@ size_t vterm_input_write(VTerm *vt, const char *bytes, size_t len)
 
   for( ; pos < len; pos++) {
     unsigned char c = bytes[pos];
-    // printf("c: %x\n", (int)c);
     bool c1_allowed = !vt->mode.utf8;
 
     if(c == 0x00 || c == 0x7f) { // NUL, DEL
@@ -403,3 +400,4 @@ void vterm_parser_set_emit_nul(VTerm *vt, bool emit)
 {
   vt->parser.emit_nul = emit;
 }
+

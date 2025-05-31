@@ -107,6 +107,7 @@ type
     vfsService*: VFSService
     commands*: CommandService
     toast*: ToastService
+    themes*: ThemeService
 
     workspace*: Workspace
     vfs*: VFS
@@ -210,8 +211,7 @@ proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: [
   if theme.loadFromFile(self.vfs, path).await.getSome(theme):
     log(lvlInfo, fmt"Loaded theme {path}")
     self.theme = theme
-    {.gcsafe.}:
-      gTheme = theme
+    self.themes.setTheme(theme)
   else:
     log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender(redrawEverything=true)
@@ -729,6 +729,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.workspace = services.getService(Workspace).get
   self.commands = services.getService(CommandService).get
   self.toast = services.getService(ToastService).get
+  self.themes = services.getService(ThemeService).get
   self.vfs = self.vfsService.vfs
 
   self.platform.fontSize = 16
@@ -760,8 +761,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.applySettingsFromAppOptions()
 
   self.theme = defaultTheme()
-  {.gcsafe.}:
-    gTheme = self.theme
+  self.themes.setTheme(self.theme)
 
   self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
   self.editors.documents.add self.logDocument
@@ -1535,8 +1535,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
       self.theme = theme
-      {.gcsafe.}:
-        gTheme = theme
+      self.themes.setTheme(self.theme)
       self.platform.requestRender(true)
 
       return true
@@ -1544,15 +1543,13 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   popup.handleItemSelected = proc(item: FinderItem) =
     if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
       self.theme = theme
-      {.gcsafe.}:
-        gTheme = theme
+      self.themes.setTheme(self.theme)
       self.platform.requestRender(true)
 
   popup.handleCanceled = proc() =
     if theme.loadFromFile(self.vfs, originalTheme).waitFor.getSome(theme):
       self.theme = theme
-      {.gcsafe.}:
-        gTheme = theme
+      self.themes.setTheme(self.theme)
       self.platform.requestRender(true)
 
   self.layout.pushPopup popup

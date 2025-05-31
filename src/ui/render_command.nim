@@ -162,7 +162,7 @@ template buildCommands*(renderCommands: var RenderCommands, body: untyped) =
       let txt = inText
       let offset = renderCommands.strings.len.uint32
       renderCommands.strings.add txt
-      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: txt.len.uint32, bounds: inBounds, color: inColor, flags: inFlags))
+      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: offset, textLen: txt.len.uint32, bounds: inBounds, color: inColor, underlineColor: inColor, flags: inFlags))
     template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
       let offset = renderCommands.strings.len.uint32
       for c in inText:

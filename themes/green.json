@@ -32,7 +32,24 @@
         "editorSuggestWidget.selectedBackground": "#2D4545",
         "editorSuggestWidget.foreground": "#ABB2BF",
         "editorSuggestWidget.highlightForeground": "#ABB2BF",
-        "descriptionForeground": "#3E4451"
+        "descriptionForeground": "#3E4451",
+
+        "terminal.ansiBlack": "#414848",
+        "terminal.ansiRed": "#f7666e",
+        "terminal.ansiGreen": "#73eaba",
+        "terminal.ansiYellow": "#d09f38",
+        "terminal.ansiBlue": "#4a72f7",
+        "terminal.ansiMagenta": "#ab8ae7",
+        "terminal.ansiCyan": "#6dbfef",
+        "terminal.ansiWhite": "#f0f0f0",
+        "terminal.ansiBrightBlack": "#616868",
+        "terminal.ansiBrightRed": "#f7768e",
+        "terminal.ansiBrightGreen": "#73daca",
+        "terminal.ansiBrightYellow": "#e0af68",
+        "terminal.ansiBrightBlue": "#7aa2f7",
+        "terminal.ansiBrightMagenta": "#bb9af7",
+        "terminal.ansiBrightCyan": "#7dcfff",
+        "terminal.ansiBrightWhite": "#ffffff",
 
     },
     "tokenColors": [
@@ -588,7 +605,6 @@
             "settings": {
                 "foreground": "#6868af"
             }
-        }
-
+        },
     ]
 }

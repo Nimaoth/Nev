@@ -79,6 +79,7 @@ type
     ##  On a DECDHL line (1=top 2=bottom)
     small* {.bitsize: 1.}: cuint
     baseline* {.bitsize: 2.}: cuint
+    dim* {.bitsize: 1.}: cuint
 
   VTermScreenCell* {.bycopy, importc.} = object
     chars*: array[VTERM_MAX_CHARS_PER_CELL, uint32]
@@ -112,6 +113,7 @@ type
     VTERM_ATTR_BACKGROUND,    ##  color:  40-49 100-107
     VTERM_ATTR_SMALL,         ##  bool:   73, 74, 75
     VTERM_ATTR_BASELINE,      ##  number: 73, 74, 75
+    VTERM_ATTR_DIM,           ##  number: 2, 22
     # VTERM_ATTR_URI,           ##  number
 
   VTermProp* {.importc.} = enum
@@ -211,6 +213,10 @@ type
     sb_popline*: proc (cols: cint; cells: ptr UncheckedArray[VTermScreenCell]; user: pointer): cint {.cdecl.}
     sb_clear*: proc (user: pointer): cint {.cdecl.}
 
+  VTermSelectionCallbacks* {.bycopy, importc.} = object
+    set*: proc (mask: VTermSelectionMask; frag: VTermStringFragment; user: pointer): cint {.cdecl.}
+    query*: proc (mask: VTermSelectionMask; user: pointer): cint {.cdecl.}
+
   VTermModifier* {.importc.} = enum
     VTERM_MOD_NONE = 0x00,
     VTERM_MOD_SHIFT = 0x01,
@@ -275,8 +281,15 @@ type
     VTERM_ATTR_FONT_MASK = 1 shl 6, VTERM_ATTR_FOREGROUND_MASK = 1 shl 7,
     VTERM_ATTR_BACKGROUND_MASK = 1 shl 8, VTERM_ATTR_CONCEAL_MASK = 1 shl 9,
     VTERM_ATTR_SMALL_MASK = 1 shl 10, VTERM_ATTR_BASELINE_MASK = 1 shl 11,
-    VTERM_ALL_ATTRS_MASK = (1 shl 12) - 1
+    VTERM_ATTR_DIM_MASK = 1 shl 12,
+    VTERM_ALL_ATTRS_MASK = (1 shl 13) - 1
 
+  VTermSelectionMask* = enum
+    VTERM_SELECTION_CLIPBOARD = (1 shl 0),
+    VTERM_SELECTION_PRIMARY = (1 shl 1),
+    VTERM_SELECTION_SECONDARY = (1 shl 2),
+    VTERM_SELECTION_SELECT = (1 shl 3),
+    VTERM_SELECTION_CUT0 = (1 shl 4)
 
 const
   VTERM_PROP_CURSORSHAPE_BLOCK* = 1
@@ -333,7 +346,7 @@ proc getCursorpos*(state: ptr VTermState; cursorpos: ptr VTermPos) {.importc: "v
 proc getDefaultColors*(state: ptr VTermState; default_fg: ptr VTermColor; default_bg: ptr VTermColor) {.importc: "vterm_state_get_default_colors".}
 proc getPaletteColor*(state: ptr VTermState; index: cint; col: ptr VTermColor) {.importc: "vterm_state_get_palette_color".}
 proc setDefaultColors*(state: ptr VTermState; default_fg: ptr VTermColor; default_bg: ptr VTermColor) {.importc: "vterm_state_set_default_colors".}
-proc setPaletteColor*(state: ptr VTermState; index: cint; col: ptr VTermColor) {.importc: "vterm_state_set_palette_color".}
+proc setPaletteColorRaw*(state: ptr VTermState; index: cint; col: ptr VTermColor) {.importc: "vterm_state_set_palette_color".}
 proc setBoldHighbright*(state: ptr VTermState; bold_is_highbright: cint) {.importc: "vterm_state_set_bold_highbright".}
 proc getPenattr*(state: ptr VTermState; attr: VTermAttr; val: ptr VTermValue): cint {.importc: "vterm_state_get_penattr".}
 proc setTermprop*(state: ptr VTermState; prop: VTermProp; val: ptr VTermValue): cint {.importc: "vterm_state_set_termprop".}
@@ -341,7 +354,20 @@ proc focusIn*(state: ptr VTermState) {.importc: "vterm_state_focus_in".}
 proc focusOut*(state: ptr VTermState) {.importc: "vterm_state_focus_out".}
 proc getLineinfo*(state: ptr VTermState; row: cint): ptr VTermLineInfo {.importc: "vterm_state_get_lineinfo".}
 
+proc setSelectionCallbacks*(state: ptr VTermState; callbacks: ptr VTermSelectionCallbacks; user: pointer; buffer: cstring; buflen: csize_t) {.importc: "vterm_state_set_selection_callbacks".}
+proc sendSelection*(state: ptr VTermState; mask: VTermSelectionMask; frag: VTermStringFragment) {.importc: "vterm_state_send_selection".}
+
 {.pop.}
+
+proc vtermRgb*(r, g, b: uint8): VTermColor =
+  result.`type` = VTERM_COLOR_RGB.ord.uint8
+  result.rgb.red = r
+  result.rgb.green = g
+  result.rgb.blue = b
+
+proc setPaletteColor*(state: ptr VTermState; index: int; color: tuple[r, g, b: uint8]) =
+  var color: VTermColor = vtermRgb(color.r, color.g, color.b)
+  state.setPaletteColorRaw(index.cint, color.addr)
 
 const VTERM_COLOR_TYPE_MASK = 1.uint8
 
