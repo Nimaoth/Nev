@@ -178,6 +178,10 @@ proc addView*(self: LayoutService, view: View, addToHistory = true, append = fal
   if self.currentView < 0:
     self.currentView = 0
 
+  # Force immediate load for new file since we're making it visible anyways
+  if view of EditorView and view.EditorView.document.requiresLoad:
+    view.EditorView.document.load()
+
   view.markDirty()
 
   self.updateActiveEditor(addToHistory)
@@ -480,20 +484,20 @@ proc openWorkspaceFile*(self: LayoutService, path: string, append: bool = false)
 
   return self.createAndAddView(document, append = append)
 
-proc openFile*(self: LayoutService, path: string, appFile: bool = false): Option[DocumentEditor] =
+proc openFile*(self: LayoutService, path: string): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
 
   let path = self.vfs.normalize(path)
 
-  log lvlInfo, fmt"[openFile] Open file '{path}' (appFile = {appFile})"
-  if self.tryOpenExisting(path, appFile, append = false).getSome(ed):
+  log lvlInfo, fmt"[openFile] Open file '{path}'"
+  if self.tryOpenExisting(path, false, append = false).getSome(ed):
     log lvlInfo, fmt"[openFile] found existing editor"
     return ed.some
 
   log lvlInfo, fmt"Open file '{path}'"
 
-  let document = self.editors.getOrOpenDocument(path, appFile=appFile).getOr:
+  let document = self.editors.getOrOpenDocument(path).getOr:
     log(lvlError, fmt"Failed to load file {path}")
     return DocumentEditor.none
 

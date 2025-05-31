@@ -70,6 +70,7 @@ Options:
   --attach               Open the passed files in an existing instance if it already exists.
   --clean                Don't load any configs/sessions/plugins
   --ts-mem-tracking      Enable treesitter memory tracking (for debugging)
+  --monitor:n            Open nev on the specified monitor (0, 1, ...). Windows only for now.
 
 Examples:
   nev                                              Open .{appName}-session if it exists
@@ -155,6 +156,11 @@ block: ## Parse command line options
 
       of "session", "s":
         opts.sessionOverride = val.some
+
+      of "monitor":
+        opts.monitor = val.parseInt.some.catch:
+          echo "Expected integer for monitor: --monitor:1"
+          quit(1)
 
       of "ts-mem-tracking":
         enableTreesitterMemoryTracking()
@@ -423,7 +429,7 @@ gServices = Services()
 gServices.addBuiltinServices()
 
 plat.vfs = gServices.getService(VFSService).get.vfs
-plat.init()
+plat.init(opts)
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
 

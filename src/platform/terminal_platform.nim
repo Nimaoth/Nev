@@ -4,7 +4,7 @@ import vmath
 import chroma as chroma
 import misc/[custom_logger, rect_utils, event, timer, custom_unicode]
 import tui, input, ui/node
-import platform
+import platform, app_options
 
 export platform
 
@@ -134,7 +134,7 @@ proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int] {.gcsafe.
 
   return (1, 1)
 
-method init*(self: TerminalPlatform) =
+method init*(self: TerminalPlatform, options: AppOptions) =
   try:
     illwillInit(fullscreen=true, mouse=true)
     setControlCHook(exitProc)

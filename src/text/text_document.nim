@@ -1067,9 +1067,14 @@ method load*(self: TextDocument, filename: string = "") =
     log lvlError, &"save: Missing filename"
     return
 
+  if self.requiresLoad:
+    self.reloadTreesitterLanguage()
+
   let isReload = self.isBackedByFile and filename == self.filename and not self.requiresLoad
   self.filename = filename
   self.isBackedByFile = true
+  self.requiresLoad = false
+
 
   asyncSpawn self.loadAsync(isReload)
 

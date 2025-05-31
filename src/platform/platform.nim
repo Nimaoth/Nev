@@ -1,7 +1,7 @@
 import vmath
 import ui/node
 import misc/[event]
-import input, vfs
+import input, vfs, app_options
 
 export input, event
 
@@ -34,7 +34,7 @@ method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, 
 method render*(self: Platform, rerender: bool) {.base, gcsafe, raises: [].} = discard
 method sizeChanged*(self: Platform): bool {.base, gcsafe, raises: [].} = discard
 method size*(self: Platform): Vec2 {.base, gcsafe, raises: [].} = discard
-method init*(self: Platform) {.base, raises: [].} = discard
+method init*(self: Platform, options: AppOptions) {.base, raises: [].} = discard
 method deinit*(self: Platform) {.base, raises: [].} = discard
 method processEvents*(self: Platform): int {.base, gcsafe, raises: [].} = discard
 method `fontSize=`*(self: Platform, fontSize: float) {.base, gcsafe, raises: [].} = discard
@@ -51,6 +51,7 @@ method preventDefault*(self: Platform) {.base, gcsafe, raises: [].} = discard
 method getStatisticsString*(self: Platform): string {.base, gcsafe, raises: [].} = discard
 method layoutText*(self: Platform, text: string): seq[Rect] {.base, gcsafe, raises: [].} = discard
 method setVsync*(self: Platform, enabled: bool) {.base, gcsafe, raises: [].} = discard
+method moveToMonitor*(self: Platform, index: int) {.base, gcsafe, raises: [].} = discard
 
 func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance
 

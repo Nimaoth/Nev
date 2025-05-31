@@ -6,7 +6,7 @@ import platform/platform
 import ui/[widget_builders_base, widget_library]
 import text/text_editor
 import app, selector_popup, theme
-import finder/[finder, previewer, file_previewer, open_editor_previewer]
+import finder/[finder, previewer, file_previewer, open_editor_previewer, data_previewer]
 import config_provider, events
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
@@ -37,6 +37,10 @@ method createUI*(self: FilePreviewer, builder: UINodeBuilder, app: App): seq[Ove
     result.add self.editor.createUI(builder, app)
 
 method createUI*(self: OpenEditorPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  if self.editor.isNotNil:
+    result.add self.editor.createUI(builder, app)
+
+method createUI*(self: DataPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   if self.editor.isNotNil:
     result.add self.editor.createUI(builder, app)
 

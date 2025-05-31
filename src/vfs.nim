@@ -158,6 +158,8 @@ proc newInMemoryVFS*(): VFSInMemory = VFSInMemory(files: initTable[string, VFSIn
 
 method name*(self: VFS): string {.base.} = &"VFS({self.prefix})"
 
+method normalizeImpl*(self: VFS, path: string): string {.base.} = path
+
 method readImpl*(self: VFS, path: string, flags: set[ReadFlag]): Future[string] {.base, async: (raises: [IOError]).} =
   raise newException(IOError, "Not implemented")
 
@@ -409,6 +411,7 @@ proc localize*(self: VFS, path: string): string =
 
 proc normalize*(self: VFS, path: string): string =
   var (vfs, path) = self.getVFS(path)
+  path = vfs.normalizeImpl(path)
   while vfs.parent.getSome(parent):
     path = vfs.prefix // path
     vfs = parent

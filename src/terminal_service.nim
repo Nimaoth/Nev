@@ -8,6 +8,7 @@ import scripting/expose
 import platform/[tui, platform]
 import finder/[finder, previewer]
 import vterm, input, input_api
+import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 
 logCategory "terminal-service"
 
@@ -128,7 +129,7 @@ type
       rope: pointer # ptr Rope, but Nim complains about destructors?
 
   CursorShape* {.pure.} = enum Block, Underline, BarLeft
-  OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, Terminated, Rope
+  OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, Terminated, Rope, Scroll
   OutputEvent = object
     case kind: OutputEventKind
     of OutputEventKind.TerminalBuffer:
@@ -147,6 +148,9 @@ type
       exitCode: int
     of OutputEventKind.Rope:
       rope: pointer # ptr Rope, but Nim complains about destructors?
+    of OutputEventKind.Scroll:
+      deltaY: int
+      scrollY: int
 
   ThreadState = object
     vterm: ptr VTerm
@@ -183,6 +187,7 @@ type
     outputChannel: ptr Channel[OutputEvent] # todo: free this
     terminalBuffer*: TerminalBuffer
     cursor*: tuple[row, col: int, visible: bool, shape: CursorShape]
+    scrollY: int
     exitCode*: Option[int]
     autoRunCommand: string
 
@@ -220,7 +225,28 @@ type
 proc createRope*(state: var ThreadState): Rope =
   var cell: VTermScreenCell
   var rope = Rope.new()
+
+  var line = ""
+  for cells in state.scrollbackBuffer.mitems:
+    line.setLen(0)
+    for cell in cells:
+      var r = 0.Rune
+      if cell.chars[0] <= Rune.high.uint32:
+        r = cell.chars[0].Rune
+
+      if r != 0.Rune:
+        line.add $r
+      else:
+        line.add " "
+
+    var endIndex = line.high
+    while endIndex >= 0 and line[endIndex] in Whitespace:
+      dec endIndex
+    rope.add line.toOpenArray(0, endIndex)
+    rope.add "\n"
+
   for row in 0..<state.height:
+    line.setLen(0)
     for col in 0..<state.width:
       var pos: VTermPos
       pos.row = row.cint
@@ -233,8 +259,14 @@ proc createRope*(state: var ThreadState): Rope =
         r = cell.chars[0].Rune
 
       if r != 0.Rune:
-        rope.add $r
+        line.add $r
+      else:
+        line.add " "
 
+    var endIndex = line.high
+    while endIndex >= 0 and line[endIndex] in Whitespace:
+      dec endIndex
+    rope.add line.toOpenArray(0, endIndex)
     rope.add "\n"
 
   return rope
@@ -273,7 +305,10 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
         # previousWideGlyph bool,
       )
       let fg = cell.fg
-      if cell.fg.isRGB:
+      if cell.fg.isDefaultFg:
+        c.fg = fgNone
+        c.fgColor = rgb(0, 0, 0)
+      elif cell.fg.isRGB:
         c.fg = fgRGB
         c.fgColor = rgb(cell.fg.rgb.red, cell.fg.rgb.green, cell.fg.rgb.blue)
       elif cell.fg.isIndexed:
@@ -282,7 +317,10 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
         state.screen.convertColorToRgb(cell.fg.addr)
         c.fgColor = rgb(cell.fg.rgb.red, cell.fg.rgb.green, cell.fg.rgb.blue)
 
-      if cell.bg.isRGB:
+      if cell.bg.isDefaultBg:
+        c.bg = bgNone
+        c.bgColor = rgb(0, 0, 0)
+      elif cell.bg.isRGB:
         c.bg = bgRGB
         c.bgColor = rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
       elif cell.bg.isIndexed:
@@ -319,6 +357,8 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
       of OutputEventKind.Rope:
         let rope = cast[ptr Rope](event.rope)
         terminal.onRope.invoke(rope)
+      of OutputEventKind.Scroll:
+        terminal.scrollY = event.scrollY
 
       updated = true
 
@@ -353,9 +393,11 @@ proc handleInputEvents(state: var ThreadState) =
         state.vterm.mouseButton(event.button.toVtermButton, event.pressed, event.modifiers.toVtermModifiers)
 
       of InputEventKind.Scroll:
+        let prevScrollY = state.scrollY
         state.scrollY += event.deltaY
         state.scrollY = state.scrollY.clamp(0, state.scrollbackBuffer.len)
         state.outputChannel[].send OutputEvent(kind: OutputEventKind.Cursor, row: state.cursor.row + state.scrollY, col: state.cursor.col)
+        state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY, deltaY: state.scrollY - prevScrollY)
         state.dirty = true
 
       of InputEventKind.Size:
@@ -851,6 +893,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
     if view.terminal.command == shell:
       self.handleInput(view, command)
       self.handleKey(view, INPUT_ENTER, {})
+      view.handleScroll(-5000000, {})
       self.layout.showView(view)
       return
 
@@ -871,6 +914,9 @@ proc sendTerminalInputAndSetMode*(self: TerminalService, input: string, mode: st
   self.sendTerminalInput(input)
   self.setTerminalMode(mode)
 
+# todo: I don't like this import
+import text/text_editor
+
 proc requestEditBuffer*(self: TerminalView) {.async.} =
   var rope: Rope = Rope.new()
   let ropePtr = rope.addr
@@ -889,7 +935,16 @@ proc requestEditBuffer*(self: TerminalView) {.async.} =
 
   let path = &"ed://{self.terminal.id}.terminal-output"
   await self.terminals.services.getService(VFSService).get.vfs.write(path, rope)
-  discard self.terminals.layout.openFile(path)
+
+  if self.terminals.layout.openFile(path).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    let numLines = rope.lines
+    let height = self.size.height
+    let scrollY = self.terminal.scrollY
+    textEditor.targetSelection = (numLines - height div 2 - 1 - scrollY, 0).toSelection
+    textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
+    textEditor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
+    textEditor.centerCursor()
 
 proc editTerminalBuffer*(self: TerminalService) {.expose("terminal").} =
   if self.getActiveView().getSome(view):

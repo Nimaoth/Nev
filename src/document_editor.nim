@@ -12,6 +12,10 @@ from scripting_api import EditorId, newEditorId
 
 logCategory "document-editor"
 
+declareSettings EditorSettings, "editor":
+  ## Any editor with this set to true will be stored in the session and restored on startup.
+  declare saveInSession, bool, true
+
 type
   DocumentEditor* = ref object of RootObj
     id*: EditorId
@@ -24,6 +28,7 @@ type
     active: bool
     onActiveChanged*: Event[DocumentEditor]
     config*: ConfigStore
+    editorSettings*: EditorSettings
 
   DocumentFactory* = ref object of RootObj
   DocumentEditorFactory* = ref object of RootObj

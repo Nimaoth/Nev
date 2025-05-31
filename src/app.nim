@@ -1173,6 +1173,8 @@ proc saveAppState*(self: App) {.expose("editor").} =
       return OpenEditor.none
     if view.document == self.logDocument:
       return OpenEditor.none
+    if not view.editor.config.get("editor.save-in-session", true):
+      return OpenEditor.none
 
     try:
       let customOptions = view.editor.getStateJson()

@@ -36,6 +36,7 @@
         "\\..json$": "json",
         "\\..nev-session$": "json",
         "\\..lock$": "json",
+        "\\..code-workspace$": "json",
         "\\..yml$": "yaml",
         "\\..clangd$": "yaml",
         "\\..nix$": "nix",
@@ -59,6 +60,7 @@
         "\\..lua$": "lua",
         "\\..log$": "log",
         "\\..shell-command-results$": "shell-command-results",
+        "\\..terminal-output$": "terminal-output",
         "nimble..*?\\..paths$": "nim-paths",
         "/(vector|string|thread|iostream)$": "cpp",
         "..+/MSVC/..+/include(/..+?)*/[a-z0-9_]+$": "cpp",
@@ -190,9 +192,13 @@
 
     "+lang": {
         "command-line": {
+            "editor.save-in-session": false,
             "+text": {
                 "completion-word-chars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"]
             }
+        },
+        "terminal-output": {
+            "editor.save-in-session": false,
         },
         "html": {
             "+text": {
@@ -389,7 +395,7 @@
                         "^\\s*(\\w+[\\*\\s]+)\\w+\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
                         "^\\s*(typedef\\s+)?(struct|enum|union)\\s+\\w+"
                     ],
-                    "workspace-symbols": {
+                    "workspace-symbols-by-kind": {
                         "Function": "^\\s*(\\w+[\\*\\s]+)\\w+\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
                         "Class": "^\\s*(typedef\\s+)?(struct|enum|union)\\s+\\w+"
                     }
@@ -475,7 +481,7 @@
                         "fn \\b[a-zA-Z0-9_]+\\b",
                         "\\b[a-zA-Z0-9_]+\\b = (struct|enum|union|@import)"
                     ],
-                    "workspace-symbols": {
+                    "workspace-symbols-by-kind": {
                         "Class": "\\b[a-zA-Z0-9_]+\\b = (struct|enum|union|@import)",
                         "Function": "fn \\b[a-zA-Z0-9_]+\\b"
                     }

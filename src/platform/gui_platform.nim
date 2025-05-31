@@ -3,7 +3,7 @@ import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts
 import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer]
 import ui/node
 import platform
-import input, monitors, lrucache, theme, compilation_config, vfs
+import input, monitors, lrucache, theme, compilation_config, vfs, app_options
 
 export platform
 
@@ -59,6 +59,9 @@ proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
 
+method moveToMonitor*(self: GuiPlatform, index: int) {.gcsafe, raises: [].} =
+  centerWindowOnMonitor(self.window, index)
+
 method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Typefaces: {self.typefaces.len}\n"
   result.add &"Glyph Cache: {self.glyphCache.len}\n"
@@ -66,7 +69,7 @@ method getStatisticsString*(self: GuiPlatform): string =
 
 {.pop.} # gcsafe
 
-method init*(self: GuiPlatform) =
+method init*(self: GuiPlatform, options: AppOptions) =
   try:
     self.glyphCache = newLruCache[Rune, string](5000, true)
     self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
@@ -91,7 +94,12 @@ method init*(self: GuiPlatform) =
     self.builder = newNodeBuilder()
     self.builder.useInvalidation = true
 
-    # self.window.centerWindowOnMonitor(1)
+    if options.monitor.getSome(index):
+      when defined(windows):
+        self.window.centerWindowOnMonitor(index)
+      else:
+        log lvlWarn, &"Opening window on specific monitor not implemented on this platform yet."
+
     self.window.maximized = true
     makeContextCurrent(self.window)
     loadExtensions()
