@@ -1,5 +1,5 @@
 import std/[options, tables]
-import misc/[event]
+import misc/[event, id]
 import events, document_editor
 
 {.push gcsafe.}
@@ -7,11 +7,15 @@ import events, document_editor
 
 type
   View* = ref object of RootObj
+    id*: Id
     active*: bool
     mDirty: bool
     onMarkedDirty*: Event[void]
 
   DebuggerView* = ref object of View
+
+proc initView*(self: View) =
+  self.id = newId()
 
 func dirty*(self: View): bool = self.mDirty
 

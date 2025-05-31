@@ -76,7 +76,7 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
 
   var res: seq[OverlayFunction] = @[]
 
-  builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = uiUserId.newPrimaryId):
+  builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.id.newPrimaryId):
     # onClickAny btn:
     #   self.app.tryActivateEditor(self)
 
@@ -87,6 +87,13 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
             backgroundColor = headerColor):
 
           var text = &"Terminal"
+          if self.terminal.group != "":
+            text.add " - Group: "
+            text.add self.terminal.group
+
+          text.add " - "
+          text.add self.terminal.command
+
           if self.terminal.exitCode.getSome(exitCode):
             text.add " - Exit Code: "
             text.add $exitCode

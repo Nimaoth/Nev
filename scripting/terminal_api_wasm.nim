@@ -27,17 +27,17 @@ proc createTerminal*(command: string = "";
       argsJsonString.cstring)
 
 
-proc terminal_runInTerminal_void_TerminalService_string_string_CreateTerminalOptions_wasm(
+proc terminal_runInTerminal_void_TerminalService_string_string_RunInTerminalOptions_wasm(
     arg: cstring): cstring {.importc.}
 proc runInTerminal*(shell: string; command: string;
-                    options: CreateTerminalOptions = CreateTerminalOptions()) {.
+                    options: RunInTerminalOptions = RunInTerminalOptions()) {.
     gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add shell.toJson()
   argsJson.add command.toJson()
   argsJson.add options.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = terminal_runInTerminal_void_TerminalService_string_string_CreateTerminalOptions_wasm(
+  let res {.used.} = terminal_runInTerminal_void_TerminalService_string_string_RunInTerminalOptions_wasm(
       argsJsonString.cstring)
 
 

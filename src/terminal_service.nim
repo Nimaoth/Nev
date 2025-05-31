@@ -178,8 +178,9 @@ type
     processInfo: PROCESS_INFORMATION
 
   Terminal* = ref object
-    id: int
-    command: string
+    id*: int
+    group*: string
+    command*: string
     vterm: ptr VTerm
     screen: ptr VTermScreen
     thread: Thread[ThreadState]
@@ -721,10 +722,21 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
 proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[JsonNode]
 
 method close*(self: TerminalView) =
-  if self.open:
+  if not self.open:
     return
   self.open = false
   self.terminal.terminate()
+  self.terminals.terminals.del(self.terminal.id)
+
+method activate*(self: TerminalView) =
+  if self.active:
+    return
+  self.active = true
+
+method deactivate*(self: TerminalView) =
+  if not self.active:
+    return
+  self.active = false
 
 method getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]): seq[EventHandler] =
   result = @[self.eventHandler]
@@ -759,18 +771,18 @@ template withActiveView*(self: TerminalService, view: TerminalView, body: untype
     body
 
 proc handleInput(self: TerminalService, view: TerminalView, input: string) =
-  debugf"handleInput '{input}'"
+  # debugf"handleInput '{input}'"
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Text, text: input))
 
 proc handleKey(self: TerminalService, view: TerminalView, input: int64, modifiers: Modifiers) =
-  debugf"handleKey '{inputToString(input, modifiers)}'"
+  # debugf"handleKey '{inputToString(input, modifiers)}'"
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Key, input: input, modifiers: modifiers))
 
 proc handleScroll*(view: TerminalView, deltaY: int, modifiers: Modifiers) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Scroll, deltaY: deltaY, modifiers: modifiers))
 
 proc handleClick*(view: TerminalView, button: input.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) =
-  debugf"handleClick '{button}'"
+  # debugf"handleClick '{button}'"
   discard SetEvent(view.terminal.inputWriteEvent)
 
 proc handleDrag*(view: TerminalView, button: input.MouseButton, col: int, row: int, modifiers: Modifiers) =
@@ -804,14 +816,25 @@ proc setSize*(self: TerminalView, width: int, height: int) =
       self.terminal.sendEvent(InputEvent(kind: InputEventKind.Size, row: height, col: width))
 
 type CreateTerminalOptions* = object
+  group*: string = ""
   autoRunCommand*: string = ""
   mode*: Option[string]
   closeOnTerminate*: bool = true
 
+type RunInTerminalOptions* = object
+  group*: string = ""
+  mode*: Option[string]
+  closeOnTerminate*: bool = true
+  reuseExisting*: bool = true
+
 proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions): TerminalView =
   try:
     let term = self.createTerminal(80, 50, command, options.autoRunCommand)
+    term.group = options.group
+
     let view = TerminalView(terminals: self, terminal: term, closeOnTerminate: options.closeOnTerminate)
+    view.initView()
+
     assignEventHandler(view.eventHandler, self.events.getEventHandlerConfig("terminal")):
       onAction:
         self.withActiveView(view):
@@ -888,18 +911,34 @@ proc createTerminal*(self: TerminalService, command: string = "", options: Creat
   ## `closeOnTerminate` Close the terminal when the process ends.
   self.layout.addView(self.createTerminalView(command, options))
 
-proc runInTerminal*(self: TerminalService, shell: string, command: string, options: CreateTerminalOptions = CreateTerminalOptions()) {.expose("terminal").} =
-  for view in self.terminals.values:
-    if view.terminal.command == shell:
-      self.handleInput(view, command)
-      self.handleKey(view, INPUT_ENTER, {})
-      view.handleScroll(-5000000, {})
-      self.layout.showView(view)
-      return
+proc runInTerminal*(self: TerminalService, shell: string, command: string, options: RunInTerminalOptions = RunInTerminalOptions()) {.expose("terminal").} =
+  let shellCommand = self.config.runtime.get("editor.shells." & shell & ".command", string.none)
+  if shellCommand.isNone:
+    log lvlError, &"Failed to run command in shell '{shell}': Unknown shell, configure in 'editor.shells.{shell}'"
+    return
+  if shellCommand.get == "":
+    log lvlError, &"Failed to run command in shell '{shell}': Invalid configuration, empty 'editor.shells.{shell}.command'"
+    return
+
+  if options.reuseExisting:
+    for view in self.terminals.values:
+      if view.terminal.group == options.group and view.terminal.command == shellCommand.get:
+        if command.len > 0:
+          self.handleInput(view, command)
+          self.handleKey(view, INPUT_ENTER, {})
+        view.handleScroll(-5000000, {})
+        if options.mode.isSome:
+          view.setMode(options.mode.get)
+        self.layout.showView(view)
+        return
 
   var options = options
-  options.autoRunCommand = command
-  self.createTerminal(shell, options)
+  self.createTerminal(shellCommand.get, CreateTerminalOptions(
+    group: options.group,
+    autoRunCommand: command,
+    mode: options.mode,
+    closeOnTerminate: options.closeOnTerminate,
+  ))
 
 proc scrollTerminal*(self: TerminalService, amount: int) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
@@ -1042,7 +1081,7 @@ proc handleActionInternal(self: TerminalService, view: TerminalView, action: str
   return JsonNode.none
 
 proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[JsonNode] =
-  debugf"handleAction '{action} {arg}'"
+  # debugf"handleAction '{action} {arg}'"
   self.activeView = view
   try:
     var args = newJArray()
