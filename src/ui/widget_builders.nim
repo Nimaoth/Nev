@@ -21,7 +21,7 @@ method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[Overla
 proc updateWidgetTree*(self: App, frameIndex: int) =
   # self.platform.builder.buildUINodes()
 
-  var headerColor = if self.commands.commandLineMode: self.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  var headerColor = if self.commands.commandLineMode: self.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
 
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
@@ -36,7 +36,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
-        let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+        let textColor = self.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
         let maxViews = self.uiSettings.maxViews.get()
         let maximizedText = if self.layout.maximizeView:
@@ -106,13 +106,13 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     for i, popup in self.layout.popups:
       overlays.add popup.createUI(builder, self)
 
-    let textColor = self.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+    let textColor = self.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
     let paddingX = builder.charWidth
     let paddingY = builder.charWidth
     builder.panel(&{FillX, LayoutVerticalReverse}, x = currentNode.w * 0.7, y = mainBounds.y + paddingY, h = mainBounds.h - paddingY * 2):
       for i in countdown(self.toast.toasts.high, 0):
         let toast {.cursor.} = self.toast.toasts[i]
-        let color = self.theme.tokenColor(toast.color, textColor)
+        let color = self.themes.theme.tokenColor(toast.color, textColor)
         builder.panel(&{SizeToContentY, LayoutVertical, FillBackground}, pivot = vec2(0, 1), w = currentNode.w - paddingX, backgroundColor = headerColor):
           builder.panel(&{FillX}, h = paddingY)
           builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, x = paddingX, text = toast.title, textColor = color)
@@ -130,6 +130,6 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     if self.showNextPossibleInputs:
       let inputLines = self.uiSettings.whichKeyHeight.get()
-      let continuesTextColor = self.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
-      let keysTextColor = self.theme.tokenColor("number", color(225/255, 200/255, 200/255))
+      let continuesTextColor = self.themes.theme.tokenColor("keyword", color(225/255, 200/255, 200/255))
+      let keysTextColor = self.themes.theme.tokenColor("number", color(225/255, 200/255, 200/255))
       builder.renderCommandKeys(self.nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, inputLines, mainBounds)

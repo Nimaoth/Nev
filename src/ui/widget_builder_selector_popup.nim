@@ -20,7 +20,7 @@ logCategory "selector-popup-ui"
 proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBuilder, app: App):
     seq[OverlayFunction] =
 
-  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let name = item.displayName
   let matchIndices = self.getCompletionMatches(i, self.getSearchString(), name, defaultPathMatchingConfig)
 
@@ -63,8 +63,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
     absolute(scale.x * builder.currentParent.boundsActual.w),
     absolute(scale.y * builder.currentParent.boundsActual.h))
 
-  let backgroundColor = app.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
-  let selectionColor = app.theme.color("list.activeSelectionBackground",
+  let backgroundColor = app.themes.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
+  let selectionColor = app.themes.theme.color("list.activeSelectionBackground",
     color(0.8, 0.8, 0.8)).withAlpha(1)
 
   let excluded = ["prev", "next", "accept", "close"]
@@ -88,7 +88,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
 
           if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
 
-            let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+            let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
             let highlightColor = textColor.lighten(0.15)
             let detailColor = textColor.darken(0.2)
 
@@ -169,10 +169,10 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
                 x += maxWidths[col] + gap
 
           if app.nextPossibleInputs.len == 0:
-            let textColor = app.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
-            let continuesTextColor = app.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
-            let keysTextColor = app.theme.tokenColor("number", color(0.882, 0.784, 0.784))
-            var headerColor = app.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
+            let textColor = app.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+            let continuesTextColor = app.themes.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
+            let keysTextColor = app.themes.theme.tokenColor("number", color(0.882, 0.784, 0.784))
+            var headerColor = app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
             builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeight, currentNode.bounds, padding = 0)
 
         if showPreview:

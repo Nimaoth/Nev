@@ -30,19 +30,19 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
   let uiSettings = UISettings.new(app.config.runtime)
   let inactiveBrightnessChange = uiSettings.background.inactiveBrightnessChange.get()
   var backgroundColor = if self.active:
-    app.theme.color("editor.background", color(25/255, 25/255, 40/255))
+    app.themes.theme.color("editor.background", color(25/255, 25/255, 40/255))
   else:
-    app.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
+    app.themes.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
 
   let transparentBackground = app.config.runtime.get("ui.background.transparent", false)
-  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var activeBackgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 40/255))
+  let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var activeBackgroundColor = app.themes.theme.color("editor.background", color(25/255, 25/255, 40/255))
   activeBackgroundColor.a = 1
-  # let selectedBackgroundColor = app.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
+  # let selectedBackgroundColor = app.themes.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
   let selectedBackgroundColor = color(0.6, 0.4, 0.2) # todo
 
-  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
-  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
+  let cursorForegroundColor = app.themes.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
+  let cursorBackgroundColor = app.themes.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
 
   if transparentBackground:
     backgroundColor.a = 0
@@ -52,11 +52,11 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
     activeBackgroundColor.a = 1
 
   let headerColor = if self.active:
-    app.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1)
+    app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1)
   else:
-    app.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1).lighten(inactiveBrightnessChange)
+    app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1).lighten(inactiveBrightnessChange)
 
-  let activeHeaderColor = app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)).withAlpha(1)
+  let activeHeaderColor = app.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)).withAlpha(1)
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags

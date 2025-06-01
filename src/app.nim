@@ -125,7 +125,6 @@ type
 
     layout*: LayoutService
 
-    theme*: Theme
     loadedFontSize: float
     loadedLineDistance: float
 
@@ -205,12 +204,11 @@ proc setLocationList(self: App, list: seq[FinderItem],
   self.previewer = previewer.move
 
 proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: []).} =
-  if not force and self.theme.isNotNil and self.theme.path == path:
+  if not force and self.themes.theme.isNotNil and self.themes.theme.path == path:
     return
   self.reloadThemeFromConfig = false
   if theme.loadFromFile(self.vfs, path).await.getSome(theme):
     log(lvlInfo, fmt"Loaded theme {path}")
-    self.theme = theme
     self.themes.setTheme(theme)
   else:
     log(lvlError, fmt"Failed to load theme {path}")
@@ -760,8 +758,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.applySettingsFromAppOptions()
 
-  self.theme = defaultTheme()
-  self.themes.setTheme(self.theme)
+  self.themes.setTheme(defaultTheme())
 
   self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
   self.editors.documents.add self.logDocument
@@ -901,8 +898,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       for e in events:
         case e.action
         of Modify:
-          if "app://themes" // e.name == self.theme.path:
-            asyncSpawn self.setTheme(self.theme.path, force = true)
+          if "app://themes" // e.name == self.themes.theme.path:
+            asyncSpawn self.setTheme(self.themes.theme.path, force = true)
 
         else:
           discard
@@ -1505,7 +1502,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  let originalTheme = self.theme.path
+  let originalTheme = self.themes.theme.path
 
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     var items = newSeq[FinderItem]()
@@ -1534,22 +1531,19 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
-      self.theme = theme
-      self.themes.setTheme(self.theme)
+      self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
       return true
 
   popup.handleItemSelected = proc(item: FinderItem) =
     if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
-      self.theme = theme
-      self.themes.setTheme(self.theme)
+      self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
   popup.handleCanceled = proc() =
     if theme.loadFromFile(self.vfs, originalTheme).waitFor.getSome(theme):
-      self.theme = theme
-      self.themes.setTheme(self.theme)
+      self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
   self.layout.pushPopup popup
@@ -2645,7 +2639,7 @@ proc reloadPlugin*(self: App) {.expose("editor").} =
 
 proc reloadTheme*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload theme"
-  asyncSpawn self.setTheme(self.theme.path, force = true)
+  asyncSpawn self.setTheme(self.themes.theme.path, force = true)
 
 proc reloadState*(self: App) {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
