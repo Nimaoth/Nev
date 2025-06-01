@@ -661,6 +661,7 @@
             }
         },
         "shell-command-results": {
+            "editor.save-in-session": false,
             "+text": {
                 "auto-reload": true,
                 "scroll-to-change-on-reload": "last",
@@ -759,6 +760,11 @@
         },
     },
 
+    "editor.shells.wsl": {
+        "command": "wsl",
+        "args": ["--"],
+        "eval": false,
+    },
     "editor.shells.powershell": {
         "command": "powershell",
         "args": ["-Command"],
@@ -774,6 +780,8 @@
         "args": ["-c"],
         "eval": false,
     },
+
+    "terminal.default-mode": "insert",
 
     "editor.open-session.tmux": {
         "env": "TMUX",

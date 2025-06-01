@@ -10,8 +10,6 @@ typedef enum {
   VTERM_ALL_MODS_MASK = 0x07
 } VTermModifier;
 
-static_assert(sizeof(VTermModifier) == 4, "");
-
 typedef enum {
   VTERM_KEY_NONE,
 

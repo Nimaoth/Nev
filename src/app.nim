@@ -784,6 +784,12 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     else:
       string.none
 
+  self.commands.addScopedCommandHandler "", proc(command: string): Option[string] =
+    var (action, arg) = command.parseAction
+    if self.handleAction(action, arg, record=true).getSome(res):
+      return ($res).some
+    return string.none
+
   assignEventHandler(self.eventHandler, self.events.getEventHandlerConfig("editor")):
     onAction:
       if self.handleAction(action, arg, record=true).isSome:

@@ -1,4 +1,4 @@
-import std/[strformat, options, tables]
+import std/[strformat, options, tables, sequtils, strutils]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -41,7 +41,7 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
   # let selectedBackgroundColor = app.themes.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
   let selectedBackgroundColor = color(0.6, 0.4, 0.2) # todo
 
-  let cursorForegroundColor = app.themes.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
+  var cursorForegroundColor = app.themes.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = app.themes.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
 
   if transparentBackground:
@@ -72,7 +72,9 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
   else:
     sizeFlags.incl FillY
 
-  let drawCursor = self.mode != "normal" and self.terminal.cursor.visible
+  if self.mode == "normal":
+    cursorForegroundColor = cursorForegroundColor.darken(0.3)
+  let drawCursor = self.terminal.cursor.visible
 
   var res: seq[OverlayFunction] = @[]
 
@@ -80,29 +82,46 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
     # onClickAny btn:
     #   self.app.tryActivateEditor(self)
 
-    if true or dirty or app.platform.redrawEverything or not builder.retain():
+    if dirty or app.platform.redrawEverything or not builder.retain():
       builder.panel(&{LayoutVertical} + sizeFlags):
         # Header
         builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
             backgroundColor = headerColor):
 
-          var text = &"Terminal"
+          proc section(text: string, foreground: Color, background: Color, extraFlags: UINodeFlags) =
+            var flags = &{SizeToContentX, SizeToContentY, DrawText} + extraFlags
+            builder.panel(flags, textColor = foreground, backgroundColor = background, text = text)
+
+          proc section(text: string, foreground: Option[string] = string.none, background: Option[string] = string.none) =
+            var extraFlags = 0.UINodeFlags
+            if background.isSome:
+              extraFlags.incl FillBackground
+            let foreground = foreground.mapIt(app.themes.theme.color(it, textColor))
+            let background = background.mapIt(app.themes.theme.color(it, headerColor))
+            section(text, foreground.get(textColor), background.get(headerColor), extraFlags)
+
+          section("Terminal")
+
           if self.terminal.group != "":
-            text.add " - Group: "
-            text.add self.terminal.group
-
-          text.add " - "
-          text.add self.terminal.command
-
-          if self.terminal.exitCode.getSome(exitCode):
-            text.add " - Exit Code: "
-            text.add $exitCode
+            section(" - ")
+            section(self.terminal.group,
+              ["terminal.header.group.foreground", self.terminal.group].join(".").some,
+              ["terminal.header.group.background", self.terminal.group].join(".").some)
 
           if self.mode != "":
-            text.add " - "
-            text.add self.mode
+            section(" - ")
+            section(self.mode,
+              ["terminal.header.mode.foreground", self.mode].join(".").some,
+              ["terminal.header.mode.background", self.mode].join(".").some)
 
-          builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
+          if self.terminal.exitCode.getSome(exitCode):
+            section(" - ")
+            let foreground = if exitCode == 0: "terminal.header.exitCode.foreground.ok" else: "terminal.header.exitCode.foreground.fail"
+            let background = if exitCode == 0: "terminal.header.exitCode.background.ok" else: "terminal.header.exitCode.background.fail"
+            section($exitCode, foreground.some, background.some)
+
+          section(" - ")
+          section(self.terminal.command, "terminal.header.command.foreground".some, "terminal.header.command.background".some)
 
         # Body
         builder.panel(sizeFlags + &{FillBackground, MouseHover}, backgroundColor = backgroundColor):
@@ -131,78 +150,120 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
               let height = self.terminal.terminalBuffer.height
 
               # todo: batch cells with same style
+              var buffer = ""
               for row in 0..<height:
+                var lastCell: TerminalChar = self.terminal.terminalBuffer[0, row]
+                buffer.setLen(0)
+                var boundsAcc = rect(0, row.float * builder.textHeight, 0, builder.textHeight)
+
+                var bg = lastCell.bg
+                var bgColor = color(0, 0, 0)
+                var fg = lastCell.fg
+                var fgColor = color(0, 0, 0)
+
+                var textFlags = 0.UINodeFlags
+
+                template flush(draw: bool = true): untyped =
+                  if buffer.len > 0 and draw:
+                    if bg != bgNone:
+                      fillRect(boundsAcc, bgColor)
+
+                    if styleStrikethrough in lastCell.style:
+                      # todo: make this work in terminal platform
+                      fillRect(rect(boundsAcc.x, boundsAcc.y + boundsAcc.h * 0.4, boundsAcc.w, boundsAcc.h * 0.1), fgColor)
+
+                    if styleHidden notin lastCell.style and lastCell.ch.int != 0:
+                      drawText(buffer, boundsAcc, fgColor, textFlags)
+
+                  textFlags = 0.UINodeFlags
+                  boundsAcc.x = boundsAcc.xw
+                  boundsAcc.w = builder.charWidth
+                  buffer.setLen(0)
+
+                template `!=`(a, b: colors.Color): bool =
+                  not colors.`==`(a, b)
+
                 for col in 0..<width:
                   let cell {.cursor.} = self.terminal.terminalBuffer[col, row]
+                  defer:
+                    lastCell = cell
 
-                  let cellBounds = rect(
-                    col.float * builder.charWidth, row.float * builder.textHeight, builder.charWidth, builder.textHeight)
+                  if (cell.ch.int != 0) != (lastCell.ch.int != 0):
+                    flush()
+                  elif cell.fg != lastCell.fg or cell.fgColor != lastCell.fgColor or cell.bg != lastCell.bg or cell.bgColor != lastCell.bgColor or cell.style != lastCell.style:
+                    flush()
+                  elif drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
+                    flush()
 
-                  var bg = cell.bg
-                  var bgColor = color(0, 0, 0)
+                  if cell.ch.int != 0:
+                    buffer.add $cell.ch
+                  else:
+                    buffer.add " "
+                  boundsAcc.w = (col + 1).float * builder.charWidth - boundsAcc.x
 
-                  case bg
-                  of bgNone: discard
-                  of bgBlack: bgColor = color(0, 0, 0)
-                  of bgRed: bgColor = color(1, 0, 0)
-                  of bgGreen: bgColor = color(0, 1, 0)
-                  of bgYellow: bgColor = color(1, 1, 0)
-                  of bgBlue: bgColor = color(0, 0, 1)
-                  of bgMagenta: bgColor = color(1, 0, 1)
-                  of bgCyan: bgColor = color(0, 1, 1)
-                  of bgWhite: bgColor = color(1, 1, 1)
-                  of bgRGB:
-                    let (r, g, b) = colors.extractRGB(cell.bgColor)
-                    bgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
+                  let cellBounds = rect(col.float * builder.charWidth, row.float * builder.textHeight,
+                    builder.charWidth, builder.textHeight)
 
-                  var fgColor = textColor
+                  # Only calculate colors and style for the first cell in a run
+                  if buffer.len == 1:
+                    bg = cell.bg
+                    bgColor = color(0, 0, 0)
 
-                  case cell.fg
-                  of fgNone: fgColor = textColor
-                  of fgBlack: fgColor = color(0, 0, 0)
-                  of fgRed: fgColor = color(1, 0, 0)
-                  of fgGreen: fgColor = color(0, 1, 0)
-                  of fgYellow: fgColor = color(1, 1, 0)
-                  of fgBlue: fgColor = color(0, 0, 1)
-                  of fgMagenta: fgColor = color(1, 0, 1)
-                  of fgCyan: fgColor = color(0, 1, 1)
-                  of fgWhite: fgColor = color(1, 1, 1)
-                  of fgRGB:
-                    let (r, g, b) = colors.extractRGB(cell.fgColor)
-                    fgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
+                    case bg
+                    of bgNone: discard
+                    of bgBlack: bgColor = color(0, 0, 0)
+                    of bgRed: bgColor = color(1, 0, 0)
+                    of bgGreen: bgColor = color(0, 1, 0)
+                    of bgYellow: bgColor = color(1, 1, 0)
+                    of bgBlue: bgColor = color(0, 0, 1)
+                    of bgMagenta: bgColor = color(1, 0, 1)
+                    of bgCyan: bgColor = color(0, 1, 1)
+                    of bgWhite: bgColor = color(1, 1, 1)
+                    of bgRGB:
+                      let (r, g, b) = colors.extractRGB(cell.bgColor)
+                      bgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
 
-                  if styleReverse in cell.style:
+                    fgColor = textColor
+
                     case cell.fg
-                    of fgNone:
-                      bgColor = textColor
-                    else:
-                      bgColor = fgColor
+                    of fgNone: fgColor = textColor
+                    of fgBlack: fgColor = color(0, 0, 0)
+                    of fgRed: fgColor = color(1, 0, 0)
+                    of fgGreen: fgColor = color(0, 1, 0)
+                    of fgYellow: fgColor = color(1, 1, 0)
+                    of fgBlue: fgColor = color(0, 0, 1)
+                    of fgMagenta: fgColor = color(1, 0, 1)
+                    of fgCyan: fgColor = color(0, 1, 1)
+                    of fgWhite: fgColor = color(1, 1, 1)
+                    of fgRGB:
+                      let (r, g, b) = colors.extractRGB(cell.fgColor)
+                      fgColor = color(r.float / 255.0, g.float / 255.0, b.float / 255.0)
 
-                    bg = bgRGB
-                    fgColor = cursorBackgroundColor
+                    if styleReverse in cell.style:
+                      case cell.fg
+                      of fgNone:
+                        bgColor = textColor
+                      else:
+                        bgColor = fgColor
 
-                  if bg != bgNone:
-                    fillRect(cellBounds, bgColor)
+                      bg = bgRGB
+                      fgColor = cursorBackgroundColor
 
-                  var textFlags = 0.UINodeFlags
+                    if styleUnderscore in cell.style:
+                      textFlags.incl TextUndercurl
 
-                  if styleUnderscore in cell.style:
-                    textFlags.incl TextUndercurl
+                    if styleItalic in cell.style:
+                      textFlags.incl TextItalic
 
-                  if styleItalic in cell.style:
-                    textFlags.incl TextItalic
+                    if styleBlink in cell.style:
+                      textFlags.incl TextBold
 
-                  if styleBlink in cell.style:
-                    textFlags.incl TextBold
+                    if styleDim in cell.style:
+                      fgColor = fgColor.darken(0.2)
 
-                  if styleDim in cell.style:
-                    fgColor = fgColor.darken(0.2)
-
-                  if styleStrikethrough in cell.style:
-                    # todo: make this work in terminal platform
-                    fillRect(rect(cellBounds.x, cellBounds.y + cellBounds.h * 0.4, cellBounds.w, cellBounds.h * 0.1), fgColor)
-
+                  # draw cursor
                   if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
+                    flush(false)
                     var cursorBounds = rect(
                       self.terminal.cursor.col.float * builder.charWidth, self.terminal.cursor.row.float * builder.textHeight,
                       builder.charWidth, builder.textHeight)
@@ -217,10 +278,11 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                       cursorBounds.w *= 0.1
 
                     fillRect(cursorBounds, cursorForegroundColor)
-
-                  if cell.ch != 0.Rune:
-                    if styleHidden notin cell.style:
+                    if cell.ch != 0.Rune and styleHidden notin cell.style:
                       drawText($cell.ch, cellBounds, fgColor, textFlags)
+
+                # Flush last part of the line
+                flush()
 
           currentNode.markDirty(builder)
 

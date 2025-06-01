@@ -5,7 +5,7 @@ import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, asy
 import scripting/[expose]
 import platform/[platform]
 import events, vfs, layout
-import dispatch_tables, config_provider, service
+import dispatch_tables, config_provider, service, platform_service
 import language_server_command_line
 
 import command_service
@@ -19,6 +19,10 @@ logCategory "commands-api"
 {.push raises: [].}
 
 ###########################################################################
+
+proc requestRender(self: CommandService) =
+  if self.services.getService(PlatformService).getSome(platform):
+    platform.platform.requestRender()
 
 proc getCommandService(): Option[CommandService] =
   {.gcsafe.}:
@@ -48,8 +52,10 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   if self.prefix != "":
     editor.clearOverlays(overlayIdPrefix)
     editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
-  self.events.rebuildCommandToKeysMap()
-  self.platform.requestRender()
+
+  if self.services.getService(EventHandlerService).getSome(events):
+    events.rebuildCommandToKeysMap()
+  self.requestRender()
 
 proc exitCommandLine*(self: CommandService) {.expose("commands").} =
   let editor = self.commandLineEditor.TextDocumentEditor
@@ -67,7 +73,7 @@ proc exitCommandLine*(self: CommandService) {.expose("commands").} =
       discard self.defaultCommandHandler(string.none)
   except Exception as e:
     log lvlError, &"exitCommandLine: {e.msg}"
-  self.platform.requestRender()
+  self.requestRender()
 
 proc commandLineResult*(self: CommandService, value: string, showInCommandLine: bool = false,
     appendAndShowInFile: bool = false, filename: string = "ed://.shell-command-results") {.expose("commands").} =
@@ -88,8 +94,9 @@ proc commandLineResult*(self: CommandService, value: string, showInCommandLine: 
     editor.document.setReadOnly(true)
     editor.selection = (0, 0).toSelection
     editor.scrollToCursor(scrollBehaviour = ScrollBehaviour.TopOfScreen.some)
-    self.events.rebuildCommandToKeysMap()
-    self.platform.requestRender()
+    if self.services.getService(EventHandlerService).getSome(events):
+      events.rebuildCommandToKeysMap()
+    self.requestRender()
 
   else:
     self.exitCommandLine()
@@ -110,7 +117,7 @@ commandLineImpl = commandLine
 
 proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
   defer:
-    self.platform.requestRender()
+    self.requestRender()
 
   let editor = self.commandLineEditor.TextDocumentEditor
   self.commandLineInputMode = false
@@ -164,7 +171,7 @@ proc selectPreviousCommandInHistory*(self: CommandService) {.expose("commands").
   if self.prefix != "":
     editor.clearOverlays(overlayIdPrefix)
     editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
-  self.platform.requestRender()
+  self.requestRender()
 
 proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
   let editor = self.commandLineEditor.TextDocumentEditor
@@ -185,7 +192,7 @@ proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
   if self.prefix != "":
     editor.clearOverlays(overlayIdPrefix)
     editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
-  self.platform.requestRender()
+  self.requestRender()
 
 proc runProcessAndShowResultAsync(self: CommandService, command: string, options: RunShellCommandOptions) {.async.} =
   log lvlInfo, &"Run shell command '{command}'"

@@ -1,14 +1,13 @@
 import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, atomics]
 import vmath
 import chroma
-import winim/lean
 import nimsumtree/[arc, rope]
 import misc/[async_process, custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref]
 import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
 import scripting/expose
 import platform/[tui, platform]
 import finder/[finder, previewer]
-import vterm, input, input_api
+import vterm, input, input_api, register, command_service
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 
 from std/terminal import Style
@@ -17,29 +16,55 @@ const bufferSize = 10 * 1024 * 1024
 
 logCategory "terminal-service"
 
-type HPCON* = HANDLE
+when defined(windows):
+  import winim/lean
+  type HPCON* = HANDLE
 
-const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: DWORD = 131094
+  const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: DWORD = 131094
 
-const PIPE_ACCESS_DUPLEX = 0x3
-const PIPE_ACCESS_INBOUND = 0x1
-const PIPE_ACCESS_OUTBOUND = 0x2
+  const PIPE_ACCESS_DUPLEX = 0x3
+  const PIPE_ACCESS_INBOUND = 0x1
+  const PIPE_ACCESS_OUTBOUND = 0x2
 
-const PIPE_TYPE_BYTE = 0x0
-const PIPE_TYPE_MESSAGE = 0x4
+  const PIPE_TYPE_BYTE = 0x0
+  const PIPE_TYPE_MESSAGE = 0x4
 
-const PIPE_READMODE_BYTE = 0x0
-const PIPE_READMODE_MESSAGE = 0x2
+  const PIPE_READMODE_BYTE = 0x0
+  const PIPE_READMODE_MESSAGE = 0x2
 
-const PIPE_WAIT = 0x0
+  const PIPE_WAIT = 0x0
 
-const FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000
-const FILE_FLAG_WRITE_THROUGH = 0x80000000
-const FILE_FLAG_OVERLAPPED = 0x40000000
+  const FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000
+  const FILE_FLAG_WRITE_THROUGH = 0x80000000
+  const FILE_FLAG_OVERLAPPED = 0x40000000
 
-proc CreatePseudoConsole*(size: wincon.COORD, hInput: HANDLE, hOutput: HANDLE, dwFlags: DWORD, phPC: ptr HPCON): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
-proc ClosePseudoConsole*(hPC: HPCON) {.winapi, stdcall, dynlib: "kernel32", importc.}
-proc ResizePseudoConsole*(phPC: HPCON, size: wincon.COORD): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
+  proc CreatePseudoConsole*(size: wincon.COORD, hInput: HANDLE, hOutput: HANDLE, dwFlags: DWORD, phPC: ptr HPCON): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
+  proc ClosePseudoConsole*(hPC: HPCON) {.winapi, stdcall, dynlib: "kernel32", importc.}
+  proc ResizePseudoConsole*(phPC: HPCON, size: wincon.COORD): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
+
+else:
+  import posix/linux
+  import posix/posix
+  import posix/termios
+
+  {.passL: "-lutil".}
+
+  proc openpty*(amaster: ptr cint, aslave: ptr cint, name: cstring, termp: ptr Termios, winp: ptr IOctl_WinSize): int {.importc, header: "<pty.h>", sideEffect.}
+  proc ptsname*(fd: cint): cstring {.importc, header: "<pty.h>", sideEffect.}
+  proc login_tty*(fd: cint): cint {.importc, header: "<utmp.h>", sideEffect.}
+  proc eventfd(count: cuint, flags: cint): cint {.cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
+
+  const platformHeaders = """#include <sys/select.h>
+                             #include <sys/time.h>
+                             #include <sys/types.h>
+                             #include <unistd.h>"""
+
+  type
+    FdSet {.importc: "fd_set", header: platformHeaders, pure, final.} = object
+
+  var EFD_NONBLOCK {.importc: "EFD_NONBLOCK", header: "<sys/eventfd.h>".}: cint
+  var TIOCSWINSZ {.importc: "TIOCSWINSZ", header: "<termios.h>".}: culong
+  var SIGWINCH {.importc: "SIGWINCH", header: "<signal.h>".}: cint
 
 proc inputToVtermKey(input: int64): VTermKey =
   return case input
@@ -86,27 +111,28 @@ proc toVtermButton(button: input.MouseButton): cint =
   of input.MouseButton.Middle: return 3
   else: return 4
 
-proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX =
-  ZeroMemory(addr(result), sizeof((result)))
-  result.StartupInfo.cb = sizeof((STARTUPINFOEX)).DWORD
+when defined(windows):
+  proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX =
+    ZeroMemory(addr(result), sizeof((result)))
+    result.StartupInfo.cb = sizeof((STARTUPINFOEX)).DWORD
 
-  var bytesRequired: SIZE_T
-  InitializeProcThreadAttributeList(nil, 1, 0, addr(bytesRequired))
+    var bytesRequired: SIZE_T
+    InitializeProcThreadAttributeList(nil, 1, 0, addr(bytesRequired))
 
-  result.lpAttributeList = cast[PPROC_THREAD_ATTRIBUTE_LIST](HeapAlloc(GetProcessHeap(), 0, bytesRequired))
+    result.lpAttributeList = cast[PPROC_THREAD_ATTRIBUTE_LIST](HeapAlloc(GetProcessHeap(), 0, bytesRequired))
 
-  if result.lpAttributeList == nil:
-    raiseOSError(14.OSErrorCode)
+    if result.lpAttributeList == nil:
+      raiseOSError(14.OSErrorCode)
 
-  if InitializeProcThreadAttributeList(result.lpAttributeList, 1, 0, addr(bytesRequired)) == 0:
-    HeapFree(GetProcessHeap(), 0, result.lpAttributeList)
-    raiseOSError(osLastError())
+    if InitializeProcThreadAttributeList(result.lpAttributeList, 1, 0, addr(bytesRequired)) == 0:
+      HeapFree(GetProcessHeap(), 0, result.lpAttributeList)
+      raiseOSError(osLastError())
 
-  if UpdateProcThreadAttribute(result.lpAttributeList, 0,
-                                 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, cast[LPVOID](hpc),
-                                 sizeof((hpc)), nil, nil) == 0:
-    HeapFree(GetProcessHeap(), 0, result.lpAttributeList)
-    raiseOSError(osLastError())
+    if UpdateProcThreadAttribute(result.lpAttributeList, 0,
+                                   PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, cast[LPVOID](hpc),
+                                   sizeof((hpc)), nil, nil) == 0:
+      HeapFree(GetProcessHeap(), 0, result.lpAttributeList)
+      raiseOSError(osLastError())
 
 declareSettings TerminalSettings, "terminal":
   ## Mode to enter when creating a new terminal, if no mode is specified otherwise.
@@ -117,13 +143,24 @@ declareSettings TerminalSettings, "terminal":
   declare idleThreshold, int, 500
 
 type
-  InputEventKind {.pure.} = enum Text, Key, MouseMove, MouseClick, Scroll, Size, Terminate, RequestRope, SetColorPalette
+  InputEventKind {.pure.} = enum
+    Text
+    Key
+    MouseMove
+    MouseClick
+    Scroll
+    Size
+    Terminate
+    RequestRope
+    SetColorPalette
+    Paste
+
   InputEvent = object
     modifiers: Modifiers
     row: int
     col: int
     case kind: InputEventKind
-    of InputEventKind.Text:
+    of InputEventKind.Text, InputEventKind.Paste:
       text: string
     of InputEventKind.Key:
       input: int64
@@ -140,11 +177,11 @@ type
       discard
     of InputEventKind.RequestRope:
       rope: pointer # ptr Rope, but Nim complains about destructors?
-    of SetColorPalette:
+    of InputEventKind.SetColorPalette:
       colors: seq[tuple[r, g, b: uint8]]
 
   CursorShape* {.pure.} = enum Block, Underline, BarLeft
-  OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, Terminated, Rope, Scroll
+  OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, Terminated, Rope, Scroll, Log
   OutputEvent = object
     case kind: OutputEventKind
     of OutputEventKind.TerminalBuffer:
@@ -166,6 +203,22 @@ type
     of OutputEventKind.Scroll:
       deltaY: int
       scrollY: int
+    of OutputEventKind.Log:
+      level: Level
+      msg: string
+
+  OsHandles = object
+    when defined(windows):
+      hpcon: HPCON
+      inputWriteHandle: HANDLE
+      outputReadHandle: HANDLE
+      inputWriteEvent: HANDLE
+      processInfo: PROCESS_INFORMATION
+    else:
+      masterFd: cint
+      slaveFd: cint
+      inputWriteEventFd: cint
+      childPid: Pid
 
   ThreadState = object
     vterm: ptr VTerm
@@ -182,22 +235,16 @@ type
     processTerminated: bool = false
     autoRunCommand: string
 
-    # Windows specific stuff
-    hpcon: HPCON
-    inputWriteHandle: HANDLE
-    outputReadHandle: HANDLE
-    inputWriteEvent: HANDLE
-    outputReadEvent: HANDLE
-    waitingForOvelapped: bool
-    outputOverlapped: OVERLAPPED
-    processInfo: PROCESS_INFORMATION
+    handles: OsHandles
+    when defined(windows):
+      outputReadEvent: HANDLE
+      outputOverlapped: OVERLAPPED
+      waitingForOvelapped: bool
 
   Terminal* = ref object
     id*: int
     group*: string
     command*: string
-    vterm: ptr VTerm
-    screen: ptr VTermScreen
     thread: Thread[ThreadState]
     inputChannel: ptr Channel[InputEvent] # todo: free this
     outputChannel: ptr Channel[OutputEvent] # todo: free this
@@ -208,17 +255,12 @@ type
     autoRunCommand: string
 
     # Events
-    lastUpdateTime: Timer
+    lastUpdateTime: timer.Timer
     onTerminated: Event[int]
     onRope: Event[ptr Rope]
     onUpdated: Event[void]
 
-    # Windows specific stuff
-    hpcon: HPCON
-    inputWriteHandle: HANDLE
-    outputReadHandle: HANDLE
-    inputWriteEvent: HANDLE
-    processInfo: PROCESS_INFORMATION
+    handles: OsHandles
 
   TerminalView* = ref object of View
     terminals: TerminalService
@@ -235,6 +277,8 @@ type
     config: ConfigService
     layout: LayoutService
     themes: ThemeService
+    registers: Registers
+    commands: CommandService
     idCounter: int = 0
     settings: TerminalSettings
 
@@ -384,6 +428,8 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
         terminal.onRope.invoke(rope)
       of OutputEventKind.Scroll:
         terminal.scrollY = event.scrollY
+      of OutputEventKind.Log:
+        log event.level, &"[{terminal.id}][thread] {event.msg}"
 
       updated = true
 
@@ -391,17 +437,34 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
       terminal.lastUpdateTime = startTimer()
       terminal.onUpdated.invoke()
 
+proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
+  if len > 0:
+    let state = cast[ptr ThreadState](user)
+    when defined(windows):
+      var bytesWritten: int32
+      if WriteFile(state[].handles.inputWriteHandle, s[0].addr, len.cint, bytesWritten.addr, nil) == 0:
+        echo "Failed to write data to shell: ", newOSError(osLastError()).msg
+      if bytesWritten.int < len.int:
+        echo "--------------------------------------------"
+        echo "failed to write all bytes to shell"
+    else:
+      discard write(state.handles.masterFd, s[0].addr, len.int)
+
 proc handleInputEvents(state: var ThreadState) =
   while state.inputChannel[].peek() > 0:
     let event = state.inputChannel[].recv()
     try:
       case event.kind
       of InputEventKind.Text:
-        # echo "text ", event.text
         for r in event.text.runes:
           state.vterm.uniChar(r.uint32, event.modifiers.toVtermModifiers)
+
+      of InputEventKind.Paste:
+        state.vterm.startPaste()
+        handleOutput(event.text.cstring, event.text.len.csize_t, state.addr)
+        state.vterm.endPaste()
+
       of InputEventKind.Key:
-        # echo "key ", inputToString(event.input, event.modifiers)
         if event.input > 0:
           state.vterm.uniChar(event.input.uint32, event.modifiers.toVtermModifiers)
         elif event.input < 0:
@@ -431,7 +494,13 @@ proc handleInputEvents(state: var ThreadState) =
         state.height = event.row
         state.vterm.setSize(state.height.cint, state.width.cint)
         state.screen.flushDamage()
-        ResizePseudoConsole(state.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
+
+        when defined(windows):
+          ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
+        else:
+          var winp: IOctl_WinSize = IOctl_WinSize(ws_row: state.height.cushort, ws_col: state.width.cushort, ws_xpixel: 500.cushort, ws_ypixel: 500.cushort)
+          discard termios.ioctl(state.handles.masterFd, TIOCSWINSZ, winp.addr)
+
         state.dirty = true
 
       of InputEventKind.Terminate:
@@ -451,84 +520,72 @@ proc handleInputEvents(state: var ThreadState) =
       echo &"Failed to send input: {getCurrentExceptionMsg()}"
 
 proc handleProcessOutput(state: var ThreadState, buffer: var string) =
-  template handleData(data: untyped, bytesToWrite: int): untyped =
-    let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
-    if written != bytesToWrite:
-      echo "fix me: vterm.nim.terminalThread vterm.writeInput"
-      assert written == bytesToWrite, "fix me: vterm.nim.terminalThread vterm.writeInput"
+  when defined(windows):
+    template handleData(data: untyped, bytesToWrite: int): untyped =
+      let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
+      if written != bytesToWrite:
+        echo "fix me: vterm.nim.terminalThread vterm.writeInput"
+        assert written == bytesToWrite, "fix me: vterm.nim.terminalThread vterm.writeInput"
 
-    state.screen.flushDamage()
-    state.dirty = true
+      state.screen.flushDamage()
+      state.dirty = true
 
-  var bytesRead: DWORD = 0
-  if state.waitingForOvelapped:
-    if GetOverlappedResult(state.outputReadHandle, state.outputOverlapped.addr, bytesRead.addr, 0) != 0:
-      state.waitingForOvelapped = false
-      # echo &"handleProcessOutput: {bytesRead}/{buffer.len} data received (GetOverlappedResult)"
-      handleData(buffer.cstring, bytesRead.int)
-
-    else:
-      let error = osLastError()
-      case error.int32
-      of ERROR_HANDLE_EOF:
-        # echo "handleProcessOutput: reached end of file (GetOverlappedResult)"
+    var bytesRead: DWORD = 0
+    if state.waitingForOvelapped:
+      if GetOverlappedResult(state.handles.outputReadHandle, state.outputOverlapped.addr, bytesRead.addr, 0) != 0:
         state.waitingForOvelapped = false
-        return
-
-      of ERROR_IO_INCOMPLETE:
-        # echo "handleProcessOutput: read pending (GetOverlappedResult)"
-        state.waitingForOvelapped = true
-        return
+        handleData(buffer.cstring, bytesRead.int)
 
       else:
-        raiseOSError(error)
+        let error = osLastError()
+        case error.int32
+        of ERROR_HANDLE_EOF:
+          state.waitingForOvelapped = false
+          return
 
-  # var bytesAvailable: DWORD = 0
-  # if PeekNamedPipe(state.outputReadHandle, nil, 0, nil, bytesAvailable.addr, nil) == 0:
-  #   echo "Failed to peek named pipe", newOSError(osLastError()).msg
+        of ERROR_IO_INCOMPLETE:
+          state.waitingForOvelapped = true
+          return
 
-  # if bytesAvailable == 0:
-  #   return
+        else:
+          raiseOSError(error)
 
-  buffer.setLen(bufferSize)
-  state.outputOverlapped.hEvent = state.outputReadEvent
-  if ReadFile(state.outputReadHandle, buffer[0].addr, buffer.len.DWORD, bytesRead.addr, state.outputOverlapped.addr) != 0:
-    # echo &"handleProcessOutput: {bytesRead}/{buffer.len} data received immediately (ReadFile)"
-    handleData(buffer.cstring, bytesRead.int)
-    state.waitingForOvelapped = false
-    return
+    buffer.setLen(bufferSize)
+    state.outputOverlapped.hEvent = state.outputReadEvent
+    if ReadFile(state.handles.outputReadHandle, buffer[0].addr, buffer.len.DWORD, bytesRead.addr, state.outputOverlapped.addr) != 0:
+      handleData(buffer.cstring, bytesRead.int)
+      state.waitingForOvelapped = false
+      return
 
-  let error = osLastError()
-  case error.int32
-  of ERROR_HANDLE_EOF:
-    # echo "handleProcessOutput: reached end of file (ReadFile)"
-    state.waitingForOvelapped = false
-    return
+    let error = osLastError()
+    case error.int32
+    of ERROR_HANDLE_EOF:
+      state.waitingForOvelapped = false
+      return
 
-  of ERROR_IO_PENDING:
-    # echo "handleProcessOutput: read pending (ReadFile)"
-    state.waitingForOvelapped = true
-    return
+    of ERROR_IO_PENDING:
+      state.waitingForOvelapped = true
+      return
+
+    else:
+      raiseOSError(error)
 
   else:
-    raiseOSError(error)
+    buffer.setLen(bufferSize)
+    let n = read(state.handles.masterFd, buffer[0].addr, buffer.len)
+    if n > 0:
+      let written = state.vterm.writeInput(buffer.cstring, n.csize_t).int
+      if written != n:
+        echo "fix me: vterm.nim.terminalThread vterm.writeInput"
+        assert written == n, "fix me: vterm.nim.terminalThread vterm.writeInput"
+
+      state.screen.flushDamage()
+      state.dirty = true
+    elif n == 0:
+      state.processTerminated = true
 
 proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   var state = s
-
-  proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
-    var str = newSeq[uint8]()
-    for i in 0..<len.int:
-      str.add s[i].uint8
-
-    if len > 0:
-      let state = cast[ptr ThreadState](user)
-      var bytesWritten: int32
-      if WriteFile(state[].inputWriteHandle, s[0].addr, len.cint, bytesWritten.addr, nil) == 0:
-        echo "Failed to write data to shell: ", newOSError(osLastError()).msg
-      if bytesWritten.int < len.int:
-        echo "--------------------------------------------"
-        echo "failed to write all bytes to shell"
 
   var callbacks = VTermScreenCallbacks(
     # damage: (proc(rect: VTermRect; user: pointer): cint {.cdecl.} = discard),
@@ -581,6 +638,8 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
     sb_clear: (proc(user: pointer): cint {.cdecl.} =
       let state = cast[ptr ThreadState](user)
       state[].scrollbackBuffer.setLen(0)
+      state.scrollY = 0
+      state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY)
       return 1
     ),
   )
@@ -605,34 +664,82 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       state.vterm.uniChar(r.uint32, {}.toVtermModifiers)
     state.vterm.key(INPUT_ENTER.inputToVtermKey, {}.toVtermModifiers)
 
+  proc log(str: string) =
+    discard
+    # state.outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
+
   var buffer = ""
   while true:
-    var handles = [state.inputWriteEvent, state.outputReadEvent, state.processInfo.hProcess]
-    let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
-    if res == WAIT_FAILED:
-      let error = osLastError()
-      echo "failed: ", newOSError(error).msg, ", ", error.int
-      discard
-    elif res == WAIT_TIMEOUT:
-      discard
-    else:
-      if res >= WAIT_ABANDONED_0:
-        # let index = res - WAIT_ABANDONED_0
+    when defined(windows):
+      var handles = [state.handles.inputWriteEvent, state.outputReadEvent, state.handles.processInfo.hProcess]
+      let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
+      if res == WAIT_FAILED:
+        let error = osLastError()
+        echo "failed: ", newOSError(error).msg, ", ", error.int
         discard
-      elif res >= WAIT_OBJECT_0:
-        let index = res - WAIT_OBJECT_0
-        assert index >= 0 and index < 3
+      elif res == WAIT_TIMEOUT:
+        discard
+      else:
+        if res >= WAIT_ABANDONED_0:
+          # let index = res - WAIT_ABANDONED_0
+          discard
+        elif res >= WAIT_OBJECT_0:
+          let index = res - WAIT_OBJECT_0
+          assert index >= 0 and index < 3
 
-        if index == 2:
-          # Process ended
-          var exitCode: DWORD = 0
-          discard GetExitCodeProcess(state.processInfo.hProcess, exitCode.addr)
-          state.processTerminated = true
+          if index == 2:
+            # Process ended
+            var exitCode: DWORD = 0
+            discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCode.addr)
+            state.processTerminated = true
+            state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode.int)
+            break
+
+      state.handleProcessOutput(buffer)
+      state.handleInputEvents()
+
+    else:
+      var fds = [
+        TPollfd(fd: state.handles.masterFd, events: POLLIN),
+        TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
+      ]
+
+      log(&"poll")
+      let res = poll(fds[0].addr, fds.len.Tnfds, -1)
+      if res < 0:
+        break
+
+      proc wifexited(status: cint): cint = {.emit: [result, " = WIFEXITED(", status, ");"].}
+      proc wexitstatus(status: cint): cint = {.emit: [result, " = WEXITSTATUS(", status, ");"].}
+
+      var status: cint
+      let waitRes = waitpid(state.handles.childPid, status, WNOHANG)
+      if waitRes == state.handles.childPid:
+        state.processTerminated = true
+        var exitCode: cint
+        if wifexited(status) != 0:
+          exitCode = wexitstatus(status)
+        log(&"process terminated 1 with exit code {exitCode}")
+        state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode.int)
+        break
+
+      if (fds[0].revents and POLLIN) != 0:
+        log(&"handle process outut")
+        state.handleProcessOutput(buffer)
+        if state.processTerminated:
+          var exitCode: cint
+          if wifexited(status) != 0:
+            exitCode = wexitstatus(status)
+          log(&"process terminated 2 with exit code {exitCode}")
           state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode.int)
           break
 
-    state.handleProcessOutput(buffer)
-    state.handleInputEvents()
+      if (fds[1].revents and POLLIN) != 0:
+        log(&"handle input events")
+        var b: uint64 = 0
+        var n: int = read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
+        state.handleInputEvents()
+
 
     if state.dirty:
       state.dirty = false
@@ -640,67 +747,132 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
         kind: OutputEventKind.TerminalBuffer,
         buffer: state.createTerminalBuffer())
 
-  # echo "============================================"
-  # echo "terminal thread done"
-  # echo "============================================"
+  log(&"terminal thread done")
 
 proc sendEvent(self: Terminal, event: InputEvent) =
   self.inputChannel[].send(event)
-  discard SetEvent(self.inputWriteEvent)
+  when defined(windows):
+    discard SetEvent(self.handles.inputWriteEvent)
+  else:
+    var b: uint64 = 1
+    discard write(self.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
 
 proc terminate*(self: Terminal) =
   log lvlInfo, &"Close terminal '{self.command}'"
-  ClosePseudoConsole(self.hpcon)
+  when defined(windows):
+    ClosePseudoConsole(self.handles.hpcon)
+  else:
+    discard close(self.handles.masterFd)
   self.sendEvent(InputEvent(kind: InputEventKind.Terminate))
 
 proc createTerminal*(self: TerminalService, width: int, height: int, command: string, autoRunCommand: string = ""): Terminal =
-  var
-    inputReadHandle: HANDLE
-    outputWriteHandle: HANDLE
-
-  var
-    outputReadHandle: HANDLE
-    inputWriteHandle: HANDLE
-
-  var sa: SECURITY_ATTRIBUTES
-  sa.nLength = sizeof(sa).DWORD
-  sa.lpSecurityDescriptor = nil
-  sa.bInheritHandle = true
-  if CreatePipe(addr(inputReadHandle), addr(inputWriteHandle), sa.addr, 0) == 0:
-    raiseOSError(osLastError())
-
   let id = self.idCounter
   inc self.idCounter
-
-  let processId = GetProcessID(GetCurrentProcess()).int
-  let readPipeName = newWideCString(r"\\.\pipe\nev-terminal-" & $processId & "-" & $id)
-  outputReadHandle = CreateNamedPipe(readPipeName, PIPE_ACCESS_INBOUND or FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE or PIPE_WAIT, 1, bufferSize, bufferSize, 0, sa.addr)
-  if outputReadHandle == INVALID_HANDLE_VALUE:
-    raiseOSError(osLastError(), "Failed to create named pipe for terminal")
-
-  outputWriteHandle = CreateFile(readPipeName, GENERIC_WRITE, 0, sa.addr, OPEN_EXISTING, 0, 0)
-  if outputWriteHandle == INVALID_HANDLE_VALUE:
-    raiseOSError(osLastError(), "Failed to open write end of terminal pipe")
-
-  var hPC: HPCON
-  if CreatePseudoConsole(wincon.COORD(X: width.SHORT, Y: height.SHORT), inputReadHandle, outputWriteHandle, 0, addr(hPC)) != S_OK:
-    raiseOSError(osLastError(), "Failed to create pseude console")
-
-  var siEx: STARTUPINFOEX = prepareStartupInformation(hPC)
-  var pi: PROCESS_INFORMATION
-  ZeroMemory(addr(pi), sizeof((pi)))
 
   let command = if command.len > 0:
     command
   else:
     self.config.runtime.get("terminal.shell", "powershell.exe")
 
-  let cmd = newWideCString(command)
-  if CreateProcessW(nil, cmd, nil, nil, FALSE, EXTENDED_STARTUPINFO_PRESENT, nil, nil, siEx.StartupInfo.addr, pi.addr) == 0:
-    raiseOSError(osLastError(), "Failed to start sub process")
+  when defined(windows):
+    var
+      inputReadHandle: HANDLE
+      outputWriteHandle: HANDLE
 
-  CloseHandle(inputReadHandle)
-  # CloseHandle(outputWriteHandle)
+    var
+      outputReadHandle: HANDLE
+      inputWriteHandle: HANDLE
+
+    var sa: SECURITY_ATTRIBUTES
+    sa.nLength = sizeof(sa).DWORD
+    sa.lpSecurityDescriptor = nil
+    sa.bInheritHandle = true
+    if CreatePipe(addr(inputReadHandle), addr(inputWriteHandle), sa.addr, 0) == 0:
+      raiseOSError(osLastError())
+
+    let processId = GetProcessID(GetCurrentProcess()).int
+    let readPipeName = newWideCString(r"\\.\pipe\nev-terminal-" & $processId & "-" & $id)
+    outputReadHandle = CreateNamedPipe(readPipeName, PIPE_ACCESS_INBOUND or FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE or PIPE_WAIT, 1, bufferSize, bufferSize, 0, sa.addr)
+    if outputReadHandle == INVALID_HANDLE_VALUE:
+      raiseOSError(osLastError(), "Failed to create named pipe for terminal")
+
+    outputWriteHandle = CreateFile(readPipeName, GENERIC_WRITE, 0, sa.addr, OPEN_EXISTING, 0, 0)
+    if outputWriteHandle == INVALID_HANDLE_VALUE:
+      raiseOSError(osLastError(), "Failed to open write end of terminal pipe")
+
+    var hPC: HPCON
+    if CreatePseudoConsole(wincon.COORD(X: width.SHORT, Y: height.SHORT), inputReadHandle, outputWriteHandle, 0, addr(hPC)) != S_OK:
+      raiseOSError(osLastError(), "Failed to create pseude console")
+
+    var siEx: STARTUPINFOEX = prepareStartupInformation(hPC)
+    var pi: PROCESS_INFORMATION
+    ZeroMemory(addr(pi), sizeof((pi)))
+
+    let cmd = newWideCString(command)
+    if CreateProcessW(nil, cmd, nil, nil, FALSE, EXTENDED_STARTUPINFO_PRESENT, nil, nil, siEx.StartupInfo.addr, pi.addr) == 0:
+      raiseOSError(osLastError(), "Failed to start sub process")
+
+    CloseHandle(inputReadHandle)
+    # CloseHandle(outputWriteHandle)
+
+    let inputWriteEvent = CreateEvent(nil, FALSE, FALSE, nil)
+    let outputReadEvent = CreateEvent(sa.addr, FALSE, FALSE, nil)
+
+    let handles = OsHandles(
+      hpcon: hPC,
+      inputWriteHandle: inputWriteHandle,
+      outputReadHandle: outputReadHandle,
+      inputWriteEvent: inputWriteEvent,
+      processInfo: pi,
+    )
+
+  else: # not windows
+    var master_fd: cint
+    var slave_fd: cint
+    var termp: Termios
+
+    # mostly copied from neovim
+    termp.c_iflag = Cflag(ICRNL or IXON) # or IUTF8
+    termp.c_oflag = Cflag(OPOST or ONLCR or NL0 or BS0 or VT0 or FF0)
+    termp.c_cflag = Cflag(CS8 or CREAD)
+    termp.c_lflag = Cflag(ISIG or ICANON or IEXTEN or ECHO or ECHOE or ECHOK)
+    termp.c_cc[VINTR] = (0x1f and 'C'.int).char
+    termp.c_cc[VQUIT] = (0x1f and '\\'.int).char
+    termp.c_cc[VERASE] = 0x7f.char
+    termp.c_cc[VKILL] = (0x1f and 'U'.int).char
+    termp.c_cc[VEOF] = (0x1f and 'D'.int).char
+    termp.c_cc[VEOL] = 0.char
+    # termp.c_cc[VEOL2] = 0.char
+    termp.c_cc[VSTART] = (0x1f and 'Q'.int).char
+    termp.c_cc[VSTOP] = (0x1f and 'S'.int).char
+    termp.c_cc[VSUSP] = (0x1f and 'Z'.int).char
+    # termp.c_cc[VREPRINT] = (0x1f and 'R'.int).char
+    # termp.c_cc[VWERASE] = (0x1f and 'W'.int).char
+    # termp.c_cc[VLNEXT] = (0x1f and 'V'.int).char
+    termp.c_cc[VMIN] = 1.char
+    termp.c_cc[VTIME] = 0.char
+
+    var winp: IOctl_WinSize = IOctl_WinSize(ws_row: height.cushort, ws_col: width.cushort)
+    if openpty(addr(master_fd), addr(slave_fd), nil, addr(termp), addr(winp)) == -1:
+      raise newOSError(osLastError(), "openpty")
+
+    let pid = fork()
+    if pid < 0:
+      raise newOSError(osLastError(), "fork")
+
+    let inputWriteEventFd = eventfd(0, EFD_NONBLOCK)
+
+    if pid == 0:
+      discard login_tty(slave_fd)
+      discard execlp("/bin/bash", "bash", nil)
+      raise newOSError(osLastError(), "execlp")
+
+    let handles = OsHandles(
+      masterFd: master_fd,
+      slaveFd: slave_fd,
+      inputWriteEventFd: inputWriteEventFd,
+      childPid: pid,
+    )
 
   let vterm = VTerm.new(height.cint, width.cint)
   if vterm == nil:
@@ -715,15 +887,8 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
   result = Terminal(
     id: id,
     command: command,
-    vterm: vterm,
-    screen: screen,
     autoRunCommand: autoRunCommand,
-
-    # Windows specific stuff
-    hpcon: hPC,
-    inputWriteHandle: inputWriteHandle,
-    outputReadHandle: outputReadHandle,
-    processInfo: pi,
+    handles: handles,
   )
 
   proc createChannel[T](channel: var ptr[Channel[T]]) =
@@ -736,32 +901,27 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
   result.terminalBuffer.initTerminalBuffer(width, height)
   asyncSpawn self.handleOutputChannel(result)
 
-  let inputWriteEvent = CreateEvent(nil, FALSE, FALSE, nil)
-  let outputReadEvent = CreateEvent(sa.addr, FALSE, FALSE, nil)
-  result.inputWriteEvent = inputWriteEvent
-
-  let threadState = ThreadState(
+  var threadState = ThreadState(
     vterm: vterm,
     screen: screen,
-    hpcon: result.hpcon,
-    inputWriteHandle: inputWriteHandle,
-    outputReadHandle: outputReadHandle,
-    inputWriteEvent: inputWriteEvent,
-    outputReadEvent: outputReadEvent,
     inputChannel: result.inputChannel,
     outputChannel: result.outputChannel,
-    processInfo: pi,
     width: width,
     height: height,
     cursor: (0, 0, true),
     autoRunCommand: autoRunCommand,
+    handles: handles,
   )
+
+  when defined(windows):
+    threadState.outputReadEvent = outputReadEvent
+
   result.thread.createThread(terminalThread, threadState)
 
 {.push gcsafe.}
 {.push raises: [].}
 
-proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[JsonNode]
+proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[string]
 
 method close*(self: TerminalView) =
   if not self.open:
@@ -826,6 +986,8 @@ method init*(self: TerminalService): Future[Result[void, ref CatchableError]] {.
   self.layout = self.services.getService(LayoutService).get
   self.config = self.services.getService(ConfigService).get
   self.themes = self.services.getService(ThemeService).get
+  self.registers = self.services.getService(Registers).get
+  self.commands = self.services.getService(CommandService).get
   discard self.themes.onThemeChanged.subscribe proc(theme: Theme) = self.handleThemeChanged(theme)
 
   self.settings = TerminalSettings.new(self.config.runtime)
@@ -847,20 +1009,20 @@ template withActiveView*(self: TerminalService, view: TerminalView, body: untype
     self.activeView = view
     body
 
-proc handleInput(self: TerminalService, view: TerminalView, input: string) =
-  # debugf"handleInput '{input}'"
-  view.terminal.sendEvent(InputEvent(kind: InputEventKind.Text, text: input))
+proc handleInput(self: TerminalService, view: TerminalView, text: string) =
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.Text, text: text))
+
+proc handlePaste(self: TerminalService, view: TerminalView, text: string) =
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.Paste, text: text))
 
 proc handleKey(self: TerminalService, view: TerminalView, input: int64, modifiers: Modifiers) =
-  # debugf"handleKey '{inputToString(input, modifiers)}'"
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Key, input: input, modifiers: modifiers))
 
 proc handleScroll*(view: TerminalView, deltaY: int, modifiers: Modifiers) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Scroll, deltaY: deltaY, modifiers: modifiers))
 
 proc handleClick*(view: TerminalView, button: input.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) =
-  # debugf"handleClick '{button}'"
-  discard SetEvent(view.terminal.inputWriteEvent)
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseClick, button: button, pressed: pressed, row: row, col: col, modifiers: modifiers))
 
 proc handleDrag*(view: TerminalView, button: input.MouseButton, col: int, row: int, modifiers: Modifiers) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col, modifiers: modifiers))
@@ -977,9 +1139,26 @@ proc setMode*(self: TerminalView, mode: string) =
   self.terminals.updateModeEventHandlers(self)
   self.terminals.requestRender()
 
+proc pasteAsync*(self: TerminalService, view: TerminalView, registerName: string): Future[void] {.async.} =
+  log lvlInfo, fmt"paste register from '{registerName}'"
+
+  var register: Register
+  if not self.registers.getRegisterAsync(registerName, register.addr).await:
+    return
+
+  case register.kind
+  of RegisterKind.Text:
+    self.handlePaste(view, register.text)
+  of RegisterKind.Rope:
+    self.handlePaste(view, $register.rope) # todo: send the rope to the terminal thread instead of converting to string
+
 proc setTerminalMode*(self: TerminalService, mode: string) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
     view.setMode(mode)
+
+proc escape*(self: TerminalService) {.expose("terminal").} =
+  if self.getActiveView().getSome(view):
+    view.setMode("normal")
 
 proc createTerminal*(self: TerminalService, command: string = "", options: CreateTerminalOptions = CreateTerminalOptions()) {.expose("terminal").} =
   ## Opens a new terminal by running `command`.
@@ -1028,6 +1207,10 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
 proc scrollTerminal*(self: TerminalService, amount: int) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
     view.handleScroll(amount, {})
+
+proc pasteTerminal*(self: TerminalService, register: string = "") {.expose("terminal").} =
+  if self.getActiveView().getSome(view):
+    asyncSpawn self.pasteAsync(view, register)
 
 proc sendTerminalInput*(self: TerminalService, input: string) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
@@ -1150,33 +1333,39 @@ proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float 
 genDispatcher("terminal")
 addGlobalDispatchTable "terminal", genDispatchTable("terminal")
 
-proc handleActionInternal(self: TerminalService, view: TerminalView, action: string, args: JsonNode): Option[JsonNode] =
+proc handleActionInternal(self: TerminalService, view: TerminalView, action: string, args: JsonNode): Option[string] =
   # if self.plugins.invokeAnyCallback(action, args).isNotNil:
   #   return Handled
 
   try:
     if dispatch(action, args).getSome(res):
-      return res.some
+      return ($res).some
   except:
     let argsText = if args.isNil: "nil" else: $args
     log(lvlError, fmt"Failed to dispatch command '{action} {argsText}': {getCurrentExceptionMsg()}")
-    return JsonNode.none
+    return string.none
 
   log lvlError, fmt"Unknown command '{action}'"
-  return JsonNode.none
+  return string.none
 
-proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[JsonNode] =
+proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[string] =
   # debugf"handleAction '{action} {arg}'"
-  self.activeView = view
-  try:
-    var args = newJArray()
-    try:
-      for a in newStringStream(arg).parseJsonFragments():
-        args.add a
+  self.withActiveView(view):
+    let res = self.commands.executeCommand(action & " " & arg)
+    if res.isSome:
+      return res
 
-      return self.handleActionInternal(view, action, args)
-    except CatchableError:
-      log(lvlError, fmt"handleCommmand: {action}, Failed to parse args: '{arg}'")
-      return JsonNode.none
-  except:
-    discard
+    try:
+      var args = newJArray()
+      try:
+        for a in newStringStream(arg).parseJsonFragments():
+          args.add a
+
+        return self.handleActionInternal(view, action, args)
+      except CatchableError:
+        log(lvlError, fmt"handleCommmand: {action}, Failed to parse args: '{arg}'")
+        return string.none
+    except:
+      discard
+
+  return string.none

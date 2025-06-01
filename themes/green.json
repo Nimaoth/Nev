@@ -51,6 +51,26 @@
         "terminal.ansiBrightCyan": "#7dcfff",
         "terminal.ansiBrightWhite": "#ffffff",
 
+        "terminal.header.group.foreground": "#ABB2BF",
+        // "terminal.header.group.background": "#000000",
+        "terminal.header.group.foreground.build-run": "#CAFAAA",
+        // "terminal.header.group.background.build-run": "#000000",
+        "terminal.header.group.foreground.scratch": "#FACAAA",
+        // "terminal.header.group.background.scratch": "#000000",
+
+        "terminal.header.mode.foreground.normal": "#333333",
+        "terminal.header.mode.background.normal": "#ffaaaa",
+        "terminal.header.mode.foreground.insert": "#333333",
+        "terminal.header.mode.background.insert": "#aaffaa",
+
+        "terminal.header.exitCode.foreground.ok": "#333333",
+        "terminal.header.exitCode.background.ok": "#aaffaa",
+        "terminal.header.exitCode.foreground.fail": "#333333",
+        "terminal.header.exitCode.background.fail": "#ffaaaaa",
+
+        "terminal.header.command.foreground": "#aaaaff",
+        // "terminal.header.command.background": "#000000",
+
     },
     "tokenColors": [
         {

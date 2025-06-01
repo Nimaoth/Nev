@@ -14,6 +14,14 @@ proc setTerminalMode*(mode: string) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc terminal_escape_void_TerminalService_wasm(arg: cstring): cstring {.importc.}
+proc escape*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = terminal_escape_void_TerminalService_wasm(
+      argsJsonString.cstring)
+
+
 proc terminal_createTerminal_void_TerminalService_string_CreateTerminalOptions_wasm(
     arg: cstring): cstring {.importc.}
 proc createTerminal*(command: string = "";
@@ -48,6 +56,16 @@ proc scrollTerminal*(amount: int) {.gcsafe, raises: [].} =
   argsJson.add amount.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = terminal_scrollTerminal_void_TerminalService_int_wasm(
+      argsJsonString.cstring)
+
+
+proc terminal_pasteTerminal_void_TerminalService_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc pasteTerminal*(register: string = "") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = terminal_pasteTerminal_void_TerminalService_string_wasm(
       argsJsonString.cstring)
 
 

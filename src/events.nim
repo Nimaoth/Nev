@@ -318,13 +318,25 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
     handler.states = handler.dfa.stepAll(handler.states, input, modifiers)
 
     if debugEventHandlers:
-      debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}\n  {prevStates}\n  -> {handler.states}, inProgress: {handler.inProgress}, anyTerminal: {handler.states.anyIt(handler.dfa.isTerminal(it.current))}"
+      debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, {handleUnknownAsInput}, {allowHandlingEvent}\n  {prevStates}\n  -> {handler.states}, inProgress: {handler.inProgress}, anyTerminal: {handler.states.anyIt(handler.dfa.isTerminal(it.current))}"
       # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
 
     if not handler.inProgress:
-      if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
-        if handler.handleInput(inputToString(input, {})) == Handled:
-          return Handled
+      if input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
+        # if we have delayed inputs we're allowed to handle the current event as input
+        if delayedInputs.len > 0:
+          if debugEventHandlers:
+            debugf"flush delayed inputs"
+          for (handler, input, modifiers) in delayedInputs:
+            discard handler.handleInput(inputToString(input, {}))
+          delayedInputs.setLen(0)
+
+          if handler.handleInput(inputToString(input, {})) == Handled:
+            return Handled
+
+        elif handleUnknownAsInput:
+          if handler.handleInput(inputToString(input, {})) == Handled:
+            return Handled
 
       elif handler.handleKey != nil:
         if handler.handleKey(input, modifiers) == Handled:
@@ -374,6 +386,8 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
 
     else:
       if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and handler.config.handleInputs:
+        if debugEventHandlers:
+          debugf"delay input {inputToString(input, modifiers)}"
         delayedInputs.add (handler, input, modifiers)
 
       if not handler.handleProgress.isNil:
@@ -401,6 +415,9 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
       handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput, not anyInProgressAbove, delayedInputs)
     else:
       Ignored
+
+    if debugEventHandlers:
+      debugf"-> {response}"
 
     case response
     of Handled:

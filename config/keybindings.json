@@ -2,7 +2,9 @@
     "editor": {
         "<SPACE>sr": "open-recent-session",
         "!": "run-shell-command",
+        "<SPACE>to": ["select-terminal"],
     },
+
     "popup.selector.settings": {
         "<C-h>": "prev-store",
         "<C-f>": "next-store",
@@ -14,5 +16,45 @@
     "popup.selector.file-explorer": {
         "<C-g>n": "create-new-session",
         "<C-g>o": "open-session",
-    }
+
+    },
+    "popup.selector.terminals": {
+        "<C-x>": "close-selected",
+    },
+
+    "terminal.normal": {
+        "i": ["set-terminal-mode", "insert"],
+        "a": ["all", ["set-terminal-mode", "insert"], ["send-terminal-input", "<RIGHT>"]],
+        "I": ["all", ["set-terminal-mode", "insert"], ["send-terminal-input", "<HOME>"]],
+        "A": ["all", ["set-terminal-mode", "insert"], ["send-terminal-input", "<END>"]],
+        "<C-c>": ["send-terminal-input", "<C-c>"],
+        "<ENTER>": ["send-terminal-input", "<ENTER>"],
+        "<UP>": ["send-terminal-input", "<UP>"],
+        "<DOWN>": ["send-terminal-input", "<DOWN>"],
+        "<LEFT>": ["send-terminal-input", "<LEFT>"],
+        "<RIGHT>": ["send-terminal-input", "<RIGHT>"],
+        "<HOME>": ["send-terminal-input", "<HOME>"],
+        "<END>": ["send-terminal-input", "<END>"],
+        "<C-e>": ["edit-terminal-buffer"],
+        "<C-u>": "scroll-terminal 50",
+        "<C-d>": "scroll-terminal -50",
+        "<C-v>": "paste-terminal",
+        "p": "paste-terminal",
+    },
+    "terminal": {
+        "<CS-LEFT>": "prev-view",
+        "<CS-RIGHT>": "next-view",
+        "<CS-UP>": "scroll-terminal 2",
+        "<CS-DOWN>": "scroll-terminal -2",
+        "<CS-PAGE_UP>": "scroll-terminal 50",
+        "<CS-PAGE_DOWN>": "scroll-terminal -50",
+        "<CS-HOME>": "scroll-terminal 500000",
+        "<CS-END>": "scroll-terminal -500000",
+        "gg": "scroll-terminal 500000",
+        "G": "scroll-terminal -500000",
+        "<C-ENTER>": ["send-terminal-input-and-set-mode", "<ENTER>", "normal"],
+    },
+    "terminal.insert": {
+        "cf": ["set-terminal-mode", "normal"],
+    },
 }
