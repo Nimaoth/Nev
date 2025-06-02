@@ -202,7 +202,7 @@ type
     of OutputEventKind.CursorShape:
       shape: CursorShape
     of OutputEventKind.Terminated:
-      exitCode: int
+      exitCode: Option[int]
     of OutputEventKind.Rope:
       rope: pointer # ptr Rope, but Nim complains about destructors?
     of OutputEventKind.Scroll:
@@ -218,7 +218,9 @@ type
       inputWriteHandle: HANDLE
       outputReadHandle: HANDLE
       inputWriteEvent: HANDLE
+      outputReadEvent: HANDLE
       processInfo: PROCESS_INFORMATION
+      startupInfo: STARTUPINFOEX
     else:
       masterFd: cint
       slaveFd: cint
@@ -243,7 +245,6 @@ type
 
     handles: OsHandles
     when defined(windows):
-      outputReadEvent: HANDLE
       outputOverlapped: OVERLAPPED
       waitingForOvelapped: bool
 
@@ -259,10 +260,11 @@ type
     scrollY: int
     exitCode*: Option[int]
     autoRunCommand: string
+    threadTerminated: bool = false
 
     # Events
     lastUpdateTime: timer.Timer
-    onTerminated: Event[int]
+    onTerminated: Event[Option[int]]
     onRope: Event[ptr Rope]
     onUpdated: Event[void]
 
@@ -422,9 +424,7 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
 
 proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
   # todo: cancel when closed
-  while true:
-    await sleepAsync(10.milliseconds)
-
+  while not terminal.threadTerminated:
     var updated = false
     while terminal.outputChannel[].peek() > 0:
       let event = terminal.outputChannel[].recv()
@@ -437,15 +437,16 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
         terminal.cursor.row = event.row
         terminal.cursor.col = event.col
       of OutputEventKind.CursorVisible:
-        debugf"visible -> {event.visible}"
         terminal.cursor.visible = event.visible
       of OutputEventKind.CursorBlink:
         terminal.cursor.blink = event.cursorBlink
       of OutputEventKind.CursorShape:
         terminal.cursor.shape = event.shape
       of OutputEventKind.Terminated:
-        terminal.exitCode = event.exitCode.some
+        terminal.exitCode = event.exitCode
+        terminal.threadTerminated = true
         terminal.onTerminated.invoke(event.exitCode)
+        break
       of OutputEventKind.Rope:
         let rope = cast[ptr Rope](event.rope)
         terminal.onRope.invoke(rope)
@@ -459,6 +460,9 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
     if updated:
       terminal.lastUpdateTime = startTimer()
       terminal.onUpdated.invoke()
+
+    # todo: use async signals
+    await sleepAsync(10.milliseconds)
 
 proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
   if len > 0:
@@ -577,7 +581,7 @@ proc handleProcessOutput(state: var ThreadState, buffer: var string) =
           raiseOSError(error)
 
     buffer.setLen(bufferSize)
-    state.outputOverlapped.hEvent = state.outputReadEvent
+    state.outputOverlapped.hEvent = state.handles.outputReadEvent
     if ReadFile(state.handles.outputReadHandle, buffer[0].addr, buffer.len.DWORD, bytesRead.addr, state.outputOverlapped.addr) != 0:
       handleData(buffer.cstring, bytesRead.int)
       state.waitingForOvelapped = false
@@ -710,13 +714,12 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
     state.vterm.key(INPUT_ENTER.inputToVtermKey, {}.toVtermModifiers)
 
   var buffer = ""
+  var exitCode = int.none
   while true:
     when defined(windows):
-      var handles = [state.handles.inputWriteEvent, state.outputReadEvent, state.handles.processInfo.hProcess]
+      var handles = [state.handles.inputWriteEvent, state.handles.outputReadEvent, state.handles.processInfo.hProcess]
       let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
       if res == WAIT_FAILED:
-        let error = osLastError()
-        echo "failed: ", newOSError(error).msg, ", ", error.int
         discard
       elif res == WAIT_TIMEOUT:
         discard
@@ -730,10 +733,10 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
 
           if index == 2:
             # Process ended
-            var exitCode: DWORD = 0
-            discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCode.addr)
+            var exitCodeC: DWORD = 0
+            discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCodeC.addr)
+            exitCode = exitCodeC.int.some
             state.processTerminated = true
-            state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode.int)
             break
 
       state.handleProcessOutput(buffer)
@@ -745,7 +748,6 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
         TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
       ]
 
-      # log(&"poll")
       let res = poll(fds[0].addr, fds.len.Tnfds, -1)
       if res < 0:
         break
@@ -757,30 +759,28 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       let waitRes = waitpid(state.handles.childPid, status, WNOHANG)
       if waitRes == state.handles.childPid:
         state.processTerminated = true
-        var exitCode: cint
+        var exitCodeC: cint
         if wifexited(status) != 0:
-          exitCode = wexitstatus(status)
-        log(&"process terminated 1 with exit code {exitCode}")
-        state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode.int)
+          exitCodeC = wexitstatus(status)
+        exitCode = exitCodeC.int.some
         break
 
       if (fds[0].revents and POLLIN) != 0:
-        # log(&"handle process outut")
         state.handleProcessOutput(buffer)
         if state.processTerminated:
-          var exitCode: cint
+          var exitCodeC: cint
           if wifexited(status) != 0:
-            exitCode = wexitstatus(status)
-          log(&"process terminated 2 with exit code {exitCode}")
-          state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode.int)
+            exitCodeC = wexitstatus(status)
+          exitCode = exitCodeC.int.some
           break
 
       if (fds[1].revents and POLLIN) != 0:
-        # log(&"handle input events")
         var b: uint64 = 0
         var n: int = read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
         state.handleInputEvents()
 
+    if state.terminateRequested:
+      break
 
     if state.dirty:
       state.dirty = false
@@ -788,9 +788,15 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
         kind: OutputEventKind.TerminalBuffer,
         buffer: state.createTerminalBuffer())
 
-  log(&"terminal thread done")
+  # todo: on windows, could `buffer` still be in use by the overlapped read at this point?
+  # If so we need to wait here, or cancel the read if possible.
+
+  log(&"terminal thread done, exit code {exitCode}")
+  state.outputChannel[].send OutputEvent(kind: OutputEventKind.Terminated, exitCode: exitCode)
 
 proc sendEvent(self: Terminal, event: InputEvent) =
+  if self.threadTerminated:
+    return
   self.inputChannel[].send(event)
   when defined(windows):
     discard SetEvent(self.handles.inputWriteEvent)
@@ -798,13 +804,35 @@ proc sendEvent(self: Terminal, event: InputEvent) =
     var b: uint64 = 1
     discard write(self.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
 
-proc terminate*(self: Terminal) =
+proc terminate*(self: Terminal) {.async.} =
   log lvlInfo, &"Close terminal '{self.command}'"
+
+  if not self.threadTerminated:
+    self.sendEvent(InputEvent(kind: InputEventKind.Terminate))
+
   when defined(windows):
     ClosePseudoConsole(self.handles.hpcon)
   else:
     discard close(self.handles.masterFd)
-  self.sendEvent(InputEvent(kind: InputEventKind.Terminate))
+
+  while not self.threadTerminated:
+    # todo: use async signals
+    await sleepAsync(10.milliseconds)
+
+  when defined(windows):
+    CloseHandle(self.handles.inputWriteEvent)
+    CloseHandle(self.handles.outputReadEvent)
+    CloseHandle(self.handles.inputWriteHandle)
+    CloseHandle(self.handles.outputReadHandle)
+    HeapFree(GetProcessHeap(), 0, self.handles.startupInfo.lpAttributeList)
+  else:
+    discard close(self.handles.inputWriteEventFd)
+
+  self.inputChannel[].close()
+  self.inputChannel.deallocShared()
+
+  self.outputChannel[].close()
+  self.outputChannel.deallocShared()
 
 proc createTerminal*(self: TerminalService, width: int, height: int, command: string, autoRunCommand: string = ""): Terminal =
   let id = self.idCounter
@@ -854,7 +882,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
       raiseOSError(osLastError(), "Failed to start sub process")
 
     CloseHandle(inputReadHandle)
-    # CloseHandle(outputWriteHandle)
+    CloseHandle(outputWriteHandle)
 
     let inputWriteEvent = CreateEvent(nil, FALSE, FALSE, nil)
     let outputReadEvent = CreateEvent(sa.addr, FALSE, FALSE, nil)
@@ -864,7 +892,9 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
       inputWriteHandle: inputWriteHandle,
       outputReadHandle: outputReadHandle,
       inputWriteEvent: inputWriteEvent,
+      outputReadEvent: outputReadEvent,
       processInfo: pi,
+      startupInfo: siEx,
     )
 
   else: # not windows
@@ -954,9 +984,6 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     handles: handles,
   )
 
-  when defined(windows):
-    threadState.outputReadEvent = outputReadEvent
-
   result.thread.createThread(terminalThread, threadState)
 
 {.push gcsafe.}
@@ -968,8 +995,8 @@ method close*(self: TerminalView) =
   if not self.open:
     return
   self.open = false
-  self.terminal.terminate()
   self.terminals.terminals.del(self.terminal.id)
+  asyncSpawn self.terminal.terminate()
 
 method activate*(self: TerminalView) =
   if self.active:
@@ -1130,7 +1157,7 @@ proc createTerminalView(self: TerminalService, command: string, options: api.Cre
       self.services.getService(PlatformService).get.platform.requestRender()
       view.markDirty()
 
-    discard term.onTerminated.subscribe proc(exitCode: int) =
+    discard term.onTerminated.subscribe proc(exitCode: Option[int]) =
       if not view.open:
         return
       log lvlInfo, &"Terminal process '{command}' terminated with exit code {exitCode}"
@@ -1269,6 +1296,7 @@ proc requestEditBuffer*(self: TerminalView) {.async.} =
     waiting = false
 
   while waiting:
+    # todo: use async signals
     await sleepAsync(30.milliseconds)
 
   self.terminal.onRope.unsubscribe(handle)
