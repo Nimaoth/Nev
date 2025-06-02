@@ -912,7 +912,7 @@ type
     bgColor*: Color
     style*: set[Style]
     forceWrite*: bool
-    previousWideGlyph: bool
+    previousWideGlyph*: bool
 
   TerminalBuffer* = object
     ## A virtual terminal buffer of a fixed width and height. It remembers the

@@ -443,10 +443,12 @@ proc main() =
     log lvlInfo, "Shutting down platform"
     plat.deinit()
 
+    log lvlInfo, "Deinit language servers"
     deinitLanguageServers()
 
     # Give language server threads some time to deinit properly before force quitting.
     sleep(100)
+    log lvlInfo, "All done"
   except:
     discard
 

@@ -754,7 +754,7 @@ proc vimToggleCase(editor: TextDocumentEditor, moveCursorRight: bool) {.exposeAc
     editor.updateTargetColumn()
 
 proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-current-view-or-quit").} =
-  let openEditors = getVisibleEditors().len + getHiddenEditors().len
+  let openEditors = getNumVisibleViews() + getNumHiddenViews()
   if openEditors == 1:
     plugin_runtime.quit()
   else:

@@ -149,7 +149,6 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
               let width = self.terminal.terminalBuffer.width
               let height = self.terminal.terminalBuffer.height
 
-              # todo: batch cells with same style
               var buffer = ""
               for row in 0..<height:
                 var lastCell: TerminalChar = self.terminal.terminalBuffer[0, row]
@@ -160,6 +159,7 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                 var bgColor = color(0, 0, 0)
                 var fg = lastCell.fg
                 var fgColor = color(0, 0, 0)
+                var runLen = 0
 
                 var textFlags = 0.UINodeFlags
 
@@ -179,6 +179,7 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                   boundsAcc.x = boundsAcc.xw
                   boundsAcc.w = builder.charWidth
                   buffer.setLen(0)
+                  runLen = 0
 
                 template `!=`(a, b: colors.Color): bool =
                   not colors.`==`(a, b)
@@ -188,11 +189,36 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                   defer:
                     lastCell = cell
 
-                  if (cell.ch.int != 0) != (lastCell.ch.int != 0):
+                  if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
+                    flush()
+                    let cellBounds = rect(col.float * builder.charWidth, row.float * builder.textHeight,
+                      builder.charWidth, builder.textHeight)
+                    var cursorBounds = cellBounds
+                    case self.terminal.cursor.shape
+                    of CursorShape.Block:
+                      fgColor = cursorBackgroundColor
+                    of CursorShape.Underline:
+                      cursorBounds.y += cursorBounds.h * 0.9
+                      cursorBounds.h *= 0.1
+                    of CursorShape.BarLeft:
+                      cursorBounds.w *= 0.1
+
+                    fillRect(cursorBounds, cursorForegroundColor)
+                    if cell.ch != 0.Rune and styleHidden notin cell.style:
+                      drawText($cell.ch, cellBounds, fgColor, textFlags)
+
+                    continue
+
+                  elif drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col + 1:
+                    flush(false)
+                  elif cell.previousWideGlyph:
+                    flush()
+                    continue
+                  elif lastCell.previousWideGlyph:
+                    flush(false)
+                  elif (cell.ch.int != 0) != (lastCell.ch.int != 0):
                     flush()
                   elif cell.fg != lastCell.fg or cell.fgColor != lastCell.fgColor or cell.bg != lastCell.bg or cell.bgColor != lastCell.bgColor or cell.style != lastCell.style:
-                    flush()
-                  elif drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
                     flush()
 
                   if cell.ch.int != 0:
@@ -200,12 +226,10 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                   else:
                     buffer.add " "
                   boundsAcc.w = (col + 1).float * builder.charWidth - boundsAcc.x
-
-                  let cellBounds = rect(col.float * builder.charWidth, row.float * builder.textHeight,
-                    builder.charWidth, builder.textHeight)
+                  inc runLen
 
                   # Only calculate colors and style for the first cell in a run
-                  if buffer.len == 1:
+                  if runLen == 1:
                     bg = cell.bg
                     bgColor = color(0, 0, 0)
 
@@ -260,26 +284,6 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
 
                     if styleDim in cell.style:
                       fgColor = fgColor.darken(0.2)
-
-                  # draw cursor
-                  if drawCursor and row == self.terminal.cursor.row and col == self.terminal.cursor.col:
-                    flush(false)
-                    var cursorBounds = rect(
-                      self.terminal.cursor.col.float * builder.charWidth, self.terminal.cursor.row.float * builder.textHeight,
-                      builder.charWidth, builder.textHeight)
-
-                    case self.terminal.cursor.shape
-                    of CursorShape.Block:
-                      fgColor = cursorBackgroundColor
-                    of CursorShape.Underline:
-                      cursorBounds.y += cursorBounds.h * 0.9
-                      cursorBounds.h *= 0.1
-                    of CursorShape.BarLeft:
-                      cursorBounds.w *= 0.1
-
-                    fillRect(cursorBounds, cursorForegroundColor)
-                    if cell.ch != 0.Rune and styleHidden notin cell.style:
-                      drawText($cell.ch, cellBounds, fgColor, textFlags)
 
                 # Flush last part of the line
                 flush()

@@ -346,6 +346,14 @@ proc getHiddenEditors*(self: LayoutService): seq[EditorId] {.expose("layout").} 
     if view of EditorView:
       result.add view.EditorView.editor.id
 
+proc getNumVisibleViews*(self: LayoutService): int {.expose("layout").} =
+  ## Returns the amount of visible views
+  return self.views.len
+
+proc getNumHiddenViews*(self: LayoutService): int {.expose("layout").} =
+  ## Returns the amount of hidden views
+  return self.hiddenViews.len
+
 proc showView*(self: LayoutService, view: View, viewIndex: Option[int] = int.none) =
   ## Make the given view visible
   ## If viewIndex is none, the view will be opened in the currentView,

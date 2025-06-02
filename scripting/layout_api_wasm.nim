@@ -86,6 +86,32 @@ proc getHiddenEditors*(): seq[EditorId] {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc layout_getNumVisibleViews_int_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc getNumVisibleViews*(): int {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_getNumVisibleViews_int_LayoutService_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc layout_getNumHiddenViews_int_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc getNumHiddenViews*(): int {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_getNumHiddenViews_int_LayoutService_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc layout_showEditor_void_LayoutService_EditorId_Option_int_wasm(arg: cstring): cstring {.
     importc.}
 proc showEditor*(editorId: EditorId; viewIndex: Option[int] = int.none) {.

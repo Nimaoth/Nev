@@ -154,6 +154,7 @@ type
     RequestRope
     SetColorPalette
     Paste
+    EnableLog
 
   InputEvent = object
     modifiers: Modifiers
@@ -179,9 +180,11 @@ type
       rope: pointer # ptr Rope, but Nim complains about destructors?
     of InputEventKind.SetColorPalette:
       colors: seq[tuple[r, g, b: uint8]]
+    of InputEventKind.EnableLog:
+      enableLog: bool
 
   CursorShape* {.pure.} = enum Block, Underline, BarLeft
-  OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, Terminated, Rope, Scroll, Log
+  OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, CursorBlink, Terminated, Rope, Scroll, Log
   OutputEvent = object
     case kind: OutputEventKind
     of OutputEventKind.TerminalBuffer:
@@ -194,6 +197,8 @@ type
       col: int
     of OutputEventKind.CursorVisible:
       visible: bool
+    of OutputEventKind.CursorBlink:
+      cursorBlink: bool
     of OutputEventKind.CursorShape:
       shape: CursorShape
     of OutputEventKind.Terminated:
@@ -228,12 +233,13 @@ type
     width: int
     height: int
     scrollY: int = 0
-    cursor: tuple[row, col: int, visible: bool]
+    cursor: tuple[row, col: int, visible: bool, blink: bool] = (0, 0, true, true)
     scrollbackBuffer: seq[seq[VTermScreenCell]]
     dirty: bool = false # When true send updated terminal buffer to main thread
     terminateRequested: bool = false
     processTerminated: bool = false
     autoRunCommand: string
+    enableLog: bool = false
 
     handles: OsHandles
     when defined(windows):
@@ -249,7 +255,7 @@ type
     inputChannel: ptr Channel[InputEvent] # todo: free this
     outputChannel: ptr Channel[OutputEvent] # todo: free this
     terminalBuffer*: TerminalBuffer
-    cursor*: tuple[row, col: int, visible: bool, shape: CursorShape]
+    cursor*: tuple[row, col: int, visible: bool, shape: CursorShape, blink: bool] = (0, 0, true, CursorShape.Block, true)
     scrollY: int
     exitCode*: Option[int]
     autoRunCommand: string
@@ -285,32 +291,38 @@ type
     terminals*: Table[int, TerminalView]
     activeView: TerminalView
 
-proc createRope*(state: var ThreadState): Rope =
+proc createRope*(state: var ThreadState, scrollback: bool = true): Rope =
   var cell: VTermScreenCell
   var rope = Rope.new()
 
   var line = ""
-  for cells in state.scrollbackBuffer.mitems:
-    line.setLen(0)
-    for cell in cells:
-      var r = 0.Rune
-      if cell.chars[0] <= Rune.high.uint32:
-        r = cell.chars[0].Rune
+  if scrollback:
+    for cells in state.scrollbackBuffer.mitems:
+      line.setLen(0)
+      for cell in cells:
+        var r = 0.Rune
+        if cell.chars[0] <= Rune.high.uint32:
+          r = cell.chars[0].Rune
 
-      if r != 0.Rune:
-        line.add $r
-      else:
-        line.add " "
+        if r != 0.Rune:
+          line.add $r
+        else:
+          line.add " "
 
-    var endIndex = line.high
-    while endIndex >= 0 and line[endIndex] in Whitespace:
-      dec endIndex
-    rope.add line.toOpenArray(0, endIndex)
-    rope.add "\n"
+      var endIndex = line.high
+      while endIndex >= 0 and line[endIndex] in Whitespace:
+        dec endIndex
+      rope.add line.toOpenArray(0, endIndex)
+      rope.add "\n"
 
   for row in 0..<state.height:
     line.setLen(0)
+    var prevOverlap = 1
     for col in 0..<state.width:
+      dec prevOverlap
+      if prevOverlap > 0:
+        continue
+
       var pos: VTermPos
       pos.row = row.cint
       pos.col = col.cint
@@ -325,6 +337,7 @@ proc createRope*(state: var ThreadState): Rope =
         line.add $r
       else:
         line.add " "
+      prevOverlap = cell.width.int
 
     var endIndex = line.high
     while endIndex >= 0 and line[endIndex] in Whitespace:
@@ -336,11 +349,15 @@ proc createRope*(state: var ThreadState): Rope =
 
 proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
   result.initTerminalBuffer(state.width, state.height)
+
   var cell: VTermScreenCell
   var pos: VTermPos
   for scrolledRow in 0..<state.height:
     var col: cint = 0
+    var prevOverlap = 1
     for col in 0..<state.width:
+      dec prevOverlap
+
       let actualRow = scrolledRow - state.scrollY
       if actualRow >= 0 and actualRow < state.height:
         pos.row = actualRow.cint
@@ -363,6 +380,8 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
         fg: fgNone,
         bg: bgNone,
       )
+      if prevOverlap > 0:
+        c.previousWideGlyph = true
 
       if cell.attrs.bold != 0: c.style.incl(terminal.Style.styleBlink)
       if cell.attrs.italic != 0: c.style.incl(terminal.Style.styleItalic)
@@ -399,6 +418,7 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
         c.bgColor = colors.rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
 
       result[col, scrolledRow] = c
+      prevOverlap = cell.width.int
 
 proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
   # todo: cancel when closed
@@ -417,7 +437,10 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
         terminal.cursor.row = event.row
         terminal.cursor.col = event.col
       of OutputEventKind.CursorVisible:
+        debugf"visible -> {event.visible}"
         terminal.cursor.visible = event.visible
+      of OutputEventKind.CursorBlink:
+        terminal.cursor.blink = event.cursorBlink
       of OutputEventKind.CursorShape:
         terminal.cursor.shape = event.shape
       of OutputEventKind.Terminated:
@@ -516,6 +539,9 @@ proc handleInputEvents(state: var ThreadState) =
           state.vterm.state.setPaletteColor(i, c)
         state.dirty = true
 
+      of InputEventKind.EnableLog:
+        state.enableLog = event.enableLog
+
     except:
       echo &"Failed to send input: {getCurrentExceptionMsg()}"
 
@@ -584,8 +610,20 @@ proc handleProcessOutput(state: var ThreadState, buffer: var string) =
     elif n == 0:
       state.processTerminated = true
 
+proc log(state: ThreadState, str: string) =
+  if state.enableLog:
+    state.outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
+
+proc log(state: ptr ThreadState, str: string) =
+  if state.enableLog:
+    state[].outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
+
 proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   var state = s
+
+  proc log(str: string) =
+    if state.enableLog:
+      state.outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
 
   var callbacks = VTermScreenCallbacks(
     # damage: (proc(rect: VTermRect; user: pointer): cint {.cdecl.} = discard),
@@ -595,12 +633,19 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       state.cursor.row = pos.row.int
       state.cursor.col = pos.col.int
       state.outputChannel[].send OutputEvent(kind: OutputEventKind.Cursor, row: pos.row.int + state.scrollY, col: pos.col.int)
+      # state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: visible != 0)
     ),
     settermprop: (proc(prop: VTermProp; val: ptr VTermValue; user: pointer): cint {.cdecl.} =
       let state = cast[ptr ThreadState](user)
       case prop
       of VTERM_PROP_CURSORVISIBLE:
+        # log state, &"settermmprop VTERM_PROP_CURSORVISIBLE {val.boolean}"
         state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: val.boolean)
+
+      of VTERM_PROP_CURSORBLINK:
+        state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorBlink, cursorBlink: val.boolean)
+      # of VTERM_PROP_ALTSCREEN:
+        # log state, &"settermmprop VTERM_PROP_ALTSCREEN {val.boolean}"
 
       of VTERM_PROP_CURSORSHAPE:
         let shape = case val.number
@@ -664,10 +709,6 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       state.vterm.uniChar(r.uint32, {}.toVtermModifiers)
     state.vterm.key(INPUT_ENTER.inputToVtermKey, {}.toVtermModifiers)
 
-  proc log(str: string) =
-    discard
-    # state.outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
-
   var buffer = ""
   while true:
     when defined(windows):
@@ -704,7 +745,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
         TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
       ]
 
-      log(&"poll")
+      # log(&"poll")
       let res = poll(fds[0].addr, fds.len.Tnfds, -1)
       if res < 0:
         break
@@ -724,7 +765,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
         break
 
       if (fds[0].revents and POLLIN) != 0:
-        log(&"handle process outut")
+        # log(&"handle process outut")
         state.handleProcessOutput(buffer)
         if state.processTerminated:
           var exitCode: cint
@@ -735,7 +776,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
           break
 
       if (fds[1].revents and POLLIN) != 0:
-        log(&"handle input events")
+        # log(&"handle input events")
         var b: uint64 = 0
         var n: int = read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
         state.handleInputEvents()
@@ -908,7 +949,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     outputChannel: result.outputChannel,
     width: width,
     height: height,
-    cursor: (0, 0, true),
+    cursor: (0, 0, true, true),
     autoRunCommand: autoRunCommand,
     handles: handles,
   )
@@ -1054,19 +1095,7 @@ proc setSize*(self: TerminalView, width: int, height: int) =
     if self.terminal != nil:
       self.terminal.sendEvent(InputEvent(kind: InputEventKind.Size, row: height, col: width))
 
-type CreateTerminalOptions* = object
-  group*: string = ""
-  autoRunCommand*: string = ""
-  mode*: Option[string]
-  closeOnTerminate*: bool = true
-
-type RunInTerminalOptions* = object
-  group*: string = ""
-  mode*: Option[string]
-  closeOnTerminate*: bool = true
-  reuseExisting*: bool = true
-
-proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions): TerminalView =
+proc createTerminalView(self: TerminalService, command: string, options: api.CreateTerminalOptions): TerminalView =
   try:
     let term = self.createTerminal(80, 50, command, options.autoRunCommand)
     term.group = options.group
@@ -1160,7 +1189,7 @@ proc escape*(self: TerminalService) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
     view.setMode("normal")
 
-proc createTerminal*(self: TerminalService, command: string = "", options: CreateTerminalOptions = CreateTerminalOptions()) {.expose("terminal").} =
+proc createTerminal*(self: TerminalService, command: string = "", options: api.CreateTerminalOptions = api.CreateTerminalOptions()) {.expose("terminal").} =
   ## Opens a new terminal by running `command`.
   ## `command`:         Program name and arguments for the process. Usually a shell.
   ## `autoRunCommand`   Command to execute in the shell. This is passed to `command` through stdin, as if typed
@@ -1175,7 +1204,7 @@ proc isIdle(self: TerminalService, terminal: Terminal): bool =
   let idleThreshold = self.settings.idleThreshold.get()
   return terminal.lastUpdateTime.elapsed.ms.int > idleThreshold
 
-proc runInTerminal*(self: TerminalService, shell: string, command: string, options: RunInTerminalOptions = RunInTerminalOptions()) {.expose("terminal").} =
+proc runInTerminal*(self: TerminalService, shell: string, command: string, options: api.RunInTerminalOptions = api.RunInTerminalOptions()) {.expose("terminal").} =
   let shellCommand = self.config.runtime.get("editor.shells." & shell & ".command", string.none)
   if shellCommand.isNone:
     log lvlError, &"Failed to run command in shell '{shell}': Unknown shell, configure in 'editor.shells.{shell}'"
@@ -1197,7 +1226,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
         return
 
   var options = options
-  self.createTerminal(shellCommand.get, CreateTerminalOptions(
+  self.createTerminal(shellCommand.get, api.CreateTerminalOptions(
     group: options.group,
     autoRunCommand: command,
     mode: options.mode,
@@ -1211,6 +1240,10 @@ proc scrollTerminal*(self: TerminalService, amount: int) {.expose("terminal").} 
 proc pasteTerminal*(self: TerminalService, register: string = "") {.expose("terminal").} =
   if self.getActiveView().getSome(view):
     asyncSpawn self.pasteAsync(view, register)
+
+proc enableTerminalDebugLog*(self: TerminalService, enable: bool) {.expose("terminal").} =
+  if self.getActiveView().getSome(view):
+    view.terminal.sendEvent(InputEvent(kind: InputEventKind.EnableLog, enableLog: enable))
 
 proc sendTerminalInput*(self: TerminalService, input: string) {.expose("terminal").} =
   if self.getActiveView().getSome(view):

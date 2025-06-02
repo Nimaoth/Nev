@@ -42,6 +42,10 @@ defineBitFlagSized(uint64):
     SnapInitialBounds
     AutoPivotChildren
     IgnoreBoundsForSizeToContent
+    CursorBlock
+    CursorBar
+    CursorUnderline
+    CursorBlinking
 
 type
   RenderCommandKind* {.pure.} = enum
@@ -158,6 +162,8 @@ template buildCommands*(renderCommands: var RenderCommands, body: untyped) =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Rect, bounds: inBounds, color: inColor))
     template fillRect(inBounds: Rect, inColor: Color): untyped {.used.} =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor))
+    template fillRect(inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
+      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor, flags: inFlags))
     template drawText(inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
       let txt = inText
       let offset = renderCommands.strings.len.uint32

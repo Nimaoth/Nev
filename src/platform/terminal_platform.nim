@@ -16,6 +16,7 @@ type
     trueColorSupport*: bool
     mouseButtons: set[input.MouseButton]
     masks: seq[Rect]
+    cursor: tuple[row: int, col: int, visible: bool, shape: UINodeFlags]
 
     doubleClickTimer: Timer
     doubleClickCounter: int
@@ -458,12 +459,14 @@ method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
       if self.builder.root.lastSizeChange == self.builder.frameIndex:
         self.redrawEverything = true
 
+      self.cursor.visible = false
       self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
 
       # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
       try:
         {.gcsafe.}:
           self.buffer.display()
+
         self.redrawEverything = false
       except CatchableError:
         log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
@@ -636,8 +639,15 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
     node.lh = node.boundsActual.h
     let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
 
+    const cursorFlags = &{CursorBlock, CursorBar, CursorUnderline, CursorBlinking}
     if FillBackground in node.flags:
-      platform.fillRect(bounds, node.backgroundColor)
+      if node.flags * cursorFlags != 0.UINodeFlags:
+        platform.cursor.shape = node.flags * cursorFlags
+        platform.cursor.visible = true
+        platform.cursor.col = bounds.x.int
+        platform.cursor.row = bounds.y.int
+      else:
+        platform.fillRect(bounds, node.backgroundColor)
 
     # Mask the rest of the rendering is this function to the contentBounds
     if MaskContent in node.flags:
@@ -658,7 +668,14 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
       of RenderCommandKind.Rect:
         platform.drawRect(command.bounds + nodePos, command.color)
       of RenderCommandKind.FilledRect:
-        platform.fillRect(command.bounds + nodePos, command.color)
+        if command.flags * cursorFlags != 0.UINodeFlags:
+          let pos = command.bounds + nodePos
+          platform.cursor.shape = command.flags * cursorFlags
+          platform.cursor.visible = true
+          platform.cursor.col = pos.x.int
+          platform.cursor.row = pos.y.int
+        else:
+          platform.fillRect(command.bounds + nodePos, command.color)
       of RenderCommandKind.Text:
         # todo: don't copy string data
         let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
