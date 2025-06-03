@@ -102,9 +102,6 @@ when defined(musl):
   switch("d", "enableSystemClipboard=false")
   switch("d", "nimWasmtimeBuildMusl=true")
 
-else:
-  switch("d", "ssl")
-
 when defined(enableSysFatalStackTrace):
   patchFile("stdlib", "fatal", "patches/fatal")
 patchFile("stdlib", "osproc", "patches/osproc")
