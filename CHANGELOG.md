@@ -15,6 +15,7 @@
 - Added support for multiple language servers attached to one document
 - Added builtin language server to provide auto completion and goto definition for paths
 - Changed how language servers are configured.
+- Added [builtin terminal emulator](docs/docs.md#Terminal) based on [libvterm](https://www.leonerd.org.uk/code/libvterm/)
 
 ### Bug fixes
 

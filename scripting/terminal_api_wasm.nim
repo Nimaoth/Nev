@@ -110,8 +110,8 @@ proc editTerminalBuffer*() {.gcsafe, raises: [].} =
 
 proc terminal_selectTerminal_void_TerminalService_bool_float_float_float_wasm(
     arg: cstring): cstring {.importc.}
-proc selectTerminal*(preview: bool = true; scaleX: float = 0.8;
-                     scaleY: float = 0.8; previewScale: float = 0.6) {.gcsafe,
+proc selectTerminal*(preview: bool = true; scaleX: float = 0.9;
+                     scaleY: float = 0.9; previewScale: float = 0.6) {.gcsafe,
     raises: [].} =
   var argsJson = newJArray()
   argsJson.add preview.toJson()

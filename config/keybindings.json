@@ -52,9 +52,9 @@
         "<CS-END>": "scroll-terminal -500000",
         "gg": "scroll-terminal 500000",
         "G": "scroll-terminal -500000",
-        "<C-ENTER>": ["send-terminal-input-and-set-mode", "<ENTER>", "normal"],
     },
     "terminal.insert": {
         "cf": ["set-terminal-mode", "normal"],
+        "<C-ENTER>": ["send-terminal-input-and-set-mode", "<ENTER>", "normal"],
     },
 }

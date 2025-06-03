@@ -1218,10 +1218,15 @@ proc escape*(self: TerminalService) {.expose("terminal").} =
 
 proc createTerminal*(self: TerminalService, command: string = "", options: api.CreateTerminalOptions = api.CreateTerminalOptions()) {.expose("terminal").} =
   ## Opens a new terminal by running `command`.
-  ## `command`:         Program name and arguments for the process. Usually a shell.
-  ## `autoRunCommand`   Command to execute in the shell. This is passed to `command` through stdin, as if typed
-  ##                    into a shell.
-  ## `closeOnTerminate` Close the terminal when the process ends.
+  ## `command`                   Program name and arguments for the process. Usually a shell.
+  ## `options.group`             An arbitrary string used to control reusing of terminals and is displayed on screen.
+  ##                             Can be used to for example have a `scratch` group and a `build` group.
+  ##                             The `build` group would be used for running build commands, the `scratch` group for
+  ##                             random other tasks.
+  ## `options.autoRunCommand`    Command to execute in the shell. This is passed to `command` through stdin,
+  ##                             as if typed with the keyboard.
+  ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
+  ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
   self.layout.addView(self.createTerminalView(command, options))
 
 proc isIdle(self: TerminalService, terminal: Terminal): bool =
@@ -1232,6 +1237,19 @@ proc isIdle(self: TerminalService, terminal: Terminal): bool =
   return terminal.lastUpdateTime.elapsed.ms.int > idleThreshold
 
 proc runInTerminal*(self: TerminalService, shell: string, command: string, options: api.RunInTerminalOptions = api.RunInTerminalOptions()) {.expose("terminal").} =
+  ## Run the given `command` in a terminal with the specified shell.
+  ## `command` is executed in the shell by sending it as if typed using the keyboard, followed by `<ENTER>`.
+  ## `shell`                     Name of the shell. If you pass e.g. `wsl` to this function then the shell which gets
+  ##                             executed is configured in `editor.shells.wsl.command`.
+  ## `options.reuseExisting`     Run the command in an existing terminal if one exists. If not a new one is created.
+  ##                             An existing terminal is only used when it has a matching `group` and `shell`, and
+  ##                             it is not busy running another command (detecting this is sometimes wrong).
+  ## `options.group`             An arbitrary string used to control reusing of terminals and is displayed on screen.
+  ##                             Can be used to for example have a `scratch` group and a `build` group.
+  ##                             The `build` group would be used for running build commands, the `scratch` group for
+  ##                             random other tasks.
+  ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
+  ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
   let shellCommand = self.config.runtime.get("editor.shells." & shell & ".command", string.none)
   if shellCommand.isNone:
     log lvlError, &"Failed to run command in shell '{shell}': Unknown shell, configure in 'editor.shells.{shell}'"
@@ -1321,7 +1339,7 @@ proc editTerminalBuffer*(self: TerminalService) {.expose("terminal").} =
 # todo: move dependencies of terminal_previewer out of this file into separate file
 import terminal_previewer
 
-proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("terminal").} =
+proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6) {.expose("terminal").} =
   defer:
     self.requestRender()
 
@@ -1339,7 +1357,7 @@ proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float 
           displayName: name,
           filterText: name,
           data: $view.terminal.id,
-          detail: view.terminal.exitCode.mapIt("-> " & $it).get(""),
+          detail: view.terminal.exitCode.mapIt("-> " & $it).get("") & "\t" & view.terminal.group & "\t" & $view.terminal.id,
         )
 
     return items
