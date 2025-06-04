@@ -626,13 +626,13 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       let state = cast[ptr ThreadState](user)
       case prop
       of VTERM_PROP_CURSORVISIBLE:
-        # log state, &"settermmprop VTERM_PROP_CURSORVISIBLE {val.boolean}"
-        state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: val.boolean)
+        # log state, &"settermmprop VTERM_PROP_CURSORVISIBLE {val.boolean != 0}"
+        state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: val.boolean != 0)
 
       of VTERM_PROP_CURSORBLINK:
-        state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorBlink, cursorBlink: val.boolean)
+        state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorBlink, cursorBlink: val.boolean != 0)
       # of VTERM_PROP_ALTSCREEN:
-        # log state, &"settermmprop VTERM_PROP_ALTSCREEN {val.boolean}"
+        # log state, &"settermmprop VTERM_PROP_ALTSCREEN {val.boolean != 0}"
 
       of VTERM_PROP_CURSORSHAPE:
         let shape = case val.number
