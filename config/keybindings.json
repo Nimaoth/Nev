@@ -3,6 +3,16 @@
         "<SPACE>sr": "open-recent-session",
         "!": "run-shell-command",
         "<SPACE>to": ["select-terminal"],
+        "<SPACE>ts": [
+            "run-in-terminal",
+            "default",
+            "",
+            {
+                "mode": "insert",
+                "closeOnTerminate": true,
+                "group": "scratch",
+            }
+        ],
     },
 
     "popup.selector.settings": {
