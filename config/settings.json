@@ -780,6 +780,11 @@
         "args": ["-c"],
         "eval": false,
     },
+    "editor.shells.zsh": {
+        "command": "zsh",
+        "args": ["-c"],
+        "eval": false,
+    },
 
     "terminal.default-mode": "insert",
 

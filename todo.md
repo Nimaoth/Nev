@@ -86,7 +86,7 @@
 - slicing a rope slice does't work
 
 - disable tab for switching preview focus for terminal selector
-- add support for line numbers (`path:line`, `path:line:column`, `path(line, column)`, etc) in goto-definition of path language server
-- add path language server to terminal output
-- add scrollback buffer to terminal output rope
-- fix whitespace rendering when running `git commit`
+- add Cursor flag to UINodeFlags, draw active editor cursor with that flag, handle it platform to draw
+  native terminal cursor instead of rect
+- add foreground color highlights
+
