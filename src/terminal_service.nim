@@ -31,7 +31,6 @@ when defined(windows):
   proc ResizePseudoConsole*(phPC: HPCON, size: wincon.COORD): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
 
 else:
-  import posix/linux
   import posix/posix
   import posix/termios
 
@@ -47,12 +46,8 @@ else:
                              #include <sys/types.h>
                              #include <unistd.h>"""
 
-  type
-    FdSet {.importc: "fd_set", header: platformHeaders, pure, final.} = object
-
   var EFD_NONBLOCK {.importc: "EFD_NONBLOCK", header: "<sys/eventfd.h>".}: cint
   var TIOCSWINSZ {.importc: "TIOCSWINSZ", header: "<termios.h>".}: culong
-  var SIGWINCH {.importc: "SIGWINCH", header: "<signal.h>".}: cint
 
 proc inputToVtermKey(input: int64): VTermKey =
   return case input
@@ -759,7 +754,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
 
       if (fds[1].revents and POLLIN) != 0:
         var b: uint64 = 0
-        var n: int = read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
+        discard read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
         state.handleInputEvents()
 
     if state.terminateRequested:
