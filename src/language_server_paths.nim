@@ -1,4 +1,4 @@
-import std/[options, tables, strutils, os]
+import std/[options, tables, strutils, os, strformat]
 import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, rope_utils, event, regex, rope_regex, myjsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -8,7 +8,9 @@ import text/text_document
 
 logCategory "language-server-paths"
 
-const pathRegex = """(?=.*[/\\])(?:(?:\w+:\/\/)?(?:[a-zA-Z]:(/|\\{1,2})|(/|\\{1,2})|)(?:[^\\/\s\"'>\[\]:]+(/|\\{1,2}))*([^\\/\s\"'>\[\]:]+(?:\.\w+)?)?)"""
+const pathRegex = """(?=.*[/\\])(?:(?:\w+:\/\/)?(?:[a-zA-Z]:(/|\\{1,2})|(/|\\{1,2})|)(?:[^\\/\s\"'>\[\]:(),]+(/|\\{1,2}))*([^\\/\s\"'>\[\]:(),]+(?:\.\w+)?)?)"""
+const lineInfoRegex = """^((:\d+(:\d+)?)|(\((\d+), (\d+)\)))"""
+const numberRegex = """(\d+)"""
 
 type
   LanguageServerPaths* = ref object of LanguageServer
@@ -62,33 +64,46 @@ method getDefinition*(self: LanguageServerPaths, filename: string, location: Cur
       return definitions
 
     let lineLen = rope.lineLen(location.line)
-    if location.column > lineLen or lineLen > 512:
+    if location.column > lineLen or lineLen > 512: # todo: make this limit configurable
       return definitions
 
     let pathRegex = textDoc.config.get("lsp.paths.regex", pathRegex)
-    let text = rope.slice(point(location.line, 0)...point(location.line, lineLen)).toRope
-    let bounds = await findAllAsync(text.slice(int), pathRegex)
+    let line = rope.slice(point(location.line, 0)...point(location.line, lineLen)).toRope # todo: don't use toRope once the bug with slicing a slice is fixed
+    let bounds = await findAllAsync(line.slice(int), pathRegex)
     for b in bounds:
       if b.a == b.b or location.column < b.a.column.int or location.column > b.b.column.int:
         continue
 
-      var path = $text[b]
+      var path = $line[b]
       if path.find("/") == -1 and path.find("\\") == -1:
         continue
 
-      if path.startsWith("../") or path.startsWith("..\\"):
-        let fileDir = filename.splitPath.head
+      if path.startsWith("../") or path.startsWith("..\\") or path.startsWith("./") or path.startsWith(".\\"):
+        var fileDir = filename.splitPath.head
         path = fileDir // path
 
-      elif path.startsWith("./") or path.startsWith(".\\"):
-        let fileDir = filename.splitPath.head
-        path = fileDir // path
+      var fileCursorLocation: Cursor = (0, 0)
+
+      try:
+        let lineInfoRegex = re(lineInfoRegex)
+        let numberRegex = re(numberRegex)
+        let lineStr = ($line)[b.b.column..^1]
+        let lineNumberInfo = lineStr.findBounds(lineInfoRegex, 0)
+        if lineNumberInfo.first == 0:
+          let lineNumberString = lineStr[lineNumberInfo.first..lineNumberInfo.last]
+          let bounds = lineNumberString.findAllBounds(0, numberRegex)
+          if bounds.len >= 1:
+            fileCursorLocation.line = (lineNumberString[bounds[0].first.column..<bounds[0].last.column]).parseInt - 1
+          if bounds.len >= 2:
+            fileCursorLocation.column = (lineNumberString[bounds[1].first.column..<bounds[1].last.column]).parseInt - 1
+      except:
+        discard
 
       let fileKind = await self.vfs.getFileKind(path)
       if fileKind == FileKind.File.some:
         definitions.add Definition(
           filename: path,
-          location: (0, 0),
+          location: fileCursorLocation,
         )
 
   return definitions

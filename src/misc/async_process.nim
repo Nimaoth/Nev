@@ -440,7 +440,7 @@ type RunProcessThreadArgs = tuple
   captureErr: bool = true
   evalCommand: bool = false
 
-proc readLineIncludingLast(s: Stream, line: var string, last: char): tuple[eof: bool, last: char] =
+proc readLineIncludingLast*(s: Stream, line: var string, last: char): tuple[eof: bool, last: char] =
   ## Like streams.readLine, but also returns an empty string for the last line if the last line is empty,
   ## which streams.readLine doesn't.
   line.setLen(0)

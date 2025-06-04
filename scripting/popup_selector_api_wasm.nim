@@ -39,6 +39,15 @@ proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.gcsafe, raises: [].} 
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc popup_selector_pop_void_SelectorPopup_wasm(arg: cstring): cstring {.importc.}
+proc pop*(self: SelectorPopup) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = popup_selector_pop_void_SelectorPopup_wasm(
+      argsJsonString.cstring)
+
+
 proc popup_selector_accept_void_SelectorPopup_wasm(arg: cstring): cstring {.
     importc.}
 proc accept*(self: SelectorPopup) {.gcsafe, raises: [].} =
@@ -105,16 +114,6 @@ proc next*(self: SelectorPopup; count: int = 1) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc popup_selector_toggleFocusPreview_void_SelectorPopup_wasm(arg: cstring): cstring {.
-    importc.}
-proc toggleFocusPreview*(self: SelectorPopup) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = popup_selector_toggleFocusPreview_void_SelectorPopup_wasm(
-      argsJsonString.cstring)
-
-
 proc popup_selector_setFocusPreview_void_SelectorPopup_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc setFocusPreview*(self: SelectorPopup; focus: bool) {.gcsafe, raises: [].} =
@@ -123,5 +122,15 @@ proc setFocusPreview*(self: SelectorPopup; focus: bool) {.gcsafe, raises: [].} =
   argsJson.add focus.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = popup_selector_setFocusPreview_void_SelectorPopup_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc popup_selector_toggleFocusPreview_void_SelectorPopup_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleFocusPreview*(self: SelectorPopup) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = popup_selector_toggleFocusPreview_void_SelectorPopup_wasm(
       argsJsonString.cstring)
 

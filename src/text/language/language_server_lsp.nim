@@ -724,7 +724,7 @@ method rename*(self: LanguageServerLSP, filename: string, position: Cursor, newN
 method executeCommand*(self: LanguageServerLSP, command: string, arguments: seq[JsonNode]): Future[Response[JsonNode]] {.async.} =
   return await self.client.executeCommand(command, arguments)
 
-import text/[text_editor, text_document]
+import text/[text_editor]
 
 method connect*(self: LanguageServerLSP, document: Document) =
   if not (document of TextDocument):

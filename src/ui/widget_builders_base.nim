@@ -1,4 +1,4 @@
-import app, view, document_editor, popup, ui/node
+import app, view, document_editor, popup, ui/node, finder/previewer
 
 {.used.}
 
@@ -14,6 +14,9 @@ method createUI*(self: DocumentEditor, builder: UINodeBuilder, app: App): seq[Ov
   discard
 
 method createUI*(self: Popup, builder: UINodeBuilder, app: App): seq[OverlayFunction] {.base.} =
+  discard
+
+method createUI*(self: Previewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] {.base.} =
   discard
 
 func withAlpha*(color: Color, alpha: float32): Color =

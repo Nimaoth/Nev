@@ -19,9 +19,27 @@ when enableSystemClipboard:
 
   proc getClipboardThread(): Option[string] {.gcsafe.} =
     try:
+      proc findCr(str: cstring, start: int, len: int): int =
+        let i = str.toOpenArray(0, len - 1).find('\r', start)
+        if i == -1:
+          return len
+        return i
+
       var len: cint = 0
       let resRaw = clipboard.clipboardTextEx(len.addr, LCB_CLIPBOARD)
-      let res = $resRaw
+
+      var res = newStringOfCap(len.int)
+      var lastI = 0
+      var i = resRaw.findCr(0, len.int)
+      while lastI < len.int:
+        if i > lastI:
+          let start = res.len
+          let amount = i - lastI
+          res.setLen(res.len + amount)
+          copyMem(res[start].addr, resRaw[lastI].addr, amount)
+        lastI = i + 1
+        i = resRaw.findCr(lastI, len.int)
+
       c_free(resRaw)
       return res.some
     except CatchableError:

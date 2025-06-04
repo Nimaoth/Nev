@@ -91,7 +91,7 @@ for kind, key, val in optParser.getopt():
   of cmdEnd: assert(false) # cannot happen
 
 if packageWindows:
-  echo "Package windows..."
+  echo &"Package windows..."
   mkDir releaseWindows
   copySharedFilesTo releaseWindows
   if fileExists "nev.exe":
@@ -100,11 +100,11 @@ if packageWindows:
     cpFile2 "nevt.exe", releaseWindows, optional=true
     cpFile2 "wasmtime.dll", releaseWindows, optional=true
 
-  echo "Create {releaseWindows}.zip"
+  echo &"Create {releaseWindows}.zip"
   exec(&"powershell -Command Compress-Archive -Path {releaseWindows} -DestinationPath {releaseWindows}.zip")
 
 if packageLinux:
-  echo "Package linux..."
+  echo &"Package linux..."
   mkDir releaseLinux
   copySharedFilesTo releaseLinux
   if fileExists "nev":
@@ -117,10 +117,10 @@ if packageLinux:
     cpFile2 "nev-musl", releaseLinuxMusl
     mvFile(releaseLinuxMusl / "nev-musl", releaseLinuxMusl / "nev")
 
-  echo "Create {releaseLinux}.tar"
+  echo &"Create {releaseLinux}.tar"
   exec(&"tar -jcvf {releaseLinux}.tar {releaseLinux}")
 
-  echo "Create {releaseLinuxMusl}.tar"
+  echo &"Create {releaseLinuxMusl}.tar"
   exec(&"tar -jcvf {releaseLinuxMusl}.tar {releaseLinuxMusl}")
 
 quit exitCode

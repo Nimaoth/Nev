@@ -754,7 +754,7 @@ proc vimToggleCase(editor: TextDocumentEditor, moveCursorRight: bool) {.exposeAc
     editor.updateTargetColumn()
 
 proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-current-view-or-quit").} =
-  let openEditors = getVisibleEditors().len + getHiddenEditors().len
+  let openEditors = getNumVisibleViews() + getNumHiddenViews()
   if openEditors == 1:
     plugin_runtime.quit()
   else:
@@ -813,6 +813,15 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   setHandleInputs "editor.text.visual-line", false
   setOption "editor.text.cursor.wide.visual-line", true
   setOption "editor.text.cursor.movement.visual-line", "last"
+
+  setHandleInputs "terminal", false
+  setHandleKeys "terminal", false
+
+  setHandleInputs "terminal.normal", false
+  setHandleKeys "terminal.normal", false
+
+  setHandleInputs "terminal.insert", true
+  setHandleKeys "terminal.insert", true
 
   addModeChangedHandler onModeChangedHandle, proc(editor, oldMode, newMode: auto) {.gcsafe, raises: [].} =
     if not editor.getCurrentEventHandlers().contains("editor.text"):

@@ -18,11 +18,14 @@ For examples and default values see [here](../config/settings.json)
 | `editor.open-session.use-multiplexer` | bool | true | If true then Nev will detect if it's running inside a multiplexer like tmux, zellij or wezterm (by using environment variables) and if so opening a session will use the command `editor.open-session.tmux` or `editor.open-session.zellij` or `editor.open-session.wezterm` |
 | `editor.print-statistics-on-shutdown` | bool | false | If true the editor prints memory usage statistics when quitting. |
 | `editor.record-input-history` | bool | false | Whether the editor shows a history of the last few pressed buttons in the status bar. |
+| `editor.save-in-session` | bool | true | Any editor with this set to true will be stored in the session and restored on startup. |
 | `editor.watch-app-config` | bool | true | Watch the config files in the app directory and automatically reload them when they change. |
 | `editor.watch-theme` | bool | true | Watch the theme directory for changes to the theme. |
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
 | `lsp-merge.timeout` | int | 10000 | Timeout for LSP requests in milliseconds |
+| `terminal.default-mode` | string | "normal" | Mode to enter when creating a new terminal, if no mode is specified otherwise. |
+| `terminal.idle-threshold` | int | 500 | After how many milliseconds of no data received from a terminal it is considered idle, and can be reused for running more commands. |
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
 | `text.code-actions.sign` | string | "⚑" | Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions. |

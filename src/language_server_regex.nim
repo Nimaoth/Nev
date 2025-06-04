@@ -1,8 +1,8 @@
-import std/[options, tables, strutils, os, sugar, sequtils]
+import std/[options, tables, strutils, sugar, sequtils]
 import nimsumtree/rope
-import misc/[custom_logger, custom_async, util, response, rope_utils, event, regex, rope_regex, myjsonutils, jsonex]
+import misc/[custom_logger, custom_async, util, rope_utils, event, rope_regex, myjsonutils, jsonex]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import text/language/[language_server_base, lsp_types]
+import text/language/[language_server_base]
 import document_editor, service, vfs_service, vfs, config_provider
 import workspaces/workspace
 import text/[text_document, text_editor]

@@ -1362,6 +1362,11 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
             onDragBody
           return true
 
+      template onDrag(onDragBody: untyped) {.used.} =
+        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, modifiers {.inject.}: set[Modifier], pos {.inject.}: Vec2, d: Vec2): bool {.gcsafe, raises: [].} =
+          onDragBody
+          return true
+
       template onBeginHover(onBody: untyped) {.used.} =
         currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2): bool {.gcsafe, raises: [].} =
           onBody

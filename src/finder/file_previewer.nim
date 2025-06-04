@@ -15,7 +15,7 @@ type
     services*: Services
     editors*: DocumentEditorService
     vfs: VFS
-    editor: TextDocumentEditor
+    editor*: TextDocumentEditor
     tempDocument: TextDocument
     reuseExistingDocuments: bool
     openNewDocuments: bool

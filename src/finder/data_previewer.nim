@@ -9,7 +9,7 @@ logCategory "data-previewer"
 
 type
   DataPreviewer* = ref object of Previewer
-    editor: TextDocumentEditor
+    editor*: TextDocumentEditor
     tempDocument: TextDocument
     getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].}
 

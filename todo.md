@@ -72,8 +72,21 @@
 - finish/revise using string as parameter type for wasm functions (see createWasmWrapper, createHostWrapper)
 - fix potential issues because of loading order when loading test-language and test-language-playground
 - git: use workspace directory instead of working directory
-- named UI nodes are never cleaned up
-- use github raw link for github workspace
+- Named UI nodes are never cleaned up
+- Use GitHub raw link for GitHub workspace
 - move git stuff to workspace to support multiple git repositories
 - global search:
   - figure out how to specify file filters and other options (case sensitive, whole word match, regex)
+
+- show aliases in command line auto complete.
+
+- fix multiple code actions for the same diagnostic
+- code action sorting
+
+- slicing a rope slice does't work
+
+- disable tab for switching preview focus for terminal selector
+- add Cursor flag to UINodeFlags, draw active editor cursor with that flag, handle it platform to draw
+  native terminal cursor instead of rect
+- add foreground color highlights
+

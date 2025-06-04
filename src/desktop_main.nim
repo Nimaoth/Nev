@@ -70,6 +70,7 @@ Options:
   --attach               Open the passed files in an existing instance if it already exists.
   --clean                Don't load any configs/sessions/plugins
   --ts-mem-tracking      Enable treesitter memory tracking (for debugging)
+  --monitor:n            Open nev on the specified monitor (0, 1, ...). Windows only for now.
 
 Examples:
   nev                                              Open .{appName}-session if it exists
@@ -155,6 +156,11 @@ block: ## Parse command line options
 
       of "session", "s":
         opts.sessionOverride = val.some
+
+      of "monitor":
+        opts.monitor = val.parseInt.some.catch:
+          echo "Expected integer for monitor: --monitor:1"
+          quit(1)
 
       of "ts-mem-tracking":
         enableTreesitterMemoryTracking()
@@ -247,7 +253,7 @@ import text/language/debugger
 import scripting/scripting_base
 import vcs/vcs_api
 import wasm3, wasm3/[wasm3c, wasmconversions]
-import selector_popup, collab, layout, config_provider, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, command_service_api, toast
+import selector_popup, collab, layout, config_provider, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, command_service_api, toast, terminal_service
 import language_server_paths
 import language_server_regex
 import plugin_api/[process]
@@ -423,7 +429,7 @@ gServices = Services()
 gServices.addBuiltinServices()
 
 plat.vfs = gServices.getService(VFSService).get.vfs
-plat.init()
+plat.init(opts)
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
 
@@ -437,10 +443,12 @@ proc main() =
     log lvlInfo, "Shutting down platform"
     plat.deinit()
 
+    log lvlInfo, "Deinit language servers"
     deinitLanguageServers()
 
     # Give language server threads some time to deinit properly before force quitting.
     sleep(100)
+    log lvlInfo, "All done"
   except:
     discard
 

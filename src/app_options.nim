@@ -11,3 +11,4 @@ type AppOptions* = object
   settings*: seq[string]
   earlyCommands*: seq[string]
   lateCommands*: seq[string]
+  monitor*: Option[int]

@@ -1,4 +1,4 @@
-import std/[json, tables, options, sugar, sets]
+import std/[json, tables, options, sets]
 import vmath, bumpy
 import misc/[event, custom_logger, id, custom_async, util, array_set]
 import platform/[platform]
@@ -12,6 +12,10 @@ from scripting_api import EditorId, newEditorId
 
 logCategory "document-editor"
 
+declareSettings EditorSettings, "editor":
+  ## Any editor with this set to true will be stored in the session and restored on startup.
+  declare saveInSession, bool, true
+
 type
   DocumentEditor* = ref object of RootObj
     id*: EditorId
@@ -24,6 +28,7 @@ type
     active: bool
     onActiveChanged*: Event[DocumentEditor]
     config*: ConfigStore
+    editorSettings*: EditorSettings
 
   DocumentFactory* = ref object of RootObj
   DocumentEditorFactory* = ref object of RootObj
@@ -71,8 +76,10 @@ func dirty*(self: DocumentEditor): bool = self.mDirty
 
 proc markDirty*(self: DocumentEditor, notify: bool = true) =
   if not self.mDirty and notify:
+    self.mDirty = true
     self.onMarkedDirty.invoke()
-  self.mDirty = true
+  else:
+    self.mDirty = true
 
 proc resetDirty*(self: DocumentEditor) =
   self.mDirty = false

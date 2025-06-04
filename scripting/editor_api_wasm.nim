@@ -153,6 +153,17 @@ proc setHandleActions*(context: string; value: bool) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_setHandleKeys_void_App_string_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setHandleKeys*(context: string; value: bool) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add context.toJson()
+  argsJson.add value.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_setHandleKeys_void_App_string_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_setConsumeAllActions_void_App_string_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc setConsumeAllActions*(context: string; value: bool) {.gcsafe, raises: [].} =
@@ -838,6 +849,14 @@ proc echoArgs*(args: JsonNode) {.gcsafe, raises: [].} =
   let argsJsonString = $argsJson
   let res {.used.} = editor_echoArgs_void_App_JsonNode_wasm(
       argsJsonString.cstring)
+
+
+proc editor_all_void_App_JsonNode_wasm(arg: cstring): cstring {.importc.}
+proc all*(args: JsonNode) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add args.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_all_void_App_JsonNode_wasm(argsJsonString.cstring)
 
 
 proc editor_printStatistics_void_App_wasm(arg: cstring): cstring {.importc.}

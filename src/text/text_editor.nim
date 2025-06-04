@@ -523,9 +523,11 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   self.selections = @[selection]
 
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
-  self.targetSelectionsInternal = @[selection].some
-  self.selection = selection
-  self.updateTargetColumn(Last)
+  if self.document.isLoadingAsync or self.document.requiresLoad:
+    self.targetSelectionsInternal = @[selection].some
+  else:
+    self.selection = selection
+    self.updateTargetColumn(Last)
 
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
@@ -767,8 +769,6 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
 
   if self.document.requiresLoad:
     self.document.load()
-    self.document.reloadTreesitterLanguage()
-    self.document.requiresLoad = false
 
   # todo: this should account for the line number width
   let wrapWidth = if self.settings.wrapLines.get():
@@ -943,6 +943,8 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
     scrollBehaviour = ScrollBehaviour.none, relativePosition: float = 0.5) =
   if self.disableScrolling:
     return
+
+  # debugf"scrollToCursor {cursor}, {margin}, {scrollBehaviour}"
 
   self.targetPoint = cursor.toPoint.some
   self.targetLineMargin = margin
@@ -1987,13 +1989,13 @@ proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("edit
   if self.document.undo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
   if self.document.redo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
-    self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("editor.text").} =
   self.document.addNextCheckpoint checkpoint
@@ -2062,6 +2064,7 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
 
   self.selections = newSelections
   self.scrollToCursor(Last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.markDirty()
 
 proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: bool = false) {.
@@ -3084,6 +3087,7 @@ proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false,
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
   self.scrollToCursor(Last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.updateTargetColumn(Last)
 
 proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
@@ -3099,6 +3103,7 @@ proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     ))
 
   self.scrollToCursor(Last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.updateTargetColumn(Last)
 
 proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
@@ -3137,6 +3142,7 @@ proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false,
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
   self.scrollToCursor(Last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.updateTargetColumn(Last)
 
 proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config,
@@ -3539,7 +3545,7 @@ type
 
 proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
   let symbols = self.languageServer.getWorkspaceSymbols(self.filename, self.query).await
-  let t = startTimer()
+  # let t = startTimer()
   var items = newItemList(symbols.len)
   var index = 0
   for symbol in symbols:
@@ -4798,7 +4804,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
   if self.document.isNil:
     return
 
-  # log lvlInfo, &"handleTextDocumentLoaded {self.id}, {self.usage}, {self.document.filename}: targetSelectionsInternal: {self.targetSelectionsInternal}, selectionsBeforeReload: {self.selectionsBeforeReload}"
+  # debugf"handleTextDocumentLoaded {self.id}, {self.usage}, '{self.document.filename}': targetSelectionsInternal: {self.targetSelectionsInternal}"
 
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
@@ -4850,21 +4856,26 @@ proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
   if self.document.isNil:
     return
 
+  if self.lastContentBounds.w == 0 or self.lastContentBounds.h == 0:
+    return
+
   if displayMap == self.displayMap:
     if displayMap.endDisplayPoint.row != self.lastEndDisplayPoint.row:
       self.lastEndDisplayPoint = displayMap.endDisplayPoint
       self.updateTargetColumn()
       # let oldScrollOffset = self.scrollOffset.y
 
+      # debugf"handleDisplayMapUpdated '{self.getFileName()}': target {self.targetPoint}, {displayMap.endDisplayPoint.row} -> {self.lastEndDisplayPoint.row}, {self.lastContentBounds}"
       if self.targetPoint.getSome(point):
         self.scrollToCursor(point.toCursor, self.targetLineMargin, self.nextScrollBehaviour, self.targetLineRelativeY)
+        self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
       else:
         self.scrollOffset = self.interpolatedScrollOffset
 
       # let oldInterpolatedScrollOffset = self.interpolatedScrollOffset.y
       let displayPoint = self.displayMap.toDisplayPoint(self.currentCenterCursor.toPoint)
       self.interpolatedScrollOffset.y = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
-      # debugf"handleDisplayMapUpdated {self.getFileName()}: {oldScrollOffset} -> {self.scrollOffset}, {oldInterpolatedScrollOffset} -> {self.interpolatedScrollOffset.y}, target {self.targetPoint}"
+      # debugf"handleDisplayMapUpdated '{self.getFileName()}': {oldScrollOffset} -> {self.scrollOffset}, {oldInterpolatedScrollOffset} -> {self.interpolatedScrollOffset.y}, target {self.targetPoint}"
 
     self.markDirty()
   elif displayMap == self.diffDisplayMap:

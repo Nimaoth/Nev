@@ -121,6 +121,7 @@ macro defineBitFlagSized*(typ: typed, body: untyped): untyped =
     func `-`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.typ and not (1.typ shl b.typ)).flagsName
     func `+`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.typ or b.typ).flagsName
     func `+`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.typ or (1.typ shl b.typ)).flagsName
+    func `*`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.typ and b.typ).flagsName
 
     func `==`*(a, b: flagsName): bool {.borrow.}
 
