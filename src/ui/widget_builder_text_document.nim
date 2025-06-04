@@ -130,9 +130,9 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let backgroundColor = app.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
-  let borderColor = app.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
-  let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
+  let backgroundColor = app.themes.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let borderColor = app.themes.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
+  let docsColor = app.themes.theme.color("editor.foreground", color(1, 1, 1))
 
   let numLinesToShow = min(10, self.hoverText.countLines)
   let (top, bottom) = (
@@ -180,13 +180,13 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   let charWidth = app.platform.charWidth
 
   let transparentBackground = self.uiSettings.background.transparent.get()
-  var backgroundColor = app.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
-  let borderColor = app.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
-  let selectedBackgroundColor = app.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
-  let docsColor = app.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
-  let nameColor = app.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
-  let nameSelectedColor = app.theme.color(@["editorSuggestWidget.highlightForeground", "editor.foreground"], color(1, 1, 1))
-  let scopeColor = app.theme.color(@["descriptionForeground", "editor.foreground"], color(175/255, 1, 175/255))
+  var backgroundColor = app.themes.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let borderColor = app.themes.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
+  let selectedBackgroundColor = app.themes.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
+  let docsColor = app.themes.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
+  let nameColor = app.themes.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
+  let nameSelectedColor = app.themes.theme.color(@["editorSuggestWidget.highlightForeground", "editor.foreground"], color(1, 1, 1))
+  let scopeColor = app.themes.theme.color(@["descriptionForeground", "editor.foreground"], color(175/255, 1, 175/255))
 
   if transparentBackground:
     backgroundColor.a = 0
@@ -428,8 +428,8 @@ proc drawLineNumber(renderCommands: var RenderCommands, builder: UINodeBuilder, 
 
 proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode, renderCommands: var RenderCommands, state: var LineDrawerState) =
 
-  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
-  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
+  let cursorForegroundColor = app.themes.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
+  let cursorBackgroundColor = app.themes.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let cursorTrailColor = cursorForegroundColor.darken(0.1)
   let cursorSpeed: float = self.uiSettings.cursorTrailSpeed.get()
   let cursorTrail: int = self.uiSettings.cursorTrailLength.get()
@@ -623,11 +623,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
   let showContextLines = not renderDiff and self.settings.contextLines.get()
 
-  let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
-  let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background"], backgroundColor.lighten(0.05))
-  let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
-  let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
-  var changedTextBackgroundColor = app.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
+  let selectionColor = app.themes.theme.color("selection.background", color(200/255, 200/255, 200/255))
+  let contextBackgroundColor = app.themes.theme.color(@["breadcrumbPicker.background"], backgroundColor.lighten(0.05))
+  let insertedTextBackgroundColor = app.themes.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
+  let deletedTextBackgroundColor = app.themes.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
+  var changedTextBackgroundColor = app.themes.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
 
   let cursorLine = self.selection.last.line
   let cursorDisplayLine = self.displayMap.toDisplayPoint(self.selection.last.toPoint).row.int
@@ -728,17 +728,17 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     reverse: false,
   )
 
-  let errorColor = app.theme.tokenColor("error", color(0.8, 0.2, 0.2))
-  let warningColor = app.theme.tokenColor("warning", color(0.8, 0.8, 0.2))
-  let informationColor = app.theme.tokenColor("information", color(0.8, 0.8, 0.8))
-  let hintColor = app.theme.tokenColor("hint", color(0.7, 0.7, 0.7))
+  let errorColor = app.themes.theme.tokenColor("error", color(0.8, 0.2, 0.2))
+  let warningColor = app.themes.theme.tokenColor("warning", color(0.8, 0.8, 0.2))
+  let informationColor = app.themes.theme.tokenColor("information", color(0.8, 0.8, 0.8))
+  let hintColor = app.themes.theme.tokenColor("hint", color(0.7, 0.7, 0.7))
 
   let space = self.uiSettings.whitespaceChar.get()
   let spaceColorName = self.uiSettings.whitespaceColor.get()
   if space.len > 0:
     currentNode.renderCommands.space = space.runeAt(0)
 
-  currentNode.renderCommands.spacesColor = app.theme.tokenColor(spaceColorName, textColor)
+  currentNode.renderCommands.spacesColor = app.themes.theme.tokenColor(spaceColorName, textColor)
 
   self.lastRenderedChunks.setLen(0)
 
@@ -839,7 +839,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
               var color = textColor
               if s.color != "":
-                color = app.theme.tokenColor(s.color, textColor)
+                color = app.themes.theme.tokenColor(s.color, textColor)
               drawText(s.text, bounds, color * s.tint, 0.UINodeFlags)
               bounds.x += builder.charWidth * s.width.float
               i += s.width
@@ -868,12 +868,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           fillRect(bounds, color)
 
         let (underlineColor, underlineFlags) = if chunk.styledChunk.underline.getSome(underline):
-          let underlineColor = app.theme.tokenColor(underline.color, textColor)
+          let underlineColor = app.themes.theme.tokenColor(underline.color, textColor)
           (underlineColor, &{TextUndercurl})
         else:
           (color(1, 1, 1), 0.UINodeFlags)
 
-        let textColor = if chunk.scope.len == 0: textColor else: app.theme.tokenColor(chunk.scope, textColor)
+        let textColor = if chunk.scope.len == 0: textColor else: app.themes.theme.tokenColor(chunk.scope, textColor)
         var flags = underlineFlags
         if chunk.styledChunk.drawWhitespace:
           flags.incl UINodeFlag.TextDrawSpaces
@@ -995,7 +995,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       var sn = s.selection.normalized
       if sn.last < visibleTextRange.first or sn.first > visibleTextRange.last:
         continue
-      let color = app.theme.color(s.color, color(200/255, 200/255, 200/255)) * s.tint
+      let color = app.themes.theme.color(s.color, color(200/255, 200/255, 200/255)) * s.tint
       self.drawHighlight(builder, sn, color, selectionsNode.renderCommands, state, ropeCursor)
 
   for s in self.selections:
@@ -1107,15 +1107,15 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let transparentBackground = self.uiSettings.background.transparent.get()
   let inactiveBrightnessChange = self.uiSettings.background.inactiveBrightnessChange.get()
 
-  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
+  let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var backgroundColor = if self.active: app.themes.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.themes.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
 
   if transparentBackground:
     backgroundColor.a = 0
   else:
     backgroundColor.a = 1
 
-  var headerColor = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  var headerColor = if self.active: app.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags

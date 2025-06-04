@@ -3,7 +3,7 @@ import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts
 import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer]
 import ui/node
 import platform
-import input, monitors, lrucache, theme, compilation_config, vfs
+import input, monitors, lrucache, theme, compilation_config, vfs, app_options
 
 export platform
 
@@ -43,7 +43,7 @@ type
     framebuffer: Texture
 
     typefaces: Table[string, Typeface]
-    glyphCache: LruCache[Rune, string]
+    glyphCache: LruCache[(Rune, UINodeFlags), string]
     asciiGlyphCache: array[128, string]
 
     lastEvent: Option[(int64, Modifiers, Button)]
@@ -59,6 +59,9 @@ proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
 
+method moveToMonitor*(self: GuiPlatform, index: int) {.gcsafe, raises: [].} =
+  centerWindowOnMonitor(self.window, index)
+
 method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Typefaces: {self.typefaces.len}\n"
   result.add &"Glyph Cache: {self.glyphCache.len}\n"
@@ -66,9 +69,9 @@ method getStatisticsString*(self: GuiPlatform): string =
 
 {.pop.} # gcsafe
 
-method init*(self: GuiPlatform) =
+method init*(self: GuiPlatform, options: AppOptions) =
   try:
-    self.glyphCache = newLruCache[Rune, string](5000, true)
+    self.glyphCache = newLruCache[(Rune, UINodeFlags), string](5000, true)
     self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
     self.window.runeInputEnabled = true
     self.supportsThinCursor = true
@@ -91,7 +94,12 @@ method init*(self: GuiPlatform) =
     self.builder = newNodeBuilder()
     self.builder.useInvalidation = true
 
-    # self.window.centerWindowOnMonitor(1)
+    if options.monitor.getSome(index):
+      when defined(windows):
+        self.window.centerWindowOnMonitor(index)
+      else:
+        log lvlWarn, &"Opening window on specific monitor not implemented on this platform yet."
+
     self.window.maximized = true
     makeContextCurrent(self.window)
     loadExtensions()
@@ -396,6 +404,11 @@ method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontIt
 
     for (_, image) in self.glyphCache.pairs:
       self.boxy.removeImage(image)
+
+    for image in self.asciiGlyphCache.mitems:
+      if image.len > 0:
+        self.boxy.removeImage(image)
+      image.setLen(0)
   except:
     discard
 
@@ -539,6 +552,8 @@ method render*(self: GuiPlatform, rerender: bool) =
           self.boxy.removeImage(image)
         self.glyphCache.clear()
         for image in self.asciiGlyphCache.mitems:
+          if image.len > 0:
+            self.boxy.removeImage(image)
           image.setLen(0)
 
       if self.builder.root.lastSizeChange == self.builder.frameIndex:
@@ -616,14 +631,24 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
   else:
     VerticalAlignment.TopAlign
 
+  let textFlags = flags * &{TextItalic, TextBold}
+
+  proc tintRune(r: Rune): bool =
+    return true
+
   # todo: convert typeset to not use strings to avoid copying
   try:
     let font = platform.getFont(platform.ctx.fontSize, flags)
 
     if arrangementIndex == -1 or arrangementIndex >= uint32.high.int:
       let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
-      template drawRune(i: int, rune: Rune, color: Color): untyped =
-        if rune.int < platform.asciiGlyphCache.len:
+      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+        let color = if tintRune(rune):
+          inColor
+        else:
+          color(1, 1, 1)
+
+        if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags:
           if platform.asciiGlyphCache[rune.int].len == 0:
             var path = font.typeface.getGlyphPath(rune)
             let rect = arrangement.selectionRects[i]
@@ -638,18 +663,19 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
           platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
 
         else:
-          if not platform.glyphCache.contains(rune):
+          let key = (rune, textFlags)
+          if not platform.glyphCache.contains(key):
             var path = font.typeface.getGlyphPath(rune)
             let rect = arrangement.selectionRects[i]
             path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
             var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
             for paint in font.paints:
               image.fillPath(path, paint)
-            platform.boxy.addImage($rune, image, genMipmaps=false)
-            platform.glyphCache[rune] = $rune
+            platform.boxy.addImage($key, image, genMipmaps=false)
+            platform.glyphCache[key] = $key
 
           let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-          platform.boxy.drawImage($rune, pos, color)
+          platform.boxy.drawImage($key, pos, color)
 
       if TextDrawSpaces in flags:
         let spaceRune = renderCommands.space
@@ -669,18 +695,23 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
       let indices {.cursor.} = renderCommands.arrangements[arrangementIndex]
       let solidPaint = ({.cast(gcsafe).}: solidPaint)
       solidPaint.color = color(1, 1, 1)
-      template drawRune(i: int, rune: Rune, color: Color): untyped =
-        if not platform.glyphCache.contains(rune):
+      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+        let color = if tintRune(rune):
+          inColor
+        else:
+          color(1, 1, 1)
+        let key = (rune, textFlags)
+        if not platform.glyphCache.contains(key):
           var path = typeface.getGlyphPath(rune)
           let rect = renderCommands.arrangement.selectionRects[i]
           path.transform(translate(renderCommands.arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
           var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
           image.fillPath(path, solidPaint)
-          platform.boxy.addImage($rune, image, genMipmaps=false)
-          platform.glyphCache[rune] = $rune
+          platform.boxy.addImage($key, image, genMipmaps=false)
+          platform.glyphCache[key] = $key
 
         let pos = (vec2(pos.x, pos.y) + renderCommands.arrangement.selectionRects[i].xy).round
-        platform.boxy.drawImage($rune, pos, color)
+        platform.boxy.drawImage($key, pos, color)
 
       if TextDrawSpaces in flags:
         let spaceRune = renderCommands.space

@@ -1,7 +1,7 @@
 import std/[json, tables, strutils, options]
 import chroma, results
-import misc/[custom_logger, myjsonutils, util, custom_async]
-import vfs
+import misc/[custom_logger, myjsonutils, util, custom_async, event]
+import vfs, service
 
 logCategory "theme"
 
@@ -24,7 +24,23 @@ type
     colors*: Table[string, Color]
     tokenColors*: Table[string, Style]
 
-var gTheme*: Theme = nil
+  ThemeService* = ref object of Service
+    # config: ConfigService
+    theme*: Theme
+    onThemeChanged*: Event[Theme]
+
+func serviceName*(_: typedesc[ThemeService]): string = "ThemeService"
+addBuiltinService(ThemeService) #, ConfigService)
+
+method init*(self: ThemeService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"ThemeService.init"
+  # self.config = self.services.getService(ConfigService).get
+
+  return ok()
+
+proc setTheme*(self: ThemeService, theme: Theme) =
+  self.theme = theme
+  self.onThemeChanged.invoke(theme)
 
 proc parseHexVar*(text: string): Result[Color, string] =
   try:

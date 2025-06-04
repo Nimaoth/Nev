@@ -81,7 +81,7 @@ method deactivate*(view: EditorView) =
   view.editor.active = false
 
 method markDirty*(view: EditorView, notify: bool = true) =
-  view.dirty = true
+  view.markDirtyBase()
   view.editor.markDirty(notify)
 
 method getEventHandlers*(view: EditorView, inject: Table[string, EventHandler]): seq[EventHandler] =
@@ -178,6 +178,10 @@ proc addView*(self: LayoutService, view: View, addToHistory = true, append = fal
   if self.currentView < 0:
     self.currentView = 0
 
+  # Force immediate load for new file since we're making it visible anyways
+  if view of EditorView and view.EditorView.document.requiresLoad:
+    view.EditorView.document.load()
+
   view.markDirty()
 
   self.updateActiveEditor(addToHistory)
@@ -203,12 +207,23 @@ proc createAndAddView*(self: LayoutService, document: Document, append: bool = f
     return editor.some
   return DocumentEditor.none
 
-proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor): void =
+proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) =
   if self.popups.len > 0:
     return
   for i, view in self.views:
     if view of EditorView and view.EditorView.editor == editor:
       self.currentView = i
+      self.platform.requestRender()
+      return
+
+proc tryActivateView*(self: LayoutService, view: View) =
+  if self.popups.len > 0:
+    return
+  for i, v in self.views:
+    if v == view:
+      self.currentView = i
+      self.platform.requestRender()
+      return
 
 proc getActiveViewEditor*(self: LayoutService): Option[DocumentEditor] =
   if self.tryGetCurrentEditorView().getSome(view):
@@ -342,6 +357,44 @@ proc getHiddenEditors*(self: LayoutService): seq[EditorId] {.expose("layout").} 
     if view of EditorView:
       result.add view.EditorView.editor.id
 
+proc getNumVisibleViews*(self: LayoutService): int {.expose("layout").} =
+  ## Returns the amount of visible views
+  return self.views.len
+
+proc getNumHiddenViews*(self: LayoutService): int {.expose("layout").} =
+  ## Returns the amount of hidden views
+  return self.hiddenViews.len
+
+proc showView*(self: LayoutService, view: View, viewIndex: Option[int] = int.none) =
+  ## Make the given view visible
+  ## If viewIndex is none, the view will be opened in the currentView,
+  ## Otherwise the view will be opened in the view with the given index.
+
+  for i, v in self.views:
+    if v == view:
+      self.currentView = i
+      return
+
+  var hiddenView = -1
+  for i, v in self.hiddenViews:
+    if v == view:
+      hiddenView = i
+      break
+
+  if hiddenView >= 0:
+    self.hiddenViews.removeSwap(hiddenView)
+
+  if viewIndex.getSome(_):
+    # todo
+    log lvlError, &"Not implemented: showView(view, {viewIndex})"
+  else:
+    let oldView = self.views[self.currentView]
+    oldView.deactivate()
+    self.hiddenViews.add oldView
+
+    self.views[self.currentView] = view
+    view.activate()
+
 proc showEditor*(self: LayoutService, editorId: EditorId, viewIndex: Option[int] = int.none) {.expose("layout").} =
   ## Make the given editor visible
   ## If viewIndex is none, the editor will be opened in the currentView,
@@ -450,29 +503,34 @@ proc openWorkspaceFile*(self: LayoutService, path: string, append: bool = false)
 
   return self.createAndAddView(document, append = append)
 
-proc openFile*(self: LayoutService, path: string, appFile: bool = false): Option[DocumentEditor] =
+proc openFile*(self: LayoutService, path: string): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
 
   let path = self.vfs.normalize(path)
 
-  log lvlInfo, fmt"[openFile] Open file '{path}' (appFile = {appFile})"
-  if self.tryOpenExisting(path, appFile, append = false).getSome(ed):
+  log lvlInfo, fmt"[openFile] Open file '{path}'"
+  if self.tryOpenExisting(path, false, append = false).getSome(ed):
     log lvlInfo, fmt"[openFile] found existing editor"
     return ed.some
 
   log lvlInfo, fmt"Open file '{path}'"
 
-  let document = self.editors.getOrOpenDocument(path, appFile=appFile).getOr:
+  let document = self.editors.getOrOpenDocument(path).getOr:
     log(lvlError, fmt"Failed to load file {path}")
     return DocumentEditor.none
 
   return self.createAndAddView(document)
 
 proc closeView*(self: LayoutService, view: View, restoreHidden: bool = true) =
-  ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
+  ## Closes the current view.
   let viewIndex = self.views.find(view)
   let hiddenViewIndex = self.hiddenViews.find(view)
+  if viewIndex == -1 and hiddenViewIndex == -1:
+    # Already closed
+    log lvlError, &"Trying to close non existing view"
+    return
+
   log lvlInfo, &"closeView {viewIndex}:{hiddenViewIndex}, restoreHidden: {restoreHidden}"
 
   if viewIndex != -1:
@@ -492,8 +550,9 @@ proc closeView*(self: LayoutService, view: View, restoreHidden: bool = true) =
     else:
       discard
       # todo
-      # self.help()
+      # open some default file/view
 
+  view.close()
   if view of EditorView:
     self.editors.closeEditor(view.EditorView.editor)
 
@@ -521,6 +580,7 @@ proc closeView*(self: LayoutService, index: int, keepHidden: bool = true, restor
   if keepHidden:
     self.hiddenViews.add view
   else:
+    view.close()
     if view of EditorView:
       self.editors.closeEditor(view.EditorView.editor)
 
@@ -571,6 +631,7 @@ proc closeOtherViews*(self: LayoutService, keepHidden: bool = true) {.expose("la
       if keepHidden:
         self.hiddenViews.add view
       else:
+        view.close()
         if view of EditorView:
           self.editors.closeEditor(view.EditorView.editor)
 

@@ -3,7 +3,7 @@ import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
 import scripting/[expose, scripting_base]
 import app_interface, text/text_editor, popup, events,
-  selector_popup_builder, dispatch_tables, layout, service, config_provider
+  selector_popup_builder, dispatch_tables, layout, service, config_provider, view
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 
@@ -22,6 +22,7 @@ type
     editors: DocumentEditorService
     textEditor*: TextDocumentEditor
     previewEditor*: TextDocumentEditor
+    previewView*: View
     selected*: int
     scrollOffset*: int
     handleItemConfirmed*: proc(finderItem: FinderItem): bool {.gcsafe, raises: [].}
@@ -32,6 +33,8 @@ type
 
     previewEventHandler: EventHandler
     customEventHandler: EventHandler
+
+    viewMarkedDirtyHandle: Id
 
     scale*: Vec2
     previewScale*: float = 0.5
@@ -114,7 +117,9 @@ method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   if self.textEditor.isNil:
     return @[]
 
-  if self.focusPreview and self.previewEditor.isNotNil:
+  if self.focusPreview and self.previewView.isNotNil:
+    result = self.previewView.getEventHandlers(initTable[string, EventHandler]()) & @[self.previewEventHandler]
+  elif self.focusPreview and self.previewEditor.isNotNil:
     result = self.previewEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.previewEventHandler]
   else:
     result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
@@ -142,6 +147,22 @@ proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
 proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
+proc updatePreview(self: SelectorPopup) =
+  if self.previewer.isSome and self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+    let view = self.previewer.get.get.previewItem(list[self.selected])
+    if view != self.previewView:
+      if self.previewView != nil:
+        self.previewView.onMarkedDirty.unsubscribe(self.viewMarkedDirtyHandle)
+
+      self.previewView = view
+
+      if self.previewView != nil:
+        self.viewMarkedDirtyHandle = self.previewView.onMarkedDirty.subscribe () =>
+          self.markDirty()
+
+    if view == nil and self.previewEditor.isNotNil:
+      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+
 proc setPreviewVisible*(self: SelectorPopup, visible: bool) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
@@ -153,9 +174,7 @@ proc setPreviewVisible*(self: SelectorPopup, visible: bool) {.expose("popup.sele
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.isSome:
-      assert self.previewEditor.isNotNil
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+    self.updatePreview()
 
   self.markDirty()
 
@@ -172,6 +191,12 @@ proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.expose("popup.selecto
   #   return selected.itemToJson
   return newJNull()
 
+proc getNumItems*(self: SelectorPopup): int =
+  assert self.finder.isNotNil
+
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+    return list.filteredLen
+
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] =
   assert self.finder.isNotNil
 
@@ -179,6 +204,9 @@ proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] =
     assert self.selected >= 0
     assert self.selected < list.filteredLen
     result = list[self.selected].some
+
+proc pop*(self: SelectorPopup) {.expose("popup.selector").} =
+  self.layout.popPopup(self)
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
@@ -242,9 +270,7 @@ proc prev*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.isSome:
-      assert self.previewEditor.isNotNil
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+    self.updatePreview()
 
   self.markDirty()
 
@@ -260,27 +286,29 @@ proc next*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.isSome:
-      assert self.previewEditor.isNotNil
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+    self.updatePreview()
 
   self.markDirty()
-
-proc toggleFocusPreview*(self: SelectorPopup) {.expose("popup.selector").} =
-  if self.previewEditor.isNil:
-    return
-
-  self.focusPreview = not self.focusPreview
-  self.markDirty()
-  self.previewEditor.markDirty()
 
 proc setFocusPreview*(self: SelectorPopup, focus: bool) {.expose("popup.selector").} =
-  if self.previewEditor.isNil:
+  if self.previewer.isNone:
     return
+
+  if self.previewView != nil:
+    if focus:
+      self.previewer.get.get.activate()
+      self.previewView.activate()
+    else:
+      self.previewer.get.get.deactivate()
+      self.previewView.deactivate()
+  else:
+    self.previewEditor.markDirty()
 
   self.focusPreview = focus
   self.markDirty()
-  self.previewEditor.markDirty()
+
+proc toggleFocusPreview*(self: SelectorPopup) {.expose("popup.selector").} =
+  self.setFocusPreview(not self.focusPreview)
 
 genDispatcher("popup.selector")
 addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
@@ -350,9 +378,7 @@ proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.isSome:
-      assert self.previewEditor.isNotNil
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+    self.updatePreview()
 
   else:
     self.selected = 0

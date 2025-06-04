@@ -5,6 +5,8 @@ import scripting/expose
 import service, dispatch_tables, vfs, vfs_local, vfs_config, config_provider
 import fsnotify
 
+export vfs
+
 {.push gcsafe.}
 {.push raises: [].}
 

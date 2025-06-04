@@ -1,4 +1,4 @@
-import std/[os, options, unicode, strutils, streams, atomics, sequtils]
+import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm]
 import nimsumtree/[rope, static_array]
 import misc/[custom_async, custom_logger, util, timer, regex, id]
 import vfs
@@ -43,6 +43,9 @@ proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {
   except OSError as e:
     log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
     return idNone()
+
+method normalizeImpl*(self: VFSLocal, path: string): string =
+  return path.normalizePath.normalizeNativePath
 
 method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
   log lvlInfo, &"Register watcher for local file system at '{path}'"

@@ -6,7 +6,7 @@ import scripting/[expose, scripting_base]
 import platform/[platform]
 import workspaces/[workspace]
 import config_provider, app_interface
-import text/language/language_server_base, language_server_command_line
+import language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
@@ -107,6 +107,7 @@ type
     vfsService*: VFSService
     commands*: CommandService
     toast*: ToastService
+    themes*: ThemeService
 
     workspace*: Workspace
     vfs*: VFS
@@ -124,7 +125,6 @@ type
 
     layout*: LayoutService
 
-    theme*: Theme
     loadedFontSize: float
     loadedLineDistance: float
 
@@ -204,14 +204,12 @@ proc setLocationList(self: App, list: seq[FinderItem],
   self.previewer = previewer.move
 
 proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: []).} =
-  if not force and self.theme.isNotNil and self.theme.path == path:
+  if not force and self.themes.theme.isNotNil and self.themes.theme.path == path:
     return
   self.reloadThemeFromConfig = false
   if theme.loadFromFile(self.vfs, path).await.getSome(theme):
     log(lvlInfo, fmt"Loaded theme {path}")
-    self.theme = theme
-    {.gcsafe.}:
-      gTheme = theme
+    self.themes.setTheme(theme)
   else:
     log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender(redrawEverything=true)
@@ -418,12 +416,23 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNode, filename: string) =
           # todo: line
           self.addCommandScript(scope, "", keys, name, args, source = (filename, 0, 0))
 
+        elif command.kind == JArray:
+          if command.elems.len > 0:
+            let name = command[0].getStr
+            let args = command.elems[1..^1].mapIt($it).join(" ")
+            self.addCommandScript(scope, "", keys, name, args, source = (filename, 0, 0))
+          else:
+            log lvlError, &"Invalid command in keybinding settings '{filename}': Array must not be empty for '{scope}.{keys}'"
+
         elif command.kind == JObject:
           let name = command["command"].getStr
           let args = command["args"].elems.mapIt($it).join(" ")
           let description = command.fields.getOrDefault("description", newJString("")).getStr
           # todo: line
           self.addCommandScript(scope, "", keys, name, args, description, source = (filename, 0, 0))
+
+        else:
+          log lvlError, &"Invalid command in keybinding settings '{filename}': Expected string | array | object for '{scope}.{keys}'"
 
   except CatchableError:
     log(lvlError, &"Failed to load keybindings from json: {getCurrentExceptionMsg()}\n{json.pretty}")
@@ -718,6 +727,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.workspace = services.getService(Workspace).get
   self.commands = services.getService(CommandService).get
   self.toast = services.getService(ToastService).get
+  self.themes = services.getService(ThemeService).get
   self.vfs = self.vfsService.vfs
 
   self.platform.fontSize = 16
@@ -748,9 +758,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.applySettingsFromAppOptions()
 
-  self.theme = defaultTheme()
-  {.gcsafe.}:
-    gTheme = self.theme
+  self.themes.setTheme(defaultTheme())
 
   self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
   self.editors.documents.add self.logDocument
@@ -775,6 +783,12 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       self.defaultHandleCommand(command.get)
     else:
       string.none
+
+  self.commands.addScopedCommandHandler "", proc(command: string): Option[string] =
+    var (action, arg) = command.parseAction
+    if self.handleAction(action, arg, record=true).getSome(res):
+      return ($res).some
+    return string.none
 
   assignEventHandler(self.eventHandler, self.events.getEventHandlerConfig("editor")):
     onAction:
@@ -890,8 +904,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       for e in events:
         case e.action
         of Modify:
-          if "app://themes" // e.name == self.theme.path:
-            asyncSpawn self.setTheme(self.theme.path, force = true)
+          if "app://themes" // e.name == self.themes.theme.path:
+            asyncSpawn self.setTheme(self.themes.theme.path, force = true)
 
         else:
           discard
@@ -1162,6 +1176,8 @@ proc saveAppState*(self: App) {.expose("editor").} =
       return OpenEditor.none
     if view.document == self.logDocument:
       return OpenEditor.none
+    if not view.editor.config.get("editor.save-in-session", true):
+      return OpenEditor.none
 
     try:
       let customOptions = view.editor.getStateJson()
@@ -1206,6 +1222,9 @@ proc setHandleInputs*(self: App, context: string, value: bool) {.expose("editor"
 
 proc setHandleActions*(self: App, context: string, value: bool) {.expose("editor").} =
   self.events.getEventHandlerConfig(context).setHandleActions(value)
+
+proc setHandleKeys*(self: App, context: string, value: bool) {.expose("editor").} =
+  self.events.getEventHandlerConfig(context).setHandleKeys(value)
 
 proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("editor").} =
   self.events.getEventHandlerConfig(context).setConsumeAllActions(value)
@@ -1489,7 +1508,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  let originalTheme = self.theme.path
+  let originalTheme = self.themes.theme.path
 
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     var items = newSeq[FinderItem]()
@@ -1518,25 +1537,19 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
     if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
-      self.theme = theme
-      {.gcsafe.}:
-        gTheme = theme
+      self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
       return true
 
   popup.handleItemSelected = proc(item: FinderItem) =
     if theme.loadFromFile(self.vfs, item.data).waitFor.getSome(theme):
-      self.theme = theme
-      {.gcsafe.}:
-        gTheme = theme
+      self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
   popup.handleCanceled = proc() =
     if theme.loadFromFile(self.vfs, originalTheme).waitFor.getSome(theme):
-      self.theme = theme
-      {.gcsafe.}:
-        gTheme = theme
+      self.themes.setTheme(theme)
       self.platform.requestRender(true)
 
   self.layout.pushPopup popup
@@ -1936,30 +1949,28 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     var items = newSeq[FinderItem]()
     let allViews = self.layout.views & self.layout.hiddenViews
     for i in countdown(allViews.high, 0):
-      if not (allViews[i] of EditorView):
-        continue
+      if allViews[i] of EditorView:
+        let view = allViews[i].EditorView
+        let document = view.editor.getDocument
+        let path = document.filename
+        let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
+        let dirtyMarker = if isDirty: "*" else: " "
+        let activeMarker = if i == self.layout.currentView:
+          "#"
+        elif i < self.layout.views.len:
+          "👁"
+        else:
+          " "
 
-      let view = allViews[i].EditorView
-      let document = view.editor.getDocument
-      let path = document.filename
-      let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
-      let dirtyMarker = if isDirty: "*" else: " "
-      let activeMarker = if i == self.layout.currentView:
-        "#"
-      elif i < self.layout.views.len:
-        "👁"
-      else:
-        " "
+        let (directory, name) = path.splitPath
+        let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
 
-      let (directory, name) = path.splitPath
-      let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
-
-      items.add FinderItem(
-        displayName: activeMarker & dirtyMarker & name,
-        filterText: name,
-        data: $view.editor.id,
-        detail: relativeDirectory,
-      )
+        items.add FinderItem(
+          displayName: activeMarker & dirtyMarker & name,
+          filterText: name,
+          data: $view.editor.id,
+          detail: relativeDirectory,
+        )
 
     return items
 
@@ -2634,7 +2645,7 @@ proc reloadPlugin*(self: App) {.expose("editor").} =
 
 proc reloadTheme*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload theme"
-  asyncSpawn self.setTheme(self.theme.path, force = true)
+  asyncSpawn self.setTheme(self.themes.theme.path, force = true)
 
 proc reloadState*(self: App) {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
@@ -3078,6 +3089,15 @@ proc collectGarbage*(self: App) {.expose("editor").} =
 
 proc echoArgs*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
   log lvlInfo, &"echoArgs: {args}"
+
+proc all*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
+  log lvlInfo, &"run all commands: {args}"
+  if args.kind == JArray:
+    for command in args.elems:
+      if command.kind == JArray and command.len > 0:
+        let action = command[0].getStr
+        let arg = command.elems[1..^1].mapIt($it).join(" ")
+        discard self.handleAction(action, arg, record=false)
 
 proc printStatistics*(self: App) {.expose("editor").} =
   {.gcsafe.}:

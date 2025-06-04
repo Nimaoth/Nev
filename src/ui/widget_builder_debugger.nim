@@ -286,14 +286,14 @@ proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
 
 method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   let dirty = self.dirty
-  self.dirty = false
+  self.resetDirty()
 
   let transparentBackground = app.config.runtime.get("ui.background.transparent", false)
-  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var backgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(0.025)
-  var activeBackgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 40/255))
+  let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var backgroundColor = app.themes.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(0.025)
+  var activeBackgroundColor = app.themes.theme.color("editor.background", color(25/255, 25/255, 40/255))
   activeBackgroundColor.a = 1
-  # let selectedBackgroundColor = app.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
+  # let selectedBackgroundColor = app.themes.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
   let selectedBackgroundColor = color(0.6, 0.4, 0.2) # todo
 
   if transparentBackground:
@@ -303,8 +303,8 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[Over
     backgroundColor.a = 1
     activeBackgroundColor.a = 1
 
-  let headerColor = app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255)).withAlpha(1)
-  let activeHeaderColor = app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)).withAlpha(1)
+  let headerColor = app.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255)).withAlpha(1)
+  let activeHeaderColor = app.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)).withAlpha(1)
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags

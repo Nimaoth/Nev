@@ -27,6 +27,7 @@ type
     commands: Table[string, Table[string, Command]]
     handleActions*: bool
     handleInputs*: bool
+    handleKeys*: bool
     consumeAllActions*: bool
     consumeAllInput*: bool
     revision: int
@@ -43,6 +44,7 @@ type
     handleInput*: proc(input: string): EventResponse {.gcsafe, raises: [].}
     handleProgress*: proc(input: int64) {.gcsafe, raises: [].}
     handleCanceled*: proc(input: int64) {.gcsafe, raises: [].}
+    handleKey*: proc(input: int64, mods: Modifiers): EventResponse {.gcsafe, raises: [].}
 
   CommandKeyInfo* = object
     keys*: string
@@ -72,6 +74,7 @@ func newEventHandlerConfig*(context: string, parent: EventHandlerConfig = nil): 
   result.parent = parent
   result.handleActions = true
   result.handleInputs = false
+  result.handleKeys = false
   result.context = context
 
 proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]]) =
@@ -128,6 +131,10 @@ proc dfa*(handler: EventHandler): CommandDFA =
 
 proc setHandleInputs*(config: EventHandlerConfig, value: bool) =
   config.handleInputs = value
+  config.revision += 1
+
+proc setHandleKeys*(config: EventHandlerConfig, value: bool) =
+  config.handleKeys = value
   config.revision += 1
 
 proc setHandleActions*(config: EventHandlerConfig, value: bool) =
@@ -215,6 +222,15 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
         let input {.inject, used.} = i
         canceledBody
 
+    template onKey(onKeyBody: untyped): untyped {.used.} =
+      handler.handleKey = proc(i: int64, m: Modifiers): EventResponse {.gcsafe, raises: [].} =
+        if handler.config.handleKeys:
+          let input {.inject, used.} = i
+          let mods {.inject, used.} = m
+          return onKeyBody
+        else:
+          return Ignored
+
     handlerBody
     handler
 
@@ -258,6 +274,15 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
         let input {.inject, used.} = i
         canceledBody
 
+    template onKey(onKeyBody: untyped): untyped {.used.} =
+      handler.handleKey = proc(i: int64, m: Modifiers): EventResponse {.gcsafe, raises: [].} =
+        if handler.config.handleKeys:
+          let input {.inject, used.} = i
+          let mods {.inject, used.} = m
+          return onKeyBody
+        else:
+          return Ignored
+
     handlerBody
     target = handler
 
@@ -293,12 +318,28 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
     handler.states = handler.dfa.stepAll(handler.states, input, modifiers)
 
     if debugEventHandlers:
-      debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}\n  {prevStates}\n  -> {handler.states}"
+      debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, {handleUnknownAsInput}, {allowHandlingEvent}\n  {prevStates}\n  -> {handler.states}, inProgress: {handler.inProgress}, anyTerminal: {handler.states.anyIt(handler.dfa.isTerminal(it.current))}"
       # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
 
     if not handler.inProgress:
-      if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
-        if handler.handleInput(inputToString(input, {})) == Handled:
+      if input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and allowHandlingEvent:
+        # if we have delayed inputs we're allowed to handle the current event as input
+        if delayedInputs.len > 0:
+          if debugEventHandlers:
+            debugf"flush delayed inputs"
+          for (handler, input, modifiers) in delayedInputs:
+            discard handler.handleInput(inputToString(input, {}))
+          delayedInputs.setLen(0)
+
+          if handler.handleInput(inputToString(input, {})) == Handled:
+            return Handled
+
+        elif handleUnknownAsInput:
+          if handler.handleInput(inputToString(input, {})) == Handled:
+            return Handled
+
+      elif handler.handleKey != nil:
+        if handler.handleKey(input, modifiers) == Handled:
           return Handled
 
       handler.resetHandler()
@@ -345,6 +386,8 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
 
     else:
       if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil and handler.config.handleInputs:
+        if debugEventHandlers:
+          debugf"delay input {inputToString(input, modifiers)}"
         delayedInputs.add (handler, input, modifiers)
 
       if not handler.handleProgress.isNil:
@@ -372,6 +415,9 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
       handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput, not anyInProgressAbove, delayedInputs)
     else:
       Ignored
+
+    if debugEventHandlers:
+      debugf"-> {response}"
 
     case response
     of Handled:

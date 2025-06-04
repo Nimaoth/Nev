@@ -1,12 +1,12 @@
 import std/[strutils, sugar, sequtils]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, fuzzy_matching]
+import misc/[util, custom_logger, fuzzy_matching, disposable_ref]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_library]
 import text/text_editor
 import app, selector_popup, theme
-import finder/finder
+import finder/[finder, previewer, file_previewer, open_editor_previewer, data_previewer]
 import config_provider, events
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
@@ -20,7 +20,7 @@ logCategory "selector-popup-ui"
 proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBuilder, app: App):
     seq[OverlayFunction] =
 
-  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let name = item.displayName
   let matchIndices = self.getCompletionMatches(i, self.getSearchString(), name, defaultPathMatchingConfig)
 
@@ -31,6 +31,18 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
       builder.panel(&{FillY}, w = builder.charWidth * 4)
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = item.detail,
         textColor = textColor.darken(0.2))
+
+method createUI*(self: FilePreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  if self.editor.isNotNil:
+    result.add self.editor.createUI(builder, app)
+
+method createUI*(self: OpenEditorPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  if self.editor.isNotNil:
+    result.add self.editor.createUI(builder, app)
+
+method createUI*(self: DataPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  if self.editor.isNotNil:
+    result.add self.editor.createUI(builder, app)
 
 method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   # let dirty = self.dirty
@@ -51,8 +63,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
     absolute(scale.x * builder.currentParent.boundsActual.w),
     absolute(scale.y * builder.currentParent.boundsActual.h))
 
-  let backgroundColor = app.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
-  let selectionColor = app.theme.color("list.activeSelectionBackground",
+  let backgroundColor = app.themes.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
+  let selectionColor = app.themes.theme.color("list.activeSelectionBackground",
     color(0.8, 0.8, 0.8)).withAlpha(1)
 
   let excluded = ["prev", "next", "accept", "close"]
@@ -76,7 +88,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
 
           if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
 
-            let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+            let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
             let highlightColor = textColor.lighten(0.15)
             let detailColor = textColor.darken(0.2)
 
@@ -157,10 +169,10 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
                 x += maxWidths[col] + gap
 
           if app.nextPossibleInputs.len == 0:
-            let textColor = app.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
-            let continuesTextColor = app.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
-            let keysTextColor = app.theme.tokenColor("number", color(0.882, 0.784, 0.784))
-            var headerColor = app.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
+            let textColor = app.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
+            let continuesTextColor = app.themes.theme.tokenColor("keyword", color(0.882, 0.784, 0.784))
+            let keysTextColor = app.themes.theme.tokenColor("number", color(0.882, 0.784, 0.784))
+            var headerColor = app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176))
             builder.renderCommandKeys(nextPossibleInputs, textColor, continuesTextColor, keysTextColor, headerColor, whichKeyHeight, currentNode.bounds, padding = 0)
 
         if showPreview:
@@ -168,7 +180,11 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
               w = bounds.w * previewScale, h = bounds.h):
 
             self.previewEditor.active = self.focusPreview
-            result.add self.previewEditor.createUI(builder, app)
+
+            if self.previewView != nil:
+              result.add self.previewView.createUI(builder, app)
+            elif self.previewer.isSome:
+              result.add self.previewer.get.get.createUI(builder, app)
 
     if sizeToContentY:
       currentNode.h = currentNode.last.h

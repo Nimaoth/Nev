@@ -1,4 +1,5 @@
 import std/[options, tables]
+import misc/[event, id]
 import events, document_editor
 
 {.push gcsafe.}
@@ -6,10 +7,23 @@ import events, document_editor
 
 type
   View* = ref object of RootObj
-    dirty*: bool
+    id*: Id
     active*: bool
+    mDirty: bool
+    onMarkedDirty*: Event[void]
 
   DebuggerView* = ref object of View
+
+proc initView*(self: View) =
+  self.id = newId()
+
+func dirty*(self: View): bool = self.mDirty
+
+proc resetDirty*(self: View) =
+  self.mDirty = false
+
+method close*(view: View) {.base.} =
+  discard
 
 method activate*(view: View) {.base.} =
   view.active = true
@@ -17,8 +31,15 @@ method activate*(view: View) {.base.} =
 method deactivate*(view: View) {.base.} =
   view.active = false
 
-method markDirty*(view: View, notify: bool = true) {.base.} =
-  view.dirty = true
+proc markDirtyBase*(self: View, notify: bool = true) =
+  if not self.mDirty and notify:
+    self.mDirty = true
+    self.onMarkedDirty.invoke()
+  else:
+    self.mDirty = true
+
+method markDirty*(self: View, notify: bool = true) {.base.} =
+  self.markDirtyBase()
 
 method getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.base.} =
   discard
