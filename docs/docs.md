@@ -152,6 +152,26 @@ the popup by focusing the preview using `<TAB>`.
 
 To open the terminal in the main view just press `<ENTER>` or `<C-y>`.
 
+### Defining shells
+
+To use the `run-in-terminal` command you need to define the shell command in the settings.
+
+The following shells are already defined by default: `bash`, `sh`, `zsh`, `powershell`, `wsl` and `default`.
+`default` is `bash` on linux and `powershell` on windows.
+
+Additional shells can be specified like this:
+
+```json
+// settings.json
+{
+  "editor.shells.bash.command": "/path/to/bash", // Specify a full path
+  "editor.shells.zsh.command": "zsh" // Use system $PATH
+  "editor.shells.bash-no-profile.command": "bash --noprofile" // Pass command line arguments
+}
+```
+
+You can the use a shell like this: `run-in-terminal "bash-no-profile" "ls"`
+
 ### Examples
 
 #### Open a scratch terminal using a key combination
