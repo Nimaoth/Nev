@@ -6,7 +6,7 @@ import scripting/[expose, scripting_base]
 import platform/[platform]
 import workspaces/[workspace]
 import config_provider, app_interface
-import text/language/language_server_base, language_server_command_line
+import language_server_command_line
 import input, events, document, document_editor, popup, dispatch_tables, theme, app_options, view, register
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]

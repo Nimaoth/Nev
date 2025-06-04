@@ -16,6 +16,11 @@
 - Added builtin language server to provide auto completion and goto definition for paths
 - Changed how language servers are configured.
 - Added [builtin terminal emulator](docs/docs.md#Terminal) based on [libvterm](https://www.leonerd.org.uk/code/libvterm/)
+- Added command `all` which runs all arguments as commands. Arguments need to be arrays.
+- Remove carriage return from text when pasting from clipboard.
+- Added command line argument `--monitor` to specify which monitor to open the window on (Windows only).
+- Added support for line numbers for `goto-definition` for the path language server (supported formats: `path:line`, `path:line:column`, `path(line, column)`).
+- Added support for rendering bold and italic text (currently only for terminals)
 
 ### Bug fixes
 

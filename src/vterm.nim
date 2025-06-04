@@ -1,7 +1,4 @@
-import std/[os, colors]
-import winim/lean
 import misc/[custom_unicode]
-import platform/[tui]
 
 {.compile: "./libvterm/encoding.c".}
 {.compile: "./libvterm/keyboard.c".}
@@ -168,7 +165,7 @@ type
 
   VTermParserCallbacks* {.bycopy, importc.} = object
     text*: proc (bytes: cstring; len: csize_t; user: pointer): cint {.cdecl.}
-    control*: proc (control: cuchar; user: pointer): cint {.cdecl.}
+    control*: proc (control: char; user: pointer): cint {.cdecl.}
     escape*: proc (bytes: cstring; len: csize_t; user: pointer): cint {.cdecl.}
     csi*: proc (leader: cstring; args: ptr clong; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.}
     osc*: proc (command: cint; frag: VTermStringFragment; user: pointer): cint {.cdecl.}
@@ -193,7 +190,7 @@ type
     sb_clear*: proc (user: pointer): cint {.cdecl.}
 
   VTermStateFallbacks* {.bycopy, importc.} = object
-    control*: proc (control: cuchar; user: pointer): cint {.cdecl.}
+    control*: proc (control: char; user: pointer): cint {.cdecl.}
     csi*: proc (leader: cstring; args: ptr clong; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.}
     osc*: proc (command: cint; frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     dcs*: proc (command: cstring; commandlen: csize_t; frag: VTermStringFragment; user: pointer): cint {.cdecl.}

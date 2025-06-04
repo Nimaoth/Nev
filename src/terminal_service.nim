@@ -1,8 +1,8 @@
-import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, atomics]
+import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors]
 import vmath
 import chroma
-import nimsumtree/[arc, rope]
-import misc/[async_process, custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref]
+import nimsumtree/[rope]
+import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref]
 import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
 import scripting/expose
 import platform/[tui, platform]
@@ -21,21 +21,9 @@ when defined(windows):
   type HPCON* = HANDLE
 
   const PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE: DWORD = 131094
-
-  const PIPE_ACCESS_DUPLEX = 0x3
   const PIPE_ACCESS_INBOUND = 0x1
-  const PIPE_ACCESS_OUTBOUND = 0x2
-
   const PIPE_TYPE_BYTE = 0x0
-  const PIPE_TYPE_MESSAGE = 0x4
-
-  const PIPE_READMODE_BYTE = 0x0
-  const PIPE_READMODE_MESSAGE = 0x2
-
   const PIPE_WAIT = 0x0
-
-  const FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000
-  const FILE_FLAG_WRITE_THROUGH = 0x80000000
   const FILE_FLAG_OVERLAPPED = 0x40000000
 
   proc CreatePseudoConsole*(size: wincon.COORD, hInput: HANDLE, hOutput: HANDLE, dwFlags: DWORD, phPC: ptr HPCON): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
@@ -253,8 +241,8 @@ type
     group*: string
     command*: string
     thread: Thread[ThreadState]
-    inputChannel: ptr Channel[InputEvent] # todo: free this
-    outputChannel: ptr Channel[OutputEvent] # todo: free this
+    inputChannel: ptr Channel[InputEvent]
+    outputChannel: ptr Channel[OutputEvent]
     terminalBuffer*: TerminalBuffer
     cursor*: tuple[row, col: int, visible: bool, shape: CursorShape, blink: bool] = (0, 0, true, CursorShape.Block, true)
     scrollY: int
@@ -271,7 +259,7 @@ type
     handles: OsHandles
 
   TerminalView* = ref object of View
-    terminals: TerminalService
+    terminals*: TerminalService
     eventHandler: EventHandler
     modeEventHandler: EventHandler
     mode*: string
@@ -283,7 +271,7 @@ type
   TerminalService* = ref object of Service
     events: EventHandlerService
     config: ConfigService
-    layout: LayoutService
+    layout*: LayoutService
     themes: ThemeService
     registers: Registers
     commands: CommandService
@@ -355,7 +343,6 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
   var cell: VTermScreenCell
   var pos: VTermPos
   for scrolledRow in 0..<state.height:
-    var col: cint = 0
     var prevOverlap = 1
     for col in 0..<state.width:
       dec prevOverlap
@@ -394,7 +381,6 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
       if cell.attrs.strike != 0: c.style.incl(terminal.Style.styleStrikethrough)
       if cell.attrs.dim != 0: c.style.incl(terminal.Style.styleDim)
 
-      let fg = cell.fg
       if cell.fg.isDefaultFg:
         c.fg = fgNone
         c.fgColor = colors.rgb(0, 0, 0)
@@ -403,7 +389,6 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
         c.fgColor = colors.rgb(cell.fg.rgb.red, cell.fg.rgb.green, cell.fg.rgb.blue)
       elif cell.fg.isIndexed:
         c.fg = fgRGB
-        let idx = cell.fg.indexed.idx
         state.screen.convertColorToRgb(cell.fg.addr)
         c.fgColor = colors.rgb(cell.fg.rgb.red, cell.fg.rgb.green, cell.fg.rgb.blue)
 
@@ -415,7 +400,6 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
         c.bgColor = colors.rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
       elif cell.bg.isIndexed:
         c.bg = bgRGB
-        let idx = cell.bg.indexed.idx
         state.screen.convertColorToRgb(cell.bg.addr)
         c.bgColor = colors.rgb(cell.bg.rgb.red, cell.bg.rgb.green, cell.bg.rgb.blue)
 
@@ -423,7 +407,6 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
       prevOverlap = cell.width.int
 
 proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
-  # todo: cancel when closed
   while not terminal.threadTerminated:
     var updated = false
     while terminal.outputChannel[].peek() > 0:

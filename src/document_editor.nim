@@ -1,4 +1,4 @@
-import std/[json, tables, options, sugar, sets]
+import std/[json, tables, options, sets]
 import vmath, bumpy
 import misc/[event, custom_logger, id, custom_async, util, array_set]
 import platform/[platform]

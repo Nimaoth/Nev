@@ -207,12 +207,23 @@ proc createAndAddView*(self: LayoutService, document: Document, append: bool = f
     return editor.some
   return DocumentEditor.none
 
-proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor): void =
+proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) =
   if self.popups.len > 0:
     return
   for i, view in self.views:
     if view of EditorView and view.EditorView.editor == editor:
       self.currentView = i
+      self.platform.requestRender()
+      return
+
+proc tryActivateView*(self: LayoutService, view: View) =
+  if self.popups.len > 0:
+    return
+  for i, v in self.views:
+    if v == view:
+      self.currentView = i
+      self.platform.requestRender()
+      return
 
 proc getActiveViewEditor*(self: LayoutService): Option[DocumentEditor] =
   if self.tryGetCurrentEditorView().getSome(view):

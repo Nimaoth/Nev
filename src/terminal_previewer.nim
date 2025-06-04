@@ -1,6 +1,5 @@
-import std/[options, strformat, strutils, tables]
+import std/[strformat, strutils, tables]
 import misc/[util, custom_logger]
-import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder/[finder, previewer]
 import service, terminal_service, view

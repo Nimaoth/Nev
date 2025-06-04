@@ -1,8 +1,8 @@
-import std/[options, strformat, tables, sequtils]
+import std/[options, strformat, tables]
 import misc/[util, custom_logger, custom_async, custom_unicode]
 import text/language/[language_server_base]
 import document_editor, events
-import config_provider, service, vfs_service
+import config_provider, service
 import nimsumtree/rope
 
 logCategory "commands"

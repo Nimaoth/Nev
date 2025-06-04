@@ -1,12 +1,11 @@
-import std/[strformat, options, tables, sequtils, strutils]
+import std/[options, tables, strutils]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/[platform, tui]
-import ui/[widget_builders_base, widget_library]
+import ui/[widget_builders_base]
 import app, theme, view
-import text/text_editor
-import config_provider, terminal_service, terminal_previewer
+import config_provider, terminal_service, terminal_previewer, layout
 
 from std/colors as colors import nil
 
@@ -16,8 +15,6 @@ import ui/node
 {.used.}
 
 logCategory "widget_builder_terminal"
-
-var uiUserId = newId()
 
 method createUI*(self: TerminalPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   if self.view != nil:
@@ -38,8 +35,6 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
   let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
   var activeBackgroundColor = app.themes.theme.color("editor.background", color(25/255, 25/255, 40/255))
   activeBackgroundColor.a = 1
-  # let selectedBackgroundColor = app.themes.theme.color("editorSuggestWidget.selectedBackground", color(0.6, 0.5, 0.2)).withAlpha(1)
-  let selectedBackgroundColor = color(0.6, 0.4, 0.2) # todo
 
   var cursorForegroundColor = app.themes.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = app.themes.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
@@ -55,8 +50,6 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
     app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1)
   else:
     app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1).lighten(inactiveBrightnessChange)
-
-  let activeHeaderColor = app.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)).withAlpha(1)
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
@@ -79,8 +72,6 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
   var res: seq[OverlayFunction] = @[]
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.id.newPrimaryId):
-    # onClickAny btn:
-    #   self.app.tryActivateEditor(self)
 
     if dirty or app.platform.redrawEverything or not builder.retain():
       builder.panel(&{LayoutVertical} + sizeFlags):
@@ -128,6 +119,7 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
           onScroll:
             self.handleScroll(delta.y.int, modifiers)
           currentNode.handlePressed = proc(node: UINode, btn: input.MouseButton, modifiers: set[Modifier], pos: Vec2): bool =
+            self.terminals.layout.tryActivateView(self)
             let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
             self.handleClick(btn, true, modifiers, cellPos.x.int, cellPos.y.int)
             return true
@@ -157,7 +149,6 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
 
                 var bg = lastCell.bg
                 var bgColor = color(0, 0, 0)
-                var fg = lastCell.fg
                 var fgColor = color(0, 0, 0)
                 var runLen = 0
 

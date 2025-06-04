@@ -16,7 +16,7 @@ method createUI*(self: DocumentEditor, builder: UINodeBuilder, app: App): seq[Ov
 method createUI*(self: Popup, builder: UINodeBuilder, app: App): seq[OverlayFunction] {.base.} =
   discard
 
-method createUI*(self: Previewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: Previewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] {.base.} =
   discard
 
 func withAlpha*(color: Color, alpha: float32): Color =

@@ -2,7 +2,7 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, response, rope_utils, async_process, jsonex]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer, rope_utils, async_process, jsonex]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, config_provider, service, vfs, vfs_service, language_server_list
