@@ -10,6 +10,8 @@ import finder/[finder, previewer]
 import vterm, input, input_api, register, command_service
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 
+from scripting_api import RunInTerminalOptions, CreateTerminalOptions
+
 from std/terminal import Style
 
 const bufferSize = 10 * 1024 * 1024
@@ -1100,7 +1102,7 @@ proc setSize*(self: TerminalView, width: int, height: int) =
     if self.terminal != nil:
       self.terminal.sendEvent(InputEvent(kind: InputEventKind.Size, row: height, col: width))
 
-proc createTerminalView(self: TerminalService, command: string, options: api.CreateTerminalOptions): TerminalView =
+proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions): TerminalView =
   try:
     let term = self.createTerminal(80, 50, command, options.autoRunCommand)
     term.group = options.group
@@ -1194,7 +1196,7 @@ proc escape*(self: TerminalService) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
     view.setMode("normal")
 
-proc createTerminal*(self: TerminalService, command: string = "", options: api.CreateTerminalOptions = api.CreateTerminalOptions()) {.expose("terminal").} =
+proc createTerminal*(self: TerminalService, command: string = "", options: CreateTerminalOptions = CreateTerminalOptions()) {.expose("terminal").} =
   ## Opens a new terminal by running `command`.
   ## `command`                   Program name and arguments for the process. Usually a shell.
   ## `options.group`             An arbitrary string used to control reusing of terminals and is displayed on screen.
@@ -1214,7 +1216,7 @@ proc isIdle(self: TerminalService, terminal: Terminal): bool =
   let idleThreshold = self.settings.idleThreshold.get()
   return terminal.lastUpdateTime.elapsed.ms.int > idleThreshold
 
-proc runInTerminal*(self: TerminalService, shell: string, command: string, options: api.RunInTerminalOptions = api.RunInTerminalOptions()) {.expose("terminal").} =
+proc runInTerminal*(self: TerminalService, shell: string, command: string, options: RunInTerminalOptions = RunInTerminalOptions()) {.expose("terminal").} =
   ## Run the given `command` in a terminal with the specified shell.
   ## `command` is executed in the shell by sending it as if typed using the keyboard, followed by `<ENTER>`.
   ## `shell`                     Name of the shell. If you pass e.g. `wsl` to this function then the shell which gets
@@ -1249,7 +1251,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
         return
 
   var options = options
-  self.createTerminal(shellCommand.get, api.CreateTerminalOptions(
+  self.createTerminal(shellCommand.get, CreateTerminalOptions(
     group: options.group,
     autoRunCommand: command,
     mode: options.mode,

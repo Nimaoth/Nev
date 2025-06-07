@@ -22,28 +22,30 @@ proc escape*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc terminal_createTerminal_void_TerminalService_string_api_CreateTerminalOptions_wasm(
+proc terminal_createTerminal_void_TerminalService_string_CreateTerminalOptions_wasm(
     arg: cstring): cstring {.importc.}
-proc createTerminal*(command: string = ""; options: api.CreateTerminalOptions = api.CreateTerminalOptions()) {.
+proc createTerminal*(command: string = "";
+                     options: CreateTerminalOptions = CreateTerminalOptions()) {.
     gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add command.toJson()
   argsJson.add options.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = terminal_createTerminal_void_TerminalService_string_api_CreateTerminalOptions_wasm(
+  let res {.used.} = terminal_createTerminal_void_TerminalService_string_CreateTerminalOptions_wasm(
       argsJsonString.cstring)
 
 
-proc terminal_runInTerminal_void_TerminalService_string_string_api_RunInTerminalOptions_wasm(
+proc terminal_runInTerminal_void_TerminalService_string_string_RunInTerminalOptions_wasm(
     arg: cstring): cstring {.importc.}
-proc runInTerminal*(shell: string; command: string; options: api.RunInTerminalOptions = api.RunInTerminalOptions()) {.
+proc runInTerminal*(shell: string; command: string;
+                    options: RunInTerminalOptions = RunInTerminalOptions()) {.
     gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add shell.toJson()
   argsJson.add command.toJson()
   argsJson.add options.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = terminal_runInTerminal_void_TerminalService_string_string_api_RunInTerminalOptions_wasm(
+  let res {.used.} = terminal_runInTerminal_void_TerminalService_string_string_RunInTerminalOptions_wasm(
       argsJsonString.cstring)
 
 

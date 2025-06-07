@@ -1047,6 +1047,12 @@ declareSettings UiSettings, "ui":
   ## How long toasts are displayed for, in milliseconds.
   declare toastDuration, int, 8000
 
+  # Defines the way views are layed out.
+  # declare layout, JsonNodeEx, newJexObject()
+
+  ## In which slot to open new views if no slot is specified directly.
+  declare defaultSlot, string, ""
+
   # ## How long the cursor trail is. Set to 0 to disable cursor trail.
   # declare inclusiveSelection, int, 2
 

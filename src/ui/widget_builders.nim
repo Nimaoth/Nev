@@ -1,4 +1,4 @@
-import std/[sugar]
+import std/[sugar, os]
 import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
@@ -43,6 +43,9 @@ method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
+  if self.children.len == 0:
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
 method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
   let mainSplit = 0.5
@@ -66,6 +69,9 @@ method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[Ov
         result.add c.createUI(builder, app)
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
+  if self.children.len == 0:
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
 method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
@@ -95,6 +101,9 @@ method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq
         result.add c.createUI(builder, app)
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
+  if self.children.len == 0:
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
 method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
@@ -129,7 +138,13 @@ method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[Overlay
             leaf.display()
           else:
             "-"
-          builder.panel(&{SizeToContentX, FillY, DrawText}, text = desc, textColor = textColor)
+
+          let headLen = desc.splitPath.head.len
+          var highlightIndices = newSeq[int]()
+          for i in (headLen + 1)..desc.high:
+            highlightIndices.add(i)
+          discard builder.highlightedText(desc, highlightIndices, textColor.darken(0.2), textColor, 20)
+
       builder.panel(&{SizeToContentX, FillY, DrawText}, text = " |", textColor = textColor)
 
     builder.panel(&{FillX, FillY}):
@@ -161,6 +176,9 @@ method createUI*(self: MainLayout, builder: UINodeBuilder, app: App): seq[Overla
       let bounds = rect(xy, xwyh - xy)
       builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
         result.add c.createUI(builder, app)
+
+  if self.center == nil:
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
 proc updateWidgetTree*(self: App, frameIndex: int) =
   # self.platform.builder.buildUINodes()

@@ -94,6 +94,7 @@ For examples and default values see [here](../config/settings.json)
 | `ui.background.transparent` | bool | false | If true the background is transparent. |
 | `ui.cursor-trail-length` | int | 2 | How long the cursor trail is. Set to 0 to disable cursor trail. |
 | `ui.cursor-trail-speed` | float | 100.0 | How fast to interpolate the cursor trail position when moving the cursor. Higher means faster. |
+| `ui.default-slot` | string | "" | In which slot to open new views if no slot is specified directly. |
 | `ui.indent-guide` | bool | true | Enable indent guides to show the indentation of the current line. |
 | `ui.line-numbers` | "none" \| "absolute" \| "relative" | "absolute" | How line numbers should be displayed. |
 | `ui.max-views` | int | 2 | Maximum number of views (files or other UIs) which can be shown. |

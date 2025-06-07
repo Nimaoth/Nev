@@ -1942,6 +1942,15 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     discard self.layout.openFile(item.data)
     return true
 
+  popup.addCustomCommand "open-in-slot", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    self.commands.openCommandLine "", "slot: ", proc(path: Option[string]): Option[string] =
+      if path.getSome(path):
+        discard self.layout.openFile(item.data, path)
+    return true
+
   self.layout.pushPopup popup
 
 proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("editor").} =
@@ -1956,23 +1965,36 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
         let view = v.EditorView
         allViews.add view
 
-    for i in countdown(allViews.high, 0):
-      if allViews[i] of EditorView:
-        let view = allViews[i].EditorView
+    let activeView = self.layout.layout.activeLeafView()
+
+    for i in countdown(self.layout.hiddenViews.high, 0):
+      let v = self.layout.hiddenViews[i]
+      if v of EditorView:
+        let view = v.EditorView
         let document = view.editor.getDocument
-        let path = document.filename
         let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
         let dirtyMarker = if isDirty: "*" else: " "
-        let activeMarker = if i == self.layout.currentView:
-          "#"
-        elif i < self.layout.views.len:
-          "👁"
-        else:
-          " "
-
-        let (directory, name) = path.splitPath
+        let (directory, name) = document.filename.splitPath
         let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
+        items.add FinderItem(
+          displayName: dirtyMarker & name,
+          filterText: name,
+          data: $view.editor.id,
+          detail: relativeDirectory,
+        )
 
+    self.layout.layout.forEachView proc(v: View): bool =
+      if v of EditorView:
+        let view = v.EditorView
+        let document = view.editor.getDocument
+        let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
+        let dirtyMarker = if isDirty: "*" else: " "
+        let activeMarker = if view.View == activeView:
+          "#"
+        else:
+          "👁"
+        let (directory, name) = document.filename.splitPath
+        let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
         items.add FinderItem(
           displayName: activeMarker & dirtyMarker & name,
           filterText: name,
