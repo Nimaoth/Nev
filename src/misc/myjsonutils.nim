@@ -566,3 +566,17 @@ proc extendJson*(a: var JsonNode, b: JsonNode, extend: bool) =
 
   else:
     a = b
+
+proc shallowCopy*(p: JsonNode): JsonNode =
+  ## Performs a shallow copy of `p`.
+  case p.kind
+  of JString, JInt, JFloat, JBool, JNull:
+    result = p.copy()
+  of JObject:
+    result = newJObject()
+    for key, val in pairs(p.fields):
+      result.fields[key] = val
+  of JArray:
+    result = newJArray()
+    for i in items(p.elems):
+      result.elems.add(i)

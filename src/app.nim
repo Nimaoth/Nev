@@ -66,7 +66,6 @@ type EditorState = object
   fontItalic: string
   fontBoldItalic: string
   fallbackFonts: seq[string]
-  layout: string
   workspaceFolder: OpenWorkspace
   openEditors: seq[OpenEditor]
   hiddenEditors: seq[OpenEditor]
@@ -164,6 +163,8 @@ proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
 proc defaultHandleCommand*(self: App, command: string): Option[string]
+proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
+proc runLateCommandsFromAppOptions(self: App)
 
 implTrait AppInterface, App:
   getActiveEditor(Option[DocumentEditor], App)
@@ -357,41 +358,73 @@ proc addSessionToRecentSessions(self: App, session: string) {.async.} =
   except:
     log lvlError, &"Failed to update recent sessions: {getCurrentExceptionMsg()}"
 
-proc restoreStateFromConfig*(self: App, state: ptr EditorState) {.async: (raises: []).} =
+proc loadSession*(self: App) {.async: (raises: []).} =
   try:
     if self.generalSettings.keepSessionHistory.get():
       await self.addSessionToRecentSessions(self.sessionFile)
 
     let stateJson = self.vfs.read(self.sessionFile).await.parseJson
-
-    state[] = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+    var state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
 
     if stateJson.hasKey("workspaceFolders"):
       try:
         log lvlError, &"Old session file found"
-        state[].workspaceFolder = stateJson["workspaceFolders"][0].jsonTo(OpenWorkspace, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+        state.workspaceFolder = stateJson["workspaceFolders"][0].jsonTo(OpenWorkspace, JOptions(allowMissingKeys: true, allowExtraKeys: true))
       except:
         discard
 
     log(lvlInfo, fmt"Restoring session {self.sessionFile}")
 
-    if not state[].layout.isEmptyOrWhitespace:
-      self.layout.setLayout(state[].layout)
-
-    let fontSize = max(state[].fontSize.float, 10.0)
+    let fontSize = max(state.fontSize.float, 10.0)
     self.loadedFontSize = fontSize
     self.platform.fontSize = fontSize
-    self.loadedLineDistance = state[].lineDistance.float
-    self.platform.lineDistance = state[].lineDistance.float
-    if state[].fontRegular.len > 0: self.fontRegular = state[].fontRegular
-    if state[].fontBold.len > 0: self.fontBold = state[].fontBold
-    if state[].fontItalic.len > 0: self.fontItalic = state[].fontItalic
-    if state[].fontBoldItalic.len > 0: self.fontBoldItalic = state[].fontBoldItalic
-    if state[].fallbackFonts.len > 0: self.fallbackFonts = state[].fallbackFonts
-
+    self.loadedLineDistance = state.lineDistance.float
+    self.platform.lineDistance = state.lineDistance.float
+    if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
+    if state.fontBold.len > 0: self.fontBold = state.fontBold
+    if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
+    if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
+    if state.fallbackFonts.len > 0: self.fallbackFonts = state.fallbackFonts
     self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
 
-    self.session.restoreSession(state[].sessionData)
+    self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
+
+    log(lvlInfo, fmt"Restoring workspace")
+    if state.workspaceFolder.settings != nil:
+      self.workspace.restore(state.workspaceFolder.settings)
+      self.config.groups.add(workspaceConfigDir)
+      await self.loadConfigFrom(workspaceConfigDir, "workspace")
+
+    # Open current working dir as local workspace if no workspace exists yet
+    if self.workspace.path == "":
+      log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+      self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
+      self.config.groups.add(workspaceConfigDir)
+      await self.loadConfigFrom(workspaceConfigDir, "workspace")
+
+    # Restore open editors
+    if self.appOptions.fileToOpen.getSome(filePath):
+      try:
+        let path = os.absolutePath(filePath).normalizePathUnix
+        if self.vfs.getFileKind(path).await.getSome(kind):
+          if kind == FileKind.File:
+            discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+      except CatchableError as e:
+        log lvlError, &"Failed to open file '{filePath}': {e.msg}"
+
+    self.session.restoreSession(state.sessionData)
+
+    # if self.layout.hiddenViews.len > 0:
+    #   self.layout.addView self.layout.hiddenViews.pop
+    # else:
+    #   self.help()
+
+    asyncSpawn self.initScripting(self.appOptions)
+
+    self.runLateCommandsFromAppOptions()
+
+    log lvlInfo, &"Finished initializing app"
+
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
@@ -688,8 +721,6 @@ proc runLateCommandsFromAppOptions(self: App) =
     let res = self.handleAction(action, args, record=false)
     log lvlInfo, &"'{command}' -> {res}"
 
-proc finishInitialization*(self: App, state: EditorState): Future[void]
-
 proc newApp*(backend: api.Backend, platform: Platform, services: Services, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
@@ -835,40 +866,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     onInput:
       Ignored
 
-  var state = EditorState()
-  if not options.dontRestoreConfig:
-    if options.sessionOverride.getSome(session):
-      self.sessionFile = os.absolutePath(session).normalizePathUnix
-    elif options.fileToOpen.getSome(file):
-      let path = os.absolutePath(file).normalizePathUnix
-      if self.vfs.getFileKind(path).await.getSome(kind):
-        case kind
-        of FileKind.File:
-          # Don't restore a session when opening a specific file.
-          discard
-        of FileKind.Directory:
-          log lvlInfo, &"Set current dir: '{path}'"
-          setCurrentDir(path)
-          if fileExists(path // defaultSessionName):
-            self.sessionFile = path // defaultSessionName
-
-    elif options.restoreLastSession:
-      let lastSessions = await self.getRecentSessions()
-      if lastSessions.len == 0:
-        log lvlError, &"Failed to restore last session: No last session found."
-      else:
-        self.sessionFile = lastSessions.last
-
-    elif fileExists(defaultSessionName):
-      self.sessionFile = os.absolutePath(defaultSessionName).normalizePathUnix
-
-    if self.sessionFile != "":
-      await self.restoreStateFromConfig(state.addr)
-    else:
-      log lvlInfo, &"Don't restore session file."
-
-  self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
-
   let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
@@ -880,22 +877,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.runEarlyCommandsFromAppOptions()
   self.runConfigCommands("startup-commands")
-
-  # if self.runtime.get("command-server.port", Port.none).getSome(port):
-  #   asyncSpawn self.listenForConnection(port)
-
-  log(lvlInfo, fmt"Restoring workspace")
-  if state.workspaceFolder.settings != nil:
-    self.workspace.restore(state.workspaceFolder.settings)
-    self.config.groups.add(workspaceConfigDir)
-    await self.loadConfigFrom(workspaceConfigDir, "workspace")
-
-  # Open current working dir as local workspace if no workspace exists yet
-  if self.workspace.path == "":
-    log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
-    self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
-    self.config.groups.add(workspaceConfigDir)
-    await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
   await self.setTheme(self.uiSettings.theme.get())
 
@@ -933,59 +914,80 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     if key == "" or key == "ui" or key == "ui.theme":
       self.reloadThemeFromConfig = true
 
-  asyncSpawn self.finishInitialization(state)
-
-  log lvlInfo, &"Finished creating app"
-
-  return self
-
-proc finishInitialization*(self: App, state: EditorState) {.async.} =
-  await sleepAsync(1.milliseconds)
-
-  # Restore open editors
-  if self.appOptions.fileToOpen.getSome(filePath):
-    try:
-      let path = os.absolutePath(filePath).normalizePathUnix
+  if not options.dontRestoreConfig:
+    if options.sessionOverride.getSome(session):
+      self.sessionFile = os.absolutePath(session).normalizePathUnix
+    elif options.fileToOpen.getSome(file):
+      let path = os.absolutePath(file).normalizePathUnix
       if self.vfs.getFileKind(path).await.getSome(kind):
-        if kind == FileKind.File:
-          discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
-    except CatchableError as e:
-      log lvlError, &"Failed to open file '{filePath}': {e.msg}"
+        case kind
+        of FileKind.File:
+          # Don't restore a session when opening a specific file.
+          discard
+        of FileKind.Directory:
+          log lvlInfo, &"Set current dir: '{path}'"
+          setCurrentDir(path)
+          if fileExists(path // defaultSessionName):
+            self.sessionFile = path // defaultSessionName
+
+    elif options.restoreLastSession:
+      let lastSessions = await self.getRecentSessions()
+      if lastSessions.len == 0:
+        log lvlError, &"Failed to restore last session: No last session found."
+      else:
+        self.sessionFile = lastSessions.last
+
+    elif fileExists(defaultSessionName):
+      self.sessionFile = os.absolutePath(defaultSessionName).normalizePathUnix
+
+    if self.sessionFile != "":
+      asyncSpawn self.loadSession()
+    else:
+      log lvlInfo, &"Don't restore session file."
+
+      # Open current working dir as local workspace if no workspace exists yet
+      if self.workspace.path == "":
+        log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+        self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
+        self.config.groups.add(workspaceConfigDir)
+        await self.loadConfigFrom(workspaceConfigDir, "workspace")
+
+      if self.appOptions.fileToOpen.getSome(filePath):
+        try:
+          let path = os.absolutePath(filePath).normalizePathUnix
+          if self.vfs.getFileKind(path).await.getSome(kind):
+            if kind == FileKind.File:
+              discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+        except CatchableError as e:
+          log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
   else:
-    for editorState in state.openEditors:
-      let view = self.layout.createView(editorState.filename)
-      if view.isNil:
-        continue
+    # Open current working dir as local workspace if no workspace exists yet
+    if self.workspace.path == "":
+      log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+      self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
+      self.config.groups.add(workspaceConfigDir)
+      await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-      self.layout.addView(view, append=true)
-      if editorState.customOptions.isNotNil and view of EditorView:
-        view.EditorView.editor.restoreStateJson(editorState.customOptions)
+    if self.appOptions.fileToOpen.getSome(filePath):
+      try:
+        let path = os.absolutePath(filePath).normalizePathUnix
+        if self.vfs.getFileKind(path).await.getSome(kind):
+          if kind == FileKind.File:
+            discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+      except CatchableError as e:
+        log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
-    for editorState in state.hiddenEditors:
-      let view = self.layout.createView(editorState.filename)
-      if view.isNil:
-        continue
-
-      self.layout.hiddenViews.add view
-      if editorState.customOptions.isNotNil and view of EditorView:
-        view.EditorView.editor.restoreStateJson(editorState.customOptions)
-
-  if self.layout.views.len == 0:
-    if self.layout.hiddenViews.len > 0:
-      self.layout.addView self.layout.hiddenViews.pop
-    else:
-      self.help()
-
-  asyncSpawn self.initScripting(self.appOptions)
-
-  self.runLateCommandsFromAppOptions()
-
-  log lvlInfo, &"Finished initializing app"
+  # if self.runtime.get("command-server.port", Port.none).getSome(port):
+  #   asyncSpawn self.listenForConnection(port)
 
   # todo
   # asyncSpawn self.listenForIpc(0)
   # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
+
+  log lvlInfo, &"Finished creating app"
+
+  return self
 
 proc saveAppState*(self: App)
 proc printStatistics*(self: App)
@@ -1149,7 +1151,8 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fallbackFonts = self.fallbackFonts
 
   state.commandHistory = self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory
-  state.sessionData = self.session.sessionData
+  state.sessionData = self.session.saveSession()
+  echo "session data: ", state.sessionData.pretty
 
   if getDebugger().getSome(debugger):
     state.debuggerState = debugger.getStateJson().some
@@ -1947,7 +1950,12 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
-    let allViews = self.layout.views & self.layout.hiddenViews
+    var allViews = self.layout.hiddenViews
+    self.layout.layout.forEachView proc(v: View): bool =
+      if v of EditorView:
+        let view = v.EditorView
+        allViews.add view
+
     for i in countdown(allViews.high, 0):
       if allViews[i] of EditorView:
         let view = allViews[i].EditorView
@@ -2646,17 +2654,6 @@ proc reloadPlugin*(self: App) {.expose("editor").} =
 proc reloadTheme*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload theme"
   asyncSpawn self.setTheme(self.themes.theme.path, force = true)
-
-proc reloadState*(self: App) {.expose("editor").} =
-  ## Reloads some of the state stored in the session file (default: config/config.json)
-  var state = EditorState()
-  if self.sessionFile != "":
-    try:
-      waitFor self.restoreStateFromConfig(state.addr)
-    except CatchableError as e:
-      log lvlError, &"Failed to reload state: {e.msg}\n{e.getStackTrace()}"
-
-  self.requestRender()
 
 proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)

@@ -1,3 +1,4 @@
+import std/[sugar]
 import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
@@ -18,11 +19,164 @@ method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[Overla
   self.resetDirty()
   self.editor.createUI(builder, app)
 
+method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  self.resetDirty()
+  let mainSplit = 0.5
+  var rects = newSeq[Rect]()
+  var rect = rect(0, 0, 1, 1)
+  for i, c in self.children:
+    let ratio = if i == 0 and self.children.len > 1:
+      mainSplit
+    else:
+      1.0 / (self.children.len - i).float32
+    let (view_rect, remaining) = rect.splitV(ratio.percent)
+    rect = remaining
+    rects.add view_rect
+
+  for i, c in self.children:
+    if c != nil:
+      let xy = rects[i].xy * builder.currentParent.bounds.wh
+      let xwyh = rects[i].xwyh * builder.currentParent.bounds.wh
+      let bounds = rect(xy, xwyh - xy)
+      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
+        result.add c.createUI(builder, app)
+    else:
+      builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
+method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  self.resetDirty()
+  let mainSplit = 0.5
+  var rects = newSeq[Rect]()
+  var rect = rect(0, 0, 1, 1)
+  for i, c in self.children:
+    let ratio = if i == 0 and self.children.len > 1:
+      mainSplit
+    else:
+      1.0 / (self.children.len - i).float32
+    let (view_rect, remaining) = rect.splitH(ratio.percent)
+    rect = remaining
+    rects.add view_rect
+
+  for i, c in self.children:
+    if c != nil:
+      let xy = rects[i].xy * builder.currentParent.bounds.wh
+      let xwyh = rects[i].xwyh * builder.currentParent.bounds.wh
+      let bounds = rect(xy, xwyh - xy)
+      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
+        result.add c.createUI(builder, app)
+    else:
+      builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
+method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  self.resetDirty()
+  let mainSplit = 0.5
+  var rects = newSeq[Rect]()
+  var rect = rect(0, 0, 1, 1)
+  for i, c in self.children:
+    let ratio = if i == 0 and self.children.len > 1:
+      mainSplit
+    elif i == self.children.len - 1:
+      1.0
+    else:
+      0.5
+    let (view_rect, remaining) = if i mod 2 == 0:
+      rect.splitV(ratio.percent)
+    else:
+      rect.splitH(ratio.percent)
+    rect = remaining
+    rects.add view_rect
+
+  for i, c in self.children:
+    if c != nil:
+      let xy = rects[i].xy * builder.currentParent.bounds.wh
+      let xwyh = rects[i].xwyh * builder.currentParent.bounds.wh
+      let bounds = rect(xy, xwyh - xy)
+      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
+        result.add c.createUI(builder, app)
+    else:
+      builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
+method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  self.resetDirty()
+  let activeTabColor = app.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
+  let inactiveTabColor = app.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+
+  let index = self.activeIndex.clamp(0, self.children.high)
+  builder.panel(&{FillX, FillY, LayoutVertical}):
+    # tabs
+    builder.panel(&{FillX, LayoutHorizontal, FillBackground}, h = builder.textHeight, backgroundColor = inactiveTabColor):
+      builder.panel(&{SizeToContentX, FillY, DrawText}, text = "| ", textColor = textColor)
+      for i, c in self.children:
+        let i = i
+        if i > 0:
+          builder.panel(&{SizeToContentX, FillY, DrawText}, text = " | ", textColor = textColor)
+
+        let backgroundColor = if i == index:
+          activeTabColor
+        else:
+          inactiveTabColor
+
+        builder.panel(&{SizeToContentX, FillY, LayoutHorizontal, FillBackground}, backgroundColor = backgroundColor):
+          capture i:
+            onClickAny btn:
+              echo &"activate tab {i} with {btn}"
+              self.activeIndex = i
+              app.requestRender()
+
+          let leaf = c.activeLeafView()
+          let desc = if leaf != nil:
+            leaf.display()
+          else:
+            "-"
+          builder.panel(&{SizeToContentX, FillY, DrawText}, text = desc, textColor = textColor)
+      builder.panel(&{SizeToContentX, FillY, DrawText}, text = " |", textColor = textColor)
+
+    builder.panel(&{FillX, FillY}):
+      if index in 0..self.children.high:
+        result.add self.children[index].createUI(builder, app)
+      else:
+        builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+
+method createUI*(self: MainLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  self.resetDirty()
+
+  var rects: array[5, Rect]
+  var remaining = rect(0, 0, 1, 1)
+  if self.left != nil:
+    (rects[0], remaining) = remaining.splitV(0.20.percent)
+  if self.right != nil:
+    (remaining, rects[1]) = remaining.splitV(0.70.percent)
+  if self.top != nil:
+    (rects[2], remaining) = remaining.splitH(0.25.percent)
+  if self.bottom != nil:
+    (remaining, rects[3]) = remaining.splitH(0.66.percent)
+
+  rects[4] = remaining
+
+  for i, c in self.children:
+    if c != nil:
+      let xy = rects[i].xy * builder.currentParent.bounds.wh
+      let xwyh = rects[i].xwyh * builder.currentParent.bounds.wh
+      let bounds = rect(xy, xwyh - xy)
+      builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
+        result.add c.createUI(builder, app)
+
 proc updateWidgetTree*(self: App, frameIndex: int) =
   # self.platform.builder.buildUINodes()
 
   var headerColor = if self.commands.commandLineMode: self.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
+
+  self.layout.preRender()
+
+  let newActiveView = self.layout.layout.activeLeafView()
+  if newActiveView != self.layout.activeView and newActiveView != nil:
+    if self.layout.activeView != nil:
+      self.layout.activeView.deactivate()
+    newActiveView.activate()
+    self.layout.activeView = newActiveView
+    newActiveView.markDirty(notify=false)
 
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
   let builder = self.platform.builder
@@ -70,37 +224,16 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
         let overlay = currentNode
 
         if self.layout.maximizeView:
-          let view {.cursor.} = self.layout.views[self.layout.currentView]
-          let wasActive = view.active
-          if not self.commands.commandLineMode:
-            view.activate()
-          else:
-            view.deactivate()
-          if view.active != wasActive:
-            view.markDirty(notify=false)
-
           let bounds = overlay.bounds
           builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-            overlays.add view.createUI(builder, self)
+            let view = self.layout.layout.activeLeafView()
+            if view != nil:
+              overlays.add view.createUI(builder, self)
+            else:
+              builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
         else:
-          let rects = self.layout.layout.layoutViews(self.layout.layout_props, rect(0, 0, 1, 1), self.layout.views.len)
-          for i, view in self.layout.views:
-            let xy = rects[i].xy * overlay.bounds.wh
-            let xwyh = rects[i].xwyh * overlay.bounds.wh
-            let bounds = rect(xy, xwyh - xy)
-
-            let wasActive = view.active
-            if (self.layout.currentView == i) and not self.commands.commandLineMode:
-              view.activate()
-            else:
-              view.deactivate()
-
-            if view.active != wasActive:
-              view.markDirty(notify=false)
-
-            builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-              overlays.add view.createUI(builder, self)
+          overlays.add self.layout.layout.createUI(builder, self)
 
     # popups
     for i, popup in self.layout.popups:

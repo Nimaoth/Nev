@@ -803,4 +803,11 @@
         "command": "wezterm",
         "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
     },
+
+    "layout": {
+        "kind": "main",
+        "center": {
+            "kind": "tab",
+        },
+     },
 }
