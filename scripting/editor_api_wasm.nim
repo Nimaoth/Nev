@@ -594,13 +594,6 @@ proc reloadTheme*() {.gcsafe, raises: [].} =
   let res {.used.} = editor_reloadTheme_void_App_wasm(argsJsonString.cstring)
 
 
-proc editor_reloadState_void_App_wasm(arg: cstring): cstring {.importc.}
-proc reloadState*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_reloadState_void_App_wasm(argsJsonString.cstring)
-
-
 proc editor_saveSession_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc saveSession*(sessionFile: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
