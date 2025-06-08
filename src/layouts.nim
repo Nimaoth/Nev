@@ -1,4 +1,4 @@
-import std/[tables, options, json, sugar, sequtils]
+import std/[tables, options, json, sugar, sequtils, strutils]
 import bumpy
 import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex]
 import document, document_editor, view
@@ -20,6 +20,7 @@ type
   TabLayout* = ref object of Layout
 
   MainLayout* = ref object of Layout
+    childTemplates*: seq[Layout]
 
 proc extractSlot*(path: string): tuple[current, remainder: string] =
   let i = path.find('.')
@@ -45,39 +46,70 @@ proc `top=`*(self: MainLayout, view: View) = self.children[2] = view
 proc `bottom=`*(self: MainLayout, view: View) = self.children[3] = view
 proc `center=`*(self: MainLayout, view: View) = self.children[4] = view
 
+proc leftTemplate*(self: MainLayout): Layout = self.childTemplates[0]
+proc rightTemplate*(self: MainLayout): Layout = self.childTemplates[1]
+proc topTemplate*(self: MainLayout): Layout = self.childTemplates[2]
+proc bottomTemplate*(self: MainLayout): Layout = self.childTemplates[3]
+proc centerTemplate*(self: MainLayout): Layout = self.childTemplates[4]
+proc `leftTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[0] = layout
+proc `rightTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[1] = layout
+proc `topTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[2] = layout
+proc `bottomTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[3] = layout
+proc `centerTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[4] = layout
+
 method getView*(self: Layout, path: string): View {.base.} =
   let (slot, subPath) = path.extractSlot
   case slot
   of "":
     return self
 
+  of "**":
+    if self.children.len > 0:
+      let c = self.children[self.activeIndex]
+      if c of Layout:
+        return c.Layout.getView(slot)
+      # Don't return c here becauses for ** we want to return a layout, not a non-layout view
+    return self
+
   of "*":
-    if subPath.len > 0 and self.children.len > 0:
+    if self.children.len > 0:
       let c = self.children[self.activeIndex]
       if c of Layout:
         return c.Layout.getView(subPath)
       return c
     return self
 
+  else:
+    try:
+      let index = slot.parseInt
+      if index in 0..self.children.high:
+        let c = self.children[index]
+        if c of Layout:
+          return c.Layout.getView(subPath)
+        return c
+      return self
+    except:
+      return self
+
 method getView*(self: MainLayout, path: string): View =
   let (slot, subPath) = path.extractSlot
   case slot
-  of "":
+  of "": return self
+  of "**":
+    let c = self.children[self.activeIndex]
+    if c != nil and c of Layout:
+      return c.Layout.getView(slot)
+    # Don't return c here becauses for ** we want to return a layout, not a non-layout view
     return self
-  of "*":
-    if subPath.len > 0 and self.children.len > 0:
-      let c = self.children[self.activeIndex]
-      if c of Layout:
-        return c.Layout.getView(subPath)
-      return c
-    return self
-  of "center": return self.center
-  of "left": return self.left
-  of "right": return self.right
-  of "top": return self.top
-  of "bottom": return self.bottom
-  else:
-    return nil
+  of "*": result = self.children[self.activeIndex]
+  of "center": result = self.center
+  of "left": result = self.left
+  of "right": result = self.right
+  of "top": result = self.top
+  of "bottom": result = self.bottom
+  else: return nil
+  if result != nil and result of Layout:
+    result = result.Layout.getView(subPath)
 
 proc forEachViewImpl(self: Layout, cb: proc(view: View): bool {.gcsafe, raises: [].}): bool =
   for i, c in self.children:
@@ -109,7 +141,10 @@ method kind*(self: TabLayout): string = "tab"
 
 method copy*(self: Layout): Layout {.base.} = assert(false)
 method copy*(self: MainLayout): Layout =
-  MainLayout(children: self.children.mapIt(if it != nil: it.Layout.copy.View else: nil))
+  MainLayout(
+    children: self.children.mapIt(if it != nil: it.Layout.copy.View else: nil),
+    childTemplates: self.childTemplates.mapIt(if it != nil: it.copy else: nil),
+  )
 
 method copy*(self: HorizontalLayout): Layout =
   HorizontalLayout(children: self.children.mapIt(if it != nil: it.Layout.copy.View else: nil))
@@ -165,6 +200,12 @@ method removeView*(self: MainLayout, view: View): bool =
       return true
     if c of Layout:
       if c.Layout.removeView(view):
+        if c.Layout.numLeafViews() == 0:
+          self.children[i] = nil
+          for k in countdown(self.children.high, 0):
+            if self.children[k] != nil:
+              self.activeIndex = k
+              break
         return true
 
   return false
@@ -178,7 +219,26 @@ method saveLayout*(self: Layout): JsonNode =
     if c == nil:
       children.add newJNull()
     else:
-      children.add c.saveLayout()
+      let saved = c.saveLayout()
+      if saved != nil:
+        children.add saved
+
+  result["activeIndex"] = self.activeIndex.toJson
+  result["children"] = children
+
+method saveLayout*(self: MainLayout): JsonNode =
+  result = newJObject()
+  result["kind"] = self.kind.toJson
+  var children = newJArray()
+  for i, c in self.children:
+    if c == nil:
+      children.add newJNull()
+    else:
+      let saved = c.saveLayout()
+      if saved != nil:
+        children.add saved
+      else:
+        children.add newJNull()
 
   result["activeIndex"] = self.activeIndex.toJson
   result["children"] = children
@@ -464,3 +524,97 @@ method tryGetViewDown*(self: MainLayout): View =
 method tryGetViewDown*(self: TabLayout): View =
   if self.children.len > 0:
     return self.children[self.activeIndex].tryGetViewDown()
+
+method addView*(self: Layout, view: View, path: string = "", focus: bool = true): View {.base.} =
+  debugf"{self.desc}.addView {view.desc()} to slot '{path}', focus = {focus}"
+  let (slot, subPath) = path.extractSlot
+  case slot
+  of "+":
+    if self.childTemplate != nil:
+      let newChild = self.childTemplate.copy()
+      self.children.add(newChild)
+      if focus:
+        self.activeIndex = self.children.high
+      self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+      return newChild.addView(view, subPath, focus)
+    else:
+      self.children.add(view)
+      if focus:
+        self.activeIndex = self.children.high
+      self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+  of "", "*":
+    if self.children.len > 0:
+      if self.children[self.activeIndex] != nil and self.children[self.activeIndex] of Layout:
+        return self.children[self.activeIndex].Layout.addView(view, subPath, focus)
+      else:
+        result = self.children[self.activeIndex]
+        self.children[self.activeIndex] = view
+    else:
+      if self.childTemplate != nil:
+        let newChild = self.childTemplate.copy()
+        self.children.add(newChild)
+        if focus:
+          self.activeIndex = self.children.high
+        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+        return newChild.addView(view, subPath, focus)
+      else:
+        self.children.add(view)
+        if focus:
+          self.activeIndex = self.children.high
+        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+
+method addView*(self: MainLayout, view: View, path: string = "", focus: bool = true): View =
+  debugf"MainLayout.addView {view.desc()} to slot '{path}', focus = {focus}"
+  var index = 4
+  let (slot, subPath) = path.extractSlot
+  case slot
+  of "", "*": index = self.activeIndex
+  of "left": index = 0
+  of "right": index = 1
+  of "top": index = 2
+  of "bottom": index = 3
+  of "center": index = 4
+
+  if self.children[index] != nil and self.children[index] of Layout:
+    if focus:
+      self.activeIndex = index
+    return self.children[index].Layout.addView(view, subPath, focus)
+  elif self.childTemplates[index] != nil:
+    let newChild = self.childTemplates[index].copy()
+    self.children[index] = newChild
+    if focus:
+      self.activeIndex = index
+    return newChild.addView(view, subPath, focus)
+  else:
+    result = self.children[index]
+    self.children[index] = view
+    if focus:
+      self.activeIndex = index
+
+# method addView*(self: AlternatingLayout, view: View, slot: string = "", focus: bool = true) =
+#   debugf"addView {view.desc()} append={append}"
+#   let maxViews = self.uiSettings.maxViews.get()
+
+#   discard self.layout.removeView(view)
+#   self.layout.addView(view)
+
+#   while maxViews > 0 and self.views.len > maxViews:
+#     self.views[self.views.high].deactivate()
+#     self.hiddenViews.add self.views.pop()
+
+#   if append:
+#     self.currentView = self.views.high
+
+#   if self.views.len == maxViews:
+#     self.views[self.currentView].deactivate()
+#     self.hiddenViews.add self.views[self.currentView]
+#     self.views[self.currentView] = view
+#   elif append:
+#     self.views.add view
+#   else:
+#     if self.currentView < 0:
+#       self.currentView = 0
+#     self.views.insert(view, self.currentView)
+
+#   if self.currentView < 0:
+#     self.currentView = 0

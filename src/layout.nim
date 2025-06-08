@@ -82,16 +82,16 @@ proc createLayout(self: LayoutService, config: JsonNodeEx): View {.raises: [Valu
       checkJson children.kind == JArray, "'children' must be an array"
       for i, c in children.elems:
         res.children.add self.createLayout(c)
-      if res.children.len > 0 and res.children[0] of Layout:
-        res.childTemplate = res.children[0].Layout.copy()
+    if config.hasKey("childTemplate"):
+      res.childTemplate = self.createLayout(config["childTemplate"]).Layout
     if config.hasKey("activeIndex"):
       let activeIndex = config["activeIndex"]
       checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
-      res.activeIndex = activeIndex.getInt
+      res.activeIndex = activeIndex.getInt.clamp(0, res.children.high)
 
   case kind
   of "main":
-    let res = MainLayout(children: newSeq[View](5))
+    let res = MainLayout(children: newSeq[View](5), childTemplates: newSeq[Layout](5))
     if config.hasKey("children"):
       let children = config["children"]
       checkJson children.kind == JArray, "'children' must be an array"
@@ -100,20 +100,20 @@ proc createLayout(self: LayoutService, config: JsonNodeEx): View {.raises: [Valu
           res.children[i] = self.createLayout(c)
     else:
       if config.hasKey("left"):
-        res.left = self.createLayout(config["left"])
+        res.leftTemplate = self.createLayout(config["left"]).Layout
       if config.hasKey("right"):
-        res.right = self.createLayout(config["right"])
+        res.rightTemplate = self.createLayout(config["right"]).Layout
       if config.hasKey("top"):
-        res.top = self.createLayout(config["top"])
+        res.topTemplate = self.createLayout(config["top"]).Layout
       if config.hasKey("bottom"):
-        res.bottom = self.createLayout(config["bottom"])
+        res.bottomTemplate = self.createLayout(config["bottom"]).Layout
       if config.hasKey("center"):
-        res.center = self.createLayout(config["center"])
+        res.centerTemplate = self.createLayout(config["center"]).Layout
 
     if config.hasKey("activeIndex"):
       let activeIndex = config["activeIndex"]
       checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
-      res.activeIndex = activeIndex.getInt
+      res.activeIndex = activeIndex.getInt.clamp(0, res.children.high)
 
     return res
 
@@ -181,19 +181,19 @@ method createViews(self: Layout, config: JsonNodeEx, layouts: LayoutService) {.b
           self.children[i].Layout.createViews(c, layouts)
         else:
           self.children[i] = layouts.createLayout(c)
-          self.activeIndex = max(self.activeIndex, 0)
+          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
       elif self.childTemplate != nil:
         let newChild = self.childTemplate.copy()
         self.children.add(newChild)
-        self.activeIndex = max(self.activeIndex, 0)
+        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
         newChild.createViews(c, layouts)
       else:
         self.children.add(layouts.createLayout(c))
-        self.activeIndex = max(self.activeIndex, 0)
+        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
   if config.hasKey("activeIndex"):
     let activeIndex = config["activeIndex"]
     checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
-    self.activeIndex = activeIndex.getInt
+    self.activeIndex = activeIndex.getInt.clamp(0, self.children.high)
 
 # method createViews(self: MainLayout, config: JsonNodeEx, layouts: LayoutService) {.raises: [ValueError].} =
 #   if config.hasKey("children"):
@@ -375,85 +375,7 @@ proc `currentView=`*(self: LayoutService, newIndex: int, addToHistory = true) =
   self.currentViewInternal = newIndex
   self.updateActiveEditor(addToHistory)
 
-method addView*(self: Layout, view: View, path: string = ""): View {.base.} =
-  debugf"{self.desc}.addView {view.desc()} to slot '{path}'"
-  let (slot, subPath) = path.extractSlot
-  case slot
-  of "+":
-    if self.childTemplate != nil:
-      let newChild = self.childTemplate.copy()
-      self.children.add(newChild)
-      self.activeIndex = self.children.high
-      return newChild.addView(view, subPath)
-    else:
-      self.children.add(view)
-      self.activeIndex = self.children.high
-  of "", "*":
-    if self.children.len > 0:
-      if self.children[self.activeIndex] != nil and self.children[self.activeIndex] of Layout:
-        return self.children[self.activeIndex].Layout.addView(view, subPath)
-      else:
-        result = self.children[self.activeIndex]
-        self.children[self.activeIndex] = view
-    else:
-      if self.childTemplate != nil:
-        let newChild = self.childTemplate.copy()
-        self.children.add(newChild)
-        self.activeIndex = self.children.high
-        return newChild.addView(view, subPath)
-      else:
-        self.children.add(view)
-        self.activeIndex = self.children.high
-
-method addView*(self: MainLayout, view: View, path: string = ""): View =
-  debugf"MainLayout.addView {view.desc()} to slot '{path}'"
-  var index = 4
-  let (slot, subPath) = path.extractSlot
-  case slot
-  of "", "*": index = self.activeIndex
-  of "left": index = 0
-  of "right": index = 1
-  of "top": index = 2
-  of "bottom": index = 3
-  of "center": index = 4
-
-  if self.children[index] != nil and self.children[index] of Layout:
-    self.activeIndex = index
-    return self.children[index].Layout.addView(view, subPath)
-  else:
-    result = self.children[index]
-    self.children[index] = view
-    self.activeIndex = index
-
-# method addView*(self: AlternatingLayout, view: View, slot: string = "") =
-#   debugf"addView {view.desc()} append={append}"
-#   let maxViews = self.uiSettings.maxViews.get()
-
-#   discard self.layout.removeView(view)
-#   self.layout.addView(view)
-
-#   while maxViews > 0 and self.views.len > maxViews:
-#     self.views[self.views.high].deactivate()
-#     self.hiddenViews.add self.views.pop()
-
-#   if append:
-#     self.currentView = self.views.high
-
-#   if self.views.len == maxViews:
-#     self.views[self.currentView].deactivate()
-#     self.hiddenViews.add self.views[self.currentView]
-#     self.views[self.currentView] = view
-#   elif append:
-#     self.views.add view
-#   else:
-#     if self.currentView < 0:
-#       self.currentView = 0
-#     self.views.insert(view, self.currentView)
-
-#   if self.currentView < 0:
-#     self.currentView = 0
-
-proc addView*(self: LayoutService, view: View, addToHistory = true, append = false, slot: string = "") =
+proc addView*(self: LayoutService, view: View, addToHistory = true, append = false, slot: string = "", focus: bool = true) =
   debugf"addView {view.desc()} append={append}"
   let maxViews = self.uiSettings.maxViews.get()
 
@@ -463,7 +385,7 @@ proc addView*(self: LayoutService, view: View, addToHistory = true, append = fal
     slot
 
   discard self.layout.removeView(view)
-  let ejectedView = self.layout.addView(view, slot)
+  let ejectedView = self.layout.addView(view, slot, focus)
 
   self.hiddenViews.removeSwap(view)
   if self.allViews.find(view) != -1:
@@ -686,36 +608,38 @@ proc getNumHiddenViews*(self: LayoutService): int {.expose("layout").} =
   ## Returns the amount of hidden views
   return self.hiddenViews.len
 
-proc showView*(self: LayoutService, view: View, viewIndex: Option[int] = int.none) =
+proc showView*(self: LayoutService, view: View, viewIndex: Option[int] = int.none, slot: string = "", focus: bool = true) =
   ## Make the given view visible
   ## If viewIndex is none, the view will be opened in the currentView,
   ## Otherwise the view will be opened in the view with the given index.
-  debugf"showView {view.desc()}, viewIndex = {viewIndex}"
+  debugf"showView {view.desc()}, viewIndex = {viewIndex}, slot = '{slot}'"
+
+  let i = self.hiddenViews.find(view)
+  if i == -1:
+    if focus:
+      debugf"focus view {view.desc}"
+      self.tryActivateView(view)
+  else:
+    self.hiddenViews.removeSwap(i)
+    self.addView(view, slot=slot, focus=focus)
+
+  self.platform.requestRender()
 
   for i, v in self.views:
     if v == view:
       self.currentView = i
       return
 
-  var hiddenView = -1
-  for i, v in self.hiddenViews:
-    if v == view:
-      hiddenView = i
-      break
+  # if viewIndex.getSome(_):
+  #   # todo
+  #   log lvlError, &"Not implemented: showView(view, {viewIndex})"
+  # else:
+  #   let oldView = self.views[self.currentView]
+  #   oldView.deactivate()
+  #   self.hiddenViews.add oldView
 
-  if hiddenView >= 0:
-    self.hiddenViews.removeSwap(hiddenView)
-
-  if viewIndex.getSome(_):
-    # todo
-    log lvlError, &"Not implemented: showView(view, {viewIndex})"
-  else:
-    let oldView = self.views[self.currentView]
-    oldView.deactivate()
-    self.hiddenViews.add oldView
-
-    self.views[self.currentView] = view
-    view.activate()
+  #   self.views[self.currentView] = view
+  #   view.activate()
 
 proc showEditor*(self: LayoutService, editorId: EditorId, viewIndex: Option[int] = int.none) {.expose("layout").} =
   ## Make the given editor visible
@@ -1018,6 +942,13 @@ proc focusViewDown*(self: LayoutService) {.expose("layout").} =
   let view = self.layout.tryGetViewDown()
   if view != nil:
     debugf"focus view down {view.desc}"
+    self.tryActivateView(view)
+  self.platform.requestRender()
+
+proc focusView*(self: LayoutService, slot: string) {.expose("layout").} =
+  let view = self.layout.getView(slot)
+  if view != nil:
+    debugf"focus view {view.desc}"
     self.tryActivateView(view)
   self.platform.requestRender()
 

@@ -208,6 +208,16 @@ proc focusViewDown*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc layout_focusView_void_LayoutService_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc focusView*(slot: string) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add slot.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_focusView_void_LayoutService_string_wasm(
+      argsJsonString.cstring)
+
+
 proc layout_nextView_void_LayoutService_string_wasm(arg: cstring): cstring {.
     importc.}
 proc nextView*(slot: string = "") {.gcsafe, raises: [].} =

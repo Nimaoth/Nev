@@ -6,6 +6,7 @@ import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger, widget_builder_terminal, widget_library]
 import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
+import terminal_service
 
 when enableAst:
   import ui/[widget_builder_model_document]
@@ -111,6 +112,8 @@ method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[Overlay
   let inactiveTabColor = app.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
+  let width = app.uiSettings.tabHeaderWidth.get()
+
   let index = self.activeIndex.clamp(0, self.children.high)
   builder.panel(&{FillX, FillY, LayoutVertical}):
     # tabs
@@ -129,7 +132,6 @@ method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[Overlay
         builder.panel(&{SizeToContentX, FillY, LayoutHorizontal, FillBackground}, backgroundColor = backgroundColor):
           capture i:
             onClickAny btn:
-              echo &"activate tab {i} with {btn}"
               self.activeIndex = i
               app.requestRender()
 
@@ -143,7 +145,7 @@ method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[Overlay
           var highlightIndices = newSeq[int]()
           for i in (headLen + 1)..desc.high:
             highlightIndices.add(i)
-          discard builder.highlightedText(desc, highlightIndices, textColor.darken(0.2), textColor, 20)
+          discard builder.highlightedText(desc, highlightIndices, textColor.darken(0.2), textColor, width)
 
       builder.panel(&{SizeToContentX, FillY, DrawText}, text = " |", textColor = textColor)
 

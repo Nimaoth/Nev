@@ -1152,7 +1152,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
 
   state.commandHistory = self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory
   state.sessionData = self.session.saveSession()
-  echo "session data: ", state.sessionData.pretty
 
   if getDebugger().getSome(debugger):
     state.debuggerState = debugger.getStateJson().some

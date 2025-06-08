@@ -266,12 +266,16 @@ type CreateTerminalOptions* = object
   autoRunCommand*: string = ""
   mode*: Option[string]
   closeOnTerminate*: bool = true
+  slot*: string = ""
+  focus*: bool = true
 
 type RunInTerminalOptions* = object
   group*: string = ""
   mode*: Option[string]
   closeOnTerminate*: bool = true
   reuseExisting*: bool = true
+  slot*: string = ""
+  focus*: bool = true
 
 when defined(wasm):
   # todo: this should use the types from the nimsumtree library so it doesn't go out of sync

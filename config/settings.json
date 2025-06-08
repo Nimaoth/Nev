@@ -805,10 +805,34 @@
     },
 
     "ui.layout": {
-        "kind": "main",
-        "center": {
-            "kind": "tab",
+        "kind": "tab",
+        "childTemplate": {
+            "kind": "main",
+            "center": {
+                "kind": "alternating"
+            },
+            "bottom": {
+                "kind": "tab"
+            }
         },
-     },
-    "ui.default-slot": "center.*",
+        "children": [
+            {
+                "kind": "main",
+                "center": {
+                    "kind": "alternating"
+                },
+                "bottom": {
+                    "kind": "tab"
+                }
+            }
+        ]
+    },
+    "ui.default-slot": "*.center.+",
+    // "ui.layout": {
+    //     "kind": "main",
+    //     "center": {
+    //         "kind": "tab",
+    //     },
+    //  },
+    // "ui.default-slot": "center.*",
 }

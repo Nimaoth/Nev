@@ -88,8 +88,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     addCommand "editor", "x", "close-current-view", keepHidden=true, restoreHidden=false
     addCommand "editor", "X", "close-current-view", keepHidden=false, restoreHidden=true
     addCommand "editor", "h", "prev-view"
-    addCommand "editor", "n", "prev-view"
-    addCommand "editor", "t", "next-view"
     addCommand "editor", "l", "next-view"
     addCommand "editor", "N", "move-current-view-prev"
     addCommand "editor", "H", "move-current-view-prev"
@@ -104,8 +102,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     addCommand "editor", "<CA-v>", "create-view"
     addCommand "editor", "<CA-x>", "close-current-view", true
     addCommand "editor", "<CA-X>", "close-current-view", false
-    addCommand "editor", "<CA-n>", "prev-view"
-    addCommand "editor", "<CA-t>", "next-view"
     addCommand "editor", "<CS-n>", "move-current-view-prev"
     addCommand "editor", "<CS-t>", "move-current-view-next"
     addCommand "editor", "<CA-r>", "move-current-view-to-top"

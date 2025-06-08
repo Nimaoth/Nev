@@ -1053,6 +1053,9 @@ declareSettings UiSettings, "ui":
   ## In which slot to open new views if no slot is specified directly.
   declare defaultSlot, string, ""
 
+  ## Width of tab layout headers in characters
+  declare tabHeaderWidth, int, 30
+
   # ## How long the cursor trail is. Set to 0 to disable cursor trail.
   # declare inclusiveSelection, int, 2
 

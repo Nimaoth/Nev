@@ -993,6 +993,15 @@ method getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]
   if self.modeEventHandler != nil:
     result.add self.modeEventHandler
 
+method desc*(self: TerminalView): string = &"TerminalView"
+method kind*(self: TerminalView): string = "terminal"
+method display*(self: TerminalView): string = &"/{self.terminal.command} - {self.terminal.group}"
+# method saveLayout*(self: TerminalView): JsonNode =
+#   result = newJObject()
+#   result["kind"] = self.kind.toJson
+#   result["command"] = self.terminal.command
+#   result["group"] = self.terminal.group
+
 proc setTheme(self: Terminal, theme: Theme) =
   let colors1 = @[
     theme.color("terminal.ansiBlack", color(0.5, 0.5, 0.5)),
@@ -1207,7 +1216,7 @@ proc createTerminal*(self: TerminalService, command: string = "", options: Creat
   ##                             as if typed with the keyboard.
   ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
   ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
-  self.layout.addView(self.createTerminalView(command, options))
+  self.layout.addView(self.createTerminalView(command, options), slot=options.slot, focus=options.focus)
 
 proc isIdle(self: TerminalService, terminal: Terminal): bool =
   if not terminal.cursor.visible or terminal.cursor.col == 0:
@@ -1247,7 +1256,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
         view.handleScroll(-5000000, {})
         if options.mode.isSome:
           view.setMode(options.mode.get)
-        self.layout.showView(view)
+        self.layout.showView(view, slot = options.slot, focus = options.focus)
         return
 
   var options = options
@@ -1256,6 +1265,8 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
     autoRunCommand: command,
     mode: options.mode,
     closeOnTerminate: options.closeOnTerminate,
+    slot: options.slot,
+    focus: options.focus,
   ))
 
 proc scrollTerminal*(self: TerminalService, amount: int) {.expose("terminal").} =
