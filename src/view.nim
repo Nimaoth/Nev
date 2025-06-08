@@ -1,4 +1,4 @@
-import std/[options, tables]
+import std/[options, tables, json]
 import misc/[event, id]
 import events, document_editor
 
@@ -7,15 +7,20 @@ import events, document_editor
 
 type
   View* = ref object of RootObj
-    id*: Id
+    mId*: Id
     active*: bool
     mDirty: bool
     onMarkedDirty*: Event[void]
 
   DebuggerView* = ref object of View
 
+proc id*(self: View): Id =
+  if self.mId == idNone():
+    self.mId = newId()
+  self.mId
+
 proc initView*(self: View) =
-  self.id = newId()
+  self.mId = newId()
 
 func dirty*(self: View): bool = self.mDirty
 
@@ -46,3 +51,5 @@ method getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[E
 
 method getActiveEditor*(self: View): Option[DocumentEditor] {.base.} =
   discard
+
+method saveState*(self: View): JsonNode {.base.} = nil

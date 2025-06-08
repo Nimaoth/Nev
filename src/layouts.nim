@@ -116,13 +116,48 @@ proc forEachViewImpl(self: Layout, cb: proc(view: View): bool {.gcsafe, raises: 
     if c == nil:
       continue
     if cb(c):
-      return
+      return true
     if c of Layout:
       if c.Layout.forEachViewImpl(cb):
-        return
+        return true
 
 proc forEachView*(self: Layout, cb: proc(view: View): bool {.gcsafe, raises: [].}) =
   discard self.forEachViewImpl(cb)
+
+method forEachVisibleViewImpl(self: Layout, cb: proc(view: View): bool {.gcsafe, raises: [].}): bool {.base.} =
+  for i, c in self.children:
+    if c == nil:
+      continue
+    if cb(c):
+      return true
+    if c of Layout:
+      if c.Layout.forEachVisibleViewImpl(cb):
+        return true
+
+method forEachVisibleViewImpl(self: TabLayout, cb: proc(view: View): bool {.gcsafe, raises: [].}): bool =
+  if self.children.len > 0:
+    let c = self.children[self.activeIndex]
+    if cb(c):
+      return true
+    if c of Layout:
+      return c.Layout.forEachVisibleViewImpl(cb)
+
+proc forEachVisibleView*(self: Layout, cb: proc(view: View): bool {.gcsafe, raises: [].}) =
+  discard self.forEachVisibleViewImpl(cb)
+
+proc leafViews*(self: Layout): seq[View] =
+  var res = newSeq[View]()
+  self.forEachView proc(v: View): bool =
+    if not (v of Layout):
+      res.add v
+  return res
+
+proc visibleLeafViews*(self: Layout): seq[View] =
+  var res = newSeq[View]()
+  self.forEachVisibleView proc(v: View): bool =
+    if not (v of Layout):
+      res.add v
+  return res
 
 method desc*(self: View): string {.base.} = "View"
 method desc*(self: Layout): string = "Layout"
@@ -175,6 +210,7 @@ method activeLeafView*(self: Layout): View =
     return self.children[self.activeIndex].activeLeafView()
 
 method removeView*(self: Layout, view: View): bool {.base.} =
+  debugf"{self.desc}.removeView {view.desc}"
   for i, c in self.children:
     if c == view:
       self.children.removeShift(i)
@@ -190,6 +226,7 @@ method removeView*(self: Layout, view: View): bool {.base.} =
   return false
 
 method removeView*(self: MainLayout, view: View): bool =
+  debugf"{self.desc}.removeView {view.desc}"
   for i, c in self.children:
     if c == view:
       self.children[i] = nil
@@ -590,31 +627,3 @@ method addView*(self: MainLayout, view: View, path: string = "", focus: bool = t
     self.children[index] = view
     if focus:
       self.activeIndex = index
-
-# method addView*(self: AlternatingLayout, view: View, slot: string = "", focus: bool = true) =
-#   debugf"addView {view.desc()} append={append}"
-#   let maxViews = self.uiSettings.maxViews.get()
-
-#   discard self.layout.removeView(view)
-#   self.layout.addView(view)
-
-#   while maxViews > 0 and self.views.len > maxViews:
-#     self.views[self.views.high].deactivate()
-#     self.hiddenViews.add self.views.pop()
-
-#   if append:
-#     self.currentView = self.views.high
-
-#   if self.views.len == maxViews:
-#     self.views[self.currentView].deactivate()
-#     self.hiddenViews.add self.views[self.currentView]
-#     self.views[self.currentView] = view
-#   elif append:
-#     self.views.add view
-#   else:
-#     if self.currentView < 0:
-#       self.currentView = 0
-#     self.views.insert(view, self.currentView)
-
-#   if self.currentView < 0:
-#     self.currentView = 0

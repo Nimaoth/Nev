@@ -282,7 +282,7 @@ type
     terminals*: Table[int, TerminalView]
     activeView: TerminalView
 
-proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions): TerminalView
+proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView
 
 proc createRope*(state: var ThreadState, scrollback: bool = true): Rope =
   var cell: VTermScreenCell
@@ -1010,7 +1010,11 @@ method kind*(self: TerminalView): string = "terminal"
 method display*(self: TerminalView): string = &"term://{self.terminal.command} - {self.terminal.group}"
 method saveLayout*(self: TerminalView): JsonNode =
   result = newJObject()
+  result["id"] = self.id.toJson
+method saveState*(self: TerminalView): JsonNode =
+  result = newJObject()
   result["kind"] = self.kind.toJson
+  result["id"] = self.id.toJson
   result["command"] = self.terminal.command.toJson
   result["options"] = CreateTerminalOptions(
     group: self.terminal.group,
@@ -1070,10 +1074,11 @@ method init*(self: TerminalService): Future[Result[void, ref CatchableError]] {.
 
   self.layout.addViewFactory "terminal", proc(config: JsonNode): View {.raises: [ValueError].} =
     type Config = object
+      id: Id
       command: string
       options: CreateTerminalOptions
     let config = config.jsonTo(Config, Joptions(allowExtraKeys: true, allowMissingKeys: true))
-    return self.createTerminalView(config.command, config.options)
+    return self.createTerminalView(config.command, config.options, id = config.id)
 
   return ok()
 
@@ -1137,19 +1142,19 @@ proc setSize*(self: TerminalView, width: int, height: int) =
     if self.terminal != nil:
       self.terminal.sendEvent(InputEvent(kind: InputEventKind.Size, row: height, col: width))
 
-proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions): TerminalView =
+proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView =
   try:
     let term = self.createTerminal(80, 50, command, options.autoRunCommand)
     term.group = options.group
     term.setTheme(self.themes.theme)
 
     let view = TerminalView(
+      mId: id,
       terminals: self,
       terminal: term,
       closeOnTerminate: options.closeOnTerminate,
       slot: options.slot,
     )
-    view.initView()
 
     assignEventHandler(view.eventHandler, self.events.getEventHandlerConfig("terminal")):
       onAction:
@@ -1247,6 +1252,7 @@ proc createTerminal*(self: TerminalService, command: string = "", options: Creat
   ##                             as if typed with the keyboard.
   ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
   ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
+  debugf"createTerminal '{command}', {options}"
   self.layout.addView(self.createTerminalView(command, options), slot=options.slot, focus=options.focus)
 
 proc isIdle(self: TerminalService, terminal: Terminal): bool =
@@ -1278,6 +1284,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
     log lvlError, &"Failed to run command in shell '{shell}': Invalid configuration, empty 'editor.shells.{shell}.command'"
     return
 
+  debugf"runInTerminal '{shell}', '{command}', {options}"
   if options.reuseExisting:
     for view in self.terminals.values:
       if view.terminal.group == options.group and view.terminal.command == shellCommand.get and self.isIdle(view.terminal):
@@ -1369,7 +1376,7 @@ proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float 
     self.requestRender()
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
-    let allViews = self.layout.hiddenViews
+    let allViews = self.layout.getHiddenViews()
     var items = newSeq[FinderItem]()
     for i in countdown(allViews.high, 0):
       if allViews[i] of TerminalView:

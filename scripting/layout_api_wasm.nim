@@ -102,15 +102,13 @@ proc getNumHiddenViews*(): int {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc layout_showEditor_void_LayoutService_EditorId_Option_int_wasm(arg: cstring): cstring {.
+proc layout_showEditor_void_LayoutService_EditorId_wasm(arg: cstring): cstring {.
     importc.}
-proc showEditor*(editorId: EditorId; viewIndex: Option[int] = int.none) {.
-    gcsafe, raises: [].} =
+proc showEditor*(editorId: EditorId) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add editorId.toJson()
-  argsJson.add viewIndex.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_showEditor_void_LayoutService_EditorId_Option_int_wasm(
+  let res {.used.} = layout_showEditor_void_LayoutService_EditorId_wasm(
       argsJsonString.cstring)
 
 
@@ -126,19 +124,6 @@ proc getOrOpenEditor*(path: string): Option[EditorId] {.gcsafe, raises: [].} =
     result = parseJson($res).jsonTo(typeof(result))
   except:
     raiseAssert(getCurrentExceptionMsg())
-
-
-proc layout_closeView_void_LayoutService_int_bool_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc closeView*(index: int; keepHidden: bool = true; restoreHidden: bool = true) {.
-    gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add index.toJson()
-  argsJson.add keepHidden.toJson()
-  argsJson.add restoreHidden.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = layout_closeView_void_LayoutService_int_bool_bool_wasm(
-      argsJsonString.cstring)
 
 
 proc layout_closeCurrentView_void_LayoutService_bool_bool_bool_wasm(arg: cstring): cstring {.

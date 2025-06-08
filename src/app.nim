@@ -1085,16 +1085,7 @@ proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("ed
     debugPrintAsyncAwaitStackTrace = enable
 
 proc showDebuggerView*(self: App) {.expose("editor").} =
-  for view in self.layout.views:
-    if view of DebuggerView:
-      return
-
-  for i, view in self.layout.hiddenViews:
-    if view of DebuggerView:
-      self.layout.hiddenViews.delete i
-      self.layout.addView(view, false)
-      return
-
+  # todo: reuse existing
   self.layout.addView(DebuggerView(), false)
 
 proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
@@ -1200,14 +1191,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
     except CatchableError:
       log lvlError, fmt"Failed to get editor state for {view.document.filename}: {getCurrentExceptionMsg()}"
       return OpenEditor.none
-
-  for view in self.layout.views:
-    if view of EditorView and view.EditorView.getEditorState().getSome(editorState):
-      state.openEditors.add editorState
-
-  for view in self.layout.hiddenViews:
-    if view of EditorView and view.EditorView.getEditorState().getSome(editorState):
-      state.hiddenEditors.add editorState
 
   if self.sessionFile != "":
     try:
@@ -1958,16 +1941,11 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
-    var allViews = self.layout.hiddenViews
-    self.layout.layout.forEachView proc(v: View): bool =
-      if v of EditorView:
-        let view = v.EditorView
-        allViews.add view
-
+    var hiddenViews = self.layout.getHiddenViews()
     let activeView = self.layout.layout.activeLeafView()
 
-    for i in countdown(self.layout.hiddenViews.high, 0):
-      let v = self.layout.hiddenViews[i]
+    for i in countdown(hiddenViews.high, 0):
+      let v = hiddenViews[i]
       if v of EditorView:
         let view = v.EditorView
         let document = view.editor.getDocument
