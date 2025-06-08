@@ -26,6 +26,8 @@ type
 
   PushSelectorPopupImpl = proc(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup {.gcsafe, raises: [].}
 
+  CreateView* = proc(config: JsonNode): View {.gcsafe, raises: [ValueError].}
+
   LayoutService* = ref object of Service
     platform: Platform
     workspace: Workspace
@@ -53,6 +55,8 @@ type
     activeView*: View
     allViews*: seq[View]
 
+    viewFactories: Table[string, CreateView]
+
 var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 
 method desc*(self: EditorView): string =
@@ -68,7 +72,13 @@ method saveLayout*(self: EditorView): JsonNode =
   result["path"] = self.document.filename.toJson
   result["state"] = self.editor.getStateJson()
 
-proc createLayout(self: LayoutService, config: JsonNodeEx): View {.raises: [ValueError].} =
+proc addViewFactory*(self: LayoutService, name: string, create: CreateView, override: bool = false) =
+  if not override and name in self.viewFactories:
+    log lvlError, &"Trying to define duplicate view factory '{name}'"
+    return
+  self.viewFactories[name] = create
+
+proc createLayout(self: LayoutService, config: JsonNode): View {.raises: [ValueError].} =
   if config.kind == JNull:
     return nil
 
@@ -163,9 +173,11 @@ proc createLayout(self: LayoutService, config: JsonNodeEx): View {.raises: [Valu
     return EditorView(document: document, editor: editor)
 
   else:
+    if kind in self.viewFactories:
+      return self.viewFactories[kind](config)
     raise newException(ValueError, &"Invalid kind for layout: '{kind}'")
 
-method createViews(self: Layout, config: JsonNodeEx, layouts: LayoutService) {.base, raises: [ValueError].} =
+method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.base, raises: [ValueError].} =
   if config.kind == JNull:
     return
 
@@ -195,38 +207,12 @@ method createViews(self: Layout, config: JsonNodeEx, layouts: LayoutService) {.b
     checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
     self.activeIndex = activeIndex.getInt.clamp(0, self.children.high)
 
-# method createViews(self: MainLayout, config: JsonNodeEx, layouts: LayoutService) {.raises: [ValueError].} =
-#   if config.hasKey("children"):
-#     let children = config["children"]
-#     checkJson children.kind == JArray, "'children' must be an array"
-#     for i, c in children.elems:
-#       if i < res.children.len:
-#         res.children[i] = self.createLayout(c)
-#   else:
-#     if config.hasKey("left"):
-#       res.left = self.createLayout(config["left"])
-#     if config.hasKey("right"):
-#       res.right = self.createLayout(config["right"])
-#     if config.hasKey("top"):
-#       res.top = self.createLayout(config["top"])
-#     if config.hasKey("bottom"):
-#       res.bottom = self.createLayout(config["bottom"])
-#     if config.hasKey("center"):
-#       res.center = self.createLayout(config["center"])
-
-#   if config.hasKey("activeIndex"):
-#     let activeIndex = config["activeIndex"]
-#     checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
-#     res.activeIndex = activeIndex.getInt
-
-#   return res
-
 proc updateLayoutTree(self: LayoutService) =
   try:
     # let config = self.uiSettings.layout.get()
     let config = self.config.runtime.get("ui.layout", newJexObject())
     debugf"updateLayoutTree\n{config.pretty}"
-    let view = self.createLayout(config)
+    let view = self.createLayout(config.toJson)
     if view of Layout:
       self.layout = view.Layout
     else:
@@ -266,15 +252,15 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
     try:
       self.updateLayoutTree()
       if data.hasKey("kind"):
-        self.layout.createViews(data.toJsonex, self)
+        self.layout.createViews(data, self)
       elif data.hasKey("views"):
-        self.layout.createViews(data["views"].toJsonex, self)
+        self.layout.createViews(data["views"], self)
 
       if data.hasKey("hidden"):
         let hidden = data["hidden"]
         checkJson hidden.kind == JArray, &"Expected array, got {hidden}"
         for state in hidden.elems:
-          let view = self.createLayout(state.toJsonEx)
+          let view = self.createLayout(state)
           self.hiddenViews.add(view)
     except Exception as e:
       log lvlError, &"Failed to create layout from session data: {e.msg}\n{data.pretty}"
@@ -294,7 +280,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
 
       self.updateLayoutTree()
       try:
-        self.layout.createViews(state.toJsonEx, self)
+        self.layout.createViews(state, self)
       except Exception as e:
         log lvlError, &"Failed to create layout from session data: {e.msg}\n{state.pretty}"
 

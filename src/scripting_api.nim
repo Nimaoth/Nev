@@ -271,6 +271,7 @@ type CreateTerminalOptions* = object
 
 type RunInTerminalOptions* = object
   group*: string = ""
+  autoRunCommand*: string = ""
   mode*: Option[string]
   closeOnTerminate*: bool = true
   reuseExisting*: bool = true

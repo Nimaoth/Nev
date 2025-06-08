@@ -2,7 +2,7 @@ import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, js
 import vmath
 import chroma
 import nimsumtree/[rope]
-import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref]
+import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref, myjsonutils]
 import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
 import scripting/expose
 import platform/[tui, platform]
@@ -17,6 +17,9 @@ from std/terminal import Style
 const bufferSize = 10 * 1024 * 1024
 
 logCategory "terminal-service"
+
+{.push gcsafe.}
+{.push raises: [].}
 
 when defined(windows):
   import winim/lean
@@ -97,7 +100,7 @@ proc toVtermButton(button: input.MouseButton): cint =
   else: return 4
 
 when defined(windows):
-  proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX =
+  proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX {.raises: [OSError].} =
     ZeroMemory(addr(result), sizeof((result)))
     result.StartupInfo.cb = sizeof((STARTUPINFOEX)).DWORD
 
@@ -263,6 +266,7 @@ type
     size*: tuple[width, height: int]
     terminal*: Terminal
     closeOnTerminate: bool
+    slot: string
     open: bool = true
 
   TerminalService* = ref object of Service
@@ -277,6 +281,8 @@ type
 
     terminals*: Table[int, TerminalView]
     activeView: TerminalView
+
+proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions): TerminalView
 
 proc createRope*(state: var ThreadState, scrollback: bool = true): Rope =
   var cell: VTermScreenCell
@@ -459,8 +465,8 @@ proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
 
 proc handleInputEvents(state: var ThreadState) =
   while state.inputChannel[].peek() > 0:
-    let event = state.inputChannel[].recv()
     try:
+      let event = state.inputChannel[].recv()
       case event.kind
       of InputEventKind.Text:
         for r in event.text.runes:
@@ -529,7 +535,7 @@ proc handleInputEvents(state: var ThreadState) =
     except:
       echo &"Failed to send input: {getCurrentExceptionMsg()}"
 
-proc handleProcessOutput(state: var ThreadState, buffer: var string) =
+proc handleProcessOutput(state: var ThreadState, buffer: var string) {.raises: [OSError].} =
   when defined(windows):
     template handleData(data: untyped, bytesToWrite: int): untyped =
       let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
@@ -695,78 +701,83 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
 
   var buffer = ""
   var exitCode = int.none
-  while true:
-    when defined(windows):
-      var handles = [state.handles.inputWriteEvent, state.handles.outputReadEvent, state.handles.processInfo.hProcess]
-      let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
-      if res == WAIT_FAILED:
-        discard
-      elif res == WAIT_TIMEOUT:
-        discard
-      else:
-        if res >= WAIT_ABANDONED_0:
-          # let index = res - WAIT_ABANDONED_0
+
+  try:
+    while true:
+      when defined(windows):
+        var handles = [state.handles.inputWriteEvent, state.handles.outputReadEvent, state.handles.processInfo.hProcess]
+        let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
+        if res == WAIT_FAILED:
           discard
-        elif res >= WAIT_OBJECT_0:
-          let index = res - WAIT_OBJECT_0
-          assert index >= 0 and index < 3
+        elif res == WAIT_TIMEOUT:
+          discard
+        else:
+          if res >= WAIT_ABANDONED_0:
+            # let index = res - WAIT_ABANDONED_0
+            discard
+          elif res >= WAIT_OBJECT_0:
+            let index = res - WAIT_OBJECT_0
+            assert index >= 0 and index < 3
 
-          if index == 2:
-            # Process ended
-            var exitCodeC: DWORD = 0
-            discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCodeC.addr)
-            exitCode = exitCodeC.int.some
-            state.processTerminated = true
-            break
+            if index == 2:
+              # Process ended
+              var exitCodeC: DWORD = 0
+              discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCodeC.addr)
+              exitCode = exitCodeC.int.some
+              state.processTerminated = true
+              break
 
-      state.handleProcessOutput(buffer)
-      state.handleInputEvents()
-
-    else:
-      var fds = [
-        TPollfd(fd: state.handles.masterFd, events: POLLIN),
-        TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
-      ]
-
-      let res = poll(fds[0].addr, fds.len.Tnfds, -1)
-      if res < 0:
-        break
-
-      proc wifexited(status: cint): cint = {.emit: [result, " = WIFEXITED(", status, ");"].}
-      proc wexitstatus(status: cint): cint = {.emit: [result, " = WEXITSTATUS(", status, ");"].}
-
-      var status: cint
-      let waitRes = waitpid(state.handles.childPid, status, WNOHANG)
-      if waitRes == state.handles.childPid:
-        state.processTerminated = true
-        var exitCodeC: cint
-        if wifexited(status) != 0:
-          exitCodeC = wexitstatus(status)
-        exitCode = exitCodeC.int.some
-        break
-
-      if (fds[0].revents and POLLIN) != 0:
         state.handleProcessOutput(buffer)
-        if state.processTerminated:
+        state.handleInputEvents()
+
+      else:
+        var fds = [
+          TPollfd(fd: state.handles.masterFd, events: POLLIN),
+          TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
+        ]
+
+        let res = poll(fds[0].addr, fds.len.Tnfds, -1)
+        if res < 0:
+          break
+
+        proc wifexited(status: cint): cint = {.emit: [result, " = WIFEXITED(", status, ");"].}
+        proc wexitstatus(status: cint): cint = {.emit: [result, " = WEXITSTATUS(", status, ");"].}
+
+        var status: cint
+        let waitRes = waitpid(state.handles.childPid, status, WNOHANG)
+        if waitRes == state.handles.childPid:
+          state.processTerminated = true
           var exitCodeC: cint
           if wifexited(status) != 0:
             exitCodeC = wexitstatus(status)
           exitCode = exitCodeC.int.some
           break
 
-      if (fds[1].revents and POLLIN) != 0:
-        var b: uint64 = 0
-        discard read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
-        state.handleInputEvents()
+        if (fds[0].revents and POLLIN) != 0:
+          state.handleProcessOutput(buffer)
+          if state.processTerminated:
+            var exitCodeC: cint
+            if wifexited(status) != 0:
+              exitCodeC = wexitstatus(status)
+            exitCode = exitCodeC.int.some
+            break
 
-    if state.terminateRequested:
-      break
+        if (fds[1].revents and POLLIN) != 0:
+          var b: uint64 = 0
+          discard read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
+          state.handleInputEvents()
 
-    if state.dirty:
-      state.dirty = false
-      state.outputChannel[].send OutputEvent(
-        kind: OutputEventKind.TerminalBuffer,
-        buffer: state.createTerminalBuffer())
+      if state.terminateRequested:
+        break
+
+      if state.dirty:
+        state.dirty = false
+        state.outputChannel[].send OutputEvent(
+          kind: OutputEventKind.TerminalBuffer,
+          buffer: state.createTerminalBuffer())
+
+  except OSError as e:
+    log(&"terminal thread raised error: {e.msg}")
 
   # todo: on windows, could `buffer` still be in use by the overlapped read at this point?
   # If so we need to wait here, or cancel the read if possible.
@@ -814,7 +825,7 @@ proc terminate*(self: Terminal) {.async.} =
   self.outputChannel[].close()
   self.outputChannel.deallocShared()
 
-proc createTerminal*(self: TerminalService, width: int, height: int, command: string, autoRunCommand: string = ""): Terminal =
+proc createTerminal*(self: TerminalService, width: int, height: int, command: string, autoRunCommand: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].} =
   let id = self.idCounter
   inc self.idCounter
 
@@ -966,9 +977,6 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
 
   result.thread.createThread(terminalThread, threadState)
 
-{.push gcsafe.}
-{.push raises: [].}
-
 proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[string]
 
 method close*(self: TerminalView) =
@@ -981,12 +989,16 @@ method close*(self: TerminalView) =
 method activate*(self: TerminalView) =
   if self.active:
     return
+  debugf"activate terminal '{self.terminal.command}', {self.terminal.group}"
   self.active = true
+  self.markDirty()
 
 method deactivate*(self: TerminalView) =
   if not self.active:
     return
+  debugf"deactivate terminal '{self.terminal.command}', {self.terminal.group}"
   self.active = false
+  self.markDirty()
 
 method getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]): seq[EventHandler] =
   result = @[self.eventHandler]
@@ -995,12 +1007,19 @@ method getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]
 
 method desc*(self: TerminalView): string = &"TerminalView"
 method kind*(self: TerminalView): string = "terminal"
-method display*(self: TerminalView): string = &"/{self.terminal.command} - {self.terminal.group}"
-# method saveLayout*(self: TerminalView): JsonNode =
-#   result = newJObject()
-#   result["kind"] = self.kind.toJson
-#   result["command"] = self.terminal.command
-#   result["group"] = self.terminal.group
+method display*(self: TerminalView): string = &"term://{self.terminal.command} - {self.terminal.group}"
+method saveLayout*(self: TerminalView): JsonNode =
+  result = newJObject()
+  result["kind"] = self.kind.toJson
+  result["command"] = self.terminal.command.toJson
+  result["options"] = CreateTerminalOptions(
+    group: self.terminal.group,
+    autoRunCommand: self.terminal.autoRunCommand,
+    mode: "normal".some,
+    closeOnTerminate: self.closeOnTerminate,
+    slot: self.slot,
+    focus: false,
+  ).toJson
 
 proc setTheme(self: Terminal, theme: Theme) =
   let colors1 = @[
@@ -1048,6 +1067,13 @@ method init*(self: TerminalService): Future[Result[void, ref CatchableError]] {.
   discard self.themes.onThemeChanged.subscribe proc(theme: Theme) = self.handleThemeChanged(theme)
 
   self.settings = TerminalSettings.new(self.config.runtime)
+
+  self.layout.addViewFactory "terminal", proc(config: JsonNode): View {.raises: [ValueError].} =
+    type Config = object
+      command: string
+      options: CreateTerminalOptions
+    let config = config.jsonTo(Config, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+    return self.createTerminalView(config.command, config.options)
 
   return ok()
 
@@ -1117,7 +1143,12 @@ proc createTerminalView(self: TerminalService, command: string, options: CreateT
     term.group = options.group
     term.setTheme(self.themes.theme)
 
-    let view = TerminalView(terminals: self, terminal: term, closeOnTerminate: options.closeOnTerminate)
+    let view = TerminalView(
+      terminals: self,
+      terminal: term,
+      closeOnTerminate: options.closeOnTerminate,
+      slot: options.slot,
+    )
     view.initView()
 
     assignEventHandler(view.eventHandler, self.events.getEventHandlerConfig("terminal")):
@@ -1259,15 +1290,18 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
         self.layout.showView(view, slot = options.slot, focus = options.focus)
         return
 
-  var options = options
-  self.createTerminal(shellCommand.get, CreateTerminalOptions(
+  let view = self.createTerminalView(shellCommand.get, CreateTerminalOptions(
     group: options.group,
-    autoRunCommand: command,
+    autoRunCommand: options.autoRunCommand,
     mode: options.mode,
     closeOnTerminate: options.closeOnTerminate,
     slot: options.slot,
     focus: options.focus,
   ))
+  if command.len > 0:
+    self.handleInput(view, command)
+    self.handleKey(view, INPUT_ENTER, {})
+  self.layout.addView(view, slot=options.slot, focus=options.focus)
 
 proc scrollTerminal*(self: TerminalService, amount: int) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
