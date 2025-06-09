@@ -758,7 +758,7 @@ proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-curren
   if openEditors == 1:
     plugin_runtime.quit()
   else:
-    closeCurrentView(keepHidden=false, restoreHidden=true)
+    closeCurrentView(keepHidden=false)
 
 proc vimIndent(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-indent").} =
   editor.addNextCheckpoint "insert"

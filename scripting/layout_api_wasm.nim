@@ -4,14 +4,24 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
-proc layout_changeLayoutProp_void_LayoutService_string_float32_wasm(arg: cstring): cstring {.
+proc layout_changeSplitSize_void_LayoutService_float_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc changeLayoutProp*(prop: string; change: float32) {.gcsafe, raises: [].} =
+proc changeSplitSize*(change: float; vertical: bool) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add prop.toJson()
   argsJson.add change.toJson()
+  argsJson.add vertical.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_changeLayoutProp_void_LayoutService_string_float32_wasm(
+  let res {.used.} = layout_changeSplitSize_void_LayoutService_float_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_toggleMaximizeViewLocal_void_LayoutService_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleMaximizeViewLocal*(slot: string = "**") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add slot.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_toggleMaximizeViewLocal_void_LayoutService_string_wasm(
       argsJsonString.cstring)
 
 
@@ -88,16 +98,15 @@ proc getOrOpenEditor*(path: string): Option[EditorId] {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc layout_closeCurrentView_void_LayoutService_bool_bool_bool_wasm(arg: cstring): cstring {.
+proc layout_closeCurrentView_void_LayoutService_bool_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc closeCurrentView*(keepHidden: bool = true; restoreHidden: bool = true;
-                       closeOpenPopup: bool = true) {.gcsafe, raises: [].} =
+proc closeCurrentView*(keepHidden: bool = true; closeOpenPopup: bool = true) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add keepHidden.toJson()
-  argsJson.add restoreHidden.toJson()
   argsJson.add closeOpenPopup.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_closeCurrentView_void_LayoutService_bool_bool_bool_wasm(
+  let res {.used.} = layout_closeCurrentView_void_LayoutService_bool_bool_wasm(
       argsJsonString.cstring)
 
 

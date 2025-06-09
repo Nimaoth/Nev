@@ -22,6 +22,16 @@ method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[Overla
 
 method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
+
+  if self.children.len == 0:
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+    return
+
+  if self.maximize:
+    builder.panel(&{FillX, FillY}):
+      result.add self.children[self.activeIndex].createUI(builder, app)
+    return
+
   let mainSplit = 0.5
   var rects = newSeq[Rect]()
   var rect = rect(0, 0, 1, 1)
@@ -44,11 +54,18 @@ method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
-  if self.children.len == 0:
-    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
-
 method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
+
+  if self.children.len == 0:
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+    return
+
+  if self.maximize:
+    builder.panel(&{FillX, FillY}):
+      result.add self.children[self.activeIndex].createUI(builder, app)
+    return
+
   let mainSplit = 0.5
   var rects = newSeq[Rect]()
   var rect = rect(0, 0, 1, 1)
@@ -71,21 +88,27 @@ method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[Ov
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
-  if self.children.len == 0:
-    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
-
 method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
+  if self.children.len == 0:
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+    return
+
+  if self.maximize:
+    builder.panel(&{FillX, FillY}):
+      result.add self.children[self.activeIndex].createUI(builder, app)
+    return
+
   let mainSplit = 0.5
   var rects = newSeq[Rect]()
   var rect = rect(0, 0, 1, 1)
   for i, c in self.children:
     let ratio = if i == 0 and self.children.len > 1:
-      mainSplit
+      self.getSplitRatio(i)
     elif i == self.children.len - 1:
       1.0
     else:
-      0.5
+      self.getSplitRatio(i)
     let (view_rect, remaining) = if i mod 2 == 0:
       rect.splitV(ratio.percent)
     else:
@@ -102,9 +125,6 @@ method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq
         result.add c.createUI(builder, app)
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
-
-  if self.children.len == 0:
-    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
 method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
@@ -161,13 +181,13 @@ method createUI*(self: MainLayout, builder: UINodeBuilder, app: App): seq[Overla
   var rects: array[5, Rect]
   var remaining = rect(0, 0, 1, 1)
   if self.left != nil:
-    (rects[0], remaining) = remaining.splitV(0.20.percent)
+    (rects[0], remaining) = remaining.splitV(self.splitRatios[0].percent)
   if self.right != nil:
-    (remaining, rects[1]) = remaining.splitV(0.70.percent)
+    (remaining, rects[1]) = remaining.splitV(self.splitRatios[1].percent)
   if self.top != nil:
-    (rects[2], remaining) = remaining.splitH(0.25.percent)
+    (rects[2], remaining) = remaining.splitH(self.splitRatios[2].percent)
   if self.bottom != nil:
-    (remaining, rects[3]) = remaining.splitH(0.66.percent)
+    (remaining, rects[3]) = remaining.splitH(self.splitRatios[3].percent)
 
   rects[4] = remaining
 
@@ -215,13 +235,17 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
-        let maxViews = self.uiSettings.maxViews.get()
+        let layout = self.layout.layout.activeLeafLayout()
         let maximizedText = if self.layout.maximizeView:
           "[Fullscreen]"
-        elif maxViews == int.high:
-          fmt"[Max: ∞]"
+        elif layout != nil:
+          let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+          if layout.maximize:
+            fmt"[Max 1/{maxText}]"
+          else:
+            fmt"[{layout.children.len}/{maxText}]"
         else:
-          fmt"[Max: {maxViews}]"
+          "[]"
 
         let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
         let sessionText = if self.sessionFile.len == 0: "[No Session]" else: fmt"[Session: {self.sessionFile}]"

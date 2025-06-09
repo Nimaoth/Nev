@@ -105,10 +105,19 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
       else:
         self.children.add(layouts.getExistingView(c))
         self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+
   if config.hasKey("activeIndex"):
     let activeIndex = config["activeIndex"]
     checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
     self.activeIndex = activeIndex.getInt.clamp(0, self.children.high)
+
+  if config.hasKey("maximize"):
+    self.maximize = config["maximize"].jsonTo(bool)
+
+  # todo: this is not nice
+  if self of AutoLayout:
+    if config.hasKey("split-ratios"):
+      self.AutoLayout.splitRatios = config["split-ratios"].jsonTo(seq[float])
 
 method createViews(self: MainLayout, config: JsonNode, layouts: LayoutService) {.raises: [ValueError].} =
   if config.kind == JNull:
@@ -137,12 +146,16 @@ method createViews(self: MainLayout, config: JsonNode, layouts: LayoutService) {
           self.activeIndex = i
       else:
         log lvlError, &"Too many children for main layout (max 5): {children.len}"
+
   if config.hasKey("activeIndex"):
     let activeIndex = config["activeIndex"]
     checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
     let i = activeIndex.getInt.clamp(0, self.children.high)
     if self.children[i] != nil:
       self.activeIndex = i
+
+  if config.hasKey("split-ratios"):
+    self.splitRatios = config["split-ratios"].jsonTo(array[4, float])
 
 proc updateLayoutTree(self: LayoutService) =
   try:
@@ -367,8 +380,6 @@ proc recordFocusHistoryEntry(self: LayoutService, view: View) =
 
 proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) =
   # debugf"addView {view.desc()} slot = '{slot}', focus = {focus}, addToHistory = {addToHistory}"
-  let maxViews = self.uiSettings.maxViews.get()
-
   self.allViews.incl view
   let slot = if slot == "":
     self.layout.defaultSlot
@@ -447,9 +458,15 @@ proc getLayoutService(): Option[LayoutService] =
 static:
   addInjector(LayoutService, getLayoutService)
 
-proc changeLayoutProp*(self: LayoutService, prop: string, change: float32) {.expose("layout").} =
-  self.layout_props.props.mgetOrPut(prop, 0) += change
-  self.platform.requestRender(true)
+proc changeSplitSize*(self: LayoutService, change: float, vertical: bool) {.expose("layout").} =
+  discard self.layout.changeSplitSize(change, vertical)
+
+proc toggleMaximizeViewLocal*(self: LayoutService, slot: string = "**") {.expose("layout").} =
+  let view = self.layout.getView(slot)
+  if view != nil and view of Layout:
+    let layout = view.Layout
+    layout.maximize = not layout.maximize
+    self.platform.requestRender()
 
 proc toggleMaximizeView*(self: LayoutService) {.expose("layout").} =
   self.maximizeView = not self.maximizeView
@@ -457,14 +474,11 @@ proc toggleMaximizeView*(self: LayoutService) {.expose("layout").} =
 
 proc setMaxViews*(self: LayoutService, slot: string, maxViews: int = int.high) {.expose("layout").} =
   ## Set the maximum number of views that can be open at the same time
-  ## Closes any views that exceed the new limit
-  # debugf"setMaxViews {maxViews}, slot = '{slot}'"
   let view = self.layout.getView(slot)
   if view != nil and view of Layout:
     let layout = view.Layout
     layout.maxChildren = maxViews
 
-  self.uiSettings.maxViews.set(maxViews)
   self.platform.requestRender()
 
 proc getHiddenViews*(self: LayoutService): seq[View] =
@@ -607,14 +621,9 @@ proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[Doc
 
   return self.createAndAddView(document, slot = slot)
 
-proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) =
+proc closeView*(self: LayoutService, view: View, keepHidden: bool = false) =
   ## Closes the current view.
   self.platform.requestRender()
-
-  # if keepHidden:
-  #   debugf"hideView '{view.desc()}'"
-  # else:
-  #   debugf"closeView '{view.desc()}'"
 
   discard self.layout.removeView(view)
   if keepHidden:
@@ -653,8 +662,7 @@ proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bo
   document.deinit()
   return true
 
-proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, restoreHidden: bool = true, closeOpenPopup: bool = true) {.expose("layout").} =
-  # debugf"closeCurrentView"
+proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, closeOpenPopup: bool = true) {.expose("layout").} =
   if closeOpenPopup and self.popups.len > 0:
     self.popPopup()
   else:
@@ -663,7 +671,7 @@ proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, restoreHidd
       log lvlError, &"Failed to destroy view"
       return
 
-    self.closeView(view, keepHidden = keepHidden, restoreHidden = restoreHidden)
+    self.closeView(view, keepHidden = keepHidden)
 
 proc closeOtherViews*(self: LayoutService, keepHidden: bool = true) {.expose("layout").} =
   ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.

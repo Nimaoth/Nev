@@ -16,15 +16,20 @@ type
     defaultSlot*: string
     slots*: Table[string, string]
     maxChildren*: int = int.high
+    maximize*: bool = false
 
-  HorizontalLayout* = ref object of Layout
-  VerticalLayout* = ref object of Layout
-  AlternatingLayout* = ref object of Layout
+  AutoLayout* = ref object of Layout
+    splitRatios*: seq[float]
+
+  HorizontalLayout* = ref object of AutoLayout
+  VerticalLayout* = ref object of AutoLayout
+  AlternatingLayout* = ref object of AutoLayout
 
   TabLayout* = ref object of Layout
 
   MainLayout* = ref object of Layout
     childTemplates*: seq[Layout]
+    splitRatios*: array[4, float] = [0.2, 0.7, 0.25, 0.66]
 
 proc extractSlot*(path: string): tuple[current, remainder: string] =
   let i = path.find('.')
@@ -60,6 +65,21 @@ proc `rightTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[1
 proc `topTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[2] = layout
 proc `bottomTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[3] = layout
 proc `centerTemplate=`*(self: MainLayout, layout: Layout) = self.childTemplates[4] = layout
+
+proc getSplitRatio*(self: AutoLayout, index: int): float =
+  if index in 0..self.splitRatios.high:
+    return self.splitRatios[index]
+  return 0.5
+
+proc setSplitRatio*(self: AutoLayout, index: int, value: float) =
+  if index < 0:
+    return
+  if self.splitRatios.high < index:
+    let oldLen = self.splitRatios.len
+    self.splitRatios.setLen(index + 1)
+    for i in oldLen..self.splitRatios.high:
+      self.splitRatios[i] = 0.5
+  self.splitRatios[index] = value.clamp(0, 1)
 
 method getView*(self: Layout, path: string): View {.base.} =
   let (slot, subPath) = path.extractSlot
@@ -187,21 +207,23 @@ proc copyBase(self: Layout, src: Layout): Layout =
   self.defaultSlot = src.defaultSlot
   self.slots = src.slots
   self.maxChildren = src.maxChildren
+  self.maximize = src.maximize
   return self
 
 method copy*(self: MainLayout): Layout =
   MainLayout(
     childTemplates: self.childTemplates.mapIt(if it != nil: it.copy else: nil),
+    splitRatios: self.splitRatios,
   ).copyBase(self)
 
 method copy*(self: HorizontalLayout): Layout =
-  HorizontalLayout().copyBase(self)
+  HorizontalLayout(splitRatios: self.splitRatios).copyBase(self)
 
 method copy*(self: VerticalLayout): Layout =
-  VerticalLayout().copyBase(self)
+  VerticalLayout(splitRatios: self.splitRatios).copyBase(self)
 
 method copy*(self: AlternatingLayout): Layout =
-  AlternatingLayout().copyBase(self)
+  AlternatingLayout(splitRatios: self.splitRatios).copyBase(self)
 
 method copy*(self: TabLayout): Layout =
   TabLayout().copyBase(self)
@@ -286,6 +308,24 @@ method saveLayout*(self: Layout): JsonNode =
   result["activeIndex"] = self.activeIndex.toJson
   result["children"] = children
 
+method saveLayout*(self: AutoLayout): JsonNode =
+  if self.children.len == 0:
+    return nil
+  result = newJObject()
+  result["kind"] = self.kind.toJson
+  var children = newJArray()
+  for i, c in self.children:
+    if c == nil:
+      children.add newJNull()
+    else:
+      let saved = c.saveLayout()
+      if saved != nil:
+        children.add saved
+
+  result["activeIndex"] = self.activeIndex.toJson
+  result["children"] = children
+  result["split-ratios"] = self.splitRatios.toJson()
+
 method saveLayout*(self: MainLayout): JsonNode =
   result = newJObject()
   result["kind"] = self.kind.toJson
@@ -302,6 +342,7 @@ method saveLayout*(self: MainLayout): JsonNode =
 
   result["activeIndex"] = self.activeIndex.toJson
   result["children"] = children
+  result["split-ratios"] = self.splitRatios.toJson()
 
 method leftLeaf*(self: View): View {.base.} = self
 method rightLeaf*(self: View): View {.base.} = self
@@ -314,14 +355,20 @@ method leftLeaf*(self: TabLayout): View =
 
 method leftLeaf*(self: VerticalLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].leftLeaf()
     return self.children[0].leftLeaf()
 
 method leftLeaf*(self: HorizontalLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].leftLeaf()
     return self.children[0].leftLeaf()
 
 method leftLeaf*(self: AlternatingLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].leftLeaf()
     return self.children[0].leftLeaf()
 
 method leftLeaf*(self: MainLayout): View =
@@ -338,14 +385,20 @@ method rightLeaf*(self: TabLayout): View =
 
 method rightLeaf*(self: VerticalLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].rightLeaf()
     return self.children[0].rightLeaf()
 
 method rightLeaf*(self: HorizontalLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].rightLeaf()
     return self.children.last.rightLeaf()
 
 method rightLeaf*(self: AlternatingLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].rightLeaf()
     if self.activeIndex mod 2 != 0:
       return self.children[self.activeIndex].rightLeaf()
     return self.children.last.rightLeaf()
@@ -364,14 +417,20 @@ method topLeaf*(self: TabLayout): View =
 
 method topLeaf*(self: VerticalLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].topLeaf()
     return self.children[0].topLeaf()
 
 method topLeaf*(self: HorizontalLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].topLeaf()
     return self.children[0].topLeaf()
 
 method topLeaf*(self: AlternatingLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].topLeaf()
     if self.activeIndex <= 1:
       return self.children[self.activeIndex].topLeaf()
     return self.children[0].topLeaf()
@@ -390,14 +449,20 @@ method bottomLeaf*(self: TabLayout): View =
 
 method bottomLeaf*(self: VerticalLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].bottomLeaf()
     return self.children.last.bottomLeaf()
 
 method bottomLeaf*(self: HorizontalLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].bottomLeaf()
     return self.children.last.bottomLeaf()
 
 method bottomLeaf*(self: AlternatingLayout): View =
   if self.children.len > 0:
+    if self.maximize:
+      return self.children[self.activeIndex].bottomLeaf()
     if self.activeIndex mod 2 == 0:
       return self.children[self.activeIndex].bottomLeaf()
     return self.children.last.bottomLeaf()
@@ -419,7 +484,7 @@ method tryGetViewLeft*(self: VerticalLayout): View =
 method tryGetViewLeft*(self: HorizontalLayout): View =
   if self.children.len > 0:
     result = self.children[self.activeIndex].tryGetViewLeft()
-    if result != nil:
+    if self.maximize or result != nil:
       return
   if self.activeIndex > 0:
     return self.children[self.activeIndex - 1].rightLeaf
@@ -427,7 +492,7 @@ method tryGetViewLeft*(self: HorizontalLayout): View =
 method tryGetViewLeft*(self: AlternatingLayout): View =
   if self.children.len > 0:
     result = self.children[self.activeIndex].tryGetViewLeft()
-    if result != nil:
+    if self.maximize or result != nil:
       return
   if self.activeIndex > 0:
     if self.activeIndex mod 2 == 0:
@@ -463,7 +528,7 @@ method tryGetViewRight*(self: VerticalLayout): View =
 method tryGetViewRight*(self: HorizontalLayout): View =
   if self.children.len > 0:
     result = self.children[self.activeIndex].tryGetViewRight()
-    if result != nil:
+    if self.maximize or result != nil:
       return
   if self.activeIndex < self.children.high:
     return self.children[self.activeIndex + 1].leftLeaf
@@ -471,7 +536,7 @@ method tryGetViewRight*(self: HorizontalLayout): View =
 method tryGetViewRight*(self: AlternatingLayout): View =
   if self.children.len > 0:
     result = self.children[self.activeIndex].tryGetViewRight()
-    if result != nil:
+    if self.maximize or result != nil:
       return
   if self.activeIndex mod 2 != 0:
     return nil
@@ -502,7 +567,7 @@ method tryGetViewUp*(self: Layout): View = nil
 method tryGetViewUp*(self: VerticalLayout): View =
   if self.children.len > 0:
     result = self.children[self.activeIndex].tryGetViewUp()
-    if result != nil:
+    if self.maximize or result != nil:
       return
   if self.activeIndex > 0:
     return self.children[self.activeIndex - 1].bottomLeaf
@@ -514,7 +579,7 @@ method tryGetViewUp*(self: HorizontalLayout): View =
 method tryGetViewUp*(self: AlternatingLayout): View =
   if self.children.len > 0:
     result = self.children[self.activeIndex].tryGetViewUp()
-    if result != nil:
+    if self.maximize or result != nil:
       return
   if self.activeIndex <= 1:
     return nil
@@ -547,7 +612,7 @@ method tryGetViewDown*(self: Layout): View = nil
 method tryGetViewDown*(self: VerticalLayout): View =
   if self.children.len > 0:
     result = self.children[self.activeIndex].tryGetViewDown()
-    if result != nil:
+    if self.maximize or result != nil:
       return
   if self.activeIndex < self.children.high:
     return self.children[self.activeIndex + 1].topLeaf
@@ -559,7 +624,7 @@ method tryGetViewDown*(self: HorizontalLayout): View =
 method tryGetViewDown*(self: AlternatingLayout): View =
   if self.children.len > 0:
     result = self.children[self.activeIndex].tryGetViewDown()
-    if result != nil:
+    if self.maximize or result != nil:
       return
   if self.activeIndex mod 2 == 0:
     return nil
@@ -822,6 +887,155 @@ method tryActivateView*(self: Layout, predicate: proc(view: View): bool {.gcsafe
 
   return false
 
+method changeSplitSize*(self: Layout, change: float, vertical: bool): bool {.base.} =
+  if self.children.len > 0:
+    let c = self.children[self.activeIndex]
+    if c of Layout:
+      return c.Layout.changeSplitSize(change, vertical)
+
+  return false
+
+method changeSplitSize*(self: AutoLayout, change: float, vertical: bool): bool =
+  if self.maximize:
+    if self.children.len > 0:
+      let c = self.children[self.activeIndex]
+      if c of Layout:
+        return c.Layout.changeSplitSize(change, vertical)
+    return false
+
+  if self.children.len > 0:
+    let c = self.children[self.activeIndex]
+    if c of Layout and c.Layout.changeSplitSize(change, vertical):
+        return true
+
+    var index = self.activeIndex
+    if index == self.children.high:
+      index -= 1
+
+    self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    return true
+
+  return false
+
+method changeSplitSize*(self: VerticalLayout, change: float, vertical: bool): bool =
+  if self.maximize:
+    if self.children.len > 0:
+      let c = self.children[self.activeIndex]
+      if c of Layout:
+        return c.Layout.changeSplitSize(change, vertical)
+    return false
+
+  if not vertical:
+    return
+  if self.children.len > 0:
+    let c = self.children[self.activeIndex]
+    if c of Layout and c.Layout.changeSplitSize(change, vertical):
+        return true
+
+    var index = self.activeIndex
+    if index == self.children.high:
+      index -= 1
+
+    self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    return true
+
+  return false
+
+method changeSplitSize*(self: HorizontalLayout, change: float, vertical: bool): bool =
+  if self.maximize:
+    if self.children.len > 0:
+      let c = self.children[self.activeIndex]
+      if c of Layout:
+        return c.Layout.changeSplitSize(change, vertical)
+    return false
+
+  if vertical:
+    return
+  if self.children.len > 0:
+    let c = self.children[self.activeIndex]
+    if c of Layout and c.Layout.changeSplitSize(change, vertical):
+        return true
+
+    var index = self.activeIndex
+    if index == self.children.high:
+      index -= 1
+
+    self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    return true
+
+  return false
+
+method changeSplitSize*(self: AlternatingLayout, change: float, vertical: bool): bool =
+  if self.maximize:
+    if self.children.len > 0:
+      let c = self.children[self.activeIndex]
+      if c of Layout:
+        return c.Layout.changeSplitSize(change, vertical)
+    return false
+
+  if self.children.len > 0:
+    let c = self.children[self.activeIndex]
+    if c of Layout and c.Layout.changeSplitSize(change, vertical):
+        return true
+
+    var index = self.activeIndex
+    if index == self.children.high:
+      index -= 1
+
+    if index < 0:
+      return false
+
+    if not vertical and index mod 2 != 0:
+      index -= 1
+    elif vertical and index > 0 and index mod 2 == 0:
+      index -= 1
+    elif vertical and index == 0:
+      return false
+    elif vertical and index == 0:
+      return false
+
+    self.setSplitRatio(index, self.getSplitRatio(index) + change)
+    return true
+
+  return false
+
+method changeSplitSize*(self: TabLayout, change: float, vertical: bool): bool =
+  if self.children.len > 0:
+    let c = self.children[self.activeIndex]
+    if c of Layout:
+      return c.Layout.changeSplitSize(change, vertical)
+
+  return false
+
+method changeSplitSize*(self: MainLayout, change: float, vertical: bool): bool =
+  let c = self.children[self.activeIndex]
+  if c != nil and c of Layout:
+    if c.Layout.changeSplitSize(change, vertical):
+      return true
+
+  var index = self.activeIndex
+  if index == MainLayoutCenter:
+    if vertical:
+      if self.children[MainLayoutBottom] != nil:
+        index = MainLayoutBottom
+      elif self.children[MainLayoutTop] != nil:
+        index = MainLayoutTop
+      else:
+        return false
+    else:
+      if self.children[MainLayoutLeft] != nil:
+        index = MainLayoutLeft
+      elif self.children[MainLayoutRight] != nil:
+        index = MainLayoutRight
+      else:
+        return false
+
+  if index < 4:
+    self.splitRatios[index] += change
+    return true
+
+  return false
+
 proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
   if config.kind == JNull:
     return nil
@@ -830,7 +1044,7 @@ proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
   let kind = config["kind"].getStr
   # debugf"createLayout '{kind}': {config}"
 
-  template createChildren(res: Layout): untyped =
+  template parseLayoutFields(res: Layout): untyped =
     if config.hasKey("children"):
       let children = config["children"]
       checkJson children.kind == JArray, "'children' must be an array"
@@ -848,6 +1062,10 @@ proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
       res.slots = config["slots"].jsonTo(Table[string, string])
     if config.hasKey("max-children"):
       res.maxChildren = config["max-children"].jsonTo(int)
+
+  template parseAutoLayoutFields(res: AutoLayout): untyped =
+    if config.hasKey("split-ratios"):
+      res.splitRatios = config["split-ratios"].jsonTo(seq[float])
 
   case kind
   of "main":
@@ -879,26 +1097,32 @@ proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
       checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
       res.activeIndex = activeIndex.getInt.clamp(0, res.children.high)
 
+    if config.hasKey("split-ratios"):
+      res.splitRatios = config["split-ratios"].jsonTo(array[4, float])
+
     return res
 
   of "horizontal":
     let res = HorizontalLayout()
-    res.createChildren()
+    res.parseLayoutFields()
+    res.parseAutoLayoutFields()
     return res
 
   of "vertical":
     let res = VerticalLayout()
-    res.createChildren()
+    res.parseLayoutFields()
+    res.parseAutoLayoutFields()
     return res
 
   of "alternating":
     let res = AlternatingLayout()
-    res.createChildren()
+    res.parseLayoutFields()
+    res.parseAutoLayoutFields()
     return res
 
   of "tab":
     let res = TabLayout()
-    res.createChildren()
+    res.parseLayoutFields()
     return res
 
   else:

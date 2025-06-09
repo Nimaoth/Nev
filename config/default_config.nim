@@ -78,15 +78,12 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   withKeys "<LEADER>w", "<C-w>":
     addCommand "editor", "<*-f>-", "change-font-size", -1
     addCommand "editor", "<*-f>+", "change-font-size", 1
-    addCommand "editor", "<*-k>n", "change-layout-prop", "main-split", -0.05
-    addCommand "editor", "<*-k>t", "change-layout-prop", "main-split", 0.05
     addCommand "editor", "b", "toggle-status-bar-location"
     addCommand "editor", "1", "set-layout", "horizontal"
     addCommand "editor", "2", "set-layout", "vertical"
     addCommand "editor", "3", "set-layout", "fibonacci"
     addCommand "editor", "v", "create-view"
-    addCommand "editor", "x", "close-current-view", keepHidden=true, restoreHidden=false
-    addCommand "editor", "X", "close-current-view", keepHidden=false, restoreHidden=true
+    addCommand "editor", "x", "close-current-view", keepHidden=true
     addCommand "editor", "h", "prev-view"
     addCommand "editor", "l", "next-view"
     addCommand "editor", "N", "move-current-view-prev"

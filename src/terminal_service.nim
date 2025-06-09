@@ -1413,7 +1413,7 @@ proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float 
 
     if id in self.terminals:
       let view = self.terminals[id]
-      self.layout.showView(view)
+      self.layout.showView(view, view.slot)
     return true
 
   popup.addCustomCommand "close-selected", proc(popup: SelectorPopup, args: JsonNode): bool =

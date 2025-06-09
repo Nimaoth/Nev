@@ -845,14 +845,14 @@
         },
         "vscode": {
             "default-slot": "#default",
-            "slots.default": "center.+",
+            "slots.default": "center.*.+",
             "slots.scratch-terminal": "bottom.+",
             "slots.build-run-terminal": "left.+",
             "kind": "main",
             "center": {
-                "kind": "tab",
+                "kind": "alternating",
                 "childTemplate": {
-                    "kind": "alternating"
+                    "kind": "tab"
                 }
             },
             "bottom": {
