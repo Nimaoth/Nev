@@ -222,6 +222,14 @@ method activeLeafView*(self: Layout): View =
   if self.activeIndex in 0..self.children.high and self.children[self.activeIndex] != nil:
     return self.children[self.activeIndex].activeLeafView()
 
+method activeLeafLayout*(self: Layout): Layout {.base.} =
+  if self.activeIndex in 0..self.children.high and self.children[self.activeIndex] != nil:
+    let child = self.children[self.activeIndex]
+    if child of Layout:
+      return self.children[self.activeIndex].Layout.activeLeafLayout()
+
+  return self
+
 method removeView*(self: Layout, view: View): bool {.base.} =
   # debugf"{self.desc}.removeView {view.desc}"
   for i, c in self.children:
@@ -573,6 +581,32 @@ method tryGetViewDown*(self: MainLayout): View =
       if result != nil:
         return
 
+method tryGetNextView*(self: Layout): View {.base.} =
+  var i = self.activeIndex + 1
+  while i < self.children.len:
+    if self.children[i] != nil:
+      break
+    inc i
+  if i < self.children.len:
+    return self.children[i]
+  else:
+    for i in 0..<self.activeIndex:
+      if self.children[i] != nil:
+        return self.children[i]
+
+method tryGetPrevView*(self: Layout): View {.base.} =
+  var i = self.activeIndex - 1
+  while i >= 0:
+    if self.children[i] != nil:
+      break
+    dec i
+  if i >= 0:
+    return self.children[i]
+  else:
+    for i in countdown(self.children.high, self.activeIndex + 1):
+      if self.children[i] != nil:
+        return self.children[i]
+
 method tryGetViewDown*(self: TabLayout): View =
   if self.children.len > 0:
     return self.children[self.activeIndex].tryGetViewDown()
@@ -584,6 +618,37 @@ method activeLeafSlot*(self: Layout): string {.base.} =
     if childSlot.len > 0:
       result.add "."
       result.add childSlot
+
+method getSlot*(self: Layout, view: View): string {.base.} =
+  for i, c in self.children:
+    if c == view:
+      return $i
+    if c of Layout:
+      let subSlot = c.Layout.getSlot(view)
+      if subSlot != "":
+        return $i & "." & subSlot
+
+  return ""
+
+proc slotName*(_: typedesc[MainLayout], index: int): string =
+  case index
+  of MainLayoutLeft: return "left"
+  of MainLayoutRight: return "right"
+  of MainLayoutTop: return "top"
+  of MainLayoutBottom: return "bottom"
+  of MainLayoutCenter: return "center"
+  else: return ""
+
+method getSlot*(self: MainLayout, view: View): string =
+  for i, c in self.children:
+    if c == view:
+      return MainLayout.slotName(i)
+    if c of Layout:
+      let subSlot = c.Layout.getSlot(view)
+      if subSlot != "":
+        return MainLayout.slotName(i) & "." & subSlot
+
+  return ""
 
 method addView*(self: Layout, view: View, path: string = "", focus: bool = true): View {.base.} =
   # debugf"{self.desc}.addView {view.desc()} to slot '{path}', focus = {focus}"

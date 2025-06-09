@@ -392,21 +392,7 @@ proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = 
   view.markDirty()
   self.platform.requestRender()
 
-proc createView*(self: LayoutService, document: Document): View =
-  if self.editors.createEditorForDocument(document).getSome(editor):
-    return EditorView(document: document, editor: editor)
-  return nil
-
-# todo: change return type to Option[View]
-proc createView*(self: LayoutService, filename: string): View =
-  let document = self.editors.getOrOpenDocument(filename).getOr:
-    log(lvlError, fmt"Failed to restore file {filename} from previous session")
-    return nil
-
-  return self.createView(document)
-
 proc createAndAddView*(self: LayoutService, document: Document, slot: string = ""): Option[DocumentEditor] =
-  # debugf"createAndAddView '{document.filename}'"
   if self.editors.createEditorForDocument(document).getSome(editor):
     var view = EditorView(document: document, editor: editor)
     self.addView(view, slot=slot)
@@ -531,7 +517,7 @@ proc showView*(self: LayoutService, viewId: Id, slot: string = "", focus: bool =
   if self.getView(viewId).getSome(view):
     self.showView(view, slot, focus, addToHistory)
 
-proc showEditor*(self: LayoutService, editorId: EditorId) {.expose("layout").} =
+proc showEditor*(self: LayoutService, editorId: EditorId, slot: string = "", focus: bool = true) {.expose("layout").} =
   ## Make the given editor visible
   let editor = self.editors.getEditorForId(editorId).getOr:
     log lvlError, &"No editor with id {editorId} exists"
@@ -541,7 +527,7 @@ proc showEditor*(self: LayoutService, editorId: EditorId) {.expose("layout").} =
 
   log lvlInfo, &"showEditor editorId={editorId}, filename={editor.getDocument().filename}"
   if self.getViewForEditor(editor).getSome(view):
-    self.showView(view) # todo, slot, focus)
+    self.showView(view, slot, focus)
 
 proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.expose("layout").} =
   ## Returns an existing editor for the given file if one exists,
@@ -693,14 +679,6 @@ proc closeOtherViews*(self: LayoutService, keepHidden: bool = true) {.expose("la
 
   self.platform.requestRender()
 
-proc moveCurrentViewToTop*(self: LayoutService) {.expose("layout").} =
-  # todo
-  # if self.views.len > 0:
-  #   let view = self.views[self.currentView]
-  #   self.views.delete(self.currentView)
-  #   self.views.insert(view, 0)
-  self.platform.requestRender()
-
 proc focusViewLeft*(self: LayoutService) {.expose("layout").} =
   let view = self.layout.tryGetViewLeft()
   if view != nil:
@@ -838,26 +816,58 @@ proc setActiveIndex*(self: LayoutService, slot: string, index: int) {.expose("la
     layout.activeIndex = index.clamp(0, layout.children.high)
   self.platform.requestRender()
 
-proc moveCurrentViewPrev*(self: LayoutService) {.expose("layout").} =
-  # todo
-  # if self.views.len > 0:
-  #   let view = self.views[self.currentView]
-  #   let index = (self.currentView + self.views.len - 1) mod self.views.len
-  #   self.views.delete(self.currentView)
-  #   self.views.insert(view, index)
+proc moveCurrentViewToTop*(self: LayoutService) {.expose("layout").} =
+  let layout = self.layout.activeLeafLayout()
+  let currentView = layout.activeLeafView()
+  let firstView = if layout.children.len > 0: layout.children[0] else: nil
+  if currentView != nil and firstView != nil and currentView != firstView:
+    let prevSlot = layout.getSlot(firstView)
+    let currentSlot = layout.getSlot(currentView)
+    discard layout.addView(firstView, currentSlot)
+    discard layout.addView(currentView, prevSlot)
+    self.platform.requestRender()
   self.platform.requestRender()
+
+proc moveCurrentViewPrev*(self: LayoutService) {.expose("layout").} =
+  let layout = self.layout.activeLeafLayout()
+  let currentView = layout.activeLeafView()
+  let prevView = layout.tryGetPrevView()
+  if currentView != nil and prevView != nil:
+    let prevSlot = layout.getSlot(prevView)
+    let currentSlot = layout.getSlot(currentView)
+    discard layout.addView(prevView, currentSlot)
+    discard layout.addView(currentView, prevSlot)
+    self.platform.requestRender()
 
 proc moveCurrentViewNext*(self: LayoutService) {.expose("layout").} =
-  # todo
-  # if self.views.len > 0:
-  #   let view = self.views[self.currentView]
-  #   let index = (self.currentView + 1) mod self.views.len
-  #   self.views.delete(self.currentView)
-  #   self.views.insert(view, index)
-  self.platform.requestRender()
+  let layout = self.layout.activeLeafLayout()
+  let currentView = layout.activeLeafView()
+  let nextView = layout.tryGetNextView()
+  if currentView != nil and nextView != nil:
+    let nextSlot = layout.getSlot(nextView)
+    let currentSlot = layout.getSlot(currentView)
+    discard layout.addView(nextView, currentSlot)
+    discard layout.addView(currentView, nextSlot)
+    self.platform.requestRender()
 
 proc moveCurrentViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
-  # todo
+  if self.viewHistory.len == 0:
+    return
+
+  let viewId = self.viewHistory.popLast
+  let view = self.getView(viewId).getOr:
+    log lvlError, &"No view with id {viewId} exists"
+    return
+
+  let layout = self.layout.activeLeafLayout()
+  let currentView = layout.activeLeafView()
+  let nextView = layout.tryGetNextView()
+  if currentView != nil and nextView != nil:
+    let nextSlot = layout.getSlot(nextView)
+    let currentSlot = layout.getSlot(currentView)
+    discard layout.addView(currentView, nextSlot)
+    discard layout.addView(view, currentSlot)
+
   self.platform.requestRender()
 
 proc splitView*(self: LayoutService, slot: string = "") {.expose("layout").} =

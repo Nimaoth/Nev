@@ -61,13 +61,16 @@ proc getNumHiddenViews*(): int {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc layout_showEditor_void_LayoutService_EditorId_wasm(arg: cstring): cstring {.
+proc layout_showEditor_void_LayoutService_EditorId_string_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc showEditor*(editorId: EditorId) {.gcsafe, raises: [].} =
+proc showEditor*(editorId: EditorId; slot: string = ""; focus: bool = true) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add editorId.toJson()
+  argsJson.add slot.toJson()
+  argsJson.add focus.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_showEditor_void_LayoutService_EditorId_wasm(
+  let res {.used.} = layout_showEditor_void_LayoutService_EditorId_string_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -105,15 +108,6 @@ proc closeOtherViews*(keepHidden: bool = true) {.gcsafe, raises: [].} =
   argsJson.add keepHidden.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = layout_closeOtherViews_void_LayoutService_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc layout_moveCurrentViewToTop_void_LayoutService_wasm(arg: cstring): cstring {.
-    importc.}
-proc moveCurrentViewToTop*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = layout_moveCurrentViewToTop_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
@@ -227,6 +221,15 @@ proc setActiveIndex*(slot: string; index: int) {.gcsafe, raises: [].} =
   argsJson.add index.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = layout_setActiveIndex_void_LayoutService_string_int_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_moveCurrentViewToTop_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc moveCurrentViewToTop*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_moveCurrentViewToTop_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
