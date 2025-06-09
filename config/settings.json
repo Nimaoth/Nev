@@ -805,18 +805,13 @@
     },
 
     "ui.layout": {
-        "kind": "tab",
-        "childTemplate": {
-            "kind": "main",
-            "center": {
-                "kind": "alternating"
-            },
-            "bottom": {
-                "kind": "tab"
-            }
-        },
-        "children": [
-            {
+        "default": {
+            "default-slot": "#default",
+            "slots.default": ".center.+",
+            "slots.scratch-terminal": ".bottom.+",
+            "slots.build-run-terminal": ".left",
+            "kind": "tab",
+            "childTemplate": {
                 "kind": "main",
                 "center": {
                     "kind": "alternating"
@@ -824,15 +819,50 @@
                 "bottom": {
                     "kind": "tab"
                 }
-            }
-        ]
+            },
+        },
+        "split-tabs": {
+            "default-slot": "#default",
+            "slots.default": ".+",
+            "slots.scratch-terminal": ".+",
+            "slots.build-run-terminal": ".+",
+            "kind": "tab",
+            "childTemplate": {
+                "kind": "alternating",
+            },
+        },
+        "tabbed-splits": {
+            "default-slot": "#default",
+            "slots.default": ".+",
+            "slots.scratch-terminal": "1.+",
+            "slots.build-run-terminal": "1.+",
+            "kind": "alternating",
+            "childTemplate": {
+                "kind": "tab",
+            },
+        },
+        "vscode": {
+            "default-slot": "#default",
+            "slots.default": "center.+",
+            "slots.scratch-terminal": "bottom.+",
+            "slots.build-run-terminal": "left.+",
+            "kind": "main",
+            "center": {
+                "kind": "tab",
+                "childTemplate": {
+                    "kind": "alternating"
+                }
+            },
+            "bottom": {
+                "kind": "tab",
+            },
+            "left": {
+                "kind": "tab",
+            },
+            "right": {
+                "kind": "tab",
+            },
+        },
     },
-    "ui.default-slot": "*.center.+",
-    // "ui.layout": {
-    //     "kind": "main",
-    //     "center": {
-    //         "kind": "tab",
-    //     },
-    //  },
-    // "ui.default-slot": "center.*",
+    "ui.default-slot": "#default",
 }

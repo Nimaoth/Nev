@@ -38,6 +38,7 @@ type
     vfs: VFS
     popups*: seq[Popup]
     layout*: Layout
+    layouts*: Table[string, Layout]
     layoutProps*: LayoutProperties
     maximizeView*: bool
     currentViewInternal*: int
@@ -82,78 +83,6 @@ proc addViewFactory*(self: LayoutService, name: string, create: CreateView, over
     log lvlError, &"Trying to define duplicate view factory '{name}'"
     return
   self.viewFactories[name] = create
-
-proc createLayout(self: LayoutService, config: JsonNode): View {.raises: [ValueError].} =
-  if config.kind == JNull:
-    return nil
-
-  checkJson config.hasKey("kind") and config["kind"].kind == Jstring, "Expected field 'kind' of type string"
-  let kind = config["kind"].getStr
-  debugf"createLayout '{kind}': {config}"
-
-  template createChildren(res: Layout): untyped =
-    if config.hasKey("children"):
-      let children = config["children"]
-      checkJson children.kind == JArray, "'children' must be an array"
-      for i, c in children.elems:
-        res.children.add self.createLayout(c)
-    if config.hasKey("childTemplate"):
-      res.childTemplate = self.createLayout(config["childTemplate"]).Layout
-    if config.hasKey("activeIndex"):
-      let activeIndex = config["activeIndex"]
-      checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
-      res.activeIndex = activeIndex.getInt.clamp(0, res.children.high)
-
-  case kind
-  of "main":
-    let res = MainLayout(children: newSeq[View](5), childTemplates: newSeq[Layout](5))
-    if config.hasKey("children"):
-      let children = config["children"]
-      checkJson children.kind == JArray, "'children' must be an array"
-      for i, c in children.elems:
-        if i < res.children.len:
-          res.children[i] = self.createLayout(c)
-    else:
-      if config.hasKey("left"):
-        res.leftTemplate = self.createLayout(config["left"]).Layout
-      if config.hasKey("right"):
-        res.rightTemplate = self.createLayout(config["right"]).Layout
-      if config.hasKey("top"):
-        res.topTemplate = self.createLayout(config["top"]).Layout
-      if config.hasKey("bottom"):
-        res.bottomTemplate = self.createLayout(config["bottom"]).Layout
-      if config.hasKey("center"):
-        res.centerTemplate = self.createLayout(config["center"]).Layout
-
-    if config.hasKey("activeIndex"):
-      let activeIndex = config["activeIndex"]
-      checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
-      res.activeIndex = activeIndex.getInt.clamp(0, res.children.high)
-
-    return res
-
-  of "horizontal":
-    let res = HorizontalLayout()
-    res.createChildren()
-    return res
-
-  of "vertical":
-    let res = VerticalLayout()
-    res.createChildren()
-    return res
-
-  of "alternating":
-    let res = AlternatingLayout()
-    res.createChildren()
-    return res
-
-  of "tab":
-    let res = TabLayout()
-    res.createChildren()
-    return res
-
-  else:
-    raise newException(ValueError, &"Invalid kind for layout: '{kind}'")
 
 proc getExistingView(self: LayoutService, config: JsonNode): View {.raises: [ValueError].} =
   if config.kind == JNull:
@@ -211,6 +140,9 @@ method createViews(self: MainLayout, config: JsonNode, layouts: LayoutService) {
     let children = config["children"]
     checkJson children.kind == JArray, "'children' must be an array"
     for i, c in children.elems:
+      if c.kind == JNull:
+        continue
+
       if i < self.children.len:
         if self.children[i] != nil and self.children[i] of Layout:
           self.children[i].Layout.createViews(c, layouts)
@@ -236,11 +168,19 @@ proc updateLayoutTree(self: LayoutService) =
     # let config = self.uiSettings.layout.get()
     let config = self.config.runtime.get("ui.layout", newJexObject())
     debugf"updateLayoutTree\n{config.pretty}"
-    let view = self.createLayout(config.toJson)
-    if view of Layout:
-      self.layout = view.Layout
-    else:
-      self.layout = AlternatingLayout(children: @[view])
+
+    for key, value in config.fields.pairs:
+      let view = createLayout(value.toJson)
+      if view of Layout:
+        self.layouts[key] = view.Layout
+      else:
+        self.layouts[key] = AlternatingLayout(children: @[view])
+
+    if "default" in self.layouts:
+      self.layout = self.layouts["default"]
+
+    if self.layout == nil:
+      self.layout = AlternatingLayout(children: @[])
   except Exception as e:
     log lvlError, &"Failed to create layout from config: {e.msg}"
 
@@ -286,23 +226,29 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   proc save(): JsonNode =
     debugf"save layout in session"
     result = newJObject()
-    result["views"] = self.layout.saveLayout()
+    let layouts = newJObject()
+    for key, layout in self.layouts:
+      let saved = layout.saveLayout()
+      if saved != nil:
+        layouts[key] = saved
+    result["layouts"] = layouts
+
     var all = newJArray()
     for view in self.allViews:
       let state = view.saveState()
       if state != nil:
         all.add state
-    result["all"] = all
+    result["views"] = all
 
   proc load(data: JsonNode) =
     debugf"load layout from session:\n{data.pretty}"
     try:
       self.updateLayoutTree()
 
-      if data.hasKey("all"):
-        let all = data["all"]
-        checkJson all.kind == JArray, &"Expected array, got {all}"
-        for state in all.elems:
+      if data.hasKey("views"):
+        let views = data["views"]
+        checkJson views.kind == JArray, &"Expected array, got {views}"
+        for state in views.elems:
           if not state.hasKey("kind"):
             log lvlError, &"Failed to restore view from session state: missing field kind"
             continue
@@ -319,8 +265,12 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
           else:
             log lvlError, &"Invalid kind for view: '{kind}'"
 
-      if data.hasKey("views"):
-        self.layout.createViews(data["views"], self)
+      if data.hasKey("layouts"):
+        let layouts = data["layouts"]
+        checkJson layouts.kind == JObject, &"Expected object, got {layouts}"
+        for key, state in layouts.fields.pairs:
+          if key in self.layouts:
+            self.layouts[key].createViews(state, self)
 
     except Exception as e:
       log lvlError, &"Failed to create layout from session data: {e.msg}\n{data.pretty}"
@@ -332,37 +282,18 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
       let state = self.layout.saveLayout()
 
       self.updateLayoutTree()
-      try:
-        self.layout.createViews(state, self)
-      except Exception as e:
-        log lvlError, &"Failed to create layout from session data: {e.msg}\n{state.pretty}"
+      if state != nil:
+        try:
+          self.layout.createViews(state, self)
+        except Exception as e:
+          log lvlError, &"Failed to create layout from session data: {e.msg}\n{state.pretty}"
 
   self.updateLayoutTree()
 
   return ok()
 
 proc preRender*(self: LayoutService) =
-  # ensure all editor views have a document created from the path
-  var viewsToRemove = newSeq[View]()
-  self.layout.forEachView proc(v: View): bool =
-    if v of EditorView:
-      let view = v.EditorView
-      if view.document == nil:
-        debugf"create initial document for view {view.desc}"
-        view.document = self.editors.getOrOpenDocument(view.path).getOr:
-          log(lvlError, fmt"Failed to restore file {view.path} from previous session")
-          return
-
-      assert view.document != nil
-      if view.editor == nil:
-        if self.editors.createEditorForDocument(view.document).getSome(editor):
-          view.editor = editor
-        else:
-          viewsToRemove.add(view)
-
-  for view in viewsToRemove:
-    debugf"remove view because it failed to load: {view.desc}"
-    discard self.layout.removeView(view)
+  discard
 
 method activate*(view: EditorView) =
   view.active = true
@@ -420,7 +351,7 @@ proc addView*(self: LayoutService, view: View, addToHistory = true, append = fal
 
   self.allViews.incl view
   let slot = if slot == "":
-    self.uiSettings.defaultSlot.get()
+    self.layout.defaultSlot
   else:
     slot
 
@@ -653,22 +584,22 @@ proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.exp
 
   return EditorId.none
 
-proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, append: bool = false): Option[DocumentEditor] =
+proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, append: bool = false, slot: string = ""): Option[DocumentEditor] =
   debugf"tryOpenExisting '{path}'"
   for i, view in self.allViews:
     if view of EditorView and view.EditorView.document.filename == path:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
-      self.showView(view)
+      self.showView(view, slot = slot)
       return view.EditorView.editor.some
 
   return DocumentEditor.none
 
-proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true): Option[DocumentEditor] =
+proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true, slot: string = ""): Option[DocumentEditor] =
   debugf"tryOpenExisting '{editor}'"
   for i, view in self.allViews:
     if view of EditorView and view.EditorView.editor.id == editor:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
-      self.showView(view)
+      self.showView(view, slot = slot)
       return view.EditorView.editor.some
 
   return DocumentEditor.none
@@ -680,7 +611,7 @@ proc openWorkspaceFile*(self: LayoutService, path: string, append: bool = false,
   let path = self.workspace.getAbsolutePath(path)
 
   log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
-  if self.tryOpenExisting(path, append = append).getSome(editor):
+  if self.tryOpenExisting(path, append = append, slot = slot).getSome(editor):
     log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
     return editor.some
 
@@ -697,7 +628,7 @@ proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[Doc
   let path = self.vfs.normalize(path)
 
   log lvlInfo, fmt"[openFile] Open file '{path}'"
-  if self.tryOpenExisting(path, false, append = false).getSome(ed):
+  if self.tryOpenExisting(path, false, append = false, slot = slot).getSome(ed):
     log lvlInfo, fmt"[openFile] found existing editor"
     return ed.some
 
@@ -721,6 +652,11 @@ proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, resto
   discard self.layout.removeView(view)
   if keepHidden:
     return
+
+  # remove from all other layouts as well
+  for l in self.layouts.values:
+    if l != self.layout:
+      discard l.removeView(view)
 
   self.allViews.removeSwap(view)
   view.close()
@@ -811,6 +747,13 @@ proc focusViewDown*(self: LayoutService) {.expose("layout").} =
     debugf"focus view down {view.desc}"
     self.tryActivateView(view)
   self.platform.requestRender()
+
+proc setLayout*(self: LayoutService, layout: string) {.expose("layout").} =
+  if layout in self.layouts:
+    self.layout = self.layouts[layout]
+    self.platform.requestRender()
+  else:
+    log lvlError, &"Unknown layout '{layout}'"
 
 proc focusView*(self: LayoutService, slot: string) {.expose("layout").} =
   let view = self.layout.getView(slot)

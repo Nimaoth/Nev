@@ -193,6 +193,16 @@ proc focusViewDown*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc layout_setLayout_void_LayoutService_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc setLayout*(layout: string) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add layout.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_setLayout_void_LayoutService_string_wasm(
+      argsJsonString.cstring)
+
+
 proc layout_focusView_void_LayoutService_string_wasm(arg: cstring): cstring {.
     importc.}
 proc focusView*(slot: string) {.gcsafe, raises: [].} =

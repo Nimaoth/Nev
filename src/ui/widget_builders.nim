@@ -180,7 +180,10 @@ method createUI*(self: MainLayout, builder: UINodeBuilder, app: App): seq[Overla
         result.add c.createUI(builder, app)
 
   if self.center == nil:
-    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
+    let xy = remaining.xy * builder.currentParent.bounds.wh
+    let xwyh = remaining.xwyh * builder.currentParent.bounds.wh
+    let bounds = rect(xy, xwyh - xy)
+    builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0, 0, 0))
 
 proc updateWidgetTree*(self: App, frameIndex: int) =
   # self.platform.builder.buildUINodes()

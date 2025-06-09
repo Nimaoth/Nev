@@ -419,12 +419,7 @@ proc loadSession*(self: App) {.async: (raises: []).} =
     # else:
     #   self.help()
 
-    asyncSpawn self.initScripting(self.appOptions)
-
-    self.runLateCommandsFromAppOptions()
-
-    log lvlInfo, &"Finished initializing app"
-
+    log lvlInfo, &"Finished loading session"
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
@@ -904,6 +899,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
     )
 
+  # todo: does this work if the workspaceConfigDir only gets mounted later?
   if self.generalSettings.watchWorkspaceConfig.get():
     discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
@@ -985,6 +981,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   # asyncSpawn self.listenForIpc(0)
   # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
 
+  asyncSpawn self.initScripting(self.appOptions)
+  self.runLateCommandsFromAppOptions()
+
   log lvlInfo, &"Finished creating app"
 
   return self
@@ -1055,7 +1054,7 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
     await self.loadKeybindings(appConfigDir, loadConfigFileFrom)
   if home:
     await self.loadKeybindings(homeConfigDir, loadConfigFileFrom)
-  if workspace:
+  if workspace and self.workspace.path != "":
     await self.loadKeybindings(workspaceConfigDir, loadConfigFileFrom)
 
 proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false, wait: bool = false)

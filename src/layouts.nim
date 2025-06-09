@@ -13,6 +13,9 @@ type
     childTemplate*: Layout
     children*: seq[View]
     activeIndex*: int
+    defaultSlot*: string
+    slots*: Table[string, string]
+
   HorizontalLayout* = ref object of Layout
   VerticalLayout* = ref object of Layout
   AlternatingLayout* = ref object of Layout
@@ -249,6 +252,8 @@ method removeView*(self: MainLayout, view: View): bool =
 
 method saveLayout*(self: View): JsonNode {.base.} = nil
 method saveLayout*(self: Layout): JsonNode =
+  if self.children.len == 0:
+    return nil
   result = newJObject()
   result["kind"] = self.kind.toJson
   var children = newJArray()
@@ -564,9 +569,30 @@ method tryGetViewDown*(self: TabLayout): View =
 
 method addView*(self: Layout, view: View, path: string = "", focus: bool = true): View {.base.} =
   debugf"{self.desc}.addView {view.desc()} to slot '{path}', focus = {focus}"
-  let (slot, subPath) = path.extractSlot
-  case slot
-  of "+":
+  var index = 0
+  var (slot, subPath) = path.extractSlot
+  while true:
+    case slot
+    of "", "*":index = self.activeIndex
+    of "+": index = self.children.len
+    else:
+      if slot.startsWith("#"):
+        let slotName = slot[1..^1]
+        if slotName in self.slots:
+          (slot, subPath) = self.slots[slotName].extractSlot
+          continue
+        log lvlError, &"Failed to add view to slot '{slot}' in {self.desc}"
+        return nil
+
+      try:
+        index = slot.parseInt.clamp(0, self.children.high)
+      except:
+        log lvlError, &"Failed to add view to slot '{slot}' in {self.desc}"
+        return nil
+
+    break
+
+  if index >= self.children.len or self.children.len == 0:
     if self.childTemplate != nil:
       let newChild = self.childTemplate.copy()
       self.children.add(newChild)
@@ -579,38 +605,49 @@ method addView*(self: Layout, view: View, path: string = "", focus: bool = true)
       if focus:
         self.activeIndex = self.children.high
       self.activeIndex = self.activeIndex.clamp(0, self.children.high)
-  of "", "*":
-    if self.children.len > 0:
-      if self.children[self.activeIndex] != nil and self.children[self.activeIndex] of Layout:
-        return self.children[self.activeIndex].Layout.addView(view, subPath, focus)
-      else:
-        result = self.children[self.activeIndex]
-        self.children[self.activeIndex] = view
-    else:
-      if self.childTemplate != nil:
-        let newChild = self.childTemplate.copy()
-        self.children.add(newChild)
-        if focus:
-          self.activeIndex = self.children.high
-        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
-        return newChild.addView(view, subPath, focus)
-      else:
-        self.children.add(view)
-        if focus:
-          self.activeIndex = self.children.high
-        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+  elif self.children[index] != nil and self.children[index] of Layout:
+    if focus:
+      self.activeIndex = index
+    return self.children[index].Layout.addView(view, subPath, focus)
+  elif self.childTemplate != nil:
+    let newChild = self.childTemplate.copy()
+    self.children[index] = newChild
+    if focus:
+      self.activeIndex = index
+    return newChild.addView(view, subPath, focus)
+  else:
+    result = self.children[index]
+    self.children[index] = view
+    if focus:
+      self.activeIndex = index
 
 method addView*(self: MainLayout, view: View, path: string = "", focus: bool = true): View =
   debugf"MainLayout.addView {view.desc()} to slot '{path}', focus = {focus}"
   var index = 4
-  let (slot, subPath) = path.extractSlot
-  case slot
-  of "", "*": index = self.activeIndex
-  of "left": index = 0
-  of "right": index = 1
-  of "top": index = 2
-  of "bottom": index = 3
-  of "center": index = 4
+  var (slot, subPath) = path.extractSlot
+  while true:
+    case slot
+    of "", "*": index = self.activeIndex
+    of "left": index = 0
+    of "right": index = 1
+    of "top": index = 2
+    of "bottom": index = 3
+    of "center": index = 4
+    else:
+      if slot.startsWith("#"):
+        let slotName = slot[1..^1]
+        if slotName in self.slots:
+          (slot, subPath) = self.slots[slotName].extractSlot
+          continue
+        log lvlError, &"Failed to add view to slot '{slot}' in {self.desc}"
+        return nil
+
+      try:
+        index = slot.parseInt.clamp(0, self.children.high)
+      except:
+        return
+
+    break
 
   if self.children[index] != nil and self.children[index] of Layout:
     if focus:
@@ -627,3 +664,83 @@ method addView*(self: MainLayout, view: View, path: string = "", focus: bool = t
     self.children[index] = view
     if focus:
       self.activeIndex = index
+
+proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
+  if config.kind == JNull:
+    return nil
+
+  checkJson config.hasKey("kind") and config["kind"].kind == Jstring, "Expected field 'kind' of type string"
+  let kind = config["kind"].getStr
+  debugf"createLayout '{kind}': {config}"
+
+  template createChildren(res: Layout): untyped =
+    if config.hasKey("children"):
+      let children = config["children"]
+      checkJson children.kind == JArray, "'children' must be an array"
+      for i, c in children.elems:
+        res.children.add createLayout(c)
+    if config.hasKey("childTemplate"):
+      res.childTemplate = createLayout(config["childTemplate"]).Layout
+    if config.hasKey("activeIndex"):
+      let activeIndex = config["activeIndex"]
+      checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
+      res.activeIndex = activeIndex.getInt.clamp(0, res.children.high)
+    if config.hasKey("default-slot"):
+      res.defaultSlot = config["default-slot"].jsonTo(string)
+    if config.hasKey("slots"):
+      res.slots = config["slots"].jsonTo(Table[string, string])
+
+  case kind
+  of "main":
+    let res = MainLayout(children: newSeq[View](5), childTemplates: newSeq[Layout](5))
+    if config.hasKey("slots"):
+      res.slots = config["slots"].jsonTo(Table[string, string])
+    if config.hasKey("default-slot"):
+      res.defaultSlot = config["default-slot"].jsonTo(string)
+    if config.hasKey("children"):
+      let children = config["children"]
+      checkJson children.kind == JArray, "'children' must be an array"
+      for i, c in children.elems:
+        if i < res.children.len:
+          res.children[i] = createLayout(c)
+    else:
+      if config.hasKey("left"):
+        res.leftTemplate = createLayout(config["left"]).Layout
+      if config.hasKey("right"):
+        res.rightTemplate = createLayout(config["right"]).Layout
+      if config.hasKey("top"):
+        res.topTemplate = createLayout(config["top"]).Layout
+      if config.hasKey("bottom"):
+        res.bottomTemplate = createLayout(config["bottom"]).Layout
+      if config.hasKey("center"):
+        res.centerTemplate = createLayout(config["center"]).Layout
+
+    if config.hasKey("activeIndex"):
+      let activeIndex = config["activeIndex"]
+      checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
+      res.activeIndex = activeIndex.getInt.clamp(0, res.children.high)
+
+    return res
+
+  of "horizontal":
+    let res = HorizontalLayout()
+    res.createChildren()
+    return res
+
+  of "vertical":
+    let res = VerticalLayout()
+    res.createChildren()
+    return res
+
+  of "alternating":
+    let res = AlternatingLayout()
+    res.createChildren()
+    return res
+
+  of "tab":
+    let res = TabLayout()
+    res.createChildren()
+    return res
+
+  else:
+    raise newException(ValueError, &"Invalid kind for layout: '{kind}'")
