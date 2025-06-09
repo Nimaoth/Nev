@@ -24,56 +24,15 @@ proc toggleMaximizeView*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc layout_setMaxViews_void_LayoutService_int_bool_wasm(arg: cstring): cstring {.
+proc layout_setMaxViews_void_LayoutService_string_int_wasm(arg: cstring): cstring {.
     importc.}
-proc setMaxViews*(maxViews: int; openExisting: bool = false) {.gcsafe,
-    raises: [].} =
+proc setMaxViews*(slot: string; maxViews: int = int.high) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
   argsJson.add maxViews.toJson()
-  argsJson.add openExisting.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_setMaxViews_void_LayoutService_int_bool_wasm(
+  let res {.used.} = layout_setMaxViews_void_LayoutService_string_int_wasm(
       argsJsonString.cstring)
-
-
-proc layout_getEditorInView_EditorId_LayoutService_int_wasm(arg: cstring): cstring {.
-    importc.}
-proc getEditorInView*(index: int): EditorId {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add index.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = layout_getEditorInView_EditorId_LayoutService_int_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc layout_getVisibleEditors_seq_EditorId_LayoutService_wasm(arg: cstring): cstring {.
-    importc.}
-proc getVisibleEditors*(): seq[EditorId] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = layout_getVisibleEditors_seq_EditorId_LayoutService_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
-
-
-proc layout_getHiddenEditors_seq_EditorId_LayoutService_wasm(arg: cstring): cstring {.
-    importc.}
-proc getHiddenEditors*(): seq[EditorId] {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = layout_getHiddenEditors_seq_EditorId_LayoutService_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
 
 
 proc layout_getNumVisibleViews_int_LayoutService_wasm(arg: cstring): cstring {.
@@ -233,6 +192,33 @@ proc prevView*(slot: string = "") {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc layout_openPreviousEditor_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc openPreviousEditor*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_openPreviousEditor_void_LayoutService_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_openNextEditor_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc openNextEditor*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_openNextEditor_void_LayoutService_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_openLastEditor_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc openLastEditor*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_openLastEditor_void_LayoutService_wasm(
+      argsJsonString.cstring)
+
+
 proc layout_setActiveIndex_void_LayoutService_string_int_wasm(arg: cstring): cstring {.
     importc.}
 proc setActiveIndex*(slot: string; index: int) {.gcsafe, raises: [].} =
@@ -262,15 +248,6 @@ proc moveCurrentViewNext*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc layout_openLastEditor_void_LayoutService_wasm(arg: cstring): cstring {.
-    importc.}
-proc openLastEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = layout_openLastEditor_void_LayoutService_wasm(
-      argsJsonString.cstring)
-
-
 proc layout_moveCurrentViewNextAndGoBack_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
 proc moveCurrentViewNextAndGoBack*() {.gcsafe, raises: [].} =
@@ -280,11 +257,13 @@ proc moveCurrentViewNextAndGoBack*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc layout_splitView_void_LayoutService_wasm(arg: cstring): cstring {.importc.}
-proc splitView*() {.gcsafe, raises: [].} =
+proc layout_splitView_void_LayoutService_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc splitView*(slot: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_splitView_void_LayoutService_wasm(
+  let res {.used.} = layout_splitView_void_LayoutService_string_wasm(
       argsJsonString.cstring)
 
 

@@ -478,7 +478,6 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, pathOverride: Option
 
         var err: TSWasmError
         let language = block:
-          logScope lvlDebug, &"tsWasmStoreLoadLanguage {languageId}"
           # todo: load in separate thread
           # let res = await spawnAsync(loadLanguageThread, (wasmStore, ctorSymbolName.cstring, wasmBytes.cstring, wasmBytes.len.uint32, err.addr))
           # res

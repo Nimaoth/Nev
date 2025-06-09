@@ -194,6 +194,10 @@ declareSettings TextEditorSettings, "text":
   ## If not null then scroll to the changed region when a file is reloaded.
   declare scrollToChangeOnReload, Option[ScrollToChangeOnReload], nil
 
+  ## If true then scroll to the end of the file when text is inserted at the end and the cursor
+  ## is already at the end.
+  declare scrollToEndOnInsert, bool, false
+
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
@@ -308,7 +312,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   bIsRunningSavedCommands: bool
   recordCurrentCommandRegisters: seq[string] # List of registers the current command should be recorded into.
   bIsRecordingCurrentCommand: bool = false # True while running a command which is being recorded
-  bScrollToEndOnInsert*: bool = false
 
   disableScrolling*: bool
   scrollOffset*: Vec2
@@ -4770,7 +4773,7 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
   self.snapshot = self.document.buffer.snapshot.clone()
 
-  if self.bScrollToEndOnInsert and self.selections.len == 1 and self.selection == oldSnapshot.visibleText.summary.lines.toCursor.toSelection:
+  if self.settings.scrollToEndOnInsert.get() and self.selections.len == 1 and self.selection == oldSnapshot.visibleText.summary.lines.toCursor.toSelection:
     self.selection = self.document.lastCursor.toSelection
     self.scrollToCursor()
 

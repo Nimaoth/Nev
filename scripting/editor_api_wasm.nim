@@ -68,11 +68,13 @@ proc enableDebugPrintAsyncAwaitStackTrace*(enable: bool) {.gcsafe, raises: [].} 
       argsJsonString.cstring)
 
 
-proc editor_showDebuggerView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc showDebuggerView*() {.gcsafe, raises: [].} =
+proc editor_showDebuggerView_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc showDebuggerView*(slot: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_showDebuggerView_void_App_wasm(
+  let res {.used.} = editor_showDebuggerView_void_App_string_wasm(
       argsJsonString.cstring)
 
 
@@ -554,21 +556,6 @@ proc exploreCurrentFileDirectory*() {.gcsafe, raises: [].} =
   let argsJsonString = $argsJson
   let res {.used.} = editor_exploreCurrentFileDirectory_void_App_wasm(
       argsJsonString.cstring)
-
-
-proc editor_openPreviousEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc openPreviousEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openPreviousEditor_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_openNextEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc openNextEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openNextEditor_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_reloadConfig_void_App_bool_wasm(arg: cstring): cstring {.importc.}

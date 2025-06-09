@@ -29,7 +29,7 @@ method init*(self: SessionService): Future[Result[void, ref CatchableError]] {.a
   return ok()
 
 proc restoreSession*(self: SessionService, sessionData: JsonNode) =
-  debugf"SessionService.restoreSession"
+  log lvlInfo, &"SessionService.restoreSession"
   self.sessionData = sessionData
   if self.sessionData.hasKey("dynamic"):
     let dynamic = self.sessionData["dynamic"]
@@ -49,7 +49,7 @@ proc addSaveHandler*(self: SessionService, key: string,
   self.sessionSaveHandlers.add (newId(), key, save, load)
 
 proc saveSession*(self: SessionService): JsonNode =
-  debugf"SessionService.saveSession"
+  log lvlInfo, &"SessionService.saveSession"
   result = self.sessionData.shallowCopy()
   if result == nil:
     result = newJObject()

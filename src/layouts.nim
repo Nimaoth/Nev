@@ -15,6 +15,7 @@ type
     activeIndex*: int
     defaultSlot*: string
     slots*: Table[string, string]
+    maxChildren*: int = int.high
 
   HorizontalLayout* = ref object of Layout
   VerticalLayout* = ref object of Layout
@@ -178,23 +179,32 @@ method kind*(self: AlternatingLayout): string = "alternating"
 method kind*(self: TabLayout): string = "tab"
 
 method copy*(self: Layout): Layout {.base.} = assert(false)
+
+proc copyBase(self: Layout, src: Layout): Layout =
+  self.childTemplate = src.childTemplate
+  self.children = src.children.mapIt(if it != nil: it.Layout.copy.View else: nil)
+  self.activeIndex = src.activeIndex
+  self.defaultSlot = src.defaultSlot
+  self.slots = src.slots
+  self.maxChildren = src.maxChildren
+  return self
+
 method copy*(self: MainLayout): Layout =
   MainLayout(
-    children: self.children.mapIt(if it != nil: it.Layout.copy.View else: nil),
     childTemplates: self.childTemplates.mapIt(if it != nil: it.copy else: nil),
-  )
+  ).copyBase(self)
 
 method copy*(self: HorizontalLayout): Layout =
-  HorizontalLayout(children: self.children.mapIt(if it != nil: it.Layout.copy.View else: nil))
+  HorizontalLayout().copyBase(self)
 
 method copy*(self: VerticalLayout): Layout =
-  VerticalLayout(children: self.children.mapIt(if it != nil: it.Layout.copy.View else: nil))
+  VerticalLayout().copyBase(self)
 
 method copy*(self: AlternatingLayout): Layout =
-  AlternatingLayout(children: self.children.mapIt(if it != nil: it.Layout.copy.View else: nil))
+  AlternatingLayout().copyBase(self)
 
 method copy*(self: TabLayout): Layout =
-  TabLayout(children: self.children.mapIt(if it != nil: it.Layout.copy.View else: nil))
+  TabLayout().copyBase(self)
 
 
 method display*(self: View): string {.base.} = ""
@@ -213,7 +223,7 @@ method activeLeafView*(self: Layout): View =
     return self.children[self.activeIndex].activeLeafView()
 
 method removeView*(self: Layout, view: View): bool {.base.} =
-  debugf"{self.desc}.removeView {view.desc}"
+  # debugf"{self.desc}.removeView {view.desc}"
   for i, c in self.children:
     if c == view:
       self.children.removeShift(i)
@@ -229,7 +239,7 @@ method removeView*(self: Layout, view: View): bool {.base.} =
   return false
 
 method removeView*(self: MainLayout, view: View): bool =
-  debugf"{self.desc}.removeView {view.desc}"
+  # debugf"{self.desc}.removeView {view.desc}"
   for i, c in self.children:
     if c == view:
       self.children[i] = nil
@@ -567,14 +577,58 @@ method tryGetViewDown*(self: TabLayout): View =
   if self.children.len > 0:
     return self.children[self.activeIndex].tryGetViewDown()
 
+method activeLeafSlot*(self: Layout): string {.base.} =
+  if self.children.len > 0 and self.children[self.activeIndex] != nil and self.children[self.activeIndex] of Layout:
+    result.add $self.activeIndex
+    let childSlot = self.children[self.activeIndex].Layout.activeLeafSlot()
+    if childSlot.len > 0:
+      result.add "."
+      result.add childSlot
+
 method addView*(self: Layout, view: View, path: string = "", focus: bool = true): View {.base.} =
-  debugf"{self.desc}.addView {view.desc()} to slot '{path}', focus = {focus}"
+  # debugf"{self.desc}.addView {view.desc()} to slot '{path}', focus = {focus}"
   var index = 0
   var (slot, subPath) = path.extractSlot
+  var insert = false
+  var replaceLast = true
   while true:
     case slot
-    of "", "*":index = self.activeIndex
-    of "+": index = self.children.len
+    of "+":
+      index = self.children.len
+      insert = true
+    of "", "*": index = self.activeIndex
+    of "*+":
+      index = self.activeIndex
+      insert = true
+    of "*+>":
+      index = self.activeIndex + 1
+      insert = true
+    of "*+<":
+      index = self.activeIndex - 1
+      insert = true
+    of "*+<>":
+      index = self.activeIndex + 1
+      if self.children.len == self.maxChildren and index >= self.children.len:
+        index = self.activeIndex - 1
+      insert = true
+    of "*+?":
+      index = self.activeIndex
+      insert = true
+      replaceLast = false
+    of "*+>?":
+      index = self.activeIndex + 1
+      insert = true
+      replaceLast = false
+    of "*+<?":
+      index = self.activeIndex - 1
+      insert = true
+      replaceLast = false
+    of "*+<>?":
+      index = self.activeIndex + 1
+      if self.children.len == self.maxChildren and index >= self.children.len:
+        index = self.activeIndex - 1
+      insert = true
+      replaceLast = false
     else:
       if slot.startsWith("#"):
         let slotName = slot[1..^1]
@@ -592,7 +646,30 @@ method addView*(self: Layout, view: View, path: string = "", focus: bool = true)
 
     break
 
-  if index >= self.children.len or self.children.len == 0:
+  index = index.clamp(0, self.children.len)
+
+  if insert:
+    if self.children.len == self.maxChildren:
+      if replaceLast or index >= self.children.len:
+        result = self.children.pop()
+      else:
+        result = self.children[index]
+        self.children.removeShift(index)
+      index = index.clamp(0, self.children.len)
+    if self.childTemplate != nil:
+      let newChild = self.childTemplate.copy()
+      self.children.insert(newChild, index)
+      if focus:
+        self.activeIndex = index
+      self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+      return newChild.addView(view, subPath, focus)
+    else:
+      self.children.insert(view, index)
+      if focus:
+        self.activeIndex = index
+      self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+
+  elif index >= self.children.len or self.children.len == 0:
     if self.childTemplate != nil:
       let newChild = self.childTemplate.copy()
       self.children.add(newChild)
@@ -610,11 +687,12 @@ method addView*(self: Layout, view: View, path: string = "", focus: bool = true)
       self.activeIndex = index
     return self.children[index].Layout.addView(view, subPath, focus)
   elif self.childTemplate != nil:
+    result = self.children[index]
     let newChild = self.childTemplate.copy()
     self.children[index] = newChild
     if focus:
       self.activeIndex = index
-    return newChild.addView(view, subPath, focus)
+    discard newChild.addView(view, subPath, focus)
   else:
     result = self.children[index]
     self.children[index] = view
@@ -622,7 +700,7 @@ method addView*(self: Layout, view: View, path: string = "", focus: bool = true)
       self.activeIndex = index
 
 method addView*(self: MainLayout, view: View, path: string = "", focus: bool = true): View =
-  debugf"MainLayout.addView {view.desc()} to slot '{path}', focus = {focus}"
+  # debugf"MainLayout.addView {view.desc()} to slot '{path}', focus = {focus}"
   var index = 4
   var (slot, subPath) = path.extractSlot
   while true:
@@ -665,13 +743,27 @@ method addView*(self: MainLayout, view: View, path: string = "", focus: bool = t
     if focus:
       self.activeIndex = index
 
+method tryActivateView*(self: Layout, predicate: proc(view: View): bool {.gcsafe, raises: [].}): bool {.base.} =
+  for i, c in self.children:
+    if c == nil:
+      continue
+    if predicate(c):
+      self.activeIndex = i
+      return true
+    if c of Layout:
+      if c.Layout.tryActivateView(predicate):
+        self.activeIndex = i
+        return true
+
+  return false
+
 proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
   if config.kind == JNull:
     return nil
 
   checkJson config.hasKey("kind") and config["kind"].kind == Jstring, "Expected field 'kind' of type string"
   let kind = config["kind"].getStr
-  debugf"createLayout '{kind}': {config}"
+  # debugf"createLayout '{kind}': {config}"
 
   template createChildren(res: Layout): untyped =
     if config.hasKey("children"):
@@ -689,6 +781,8 @@ proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
       res.defaultSlot = config["default-slot"].jsonTo(string)
     if config.hasKey("slots"):
       res.slots = config["slots"].jsonTo(Table[string, string])
+    if config.hasKey("max-children"):
+      res.maxChildren = config["max-children"].jsonTo(int)
 
   case kind
   of "main":

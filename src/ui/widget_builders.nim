@@ -1,4 +1,4 @@
-import std/[sugar, os]
+import std/[sugar, os, sequtils, deques]
 import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node

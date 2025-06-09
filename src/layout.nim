@@ -1,4 +1,4 @@
-import std/[tables, options, json, sugar, sequtils]
+import std/[tables, options, json, sugar, sequtils, deques]
 import bumpy
 import results
 import platform/platform
@@ -41,10 +41,8 @@ type
     layouts*: Table[string, Layout]
     layoutProps*: LayoutProperties
     maximizeView*: bool
-    currentViewInternal*: int
-    views*: seq[View]
-    activeEditorInternal*: Option[EditorId]
-    editorHistory*: Deque[EditorId]
+    focusHistory*: Deque[Id]
+    viewHistory*: Deque[Id]
 
     onEditorRegistered*: Event[DocumentEditor]
     onEditorDeregistered*: Event[DocumentEditor]
@@ -60,23 +58,6 @@ type
 var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 
 proc getView*(self: LayoutService, id: Id): Option[View]
-
-method desc*(self: EditorView): string =
-  if self.document == nil:
-    &"EditorView(pending '{self.path}')"
-  else:
-    &"EditorView('{self.document.filename}')"
-method kind*(self: EditorView): string = "editor"
-method display*(self: EditorView): string = self.document.filename
-method saveLayout*(self: EditorView): JsonNode =
-  result = newJObject()
-  result["id"] = self.id.toJson
-method saveState*(self: EditorView): JsonNode =
-  result = newJObject()
-  result["kind"] = self.kind.toJson
-  result["id"] = self.id.toJson
-  result["path"] = self.document.filename.toJson
-  result["state"] = self.editor.getStateJson()
 
 proc addViewFactory*(self: LayoutService, name: string, create: CreateView, override: bool = false) =
   if not override and name in self.viewFactories:
@@ -100,7 +81,7 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
 
   checkJson config.kind == JObject, "Expected object"
 
-  debugf"{self.desc}.createViews: {config}"
+  # debugf"{self.desc}.createViews: {config}"
   if config.hasKey("children"):
     let children = config["children"]
     checkJson children.kind == JArray, "'children' must be an array"
@@ -135,7 +116,7 @@ method createViews(self: MainLayout, config: JsonNode, layouts: LayoutService) {
 
   checkJson config.kind == JObject, "Expected object"
 
-  debugf"MainLayout.createViews: {config}"
+  # debugf"MainLayout.createViews: {config}"
   if config.hasKey("children"):
     let children = config["children"]
     checkJson children.kind == JArray, "'children' must be an array"
@@ -167,7 +148,7 @@ proc updateLayoutTree(self: LayoutService) =
   try:
     # let config = self.uiSettings.layout.get()
     let config = self.config.runtime.get("ui.layout", newJexObject())
-    debugf"updateLayoutTree\n{config.pretty}"
+    # debugf"updateLayoutTree\n{config.pretty}"
 
     for key, value in config.fields.pairs:
       let view = createLayout(value.toJson)
@@ -224,7 +205,6 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
     return EditorView(mId: config.id, document: document, editor: editor)
 
   proc save(): JsonNode =
-    debugf"save layout in session"
     result = newJObject()
     let layouts = newJObject()
     for key, layout in self.layouts:
@@ -241,7 +221,6 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
     result["views"] = all
 
   proc load(data: JsonNode) =
-    debugf"load layout from session:\n{data.pretty}"
     try:
       self.updateLayoutTree()
 
@@ -295,6 +274,27 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
 proc preRender*(self: LayoutService) =
   discard
 
+method desc*(self: EditorView): string =
+  if self.document == nil:
+    &"EditorView(pending '{self.path}')"
+  else:
+    &"EditorView('{self.document.filename}')"
+
+method kind*(self: EditorView): string = "editor"
+
+method display*(self: EditorView): string = self.document.filename
+
+method saveLayout*(self: EditorView): JsonNode =
+  result = newJObject()
+  result["id"] = self.id.toJson
+
+method saveState*(self: EditorView): JsonNode =
+  result = newJObject()
+  result["kind"] = self.kind.toJson
+  result["id"] = self.id.toJson
+  result["path"] = self.document.filename.toJson
+  result["state"] = self.editor.getStateJson()
+
 method activate*(view: EditorView) =
   view.active = true
   view.editor.active = true
@@ -312,8 +312,6 @@ method getEventHandlers*(view: EditorView, inject: Table[string, EventHandler]):
 
 method getActiveEditor*(self: EditorView): Option[DocumentEditor] =
   self.editor.some
-
-proc currentView*(self: LayoutService): int = self.currentViewInternal
 
 proc tryGetCurrentView*(self: LayoutService): Option[View] =
   let view = self.layout.activeLeafView()
@@ -334,86 +332,6 @@ proc getPopupForId*(self: LayoutService, id: EditorId): Option[Popup] =
       return popup.some
 
   return Popup.none
-
-proc updateActiveEditor*(self: LayoutService, addToHistory = true) =
-  if self.tryGetCurrentEditorView().getSome(view):
-    if addToHistory and self.activeEditorInternal.getSome(id) and id != view.editor.id:
-      self.editorHistory.addLast id
-    self.activeEditorInternal = view.editor.id.some
-
-proc `currentView=`*(self: LayoutService, newIndex: int, addToHistory = true) =
-  self.currentViewInternal = newIndex
-  self.updateActiveEditor(addToHistory)
-
-proc addView*(self: LayoutService, view: View, addToHistory = true, append = false, slot: string = "", focus: bool = true) =
-  debugf"addView {view.desc()} slot = '{slot}', focus = {focus}"
-  let maxViews = self.uiSettings.maxViews.get()
-
-  self.allViews.incl view
-  let slot = if slot == "":
-    self.layout.defaultSlot
-  else:
-    slot
-
-  discard self.layout.removeView(view)
-  let ejectedView = self.layout.addView(view, slot, focus)
-
-  # Force immediate load for new file since we're making it visible anyways
-  if view of EditorView and view.EditorView.document.requiresLoad:
-    view.EditorView.document.load()
-
-  view.markDirty()
-  self.updateActiveEditor(addToHistory)
-  self.platform.requestRender()
-
-proc createView*(self: LayoutService, document: Document): View =
-  if self.editors.createEditorForDocument(document).getSome(editor):
-    return EditorView(document: document, editor: editor)
-  return nil
-
-# todo: change return type to Option[View]
-proc createView*(self: LayoutService, filename: string): View =
-  let document = self.editors.getOrOpenDocument(filename).getOr:
-    log(lvlError, fmt"Failed to restore file {filename} from previous session")
-    return nil
-
-  return self.createView(document)
-
-proc createAndAddView*(self: LayoutService, document: Document, append: bool = false, slot: string = ""): Option[DocumentEditor] =
-  debugf"createAndAddView '{document.filename}'"
-  if self.editors.createEditorForDocument(document).getSome(editor):
-    var view = EditorView(document: document, editor: editor)
-    self.addView(view, append=append, slot=slot)
-    return editor.some
-  return DocumentEditor.none
-
-method tryActivateView*(self: Layout, predicate: proc(view: View): bool {.gcsafe, raises: [].}): bool {.base.} =
-  for i, c in self.children:
-    if c == nil:
-      continue
-    if predicate(c):
-      self.activeIndex = i
-      return true
-    if c of Layout:
-      if c.Layout.tryActivateView(predicate):
-        self.activeIndex = i
-        return true
-
-  return false
-
-proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) =
-  if self.popups.len > 0:
-    return
-  discard self.layout.tryActivateView proc(view: View): bool =
-    return view of EditorView and view.EditorView.editor == editor
-  self.platform.requestRender()
-
-proc tryActivateView*(self: LayoutService, view: View) =
-  if self.popups.len > 0:
-    return
-  discard self.layout.tryActivateView proc(v: View): bool =
-    return view == v
-  self.platform.requestRender()
 
 proc getActiveViewEditor*(self: LayoutService): Option[DocumentEditor] =
   if self.tryGetCurrentEditorView().getSome(view):
@@ -436,6 +354,81 @@ proc getViewForEditor*(self: LayoutService, editor: DocumentEditor): Option[Edit
       return view.EditorView.some
 
   return EditorView.none
+
+proc recordFocusHistoryEntry(self: LayoutService, view: View) =
+  if view == nil or view.id == idNone():
+    return
+  if self.focusHistory.len == 0 or self.focusHistory.peekLast() != view.id:
+    self.focusHistory.addLast(view.id)
+
+  # todo: make max size configurable
+  while self.focusHistory.len > 1000:
+    self.focusHistory.popFirst()
+
+proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) =
+  # debugf"addView {view.desc()} slot = '{slot}', focus = {focus}, addToHistory = {addToHistory}"
+  let maxViews = self.uiSettings.maxViews.get()
+
+  self.allViews.incl view
+  let slot = if slot == "":
+    self.layout.defaultSlot
+  else:
+    slot
+
+  let prevActiveView = self.layout.activeLeafView()
+  if focus and addToHistory:
+    self.recordFocusHistoryEntry(prevActiveView)
+
+  discard self.layout.removeView(view)
+  let ejectedView = self.layout.addView(view, slot, focus)
+
+  if ejectedView != nil and ejectedView.id != idNone():
+    self.viewHistory.addLast(ejectedView.id)
+
+  # Force immediate load for new file since we're making it visible anyways
+  if view of EditorView and view.EditorView.document.requiresLoad:
+    view.EditorView.document.load()
+
+  view.markDirty()
+  self.platform.requestRender()
+
+proc createView*(self: LayoutService, document: Document): View =
+  if self.editors.createEditorForDocument(document).getSome(editor):
+    return EditorView(document: document, editor: editor)
+  return nil
+
+# todo: change return type to Option[View]
+proc createView*(self: LayoutService, filename: string): View =
+  let document = self.editors.getOrOpenDocument(filename).getOr:
+    log(lvlError, fmt"Failed to restore file {filename} from previous session")
+    return nil
+
+  return self.createView(document)
+
+proc createAndAddView*(self: LayoutService, document: Document, slot: string = ""): Option[DocumentEditor] =
+  # debugf"createAndAddView '{document.filename}'"
+  if self.editors.createEditorForDocument(document).getSome(editor):
+    var view = EditorView(document: document, editor: editor)
+    self.addView(view, slot=slot)
+    return editor.some
+  return DocumentEditor.none
+
+proc tryActivateView*(self: LayoutService, view: View) =
+  if self.popups.len > 0:
+    return
+  let prevActiveView = self.layout.activeLeafView()
+  let activated = self.layout.tryActivateView proc(v: View): bool =
+    return view == v
+  if activated:
+    self.recordFocusHistoryEntry(prevActiveView)
+
+  self.platform.requestRender()
+
+proc tryActivateEditor*(self: LayoutService, editor: DocumentEditor) =
+  if self.popups.len > 0:
+    return
+  if self.getViewForEditor(editor).getSome(view):
+    self.tryActivateView(view)
 
 proc pushPopup*(self: LayoutService, popup: Popup) =
   popup.init()
@@ -476,22 +469,17 @@ proc toggleMaximizeView*(self: LayoutService) {.expose("layout").} =
   self.maximizeView = not self.maximizeView
   self.platform.requestRender()
 
-proc setMaxViews*(self: LayoutService, maxViews: int, openExisting: bool = false) {.expose("layout").} =
+proc setMaxViews*(self: LayoutService, slot: string, maxViews: int = int.high) {.expose("layout").} =
   ## Set the maximum number of views that can be open at the same time
   ## Closes any views that exceed the new limit
-  debugf"setMaxViews {maxViews}, openExisting = {openExisting}"
+  # debugf"setMaxViews {maxViews}, slot = '{slot}'"
+  let view = self.layout.getView(slot)
+  if view != nil and view of Layout:
+    let layout = view.Layout
+    layout.maxChildren = maxViews
 
-  # todo
-  log lvlInfo, fmt"[setMaxViews] {maxViews}"
   self.uiSettings.maxViews.set(maxViews)
-  # self.updateActiveEditor(false)
   self.platform.requestRender()
-
-proc getEditorInView*(self: LayoutService, index: int): EditorId {.expose("layout").} =
-  if index >= 0 and index < self.views.len and self.views[index] of EditorView:
-    return self.views[index].EditorView.editor.id
-
-  return EditorId(-1)
 
 proc getHiddenViews*(self: LayoutService): seq[View] =
   var res = self.allViews
@@ -505,18 +493,6 @@ proc getVisibleViews*(self: LayoutService): seq[View] =
     res.add(v)
   return res
 
-proc getVisibleEditors*(self: LayoutService): seq[EditorId] {.expose("layout").} =
-  ## Returns a list of all editors which are currently shown
-  for view in self.views:
-    if view of EditorView:
-      result.add view.EditorView.editor.id
-
-proc getHiddenEditors*(self: LayoutService): seq[EditorId] {.expose("layout").} =
-  ## Returns a list of all editors which are currently hidden
-  for view in self.getHiddenViews():
-    if view of EditorView:
-      result.add view.EditorView.editor.id
-
 proc getNumVisibleViews*(self: LayoutService): int {.expose("layout").} =
   ## Returns the amount of visible views
   var res = 0
@@ -529,29 +505,34 @@ proc getNumHiddenViews*(self: LayoutService): int {.expose("layout").} =
   ## Returns the amount of hidden views
   return self.getHiddenViews().len
 
-proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool = true) =
+proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) =
   ## Make the given view visible
-  debugf"showView {view.desc()}, slot = '{slot}', focus = {focus}"
+  # debugf"showView {view.desc()}, slot = '{slot}', focus = {focus}, addToHistory = {addToHistory}"
 
+  let prevActiveView = self.layout.activeLeafView()
   if focus:
     let activated = self.layout.tryActivateView proc(v: View): bool =
       return view == v
 
     if activated:
+      if addToHistory:
+        self.recordFocusHistoryEntry(prevActiveView)
       return
 
-    self.addView(view, slot=slot, focus=true)
+    self.addView(view, slot=slot, focus=true, addToHistory=addToHistory)
 
   else:
     discard self.layout.removeView(view)
-    self.addView(view, slot=slot, focus=false)
+    self.addView(view, slot=slot, focus=false, addToHistory=addToHistory)
 
   self.platform.requestRender()
 
+proc showView*(self: LayoutService, viewId: Id, slot: string = "", focus: bool = true, addToHistory: bool = true) =
+  if self.getView(viewId).getSome(view):
+    self.showView(view, slot, focus, addToHistory)
+
 proc showEditor*(self: LayoutService, editorId: EditorId) {.expose("layout").} =
   ## Make the given editor visible
-  ## If viewIndex is none, the editor will be opened in the currentView,
-  ## Otherwise the editor will be opened in the view with the given index.
   let editor = self.editors.getEditorForId(editorId).getOr:
     log lvlError, &"No editor with id {editorId} exists"
     return
@@ -584,8 +565,8 @@ proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.exp
 
   return EditorId.none
 
-proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, append: bool = false, slot: string = ""): Option[DocumentEditor] =
-  debugf"tryOpenExisting '{path}'"
+proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, slot: string = ""): Option[DocumentEditor] =
+  # debugf"tryOpenExisting '{path}'"
   for i, view in self.allViews:
     if view of EditorView and view.EditorView.document.filename == path:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
@@ -595,7 +576,7 @@ proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, 
   return DocumentEditor.none
 
 proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true, slot: string = ""): Option[DocumentEditor] =
-  debugf"tryOpenExisting '{editor}'"
+  # debugf"tryOpenExisting '{editor}'"
   for i, view in self.allViews:
     if view of EditorView and view.EditorView.editor.id == editor:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
@@ -604,14 +585,14 @@ proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true
 
   return DocumentEditor.none
 
-proc openWorkspaceFile*(self: LayoutService, path: string, append: bool = false, slot: string = ""): Option[DocumentEditor] =
+proc openWorkspaceFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
 
   let path = self.workspace.getAbsolutePath(path)
 
   log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
-  if self.tryOpenExisting(path, append = append, slot = slot).getSome(editor):
+  if self.tryOpenExisting(path, slot = slot).getSome(editor):
     log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
     return editor.some
 
@@ -619,7 +600,7 @@ proc openWorkspaceFile*(self: LayoutService, path: string, append: bool = false,
     log(lvlError, fmt"Failed to load file {path}")
     return DocumentEditor.none
 
-  return self.createAndAddView(document, append = append, slot = slot)
+  return self.createAndAddView(document, slot = slot)
 
 proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
   defer:
@@ -628,7 +609,7 @@ proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[Doc
   let path = self.vfs.normalize(path)
 
   log lvlInfo, fmt"[openFile] Open file '{path}'"
-  if self.tryOpenExisting(path, false, append = false, slot = slot).getSome(ed):
+  if self.tryOpenExisting(path, false, slot = slot).getSome(ed):
     log lvlInfo, fmt"[openFile] found existing editor"
     return ed.some
 
@@ -644,10 +625,10 @@ proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, resto
   ## Closes the current view.
   self.platform.requestRender()
 
-  if keepHidden:
-    debugf"hideView '{view.desc()}'"
-  else:
-    debugf"closeView '{view.desc()}'"
+  # if keepHidden:
+  #   debugf"hideView '{view.desc()}'"
+  # else:
+  #   debugf"closeView '{view.desc()}'"
 
   discard self.layout.removeView(view)
   if keepHidden:
@@ -687,7 +668,7 @@ proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bo
   return true
 
 proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, restoreHidden: bool = true, closeOpenPopup: bool = true) {.expose("layout").} =
-  debugf"closeCurrentView"
+  # debugf"closeCurrentView"
   if closeOpenPopup and self.popups.len > 0:
     self.popPopup()
   else:
@@ -713,38 +694,34 @@ proc closeOtherViews*(self: LayoutService, keepHidden: bool = true) {.expose("la
   self.platform.requestRender()
 
 proc moveCurrentViewToTop*(self: LayoutService) {.expose("layout").} =
-  if self.views.len > 0:
-    let view = self.views[self.currentView]
-    self.views.delete(self.currentView)
-    self.views.insert(view, 0)
-  self.currentView = 0
+  # todo
+  # if self.views.len > 0:
+  #   let view = self.views[self.currentView]
+  #   self.views.delete(self.currentView)
+  #   self.views.insert(view, 0)
   self.platform.requestRender()
 
 proc focusViewLeft*(self: LayoutService) {.expose("layout").} =
   let view = self.layout.tryGetViewLeft()
   if view != nil:
-    debugf"focus view left {view.desc}"
     self.tryActivateView(view)
   self.platform.requestRender()
 
 proc focusViewRight*(self: LayoutService) {.expose("layout").} =
   let view = self.layout.tryGetViewRight()
   if view != nil:
-    debugf"focus view right {view.desc}"
     self.tryActivateView(view)
   self.platform.requestRender()
 
 proc focusViewUp*(self: LayoutService) {.expose("layout").} =
   let view = self.layout.tryGetViewUp()
   if view != nil:
-    debugf"focus view up {view.desc}"
     self.tryActivateView(view)
   self.platform.requestRender()
 
 proc focusViewDown*(self: LayoutService) {.expose("layout").} =
   let view = self.layout.tryGetViewDown()
   if view != nil:
-    debugf"focus view down {view.desc}"
     self.tryActivateView(view)
   self.platform.requestRender()
 
@@ -758,7 +735,6 @@ proc setLayout*(self: LayoutService, layout: string) {.expose("layout").} =
 proc focusView*(self: LayoutService, slot: string) {.expose("layout").} =
   let view = self.layout.getView(slot)
   if view != nil:
-    debugf"focus view {view.desc}"
     self.tryActivateView(view)
   self.platform.requestRender()
 
@@ -798,6 +774,63 @@ proc prevView*(self: LayoutService, slot: string = "") {.expose("layout").} =
           break
   self.platform.requestRender()
 
+proc openPreviousEditor*(self: LayoutService) {.expose("layout").} =
+  if self.focusHistory.len == 0:
+    return
+
+  let activeView = self.layout.activeLeafView()
+  let activeViewId = if activeView != nil:
+    activeView.id
+  else:
+    idNone()
+
+  while self.focusHistory.len > 0:
+    let viewId = self.focusHistory.popLast
+    if viewId == activeViewId:
+      continue
+
+    if self.focusHistory.len == 0 or self.focusHistory.peekFirst() != activeViewId:
+      self.focusHistory.addFirst activeViewId
+
+    self.showView(viewId, addToHistory = false)
+    break
+
+proc openNextEditor*(self: LayoutService) {.expose("layout").} =
+  if self.focusHistory.len == 0:
+    return
+
+  let activeView = self.layout.activeLeafView()
+  let activeViewId = if activeView != nil:
+    activeView.id
+  else:
+    idNone()
+
+  while self.focusHistory.len > 0:
+    let viewId = self.focusHistory.popFirst
+    if viewId == activeViewId:
+      continue
+
+    if self.tryGetCurrentView().getSome(view):
+      if self.focusHistory.len == 0 or self.focusHistory.peekLast() != view.id:
+        self.focusHistory.addLast view.id
+
+    self.showView(viewId, addToHistory = false)
+    break
+
+proc openLastEditor*(self: LayoutService) {.expose("layout").} =
+  if self.viewHistory.len == 0:
+    return
+
+  let viewId = self.viewHistory.popLast
+  let view = self.getView(viewId).getOr:
+    log lvlError, &"No view with id {viewId} exists"
+    return
+
+  let slot = self.layout.activeLeafSlot()
+  log lvlInfo, &"openLastEditor viewId={viewId}, view={view.desc} in '{slot}'"
+  self.showView(view, slot)
+  self.platform.requestRender()
+
 proc setActiveIndex*(self: LayoutService, slot: string, index: int) {.expose("layout").} =
   let view = self.layout.getView(slot)
   if view != nil and view of Layout:
@@ -806,37 +839,33 @@ proc setActiveIndex*(self: LayoutService, slot: string, index: int) {.expose("la
   self.platform.requestRender()
 
 proc moveCurrentViewPrev*(self: LayoutService) {.expose("layout").} =
-  if self.views.len > 0:
-    let view = self.views[self.currentView]
-    let index = (self.currentView + self.views.len - 1) mod self.views.len
-    self.views.delete(self.currentView)
-    self.views.insert(view, index)
-    self.currentView = index
+  # todo
+  # if self.views.len > 0:
+  #   let view = self.views[self.currentView]
+  #   let index = (self.currentView + self.views.len - 1) mod self.views.len
+  #   self.views.delete(self.currentView)
+  #   self.views.insert(view, index)
   self.platform.requestRender()
 
 proc moveCurrentViewNext*(self: LayoutService) {.expose("layout").} =
-  if self.views.len > 0:
-    let view = self.views[self.currentView]
-    let index = (self.currentView + 1) mod self.views.len
-    self.views.delete(self.currentView)
-    self.views.insert(view, index)
-    self.currentView = index
-  self.platform.requestRender()
-
-proc openLastEditor*(self: LayoutService) {.expose("layout").} =
-  debugf"openLastEditor"
   # todo
+  # if self.views.len > 0:
+  #   let view = self.views[self.currentView]
+  #   let index = (self.currentView + 1) mod self.views.len
+  #   self.views.delete(self.currentView)
+  #   self.views.insert(view, index)
+  self.platform.requestRender()
 
 proc moveCurrentViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
   # todo
   self.platform.requestRender()
 
-proc splitView*(self: LayoutService) {.expose("layout").} =
+proc splitView*(self: LayoutService, slot: string = "") {.expose("layout").} =
   defer:
     self.platform.requestRender()
 
   if self.tryGetCurrentEditorView().getSome(view):
-    discard self.createAndAddView(view.document, append = true)
+    discard self.createAndAddView(view.document, slot = slot)
 
 proc moveView*(self: LayoutService, slot: string) {.expose("layout").} =
   defer:

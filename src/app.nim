@@ -1023,11 +1023,6 @@ proc shutdown*(self: App) =
 proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
   if self.logDocument.isNotNil:
-    for view in self.layout.views:
-      if view of EditorView and view.EditorView.document == self.logDocument:
-        let editor = view.EditorView.editor.TextDocumentEditor
-        editor.bScrollToEndOnInsert = true
-
     let selection = self.logDocument.TextDocument.lastCursor.toSelection
     discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
     self.logBuffer = ""
@@ -1083,9 +1078,9 @@ proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("ed
   when defined(debugAsyncAwaitMacro):
     debugPrintAsyncAwaitStackTrace = enable
 
-proc showDebuggerView*(self: App) {.expose("editor").} =
+proc showDebuggerView*(self: App, slot: string = "") {.expose("editor").} =
   # todo: reuse existing
-  self.layout.addView(DebuggerView(), false)
+  self.layout.addView(DebuggerView(), slot)
 
 proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
   if self.layout.popups.len == 0:
@@ -2585,30 +2580,6 @@ proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
   if self.layout.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
     self.exploreFiles(view.document.filename.splitPath.head)
 
-proc openPreviousEditor*(self: App) {.expose("editor").} =
-  if self.layout.editorHistory.len == 0:
-    return
-
-  let editor = self.layout.editorHistory.popLast
-
-  if self.layout.tryGetCurrentEditorView().getSome(view):
-    self.layout.editorHistory.addFirst view.editor.id
-
-  discard self.layout.tryOpenExisting(editor, addToHistory=false)
-  self.platform.requestRender()
-
-proc openNextEditor*(self: App) {.expose("editor").} =
-  if self.layout.editorHistory.len == 0:
-    return
-
-  let editor = self.layout.editorHistory.popFirst
-
-  if self.layout.tryGetCurrentEditorView().getSome(view):
-    self.layout.editorHistory.addLast view.editor.id
-
-  discard self.layout.tryOpenExisting(editor, addToHistory=false)
-  self.platform.requestRender()
-
 # todo: move to scripting_base
 proc reloadPluginAsync*(self: App) {.async.} =
   if self.wasmScriptContext.isNotNil:
@@ -3123,7 +3094,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Script Actions: {self.plugins.scriptActions.len}\n"
 
       result.add &"Input History: {self.inputHistory}\n"
-      result.add &"Editor History: {self.layout.editorHistory}\n"
+      # result.add &"Editor History: {self.layout.editorHistory}\n"
 
       result.add &"Command History: {self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len}\n"
       # for command in self.commandHistory:

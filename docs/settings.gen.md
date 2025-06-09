@@ -63,6 +63,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.indent-detection.timeout` | int | 20 | Max number of milliseconds to spend trying to detect the indent style. |
 | `text.line-comment` | string \| null | null | String which starts a line comment |
 | `text.scroll-to-change-on-reload` | "first" \| "last" \| null | null | If not null then scroll to the changed region when a file is reloaded. |
+| `text.scroll-to-end-on-insert` | bool | false | If true then scroll to the end of the file when text is inserted at the end and the cursor is already at the end. |
 | `text.search-regexes.goto-declaration` | regex \| null | null | Regex to use when using the goto-declaration feature. |
 | `text.search-regexes.goto-definition` | regex \| null | null | Regex to use when using the goto-definition feature. |
 | `text.search-regexes.goto-implementation` | regex \| null | null | Regex to use when using the goto-implementation feature. |

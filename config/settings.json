@@ -657,7 +657,8 @@
         },
         "log": {
             "+text": {
-                "treesitter.repository": "Tudyx/tree-sitter-log"
+                "treesitter.repository": "Tudyx/tree-sitter-log",
+                "scroll-to-end-on-insert": true,
             }
         },
         "shell-command-results": {
@@ -807,14 +808,15 @@
     "ui.layout": {
         "default": {
             "default-slot": "#default",
-            "slots.default": ".center.+",
+            "slots.default": ".center.*+?",
             "slots.scratch-terminal": ".bottom.+",
             "slots.build-run-terminal": ".left",
             "kind": "tab",
             "childTemplate": {
                 "kind": "main",
                 "center": {
-                    "kind": "alternating"
+                    "kind": "alternating",
+                    "max-children": 2,
                 },
                 "bottom": {
                     "kind": "tab"

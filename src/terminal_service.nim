@@ -989,14 +989,12 @@ method close*(self: TerminalView) =
 method activate*(self: TerminalView) =
   if self.active:
     return
-  debugf"activate terminal '{self.terminal.command}', {self.terminal.group}"
   self.active = true
   self.markDirty()
 
 method deactivate*(self: TerminalView) =
   if not self.active:
     return
-  debugf"deactivate terminal '{self.terminal.command}', {self.terminal.group}"
   self.active = false
   self.markDirty()
 
@@ -1252,7 +1250,7 @@ proc createTerminal*(self: TerminalService, command: string = "", options: Creat
   ##                             as if typed with the keyboard.
   ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
   ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
-  debugf"createTerminal '{command}', {options}"
+  log lvlInfo, &"createTerminal '{command}', {options}"
   self.layout.addView(self.createTerminalView(command, options), slot=options.slot, focus=options.focus)
 
 proc isIdle(self: TerminalService, terminal: Terminal): bool =
@@ -1284,7 +1282,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
     log lvlError, &"Failed to run command in shell '{shell}': Invalid configuration, empty 'editor.shells.{shell}.command'"
     return
 
-  debugf"runInTerminal '{shell}', '{command}', {options}"
+  log lvlInfo, &"runInTerminal '{shell}', '{command}', {options}"
   if options.reuseExisting:
     for view in self.terminals.values:
       if view.terminal.group == options.group and view.terminal.command == shellCommand.get and self.isIdle(view.terminal):
