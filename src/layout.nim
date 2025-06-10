@@ -875,6 +875,7 @@ proc moveCurrentViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
     let currentSlot = layout.getSlot(currentView)
     discard layout.addView(currentView, nextSlot)
     discard layout.addView(view, currentSlot)
+    self.viewHistory.addLast(nextView.id)
 
   self.platform.requestRender()
 

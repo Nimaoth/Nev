@@ -151,9 +151,9 @@ proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, lo
 
   if queryError != ts.TSQueryErrorNone:
     if logSourceOnError:
-      log lvlError, &"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}\n{source}"
+      log lvlError, &"Failed to load '{id}' query for '{self.languageId}': {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}\n{source}"
     else:
-      log lvlError, &"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}"
+      log lvlError, &"Failed to load '{id}' query for '{self.languageId}': {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}"
 
     if cacheOnFail:
       self.queries[id] = TSQuery.none
@@ -292,7 +292,7 @@ proc currentFieldName*(cursor: var ts.TSTreeCursor): cstring = tsTreeCursorCurre
 proc currentFieldId*(cursor: var ts.TSTreeCursor): ts.TSFieldId = tsTreeCursorCurrentFieldId(addr cursor)
 
 proc setPointRange*(cursor: ptr ts.TSQueryCursor, rang: TSRange) =
-  cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)
+  discard cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)
 
 proc getCaptureName*(query: TSQuery, index: uint32): string =
   var length: uint32
