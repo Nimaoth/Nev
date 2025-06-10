@@ -36,7 +36,7 @@ when defined(windows):
   proc ResizePseudoConsole*(phPC: HPCON, size: wincon.COORD): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
 
 else:
-  import posix/posix
+  import posix/posix except Id
   import posix/termios
 
   {.passL: "-lutil".}
