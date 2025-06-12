@@ -395,6 +395,8 @@ proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = 
 
   if ejectedView != nil and ejectedView.id != idNone():
     self.viewHistory.addLast(ejectedView.id)
+    self.allViews.removeShift(ejectedView)
+    self.allViews.add(ejectedView)
 
   # Force immediate load for new file since we're making it visible anyways
   if view of EditorView and view.EditorView.document.requiresLoad:
@@ -484,7 +486,7 @@ proc setMaxViews*(self: LayoutService, slot: string, maxViews: int = int.high) {
 proc getHiddenViews*(self: LayoutService): seq[View] =
   var res = self.allViews
   self.layout.forEachVisibleView proc(v: View): bool =
-    res.removeSwap(v)
+    res.removeShift(v)
   return res
 
 proc getVisibleViews*(self: LayoutService): seq[View] =
