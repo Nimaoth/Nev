@@ -892,7 +892,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
     )
 
-  if self.generalSettings.watchUserConfig.get():
+  if not self.appOptions.skipUserSettings and self.generalSettings.watchUserConfig.get():
     discard self.vfs.watch(homeConfigDir, proc(events: seq[PathEvent]) =
       let changedFiles = events.mapIt(it.name)
       asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
@@ -1046,7 +1046,7 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
   log lvlInfo, &"reapplyConfigKeybindingsAsync app={app}, home={home}, workspace={workspace}"
   if app:
     await self.loadKeybindings(appConfigDir, loadConfigFileFrom)
-  if home:
+  if not self.appOptions.skipUserSettings and home:
     await self.loadKeybindings(homeConfigDir, loadConfigFileFrom)
   if workspace and self.workspace.path != "":
     await self.loadKeybindings(workspaceConfigDir, loadConfigFileFrom)
@@ -2563,7 +2563,8 @@ proc reloadPluginAsync*(self: App) {.async.} =
 
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadConfigFrom(appConfigDir, "app")
-  await self.loadConfigFrom(homeConfigDir, "home")
+  if not self.appOptions.skipUserSettings:
+    await self.loadConfigFrom(homeConfigDir, "home")
   await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
 proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =

@@ -5,6 +5,7 @@ type AppOptions* = object
   disableWasmPlugins*: bool
   dontRestoreOptions*: bool
   dontRestoreConfig*: bool
+  skipUserSettings*: bool
   restoreLastSession*: bool
   fileToOpen*: Option[string]
   sessionOverride*: Option[string]
