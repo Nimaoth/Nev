@@ -1520,11 +1520,11 @@ proc handleCachedFilesUpdated(self: WorkspaceFilesDataSource) =
 
   for i in 0..self.workspace.cachedFiles.high:
     let path = self.workspace.cachedFiles[i]
-    let relPath = self.workspace.getRelativePathSync(path).get(path)
+    let (root, relPath) = self.workspace.getRelativePathAndWorkspaceSync(path).get(("", path))
     let (dir, name) = relPath.splitPath
     list[i] = FinderItem(
       displayName: name,
-      detail: dir,
+      detail: root // dir,
       data: path,
     )
 
@@ -1903,12 +1903,12 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
         let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
         let dirtyMarker = if isDirty: "*" else: " "
         let (directory, name) = document.filename.splitPath
-        let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
+        let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
         items.add FinderItem(
           displayName: dirtyMarker & name,
           filterText: name,
           data: $view.editor.id,
-          detail: relativeDirectory,
+          detail: root // relativeDirectory,
         )
 
     self.layout.layout.forEachView proc(v: View): bool =
@@ -1922,12 +1922,12 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
         else:
           "👁"
         let (directory, name) = document.filename.splitPath
-        let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
+        let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
         items.add FinderItem(
           displayName: activeMarker & dirtyMarker & name,
           filterText: name,
           data: $view.editor.id,
-          detail: relativeDirectory,
+          detail: root // relativeDirectory,
         )
 
     return items
