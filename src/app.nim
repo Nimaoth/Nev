@@ -787,6 +787,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.themes.setTheme(defaultTheme())
 
   self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
+  EditorSettings.new(self.logDocument.TextDocument.config).saveInSession.set(false)
   self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 

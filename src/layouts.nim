@@ -1,6 +1,6 @@
-import std/[tables, options, json, sugar, sequtils, strutils]
+import std/[tables, options, json, sugar, sequtils, strutils, sets]
 import bumpy
-import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex]
+import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex, id]
 import document, document_editor, view
 
 logCategory "layouts"
@@ -288,8 +288,8 @@ method removeView*(self: CenterLayout, view: View): bool =
 
   return false
 
-method saveLayout*(self: View): JsonNode {.base.} = nil
-method saveLayout*(self: Layout): JsonNode =
+method saveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode {.base.} = nil
+method saveLayout*(self: Layout, discardedViews: HashSet[Id]): JsonNode =
   if self.children.len == 0:
     return nil
   result = newJObject()
@@ -298,15 +298,15 @@ method saveLayout*(self: Layout): JsonNode =
   for i, c in self.children:
     if c == nil:
       children.add newJNull()
-    else:
-      let saved = c.saveLayout()
+    elif c.id notin discardedViews:
+      let saved = c.saveLayout(discardedViews)
       if saved != nil:
         children.add saved
 
   result["activeIndex"] = self.activeIndex.toJson
   result["children"] = children
 
-method saveLayout*(self: AutoLayout): JsonNode =
+method saveLayout*(self: AutoLayout, discardedViews: HashSet[Id]): JsonNode =
   if self.children.len == 0:
     return nil
   result = newJObject()
@@ -315,8 +315,8 @@ method saveLayout*(self: AutoLayout): JsonNode =
   for i, c in self.children:
     if c == nil:
       children.add newJNull()
-    else:
-      let saved = c.saveLayout()
+    elif c.id notin discardedViews:
+      let saved = c.saveLayout(discardedViews)
       if saved != nil:
         children.add saved
 
@@ -324,15 +324,15 @@ method saveLayout*(self: AutoLayout): JsonNode =
   result["children"] = children
   result["split-ratios"] = self.splitRatios.toJson()
 
-method saveLayout*(self: CenterLayout): JsonNode =
+method saveLayout*(self: CenterLayout, discardedViews: HashSet[Id]): JsonNode =
   result = newJObject()
   result["kind"] = self.kind.toJson
   var children = newJArray()
   for i, c in self.children:
     if c == nil:
       children.add newJNull()
-    else:
-      let saved = c.saveLayout()
+    elif c.id notin discardedViews:
+      let saved = c.saveLayout(discardedViews)
       if saved != nil:
         children.add saved
       else:

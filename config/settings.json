@@ -812,7 +812,7 @@
             "slots.build-run-terminal": ".left",
             "kind": "tab",
             "childTemplate": {
-                "kind": "main",
+                "kind": "center",
                 "center": {
                     "kind": "alternating",
                     "max-children": 2,
@@ -844,7 +844,7 @@
             "slots.default": "center.*.+",
             "slots.scratch-terminal": "bottom.+",
             "slots.build-run-terminal": "left.+",
-            "kind": "main",
+            "kind": "center",
             "center": {
                 "kind": "alternating",
                 "childTemplate": {

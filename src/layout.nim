@@ -1,4 +1,4 @@
-import std/[tables, options, json, sugar, sequtils, deques]
+import std/[tables, options, json, sugar, sequtils, deques, sets]
 import bumpy
 import results
 import platform/platform
@@ -85,7 +85,12 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
   if config.hasKey("children"):
     let children = config["children"]
     checkJson children.kind == JArray, "'children' must be an array"
-    for i, c in children.elems:
+    var i = 0
+    for c in children.elems:
+      if c.kind == JNull:
+        continue
+      defer:
+        inc i
       if i < self.children.len:
         if self.children[i] != nil and self.children[i] of Layout:
           self.children[i].Layout.createViews(c, layouts)
@@ -219,19 +224,23 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
 
   proc save(): JsonNode =
     result = newJObject()
-    let layouts = newJObject()
-    for key, layout in self.layouts:
-      let saved = layout.saveLayout()
-      if saved != nil:
-        layouts[key] = saved
-    result["layouts"] = layouts
 
-    var all = newJArray()
+    var discardedViews = initHashSet[Id]()
+    var viewStates = newJArray()
     for view in self.allViews:
       let state = view.saveState()
       if state != nil:
-        all.add state
-    result["views"] = all
+        viewStates.add state
+      else:
+        discardedViews.incl view.id
+    result["views"] = viewStates
+
+    let layouts = newJObject()
+    for key, layout in self.layouts:
+      let saved = layout.saveLayout(discardedViews)
+      if saved != nil:
+        layouts[key] = saved
+    result["layouts"] = layouts
 
   proc load(data: JsonNode) =
     try:
@@ -271,7 +280,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
 
   discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
     if key == "" or key.startsWith("ui.layout"):
-      let state = self.layout.saveLayout()
+      let state = self.layout.saveLayout(initHashSet[Id]())
 
       self.updateLayoutTree()
       if state != nil:
@@ -297,11 +306,16 @@ method kind*(self: EditorView): string = "editor"
 
 method display*(self: EditorView): string = self.document.filename
 
-method saveLayout*(self: EditorView): JsonNode =
+method saveLayout*(self: EditorView, discardedViews: HashSet[Id]): JsonNode =
   result = newJObject()
   result["id"] = self.id.toJson
 
 method saveState*(self: EditorView): JsonNode =
+  if self.document.filename == "":
+    return nil
+  if not EditorSettings.new(self.editor.config).saveInSession.get(true):
+    return nil
+
   result = newJObject()
   result["kind"] = self.kind.toJson
   result["id"] = self.id.toJson
@@ -830,16 +844,22 @@ proc openNextView*(self: LayoutService) {.expose("layout").} =
     break
 
 proc openLastView*(self: LayoutService) {.expose("layout").} =
-  if self.viewHistory.len == 0:
-    return
-
-  let viewId = self.viewHistory.popLast
-  let view = self.getView(viewId).getOr:
-    log lvlError, &"No view with id {viewId} exists"
-    return
+  var view: View
+  if self.viewHistory.len > 0:
+    let viewId = self.viewHistory.popLast
+    view = self.getView(viewId).getOr:
+      log lvlError, &"No view with id {viewId} exists"
+      return
+  else:
+    let hiddenViews = self.getHiddenViews()
+    if hiddenViews.len > 0:
+      view = hiddenViews[0]
+    else:
+      return
+  assert view != nil
 
   let slot = self.layout.activeLeafSlot()
-  log lvlInfo, &"openLastEditor viewId={viewId}, view={view.desc} in '{slot}'"
+  log lvlInfo, &"openLastView viewId={view.id}, view={view.desc} in '{slot}'"
   self.showView(view, slot)
   self.platform.requestRender()
 

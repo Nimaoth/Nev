@@ -982,7 +982,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     addCommand "editor", "<count><C-w>m", "set-max-views <#count> true"
 
   addCommandBlock "editor", "<LEADER>m":
-    toggleMaximizeView()
+    toggleMaximizeViewLocal("**")
 
   # completion
   addTextCommand "insert", "<C-p>", "get-completions"

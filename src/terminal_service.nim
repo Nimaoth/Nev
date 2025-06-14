@@ -361,6 +361,11 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
         if scrollbackIndex < 0:
           continue
 
+        assert scrollbackIndex < state.scrollbackBuffer.len
+
+        if col >= state.scrollbackBuffer[scrollbackIndex].len:
+          continue
+
         cell = state.scrollbackBuffer[scrollbackIndex][col]
 
       var r = 0.Rune
