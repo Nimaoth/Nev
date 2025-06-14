@@ -3,11 +3,148 @@
 This file contains documentation about features that don't fit into any of the other docs.
 - [Build from source](docs/building_from_source.md)
 - [Getting started](docs/getting_started.md)
-- [Cheatsheet](docs/cheatsheet.md)
+- [Cheat sheet](docs/cheatsheet.md)
 - [Configuration](docs/configuration.md)
 - [Finders](docs/finders.md)
 - [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
 - [Virtual filesystem](docs/virtual_file_system.md)
+
+## Layout
+
+Nev has a configurable layout system. You can put tabs into splits, splits into tabs, and more.
+
+You can also define multiple layouts and switch between them easily.
+
+The following types of layout exist:
+- `vertical` - Lays out children vertically.
+- `horizontal` - Lays out children horizontally.
+- `alternating` - Lays out children horizontally and vertically, alternating between both directions.
+  The initial split is vertical.
+- `tab` - Shows one child, and a tab bar to switch tabs.
+- `center` - Shows one view in the center, and optionally up to four views around it.
+
+Different types of layouts can be nested in a tree structure.
+
+### Slots
+
+Slots are used to specify where to open new views (files, terminals, etc.) or which view to focus.
+
+#### Slots for adding views to the layout
+
+`center`:
+- `*` - Active child
+- `left`, `right`, `top`, `bottom`, `center`
+- `0` through `4` - Same as `left`, `right` etc, in the order from above
+
+`vertical`, `horizontal`, `alternating` and `tab`:
+- `0`, `1`, ... `n` - Replace the `nth` child
+- Anything starting with `*` or '+':
+  - `+` - Insert instead of replace (replace is the default)
+  - `*` or empty string - Insert/Replace at currently active child
+  - `<` - Insert/Replace one to the left of the currently active child
+  - `>` - Insert/Replace one to the right of the currently active child
+  - `<>` - Insert/Replace one to the right of the currently active child, or the left if the right side would be above the maximum child count for the layout.
+  - `?` - When inserting a new child and the layout already has the maximum number of children, the last child is replaced by default. With this replace the child at the specified index instead. Only applicable when also specifying `+`
+
+##### Example slots used for adding views to the layout:
+- `*` will replace the active view
+- `+` will insert after the last view
+- `*+` will insert after at the active view, shifting the active view to the right. If max children are reached the last view will be removed
+- `*+?` will insert after at the active view, shifting the active view to the right. If max children are reached the active view will be replaced.
+- `*+>?` will insert after at the active view, shifting the active view to the right. If max children are reached the active view will be replaced.
+
+Slots for identifying a view (used in commands like `focus-view`) in the `center` layout:
+- `*` - Active child
+- `left`, `right`, `top`, `bottom`, `center`
+- `0` through `4` - Same as `left`, `right` etc, in the order from above
+
+Slots for identifying a view (used in commands like `focus-view`) in the `center` layout:
+- `*` - Active child
+- `0`, `1`, ... `n` - `nth` child
+
+You can also use `**` as a slot to refer to the layout containing active view.
+
+#### Examples
+
+- `focus-next-view "**"` - Focus the next view in the layout containing the active view.
+- `focus-next-view "**"` - Focus the next view in the layout containing the active view.
+- `move-view "+.center"` - Moves the active view into the center slot of a new `center` layout in a new slot in the root layout.
+- `move-view ".left"` - Moves the active view into the `left` slot of the center layout in the active slot of the root layout.
+- `open "file.txt" ".*+?"` - Assuming a `tab` layout containing e.g. a `horizontal` layout, this will open the file in the current tab in a new split which is inserted at the index of the active split. If the `horizontal` layout already has the maximum number of children the active view is replaced instead.
+
+To specify multiply slots for nested layouts, separate the slots with `.`. Say you have a `tab` layout which contains a `center` layout, then
+`*.center` would refer to the center slot in the active tab.
+Because the empty string acts the same as `*` you can also write this as `.center`
+
+Defining layouts in a settings file:
+```json
+// settings.json
+{
+  "ui.layout.default": "splits-in-tabs", // The name of the layout to use by default
+  "ui.layout.splits-in-tabs": { // name of the layout, can be anything. This layout is closest to Vim
+    "slots.default": ".+",             // The slot into which to add new views when you open them (insert new split in current tab)
+    "slots.scratch-terminal": ".+",    // Slot used to open scratch terminals
+    "slots.build-run-terminal": ".+",  // Slot used to open terminals used for build or run tasks
+    "kind": "tab",                     // Root layout uses tabs
+    "childTemplate": {
+      "kind": "alternating",           // Inside of each tab is an alternating layout
+      "max-children": 2,               // Only allow two views to be opened in this layout. If not specified then
+                                       // there is no limit.
+    },
+  },
+  "ui.layout.tabs-in-splits": {
+    "slots.default": ".+",             // Insert new tab in current split
+    "kind": "alternating",             // Root layout uses alternating splits
+    "childTemplate": {
+      "kind": "tab",                   // inside of each split are tabs
+    },
+  },
+  "ui.layout.vscode": { // This layout tries to imitate the VS Code layout
+    "slots.default": "center.*.+",        // By default open views in a new tab of the active split of the center slot of the root layout
+    "slots.scratch-terminal": "bottom.+", // Open scratch terminals in a new tab in the bottom slot of the root layout
+    "slots.build-run-terminal": "left.+", // Open build/run terminals in a new tab in the left slot of the root layout
+    "kind": "center",                       // Root layout
+    "center": {                           // Specify which layout to use in the center
+      "kind": "alternating",              // In the center we basically have the tabs-in-splits layout
+      "childTemplate": {
+        "kind": "tab",
+      }
+    },
+    "bottom": {                           // In the bottom slot are just tabs
+      "kind": "tab",
+    },
+    "left": {                             // In the left slot are just tabs
+      "kind": "tab",
+    },
+    "right": {                            // In the right slot are just tabs
+      "kind": "tab",
+    },
+  },
+}
+```
+
+### Commands
+
+There are multiple commands used to manipulate the layout (change active view, open/close/hide/move/resize views, etc.):
+
+- `focus-view <slot>` - Set the view in the specified slot to be the active one.
+- `focus-view-index <slot> <index>` - Set the active child index of the layout specified by the given slot.
+- `focus-view-left`, `focus-view-right`, `focus-view-up`, `focus-view-down` - Switch focus to the view in the corresponding direction.
+- `focus-next-view <slot>`, `focus-prev-view <slot>` - Focus the previous/next child of the layout in the specified slot.
+- `close-active-view` - Permanently close the active view.
+- `hide-active-view` - Hide the active view, removing it from the current layout tree. To reopen the view, use commands like `open-last-view` or `choose-open`.
+- `open-prev-view` - Go back in the history of focused views and open the previous one.
+- `open-next-view` - Go forward in the history of focused views and open the next one.
+- `open-last-view` - Open the last view that was hidden.
+- `move-view <slot>` - Move the active view to the specified slot.
+- `move-active-view-prev`, `move-active-view-next` - Move the active view to previous/next slot in the parent layout.
+- `move-active-view-first` - Move the active view to the first slot in the parent layout.
+- `toggle-maximize-view-local <slot>` - Toggles the `maximized` flag of the layout specified by the given slot.
+- `toggle-maximize-view` - Toggles the global maximized flag.
+- `change-split-size <change> <vertical>` - Change the size of the current split, either vertically or horizontally.
+  The size of a split is specified as a percentage of the total width available and is between `0` and `1`.
+- `set-layout <name>` - Changes the current layout. Layouts are configured in `ui.layout.<name>`
+- `choose-layout` - Opens a popup which allows you to switch between all configured layouts.
 
 ## Command aliases
 
@@ -45,9 +182,9 @@ Aliases can be bound to keys, so the following will run the `wq` alias when pres
 ```json
 // keybindings.json
 {
-    "editor": {
-        "<SPACE>wq": "wq",
-    },
+  "editor": {
+    "<SPACE>wq": "wq",
+  },
 }
 ```
 
@@ -179,18 +316,18 @@ You can the use a shell like this: `run-in-terminal "bash-no-profile" "ls"`
 ```json
 // keybindings.json
 {
-    "editor": {
-        "<SPACE>ts": [
-            "run-in-terminal",
-            "bash",
-            "", // Empty command, so the terminal is just opened and ready for you to enter something.
-            {
-                "mode": "insert",
-                "closeOnTerminate": true,
-                "group": "scratch",
-            }
-        ]
-    }
+  "editor": {
+    "<SPACE>ts": [
+      "run-in-terminal",
+      "bash",
+      "", // Empty command, so the terminal is just opened and ready for you to enter something.
+      {
+        "mode": "insert",
+        "closeOnTerminate": true,
+        "group": "scratch",
+      }
+    ]
+  }
 }
 ```
 
@@ -203,23 +340,21 @@ With this configuration you can then do the following:
 ```json
 // keybindings.json
 {
-    "editor": {
-        "<SPACE>zb": [
-            "all", // Runs all arguments as commands, allowing you to bind multiple commands in a single key combination.
-            [
-                "run-in-terminal",
-                "bash",
-                "clear; nimble build", // Clear the screen, the run `nimble build`
-                {
-                    "mode": "normal", // Set the terminal to normal mode
-                    "closeOnTerminate": false,
-                    "group": "build-run", // Group for reusing the terminal when building
-                }
-            ],
-            ["next-view"] // After the `run-in-terminal` command the terminal view will be focused, used `next-view`
-                          // to focus the original view again.
-        ]
-    }
+  "editor": {
+    "<SPACE>zb": [
+      "all", // Runs all arguments as commands, allowing you to bind multiple commands in a single key combination.
+      [
+        "run-in-terminal",
+        "bash",
+        "clear; nimble build", // Clear the screen, the run `nimble build`
+        {
+          "mode": "normal", // Set the terminal to normal mode
+          "closeOnTerminate": false,
+          "group": "build-run", // Group for reusing the terminal when building
+        }
+      ]
+    ]
+  }
 }
 ```
 
@@ -227,14 +362,14 @@ With this configuration you can then do the following:
 ```json
 // keybindings.json
 {
-    "editor": {
-        "<SPACE>tn": [
-            "create-terminal",
-            "bash",
-            {
-              "autoRunCommand": "nvim ; exit" // Run NeoVim, then exit the shell.
-            }
-        ]
-    }
+  "editor": {
+    "<SPACE>tn": [
+      "create-terminal",
+      "bash",
+      {
+        "autoRunCommand": "nvim ; exit" // Run NeoVim, then exit the shell.
+      }
+    ]
+  }
 }
 ```

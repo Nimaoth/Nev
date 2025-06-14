@@ -1253,6 +1253,8 @@ proc createTerminal*(self: TerminalService, command: string = "", options: Creat
   ##                             as if typed with the keyboard.
   ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
   ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
+  ## `options.slot`              Where to open the terminal view. Uses `default` slot if not specified.
+  ## `options.focus`             Whether to focus the terminal view. `true` by default.
   log lvlInfo, &"createTerminal '{command}', {options}"
   self.layout.addView(self.createTerminalView(command, options), slot=options.slot, focus=options.focus)
 
@@ -1277,6 +1279,8 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
   ##                             random other tasks.
   ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
   ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
+  ## `options.slot`              Where to open the terminal view. Uses `default` slot if not specified.
+  ## `options.focus`             Whether to focus the terminal view. `true` by default.
   let shellCommand = self.config.runtime.get("editor.shells." & shell & ".command", string.none)
   if shellCommand.isNone:
     log lvlError, &"Failed to run command in shell '{shell}': Unknown shell, configure in 'editor.shells.{shell}'"
