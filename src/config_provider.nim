@@ -1050,9 +1050,6 @@ declareSettings UiSettings, "ui":
   # Defines the way views are layed out.
   # declare layout, JsonNodeEx, newJexObject()
 
-  ## In which slot to open new views if no slot is specified directly.
-  declare defaultSlot, string, ""
-
   ## Width of tab layout headers in characters
   declare tabHeaderWidth, int, 30
 

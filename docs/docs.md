@@ -394,7 +394,7 @@ The terminal by default has two modes, "normal" and "insert".
 In insert mode almost every key press is forwarded to the terminal by default.
 You can still override keys in insert mode (and by default `F9` is mapped to exit to normal mode).
 
-In normal mode only some keys are send to the terminal by default (e.g. arrow keys, home/end, enter, i/I/a/A to enter insert mode, etc.)
+In normal mode only some keys are send to the terminal by default (e.g. arrow keys, home/end, enter, `i`/`I`/`a`/`A` to enter insert mode, etc.)
 
 - `insert` mode:
   | Key | Description | Mode |
@@ -431,7 +431,7 @@ To open the terminal in the main view just press `<ENTER>` or `<C-y>`.
 To use the `run-in-terminal` command you need to define the shell command in the settings.
 
 The following shells are already defined by default: `bash`, `sh`, `zsh`, `powershell`, `wsl` and `default`.
-`default` is `bash` on linux and `powershell` on windows.
+`default` is `bash` on Linux and `powershell` on windows.
 
 Additional shells can be specified like this:
 
