@@ -29,6 +29,11 @@ Different types of layouts can be nested in a tree structure.
 
 Slots are used to specify where to open new views (files, terminals, etc.) or which view to focus.
 
+To specify multiply slots for nested layouts, separate the slots with `.`.
+Say you have a `tab` layout which contains a `center` layout,
+then `*.center` would refer to the center slot in the active tab.
+Because the empty string acts the same as `*` you can also write this as `.center`
+
 #### Slots for adding views to the layout
 
 `center`:
@@ -58,7 +63,7 @@ Slots for identifying a view (used in commands like `focus-view`) in the `center
 - `left`, `right`, `top`, `bottom`, `center`
 - `0` through `4` - Same as `left`, `right` etc, in the order from above
 
-Slots for identifying a view (used in commands like `focus-view`) in the `center` layout:
+Slots for identifying a view (used in commands like `focus-view`) in the `vertical`, `horizontal`, `alternating` and `tab` layout:
 - `*` - Active child
 - `0`, `1`, ... `n` - `nth` child
 
@@ -72,43 +77,40 @@ This allows you to define e.g. keybindings using named slots so that they can wo
 #### Examples
 
 - `focus-next-view "**"` - Focus the next view in the layout containing the active view.
-- `focus-next-view "**"` - Focus the next view in the layout containing the active view.
 - `move-view "+.center"` - Moves the active view into the center slot of a new `center` layout in a new slot in the root layout.
 - `move-view ".left"` - Moves the active view into the `left` slot of the center layout in the active slot of the root layout.
 - `open "file.txt" ".*+?"` - Assuming a `tab` layout containing e.g. a `horizontal` layout, this will open the file in the current tab in a new split which is inserted at the index of the active split. If the `horizontal` layout already has the maximum number of children the active view is replaced instead.
-
-To specify multiply slots for nested layouts, separate the slots with `.`. Say you have a `tab` layout which contains a `center` layout, then
-`*.center` would refer to the center slot in the active tab.
-Because the empty string acts the same as `*` you can also write this as `.center`
 
 Defining layouts in a settings file:
 ```json
 // settings.json
 {
-  "ui.layout.default": "splits-in-tabs", // The name of the layout to use by default
-  "ui.layout.splits-in-tabs": { // name of the layout, can be anything. This layout is closest to Vim
-    "slots.default": ".+",             // The slot into which to add new views when you open them (insert new split in current tab)
-    "slots.scratch-terminal": ".+",    // Slot used to open scratch terminals
-    "slots.build-run-terminal": ".+",  // Slot used to open terminals used for build or run tasks
-    "kind": "tab",                     // Root layout uses tabs
-    "childTemplate": {
-      "kind": "alternating",           // Inside of each tab is an alternating layout
-      "max-children": 2,               // Only allow two views to be opened in this layout. If not specified then
-                                       // there is no limit.
+  "ui.layout.default": "vim",             // The name of the layout to use by default
+
+  "ui.layout.vim": {                      // Name of the layout, can be anything. This layout is closest to Vim
+    "slots.default": "**.*",              // The slot into which to add new views when you open them (insert new split in current tab)
+    "slots.scratch-terminal": "**.*<>",   // Slot used to open scratch terminals
+    "slots.build-run-terminal": "**.*<>", // Slot used to open terminals used for build or run tasks
+    "slots.new-tab": "+",                 // Slot used to open new tabs
+    "kind": "tab",                        // Root layout uses tabs
+    "childTemplate": {                    // Layout config for tab contents
+      "kind": "horizontal",               // Inside of each tab is an alternating layout
+      "max-children": 1,                  // Only allow one view to be opened in this layout. If not specified then
+                                          // there is no limit. Splits are created on demand, this is just the base.
     },
   },
   "ui.layout.tabs-in-splits": {
-    "slots.default": ".+",             // Insert new tab in current split
-    "kind": "alternating",             // Root layout uses alternating splits
+    "slots.default": ".+",                // Insert new tab in current split
+    "kind": "alternating",                // Root layout uses alternating splits
     "childTemplate": {
-      "kind": "tab",                   // inside of each split are tabs
+      "kind": "tab",                      // inside of each split are tabs
     },
   },
-  "ui.layout.vscode": { // This layout tries to imitate the VS Code layout
+  "ui.layout.vscode": {                   // This layout tries to imitate the VS Code layout
     "slots.default": "center.*.+",        // By default open views in a new tab of the active split of the center slot of the root layout
     "slots.scratch-terminal": "bottom.+", // Open scratch terminals in a new tab in the bottom slot of the root layout
     "slots.build-run-terminal": "left.+", // Open build/run terminals in a new tab in the left slot of the root layout
-    "kind": "center",                       // Root layout
+    "kind": "center",                     // Root layout
     "center": {                           // Specify which layout to use in the center
       "kind": "alternating",              // In the center we basically have the tabs-in-splits layout
       "childTemplate": {

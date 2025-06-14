@@ -811,7 +811,7 @@
         "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
     },
 
-    "ui.layout.default": "tab-center-alternating",
+    "ui.layout.default": "vim",
     "ui.layout.tab-center-alternating": {
         "slots.default": ".center.*+?",
         "slots.scratch-terminal": ".bottom.+",
