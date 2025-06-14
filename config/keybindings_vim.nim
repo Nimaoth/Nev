@@ -1455,8 +1455,6 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "insert", "<C-z>", "vim-undo", enterNormalModeBefore=false
   addTextCommand "insert", "<C-r>", "vim-redo", enterNormalModeBefore=false
 
-  addTextCommand "", "<CA-UP>", "vim-add-cursor-above"
-  addTextCommand "", "<CA-DOWN>", "vim-add-cursor-below"
   addTextCommand "", "<C-h>", "vim-add-cursor-above"
   addTextCommand "", "<C-f>", "vim-add-cursor-below"
 

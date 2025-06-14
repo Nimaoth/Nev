@@ -1025,7 +1025,7 @@ proc wrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**") {.ex
   let newLayout = if layout.kind == JString:
     let name = layout.getStr
     if name in self.layouts:
-      self.layouts[name]
+      self.layouts[name].copy()
     else:
       log lvlError, &"Unknown layout '{name}'"
       return

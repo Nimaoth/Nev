@@ -3,6 +3,7 @@
 
     "+ui": {
         "theme": "app://themes/green.json",
+        "hide-tab-bar-when-single": true,
     },
 
     "+platform": {
@@ -812,6 +813,16 @@
     },
 
     "ui.layout.default": "vim",
+    "ui.layout.vertical-temp": {
+        "kind": "vertical",
+        "temporary": true,
+        "max-children": 2
+    },
+    "ui.layout.horizontal-temp": {
+        "kind": "horizontal",
+        "temporary": true,
+        "max-children": 2
+    },
     "ui.layout.tab-center-alternating": {
         "slots.default": ".center.*+?",
         "slots.scratch-terminal": ".bottom.+",
@@ -871,10 +882,6 @@
         "slots.build-run-terminal": "**.*<>",
         "slots.new-tab": "+",
         "kind": "tab",
-        "childTemplate": {
-            "kind": "horizontal",
-            "max-children": 1,
-        }
     },
     "ui.layout.vscode": {
         "slots.default": "center.*.+",

@@ -228,6 +228,7 @@ proc copyBase(self: Layout, src: Layout): Layout =
   self.slots = src.slots
   self.maxChildren = src.maxChildren
   self.maximize = src.maximize
+  self.temporary = src.temporary
   return self
 
 method copy*(self: CenterLayout): Layout =

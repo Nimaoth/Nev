@@ -13,6 +13,38 @@
                 "group": "scratch",
             }
         ],
+
+        "<A-n>": "focus-view-left",
+        "<A-t>": "focus-view-right",
+        "<A-g>": "focus-view-up",
+        "<A-r>": "focus-view-down",
+        "<A-f>": ["focus-next-view", "**"],
+        "<A-h>": ["focus-prev-view", "**"],
+        "<A-x>": "hide-active-view",
+        "<A-w>": ["move-view", "#new-tab"], // new tab in default layout
+        "<A-c>": ["move-view", ".center.*+?"], // new split in center of current tab
+        "<A-LEFT>": ["move-view", ".left"],
+        "<A-RIGHT>": ["move-view", ".right"],
+        "<A-UP>": ["move-view", ".top"],
+        "<A-DOWN>": ["move-view", ".bottom"],
+        "<A-m>": ["toggle-maximize-view"],
+        "<A-v>": ["wrap-layout", {"kind": "vertical", "temporary": true, "max-children": 2}],
+        "<A-l>": ["wrap-layout", {"kind": "horizontal", "temporary": true, "max-children": 2}],
+        "<CA-n>": ["change-split-size", -0.1, false],
+        "<CA-t>": ["change-split-size", 0.1, false],
+        "<CA-g>": ["change-split-size", -0.1, true],
+        "<CA-r>": ["change-split-size", 0.1, true],
+        "<C-TAB>": ["focus-next-view", ""],
+        "<CS-TAB>": ["focus-prev-view", ""],
+        "<A-1>": ["set-active-view-index", "", 0],
+        "<A-2>": ["set-active-view-index", "", 1],
+        "<A-3>": ["set-active-view-index", "", 2],
+        "<A-4>": ["set-active-view-index", "", 3],
+        "<A-5>": ["set-active-view-index", "", 4],
+        "<A-6>": ["set-active-view-index", "", 5],
+        "<A-7>": ["set-active-view-index", "", 6],
+        "<A-8>": ["set-active-view-index", "", 7],
+        "<A-9>": ["set-active-view-index", "", 8],
     },
 
     "popup.selector.settings": {

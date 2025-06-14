@@ -46,7 +46,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   setLeaders @["<SPACE>", "<C-b>"]
 
   addCommand "editor", "<C-x><C-x>", "quit"
-  addCommand "editor", "<CAS-r>", "reload-plugin"
 
   addCommand "editor", "<LEADER>ot", "toggle-flag", "editor.log-frame-time"
   addCommand "editor", "<LEADER>ol", "toggle-flag", "logging"
@@ -82,28 +81,16 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     addCommand "editor", "1", "set-layout", "horizontal"
     addCommand "editor", "2", "set-layout", "vertical"
     addCommand "editor", "3", "set-layout", "fibonacci"
-    addCommand "editor", "v", "create-view"
     addCommand "editor", "x", "close-current-view", keepHidden=true
-    addCommand "editor", "h", "focus-prev-view"
-    addCommand "editor", "l", "focus-next-view"
-    addCommand "editor", "N", "move-active-view-prev"
-    addCommand "editor", "H", "move-active-view-prev"
-    addCommand "editor", "T", "move-active-view-next"
-    addCommand "editor", "L", "move-active-view-next"
-    addCommand "editor", "r", "move-active-view-first"
+    addCommand "editor", "h", "focus-view-left"
+    addCommand "editor", "j", "focus-view-down"
+    addCommand "editor", "k", "focus-view-up"
+    addCommand "editor", "l", "focus-view-right"
+    addCommand "editor", "T", "move-view", "#new-tab"
     addCommand "editor", "z", "open-prev-view"
     addCommand "editor", "y", "open-next-view"
-    addCommand "editor", "s", "split-view"
-
-  if getBackend() != Terminal:
-    addCommand "editor", "<CA-v>", "create-view"
-    addCommand "editor", "<CA-x>", "close-current-view", true
-    addCommand "editor", "<CA-X>", "close-current-view", false
-    addCommand "editor", "<CS-n>", "move-active-view-prev"
-    addCommand "editor", "<CS-t>", "move-active-view-next"
-    addCommand "editor", "<CA-r>", "move-active-view-first"
-    addCommand "editor", "<CA-h>", "open-prev-view"
-    addCommand "editor", "<CA-f>", "open-next-view"
+    addCommand "editor", "s", "wrap-layout", "vertical-temp"
+    addCommand "editor", "v", "wrap-layout", "horizontal-temp"
 
   addCommand "editor", "<C-s>", "write-file"
   addCommand "editor", "<CS-r>", "load-file"
