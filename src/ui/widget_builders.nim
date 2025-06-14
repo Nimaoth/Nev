@@ -32,14 +32,15 @@ method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[
       result.add self.children[self.activeIndex].createUI(builder, app)
     return
 
-  let mainSplit = 0.5
   var rects = newSeq[Rect]()
   var rect = rect(0, 0, 1, 1)
   for i, c in self.children:
     let ratio = if i == 0 and self.children.len > 1:
-      mainSplit
+      self.getSplitRatio(i)
+    elif i == self.children.len - 1:
+      1.0
     else:
-      1.0 / (self.children.len - i).float32
+      self.getSplitRatio(i)
     let (view_rect, remaining) = rect.splitV(ratio.percent)
     rect = remaining
     rects.add view_rect
@@ -66,14 +67,15 @@ method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[Ov
       result.add self.children[self.activeIndex].createUI(builder, app)
     return
 
-  let mainSplit = 0.5
   var rects = newSeq[Rect]()
   var rect = rect(0, 0, 1, 1)
   for i, c in self.children:
     let ratio = if i == 0 and self.children.len > 1:
-      mainSplit
+      self.getSplitRatio(i)
+    elif i == self.children.len - 1:
+      1.0
     else:
-      1.0 / (self.children.len - i).float32
+      self.getSplitRatio(i)
     let (view_rect, remaining) = rect.splitH(ratio.percent)
     rect = remaining
     rects.add view_rect
@@ -99,7 +101,6 @@ method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq
       result.add self.children[self.activeIndex].createUI(builder, app)
     return
 
-  let mainSplit = 0.5
   var rects = newSeq[Rect]()
   var rect = rect(0, 0, 1, 1)
   for i, c in self.children:
@@ -259,7 +260,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           else:
             ""
 
-          section(&"[Layout {self.layout.layoutName} - {maximizedText}")
+          section(&"[Layout {self.layout.layoutName} - {layout.desc} - {maximizedText}")
 
           let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
           section(" | ")
