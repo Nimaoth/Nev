@@ -671,7 +671,7 @@ proc closeView*(self: LayoutService, view: View, keepHidden: bool = false) =
     if l != self.layout:
       discard l.removeView(view)
 
-  self.allViews.removeSwap(view)
+  self.allViews.removeShift(view)
   view.close()
   if view of EditorView:
     self.editors.closeEditor(view.EditorView.editor)

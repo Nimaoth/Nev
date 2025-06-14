@@ -842,8 +842,8 @@
     },
     "ui.layout.nev-old": {
         "slots.default": "*+?",
-        "slots.scratch-terminal": "*+?",
-        "slots.build-run-terminal": "*+?",
+        "slots.scratch-terminal": "*+<>?",
+        "slots.build-run-terminal": "*+<>?",
         "kind": "alternating",
         "max-children": 2,
     },
