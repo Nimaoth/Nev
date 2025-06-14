@@ -305,13 +305,14 @@ proc moveView*(slot: string) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc layout_wrapLayout_void_LayoutService_JsonNode_wasm(arg: cstring): cstring {.
+proc layout_wrapLayout_void_LayoutService_JsonNode_string_wasm(arg: cstring): cstring {.
     importc.}
-proc wrapLayout*(layout: JsonNode) {.gcsafe, raises: [].} =
+proc wrapLayout*(layout: JsonNode; slot: string = "**") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add layout.toJson()
+  argsJson.add slot.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_wrapLayout_void_LayoutService_JsonNode_wasm(
+  let res {.used.} = layout_wrapLayout_void_LayoutService_JsonNode_string_wasm(
       argsJsonString.cstring)
 
 

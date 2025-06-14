@@ -1018,7 +1018,10 @@ proc moveView*(self: LayoutService, slot: string) {.expose("layout").} =
       return
     self.layout.collapseTemporaryViews()
 
-proc wrapLayout(self: LayoutService, layout: JsonNode) {.expose("layout").} =
+proc wrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**") {.expose("layout").} =
+  ## Wraps the active view with the specified layout.
+  ## You can either pass a JSON object specifying a layout configuration (like in a settings file)
+  ## or a string representing the name of a layout.
   let newLayout = if layout.kind == JString:
     let name = layout.getStr
     if name in self.layouts:
@@ -1039,14 +1042,19 @@ proc wrapLayout(self: LayoutService, layout: JsonNode) {.expose("layout").} =
       return
 
   try:
-    let parentLayout = self.layout.getView("**")
+    var parentLayout = self.layout.getView(slot)
+    if parentLayout != nil and not (parentLayout of Layout):
+      parentLayout = self.layout.parentLayout(parentLayout)
+
     if parentLayout != nil and parentLayout of Layout:
       let parentLayout = parentLayout.Layout
       let childView = parentLayout.activeLeafView()
       assert parentLayout.addView(newLayout, "*") == childView
       discard newLayout.addView(childView, "+")
 
-      let hiddenViews = self.getHiddenViews()
+      var hiddenViews = self.allViews
+      self.layout.forEachView proc(v: View): bool =
+        hiddenViews.removeShift(v)
       if hiddenViews.len > 0:
         discard newLayout.addView(hiddenViews.last, "+")
   except LayoutError:

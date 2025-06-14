@@ -181,6 +181,14 @@ method forEachVisibleViewImpl(self: TabLayout, cb: proc(view: View): bool {.gcsa
 proc forEachVisibleView*(self: Layout, cb: proc(view: View): bool {.gcsafe, raises: [].}) =
   discard self.forEachVisibleViewImpl(cb)
 
+proc parentLayout*(self: Layout, view: View): Layout =
+  var res: Layout = nil
+  self.forEachView proc(v: View): bool =
+    if v of Layout and view in v.Layout.children:
+      res = v.Layout
+      return true
+  return res
+
 proc leafViews*(self: Layout): seq[View] =
   var res = newSeq[View]()
   self.forEachView proc(v: View): bool =

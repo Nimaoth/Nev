@@ -64,6 +64,11 @@ Slots for identifying a view (used in commands like `focus-view`) in the `center
 
 You can also use `**` as a slot to refer to the layout containing active view.
 
+#### Named slots
+
+You can defined named slots per layout in `ui.layout.<layout-name>.slots.<slot-name>` and then use `#slot-name` as a slot.
+This allows you to define e.g. keybindings using named slots so that they can work for different layouts.
+
 #### Examples
 
 - `focus-next-view "**"` - Focus the next view in the layout containing the active view.
@@ -123,6 +128,133 @@ Defining layouts in a settings file:
 }
 ```
 
+Vertical layout:
+```
++---------+
+| Child 0 |
++---------+
+| Child 1 |
++---------+
+| Child 2 |
++---------+
+```
+
+Horizontal layout:
+```
++----+----+----+
+| C0 | C1 | C2 |
++----+----+----+
+```
+
+Alternating layout:
+```
++-------------------------+
+|                         |
+|         Child 0         |
+|                         |
++-------------------------+
++------------+------------+
+|            |            |
+|   Child 0  |  Child 1   |
+|            |            |
++------------+------------+
++------------+------------+
+|            |  Child 1   |
+|   Child 0  +------------+
+|            |  Child 2   |
++------------+------------+
+```
+
+Tab layout:
+```
++------------------------+
+| [Tab0] [Tab1] [Tab2]   |
++------------------------+
+|        Child n         |
++------------------------+
+```
+
+Center layout:
+```
++---------+-----------+---------+
+|         |   Top     |         |
+|         +-----------+         |
+|  Left   |  Center   | Right   |
+|         +-----------+         |
+|         |  Bottom   |         |
++---------+-----------+---------+
+
+With empty top and right slots:
++---------+-----------+
+|         |           |
+|         |  Center   |
+|  Left   |           |
+|         +-----------+
+|         |  Bottom   |
++---------+-----------+
+```
+
+Nested layouts:
+```
+Layout config:
+{
+  "kind": "center",
+  "center.kind": "alternating",
+  "bottom.kind": "tab",
+}
++---------------------------------------------------------------+
+|             |                         |                       |
+|             |                         |                       |
+|             |                         |                       |
+|             |                         |                       |
+|             |        Child 0          |     Child 1           |
+|             |        of horizontal    |     of horizontal     |
+|             |                         |                       |
+|    Left     |                         |                       |
+|             |                         |                       |
+|             |-------------------------------------------------|
+|             | [Tab 0] [Tab 1]                                 |
+|             |-------------------------------------------------|
+|             |                                                 |
+|             |                   Child of tab                  |
+|             |                                                 |
++---------------------------------------------------------------+
+```
+
+#### Arbitrary splits
+
+To create arbitrary splits like in e.g. Vim you can use the `wrap-layout` command to wrap the current view
+in either a `horizontal` or `vertical` layout, and specify the `temporary` flag so that the layout is
+automatically replaced by it's last remaining child if you close a child view and only one child remains.
+
+Example keybindings:
+```json
+// keybindings.json
+{
+  "editor": {
+    // Create a vertical split which is closed automatically when closing the second last child
+    "<A-v>": ["wrap-layout", {"kind": "vertical", "temporary": true, "max-children": 2}],
+    // Create a horizontal split which is closed automatically when closing the second last child
+    "<A-h>": ["wrap-layout", {"kind": "horizontal", "temporary": true, "max-children": 2}],
+  }
+}
+```
+
+If all you want is splits, you can define your base layout like this and use keybindings like above to create splits
+on demand:
+```json
+// settings.json
+{
+  "ui.layout.raw-splits": {
+    "slots.default": "**.*", // Open new views in the active view
+    "slots.scratch-terminal": "**.*<>", // Open scratch terminals in a neighboring view (if one exists) or the current view
+    "slots.build-run-terminal": "**.*<>",
+    "kind": "horizontal",
+    "max-children": 1,
+  },
+}
+```
+
 ### Commands
 
 There are multiple commands used to manipulate the layout (change active view, open/close/hide/move/resize views, etc.):
@@ -143,6 +275,7 @@ There are multiple commands used to manipulate the layout (change active view, o
 - `toggle-maximize-view` - Toggles the global maximized flag.
 - `change-split-size <change> <vertical>` - Change the size of the current split, either vertically or horizontally.
   The size of a split is specified as a percentage of the total width available and is between `0` and `1`.
+- `wrap-layout <layout>` - Wraps the active view with the specified layout. You can either pass a JSON object specifying a layout configuration (like in a settings file) or a string representing the name of a layout.
 - `set-layout <name>` - Changes the current layout. Layouts are configured in `ui.layout.<name>`
 - `choose-layout` - Opens a popup which allows you to switch between all configured layouts.
 
@@ -232,23 +365,27 @@ Nev has a builtin terminal. To create a terminal view there are two commands:
   ##                             as if typed with the keyboard.
   ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
   ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
+  ## `options.slot`              Where to open the terminal view. Uses `default` slot if not specified.
+  ## `options.focus`             Whether to focus the terminal view. `true` by default.
 ```
 
 - `run-in-terminal <shell> <command> [<options>]` - Runs a command in a terminal, assuming the terminal is running some shell like program.
 ```nim
-## Run the given `command` in a terminal with the specified shell.
-## `command` is executed in the shell by sending it as if typed using the keyboard, followed by `<ENTER>`.
-## `shell`                     Name of the shell. If you pass e.g. `wsl` to this function then the shell which gets
-##                             executed is configured in `editor.shells.wsl.command`.
-## `options.reuseExisting`     Run the command in an existing terminal if one exists. If not a new one is created.
-##                             An existing terminal is only used when it has a matching `group` and `shell`, and
-##                             it is not busy running another command (detecting this is sometimes wrong).
-## `options.group`             An arbitrary string used to control reusing of terminals and is displayed on screen.
-##                             Can be used to for example have a `scratch` group and a `build` group.
-##                             The `build` group would be used for running build commands, the `scratch` group for
-##                             random other tasks.
-## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
-## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".o
+  ## Run the given `command` in a terminal with the specified shell.
+  ## `command` is executed in the shell by sending it as if typed using the keyboard, followed by `<ENTER>`.
+  ## `shell`                     Name of the shell. If you pass e.g. `wsl` to this function then the shell which gets
+  ##                             executed is configured in `editor.shells.wsl.command`.
+  ## `options.reuseExisting`     Run the command in an existing terminal if one exists. If not a new one is created.
+  ##                             An existing terminal is only used when it has a matching `group` and `shell`, and
+  ##                             it is not busy running another command (detecting this is sometimes wrong).
+  ## `options.group`             An arbitrary string used to control reusing of terminals and is displayed on screen.
+  ##                             Can be used to for example have a `scratch` group and a `build` group.
+  ##                             The `build` group would be used for running build commands, the `scratch` group for
+  ##                             random other tasks.
+  ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
+  ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".o
+  ## `options.slot`              Where to open the terminal view. Uses `default` slot if not specified.
+  ## `options.focus`             Whether to focus the terminal view. `true` by default.
 ```
 
 ### Controls

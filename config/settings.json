@@ -181,7 +181,7 @@
         },
 
         "regex": {
-            "languages": [],
+            "languages": ["markdown"],
             "priority": -2,
         },
 
@@ -550,7 +550,13 @@
                 "treesitter.queries": "tree-sitter-markdown/queries",
                 "tab-width": 2,
                 "indent": "spaces",
-                "block-comment": [ "<!--", "-->" ]
+                "block-comment": [ "<!--", "-->" ],
+                "+search-regexes": {
+                    "symbols": "^#+.*",
+                    "workspace-symbols-by-kind": {
+                        "Function": "^#+.*",
+                    }
+                }
             }
         },
         "markdown_inline": {
@@ -810,6 +816,7 @@
         "slots.default": ".center.*+?",
         "slots.scratch-terminal": ".bottom.+",
         "slots.build-run-terminal": ".left",
+        "slots.new-tab": "+.center",
         "kind": "tab",
         "childTemplate": {
             "kind": "center",
@@ -826,6 +833,7 @@
         "slots.default": ".+",
         "slots.scratch-terminal": ".+",
         "slots.build-run-terminal": ".+",
+        "slots.new-tab": "+",
         "kind": "tab",
         "childTemplate": {
             "kind": "alternating",
@@ -835,6 +843,7 @@
         "slots.default": ".+",
         "slots.scratch-terminal": "1.+",
         "slots.build-run-terminal": "1.+",
+        "slots.new-tab": "*.+",
         "kind": "alternating",
         "childTemplate": {
             "kind": "tab",
@@ -844,20 +853,34 @@
         "slots.default": "*+?",
         "slots.scratch-terminal": "*+<>?",
         "slots.build-run-terminal": "*+<>?",
+        "slots.new-tab": "#default",
         "kind": "alternating",
         "max-children": 2,
+    },
+    "ui.layout.raw-splits": {
+        "slots.default": "**.*",
+        "slots.scratch-terminal": "**.*<>",
+        "slots.build-run-terminal": "**.*<>",
+        "slots.new-tab": "#default",
+        "kind": "horizontal",
+        "max-children": 1,
     },
     "ui.layout.vim": {
         "slots.default": "**.*",
         "slots.scratch-terminal": "**.*<>",
         "slots.build-run-terminal": "**.*<>",
-        "kind": "horizontal",
-        "max-children": 1,
+        "slots.new-tab": "+",
+        "kind": "tab",
+        "childTemplate": {
+            "kind": "horizontal",
+            "max-children": 1,
+        }
     },
     "ui.layout.vscode": {
         "slots.default": "center.*.+",
         "slots.scratch-terminal": "bottom.+",
         "slots.build-run-terminal": "left.+",
+        "slots.new-tab": "**.+",
         "kind": "center",
         "center": {
             "kind": "alternating",
