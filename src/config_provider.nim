@@ -1056,6 +1056,9 @@ declareSettings UiSettings, "ui":
   ## Width of tab layout headers in characters
   declare tabHeaderWidth, int, 30
 
+  ## When true then tab layouts don't render a tab bar when they only have one tab.
+  declare hideTabBarWhenSingle, bool, false
+
   # ## How long the cursor trail is. Set to 0 to disable cursor trail.
   # declare inclusiveSelection, int, 2
 

@@ -134,41 +134,43 @@ method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[Overlay
   let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   let width = app.uiSettings.tabHeaderWidth.get()
+  let hideTabBarWhenSingle = app.uiSettings.hideTabBarWhenSingle.get()
 
   let index = self.activeIndex.clamp(0, self.children.high)
   builder.panel(&{FillX, FillY, LayoutVertical}):
     # tabs
-    builder.panel(&{FillX, LayoutHorizontal, FillBackground}, h = builder.textHeight, backgroundColor = inactiveTabColor):
-      builder.panel(&{SizeToContentX, FillY, DrawText}, text = "| ", textColor = textColor)
-      for i, c in self.children:
-        let i = i
-        if i > 0:
-          builder.panel(&{SizeToContentX, FillY, DrawText}, text = " | ", textColor = textColor)
+    if not hideTabBarWhenSingle or self.children.len > 1:
+      builder.panel(&{FillX, LayoutHorizontal, FillBackground}, h = builder.textHeight, backgroundColor = inactiveTabColor):
+        builder.panel(&{SizeToContentX, FillY, DrawText}, text = "| ", textColor = textColor)
+        for i, c in self.children:
+          let i = i
+          if i > 0:
+            builder.panel(&{SizeToContentX, FillY, DrawText}, text = " | ", textColor = textColor)
 
-        let backgroundColor = if i == index:
-          activeTabColor
-        else:
-          inactiveTabColor
-
-        builder.panel(&{SizeToContentX, FillY, LayoutHorizontal, FillBackground}, backgroundColor = backgroundColor):
-          capture i:
-            onClickAny btn:
-              self.activeIndex = i
-              app.requestRender()
-
-          let leaf = c.activeLeafView()
-          let desc = if leaf != nil:
-            leaf.display()
+          let backgroundColor = if i == index:
+            activeTabColor
           else:
-            "-"
+            inactiveTabColor
 
-          let headLen = desc.splitPath.head.len
-          var highlightIndices = newSeq[int]()
-          for i in (headLen + 1)..desc.high:
-            highlightIndices.add(i)
-          discard builder.highlightedText(desc, highlightIndices, textColor.darken(0.2), textColor, width)
+          builder.panel(&{SizeToContentX, FillY, LayoutHorizontal, FillBackground}, backgroundColor = backgroundColor):
+            capture i:
+              onClickAny btn:
+                self.activeIndex = i
+                app.requestRender()
 
-      builder.panel(&{SizeToContentX, FillY, DrawText}, text = " |", textColor = textColor)
+            let leaf = c.activeLeafView()
+            let desc = if leaf != nil:
+              leaf.display()
+            else:
+              "-"
+
+            let headLen = desc.splitPath.head.len
+            var highlightIndices = newSeq[int]()
+            for i in (headLen + 1)..desc.high:
+              highlightIndices.add(i)
+            discard builder.highlightedText(desc, highlightIndices, textColor.darken(0.2), textColor, width)
+
+        builder.panel(&{SizeToContentX, FillY, DrawText}, text = " |", textColor = textColor)
 
     builder.panel(&{FillX, FillY}):
       if index in 0..self.children.high:
