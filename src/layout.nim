@@ -82,6 +82,8 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
     return
 
   checkJson config.kind == JObject, "Expected object"
+  proc resolve(id: Id): View =
+    return layouts.getView(id).get(nil)
 
   # debugf"{self.desc}.createViews: {config}"
   if config.hasKey("children"):
@@ -102,16 +104,24 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
           self.activeIndex = self.activeIndex.clamp(0, self.children.high)
           newChild.createViews(c, layouts)
         else:
-          self.children[i] = layouts.getExistingView(c)
-          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+          let view = layouts.getExistingView(c)
+          if view != nil:
+            self.children[i] = layouts.getExistingView(c)
+            self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+      elif c.hasKey("kind"):
+        let subLayout = createLayout(c, resolve)
+        self.children.add(subLayout)
+        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
       elif self.childTemplate != nil:
         let newChild = self.childTemplate.copy()
         self.children.add(newChild)
         self.activeIndex = self.activeIndex.clamp(0, self.children.high)
         newChild.createViews(c, layouts)
       else:
-        self.children.add(layouts.getExistingView(c))
-        self.activeIndex = self.activeIndex.clamp(0, self.children.high)
+        let view = layouts.getExistingView(c)
+        if view != nil:
+          self.children.add(view)
+          self.activeIndex = self.activeIndex.clamp(0, self.children.high)
 
   if config.hasKey("activeIndex"):
     let activeIndex = config["activeIndex"]
@@ -120,6 +130,9 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
 
   if config.hasKey("maximize"):
     self.maximize = config["maximize"].jsonTo(bool)
+
+  if config.hasKey("temporary"):
+    self.temporary = config["temporary"].jsonTo(bool)
 
   # todo: this is not nice
   if self of AutoLayout:
@@ -131,6 +144,8 @@ method createViews(self: CenterLayout, config: JsonNode, layouts: LayoutService)
     return
 
   checkJson config.kind == JObject, "Expected object"
+  proc resolve(id: Id): View =
+    return layouts.getView(id).get(nil)
 
   # debugf"CenterLayout.createViews: {config}"
   if config.hasKey("children"):
@@ -143,6 +158,10 @@ method createViews(self: CenterLayout, config: JsonNode, layouts: LayoutService)
       if i < self.children.len:
         if self.children[i] != nil and self.children[i] of Layout:
           self.children[i].Layout.createViews(c, layouts)
+        elif c.hasKey("kind"):
+          let subLayout = createLayout(c, resolve)
+          self.children[i] = subLayout
+          self.activeIndex = i
         elif self.childTemplates[i] != nil:
           let newChild = self.childTemplates[i].copy()
           self.children[i] = newChild
@@ -163,6 +182,9 @@ method createViews(self: CenterLayout, config: JsonNode, layouts: LayoutService)
 
   if config.hasKey("split-ratios"):
     self.splitRatios = config["split-ratios"].jsonTo(array[4, float])
+
+  if config.hasKey("temporary"):
+    self.temporary = config["temporary"].jsonTo(bool)
 
 proc updateLayoutTree(self: LayoutService) =
   try:
@@ -426,7 +448,11 @@ proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = 
     self.recordFocusHistoryEntry(prevActiveView)
 
   discard self.layout.removeView(view)
-  let ejectedView = self.layout.addView(view, slot, focus)
+  let ejectedView = self.layout.addView(view, slot, focus).catch:
+    log lvlError, &"Failed to add view: {getCurrentExceptionMsg()}"
+    return
+
+  self.layout.collapseTemporaryViews()
 
   if ejectedView != nil and ejectedView.id != idNone():
     self.viewHistory.addLast(ejectedView.id)
@@ -559,6 +585,9 @@ proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool =
     self.addView(view, slot=slot, focus=true, addToHistory=addToHistory)
 
   else:
+    for v in self.layout.visibleLeafViews():
+      if v == view:
+        return
     discard self.layout.removeView(view)
     self.addView(view, slot=slot, focus=false, addToHistory=addToHistory)
 
@@ -663,6 +692,7 @@ proc closeView*(self: LayoutService, view: View, keepHidden: bool = false) =
   self.platform.requestRender()
 
   discard self.layout.removeView(view)
+  self.layout.collapseTemporaryViews()
   if keepHidden:
     return
 
@@ -670,6 +700,7 @@ proc closeView*(self: LayoutService, view: View, keepHidden: bool = false) =
   for l in self.layouts.values:
     if l != self.layout:
       discard l.removeView(view)
+      l.collapseTemporaryViews()
 
   self.allViews.removeShift(view)
   view.close()
@@ -708,6 +739,7 @@ proc hideActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose(
 
   # todo: do we want to add it to the view history here?
   discard self.layout.removeView(view)
+  self.layout.collapseTemporaryViews()
   self.platform.requestRender()
 
 proc closeActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose("layout").} =
@@ -732,6 +764,7 @@ proc hideOtherViews*(self: LayoutService) {.expose("layout").} =
   for v in views:
     if v != view:
       discard self.layout.removeView(v)
+  self.layout.collapseTemporaryViews()
 
   self.platform.requestRender()
 
@@ -901,8 +934,11 @@ proc moveActiveViewFirst*(self: LayoutService) {.expose("layout").} =
   if currentView != nil and firstView != nil and currentView != firstView:
     let prevSlot = layout.getSlot(firstView)
     let currentSlot = layout.getSlot(currentView)
-    discard layout.addView(firstView, currentSlot)
-    discard layout.addView(currentView, prevSlot)
+    try:
+      discard layout.addView(firstView, currentSlot)
+      discard layout.addView(currentView, prevSlot)
+    except LayoutError:
+      discard
     self.platform.requestRender()
   self.platform.requestRender()
 
@@ -913,8 +949,11 @@ proc moveActiveViewPrev*(self: LayoutService) {.expose("layout").} =
   if currentView != nil and prevView != nil:
     let prevSlot = layout.getSlot(prevView)
     let currentSlot = layout.getSlot(currentView)
-    discard layout.addView(prevView, currentSlot)
-    discard layout.addView(currentView, prevSlot)
+    try:
+      discard layout.addView(prevView, currentSlot)
+      discard layout.addView(currentView, prevSlot)
+    except LayoutError:
+      discard
     self.platform.requestRender()
 
 proc moveActiveViewNext*(self: LayoutService) {.expose("layout").} =
@@ -924,8 +963,11 @@ proc moveActiveViewNext*(self: LayoutService) {.expose("layout").} =
   if currentView != nil and nextView != nil:
     let nextSlot = layout.getSlot(nextView)
     let currentSlot = layout.getSlot(currentView)
-    discard layout.addView(nextView, currentSlot)
-    discard layout.addView(currentView, nextSlot)
+    try:
+      discard layout.addView(nextView, currentSlot)
+      discard layout.addView(currentView, nextSlot)
+    except LayoutError:
+      discard
     self.platform.requestRender()
 
 proc moveActiveViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
@@ -943,8 +985,11 @@ proc moveActiveViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
   if currentView != nil and nextView != nil:
     let nextSlot = layout.getSlot(nextView)
     let currentSlot = layout.getSlot(currentView)
-    discard layout.addView(currentView, nextSlot)
-    discard layout.addView(view, currentSlot)
+    try:
+      discard layout.addView(currentView, nextSlot)
+      discard layout.addView(view, currentSlot)
+    except LayoutError:
+      discard
     self.viewHistory.addLast(nextView.id)
 
   self.platform.requestRender()
@@ -962,8 +1007,50 @@ proc moveView*(self: LayoutService, slot: string) {.expose("layout").} =
 
   let view = self.layout.activeLeafView()
   if view != nil:
+    let oldSlot = self.layout.getSlot(view)
     discard self.layout.removeView(view)
-    discard self.layout.addView(view, slot)
+    discard self.layout.addView(view, slot).catch:
+      log lvlError, &"Failed to move view to slot '{slot}': {getCurrentExceptionMsg()}"
+      try:
+        discard self.layout.addView(view, oldSlot)
+      except LayoutError:
+        discard
+      return
+    self.layout.collapseTemporaryViews()
+
+proc wrapLayout(self: LayoutService, layout: JsonNode) {.expose("layout").} =
+  let newLayout = if layout.kind == JString:
+    let name = layout.getStr
+    if name in self.layouts:
+      self.layouts[name]
+    else:
+      log lvlError, &"Unknown layout '{name}'"
+      return
+  else:
+    try:
+      let v = createLayout(layout)
+      if v != nil and v of Layout:
+        v.Layout
+      else:
+        log lvlError, &"Not a layout: {layout}"
+        return
+    except ValueError as e:
+      log lvlError, &"Failed to create layout from config: {e.msg}"
+      return
+
+  try:
+    let parentLayout = self.layout.getView("**")
+    if parentLayout != nil and parentLayout of Layout:
+      let parentLayout = parentLayout.Layout
+      let childView = parentLayout.activeLeafView()
+      assert parentLayout.addView(newLayout, "*") == childView
+      discard newLayout.addView(childView, "+")
+
+      let hiddenViews = self.getHiddenViews()
+      if hiddenViews.len > 0:
+        discard newLayout.addView(hiddenViews.last, "+")
+  except LayoutError:
+    discard
 
 proc chooseLayout(self: LayoutService) {.expose("layout").} =
   var builder = SelectorPopupBuilder()
@@ -993,6 +1080,9 @@ proc chooseLayout(self: LayoutService) {.expose("layout").} =
     return true
 
   discard self.pushSelectorPopup(builder)
+
+proc logLayout*(self: LayoutService) {.expose("layout").} =
+  log lvlInfo, self.layout.saveLayout(initHashSet[Id]()).pretty
 
 proc open*(self: LayoutService, path: string, slot: string = "") {.expose("layout").} =
   ## Opens the specified file. Relative paths are relative to the main workspace.

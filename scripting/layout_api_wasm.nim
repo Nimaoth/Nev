@@ -305,12 +305,30 @@ proc moveView*(slot: string) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc layout_wrapLayout_void_LayoutService_JsonNode_wasm(arg: cstring): cstring {.
+    importc.}
+proc wrapLayout*(layout: JsonNode) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add layout.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_wrapLayout_void_LayoutService_JsonNode_wasm(
+      argsJsonString.cstring)
+
+
 proc layout_chooseLayout_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
 proc chooseLayout*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = layout_chooseLayout_void_LayoutService_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_logLayout_void_LayoutService_wasm(arg: cstring): cstring {.importc.}
+proc logLayout*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_logLayout_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 

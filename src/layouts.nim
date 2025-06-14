@@ -9,6 +9,8 @@ logCategory "layouts"
 {.push raises: [].}
 
 type
+  LayoutError* = object of CatchableError
+
   Layout* = ref object of View
     childTemplate*: Layout
     children*: seq[View]
@@ -16,6 +18,7 @@ type
     slots*: Table[string, string]
     maxChildren*: int = int.high
     maximize*: bool = false
+    temporary*: bool = false
 
   AutoLayout* = ref object of Layout
     splitRatios*: seq[float]
@@ -81,11 +84,10 @@ proc setSplitRatio*(self: AutoLayout, index: int, value: float) =
   self.splitRatios[index] = value.clamp(0, 1)
 
 method getView*(self: Layout, path: string): View {.base.} =
+  if path == "":
+    return self
   let (slot, subPath) = path.extractSlot
   case slot
-  of "":
-    return self
-
   of "**":
     if self.children.len > 0:
       let c = self.children[self.activeIndex]
@@ -94,7 +96,7 @@ method getView*(self: Layout, path: string): View {.base.} =
       # Don't return c here becauses for ** we want to return a layout, not a non-layout view
     return self
 
-  of "*":
+  of "", "*":
     if self.children.len > 0:
       let c = self.children[self.activeIndex]
       if c of Layout:
@@ -115,24 +117,35 @@ method getView*(self: Layout, path: string): View {.base.} =
       return self
 
 method getView*(self: CenterLayout, path: string): View =
+  if path == "":
+    return self
   let (slot, subPath) = path.extractSlot
   case slot
-  of "": return self
   of "**":
     let c = self.children[self.activeIndex]
     if c != nil and c of Layout:
       return c.Layout.getView(slot)
     # Don't return c here becauses for ** we want to return a layout, not a non-layout view
     return self
-  of "*": result = self.children[self.activeIndex]
+  of "", "*": result = self.children[self.activeIndex]
   of "center": result = self.center
   of "left": result = self.left
   of "right": result = self.right
   of "top": result = self.top
   of "bottom": result = self.bottom
-  else: return nil
+  else:
+    try:
+      let index = slot.parseInt
+      if index in 0..self.children.high:
+        result = self.children[index]
+      else:
+        return nil
+    except:
+      return nil
+
   if result != nil and result of Layout:
     result = result.Layout.getView(subPath)
+
 
 proc forEachViewImpl(self: Layout, cb: proc(view: View): bool {.gcsafe, raises: [].}): bool =
   for i, c in self.children:
@@ -227,7 +240,6 @@ method copy*(self: AlternatingLayout): Layout =
 method copy*(self: TabLayout): Layout =
   TabLayout().copyBase(self)
 
-
 method display*(self: View): string {.base.} = ""
 
 method numLeafViews*(self: Layout): int {.base.} =
@@ -237,6 +249,28 @@ method numLeafViews*(self: Layout): int {.base.} =
         result += c.Layout.numLeafViews()
       else:
         inc result
+
+proc firstLeaf*(self: Layout): View =
+  for c in self.children:
+    if c == nil:
+      continue
+    if c of Layout:
+      let leaf = c.Layout.firstLeaf()
+      if leaf != nil:
+        return leaf
+      continue
+    return c
+  return nil
+
+proc collapseTemporaryViews*(self: Layout) =
+  for i, c in self.children:
+    if c == nil:
+      continue
+    if c of Layout:
+      let layout = c.Layout
+      layout.collapseTemporaryViews()
+      if layout.temporary and layout.children.len == 1 and layout.children[0] != nil:
+        self.children[i] = layout.children[0]
 
 method activeLeafView*(self: View): View {.base.} = self
 method activeLeafView*(self: Layout): View =
@@ -252,7 +286,6 @@ method activeLeafLayout*(self: Layout): Layout {.base.} =
   return self
 
 method removeView*(self: Layout, view: View): bool {.base.} =
-  # debugf"{self.desc}.removeView {view.desc}"
   for i, c in self.children:
     if c == view:
       self.children.removeShift(i)
@@ -268,7 +301,6 @@ method removeView*(self: Layout, view: View): bool {.base.} =
   return false
 
 method removeView*(self: CenterLayout, view: View): bool =
-  # debugf"{self.desc}.removeView {view.desc}"
   for i, c in self.children:
     if c == view:
       self.children[i] = nil
@@ -308,6 +340,8 @@ method saveLayout*(self: Layout, discardedViews: HashSet[Id]): JsonNode =
         children.add saved
 
   result["activeIndex"] = self.activeIndex.toJson
+  result["temporary"] = self.temporary.toJson
+  result["max-children"] = self.maxChildren.toJson
   result["children"] = children
 
 method saveLayout*(self: AutoLayout, discardedViews: HashSet[Id]): JsonNode =
@@ -326,6 +360,8 @@ method saveLayout*(self: AutoLayout, discardedViews: HashSet[Id]): JsonNode =
 
   result["activeIndex"] = self.activeIndex.toJson
   result["children"] = children
+  result["temporary"] = self.temporary.toJson
+  result["max-children"] = self.maxChildren.toJson
   result["split-ratios"] = self.splitRatios.toJson()
 
 method saveLayout*(self: CenterLayout, discardedViews: HashSet[Id]): JsonNode =
@@ -344,6 +380,8 @@ method saveLayout*(self: CenterLayout, discardedViews: HashSet[Id]): JsonNode =
 
   result["activeIndex"] = self.activeIndex.toJson
   result["children"] = children
+  result["temporary"] = self.temporary.toJson
+  result["max-children"] = self.maxChildren.toJson
   result["split-ratios"] = self.splitRatios.toJson()
 
 method leftLeaf*(self: View): View {.base.} = self
@@ -357,9 +395,7 @@ method leftLeaf*(self: TabLayout): View =
 
 method leftLeaf*(self: VerticalLayout): View =
   if self.children.len > 0:
-    if self.maximize:
-      return self.children[self.activeIndex].leftLeaf()
-    return self.children[0].leftLeaf()
+    return self.children[self.activeIndex].leftLeaf()
 
 method leftLeaf*(self: HorizontalLayout): View =
   if self.children.len > 0:
@@ -387,9 +423,7 @@ method rightLeaf*(self: TabLayout): View =
 
 method rightLeaf*(self: VerticalLayout): View =
   if self.children.len > 0:
-    if self.maximize:
-      return self.children[self.activeIndex].rightLeaf()
-    return self.children[0].rightLeaf()
+    return self.children[self.activeIndex].rightLeaf()
 
 method rightLeaf*(self: HorizontalLayout): View =
   if self.children.len > 0:
@@ -425,9 +459,7 @@ method topLeaf*(self: VerticalLayout): View =
 
 method topLeaf*(self: HorizontalLayout): View =
   if self.children.len > 0:
-    if self.maximize:
-      return self.children[self.activeIndex].topLeaf()
-    return self.children[0].topLeaf()
+    return self.children[self.activeIndex].topLeaf()
 
 method topLeaf*(self: AlternatingLayout): View =
   if self.children.len > 0:
@@ -457,9 +489,7 @@ method bottomLeaf*(self: VerticalLayout): View =
 
 method bottomLeaf*(self: HorizontalLayout): View =
   if self.children.len > 0:
-    if self.maximize:
-      return self.children[self.activeIndex].bottomLeaf()
-    return self.children.last.bottomLeaf()
+    return self.children[self.activeIndex].bottomLeaf()
 
 method bottomLeaf*(self: AlternatingLayout): View =
   if self.children.len > 0:
@@ -717,15 +747,23 @@ method getSlot*(self: CenterLayout, view: View): string =
 
   return ""
 
-method addView*(self: Layout, view: View, path: string = "", focus: bool = true): View {.base.} =
+method addView*(self: Layout, view: View, path: string = "", focus: bool = true): View {.base, raises: [LayoutError].} =
   # debugf"{self.desc}.addView {view.desc()} to slot '{path}', focus = {focus}"
   var index = self.children.len
+  var path = path
   var (slot, subPath) = path.extractSlot
   var insert = false
   var replaceLast = true
   while true:
     case slot
-    of "": index = self.activeIndex
+    of "":
+      index = self.activeIndex
+    of "**":
+      if self.children.len > 0 and self.children[self.activeIndex] of Layout:
+        return self.children[self.activeIndex].Layout.addView(view, path, focus)
+      slot = subPath
+      subPath = ""
+      continue
     else:
       if slot.startsWith("*") or slot.startsWith("+"):
         var i = 0
@@ -742,7 +780,7 @@ method addView*(self: Layout, view: View, path: string = "", focus: bool = true)
           of '<':
             if next == '>':
               index = self.activeIndex + 1
-              if self.children.len == self.maxChildren and index >= self.children.len:
+              if index >= self.children.len and (self.children.len == self.maxChildren or not insert):
                 index = self.activeIndex - 1
               inc i
             else:
@@ -752,31 +790,38 @@ method addView*(self: Layout, view: View, path: string = "", focus: bool = true)
           of '?':
             replaceLast = false
           else:
-            log lvlError, &"Unknown character in slot '{slot}' at index {i}: '{c}'. Expected one of {{'*', '+', '<', '>', '?'}}"
+            raise newException(LayoutError, &"Unknown character in slot '{slot}' at index {i}: '{c}'. Expected one of {{'*', '+', '<', '>', '?'}}")
 
         break
 
       elif slot.startsWith("#"):
         let slotName = slot[1..^1]
         if slotName in self.slots:
-          (slot, subPath) = self.slots[slotName].extractSlot
+          path = self.slots[slotName]
+          (slot, subPath) = path.extractSlot
           continue
-        log lvlError, &"Failed to add view to slot '{slot}' in {self.desc}"
-        return nil
+        raise newException(LayoutError, &"Unknown slot '{slotName}'")
 
-      try:
-        index = slot.parseInt.clamp(0, self.children.high)
-        break
-      except:
-        log lvlError, &"Failed to add view to slot '{slot}' in {self.desc}"
-        return nil
+      else:
+        try:
+          index = slot.parseInt.clamp(0, self.children.len)
+          if index == self.children.len:
+            insert = true
+          break
+        except Exception as e:
+          raise newException(LayoutError, &"Invalid slot: {e.msg}", e)
 
     break
 
-  index = index.clamp(0, self.children.len)
+  if insert:
+    index = index.clamp(0, self.children.len)
+  else:
+    index = index.clamp(0, self.children.high)
 
   if insert:
     if self.children.len == self.maxChildren:
+      if self.children[index] of Layout:
+        return self.children[index].Layout.addView(view, path, focus)
       if replaceLast or index >= self.children.len:
         result = self.children.pop()
       else:
@@ -796,7 +841,7 @@ method addView*(self: Layout, view: View, path: string = "", focus: bool = true)
         self.activeIndex = index
       self.activeIndex = self.activeIndex.clamp(0, self.children.high)
 
-  elif index >= self.children.len or self.children.len == 0:
+  elif self.children.len == 0:
     if self.childTemplate != nil:
       let newChild = self.childTemplate.copy()
       self.children.add(newChild)
@@ -826,7 +871,7 @@ method addView*(self: Layout, view: View, path: string = "", focus: bool = true)
     if focus:
       self.activeIndex = index
 
-method addView*(self: CenterLayout, view: View, path: string = "", focus: bool = true): View =
+method addView*(self: CenterLayout, view: View, path: string = "", focus: bool = true): View {.raises: [LayoutError].} =
   # debugf"CenterLayout.addView {view.desc()} to slot '{path}', focus = {focus}"
   var index = 4
   var (slot, subPath) = path.extractSlot
@@ -844,13 +889,12 @@ method addView*(self: CenterLayout, view: View, path: string = "", focus: bool =
         if slotName in self.slots:
           (slot, subPath) = self.slots[slotName].extractSlot
           continue
-        log lvlError, &"Failed to add view to slot '{slot}' in {self.desc}"
-        return nil
+        raise newException(LayoutError, &"Unknown slot '{slotName}'")
 
       try:
         index = slot.parseInt.clamp(0, self.children.high)
-      except:
-        return
+      except Exception as e:
+        raise newException(LayoutError, &"Invalid slot: {e.msg}", e)
 
     break
 
@@ -922,12 +966,13 @@ method changeSplitSize*(self: VerticalLayout, change: float, vertical: bool): bo
         return c.Layout.changeSplitSize(change, vertical)
     return false
 
-  if not vertical:
-    return
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
     if c of Layout and c.Layout.changeSplitSize(change, vertical):
-        return true
+      return true
+
+    if not vertical:
+      return false
 
     var index = self.activeIndex
     if index == self.children.high:
@@ -946,12 +991,13 @@ method changeSplitSize*(self: HorizontalLayout, change: float, vertical: bool): 
         return c.Layout.changeSplitSize(change, vertical)
     return false
 
-  if vertical:
-    return
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
     if c of Layout and c.Layout.changeSplitSize(change, vertical):
-        return true
+      return true
+
+    if vertical:
+      return false
 
     var index = self.activeIndex
     if index == self.children.high:
@@ -973,7 +1019,7 @@ method changeSplitSize*(self: AlternatingLayout, change: float, vertical: bool):
   if self.children.len > 0:
     let c = self.children[self.activeIndex]
     if c of Layout and c.Layout.changeSplitSize(change, vertical):
-        return true
+      return true
 
     var index = self.activeIndex
     if index == self.children.high:
@@ -1033,22 +1079,27 @@ method changeSplitSize*(self: CenterLayout, change: float, vertical: bool): bool
 
   return false
 
-proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
+proc createLayout*(config: JsonNode, resolve: proc(id: Id): View {.gcsafe, raises: [].} = nil): View {.raises: [ValueError].} =
   if config.kind == JNull:
     return nil
 
+  if config.hasKey("id"):
+    if resolve != nil:
+      return resolve(config["id"].jsonTo(Id))
+    else:
+      raise newException(ValueError, "Can't resolve layout id, no resolver")
+
   checkJson config.hasKey("kind") and config["kind"].kind == Jstring, "Expected field 'kind' of type string"
   let kind = config["kind"].getStr
-  # debugf"createLayout '{kind}': {config}"
 
   template parseLayoutFields(res: Layout): untyped =
     if config.hasKey("children"):
       let children = config["children"]
       checkJson children.kind == JArray, "'children' must be an array"
       for i, c in children.elems:
-        res.children.add createLayout(c)
+        res.children.add createLayout(c, resolve)
     if config.hasKey("childTemplate"):
-      res.childTemplate = createLayout(config["childTemplate"]).Layout
+      res.childTemplate = createLayout(config["childTemplate"], resolve).Layout
     if config.hasKey("activeIndex"):
       let activeIndex = config["activeIndex"]
       checkJson activeIndex.kind == JInt, "'activeIndex' must be an integer"
@@ -1057,6 +1108,8 @@ proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
       res.slots = config["slots"].jsonTo(Table[string, string])
     if config.hasKey("max-children"):
       res.maxChildren = config["max-children"].jsonTo(int)
+    if config.hasKey("temporary"):
+      res.temporary = config["temporary"].jsonTo(bool)
 
   template parseAutoLayoutFields(res: AutoLayout): untyped =
     if config.hasKey("split-ratios"):
@@ -1072,18 +1125,18 @@ proc createLayout*(config: JsonNode): View {.raises: [ValueError].} =
       checkJson children.kind == JArray, "'children' must be an array"
       for i, c in children.elems:
         if i < res.children.len:
-          res.children[i] = createLayout(c)
+          res.children[i] = createLayout(c, resolve)
     else:
       if config.hasKey("left"):
-        res.leftTemplate = createLayout(config["left"]).Layout
+        res.leftTemplate = createLayout(config["left"], resolve).Layout
       if config.hasKey("right"):
-        res.rightTemplate = createLayout(config["right"]).Layout
+        res.rightTemplate = createLayout(config["right"], resolve).Layout
       if config.hasKey("top"):
-        res.topTemplate = createLayout(config["top"]).Layout
+        res.topTemplate = createLayout(config["top"], resolve).Layout
       if config.hasKey("bottom"):
-        res.bottomTemplate = createLayout(config["bottom"]).Layout
+        res.bottomTemplate = createLayout(config["bottom"], resolve).Layout
       if config.hasKey("center"):
-        res.centerTemplate = createLayout(config["center"]).Layout
+        res.centerTemplate = createLayout(config["center"], resolve).Layout
 
     if config.hasKey("activeIndex"):
       let activeIndex = config["activeIndex"]

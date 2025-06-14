@@ -847,6 +847,13 @@
         "kind": "alternating",
         "max-children": 2,
     },
+    "ui.layout.vim": {
+        "slots.default": "**.*",
+        "slots.scratch-terminal": "**.*<>",
+        "slots.build-run-terminal": "**.*<>",
+        "kind": "horizontal",
+        "max-children": 1,
+    },
     "ui.layout.vscode": {
         "slots.default": "center.*.+",
         "slots.scratch-terminal": "bottom.+",
