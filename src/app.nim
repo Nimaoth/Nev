@@ -67,8 +67,6 @@ type EditorState = object
   fontBoldItalic: string
   fallbackFonts: seq[string]
   workspaceFolder: OpenWorkspace
-  openEditors: seq[OpenEditor]
-  hiddenEditors: seq[OpenEditor]
   commandHistory: seq[string]
 
   astProjectWorkspaceId: string
@@ -1118,10 +1116,7 @@ proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 
 proc saveAppState*(self: App) {.expose("editor").} =
-  # Save some state
   var state = EditorState()
-
-  # todo: save ast project state
 
   if self.backend == api.Backend.Terminal:
     state.fontSize = self.loadedFontSize
@@ -1142,50 +1137,11 @@ proc saveAppState*(self: App) {.expose("editor").} =
   if getDebugger().getSome(debugger):
     state.debuggerState = debugger.getStateJson().some
 
-  # todo
-  # if self.layout of HorizontalLayout:
-  #   state.layout = "horizontal"
-  # elif self.layout of VerticalLayout:
-  #   state.layout = "vertical"
-  # else:
-  #   state.layout = "fibonacci"
-
   # Save open workspace folders
   state.workspaceFolder = OpenWorkspace(
     name: self.workspace.name,
     settings: self.workspace.settings
   )
-
-  # Save open editors
-  proc getEditorState(view: EditorView): Option[OpenEditor] =
-    if view.document.filename == "":
-      return OpenEditor.none
-    if view.document of TextDocument and view.document.TextDocument.staged:
-      return OpenEditor.none
-    if view.document == self.logDocument:
-      return OpenEditor.none
-    if not view.editor.config.get("editor.save-in-session", true):
-      return OpenEditor.none
-
-    try:
-      let customOptions = view.editor.getStateJson()
-      if view.document of TextDocument:
-        let document = TextDocument(view.document)
-        return OpenEditor(
-          filename: document.filename, languageId: document.languageId, appFile: document.appFile,
-          customOptions: customOptions ?? newJObject()
-          ).some
-      else:
-        when enableAst:
-          if view.document of ModelDocument:
-            let document = ModelDocument(view.document)
-            return OpenEditor(
-              filename: document.filename, languageId: "am", appFile: document.appFile,
-              customOptions: customOptions ?? newJObject()
-              ).some
-    except CatchableError:
-      log lvlError, fmt"Failed to get editor state for {view.document.filename}: {getCurrentExceptionMsg()}"
-      return OpenEditor.none
 
   if self.sessionFile != "":
     try:

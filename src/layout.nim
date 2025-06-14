@@ -306,10 +306,6 @@ method kind*(self: EditorView): string = "editor"
 
 method display*(self: EditorView): string = self.document.filename
 
-method saveLayout*(self: EditorView, discardedViews: HashSet[Id]): JsonNode =
-  result = newJObject()
-  result["id"] = self.id.toJson
-
 method saveState*(self: EditorView): JsonNode =
   if self.document.filename == "":
     return nil

@@ -1012,9 +1012,6 @@ method getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]
 method desc*(self: TerminalView): string = &"TerminalView"
 method kind*(self: TerminalView): string = "terminal"
 method display*(self: TerminalView): string = &"term://{self.terminal.command} - {self.terminal.group}"
-method saveLayout*(self: TerminalView): JsonNode =
-  result = newJObject()
-  result["id"] = self.id.toJson
 method saveState*(self: TerminalView): JsonNode =
   result = newJObject()
   result["kind"] = self.kind.toJson

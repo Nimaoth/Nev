@@ -288,7 +288,10 @@ method removeView*(self: CenterLayout, view: View): bool =
 
   return false
 
-method saveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode {.base.} = nil
+method saveLayout*(self: View, discardedViews: HashSet[Id]): JsonNode {.base.} =
+  result = newJObject()
+  result["id"] = self.id.toJson
+
 method saveLayout*(self: Layout, discardedViews: HashSet[Id]): JsonNode =
   if self.children.len == 0:
     return nil
