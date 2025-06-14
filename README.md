@@ -21,6 +21,7 @@ Nev is still relatively new, so many things are still missing or need improvemen
 - [WASM plugins](docs/configuration.md)
 - Basic git integration (list/diff/add/stage/unstage/revert changed files)
 - [Builtin terminal emulator](docs/docs.md#Terminal) support multiple shells (e.g `bash`, `powershell`, `wsl`)
+- [Flexible layout system](docs/docs.md#Layout)
 - And many more smaller features...
 
 ## Planned features
