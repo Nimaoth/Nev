@@ -5,6 +5,7 @@ import platform/platform
 import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex, array_set]
 import scripting/expose
 import workspaces/workspace
+import finder/finder
 import service, platform_service, dispatch_tables, document, document_editor, view, events, config_provider, popup, selector_popup_builder, vfs, vfs_service, session, layouts
 from scripting_api import EditorId
 
@@ -38,6 +39,7 @@ type
     vfs: VFS
     popups*: seq[Popup]
     layout*: Layout
+    layoutName*: string = "default"
     layouts*: Table[string, Layout]
     layoutProps*: LayoutProperties
     maximizeView*: bool
@@ -164,19 +166,28 @@ method createViews(self: CenterLayout, config: JsonNode, layouts: LayoutService)
 
 proc updateLayoutTree(self: LayoutService) =
   try:
-    # let config = self.uiSettings.layout.get()
     let config = self.config.runtime.get("ui.layout", newJexObject())
-    # debugf"updateLayoutTree\n{config.pretty}"
+
+    var layoutReferences = newSeq[(string, string)]()
 
     for key, value in config.fields.pairs:
-      let view = createLayout(value.toJson)
-      if view of Layout:
-        self.layouts[key] = view.Layout
+      if value.kind == JString:
+        layoutReferences.add (key, value.getStr)
       else:
-        self.layouts[key] = AlternatingLayout(children: @[view])
+        let view = createLayout(value.toJson)
+        if view of Layout:
+          self.layouts[key] = view.Layout
+        else:
+          self.layouts[key] = AlternatingLayout(children: @[view])
 
-    if "default" in self.layouts:
-      self.layout = self.layouts["default"]
+    for (key, target) in layoutReferences:
+      if target in self.layouts:
+        self.layouts[key] = self.layouts[target].copy()
+      else:
+        log lvlError, &"Unknown layout '{target}' referenced by 'ui.layout.{key}'"
+
+    if self.layoutName in self.layouts:
+      self.layout = self.layouts[self.layoutName]
 
     if self.layout == nil:
       self.layout = AlternatingLayout(children: @[])
@@ -224,6 +235,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
 
   proc save(): JsonNode =
     result = newJObject()
+    result["layout"] = self.layoutName.toJson
 
     var discardedViews = initHashSet[Id]()
     var viewStates = newJArray()
@@ -244,6 +256,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
 
   proc load(data: JsonNode) =
     try:
+      log lvlInfo, &"Restore layout from session"
       self.updateLayoutTree()
 
       if data.hasKey("views"):
@@ -273,6 +286,11 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
           if key in self.layouts:
             self.layouts[key].createViews(state, self)
 
+      if data.hasKey("layout"):
+        self.layoutName = data["layout"].jsonTo(string)
+        if self.layoutName in self.layouts:
+          self.layout = self.layouts[self.layoutName]
+
     except Exception as e:
       log lvlError, &"Failed to create layout from session data: {e.msg}\n{data.pretty}"
 
@@ -280,14 +298,21 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
 
   discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
     if key == "" or key.startsWith("ui.layout"):
-      let state = self.layout.saveLayout(initHashSet[Id]())
+      var states = initTable[string, JsonNode]()
+      for (name, layout) in self.layouts.pairs:
+        let state = layout.saveLayout(initHashSet[Id]())
+        if state != nil:
+          states[name] = state
 
       self.updateLayoutTree()
-      if state != nil:
+      for (name, state) in states.pairs:
         try:
-          self.layout.createViews(state, self)
+          self.layouts[name].createViews(state, self)
         except Exception as e:
           log lvlError, &"Failed to create layout from session data: {e.msg}\n{state.pretty}"
+
+      if self.layoutName in states:
+        self.layout = self.layouts[self.layoutName]
 
   self.updateLayoutTree()
 
@@ -747,13 +772,6 @@ proc focusViewDown*(self: LayoutService) {.expose("layout").} =
     self.tryActivateView(view)
   self.platform.requestRender()
 
-proc setLayout*(self: LayoutService, layout: string) {.expose("layout").} =
-  if layout in self.layouts:
-    self.layout = self.layouts[layout]
-    self.platform.requestRender()
-  else:
-    log lvlError, &"Unknown layout '{layout}'"
-
 proc focusView*(self: LayoutService, slot: string) {.expose("layout").} =
   let view = self.layout.getView(slot)
   if view != nil:
@@ -859,6 +877,16 @@ proc openLastView*(self: LayoutService) {.expose("layout").} =
   self.showView(view, slot)
   self.platform.requestRender()
 
+proc setLayout*(self: LayoutService, layout: string) {.expose("layout").} =
+  if layout in self.layouts:
+    self.layout = self.layouts[layout]
+    self.layoutName = layout
+    if self.layout.numLeafViews == 0:
+      self.openLastView()
+    self.platform.requestRender()
+  else:
+    log lvlError, &"Unknown layout '{layout}'"
+
 proc setActiveViewIndex*(self: LayoutService, slot: string, index: int) {.expose("layout").} =
   let view = self.layout.getView(slot)
   if view != nil and view of Layout:
@@ -936,5 +964,34 @@ proc moveView*(self: LayoutService, slot: string) {.expose("layout").} =
   if view != nil:
     discard self.layout.removeView(view)
     discard self.layout.addView(view, slot)
+
+proc chooseLayout(self: LayoutService) {.expose("layout").} =
+  var builder = SelectorPopupBuilder()
+  builder.scope = "layout".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.3
+
+  var res = newSeq[FinderItem]()
+  for name in self.layouts.keys:
+    res.add FinderItem(
+      displayName: name,
+    )
+
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
+
+  let oldLayout = self.layoutName
+
+  builder.handleCanceled = proc(popup: ISelectorPopup) =
+    self.setLayout(oldLayout)
+
+  builder.handleItemSelected = proc(popup: ISelectorPopup, item: FinderItem) =
+    self.setLayout(item.displayName)
+
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    self.setLayout(item.displayName)
+    return true
+
+  discard self.pushSelectorPopup(builder)
 
 addGlobalDispatchTable "layout", genDispatchTable("layout")

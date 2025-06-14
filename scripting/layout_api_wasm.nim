@@ -171,16 +171,6 @@ proc focusViewDown*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc layout_setLayout_void_LayoutService_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc setLayout*(layout: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add layout.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = layout_setLayout_void_LayoutService_string_wasm(
-      argsJsonString.cstring)
-
-
 proc layout_focusView_void_LayoutService_string_wasm(arg: cstring): cstring {.
     importc.}
 proc focusView*(slot: string) {.gcsafe, raises: [].} =
@@ -235,6 +225,16 @@ proc openLastView*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = layout_openLastView_void_LayoutService_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_setLayout_void_LayoutService_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc setLayout*(layout: string) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add layout.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_setLayout_void_LayoutService_string_wasm(
       argsJsonString.cstring)
 
 
@@ -302,5 +302,14 @@ proc moveView*(slot: string) {.gcsafe, raises: [].} =
   argsJson.add slot.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = layout_moveView_void_LayoutService_string_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_chooseLayout_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc chooseLayout*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_chooseLayout_void_LayoutService_wasm(
       argsJsonString.cstring)
 

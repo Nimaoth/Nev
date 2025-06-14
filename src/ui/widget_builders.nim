@@ -210,6 +210,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
   var headerColor = if self.commands.commandLineMode: self.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
+  let textColor = self.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   self.layout.preRender()
 
@@ -233,25 +234,41 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
-        let textColor = self.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+        proc section(text: string, foreground: Color, background: Color, extraFlags: UINodeFlags) =
+          var flags = &{SizeToContentX, SizeToContentY, DrawText} + extraFlags
+          builder.panel(flags, textColor = foreground, backgroundColor = background, text = text)
 
-        let layout = self.layout.layout.activeLeafLayout()
-        let maximizedText = if self.layout.maximizeView:
-          "[Fullscreen]"
-        elif layout != nil:
-          let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
-          if layout.maximize:
-            fmt"[Max 1/{maxText}]"
+        proc section(text: string, foreground: Option[string] = string.none, background: Option[string] = string.none) =
+          var extraFlags = 0.UINodeFlags
+          if background.isSome:
+            extraFlags.incl FillBackground
+          let foreground = foreground.mapIt(self.themes.theme.color(it, textColor))
+          let background = background.mapIt(self.themes.theme.color(it, headerColor))
+          section(text, foreground.get(textColor), background.get(headerColor), extraFlags)
+
+        builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}, pivot = vec2(1, 0)):
+          let layout = self.layout.layout.activeLeafLayout()
+          let maximizedText = if self.layout.maximizeView:
+            "Fullscreen"
+          elif layout != nil:
+            let maxText = if layout.maxChildren == int.high: "∞" else: $layout.maxChildren
+            if layout.maximize:
+              fmt"Max 1/{maxText}"
+            else:
+              fmt"{layout.children.len}/{maxText}"
           else:
-            fmt"[{layout.children.len}/{maxText}]"
-        else:
-          "[]"
+            ""
 
-        let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
-        let sessionText = if self.sessionFile.len == 0: "[No Session]" else: fmt"[Session: {self.sessionFile}]"
-        let text = fmt"{maximizedText} | {modeText} | {sessionText}"
+          section(&"[Layout {self.layout.layoutName} - {maximizedText}")
 
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0))
+          let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
+          section(" | ")
+          section(modeText)
+
+          let sessionText = if self.sessionFile.len == 0: "[No Session]" else: fmt"[Session: {self.sessionFile}]"
+          section(" | ")
+          section(sessionText)
+
         builder.panel(&{}, w = builder.charWidth)
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = self.inputHistory, textColor = textColor, pivot = vec2(1, 0))
 

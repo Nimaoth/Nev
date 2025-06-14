@@ -1168,11 +1168,19 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.moveLast "line", Both
     editor.setMode "insert"
     editor.addNextCheckpoint "insert"
+  addTextCommandBlock "visual", "A":
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1, wrap=false).toSelection)
+    editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
   addTextCommandBlock "normal", "i":
     editor.setMode "insert"
     editor.addNextCheckpoint "insert"
   addTextCommandBlock "", "I":
     editor.moveFirst "line-no-indent", Both
+    editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
+  addTextCommandBlock "visual", "I":
+    editor.selections = editor.selections.mapIt(it.normalized.first.toSelection)
     editor.setMode "insert"
     editor.addNextCheckpoint "insert"
   addTextCommandBlock "normal", "gI":

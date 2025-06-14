@@ -200,8 +200,9 @@ method kind*(self: TabLayout): string = "tab"
 method copy*(self: Layout): Layout {.base.} = assert(false)
 
 proc copyBase(self: Layout, src: Layout): Layout =
-  self.childTemplate = src.childTemplate
-  self.children = src.children.mapIt(if it != nil: it.Layout.copy.View else: nil)
+  if src.childTemplate != nil:
+    self.childTemplate = src.childTemplate.copy()
+  self.children = src.children.mapIt(if it != nil: it.Layout.copy().View else: nil)
   self.activeIndex = src.activeIndex
   self.slots = src.slots
   self.maxChildren = src.maxChildren
@@ -210,7 +211,7 @@ proc copyBase(self: Layout, src: Layout): Layout =
 
 method copy*(self: CenterLayout): Layout =
   CenterLayout(
-    childTemplates: self.childTemplates.mapIt(if it != nil: it.copy else: nil),
+    childTemplates: self.childTemplates.mapIt(if it != nil: it.copy() else: nil),
     splitRatios: self.splitRatios,
   ).copyBase(self)
 

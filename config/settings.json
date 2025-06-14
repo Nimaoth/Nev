@@ -805,61 +805,67 @@
         "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
     },
 
-    "ui.layout": {
-        "default": {
-            "slots.default": ".center.*+?",
-            "slots.scratch-terminal": ".bottom.+",
-            "slots.build-run-terminal": ".left",
-            "kind": "tab",
-            "childTemplate": {
-                "kind": "center",
-                "center": {
-                    "kind": "alternating",
-                    "max-children": 2,
-                },
-                "bottom": {
-                    "kind": "tab"
-                }
-            },
-        },
-        "splits-in-tabs": {
-            "slots.default": ".+",
-            "slots.scratch-terminal": ".+",
-            "slots.build-run-terminal": ".+",
-            "kind": "tab",
-            "childTemplate": {
-                "kind": "alternating",
-            },
-        },
-        "tabbed-splits": {
-            "slots.default": ".+",
-            "slots.scratch-terminal": "1.+",
-            "slots.build-run-terminal": "1.+",
-            "kind": "alternating",
-            "childTemplate": {
-                "kind": "tab",
-            },
-        },
-        "vscode": {
-            "slots.default": "center.*.+",
-            "slots.scratch-terminal": "bottom.+",
-            "slots.build-run-terminal": "left.+",
+    "ui.layout.default": "tab-center-alternating",
+    "ui.layout.tab-center-alternating": {
+        "slots.default": ".center.*+?",
+        "slots.scratch-terminal": ".bottom.+",
+        "slots.build-run-terminal": ".left",
+        "kind": "tab",
+        "childTemplate": {
             "kind": "center",
             "center": {
                 "kind": "alternating",
-                "childTemplate": {
-                    "kind": "tab"
-                }
+                "max-children": 2,
             },
             "bottom": {
-                "kind": "tab",
-            },
-            "left": {
-                "kind": "tab",
-            },
-            "right": {
-                "kind": "tab",
-            },
+                "kind": "tab"
+            }
+        },
+    },
+    "ui.layout.splits-in-tabs": {
+        "slots.default": ".+",
+        "slots.scratch-terminal": ".+",
+        "slots.build-run-terminal": ".+",
+        "kind": "tab",
+        "childTemplate": {
+            "kind": "alternating",
+        },
+    },
+    "ui.layout.tabbed-splits": {
+        "slots.default": ".+",
+        "slots.scratch-terminal": "1.+",
+        "slots.build-run-terminal": "1.+",
+        "kind": "alternating",
+        "childTemplate": {
+            "kind": "tab",
+        },
+    },
+    "ui.layout.nev-old": {
+        "slots.default": "*+?",
+        "slots.scratch-terminal": "*+?",
+        "slots.build-run-terminal": "*+?",
+        "kind": "alternating",
+        "max-children": 2,
+    },
+    "ui.layout.vscode": {
+        "slots.default": "center.*.+",
+        "slots.scratch-terminal": "bottom.+",
+        "slots.build-run-terminal": "left.+",
+        "kind": "center",
+        "center": {
+            "kind": "alternating",
+            "childTemplate": {
+                "kind": "tab"
+            }
+        },
+        "bottom": {
+            "kind": "tab",
+        },
+        "left": {
+            "kind": "tab",
+        },
+        "right": {
+            "kind": "tab",
         },
     },
 }
