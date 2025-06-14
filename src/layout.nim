@@ -1,4 +1,4 @@
-import std/[tables, options, json, sugar, sequtils, deques, sets]
+import std/[tables, options, json, sugar, sequtils, deques, sets, os]
 import bumpy
 import results
 import platform/platform
@@ -993,5 +993,15 @@ proc chooseLayout(self: LayoutService) {.expose("layout").} =
     return true
 
   discard self.pushSelectorPopup(builder)
+
+proc open*(self: LayoutService, path: string, slot: string = "") {.expose("layout").} =
+  ## Opens the specified file. Relative paths are relative to the main workspace.
+  ## `path` - File path to open.
+  ## `slot` - Where in the layout to put the opened file. If not specified the default slot is used.
+  var path = path
+  let vfs = self.vfs.getVFS(path, maxDepth = 1).vfs
+  if vfs != nil and vfs.prefix == "" and not path.isAbsolute:
+    path = self.workspace.getAbsolutePath(path)
+  discard self.openFile(path, slot)
 
 addGlobalDispatchTable "layout", genDispatchTable("layout")

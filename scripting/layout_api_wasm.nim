@@ -313,3 +313,14 @@ proc chooseLayout*() {.gcsafe, raises: [].} =
   let res {.used.} = layout_chooseLayout_void_LayoutService_wasm(
       argsJsonString.cstring)
 
+
+proc layout_open_void_LayoutService_string_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc open*(path: string; slot: string = "") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add path.toJson()
+  argsJson.add slot.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_open_void_LayoutService_string_string_wasm(
+      argsJsonString.cstring)
+
