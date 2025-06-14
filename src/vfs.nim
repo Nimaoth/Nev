@@ -391,7 +391,7 @@ proc getVFS*(self: VFS, path: openArray[char], maxDepth: int = int.high): tuple[
         inc prefixLen
 
       when debugLogVfs:
-        debugf"[{self.name}] '{self.prefix}' foward({path.join()}) to ({self.mounts[i].vfs.name}, {self.mounts[i].vfs.prefix})"
+        debugf"[{self.name}] '{self.prefix}' forward({path.join()}) to ({self.mounts[i].vfs.name}, {self.mounts[i].vfs.prefix})"
       return self.mounts[i].vfs.getVFS(path[prefixLen..^1], maxDepth - 1)
 
   when debugLogVfs:

@@ -68,11 +68,13 @@ proc enableDebugPrintAsyncAwaitStackTrace*(enable: bool) {.gcsafe, raises: [].} 
       argsJsonString.cstring)
 
 
-proc editor_showDebuggerView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc showDebuggerView*() {.gcsafe, raises: [].} =
+proc editor_showDebuggerView_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc showDebuggerView*(slot: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_showDebuggerView_void_App_wasm(
+  let res {.used.} = editor_showDebuggerView_void_App_string_wasm(
       argsJsonString.cstring)
 
 
@@ -307,12 +309,16 @@ proc toggleStatusBarLocation*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_logs_void_App_bool_wasm(arg: cstring): cstring {.importc.}
-proc logs*(scrollToBottom: bool = false) {.gcsafe, raises: [].} =
+proc editor_logs_void_App_string_bool_bool_wasm(arg: cstring): cstring {.importc.}
+proc logs*(slot: string = ""; focus: bool = true; scrollToBottom: bool = false) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
+  argsJson.add focus.toJson()
   argsJson.add scrollToBottom.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_logs_void_App_bool_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_logs_void_App_string_bool_bool_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_toggleConsoleLogger_void_App_wasm(arg: cstring): cstring {.importc.}
@@ -556,21 +562,6 @@ proc exploreCurrentFileDirectory*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_openPreviousEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc openPreviousEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openPreviousEditor_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_openNextEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc openNextEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openNextEditor_void_App_wasm(argsJsonString.cstring)
-
-
 proc editor_reloadConfig_void_App_bool_wasm(arg: cstring): cstring {.importc.}
 proc reloadConfig*(clearOptions: bool = false) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
@@ -592,13 +583,6 @@ proc reloadTheme*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_reloadTheme_void_App_wasm(argsJsonString.cstring)
-
-
-proc editor_reloadState_void_App_wasm(arg: cstring): cstring {.importc.}
-proc reloadState*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_reloadState_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_saveSession_void_App_string_wasm(arg: cstring): cstring {.importc.}

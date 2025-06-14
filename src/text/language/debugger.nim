@@ -290,8 +290,8 @@ proc currentVariablesContext*(self: Debugger, varRef: VariablesReference):
   if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
     return (t.id, frame[].id, varRef).some
 
-proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.async.} =
-  let editor = self.layout.openWorkspaceFile(path, append = true)
+proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor, slot: string = "") {.async.} =
+  let editor = self.layout.openWorkspaceFile(path, slot = slot)
 
   if editor.getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
@@ -478,11 +478,11 @@ proc nextStackFrame*(self: Debugger) {.expose("debugger").} =
   if self.currentThread().getSome(t):
     asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
 
-proc openFileForCurrentFrame*(self: Debugger) {.expose("debugger").} =
+proc openFileForCurrentFrame*(self: Debugger, slot: string = "") {.expose("debugger").} =
   if self.currentStackFrame().getSome(frame) and
       frame[].source.isSome and
       frame[].source.get.path.getSome(path):
-    asyncSpawn self.tryOpenFileInWorkspace(path, (frame[].line - 1, frame[].column - 1))
+    asyncSpawn self.tryOpenFileInWorkspace(path, (frame[].line - 1, frame[].column - 1), slot)
 
 proc prevVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
