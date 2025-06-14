@@ -98,25 +98,41 @@ proc getOrOpenEditor*(path: string): Option[EditorId] {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc layout_closeCurrentView_void_LayoutService_bool_bool_wasm(arg: cstring): cstring {.
+proc layout_hideActiveView_void_LayoutService_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc closeCurrentView*(keepHidden: bool = true; closeOpenPopup: bool = true) {.
-    gcsafe, raises: [].} =
+proc hideActiveView*(closeOpenPopup: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add keepHidden.toJson()
   argsJson.add closeOpenPopup.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_closeCurrentView_void_LayoutService_bool_bool_wasm(
+  let res {.used.} = layout_hideActiveView_void_LayoutService_bool_wasm(
       argsJsonString.cstring)
 
 
-proc layout_closeOtherViews_void_LayoutService_bool_wasm(arg: cstring): cstring {.
+proc layout_closeActiveView_void_LayoutService_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc closeOtherViews*(keepHidden: bool = true) {.gcsafe, raises: [].} =
+proc closeActiveView*(closeOpenPopup: bool = true) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add keepHidden.toJson()
+  argsJson.add closeOpenPopup.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_closeOtherViews_void_LayoutService_bool_wasm(
+  let res {.used.} = layout_closeActiveView_void_LayoutService_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_hideOtherViews_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc hideOtherViews*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_hideOtherViews_void_LayoutService_wasm(
+      argsJsonString.cstring)
+
+
+proc layout_closeOtherViews_void_LayoutService_wasm(arg: cstring): cstring {.
+    importc.}
+proc closeOtherViews*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = layout_closeOtherViews_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
@@ -175,97 +191,97 @@ proc focusView*(slot: string) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc layout_nextView_void_LayoutService_string_wasm(arg: cstring): cstring {.
+proc layout_focusNextView_void_LayoutService_string_wasm(arg: cstring): cstring {.
     importc.}
-proc nextView*(slot: string = "") {.gcsafe, raises: [].} =
+proc focusNextView*(slot: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add slot.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_nextView_void_LayoutService_string_wasm(
+  let res {.used.} = layout_focusNextView_void_LayoutService_string_wasm(
       argsJsonString.cstring)
 
 
-proc layout_prevView_void_LayoutService_string_wasm(arg: cstring): cstring {.
+proc layout_focusPrevView_void_LayoutService_string_wasm(arg: cstring): cstring {.
     importc.}
-proc prevView*(slot: string = "") {.gcsafe, raises: [].} =
+proc focusPrevView*(slot: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add slot.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_prevView_void_LayoutService_string_wasm(
+  let res {.used.} = layout_focusPrevView_void_LayoutService_string_wasm(
       argsJsonString.cstring)
 
 
-proc layout_openPreviousEditor_void_LayoutService_wasm(arg: cstring): cstring {.
+proc layout_openPrevView_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
-proc openPreviousEditor*() {.gcsafe, raises: [].} =
+proc openPrevView*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_openPreviousEditor_void_LayoutService_wasm(
+  let res {.used.} = layout_openPrevView_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
-proc layout_openNextEditor_void_LayoutService_wasm(arg: cstring): cstring {.
+proc layout_openNextView_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
-proc openNextEditor*() {.gcsafe, raises: [].} =
+proc openNextView*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_openNextEditor_void_LayoutService_wasm(
+  let res {.used.} = layout_openNextView_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
-proc layout_openLastEditor_void_LayoutService_wasm(arg: cstring): cstring {.
+proc layout_openLastView_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
-proc openLastEditor*() {.gcsafe, raises: [].} =
+proc openLastView*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_openLastEditor_void_LayoutService_wasm(
+  let res {.used.} = layout_openLastView_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
-proc layout_setActiveIndex_void_LayoutService_string_int_wasm(arg: cstring): cstring {.
+proc layout_setActiveViewIndex_void_LayoutService_string_int_wasm(arg: cstring): cstring {.
     importc.}
-proc setActiveIndex*(slot: string; index: int) {.gcsafe, raises: [].} =
+proc setActiveViewIndex*(slot: string; index: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add slot.toJson()
   argsJson.add index.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_setActiveIndex_void_LayoutService_string_int_wasm(
+  let res {.used.} = layout_setActiveViewIndex_void_LayoutService_string_int_wasm(
       argsJsonString.cstring)
 
 
-proc layout_moveCurrentViewToTop_void_LayoutService_wasm(arg: cstring): cstring {.
+proc layout_moveActiveViewFirst_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
-proc moveCurrentViewToTop*() {.gcsafe, raises: [].} =
+proc moveActiveViewFirst*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_moveCurrentViewToTop_void_LayoutService_wasm(
+  let res {.used.} = layout_moveActiveViewFirst_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
-proc layout_moveCurrentViewPrev_void_LayoutService_wasm(arg: cstring): cstring {.
+proc layout_moveActiveViewPrev_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
-proc moveCurrentViewPrev*() {.gcsafe, raises: [].} =
+proc moveActiveViewPrev*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_moveCurrentViewPrev_void_LayoutService_wasm(
+  let res {.used.} = layout_moveActiveViewPrev_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
-proc layout_moveCurrentViewNext_void_LayoutService_wasm(arg: cstring): cstring {.
+proc layout_moveActiveViewNext_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
-proc moveCurrentViewNext*() {.gcsafe, raises: [].} =
+proc moveActiveViewNext*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_moveCurrentViewNext_void_LayoutService_wasm(
+  let res {.used.} = layout_moveActiveViewNext_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 
-proc layout_moveCurrentViewNextAndGoBack_void_LayoutService_wasm(arg: cstring): cstring {.
+proc layout_moveActiveViewNextAndGoBack_void_LayoutService_wasm(arg: cstring): cstring {.
     importc.}
-proc moveCurrentViewNextAndGoBack*() {.gcsafe, raises: [].} =
+proc moveActiveViewNextAndGoBack*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = layout_moveCurrentViewNextAndGoBack_void_LayoutService_wasm(
+  let res {.used.} = layout_moveActiveViewNextAndGoBack_void_LayoutService_wasm(
       argsJsonString.cstring)
 
 

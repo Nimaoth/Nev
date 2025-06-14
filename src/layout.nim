@@ -119,13 +119,13 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
     if config.hasKey("split-ratios"):
       self.AutoLayout.splitRatios = config["split-ratios"].jsonTo(seq[float])
 
-method createViews(self: MainLayout, config: JsonNode, layouts: LayoutService) {.raises: [ValueError].} =
+method createViews(self: CenterLayout, config: JsonNode, layouts: LayoutService) {.raises: [ValueError].} =
   if config.kind == JNull:
     return
 
   checkJson config.kind == JObject, "Expected object"
 
-  # debugf"MainLayout.createViews: {config}"
+  # debugf"CenterLayout.createViews: {config}"
   if config.hasKey("children"):
     let children = config["children"]
     checkJson children.kind == JArray, "'children' must be an array"
@@ -382,7 +382,7 @@ proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = 
   # debugf"addView {view.desc()} slot = '{slot}', focus = {focus}, addToHistory = {addToHistory}"
   self.allViews.incl view
   let slot = if slot == "":
-    self.layout.defaultSlot
+    self.layout.slots.getOrDefault("default", "")
   else:
     slot
 
@@ -664,7 +664,19 @@ proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bo
   document.deinit()
   return true
 
-proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, closeOpenPopup: bool = true) {.expose("layout").} =
+proc hideActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose("layout").} =
+  ## Hide the active view, removing it from the current layout tree.
+  ## To reopen the view, use commands like `show-last-hidden-view` or `choose-open`.
+  let view = self.layout.activeLeafView()
+  if view == nil:
+    return
+
+  # todo: do we want to add it to the view history here?
+  discard self.layout.removeView(view)
+  self.platform.requestRender()
+
+proc closeActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose("layout").} =
+  ## Permanently close the active view.
   if closeOpenPopup and self.popups.len > 0:
     self.popPopup()
   else:
@@ -673,11 +685,10 @@ proc closeCurrentView*(self: LayoutService, keepHidden: bool = true, closeOpenPo
       log lvlError, &"Failed to destroy view"
       return
 
-    self.closeView(view, keepHidden = keepHidden)
+    self.closeView(view)
 
-proc closeOtherViews*(self: LayoutService, keepHidden: bool = true) {.expose("layout").} =
-  ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
-
+proc hideOtherViews*(self: LayoutService) {.expose("layout").} =
+  ## Hides all views except for the active one.
   let view = self.layout.activeLeafView()
   if view == nil:
     return
@@ -685,7 +696,20 @@ proc closeOtherViews*(self: LayoutService, keepHidden: bool = true) {.expose("la
   let views = self.layout.leafViews()
   for v in views:
     if v != view:
-      self.closeView(v, keepHidden = keepHidden)
+      discard self.layout.removeView(v)
+
+  self.platform.requestRender()
+
+proc closeOtherViews*(self: LayoutService) {.expose("layout").} =
+  ## Permanently closes all views except for the active one.
+  let view = self.layout.activeLeafView()
+  if view == nil:
+    return
+
+  let views = self.layout.leafViews()
+  for v in views:
+    if v != view:
+      self.closeView(v)
 
   self.platform.requestRender()
 
@@ -726,7 +750,7 @@ proc focusView*(self: LayoutService, slot: string) {.expose("layout").} =
     self.tryActivateView(view)
   self.platform.requestRender()
 
-proc nextView*(self: LayoutService, slot: string = "") {.expose("layout").} =
+proc focusNextView*(self: LayoutService, slot: string = "") {.expose("layout").} =
   let view = self.layout.getView(slot)
   if view != nil and view of Layout:
     let layout = view.Layout
@@ -744,7 +768,7 @@ proc nextView*(self: LayoutService, slot: string = "") {.expose("layout").} =
           break
   self.platform.requestRender()
 
-proc prevView*(self: LayoutService, slot: string = "") {.expose("layout").} =
+proc focusPrevView*(self: LayoutService, slot: string = "") {.expose("layout").} =
   let view = self.layout.getView(slot)
   if view != nil and view of Layout:
     let layout = view.Layout
@@ -762,7 +786,7 @@ proc prevView*(self: LayoutService, slot: string = "") {.expose("layout").} =
           break
   self.platform.requestRender()
 
-proc openPreviousEditor*(self: LayoutService) {.expose("layout").} =
+proc openPrevView*(self: LayoutService) {.expose("layout").} =
   if self.focusHistory.len == 0:
     return
 
@@ -783,7 +807,7 @@ proc openPreviousEditor*(self: LayoutService) {.expose("layout").} =
     self.showView(viewId, addToHistory = false)
     break
 
-proc openNextEditor*(self: LayoutService) {.expose("layout").} =
+proc openNextView*(self: LayoutService) {.expose("layout").} =
   if self.focusHistory.len == 0:
     return
 
@@ -805,7 +829,7 @@ proc openNextEditor*(self: LayoutService) {.expose("layout").} =
     self.showView(viewId, addToHistory = false)
     break
 
-proc openLastEditor*(self: LayoutService) {.expose("layout").} =
+proc openLastView*(self: LayoutService) {.expose("layout").} =
   if self.viewHistory.len == 0:
     return
 
@@ -819,14 +843,14 @@ proc openLastEditor*(self: LayoutService) {.expose("layout").} =
   self.showView(view, slot)
   self.platform.requestRender()
 
-proc setActiveIndex*(self: LayoutService, slot: string, index: int) {.expose("layout").} =
+proc setActiveViewIndex*(self: LayoutService, slot: string, index: int) {.expose("layout").} =
   let view = self.layout.getView(slot)
   if view != nil and view of Layout:
     let layout = view.Layout
     layout.activeIndex = index.clamp(0, layout.children.high)
   self.platform.requestRender()
 
-proc moveCurrentViewToTop*(self: LayoutService) {.expose("layout").} =
+proc moveActiveViewFirst*(self: LayoutService) {.expose("layout").} =
   let layout = self.layout.activeLeafLayout()
   let currentView = layout.activeLeafView()
   let firstView = if layout.children.len > 0: layout.children[0] else: nil
@@ -838,7 +862,7 @@ proc moveCurrentViewToTop*(self: LayoutService) {.expose("layout").} =
     self.platform.requestRender()
   self.platform.requestRender()
 
-proc moveCurrentViewPrev*(self: LayoutService) {.expose("layout").} =
+proc moveActiveViewPrev*(self: LayoutService) {.expose("layout").} =
   let layout = self.layout.activeLeafLayout()
   let currentView = layout.activeLeafView()
   let prevView = layout.tryGetPrevView()
@@ -849,7 +873,7 @@ proc moveCurrentViewPrev*(self: LayoutService) {.expose("layout").} =
     discard layout.addView(currentView, prevSlot)
     self.platform.requestRender()
 
-proc moveCurrentViewNext*(self: LayoutService) {.expose("layout").} =
+proc moveActiveViewNext*(self: LayoutService) {.expose("layout").} =
   let layout = self.layout.activeLeafLayout()
   let currentView = layout.activeLeafView()
   let nextView = layout.tryGetNextView()
@@ -860,7 +884,7 @@ proc moveCurrentViewNext*(self: LayoutService) {.expose("layout").} =
     discard layout.addView(currentView, nextSlot)
     self.platform.requestRender()
 
-proc moveCurrentViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
+proc moveActiveViewNextAndGoBack*(self: LayoutService) {.expose("layout").} =
   if self.viewHistory.len == 0:
     return
 

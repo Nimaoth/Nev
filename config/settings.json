@@ -807,7 +807,6 @@
 
     "ui.layout": {
         "default": {
-            "default-slot": "#default",
             "slots.default": ".center.*+?",
             "slots.scratch-terminal": ".bottom.+",
             "slots.build-run-terminal": ".left",
@@ -823,8 +822,7 @@
                 }
             },
         },
-        "split-tabs": {
-            "default-slot": "#default",
+        "splits-in-tabs": {
             "slots.default": ".+",
             "slots.scratch-terminal": ".+",
             "slots.build-run-terminal": ".+",
@@ -834,7 +832,6 @@
             },
         },
         "tabbed-splits": {
-            "default-slot": "#default",
             "slots.default": ".+",
             "slots.scratch-terminal": "1.+",
             "slots.build-run-terminal": "1.+",
@@ -844,7 +841,6 @@
             },
         },
         "vscode": {
-            "default-slot": "#default",
             "slots.default": "center.*.+",
             "slots.scratch-terminal": "bottom.+",
             "slots.build-run-terminal": "left.+",
@@ -866,5 +862,4 @@
             },
         },
     },
-    "ui.default-slot": "#default",
 }

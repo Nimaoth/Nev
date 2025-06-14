@@ -272,8 +272,8 @@ proc setupDefaultKeybindings(self: App) =
 
   editorConfig.addCommand("", "<C-x><C-x>", "quit")
   editorConfig.addCommand("", "<CAS-r>", "reload-plugin")
-  editorConfig.addCommand("", "<C-w><LEFT>", "prev-view")
-  editorConfig.addCommand("", "<C-w><RIGHT>", "next-view")
+  editorConfig.addCommand("", "<C-w><LEFT>", "focus-prev-view")
+  editorConfig.addCommand("", "<C-w><RIGHT>", "focus-next-view")
   editorConfig.addCommand("", "<C-w><C-x>", "close-current-view true")
   editorConfig.addCommand("", "<C-w><C-X>", "close-current-view false")
   editorConfig.addCommand("", "<C-s>", "write-file")
@@ -1276,10 +1276,10 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
   self.platform.requestRender(true)
 
-proc logs*(self: App, scrollToBottom: bool = false) {.expose("editor").} =
+proc logs*(self: App, slot: string = "", focus: bool = true, scrollToBottom: bool = false) {.expose("editor").} =
   let editors = self.editors.getEditorsForDocument(self.logDocument)
   let editor = if editors.len > 0:
-    self.layout.showEditor(editors[0].id)
+    self.layout.showEditor(editors[0].id, slot = slot, focus = focus)
     editors[0]
   else:
     self.layout.createAndAddView(self.logDocument).get

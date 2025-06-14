@@ -503,18 +503,19 @@ proc handleInputEvents(state: var ThreadState) =
         state.dirty = true
 
       of InputEventKind.Size:
-        state.width = event.col
-        state.height = event.row
-        state.vterm.setSize(state.height.cint, state.width.cint)
-        state.screen.flushDamage()
+        if event.col != 0 and event.row != 0:
+          state.width = event.col
+          state.height = event.row
+          state.vterm.setSize(state.height.cint, state.width.cint)
+          state.screen.flushDamage()
 
-        when defined(windows):
-          ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
-        else:
-          var winp: IOctl_WinSize = IOctl_WinSize(ws_row: state.height.cushort, ws_col: state.width.cushort, ws_xpixel: 500.cushort, ws_ypixel: 500.cushort)
-          discard termios.ioctl(state.handles.masterFd, TIOCSWINSZ, winp.addr)
+          when defined(windows):
+            ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
+          else:
+            var winp: IOctl_WinSize = IOctl_WinSize(ws_row: state.height.cushort, ws_col: state.width.cushort, ws_xpixel: 500.cushort, ws_ypixel: 500.cushort)
+            discard termios.ioctl(state.handles.masterFd, TIOCSWINSZ, winp.addr)
 
-        state.dirty = true
+          state.dirty = true
 
       of InputEventKind.Terminate:
         state.terminateRequested = true

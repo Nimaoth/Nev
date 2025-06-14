@@ -175,7 +175,7 @@ method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[Overlay
       else:
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
-method createUI*(self: MainLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: CenterLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
 
   var rects: array[5, Rect]

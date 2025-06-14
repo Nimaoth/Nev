@@ -309,12 +309,16 @@ proc toggleStatusBarLocation*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_logs_void_App_bool_wasm(arg: cstring): cstring {.importc.}
-proc logs*(scrollToBottom: bool = false) {.gcsafe, raises: [].} =
+proc editor_logs_void_App_string_bool_bool_wasm(arg: cstring): cstring {.importc.}
+proc logs*(slot: string = ""; focus: bool = true; scrollToBottom: bool = false) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
+  argsJson.add focus.toJson()
   argsJson.add scrollToBottom.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_logs_void_App_bool_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_logs_void_App_string_bool_bool_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_toggleConsoleLogger_void_App_wasm(arg: cstring): cstring {.importc.}

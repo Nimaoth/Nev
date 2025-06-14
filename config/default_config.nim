@@ -84,26 +84,26 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     addCommand "editor", "3", "set-layout", "fibonacci"
     addCommand "editor", "v", "create-view"
     addCommand "editor", "x", "close-current-view", keepHidden=true
-    addCommand "editor", "h", "prev-view"
-    addCommand "editor", "l", "next-view"
-    addCommand "editor", "N", "move-current-view-prev"
-    addCommand "editor", "H", "move-current-view-prev"
-    addCommand "editor", "T", "move-current-view-next"
-    addCommand "editor", "L", "move-current-view-next"
-    addCommand "editor", "r", "move-current-view-to-top"
-    addCommand "editor", "z", "open-previous-editor"
-    addCommand "editor", "y", "open-next-editor"
+    addCommand "editor", "h", "focus-prev-view"
+    addCommand "editor", "l", "focus-next-view"
+    addCommand "editor", "N", "move-active-view-prev"
+    addCommand "editor", "H", "move-active-view-prev"
+    addCommand "editor", "T", "move-active-view-next"
+    addCommand "editor", "L", "move-active-view-next"
+    addCommand "editor", "r", "move-active-view-first"
+    addCommand "editor", "z", "open-prev-view"
+    addCommand "editor", "y", "open-next-view"
     addCommand "editor", "s", "split-view"
 
   if getBackend() != Terminal:
     addCommand "editor", "<CA-v>", "create-view"
     addCommand "editor", "<CA-x>", "close-current-view", true
     addCommand "editor", "<CA-X>", "close-current-view", false
-    addCommand "editor", "<CS-n>", "move-current-view-prev"
-    addCommand "editor", "<CS-t>", "move-current-view-next"
-    addCommand "editor", "<CA-r>", "move-current-view-to-top"
-    addCommand "editor", "<CA-h>", "open-previous-editor"
-    addCommand "editor", "<CA-f>", "open-next-editor"
+    addCommand "editor", "<CS-n>", "move-active-view-prev"
+    addCommand "editor", "<CS-t>", "move-active-view-next"
+    addCommand "editor", "<CA-r>", "move-active-view-first"
+    addCommand "editor", "<CA-h>", "open-prev-view"
+    addCommand "editor", "<CA-f>", "open-next-view"
 
   addCommand "editor", "<C-s>", "write-file"
   addCommand "editor", "<CS-r>", "load-file"
@@ -129,10 +129,9 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommand "editor", "<LEADER>gk", "browse-keybinds"
   addCommand "editor", "<LEADER>gi", "browse-settings"
-  addCommand "editor", "<LEADER>gn", "open-last-editor"
+  addCommand "editor", "<LEADER>gn", "open-last-view"
   addCommandBlockDesc "editor", "<LEADER>log", "Show log file":
-    logs(scrollToBottom = true)
-    nextView()
+    logs(slot = "#default", focus = false, scrollToBottom = true)
 
   addCommand "editor", "<LEADER>fl", "load-file"
   addCommand "editor", "<LEADER>fs", "write-file"

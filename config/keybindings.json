@@ -52,8 +52,6 @@
         "p": "paste-terminal",
     },
     "terminal": {
-        "<CS-LEFT>": "prev-view",
-        "<CS-RIGHT>": "next-view",
         "<CS-UP>": "scroll-terminal 2",
         "<CS-DOWN>": "scroll-terminal -2",
         "<CS-PAGE_UP>": "scroll-terminal 50",
