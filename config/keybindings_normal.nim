@@ -303,7 +303,7 @@ proc loadVSCodeKeybindings*() {.expose("load-vscode-keybindings").} =
     editor.scrollToCursor Last
     editor.updateTargetColumn()
 
-  addTextCommand "", "<A-LEFT>", "open-previous-editor" # todo: jump list
+  addTextCommand "", "<A-LEFT>", "open-prev-view" # todo: jump list
   addTextCommand "", "<A-RIGHT>", "select-next" # todo: jump list
   addTextCommand "", "<C-u>", "select-prev" # todo: jump list
 

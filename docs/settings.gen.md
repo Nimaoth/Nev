@@ -63,6 +63,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.indent-detection.timeout` | int | 20 | Max number of milliseconds to spend trying to detect the indent style. |
 | `text.line-comment` | string \| null | null | String which starts a line comment |
 | `text.scroll-to-change-on-reload` | "first" \| "last" \| null | null | If not null then scroll to the changed region when a file is reloaded. |
+| `text.scroll-to-end-on-insert` | bool | false | If true then scroll to the end of the file when text is inserted at the end and the cursor is already at the end. |
 | `text.search-regexes.goto-declaration` | regex \| null | null | Regex to use when using the goto-declaration feature. |
 | `text.search-regexes.goto-definition` | regex \| null | null | Regex to use when using the goto-definition feature. |
 | `text.search-regexes.goto-implementation` | regex \| null | null | Regex to use when using the goto-implementation feature. |
@@ -94,6 +95,7 @@ For examples and default values see [here](../config/settings.json)
 | `ui.background.transparent` | bool | false | If true the background is transparent. |
 | `ui.cursor-trail-length` | int | 2 | How long the cursor trail is. Set to 0 to disable cursor trail. |
 | `ui.cursor-trail-speed` | float | 100.0 | How fast to interpolate the cursor trail position when moving the cursor. Higher means faster. |
+| `ui.hide-tab-bar-when-single` | bool | false | When true then tab layouts don't render a tab bar when they only have one tab. |
 | `ui.indent-guide` | bool | true | Enable indent guides to show the indentation of the current line. |
 | `ui.line-numbers` | "none" \| "absolute" \| "relative" | "absolute" | How line numbers should be displayed. |
 | `ui.max-views` | int | 2 | Maximum number of views (files or other UIs) which can be shown. |
@@ -102,6 +104,7 @@ For examples and default values see [here](../config/settings.json)
 | `ui.smooth-scroll-snap-threshold` | float | 0.5 | Percentage of screen height at which the smooth scroll offset will be snapped to the target location. E.g. if this is 0.5, then if the smooth scroll offset if further from the target scroll offset than 50% of the screen height then the smooth scroll offset will instantly jump to the target scroll offset (-50% of the screen height). This means that the smooth scrolling will not take time proportional to the scroll distance for jumps bigger than the screen height. |
 | `ui.smooth-scroll-speed` | float | 15.0 | How fast smooth scrolling interpolates. |
 | `ui.syntax-highlighting` | bool | true | Enable syntax highlighting. |
+| `ui.tab-header-width` | int | 30 | Width of tab layout headers in characters |
 | `ui.theme` | string | "app://themes/tokyo-night-color-theme.json" | VFS path of the theme. |
 | `ui.toast-duration` | int | 8000 | How long toasts are displayed for, in milliseconds. |
 | `ui.which-key-delay` | int | 250 | After how many milliseconds the which key window opens. |

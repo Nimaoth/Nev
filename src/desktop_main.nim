@@ -67,6 +67,7 @@ Options:
   -c, --no-config        Don't load json config files.
   -s, --session          Load a specific session.
   -e, --restore-session  Load the last session which was opened.
+  --skip-user            Don't load config files or keybindings from the user home directory.
   --attach               Open the passed files in an existing instance if it already exists.
   --clean                Don't load any configs/sessions/plugins
   --ts-mem-tracking      Enable treesitter memory tracking (for debugging)
@@ -141,6 +142,9 @@ block: ## Parse command line options
         opts.dontRestoreConfig = true
         opts.disableNimScriptPlugins = true
         opts.disableWasmPlugins = true
+
+      of "skip-user":
+        opts.skipUserSettings = true
 
       of "no-attach":
         attach = false.some

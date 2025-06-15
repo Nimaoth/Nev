@@ -82,12 +82,13 @@ proc nextStackFrame*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc debugger_openFileForCurrentFrame_void_Debugger_wasm(arg: cstring): cstring {.
+proc debugger_openFileForCurrentFrame_void_Debugger_string_wasm(arg: cstring): cstring {.
     importc.}
-proc openFileForCurrentFrame*() {.gcsafe, raises: [].} =
+proc openFileForCurrentFrame*(slot: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = debugger_openFileForCurrentFrame_void_Debugger_wasm(
+  let res {.used.} = debugger_openFileForCurrentFrame_void_Debugger_string_wasm(
       argsJsonString.cstring)
 
 

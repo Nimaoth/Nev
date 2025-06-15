@@ -66,10 +66,7 @@ type EditorState = object
   fontItalic: string
   fontBoldItalic: string
   fallbackFonts: seq[string]
-  layout: string
   workspaceFolder: OpenWorkspace
-  openEditors: seq[OpenEditor]
-  hiddenEditors: seq[OpenEditor]
   commandHistory: seq[string]
 
   astProjectWorkspaceId: string
@@ -164,6 +161,8 @@ proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
 proc defaultHandleCommand*(self: App, command: string): Option[string]
+proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
+proc runLateCommandsFromAppOptions(self: App)
 
 implTrait AppInterface, App:
   getActiveEditor(Option[DocumentEditor], App)
@@ -271,8 +270,8 @@ proc setupDefaultKeybindings(self: App) =
 
   editorConfig.addCommand("", "<C-x><C-x>", "quit")
   editorConfig.addCommand("", "<CAS-r>", "reload-plugin")
-  editorConfig.addCommand("", "<C-w><LEFT>", "prev-view")
-  editorConfig.addCommand("", "<C-w><RIGHT>", "next-view")
+  editorConfig.addCommand("", "<C-w><LEFT>", "focus-prev-view")
+  editorConfig.addCommand("", "<C-w><RIGHT>", "focus-next-view")
   editorConfig.addCommand("", "<C-w><C-x>", "close-current-view true")
   editorConfig.addCommand("", "<C-w><C-X>", "close-current-view false")
   editorConfig.addCommand("", "<C-s>", "write-file")
@@ -357,41 +356,68 @@ proc addSessionToRecentSessions(self: App, session: string) {.async.} =
   except:
     log lvlError, &"Failed to update recent sessions: {getCurrentExceptionMsg()}"
 
-proc restoreStateFromConfig*(self: App, state: ptr EditorState) {.async: (raises: []).} =
+proc loadSession*(self: App) {.async: (raises: []).} =
   try:
     if self.generalSettings.keepSessionHistory.get():
       await self.addSessionToRecentSessions(self.sessionFile)
 
     let stateJson = self.vfs.read(self.sessionFile).await.parseJson
-
-    state[] = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+    var state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
 
     if stateJson.hasKey("workspaceFolders"):
       try:
         log lvlError, &"Old session file found"
-        state[].workspaceFolder = stateJson["workspaceFolders"][0].jsonTo(OpenWorkspace, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+        state.workspaceFolder = stateJson["workspaceFolders"][0].jsonTo(OpenWorkspace, JOptions(allowMissingKeys: true, allowExtraKeys: true))
       except:
         discard
 
     log(lvlInfo, fmt"Restoring session {self.sessionFile}")
 
-    if not state[].layout.isEmptyOrWhitespace:
-      self.layout.setLayout(state[].layout)
-
-    let fontSize = max(state[].fontSize.float, 10.0)
+    let fontSize = max(state.fontSize.float, 10.0)
     self.loadedFontSize = fontSize
     self.platform.fontSize = fontSize
-    self.loadedLineDistance = state[].lineDistance.float
-    self.platform.lineDistance = state[].lineDistance.float
-    if state[].fontRegular.len > 0: self.fontRegular = state[].fontRegular
-    if state[].fontBold.len > 0: self.fontBold = state[].fontBold
-    if state[].fontItalic.len > 0: self.fontItalic = state[].fontItalic
-    if state[].fontBoldItalic.len > 0: self.fontBoldItalic = state[].fontBoldItalic
-    if state[].fallbackFonts.len > 0: self.fallbackFonts = state[].fallbackFonts
-
+    self.loadedLineDistance = state.lineDistance.float
+    self.platform.lineDistance = state.lineDistance.float
+    if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
+    if state.fontBold.len > 0: self.fontBold = state.fontBold
+    if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
+    if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
+    if state.fallbackFonts.len > 0: self.fallbackFonts = state.fallbackFonts
     self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
 
-    self.session.restoreSession(state[].sessionData)
+    self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
+
+    log(lvlInfo, fmt"Restoring workspace")
+    if state.workspaceFolder.settings != nil:
+      self.workspace.restore(state.workspaceFolder.settings)
+      self.config.groups.add(workspaceConfigDir)
+      await self.loadConfigFrom(workspaceConfigDir, "workspace")
+
+    # Open current working dir as local workspace if no workspace exists yet
+    if self.workspace.path == "":
+      log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+      self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
+      self.config.groups.add(workspaceConfigDir)
+      await self.loadConfigFrom(workspaceConfigDir, "workspace")
+
+    # Restore open editors
+    if self.appOptions.fileToOpen.getSome(filePath):
+      try:
+        let path = os.absolutePath(filePath).normalizePathUnix
+        if self.vfs.getFileKind(path).await.getSome(kind):
+          if kind == FileKind.File:
+            discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+      except CatchableError as e:
+        log lvlError, &"Failed to open file '{filePath}': {e.msg}"
+
+    self.session.restoreSession(state.sessionData)
+
+    # if self.layout.hiddenViews.len > 0:
+    #   self.layout.addView self.layout.hiddenViews.pop
+    # else:
+    #   self.help()
+
+    log lvlInfo, &"Finished loading session"
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
@@ -688,8 +714,6 @@ proc runLateCommandsFromAppOptions(self: App) =
     let res = self.handleAction(action, args, record=false)
     log lvlInfo, &"'{command}' -> {res}"
 
-proc finishInitialization*(self: App, state: EditorState): Future[void]
-
 proc newApp*(backend: api.Backend, platform: Platform, services: Services, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
@@ -761,6 +785,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.themes.setTheme(defaultTheme())
 
   self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
+  EditorSettings.new(self.logDocument.TextDocument.config).saveInSession.set(false)
   self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 
@@ -835,7 +860,55 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     onInput:
       Ignored
 
-  var state = EditorState()
+  let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
+  self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
+    self.closeUnusedDocuments()
+
+  let showNextPossibleInputsDelay = self.uiSettings.whichKeyDelay.get()
+  self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
+    self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
+    self.platform.requestRender()
+
+  self.runEarlyCommandsFromAppOptions()
+  self.runConfigCommands("startup-commands")
+
+  await self.setTheme(self.uiSettings.theme.get())
+
+  if self.generalSettings.watchTheme.get():
+    discard self.vfs.watch("app://themes", proc(events: seq[PathEvent]) =
+      for e in events:
+        case e.action
+        of Modify:
+          if "app://themes" // e.name == self.themes.theme.path:
+            asyncSpawn self.setTheme(self.themes.theme.path, force = true)
+
+        else:
+          discard
+    )
+
+  if self.generalSettings.watchAppConfig.get():
+    discard self.vfs.watch(appConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
+    )
+
+  if not self.appOptions.skipUserSettings and self.generalSettings.watchUserConfig.get():
+    discard self.vfs.watch(homeConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
+    )
+
+  # todo: does this work if the workspaceConfigDir only gets mounted later?
+  if self.generalSettings.watchWorkspaceConfig.get():
+    discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
+      let changedFiles = events.mapIt(it.name)
+      asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
+    )
+
+  discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
+    if key == "" or key == "ui" or key == "ui.theme":
+      self.reloadThemeFromConfig = true
+
   if not options.dontRestoreConfig:
     if options.sessionOverride.getSome(session):
       self.sessionFile = os.absolutePath(session).normalizePathUnix
@@ -863,129 +936,56 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       self.sessionFile = os.absolutePath(defaultSessionName).normalizePathUnix
 
     if self.sessionFile != "":
-      await self.restoreStateFromConfig(state.addr)
+      asyncSpawn self.loadSession()
     else:
       log lvlInfo, &"Don't restore session file."
 
-  self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory = state.commandHistory
+      # Open current working dir as local workspace if no workspace exists yet
+      if self.workspace.path == "":
+        log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+        self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
+        self.config.groups.add(workspaceConfigDir)
+        await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-  let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
-  self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
-    self.closeUnusedDocuments()
+      if self.appOptions.fileToOpen.getSome(filePath):
+        try:
+          let path = os.absolutePath(filePath).normalizePathUnix
+          if self.vfs.getFileKind(path).await.getSome(kind):
+            if kind == FileKind.File:
+              discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+        except CatchableError as e:
+          log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
-  let showNextPossibleInputsDelay = self.uiSettings.whichKeyDelay.get()
-  self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
-    self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
-    self.platform.requestRender()
+  else:
+    # Open current working dir as local workspace if no workspace exists yet
+    if self.workspace.path == "":
+      log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+      self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
+      self.config.groups.add(workspaceConfigDir)
+      await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
-  self.runEarlyCommandsFromAppOptions()
-  self.runConfigCommands("startup-commands")
+    if self.appOptions.fileToOpen.getSome(filePath):
+      try:
+        let path = os.absolutePath(filePath).normalizePathUnix
+        if self.vfs.getFileKind(path).await.getSome(kind):
+          if kind == FileKind.File:
+            discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+      except CatchableError as e:
+        log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
   # if self.runtime.get("command-server.port", Port.none).getSome(port):
   #   asyncSpawn self.listenForConnection(port)
 
-  log(lvlInfo, fmt"Restoring workspace")
-  if state.workspaceFolder.settings != nil:
-    self.workspace.restore(state.workspaceFolder.settings)
-    self.config.groups.add(workspaceConfigDir)
-    await self.loadConfigFrom(workspaceConfigDir, "workspace")
+  # todo
+  # asyncSpawn self.listenForIpc(0)
+  # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
 
-  # Open current working dir as local workspace if no workspace exists yet
-  if self.workspace.path == "":
-    log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
-    self.workspace.addWorkspaceFolder(getCurrentDir().normalizePathUnix)
-    self.config.groups.add(workspaceConfigDir)
-    await self.loadConfigFrom(workspaceConfigDir, "workspace")
-
-  await self.setTheme(self.uiSettings.theme.get())
-
-  if self.generalSettings.watchTheme.get():
-    discard self.vfs.watch("app://themes", proc(events: seq[PathEvent]) =
-      for e in events:
-        case e.action
-        of Modify:
-          if "app://themes" // e.name == self.themes.theme.path:
-            asyncSpawn self.setTheme(self.themes.theme.path, force = true)
-
-        else:
-          discard
-    )
-
-  if self.generalSettings.watchAppConfig.get():
-    discard self.vfs.watch(appConfigDir, proc(events: seq[PathEvent]) =
-      let changedFiles = events.mapIt(it.name)
-      asyncSpawn self.loadConfigFrom(appConfigDir, "app", changedFiles)
-    )
-
-  if self.generalSettings.watchUserConfig.get():
-    discard self.vfs.watch(homeConfigDir, proc(events: seq[PathEvent]) =
-      let changedFiles = events.mapIt(it.name)
-      asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
-    )
-
-  if self.generalSettings.watchWorkspaceConfig.get():
-    discard self.vfs.watch(workspaceConfigDir, proc(events: seq[PathEvent]) =
-      let changedFiles = events.mapIt(it.name)
-      asyncSpawn self.loadConfigFrom(workspaceConfigDir, "workspace", changedFiles)
-    )
-
-  discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
-    if key == "" or key == "ui" or key == "ui.theme":
-      self.reloadThemeFromConfig = true
-
-  asyncSpawn self.finishInitialization(state)
+  asyncSpawn self.initScripting(self.appOptions)
+  self.runLateCommandsFromAppOptions()
 
   log lvlInfo, &"Finished creating app"
 
   return self
-
-proc finishInitialization*(self: App, state: EditorState) {.async.} =
-  await sleepAsync(1.milliseconds)
-
-  # Restore open editors
-  if self.appOptions.fileToOpen.getSome(filePath):
-    try:
-      let path = os.absolutePath(filePath).normalizePathUnix
-      if self.vfs.getFileKind(path).await.getSome(kind):
-        if kind == FileKind.File:
-          discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
-    except CatchableError as e:
-      log lvlError, &"Failed to open file '{filePath}': {e.msg}"
-
-  else:
-    for editorState in state.openEditors:
-      let view = self.layout.createView(editorState.filename)
-      if view.isNil:
-        continue
-
-      self.layout.addView(view, append=true)
-      if editorState.customOptions.isNotNil and view of EditorView:
-        view.EditorView.editor.restoreStateJson(editorState.customOptions)
-
-    for editorState in state.hiddenEditors:
-      let view = self.layout.createView(editorState.filename)
-      if view.isNil:
-        continue
-
-      self.layout.hiddenViews.add view
-      if editorState.customOptions.isNotNil and view of EditorView:
-        view.EditorView.editor.restoreStateJson(editorState.customOptions)
-
-  if self.layout.views.len == 0:
-    if self.layout.hiddenViews.len > 0:
-      self.layout.addView self.layout.hiddenViews.pop
-    else:
-      self.help()
-
-  asyncSpawn self.initScripting(self.appOptions)
-
-  self.runLateCommandsFromAppOptions()
-
-  log lvlInfo, &"Finished initializing app"
-
-  # todo
-  # asyncSpawn self.listenForIpc(0)
-  # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
 
 proc saveAppState*(self: App)
 proc printStatistics*(self: App)
@@ -1022,11 +1022,6 @@ proc shutdown*(self: App) =
 proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
   if self.logDocument.isNotNil:
-    for view in self.layout.views:
-      if view of EditorView and view.EditorView.document == self.logDocument:
-        let editor = view.EditorView.editor.TextDocumentEditor
-        editor.bScrollToEndOnInsert = true
-
     let selection = self.logDocument.TextDocument.lastCursor.toSelection
     discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
     self.logBuffer = ""
@@ -1051,9 +1046,9 @@ proc reapplyConfigKeybindingsAsync(self: App, app: bool = false, home: bool = fa
   log lvlInfo, &"reapplyConfigKeybindingsAsync app={app}, home={home}, workspace={workspace}"
   if app:
     await self.loadKeybindings(appConfigDir, loadConfigFileFrom)
-  if home:
+  if not self.appOptions.skipUserSettings and home:
     await self.loadKeybindings(homeConfigDir, loadConfigFileFrom)
-  if workspace:
+  if workspace and self.workspace.path != "":
     await self.loadKeybindings(workspaceConfigDir, loadConfigFileFrom)
 
 proc reapplyConfigKeybindings*(self: App, app: bool = false, home: bool = false, workspace: bool = false, wait: bool = false)
@@ -1082,18 +1077,9 @@ proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("ed
   when defined(debugAsyncAwaitMacro):
     debugPrintAsyncAwaitStackTrace = enable
 
-proc showDebuggerView*(self: App) {.expose("editor").} =
-  for view in self.layout.views:
-    if view of DebuggerView:
-      return
-
-  for i, view in self.layout.hiddenViews:
-    if view of DebuggerView:
-      self.layout.hiddenViews.delete i
-      self.layout.addView(view, false)
-      return
-
-  self.layout.addView(DebuggerView(), false)
+proc showDebuggerView*(self: App, slot: string = "") {.expose("editor").} =
+  # todo: reuse existing
+  self.layout.addView(DebuggerView(), slot)
 
 proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
   if self.layout.popups.len == 0:
@@ -1130,10 +1116,7 @@ proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 
 proc saveAppState*(self: App) {.expose("editor").} =
-  # Save some state
   var state = EditorState()
-
-  # todo: save ast project state
 
   if self.backend == api.Backend.Terminal:
     state.fontSize = self.loadedFontSize
@@ -1149,63 +1132,16 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fallbackFonts = self.fallbackFonts
 
   state.commandHistory = self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory
-  state.sessionData = self.session.sessionData
+  state.sessionData = self.session.saveSession()
 
   if getDebugger().getSome(debugger):
     state.debuggerState = debugger.getStateJson().some
-
-  # todo
-  # if self.layout of HorizontalLayout:
-  #   state.layout = "horizontal"
-  # elif self.layout of VerticalLayout:
-  #   state.layout = "vertical"
-  # else:
-  #   state.layout = "fibonacci"
 
   # Save open workspace folders
   state.workspaceFolder = OpenWorkspace(
     name: self.workspace.name,
     settings: self.workspace.settings
   )
-
-  # Save open editors
-  proc getEditorState(view: EditorView): Option[OpenEditor] =
-    if view.document.filename == "":
-      return OpenEditor.none
-    if view.document of TextDocument and view.document.TextDocument.staged:
-      return OpenEditor.none
-    if view.document == self.logDocument:
-      return OpenEditor.none
-    if not view.editor.config.get("editor.save-in-session", true):
-      return OpenEditor.none
-
-    try:
-      let customOptions = view.editor.getStateJson()
-      if view.document of TextDocument:
-        let document = TextDocument(view.document)
-        return OpenEditor(
-          filename: document.filename, languageId: document.languageId, appFile: document.appFile,
-          customOptions: customOptions ?? newJObject()
-          ).some
-      else:
-        when enableAst:
-          if view.document of ModelDocument:
-            let document = ModelDocument(view.document)
-            return OpenEditor(
-              filename: document.filename, languageId: "am", appFile: document.appFile,
-              customOptions: customOptions ?? newJObject()
-              ).some
-    except CatchableError:
-      log lvlError, fmt"Failed to get editor state for {view.document.filename}: {getCurrentExceptionMsg()}"
-      return OpenEditor.none
-
-  for view in self.layout.views:
-    if view of EditorView and view.EditorView.getEditorState().getSome(editorState):
-      state.openEditors.add editorState
-
-  for view in self.layout.hiddenViews:
-    if view of EditorView and view.EditorView.getEditorState().getSome(editorState):
-      state.hiddenEditors.add editorState
 
   if self.sessionFile != "":
     try:
@@ -1297,10 +1233,10 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
   self.platform.requestRender(true)
 
-proc logs*(self: App, scrollToBottom: bool = false) {.expose("editor").} =
+proc logs*(self: App, slot: string = "", focus: bool = true, scrollToBottom: bool = false) {.expose("editor").} =
   let editors = self.editors.getEditorsForDocument(self.logDocument)
   let editor = if editors.len > 0:
-    self.layout.showEditor(editors[0].id)
+    self.layout.showEditor(editors[0].id, slot = slot, focus = focus)
     editors[0]
   else:
     self.layout.createAndAddView(self.logDocument).get
@@ -1584,11 +1520,11 @@ proc handleCachedFilesUpdated(self: WorkspaceFilesDataSource) =
 
   for i in 0..self.workspace.cachedFiles.high:
     let path = self.workspace.cachedFiles[i]
-    let relPath = self.workspace.getRelativePathSync(path).get(path)
+    let (root, relPath) = self.workspace.getRelativePathAndWorkspaceSync(path).get(("", path))
     let (dir, name) = relPath.splitPath
     list[i] = FinderItem(
       displayName: name,
-      detail: dir,
+      detail: root // dir,
       data: path,
     )
 
@@ -1626,7 +1562,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
         items.add(FinderItem(
           displayName: name,
-          filterText: commandInfo.command & " |" & keys,
+          filterText: name & " |" & keys,
           detail: keys & "\t" & context & "\t" & commandInfo.command & "\t" & commandInfo.source.filename,
           data: $ %*{
             "path": commandInfo.source.filename,
@@ -1939,6 +1875,15 @@ proc chooseFile*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     discard self.layout.openFile(item.data)
     return true
 
+  popup.addCustomCommand "open-in-slot", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    self.commands.openCommandLine "", "slot: ", proc(path: Option[string]): Option[string] =
+      if path.getSome(path):
+        discard self.layout.openFile(item.data, path)
+    return true
+
   self.layout.pushPopup popup
 
 proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: float = 0.8, previewScale: float = 0.6) {.expose("editor").} =
@@ -1947,29 +1892,42 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
     var items = newSeq[FinderItem]()
-    let allViews = self.layout.views & self.layout.hiddenViews
-    for i in countdown(allViews.high, 0):
-      if allViews[i] of EditorView:
-        let view = allViews[i].EditorView
+    var hiddenViews = self.layout.getHiddenViews()
+    let activeView = self.layout.layout.activeLeafView()
+
+    for i in countdown(hiddenViews.high, 0):
+      let v = hiddenViews[i]
+      if v of EditorView:
+        let view = v.EditorView
         let document = view.editor.getDocument
-        let path = document.filename
         let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
         let dirtyMarker = if isDirty: "*" else: " "
-        let activeMarker = if i == self.layout.currentView:
+        let (directory, name) = document.filename.splitPath
+        let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
+        items.add FinderItem(
+          displayName: dirtyMarker & name,
+          filterText: name,
+          data: $view.editor.id,
+          detail: root // relativeDirectory,
+        )
+
+    self.layout.layout.forEachView proc(v: View): bool =
+      if v of EditorView:
+        let view = v.EditorView
+        let document = view.editor.getDocument
+        let isDirty = not document.requiresLoad and document.lastSavedRevision != document.revision
+        let dirtyMarker = if isDirty: "*" else: " "
+        let activeMarker = if view.View == activeView:
           "#"
-        elif i < self.layout.views.len:
-          "👁"
         else:
-          " "
-
-        let (directory, name) = path.splitPath
-        let relativeDirectory = self.workspace.getRelativePathSync(directory).get(directory)
-
+          "👁"
+        let (directory, name) = document.filename.splitPath
+        let (root, relativeDirectory) = self.workspace.getRelativePathAndWorkspaceSync(directory).get(("", directory))
         items.add FinderItem(
           displayName: activeMarker & dirtyMarker & name,
           filterText: name,
           data: $view.editor.id,
-          detail: relativeDirectory,
+          detail: root // relativeDirectory,
         )
 
     return items
@@ -2579,30 +2537,6 @@ proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
   if self.layout.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
     self.exploreFiles(view.document.filename.splitPath.head)
 
-proc openPreviousEditor*(self: App) {.expose("editor").} =
-  if self.layout.editorHistory.len == 0:
-    return
-
-  let editor = self.layout.editorHistory.popLast
-
-  if self.layout.tryGetCurrentEditorView().getSome(view):
-    self.layout.editorHistory.addFirst view.editor.id
-
-  discard self.layout.tryOpenExisting(editor, addToHistory=false)
-  self.platform.requestRender()
-
-proc openNextEditor*(self: App) {.expose("editor").} =
-  if self.layout.editorHistory.len == 0:
-    return
-
-  let editor = self.layout.editorHistory.popFirst
-
-  if self.layout.tryGetCurrentEditorView().getSome(view):
-    self.layout.editorHistory.addLast view.editor.id
-
-  discard self.layout.tryOpenExisting(editor, addToHistory=false)
-  self.platform.requestRender()
-
 # todo: move to scripting_base
 proc reloadPluginAsync*(self: App) {.async.} =
   if self.wasmScriptContext.isNotNil:
@@ -2629,7 +2563,8 @@ proc reloadPluginAsync*(self: App) {.async.} =
 
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadConfigFrom(appConfigDir, "app")
-  await self.loadConfigFrom(homeConfigDir, "home")
+  if not self.appOptions.skipUserSettings:
+    await self.loadConfigFrom(homeConfigDir, "home")
   await self.loadConfigFrom(workspaceConfigDir, "workspace")
 
 proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
@@ -2646,17 +2581,6 @@ proc reloadPlugin*(self: App) {.expose("editor").} =
 proc reloadTheme*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload theme"
   asyncSpawn self.setTheme(self.themes.theme.path, force = true)
-
-proc reloadState*(self: App) {.expose("editor").} =
-  ## Reloads some of the state stored in the session file (default: config/config.json)
-  var state = EditorState()
-  if self.sessionFile != "":
-    try:
-      waitFor self.restoreStateFromConfig(state.addr)
-    except CatchableError as e:
-      log lvlError, &"Failed to reload state: {e.msg}\n{e.getStackTrace()}"
-
-  self.requestRender()
 
 proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
@@ -3128,7 +3052,7 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Script Actions: {self.plugins.scriptActions.len}\n"
 
       result.add &"Input History: {self.inputHistory}\n"
-      result.add &"Editor History: {self.layout.editorHistory}\n"
+      # result.add &"Editor History: {self.layout.editorHistory}\n"
 
       result.add &"Command History: {self.commands.languageServerCommandLine.LanguageServerCommandLine.commandHistory.len}\n"
       # for command in self.commandHistory:

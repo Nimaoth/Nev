@@ -206,6 +206,17 @@ proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string]
   except:
     return string.none
 
+proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]] =
+  try:
+    if absolutePath.startsWith(self.path):
+      return ("ws0://", absolutePath.relativePath(self.path, '/').normalizePathUnix).some
+
+    for i, path in self.additionalPaths:
+      if absolutePath.startsWith(path):
+        return (&"ws{i + 1}://", absolutePath.relativePath(path, '/').normalizePathUnix).some
+  except:
+    discard
+
 proc getRelativePath*(self: Workspace, absolutePath: string): Future[Option[string]] {.async.} =
   return self.getRelativePathSync(absolutePath)
 

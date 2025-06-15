@@ -3,6 +3,7 @@
 
     "+ui": {
         "theme": "app://themes/green.json",
+        "hide-tab-bar-when-single": true,
     },
 
     "+platform": {
@@ -181,7 +182,7 @@
         },
 
         "regex": {
-            "languages": [],
+            "languages": ["markdown"],
             "priority": -2,
         },
 
@@ -550,7 +551,13 @@
                 "treesitter.queries": "tree-sitter-markdown/queries",
                 "tab-width": 2,
                 "indent": "spaces",
-                "block-comment": [ "<!--", "-->" ]
+                "block-comment": [ "<!--", "-->" ],
+                "+search-regexes": {
+                    "symbols": "^#+.*",
+                    "workspace-symbols-by-kind": {
+                        "Function": "^#+.*",
+                    }
+                }
             }
         },
         "markdown_inline": {
@@ -657,7 +664,8 @@
         },
         "log": {
             "+text": {
-                "treesitter.repository": "Tudyx/tree-sitter-log"
+                "treesitter.repository": "Tudyx/tree-sitter-log",
+                "scroll-to-end-on-insert": true,
             }
         },
         "shell-command-results": {
@@ -802,5 +810,99 @@
         "env": "WEZTERM_EXECUTABLE",
         "command": "wezterm",
         "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
+    },
+
+    "ui.layout.default": "vim",
+    "ui.layout.vertical-temp": {
+        "kind": "vertical",
+        "temporary": true,
+        "max-children": 2
+    },
+    "ui.layout.horizontal-temp": {
+        "kind": "horizontal",
+        "temporary": true,
+        "max-children": 2
+    },
+    "ui.layout.tab-center-alternating": {
+        "slots.default": ".center.*+?",
+        "slots.scratch-terminal": ".bottom.+",
+        "slots.build-run-terminal": ".left",
+        "slots.new-tab": "+.center",
+        "kind": "tab",
+        "childTemplate": {
+            "kind": "center",
+            "center": {
+                "kind": "alternating",
+                "max-children": 2,
+            },
+            "bottom": {
+                "kind": "tab"
+            }
+        },
+    },
+    "ui.layout.splits-in-tabs": {
+        "slots.default": ".+",
+        "slots.scratch-terminal": ".+",
+        "slots.build-run-terminal": ".+",
+        "slots.new-tab": "+",
+        "kind": "tab",
+        "childTemplate": {
+            "kind": "alternating",
+        },
+    },
+    "ui.layout.tabbed-splits": {
+        "slots.default": ".+",
+        "slots.scratch-terminal": "1.+",
+        "slots.build-run-terminal": "1.+",
+        "slots.new-tab": "*.+",
+        "kind": "alternating",
+        "childTemplate": {
+            "kind": "tab",
+        },
+    },
+    "ui.layout.nev-old": {
+        "slots.default": "*+?",
+        "slots.scratch-terminal": "*+<>?",
+        "slots.build-run-terminal": "*+<>?",
+        "slots.new-tab": "#default",
+        "kind": "alternating",
+        "max-children": 2,
+    },
+    "ui.layout.raw-splits": {
+        "slots.default": "**.*",
+        "slots.scratch-terminal": "**.*<>",
+        "slots.build-run-terminal": "**.*<>",
+        "slots.new-tab": "#default",
+        "kind": "horizontal",
+        "max-children": 1,
+    },
+    "ui.layout.vim": {
+        "slots.default": "**.*",
+        "slots.scratch-terminal": "**.*<>",
+        "slots.build-run-terminal": "**.*<>",
+        "slots.new-tab": "+",
+        "kind": "tab",
+    },
+    "ui.layout.vscode": {
+        "slots.default": "center.*.+",
+        "slots.scratch-terminal": "bottom.+",
+        "slots.build-run-terminal": "left.+",
+        "slots.new-tab": "**.+",
+        "kind": "center",
+        "center": {
+            "kind": "alternating",
+            "childTemplate": {
+                "kind": "tab"
+            }
+        },
+        "bottom": {
+            "kind": "tab",
+        },
+        "left": {
+            "kind": "tab",
+        },
+        "right": {
+            "kind": "tab",
+        },
     },
 }
