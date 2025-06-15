@@ -973,8 +973,11 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
 
     if not self.isInitialized:
       return
+  except InvalidUtf8Error as e:
+    log lvlWarn, &"[loadAsync] Failed to load file {self.filename}: {e.msg}"
+    rope = Rope.new(e.msg)
   except IOError as e:
-    log lvlError, &"[loadAsync] Failed to load file {self.filename}: {e.msg}\n{e.getStackTrace()}"
+    log lvlError, &"[loadAsync] Failed to load file {self.filename}: {e.msg}"
     return
 
   self.onPreLoaded.invoke self
