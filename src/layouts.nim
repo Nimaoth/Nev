@@ -220,10 +220,23 @@ method kind*(self: TabLayout): string = "tab"
 
 method copy*(self: Layout): Layout {.base.} = assert(false)
 
+proc copyNonNilChildren(self: Layout, src: Layout): Layout =
+  self.children = collect:
+    for c in src.children:
+      if c != nil and c of Layout:
+        c.Layout.copy().View
+
+proc copyAllChildren(self: Layout, src: Layout): Layout =
+  self.children = collect:
+    for c in src.children:
+      if c != nil and c of Layout:
+        c.Layout.copy().View
+      else:
+        nil
+
 proc copyBase(self: Layout, src: Layout): Layout =
   if src.childTemplate != nil:
     self.childTemplate = src.childTemplate.copy()
-  self.children = src.children.mapIt(if it != nil: it.Layout.copy().View else: nil)
   self.activeIndex = src.activeIndex
   self.slots = src.slots
   self.maxChildren = src.maxChildren
@@ -235,19 +248,19 @@ method copy*(self: CenterLayout): Layout =
   CenterLayout(
     childTemplates: self.childTemplates.mapIt(if it != nil: it.copy() else: nil),
     splitRatios: self.splitRatios,
-  ).copyBase(self)
+  ).copyBase(self).copyAllChildren(self)
 
 method copy*(self: HorizontalLayout): Layout =
-  HorizontalLayout(splitRatios: self.splitRatios).copyBase(self)
+  HorizontalLayout(splitRatios: self.splitRatios).copyBase(self).copyNonNilChildren(self)
 
 method copy*(self: VerticalLayout): Layout =
-  VerticalLayout(splitRatios: self.splitRatios).copyBase(self)
+  VerticalLayout(splitRatios: self.splitRatios).copyBase(self).copyNonNilChildren(self)
 
 method copy*(self: AlternatingLayout): Layout =
-  AlternatingLayout(splitRatios: self.splitRatios).copyBase(self)
+  AlternatingLayout(splitRatios: self.splitRatios).copyBase(self).copyNonNilChildren(self)
 
 method copy*(self: TabLayout): Layout =
-  TabLayout().copyBase(self)
+  TabLayout().copyBase(self).copyNonNilChildren(self)
 
 method display*(self: View): string {.base.} = ""
 

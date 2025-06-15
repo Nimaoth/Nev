@@ -197,14 +197,16 @@ proc updateLayoutTree(self: LayoutService) =
         layoutReferences.add (key, value.getStr)
       else:
         let view = createLayout(value.toJson)
-        if view of Layout:
+        if view != nil and view of Layout:
           self.layouts[key] = view.Layout
         else:
           self.layouts[key] = AlternatingLayout(children: @[view])
 
     for (key, target) in layoutReferences:
       if target in self.layouts:
-        self.layouts[key] = self.layouts[target].copy()
+        let l = self.layouts[target].copy()
+        assert l != nil
+        self.layouts[key] = l
       else:
         log lvlError, &"Unknown layout '{target}' referenced by 'ui.layout.{key}'"
 
