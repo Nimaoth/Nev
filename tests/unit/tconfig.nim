@@ -1,10 +1,10 @@
-import std/[unittest, options, sequtils, strformat, strutils]
+import std/[unittest, options, sequtils, strformat, strutils, tables]
 import misc/[util, jsonex, timer, custom_logger]
 import config_provider
 
 logCategory "tconfig"
 
-var layer1 = ConfigStore.new(nil, "layer1", %%*{
+var layer1 = ConfigStore.new("layer1", "", nil, %%*{
   "a": 1,
   "b": 2,
   "c": %%*{
@@ -27,7 +27,7 @@ var layer1 = ConfigStore.new(nil, "layer1", %%*{
   },
 })
 
-var layer2 = ConfigStore.new(layer1, "layer2", %%*{
+var layer2 = ConfigStore.new("layer2", "", layer1, %%*{
   "a": 2,
   "c": %%*{
     "c": 5,
@@ -104,9 +104,8 @@ test(layer1, "a")
 test(layer2, "a")
 
 proc testSetting[T](setting: Setting[T]) =
-  echo &"--- testSetting {setting.store.desc}.{setting.key}, cache: {setting.cache}, layers: {setting.layers.mapIt((it.revision, it.kind, it.store.desc))}"
+  echo &"--- testSetting {setting.store.desc}.{setting.key}, cache: {setting.cache}"
   echo setting.get(nil)
-  echo &"new layers: {setting.layers.mapIt((it.revision, it.kind, it.store.desc))}"
 
 proc testSetting(key: string, changeLayer: ConfigStore, value: int, debug = false) =
   logSetting = debug
