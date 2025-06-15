@@ -225,6 +225,7 @@ proc copyNonNilChildren(self: Layout, src: Layout): Layout =
     for c in src.children:
       if c != nil and c of Layout:
         c.Layout.copy().View
+  return self
 
 proc copyAllChildren(self: Layout, src: Layout): Layout =
   self.children = collect:
@@ -233,6 +234,7 @@ proc copyAllChildren(self: Layout, src: Layout): Layout =
         c.Layout.copy().View
       else:
         nil
+  return self
 
 proc copyBase(self: Layout, src: Layout): Layout =
   if src.childTemplate != nil:
