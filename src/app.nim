@@ -1171,11 +1171,64 @@ proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("edit
 proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
   self.workspace.clearDirectoryCache()
 
+proc prompt(self: App, choices: seq[string], title: string = ""): Future[Option[string]] =
+  defer:
+    self.platform.requestRender()
+
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+    var items = newSeq[FinderItem]()
+    for choice in choices:
+      items.add FinderItem(
+        displayName: choice,
+      )
+
+    return items
+
+  let source = newSyncDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  var popup = newSelectorPopup(self.services, "prompt".some, finder.some, DisposableRef[Previewer].none)
+  popup.title = title
+  popup.scale.x = 0.5
+  popup.scale.y = 0.5
+
+  var fut = newFuture[Option[string]]("App.prompt")
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    fut.complete(item.displayName.some)
+    return true
+
+  popup.handleCanceled = proc() =
+    fut.complete(string.none)
+
+  self.layout.pushPopup popup
+
+  return fut
+
 proc quit*(self: App) {.expose("editor").} =
-  self.closeRequested = true
+  let unsavedChanges = self.layout.anyUnsavedChanges()
+  if self.generalSettings.promptBeforeQuit.get() or unsavedChanges:
+    var title = "Quit?"
+    if unsavedChanges:
+      title.add " (unsaved changes)"
+    self.prompt(@["Quit", "Cancel"], title).thenIt:
+      if it == "Quit".some:
+        self.closeRequested = true
+  else:
+    self.closeRequested = true
 
 proc quitImmediately*(self: App, exitCode: int = 0) {.expose("editor").} =
-  quit(exitCode)
+  let unsavedChanges = self.layout.anyUnsavedChanges()
+  if self.generalSettings.promptBeforeQuit.get() or unsavedChanges:
+    var title = "Quit?"
+    if unsavedChanges:
+      title.add " (unsaved changes)"
+    self.prompt(@["Quit", "Cancel"], title).thenIt:
+      if it == "Quit".some:
+        quit(exitCode)
+  else:
+    quit(exitCode)
 
 proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/getting_started.md"
