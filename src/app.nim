@@ -1562,7 +1562,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
 
         items.add(FinderItem(
           displayName: name,
-          filterText: commandInfo.command & " |" & keys,
+          filterText: name & " |" & keys,
           detail: keys & "\t" & context & "\t" & commandInfo.command & "\t" & commandInfo.source.filename,
           data: $ %*{
             "path": commandInfo.source.filename,

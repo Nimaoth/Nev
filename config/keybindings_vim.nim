@@ -1614,19 +1614,19 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
     editor.selections = editor.selections.mapIt(it.last.toSelection)
 
-  addTextCommandBlock "visual", "o":
+  addTextCommandBlockDesc "visual", "o", "Invert each selection":
     editor.selections = editor.selections.mapIt((it.last, it.first))
     editor.scrollToCursor Last
     editor.updateTargetColumn()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-  addTextCommandBlock "visual-line", "o":
+  addTextCommandBlockDesc "visual-line", "o", "Invert each selection":
     editor.selections = editor.selections.mapIt((it.last, it.first))
     editor.scrollToCursor Last
     editor.updateTargetColumn()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-  addTextCommandBlock "", "<C-g>o":
+  addTextCommandBlockDesc "", "<C-g>o", "Reverse selections":
     editor.selections = editor.selections.reversed()
     editor.scrollToCursor Last
     editor.updateTargetColumn()
