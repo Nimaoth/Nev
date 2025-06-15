@@ -328,8 +328,8 @@ You can specify parameters and forward parameters in aliases:
 ```json
 // settings.json
 {
-  "alias.q": "quit-immediately 1",
-  "alias.wq": ["write-file @0", "quit-immediately @1"],
+  "alias.q": "quit 1",
+  "alias.wq": ["write-file @0", "quit @1"],
   "alias.echo": [
     // the echo-args command just logs all arguments to the log file
     "echo-args @0 @1",
@@ -347,8 +347,8 @@ doesn't receive any arguments if you only pass two arguments to the alias, becau
 You can use the same indices for `@n` multiple times.
 
 Here are some examples of running these aliases and the commands that will be executed:
-- `q` -> `quit-immediately 1`
-- `wq "test.txt" 1` -> `write-file "test.txt"`, `quit-immediately 1`
+- `q` -> `quit 1`
+- `wq "test.txt" 1` -> `write-file "test.txt"`, `quit 1`
 - `echo "a" "b"` -> `echo-args "a" "b"`, `echo-args`, `echo-args "a" "b"`
 - `echo "a" "b" "c" "d"` -> `echo-args "a" "b"`, `echo-args "c" "d"`, `echo-args "a" "b" "c" "d"`
 
