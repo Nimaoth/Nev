@@ -7,7 +7,7 @@ import workspaces/workspace
 import finder/[finder, previewer, file_previewer]
 import platform/[platform]
 import service, dispatch_tables, platform_service
-import selector_popup, vcs, layout, vfs
+import selector_popup, vcs, layout, vfs, config_provider
 from scripting_api import SelectionCursor, ScrollSnapBehaviour
 
 logCategory "vcs_api"
@@ -141,6 +141,7 @@ proc diffStagedFileAsync(self: VCSService, workspace: Workspace, path: string): 
   let stagedDocument = newTextDocument(self.services, path, load = false, createLanguageServer = false)
   stagedDocument.staged = true
   stagedDocument.readOnly = true
+  EditorSettings.new(stagedDocument.config).saveInSession.set(false)
 
   let layout = self.services.getService(LayoutService).get
   if layout.createAndAddView(stagedDocument).getSome(editor):

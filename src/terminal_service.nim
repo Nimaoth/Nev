@@ -2,7 +2,7 @@ import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, js
 import vmath
 import chroma
 import nimsumtree/[rope]
-import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref]
+import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref, myjsonutils]
 import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
 import scripting/expose
 import platform/[tui, platform]
@@ -10,11 +10,16 @@ import finder/[finder, previewer]
 import vterm, input, input_api, register, command_service
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 
+from scripting_api import RunInTerminalOptions, CreateTerminalOptions
+
 from std/terminal import Style
 
 const bufferSize = 10 * 1024 * 1024
 
 logCategory "terminal-service"
+
+{.push gcsafe.}
+{.push raises: [].}
 
 when defined(windows):
   import winim/lean
@@ -31,7 +36,7 @@ when defined(windows):
   proc ResizePseudoConsole*(phPC: HPCON, size: wincon.COORD): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
 
 else:
-  import posix/posix
+  import posix/posix except Id
   import posix/termios
 
   {.passL: "-lutil".}
@@ -95,7 +100,7 @@ proc toVtermButton(button: input.MouseButton): cint =
   else: return 4
 
 when defined(windows):
-  proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX =
+  proc prepareStartupInformation*(hpc: HPCON): STARTUPINFOEX {.raises: [OSError].} =
     ZeroMemory(addr(result), sizeof((result)))
     result.StartupInfo.cb = sizeof((STARTUPINFOEX)).DWORD
 
@@ -261,6 +266,7 @@ type
     size*: tuple[width, height: int]
     terminal*: Terminal
     closeOnTerminate: bool
+    slot: string
     open: bool = true
 
   TerminalService* = ref object of Service
@@ -275,6 +281,8 @@ type
 
     terminals*: Table[int, TerminalView]
     activeView: TerminalView
+
+proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView
 
 proc createRope*(state: var ThreadState, scrollback: bool = true): Rope =
   var cell: VTermScreenCell
@@ -351,6 +359,11 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
       elif actualRow < 0:
         let scrollbackIndex = state.scrollbackBuffer.len + actualRow
         if scrollbackIndex < 0:
+          continue
+
+        assert scrollbackIndex < state.scrollbackBuffer.len
+
+        if col >= state.scrollbackBuffer[scrollbackIndex].len:
           continue
 
         cell = state.scrollbackBuffer[scrollbackIndex][col]
@@ -457,8 +470,8 @@ proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
 
 proc handleInputEvents(state: var ThreadState) =
   while state.inputChannel[].peek() > 0:
-    let event = state.inputChannel[].recv()
     try:
+      let event = state.inputChannel[].recv()
       case event.kind
       of InputEventKind.Text:
         for r in event.text.runes:
@@ -495,18 +508,19 @@ proc handleInputEvents(state: var ThreadState) =
         state.dirty = true
 
       of InputEventKind.Size:
-        state.width = event.col
-        state.height = event.row
-        state.vterm.setSize(state.height.cint, state.width.cint)
-        state.screen.flushDamage()
+        if event.col != 0 and event.row != 0:
+          state.width = event.col
+          state.height = event.row
+          state.vterm.setSize(state.height.cint, state.width.cint)
+          state.screen.flushDamage()
 
-        when defined(windows):
-          ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
-        else:
-          var winp: IOctl_WinSize = IOctl_WinSize(ws_row: state.height.cushort, ws_col: state.width.cushort, ws_xpixel: 500.cushort, ws_ypixel: 500.cushort)
-          discard termios.ioctl(state.handles.masterFd, TIOCSWINSZ, winp.addr)
+          when defined(windows):
+            ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
+          else:
+            var winp: IOctl_WinSize = IOctl_WinSize(ws_row: state.height.cushort, ws_col: state.width.cushort, ws_xpixel: 500.cushort, ws_ypixel: 500.cushort)
+            discard termios.ioctl(state.handles.masterFd, TIOCSWINSZ, winp.addr)
 
-        state.dirty = true
+          state.dirty = true
 
       of InputEventKind.Terminate:
         state.terminateRequested = true
@@ -527,7 +541,7 @@ proc handleInputEvents(state: var ThreadState) =
     except:
       echo &"Failed to send input: {getCurrentExceptionMsg()}"
 
-proc handleProcessOutput(state: var ThreadState, buffer: var string) =
+proc handleProcessOutput(state: var ThreadState, buffer: var string) {.raises: [OSError].} =
   when defined(windows):
     template handleData(data: untyped, bytesToWrite: int): untyped =
       let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
@@ -693,78 +707,83 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
 
   var buffer = ""
   var exitCode = int.none
-  while true:
-    when defined(windows):
-      var handles = [state.handles.inputWriteEvent, state.handles.outputReadEvent, state.handles.processInfo.hProcess]
-      let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
-      if res == WAIT_FAILED:
-        discard
-      elif res == WAIT_TIMEOUT:
-        discard
-      else:
-        if res >= WAIT_ABANDONED_0:
-          # let index = res - WAIT_ABANDONED_0
+
+  try:
+    while true:
+      when defined(windows):
+        var handles = [state.handles.inputWriteEvent, state.handles.outputReadEvent, state.handles.processInfo.hProcess]
+        let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
+        if res == WAIT_FAILED:
           discard
-        elif res >= WAIT_OBJECT_0:
-          let index = res - WAIT_OBJECT_0
-          assert index >= 0 and index < 3
+        elif res == WAIT_TIMEOUT:
+          discard
+        else:
+          if res >= WAIT_ABANDONED_0:
+            # let index = res - WAIT_ABANDONED_0
+            discard
+          elif res >= WAIT_OBJECT_0:
+            let index = res - WAIT_OBJECT_0
+            assert index >= 0 and index < 3
 
-          if index == 2:
-            # Process ended
-            var exitCodeC: DWORD = 0
-            discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCodeC.addr)
-            exitCode = exitCodeC.int.some
-            state.processTerminated = true
-            break
+            if index == 2:
+              # Process ended
+              var exitCodeC: DWORD = 0
+              discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCodeC.addr)
+              exitCode = exitCodeC.int.some
+              state.processTerminated = true
+              break
 
-      state.handleProcessOutput(buffer)
-      state.handleInputEvents()
-
-    else:
-      var fds = [
-        TPollfd(fd: state.handles.masterFd, events: POLLIN),
-        TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
-      ]
-
-      let res = poll(fds[0].addr, fds.len.Tnfds, -1)
-      if res < 0:
-        break
-
-      proc wifexited(status: cint): cint = {.emit: [result, " = WIFEXITED(", status, ");"].}
-      proc wexitstatus(status: cint): cint = {.emit: [result, " = WEXITSTATUS(", status, ");"].}
-
-      var status: cint
-      let waitRes = waitpid(state.handles.childPid, status, WNOHANG)
-      if waitRes == state.handles.childPid:
-        state.processTerminated = true
-        var exitCodeC: cint
-        if wifexited(status) != 0:
-          exitCodeC = wexitstatus(status)
-        exitCode = exitCodeC.int.some
-        break
-
-      if (fds[0].revents and POLLIN) != 0:
         state.handleProcessOutput(buffer)
-        if state.processTerminated:
+        state.handleInputEvents()
+
+      else:
+        var fds = [
+          TPollfd(fd: state.handles.masterFd, events: POLLIN),
+          TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
+        ]
+
+        let res = poll(fds[0].addr, fds.len.Tnfds, -1)
+        if res < 0:
+          break
+
+        proc wifexited(status: cint): cint = {.emit: [result, " = WIFEXITED(", status, ");"].}
+        proc wexitstatus(status: cint): cint = {.emit: [result, " = WEXITSTATUS(", status, ");"].}
+
+        var status: cint
+        let waitRes = waitpid(state.handles.childPid, status, WNOHANG)
+        if waitRes == state.handles.childPid:
+          state.processTerminated = true
           var exitCodeC: cint
           if wifexited(status) != 0:
             exitCodeC = wexitstatus(status)
           exitCode = exitCodeC.int.some
           break
 
-      if (fds[1].revents and POLLIN) != 0:
-        var b: uint64 = 0
-        discard read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
-        state.handleInputEvents()
+        if (fds[0].revents and POLLIN) != 0:
+          state.handleProcessOutput(buffer)
+          if state.processTerminated:
+            var exitCodeC: cint
+            if wifexited(status) != 0:
+              exitCodeC = wexitstatus(status)
+            exitCode = exitCodeC.int.some
+            break
 
-    if state.terminateRequested:
-      break
+        if (fds[1].revents and POLLIN) != 0:
+          var b: uint64 = 0
+          discard read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
+          state.handleInputEvents()
 
-    if state.dirty:
-      state.dirty = false
-      state.outputChannel[].send OutputEvent(
-        kind: OutputEventKind.TerminalBuffer,
-        buffer: state.createTerminalBuffer())
+      if state.terminateRequested:
+        break
+
+      if state.dirty:
+        state.dirty = false
+        state.outputChannel[].send OutputEvent(
+          kind: OutputEventKind.TerminalBuffer,
+          buffer: state.createTerminalBuffer())
+
+  except OSError as e:
+    log(&"terminal thread raised error: {e.msg}")
 
   # todo: on windows, could `buffer` still be in use by the overlapped read at this point?
   # If so we need to wait here, or cancel the read if possible.
@@ -812,7 +831,7 @@ proc terminate*(self: Terminal) {.async.} =
   self.outputChannel[].close()
   self.outputChannel.deallocShared()
 
-proc createTerminal*(self: TerminalService, width: int, height: int, command: string, autoRunCommand: string = ""): Terminal =
+proc createTerminal*(self: TerminalService, width: int, height: int, command: string, autoRunCommand: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].} =
   let id = self.idCounter
   inc self.idCounter
 
@@ -964,9 +983,6 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
 
   result.thread.createThread(terminalThread, threadState)
 
-{.push gcsafe.}
-{.push raises: [].}
-
 proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[string]
 
 method close*(self: TerminalView) =
@@ -980,16 +996,35 @@ method activate*(self: TerminalView) =
   if self.active:
     return
   self.active = true
+  self.markDirty()
 
 method deactivate*(self: TerminalView) =
   if not self.active:
     return
   self.active = false
+  self.markDirty()
 
 method getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]): seq[EventHandler] =
   result = @[self.eventHandler]
   if self.modeEventHandler != nil:
     result.add self.modeEventHandler
+
+method desc*(self: TerminalView): string = &"TerminalView"
+method kind*(self: TerminalView): string = "terminal"
+method display*(self: TerminalView): string = &"term://{self.terminal.command} - {self.terminal.group}"
+method saveState*(self: TerminalView): JsonNode =
+  result = newJObject()
+  result["kind"] = self.kind.toJson
+  result["id"] = self.id.toJson
+  result["command"] = self.terminal.command.toJson
+  result["options"] = CreateTerminalOptions(
+    group: self.terminal.group,
+    autoRunCommand: self.terminal.autoRunCommand,
+    mode: "normal".some,
+    closeOnTerminate: self.closeOnTerminate,
+    slot: self.slot,
+    focus: false,
+  ).toJson
 
 proc setTheme(self: Terminal, theme: Theme) =
   let colors1 = @[
@@ -1037,6 +1072,14 @@ method init*(self: TerminalService): Future[Result[void, ref CatchableError]] {.
   discard self.themes.onThemeChanged.subscribe proc(theme: Theme) = self.handleThemeChanged(theme)
 
   self.settings = TerminalSettings.new(self.config.runtime)
+
+  self.layout.addViewFactory "terminal", proc(config: JsonNode): View {.raises: [ValueError].} =
+    type Config = object
+      id: Id
+      command: string
+      options: CreateTerminalOptions
+    let config = config.jsonTo(Config, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+    return self.createTerminalView(config.command, config.options, id = config.id)
 
   return ok()
 
@@ -1100,14 +1143,19 @@ proc setSize*(self: TerminalView, width: int, height: int) =
     if self.terminal != nil:
       self.terminal.sendEvent(InputEvent(kind: InputEventKind.Size, row: height, col: width))
 
-proc createTerminalView(self: TerminalService, command: string, options: api.CreateTerminalOptions): TerminalView =
+proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView =
   try:
     let term = self.createTerminal(80, 50, command, options.autoRunCommand)
     term.group = options.group
     term.setTheme(self.themes.theme)
 
-    let view = TerminalView(terminals: self, terminal: term, closeOnTerminate: options.closeOnTerminate)
-    view.initView()
+    let view = TerminalView(
+      mId: id,
+      terminals: self,
+      terminal: term,
+      closeOnTerminate: options.closeOnTerminate,
+      slot: options.slot,
+    )
 
     assignEventHandler(view.eventHandler, self.events.getEventHandlerConfig("terminal")):
       onAction:
@@ -1194,7 +1242,7 @@ proc escape*(self: TerminalService) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
     view.setMode("normal")
 
-proc createTerminal*(self: TerminalService, command: string = "", options: api.CreateTerminalOptions = api.CreateTerminalOptions()) {.expose("terminal").} =
+proc createTerminal*(self: TerminalService, command: string = "", options: CreateTerminalOptions = CreateTerminalOptions()) {.expose("terminal").} =
   ## Opens a new terminal by running `command`.
   ## `command`                   Program name and arguments for the process. Usually a shell.
   ## `options.group`             An arbitrary string used to control reusing of terminals and is displayed on screen.
@@ -1205,7 +1253,10 @@ proc createTerminal*(self: TerminalService, command: string = "", options: api.C
   ##                             as if typed with the keyboard.
   ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
   ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
-  self.layout.addView(self.createTerminalView(command, options))
+  ## `options.slot`              Where to open the terminal view. Uses `default` slot if not specified.
+  ## `options.focus`             Whether to focus the terminal view. `true` by default.
+  log lvlInfo, &"createTerminal '{command}', {options}"
+  self.layout.addView(self.createTerminalView(command, options), slot=options.slot, focus=options.focus)
 
 proc isIdle(self: TerminalService, terminal: Terminal): bool =
   if not terminal.cursor.visible or terminal.cursor.col == 0:
@@ -1214,7 +1265,7 @@ proc isIdle(self: TerminalService, terminal: Terminal): bool =
   let idleThreshold = self.settings.idleThreshold.get()
   return terminal.lastUpdateTime.elapsed.ms.int > idleThreshold
 
-proc runInTerminal*(self: TerminalService, shell: string, command: string, options: api.RunInTerminalOptions = api.RunInTerminalOptions()) {.expose("terminal").} =
+proc runInTerminal*(self: TerminalService, shell: string, command: string, options: RunInTerminalOptions = RunInTerminalOptions()) {.expose("terminal").} =
   ## Run the given `command` in a terminal with the specified shell.
   ## `command` is executed in the shell by sending it as if typed using the keyboard, followed by `<ENTER>`.
   ## `shell`                     Name of the shell. If you pass e.g. `wsl` to this function then the shell which gets
@@ -1228,6 +1279,8 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
   ##                             random other tasks.
   ## `options.closeOnTerminate`  Close the terminal view automatically as soon as the connected process terminates.
   ## `options.mode`              Mode to set for the terminal view. Usually something like  "normal", "insert" or "".
+  ## `options.slot`              Where to open the terminal view. Uses `default` slot if not specified.
+  ## `options.focus`             Whether to focus the terminal view. `true` by default.
   let shellCommand = self.config.runtime.get("editor.shells." & shell & ".command", string.none)
   if shellCommand.isNone:
     log lvlError, &"Failed to run command in shell '{shell}': Unknown shell, configure in 'editor.shells.{shell}'"
@@ -1236,6 +1289,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
     log lvlError, &"Failed to run command in shell '{shell}': Invalid configuration, empty 'editor.shells.{shell}.command'"
     return
 
+  log lvlInfo, &"runInTerminal '{shell}', '{command}', {options}"
   if options.reuseExisting:
     for view in self.terminals.values:
       if view.terminal.group == options.group and view.terminal.command == shellCommand.get and self.isIdle(view.terminal):
@@ -1245,16 +1299,21 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
         view.handleScroll(-5000000, {})
         if options.mode.isSome:
           view.setMode(options.mode.get)
-        self.layout.showView(view)
+        self.layout.showView(view, slot = options.slot, focus = options.focus)
         return
 
-  var options = options
-  self.createTerminal(shellCommand.get, api.CreateTerminalOptions(
+  let view = self.createTerminalView(shellCommand.get, CreateTerminalOptions(
     group: options.group,
-    autoRunCommand: command,
+    autoRunCommand: options.autoRunCommand,
     mode: options.mode,
     closeOnTerminate: options.closeOnTerminate,
+    slot: options.slot,
+    focus: options.focus,
   ))
+  if command.len > 0:
+    self.handleInput(view, command)
+    self.handleKey(view, INPUT_ENTER, {})
+  self.layout.addView(view, slot=options.slot, focus=options.focus)
 
 proc scrollTerminal*(self: TerminalService, amount: int) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
@@ -1322,7 +1381,7 @@ proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float 
     self.requestRender()
 
   proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
-    let allViews = self.layout.hiddenViews
+    let allViews = self.layout.getHiddenViews()
     var items = newSeq[FinderItem]()
     for i in countdown(allViews.high, 0):
       if allViews[i] of TerminalView:
@@ -1361,7 +1420,7 @@ proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float 
 
     if id in self.terminals:
       let view = self.terminals[id]
-      self.layout.showView(view)
+      self.layout.showView(view, view.slot)
     return true
 
   popup.addCustomCommand "close-selected", proc(popup: SelectorPopup, args: JsonNode): bool =

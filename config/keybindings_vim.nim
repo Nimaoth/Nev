@@ -758,7 +758,7 @@ proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-curren
   if openEditors == 1:
     plugin_runtime.quit()
   else:
-    closeCurrentView(keepHidden=false, restoreHidden=true)
+    closeActiveView()
 
 proc vimIndent(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-indent").} =
   editor.addNextCheckpoint "insert"
@@ -949,29 +949,29 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   # windowing
   proc defineWindowingCommands(prefix: string) =
     withKeys prefix:
-      addCommand "editor", "h", "prev-view"
-      addCommand "editor", "<C-h>", "prev-view"
-      addCommand "editor", "<LEFT>", "prev-view"
-      addCommand "editor", "l", "next-view"
-      addCommand "editor", "<C-l>", "next-view"
-      addCommand "editor", "<RIGHT>", "next-view"
-      addCommand "editor", "w", "next-view"
-      addCommand "editor", prefix, "next-view"
-      addCommand "editor", "p", "open-previous-editor"
-      addCommand "editor", "<C-p>", "open-previous-editor"
+      addCommand "editor", "h", "focus-prev-view"
+      addCommand "editor", "<C-h>", "focus-prev-view"
+      addCommand "editor", "<LEFT>", "focus-prev-view"
+      addCommand "editor", "l", "focus-next-view"
+      addCommand "editor", "<C-l>", "focus-next-view"
+      addCommand "editor", "<RIGHT>", "focus-next-view"
+      addCommand "editor", "w", "focus-next-view"
+      addCommand "editor", prefix, "focus-next-view"
+      addCommand "editor", "p", "open-prev-view"
+      addCommand "editor", "<C-p>", "open-prev-view"
       addCommand "editor", "q", "vim-close-current-view-or-quit"
-      addCommand "editor", "<C-q>", "close-current-view"
-      addCommand "editor", "c", "close-current-view", true
-      addCommand "editor", "C", "close-current-view", false
+      addCommand "editor", "<C-q>", "close-active-view"
+      addCommand "editor", "c", "hide-active-view"
+      addCommand "editor", "C", "close-active-view"
       addCommand "editor", "o", "close-other-views"
       addCommand "editor", "<C-o>", "close-other-views"
 
       # not very vim like, but the windowing system works quite differently
-      addCommand "editor", "H", "move-current-view-prev"
-      addCommand "editor", "L", "move-current-view-next"
-      addCommand "editor", "W", "move-current-view-to-top"
+      addCommand "editor", "H", "move-active-view-prev"
+      addCommand "editor", "L", "move-active-view-next"
+      addCommand "editor", "W", "move-active-view-first"
 
-  addCommand "editor", "<C-o>", "open-previous-editor"
+  addCommand "editor", "<C-o>", "open-prev-view"
 
   # In the browser C-w closes the tab, so we use A-w instead
   if getBackend() == Browser:
@@ -982,7 +982,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     addCommand "editor", "<count><C-w>m", "set-max-views <#count> true"
 
   addCommandBlock "editor", "<LEADER>m":
-    toggleMaximizeView()
+    toggleMaximizeViewLocal("**")
 
   # completion
   addTextCommand "insert", "<C-p>", "get-completions"
@@ -1168,11 +1168,19 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.moveLast "line", Both
     editor.setMode "insert"
     editor.addNextCheckpoint "insert"
+  addTextCommandBlock "visual", "A":
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1, wrap=false).toSelection)
+    editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
   addTextCommandBlock "normal", "i":
     editor.setMode "insert"
     editor.addNextCheckpoint "insert"
   addTextCommandBlock "", "I":
     editor.moveFirst "line-no-indent", Both
+    editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
+  addTextCommandBlock "visual", "I":
+    editor.selections = editor.selections.mapIt(it.normalized.first.toSelection)
     editor.setMode "insert"
     editor.addNextCheckpoint "insert"
   addTextCommandBlock "normal", "gI":
@@ -1447,8 +1455,6 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommand "insert", "<C-z>", "vim-undo", enterNormalModeBefore=false
   addTextCommand "insert", "<C-r>", "vim-redo", enterNormalModeBefore=false
 
-  addTextCommand "", "<CA-UP>", "vim-add-cursor-above"
-  addTextCommand "", "<CA-DOWN>", "vim-add-cursor-below"
   addTextCommand "", "<C-h>", "vim-add-cursor-above"
   addTextCommand "", "<C-f>", "vim-add-cursor-below"
 
@@ -1608,19 +1614,19 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
     editor.selections = editor.selections.mapIt(it.last.toSelection)
 
-  addTextCommandBlock "visual", "o":
+  addTextCommandBlockDesc "visual", "o", "Invert each selection":
     editor.selections = editor.selections.mapIt((it.last, it.first))
     editor.scrollToCursor Last
     editor.updateTargetColumn()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-  addTextCommandBlock "visual-line", "o":
+  addTextCommandBlockDesc "visual-line", "o", "Invert each selection":
     editor.selections = editor.selections.mapIt((it.last, it.first))
     editor.scrollToCursor Last
     editor.updateTargetColumn()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-  addTextCommandBlock "", "<C-g>o":
+  addTextCommandBlockDesc "", "<C-g>o", "Reverse selections":
     editor.selections = editor.selections.reversed()
     editor.scrollToCursor Last
     editor.updateTargetColumn()

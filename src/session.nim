@@ -1,5 +1,5 @@
 import std/[strutils, options, json, tables]
-import misc/[custom_async, custom_logger, util, myjsonutils, event]
+import misc/[custom_async, custom_logger, util, myjsonutils, event, id]
 import scripting/expose
 import dispatch_tables, service
 
@@ -13,6 +13,12 @@ type
     sessionData*: JsonNode
     onSessionRestored*: Event[SessionService]
     hasSession*: bool
+    sessionSaveHandlers: seq[tuple[
+      id: Id,
+      key: string,
+      save: proc(): JsonNode {.gcsafe, raises: [].},
+      load: proc(data: JsonNode) {.gcsafe, raises: [].},
+    ]]
 
 func serviceName*(_: typedesc[SessionService]): string = "SessionService"
 addBuiltinService(SessionService)
@@ -23,9 +29,36 @@ method init*(self: SessionService): Future[Result[void, ref CatchableError]] {.a
   return ok()
 
 proc restoreSession*(self: SessionService, sessionData: JsonNode) =
+  log lvlInfo, &"SessionService.restoreSession"
   self.sessionData = sessionData
+  if self.sessionData.hasKey("dynamic"):
+    let dynamic = self.sessionData["dynamic"]
+    if dynamic.kind == JObject:
+      for handler in self.sessionSaveHandlers:
+        if dynamic.hasKey(handler.key):
+          handler.load(dynamic[handler.key])
+    else:
+      log lvlError, &"Invalid data in session data: '{dynamic}' should be an object"
+
   self.onSessionRestored.invoke(self)
   self.hasSession = true
+
+proc addSaveHandler*(self: SessionService, key: string,
+    save: proc(): JsonNode {.gcsafe, raises: [].},
+    load: proc(data: JsonNode) {.gcsafe, raises: [].}) =
+  self.sessionSaveHandlers.add (newId(), key, save, load)
+
+proc saveSession*(self: SessionService): JsonNode =
+  log lvlInfo, &"SessionService.saveSession"
+  result = self.sessionData.shallowCopy()
+  if result == nil:
+    result = newJObject()
+  var dynamic = newJObject()
+  for saveHandler in self.sessionSaveHandlers:
+    let data = saveHandler.save()
+    if data != nil:
+      dynamic[saveHandler.key] = data
+  result["dynamic"] = dynamic
 
 ###########################################################################
 

@@ -1211,7 +1211,7 @@ proc raiseJsonException(condStr: string, msg: string) {.noinline.} =
   # JsonError, JsonParser, JsonKindError
   raise newException(ValueError, condStr & " failed: " & msg)
 
-template checkJson(cond: untyped, msg = "") =
+template checkJson*(cond: untyped, msg = "") =
   if not cond:
     raiseJsonException(astToStr(cond), msg)
 

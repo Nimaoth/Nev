@@ -46,7 +46,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   setLeaders @["<SPACE>", "<C-b>"]
 
   addCommand "editor", "<C-x><C-x>", "quit"
-  addCommand "editor", "<CAS-r>", "reload-plugin"
 
   addCommand "editor", "<LEADER>ot", "toggle-flag", "editor.log-frame-time"
   addCommand "editor", "<LEADER>ol", "toggle-flag", "logging"
@@ -78,39 +77,20 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   withKeys "<LEADER>w", "<C-w>":
     addCommand "editor", "<*-f>-", "change-font-size", -1
     addCommand "editor", "<*-f>+", "change-font-size", 1
-    addCommand "editor", "<*-k>n", "change-layout-prop", "main-split", -0.05
-    addCommand "editor", "<*-k>t", "change-layout-prop", "main-split", 0.05
     addCommand "editor", "b", "toggle-status-bar-location"
     addCommand "editor", "1", "set-layout", "horizontal"
     addCommand "editor", "2", "set-layout", "vertical"
     addCommand "editor", "3", "set-layout", "fibonacci"
-    addCommand "editor", "v", "create-view"
-    addCommand "editor", "x", "close-current-view", keepHidden=true, restoreHidden=false
-    addCommand "editor", "X", "close-current-view", keepHidden=false, restoreHidden=true
-    addCommand "editor", "h", "prev-view"
-    addCommand "editor", "n", "prev-view"
-    addCommand "editor", "t", "next-view"
-    addCommand "editor", "l", "next-view"
-    addCommand "editor", "N", "move-current-view-prev"
-    addCommand "editor", "H", "move-current-view-prev"
-    addCommand "editor", "T", "move-current-view-next"
-    addCommand "editor", "L", "move-current-view-next"
-    addCommand "editor", "r", "move-current-view-to-top"
-    addCommand "editor", "z", "open-previous-editor"
-    addCommand "editor", "y", "open-next-editor"
-    addCommand "editor", "s", "split-view"
-
-  if getBackend() != Terminal:
-    addCommand "editor", "<CA-v>", "create-view"
-    addCommand "editor", "<CA-x>", "close-current-view", true
-    addCommand "editor", "<CA-X>", "close-current-view", false
-    addCommand "editor", "<CA-n>", "prev-view"
-    addCommand "editor", "<CA-t>", "next-view"
-    addCommand "editor", "<CS-n>", "move-current-view-prev"
-    addCommand "editor", "<CS-t>", "move-current-view-next"
-    addCommand "editor", "<CA-r>", "move-current-view-to-top"
-    addCommand "editor", "<CA-h>", "open-previous-editor"
-    addCommand "editor", "<CA-f>", "open-next-editor"
+    addCommand "editor", "x", "close-current-view", keepHidden=true
+    addCommand "editor", "h", "focus-view-left"
+    addCommand "editor", "j", "focus-view-down"
+    addCommand "editor", "k", "focus-view-up"
+    addCommand "editor", "l", "focus-view-right"
+    addCommand "editor", "T", "move-view", "#new-tab"
+    addCommand "editor", "z", "open-prev-view"
+    addCommand "editor", "y", "open-next-view"
+    addCommand "editor", "s", "wrap-layout", "vertical-temp"
+    addCommand "editor", "v", "wrap-layout", "horizontal-temp"
 
   addCommand "editor", "<C-s>", "write-file"
   addCommand "editor", "<CS-r>", "load-file"
@@ -136,10 +116,9 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommand "editor", "<LEADER>gk", "browse-keybinds"
   addCommand "editor", "<LEADER>gi", "browse-settings"
-  addCommand "editor", "<LEADER>gn", "open-last-editor"
+  addCommand "editor", "<LEADER>gn", "open-last-view"
   addCommandBlockDesc "editor", "<LEADER>log", "Show log file":
-    logs(scrollToBottom = true)
-    nextView()
+    logs(slot = "#default", focus = false, scrollToBottom = true)
 
   addCommand "editor", "<LEADER>fl", "load-file"
   addCommand "editor", "<LEADER>fs", "write-file"

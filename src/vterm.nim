@@ -380,3 +380,6 @@ proc isDefaultFg*(col: VTermColor): bool =
 proc isDefaultBg*(col: VTermColor): bool =
   (col.`type` and ord(VTERM_COLOR_DEFAULT_BG).uint8) != 0
 
+proc `$`*(frag: VTermStringFragment): string =
+  result.setLen(frag.len.int)
+  copyMem(result[0].addr, frag.str[0].addr, frag.len.int)
