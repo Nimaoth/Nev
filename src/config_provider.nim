@@ -1122,6 +1122,9 @@ declareSettings GeneralSettings, "editor":
   ## If true then you will be prompted to confirm quitting even when no unsaved changes exist.
   declare promptBeforeQuit, bool, false
 
+  ## List of input modes which are always active (at the lowest priority).
+  declare baseModes, seq[string], @["editor"]
+
 declareSettings DebugSettings, "debug":
   ## Log how long it takes to generate the render commands for a text editor.
   declare logTextRenderTime, bool, false

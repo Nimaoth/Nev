@@ -1,4 +1,4 @@
-import std/[strutils, unicode, sequtils]
+import std/[strutils, unicode, sequtils, tables]
 import misc/[util]
 
 const
@@ -46,15 +46,15 @@ proc isAscii*(input: int64): bool =
     return true
   return false
 
-proc getInputCodeFromSpecialKey*(specialKey: string, leaders: openArray[(int64, Modifiers)]): seq[tuple[inputCodes: Slice[int64], mods: Modifiers]] =
+proc getInputCodeFromSpecialKey*(specialKey: string, leaders: Table[string, seq[(int64, Modifiers)]]): seq[tuple[inputCodes: Slice[int64], mods: Modifiers]] =
   let runes = specialKey.toRunes
   if runes.len == 1:
     return @[(runes[0].int64..runes[0].int64, {})]
   else:
-    let input = case specialKey:
-      of "LEADER":
-        return leaders.mapIt((it[0]..it[0], it[1]))
+    if specialKey in leaders:
+      return leaders[specialKey].mapIt((it[0]..it[0], it[1]))
 
+    let input = case specialKey:
       of "CHAR":
         return @[(1.int64..int32.high.int64, {})]
       of "ANY":
@@ -93,7 +93,7 @@ proc getInputCodeFromSpecialKey*(specialKey: string, leaders: openArray[(int64, 
 
     return @[(input.int64..input.int64, {})]
 
-proc parseNextInput*(input: openArray[Rune], index: int, leaders: openArray[(int64, Modifiers)] = []):
+proc parseNextInput*(input: openArray[Rune], index: int, leaders = initTable[string, seq[(int64, Modifiers)]]()):
     tuple[inputs: seq[tuple[inputCodes: Slice[int64], mods: Modifiers]], persistent: bool, flags: set[InputFlag], nextIndex: int, text: string] =
 
   result.nextIndex = index
@@ -213,7 +213,7 @@ proc parseFirstInput*(input: string): Option[tuple[inputCode: Slice[int64], mods
   let (inputCode, mods) = keys[0]
   return (inputCode, mods, text).some
 
-iterator parseInputs*(input: string, leaders: openArray[(int64, Modifiers)] = []): tuple[inputCode: Slice[int64], mods: Modifiers, text: string] =
+iterator parseInputs*(input: string, leaders = initTable[string, seq[(int64, Modifiers)]]()): tuple[inputCode: Slice[int64], mods: Modifiers, text: string] =
   let runes = input.toRunes
   var index = 0
   while index < input.len:
