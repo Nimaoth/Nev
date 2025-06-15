@@ -385,6 +385,15 @@ method getEventHandlers*(view: EditorView, inject: Table[string, EventHandler]):
 method getActiveEditor*(self: EditorView): Option[DocumentEditor] =
   self.editor.some
 
+proc anyUnsavedChanges*(self: LayoutService): bool =
+  for view in self.allViews:
+    if view of EditorView:
+      let doc = view.EditorView.document
+      let isDirty = not doc.requiresLoad and doc.lastSavedRevision != doc.revision
+      if isDirty:
+        return true
+  return false
+
 proc tryGetCurrentView*(self: LayoutService): Option[View] =
   let view = self.layout.activeLeafView()
   if view != nil:

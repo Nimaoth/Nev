@@ -1119,6 +1119,9 @@ declareSettings GeneralSettings, "editor":
   ## which enables features like opening a recent session or opening the last session.
   declare keepSessionHistory, bool, true
 
+  ## If true then you will be prompted to confirm quitting even when no unsaved changes exist.
+  declare promptBeforeQuit, bool, false
+
 declareSettings DebugSettings, "debug":
   ## Log how long it takes to generate the render commands for a text editor.
   declare logTextRenderTime, bool, false
