@@ -7,14 +7,14 @@ CS(layer1@0)
       "a": 3,
       "b": 4
     },
-    "d": {
+    "+d": {
       "a": 1,
       "b": 2,
-      "c": {
+      "+c": {
         "a": 1,
         "b": {
           "a": 1,
-          "b": {
+          "+b": {
             "a": 2
           }
         }
@@ -29,7 +29,7 @@ CS(layer1@0)
     }
   }
 ================== layer 2 ====================
-CS(layer2@0, CS(layer1@0))
+CS(layer2@1, CS(layer1@0))
   {
     "a": 2,
     "c": {
@@ -43,7 +43,7 @@ CS(layer2@0, CS(layer1@0))
       },
       "e": 3
     },
-    "e": {
+    "+e": {
       "+a": {
         "c": 3
       }
@@ -68,7 +68,7 @@ nil
 =================== layer2.c.c
 5
 =================== layer2.d
-{"a":2,"b":2,"c":{"a":9,"b":{"a":1,"b":{"a":2}},"f":10},"e":3}
+{"a":2,"b":2,"+c":{"a":9,"b":{"a":1,"+b":{"a":2}},"f":10},"e":3}
 =================== layer2.d.a
 2
 =================== layer2.d.b
@@ -76,11 +76,11 @@ nil
 =================== layer2.d.e
 3
 =================== layer2.d.c
-{"a":9,"b":{"a":1,"b":{"a":2}},"f":10}
+{"a":9,"b":{"a":1,"+b":{"a":2}},"f":10}
 =================== layer2.d.c.a
 9
 =================== layer2.d.c.b
-{"a":1,"b":{"a":2}}
+{"a":1,"+b":{"a":2}}
 =================== layer2.d.c.f
 10
 =================== layer1.e
@@ -90,11 +90,11 @@ nil
 =================== layer1.e.b
 1
 =================== layer2.e
-{"+a":{"c":3}}
+{"a":{"a":1,"b":2,"c":3},"b":1}
 =================== layer2.e.a
-{"c":3}
+{"a":1,"b":2,"c":3}
 =================== layer2.e.b
-nil
+1
 ================== layer 1 ====================
 CS(layer1@1)
   {
@@ -104,14 +104,14 @@ CS(layer1@1)
       "a": 3,
       "b": 4
     },
-    "d": {
+    "+d": {
       "a": 1,
       "b": 2,
-      "c": {
+      "+c": {
         "a": 1,
         "b": {
           "a": 1,
-          "b": {
+          "+b": {
             "a": 2
           }
         }
@@ -130,41 +130,29 @@ CS(layer1@1)
 =================== layer2.a
 2
 =================== setting layer2.d.c.f
---- testSetting CS(layer2@0, CS(layer1@1)).d.c.f, cache: none(JsonNodeEx), layers: @[]
+--- testSetting CS(layer2@2, CS(layer1@1)).d.c.f, cache: none(JsonNodeEx)
 10
-new layers: @[(0, Override, "CS(layer2@0, CS(layer1@1))")]
---- testSetting CS(layer2@0, CS(layer1@1)).d.c.f, cache: some(10), layers: @[(0, Override, "CS(layer2@0, CS(layer1@1))")]
+--- testSetting CS(layer2@2, CS(layer1@1)).d.c.f, cache: some(10)
 10
-new layers: @[(0, Override, "CS(layer2@0, CS(layer1@1))")]
---- testSetting CS(layer2@1, CS(layer1@1)).d.c.f, cache: some(10), layers: @[(0, Override, "CS(layer2@1, CS(layer1@1))")]
+--- testSetting CS(layer2@3, CS(layer1@1)).d.c.f, cache: some(10)
 113
-new layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
---- testSetting CS(layer2@1, CS(layer1@1)).d.c.f, cache: some(113), layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
+--- testSetting CS(layer2@3, CS(layer1@1)).d.c.f, cache: some(113)
 113
-new layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
 =================== setting layer2.a
---- testSetting CS(layer2@1, CS(layer1@1)).a, cache: none(JsonNodeEx), layers: @[]
+--- testSetting CS(layer2@3, CS(layer1@1)).a, cache: none(JsonNodeEx)
 2
-new layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
---- testSetting CS(layer2@1, CS(layer1@1)).a, cache: some(2), layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
+--- testSetting CS(layer2@3, CS(layer1@1)).a, cache: some(2)
 2
-new layers: @[(1, Override, "CS(layer2@1, CS(layer1@1))")]
---- testSetting CS(layer2@1, CS(layer1@2)).a, cache: some(2), layers: @[(1, Override, "CS(layer2@1, CS(layer1@2))")]
+--- testSetting CS(layer2@4, CS(layer1@2)).a, cache: some(2)
 2
-new layers: @[(1, Override, "CS(layer2@1, CS(layer1@2))")]
---- testSetting CS(layer2@1, CS(layer1@2)).a, cache: some(2), layers: @[(1, Override, "CS(layer2@1, CS(layer1@2))")]
+--- testSetting CS(layer2@4, CS(layer1@2)).a, cache: some(2)
 2
-new layers: @[(1, Override, "CS(layer2@1, CS(layer1@2))")]
 =================== setting layer2.a
---- testSetting CS(layer2@1, CS(layer1@2)).a, cache: none(JsonNodeEx), layers: @[]
+--- testSetting CS(layer2@4, CS(layer1@2)).a, cache: none(JsonNodeEx)
 2
-new layers: @[(1, Override, "CS(layer2@1, CS(layer1@2))")]
---- testSetting CS(layer2@1, CS(layer1@2)).a, cache: some(2), layers: @[(1, Override, "CS(layer2@1, CS(layer1@2))")]
+--- testSetting CS(layer2@4, CS(layer1@2)).a, cache: some(2)
 2
-new layers: @[(1, Override, "CS(layer2@1, CS(layer1@2))")]
---- testSetting CS(layer2@2, CS(layer1@2)).a, cache: some(2), layers: @[(1, Override, "CS(layer2@2, CS(layer1@2))")]
+--- testSetting CS(layer2@5, CS(layer1@2)).a, cache: some(2)
 113
-new layers: @[(2, Override, "CS(layer2@2, CS(layer1@2))")]
---- testSetting CS(layer2@2, CS(layer1@2)).a, cache: some(113), layers: @[(2, Override, "CS(layer2@2, CS(layer1@2))")]
+--- testSetting CS(layer2@5, CS(layer1@2)).a, cache: some(113)
 113
-new layers: @[(2, Override, "CS(layer2@2, CS(layer1@2))")]
