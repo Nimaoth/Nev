@@ -66,6 +66,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
   let backgroundColor = app.themes.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
   let selectionColor = app.themes.theme.color("list.activeSelectionBackground",
     color(0.8, 0.8, 0.8)).withAlpha(1)
+  let titleBackgroundColor = app.themes.theme.color(@["selector.title.background", "panel.background"], color(0.1, 0.1, 0.1)).withAlpha(1)
+  let titleForegroundColor = app.themes.theme.color(@["selector.title.foreground", "editor.foreground"], color(0.1, 0.1, 0.1)).withAlpha(1)
 
   let excluded = ["prev", "next", "accept", "close"]
   proc filterCommand(s: string): bool =
@@ -82,6 +84,16 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
 
       block:
         builder.panel(&{FillX, LayoutVertical} + yFlag, w = bounds.w * (1 - previewScale)):
+          let leftBounds = currentNode.bounds
+
+          let title = if self.title != "": self.title else: self.scope
+          if title != "":
+            builder.panel(&{SizeToContentX, SizeToContentY, DrawText, FillBackground},
+              text = title,
+              pivot = vec2(0.5, 0),
+              textColor = titleForegroundColor,
+              backgroundColor = titleBackgroundColor,
+              x = leftBounds.w * 0.5)
 
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder, app)

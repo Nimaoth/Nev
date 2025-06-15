@@ -53,6 +53,9 @@ type
 
     focusPreview*: bool
 
+    scope*: string
+    title*: string
+
 proc getSearchString*(self: SelectorPopup): string {.gcsafe, raises: [].}
 proc closed*(self: SelectorPopup): bool {.gcsafe, raises: [].}
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] {.gcsafe, raises: [].}
@@ -401,6 +404,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.plugins = services.getService(PluginService).get
   popup.editors = services.getService(DocumentEditorService).get
   popup.scale = vec2(0.5, 0.5)
+  popup.scope = scopeName.get("")
   let document = newTextDocument(services, createLanguageServer=false, filename="ed://selector_popup_search_bar")
   popup.textEditor = newTextEditor(document, services)
   popup.textEditor.usage = "search-bar"
