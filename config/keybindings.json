@@ -1,7 +1,120 @@
 {
+    "<set-LEADER>": ["<SPACE>"],
+    "<set-WINDOW>": ["<C-w>"],
+
+    "command-line-low": {
+        "<ESCAPE>": "exit-command-line",
+        "<ENTER>": "execute-command-line",
+        "<UP>": "select-previous-command-in-history",
+        "<DOWN>": "select-next-command-in-history",
+    },
+    "command-line-results-low": {
+        "<ESCAPE>": "exit-command-line",
+    },
+
     "editor": {
+        "<C-x><C-x>": "quit",
+        "<ESCAPE>": "escape",
         "<SPACE>sr": "open-recent-session",
-        "!": "run-shell-command",
+        "<SPACE>to": ["select-terminal"],
+        "<SPACE>ts": [
+            "run-in-terminal",
+            "default",
+            "",
+            {
+                "mode": "insert",
+                "closeOnTerminate": true,
+                "group": "scratch",
+            }
+        ],
+
+        "<WINDOW><*-f>-": ["change-font-size", -1],
+        "<WINDOW><*-f>+": ["change-font-size", 1],
+        "<WINDOW>x": ["hide-active-view"],
+        "<WINDOW>h": ["focus-view-left"],
+        "<WINDOW>j": ["focus-view-down"],
+        "<WINDOW>k": ["focus-view-up"],
+        "<WINDOW>l": ["focus-view-right"],
+        "<WINDOW>T": ["move-view", "#new-tab"],
+        "<WINDOW>z": ["open-prev-view"],
+        "<WINDOW>y": ["open-next-view"],
+        "<WINDOW>s": ["wrap-layout", "vertical-temp"],
+        "<WINDOW>v": ["wrap-layout", "horizontal-temp"],
+
+        "<LEADER>w<*-f>-": ["change-font-size", -1],
+        "<LEADER>w<*-f>+": ["change-font-size", 1],
+        "<LEADER>wx": ["hide-active-view"],
+        "<LEADER>wh": ["focus-view-left"],
+        "<LEADER>wj": ["focus-view-down"],
+        "<LEADER>wk": ["focus-view-up"],
+        "<LEADER>wl": ["focus-view-right"],
+        "<LEADER>wT": ["move-view", "#new-tab"],
+        "<LEADER>wz": ["open-prev-view"],
+        "<LEADER>wy": ["open-next-view"],
+        "<LEADER>ws": ["wrap-layout", "vertical-temp"],
+        "<LEADER>wv": ["wrap-layout", "horizontal-temp"],
+
+        "<A-n>": "focus-view-left",
+        "<A-t>": "focus-view-right",
+        "<A-g>": "focus-view-up",
+        "<A-r>": "focus-view-down",
+        "<A-f>": ["focus-next-view", "**"],
+        "<A-h>": ["focus-prev-view", "**"],
+        "<A-x>": "hide-active-view",
+        "<A-w>": ["move-view", "#new-tab"], // new tab in default layout
+        "<A-c>": ["move-view", ".center.*+?"], // new split in center of current tab
+        "<A-LEFT>": ["move-view", ".left"],
+        "<A-RIGHT>": ["move-view", ".right"],
+        "<A-UP>": ["move-view", ".top"],
+        "<A-DOWN>": ["move-view", ".bottom"],
+        "<A-m>": ["toggle-maximize-view"],
+        "<A-v>": ["wrap-layout", {"kind": "vertical", "temporary": true, "max-children": 2}],
+        "<A-l>": ["wrap-layout", {"kind": "horizontal", "temporary": true, "max-children": 2}],
+        "<CA-n>": ["change-split-size", -0.1, false],
+        "<CA-t>": ["change-split-size", 0.1, false],
+        "<CA-g>": ["change-split-size", -0.1, true],
+        "<CA-r>": ["change-split-size", 0.1, true],
+        "<C-TAB>": ["focus-next-view", ""],
+        "<CS-TAB>": ["focus-prev-view", ""],
+        "<A-1>": ["set-active-view-index", "", 0],
+        "<A-2>": ["set-active-view-index", "", 1],
+        "<A-3>": ["set-active-view-index", "", 2],
+        "<A-4>": ["set-active-view-index", "", 3],
+        "<A-5>": ["set-active-view-index", "", 4],
+        "<A-6>": ["set-active-view-index", "", 5],
+        "<A-7>": ["set-active-view-index", "", 6],
+        "<A-8>": ["set-active-view-index", "", 7],
+        "<A-9>": ["set-active-view-index", "", 8],
+
+        "<C-s>": ["write-file"],
+        "<LEADER><LEADER>": ["command-line"],
+        "<LEADER>gt": ["choose-theme"],
+        "<LEADER>gf": ["choose-file"],
+        "<LEADER>go": ["choose-open"],
+        "<LEADER>gd": ["choose-open-document"],
+        "<LEADER>gl": ["choose-location"],
+        "<LEADER>gg": ["choose-git-active-files", false],
+        "<LEADER>GG": ["choose-git-active-files", true],
+        "<LEADER>ge": ["explore-root"],
+        "<LEADER>gv": ["explore-files", "", true],
+        "<LEADER>gw": ["explore-workspace"],
+        // "<LEADER>gW": ["explore-files", "ws0://".normalizePath],
+        "<LEADER>gu": ["explore-user-config"],
+        "<LEADER>ga": ["explore-app-config"],
+        "<LEADER>gh": ["explore-help"],
+        "<LEADER>gp": ["explore-current-file-directory"],
+        "<LEADER>gs": ["search-global-interactive"],
+        "<LEADER>gk": ["browse-keybinds"],
+        "<LEADER>gi": ["browse-settings"],
+        "<LEADER>gn": ["open-last-view"],
+        "<LEADER>fl": ["load-file"],
+        "<LEADER>fs": ["write-file"],
+
+          // addCommandBlockDesc "editor", "<LEADER>log", "Show log file": logs(slot = "#default", focus = false, scrollToBottom = true)
+    },
+
+    "vim": {
+        "<SPACE>sr": "open-recent-session",
         "<SPACE>to": ["select-terminal"],
         "<SPACE>ts": [
             "run-in-terminal",
@@ -47,7 +160,64 @@
         "<A-9>": ["set-active-view-index", "", 8],
     },
 
+    "popup.selector": {
+        "<ENTER>": ["accept"],
+        "<C-y>": ["accept"],
+        "<TAB>": ["accept"],
+        "<ESCAPE>": ["cancel"],
+        "<UP>": ["prev"],
+        "<C-p>": ["prev"],
+        "<DOWN>": ["next"],
+        "<C-n>": ["next"],
+        "<C-u>": ["prev", 5],
+        "<C-d>": ["next", 5],
+        "<C-b>": ["toggle-preview"],
+        "<TAB>": ["toggle-focus-preview"],
+        "<C-k>s": ["sort", "Toggle"],
+        "<C-k>n": ["normalize-scores", "Toggle"],
+        "<C-k>f": ["set-min-score", 0.0],
+        "<C-k>F": ["set-min-score", -1.0],
+        "<C-k>+": ["set-min-score", 0.2, true],
+        "<C-k>-": ["set-min-score", -0.2, true],
+        "<C-l>": ["set-location-list-from-current-popup"],
+    },
+
+    "popup.selector.preview": {
+        "<TAB>": ["toggle-focus-preview"],
+    },
+
+    "popup.selector.open": {
+        "<C-x>": ["close-selected"],
+    },
+
+    "popup.selector.git": {
+        "<C-a>": ["stage-selected"],
+        "<C-u>": ["unstage-selected"],
+        "<C-q>a": ["revert-selected"],
+        "<C-h>": ["prev-change"],
+        "<C-f>": ["next-change"],
+        "<C-s>": ["stage-change"],
+        "<C-q>h": ["revert-change"],
+    },
+
+    "popup.selector.file-explorer": {
+        "<C-UP>": { "command": ["go-up"], "description": "Go up to the parent directory" },
+        "<C-r>": { "command": ["go-up"], "description": "Go up to the parent directory" },
+        "<CS-y>": ["enter-normalized"],
+        "<C-a>": ["add-workspace-folder"],
+        "<C-x>": ["remove-workspace-folder"],
+        "<C-f>": ["create-file"],
+        "<C-g>f": ["create-file"],
+        "<C-g>d": ["create-directory"],
+        "<C-g>x": ["delete-file-or-dir"],
+        "<C-u>": ["refresh"],
+        "<C-g>n": "create-new-session",
+        "<C-g>o": "open-session",
+    },
+
     "popup.selector.settings": {
+        "<C-t>": ["toggle-flag"],
+        "<C-s>": ["update-setting"],
         "<C-h>": "prev-store",
         "<C-f>": "next-store",
         "<C-g>": "toggle-merged",
@@ -55,11 +225,7 @@
         "<C-c>": "delete-setting",
         "<C-r>": "reload-store"
     },
-    "popup.selector.file-explorer": {
-        "<C-g>n": "create-new-session",
-        "<C-g>o": "open-session",
 
-    },
     "popup.selector.terminals": {
         "<C-x>": "close-selected",
     },

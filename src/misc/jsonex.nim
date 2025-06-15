@@ -1,20 +1,21 @@
-import std/[hashes, tables, strutils, lexbase, streams, macros, parsejson, json, sets, strtabs, uri, typetraits, enumutils]
+import std/[hashes, tables, strutils, lexbase, streams, macros, json, sets, strtabs, uri, typetraits, enumutils, lexbase]
 
 import std/options # xxx remove this dependency using same approach as https://github.com/nim-lang/Nim/pull/14563
 import std/private/since
 
 import myjsonutils
+import parsejsonex
 
 when defined(nimPreviewSlimSystem):
   import std/[syncio, assertions, formatfloat]
 
-export
-  tables.`$`
+# export
+#   tables.`$`
 
-export
-  parsejson.JsonEventKind, parsejson.JsonError, JsonParser, JsonKindError,
-  open, close, str, getInt, getFloat, kind, getColumn, getLine, getFilename,
-  errorMsg, errorMsgExpected, next, JsonParsingError, raiseParseErr, nimIdentNormalize
+# export
+#   parsejson.JsonEventKind, parsejson.JsonError, JsonexParser, JsonKindError,
+#   open, close, str, getInt, getFloat, kind, getColumn, getLine, getFilename,
+#   errorMsg, errorMsgExpected, next, JsonParsingError, raiseParseErr, nimIdentNormalize
 
 type
   JsonNodeEx* = ref JsonNodeExObj ## JSON node
@@ -23,6 +24,7 @@ type
                      # so shouldn't be quoted
     extend*: bool
     userData*: int
+    loc*: tuple[line, column: int32]
     case kind*: JsonNodeKind
     of JString:
       str*: string
@@ -492,6 +494,7 @@ proc copy*(p: JsonNodeEx): JsonNodeEx =
 
   result.extend = p.extend
   result.userData = p.userData
+  result.loc = p.loc
 
 # ------------- pretty printing ----------------------------------------------
 
@@ -725,8 +728,12 @@ iterator mpairs*(node: var JsonNodeEx): tuple[key: string, val: var JsonNodeEx] 
   for key, val in mpairs(node.fields):
     yield (key, val)
 
-proc parseJsonex*(p: var JsonParser; rawIntegers, rawFloats: bool, depth = 0): JsonNodeEx =
+proc parseJsonex*(p: var JsonexParser; rawIntegers, rawFloats: bool, depth = 0): JsonNodeEx =
   ## Parses JSON from a JSON Parser `p`.
+  let loc = (p.lineNumber.int32, p.getColNumber(p.tokenStartPos).int32)
+  defer:
+    if result != nil:
+      result.loc = loc
   case p.tok
   of tkString:
     # we capture 'p.a' here, so we need to give it a fresh buffer afterwards:
@@ -804,7 +811,7 @@ iterator parseJsonexFragments*(s: Stream, filename: string = ""; rawIntegers = f
   ## field but kept as raw numbers via `JString`.
   ## If `rawFloats` is true, floating point literals will not be converted to a `JFloat`
   ## field but kept as raw numbers via `JString`.
-  var p: JsonParser
+  var p: JsonexParser
   p.open(s, filename)
   try:
     discard getTok(p) # read first token
@@ -822,7 +829,7 @@ proc parseJsonex*(s: Stream, filename: string = ""; rawIntegers = false, rawFloa
   ## field but kept as raw numbers via `JString`.
   ## If `rawFloats` is true, floating point literals will not be converted to a `JFloat`
   ## field but kept as raw numbers via `JString`.
-  var p: JsonParser
+  var p: JsonexParser
   p.open(s, filename)
   try:
     discard getTok(p) # read first token
@@ -1208,7 +1215,7 @@ macro initCaseObject(T: typedesc, fun: untyped): untyped =
 
 proc raiseJsonException(condStr: string, msg: string) {.noinline.} =
   # just pick 1 exception type for simplicity; other choices would be:
-  # JsonError, JsonParser, JsonKindError
+  # JsonError, JsonexParser, JsonKindError
   raise newException(ValueError, condStr & " failed: " & msg)
 
 template checkJson*(cond: untyped, msg = "") =

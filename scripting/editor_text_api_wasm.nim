@@ -2647,3 +2647,30 @@ proc setCustomHeader*(self: TextDocumentEditor; text: string) {.gcsafe,
   let res {.used.} = editor_text_setCustomHeader_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
 
+
+proc editor_text_cycleCase_string_TextDocumentEditor_Selection_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc cycleCase*(self: TextDocumentEditor; selection: Selection;
+                inclusiveEnd: bool = false): string {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add inclusiveEnd.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_cycleCase_string_TextDocumentEditor_Selection_bool_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_cycleSelectedCase_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc cycleSelectedCase*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_cycleSelectedCase_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+

@@ -6,6 +6,8 @@ For examples and default values see [here](../config/settings.json)
 | ----------- | --- | --- | ------ |
 | `debug.draw-text-chunks` | bool | false | GUI only: Highlight text chunks |
 | `debug.log-text-render-time` | bool | false | Log how long it takes to generate the render commands for a text editor. |
+| `editor.base-input-context` | string | "editor" | If true then you will be prompted to confirm quitting even when no unsaved changes exist. |
+| `editor.base-modes` | string[] | ["editor"] | List of input modes which are always active (at the lowest priority). |
 | `editor.clear-input-history-delay` | int | 3000 | After how many milliseconds of no input the input history is cleared. |
 | `editor.close-unused-documents-timer` | int | 10 | How often the editor will check for unused documents and close them, in seconds. |
 | `editor.custom-mode-on-top` | bool | true | If true then the app mode event handler (if the app mode is not "") will be on top of the event handler stack, otherwise it will be at the bottom (but still above the "editor" event handler. |

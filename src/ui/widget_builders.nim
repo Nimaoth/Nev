@@ -236,6 +236,8 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     var mainBounds: Rect
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
+
+      # todo: handle self.statusBarOnTop
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         proc section(text: string, foreground: Color, background: Color, extraFlags: UINodeFlags) =
           var flags = &{SizeToContentX, SizeToContentY, DrawText} + extraFlags

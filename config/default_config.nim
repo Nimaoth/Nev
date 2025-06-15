@@ -43,145 +43,11 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
     clearCommands "command-line-high"
     clearCommands "popup.selector"
 
-  setLeaders @["<SPACE>", "<C-b>"]
-
-  addCommand "editor", "<C-x><C-x>", "quit"
-
-  addCommand "editor", "<LEADER>ot", "toggle-flag", "editor.log-frame-time"
-  addCommand "editor", "<LEADER>ol", "toggle-flag", "logging"
-  addCommand "editor", "<LEADER>os", "toggle-flag", "render-selected-value"
-  addCommand "editor", "<LEADER>or", "toggle-flag", "log-render-duration"
-  addCommand "editor", "<LEADER>od", "toggle-flag", "render-debug-info"
-  addCommand "editor", "<LEADER>oo", "toggle-flag", "render-execution-output"
-  addCommand "editor", "<LEADER>og", "toggle-flag", "text.print-scopes"
-  addCommand "editor", "<LEADER>om", "toggle-flag", "text.print-matches"
-  addCommand "editor", "<LEADER>oh", "toggle-flag", "text.show-node-highlight"
-  addCommand "editor", "<LEADER>ok", "toggle-flag", "ui.which-key-no-progress"
-  addCommandBlockDesc "editor", "<C-5>", "":
-    setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") - 1, 0, 100000))
-    echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
-  addCommandBlockDesc "editor", "<C-6>", "":
-    setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") + 1, 0, 100000))
-    echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
-  addCommandBlockDesc "editor", "<C-2>", "":
-    setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") - 1, -100000, 100000))
-    echo "text.node-highlight-sibling-index: ", getOption[int]("text.node-highlight-sibling-index")
-  addCommandBlockDesc "editor", "<C-3>", "":
-    setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") + 1, -100000, 100000))
-
-  # addCommand "editor", "<S-SPACE><*-l>", ""
-  # addCommand "editor", "<LEADER>ff", "log-options"
-  addCommand "editor", "<ESCAPE>", "escape"
-
-  # Window stuff <LEADER>w
-  withKeys "<LEADER>w", "<C-w>":
-    addCommand "editor", "<*-f>-", "change-font-size", -1
-    addCommand "editor", "<*-f>+", "change-font-size", 1
-    addCommand "editor", "b", "toggle-status-bar-location"
-    addCommand "editor", "1", "set-layout", "horizontal"
-    addCommand "editor", "2", "set-layout", "vertical"
-    addCommand "editor", "3", "set-layout", "fibonacci"
-    addCommand "editor", "x", "close-current-view", keepHidden=true
-    addCommand "editor", "h", "focus-view-left"
-    addCommand "editor", "j", "focus-view-down"
-    addCommand "editor", "k", "focus-view-up"
-    addCommand "editor", "l", "focus-view-right"
-    addCommand "editor", "T", "move-view", "#new-tab"
-    addCommand "editor", "z", "open-prev-view"
-    addCommand "editor", "y", "open-next-view"
-    addCommand "editor", "s", "wrap-layout", "vertical-temp"
-    addCommand "editor", "v", "wrap-layout", "horizontal-temp"
-
-  addCommand "editor", "<C-s>", "write-file"
-  addCommand "editor", "<CS-r>", "load-file"
-  addCommand "editor", "<CS-s>", "save-app-state"
-  addCommand "editor", "<LEADER><LEADER>", "command-line"
-  addCommand "editor", "<LEADER>gt", "choose-theme"
-  addCommand "editor", "<LEADER>gf", "choose-file"
-  addCommand "editor", "<LEADER>go", "choose-open"
-  addCommand "editor", "<LEADER>gd", "choose-open-document"
-  addCommand "editor", "<LEADER>gl", "choose-location"
-  addCommand "editor", "<LEADER>gg", "choose-git-active-files", false
-  addCommand "editor", "<LEADER>GG", "choose-git-active-files", true
-
-  addCommand "editor", "<LEADER>ge", "explore-root"
-  addCommand "editor", "<LEADER>gv", "explore-files", "", showVFS=true
-  addCommand "editor", "<LEADER>gw", "explore-workspace"
-  addCommand "editor", "<LEADER>gW", "explore-files", "ws0://".normalizePath
-  addCommand "editor", "<LEADER>gu", "explore-user-config"
-  addCommand "editor", "<LEADER>ga", "explore-app-config"
-  addCommand "editor", "<LEADER>gh", "explore-help"
-
-  addCommand "editor", "<LEADER>gp", "explore-current-file-directory"
-  addCommand "editor", "<LEADER>gs", "search-global-interactive"
-  addCommand "editor", "<LEADER>gk", "browse-keybinds"
-  addCommand "editor", "<LEADER>gi", "browse-settings"
-  addCommand "editor", "<LEADER>gn", "open-last-view"
-  addCommandBlockDesc "editor", "<LEADER>log", "Show log file":
-    logs(slot = "#default", focus = false, scrollToBottom = true)
-
-  addCommand "editor", "<LEADER>fl", "load-file"
-  addCommand "editor", "<LEADER>fs", "write-file"
-
-  addCommand "command-line-low", "<ESCAPE>", "exit-command-line"
-  addCommand "command-line-low", "<ENTER>", "execute-command-line"
-  addCommand "command-line-low", "<UP>", "select-previous-command-in-history"
-  addCommand "command-line-low", "<DOWN>", "select-next-command-in-history"
-  addCommand "command-line-results-low", "<ESCAPE>", "exit-command-line"
-
-  addCommand "popup.selector", "<ENTER>", "accept"
-  addCommand "popup.selector", "<C-y>", "accept"
-  addCommand "popup.selector", "<TAB>", "accept"
-  addCommand "popup.selector", "<ESCAPE>", "cancel"
-  addCommand "popup.selector", "<UP>", "prev"
-  addCommand "popup.selector", "<C-p>", "prev"
-  addCommand "popup.selector", "<DOWN>", "next"
-  addCommand "popup.selector", "<C-n>", "next"
-  addCommand "popup.selector", "<C-u>", "prev", 5
-  addCommand "popup.selector", "<C-d>", "next", 5
-  addCommand "popup.selector", "<C-b>", "toggle-preview"
-  addCommand "popup.selector", "<TAB>", "toggle-focus-preview"
-  addCommand "popup.selector", "<C-k>s", "sort", "Toggle"
-  addCommand "popup.selector", "<C-k>n", "normalize-scores", "Toggle"
-  addCommand "popup.selector", "<C-k>f", "set-min-score", 0.0
-  addCommand "popup.selector", "<C-k>F", "set-min-score", -1.0
-  addCommand "popup.selector", "<C-k>+", "set-min-score", 0.2, add = true
-  addCommand "popup.selector", "<C-k>-", "set-min-score", -0.2, add = true
-  addCommand "popup.selector.preview", "<TAB>", "toggle-focus-preview"
-  addCommandBlockDesc "popup.selector", "<C-l>", "Save location list":
-    setLocationListFromCurrentPopup()
-
-  addCommand "editor", "<C-n>", "goto-prev-location"
-  addCommand "editor", "<C-t>", "goto-next-location"
-
-  addCommand "popup.selector.open", "<C-x>", "close-selected"
-
-  addCommand "popup.selector.git", "<C-a>", "stage-selected"
-  addCommand "popup.selector.git", "<C-u>", "unstage-selected"
-  addCommand "popup.selector.git", "<C-q>a", "revert-selected"
-
-  addCommand "popup.selector.git", "<C-h>", "prev-change"
-  addCommand "popup.selector.git", "<C-f>", "next-change"
-  addCommand "popup.selector.git", "<C-s>", "stage-change"
-  addCommand "popup.selector.git", "<C-q>h", "revert-change"
+  addCommandDescription "popup.selector.file-explorer", "<C-g>", "File operations"
   addCommandDescription "popup.selector", "<C-k>", "Scoring"
   addCommandDescription "popup.selector.git", "<C-q>", "Revert"
 
-  addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
-  addCommand "popup.selector.file-explorer", "<C-r>", "go-up"
-  addCommand "popup.selector.file-explorer", "<CS-y>", "enter-normalized"
-  addCommand "popup.selector.file-explorer", "<C-a>", "add-workspace-folder"
-  addCommand "popup.selector.file-explorer", "<C-x>", "remove-workspace-folder"
-  addCommand "popup.selector.file-explorer", "<C-f>", "create-file"
-  addCommand "popup.selector.file-explorer", "<C-g>f", "create-file"
-  addCommand "popup.selector.file-explorer", "<C-g>d", "create-directory"
-  addCommand "popup.selector.file-explorer", "<C-g>x", "delete-file-or-dir"
-  addCommand "popup.selector.file-explorer", "<C-u>", "refresh"
-  addCommandDescription "popup.selector.file-explorer", "<C-g>", "File operations"
-
-  addCommand "popup.selector.settings", "<C-t>", "toggle-flag"
-  addCommand "popup.selector.settings", "<C-s>", "update-setting"
-
+  # debugger stuff
   addCommandBlockDesc "editor", "<LEADER>al", "Run last configuration":
     runLastConfiguration()
     showDebuggerView()
@@ -233,14 +99,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommand "debugger.stacktrace", "<ENTER>", "open-file-for-current-frame"
   addCommand "debugger.stacktrace", "<C-y>", "open-file-for-current-frame"
 
-  addCommandBlock "debugger", "<C-u>":
-    for i in 0..10:
-      prevVariable()
-
-  addCommandBlock "debugger", "<C-d>":
-    for i in 0..10:
-      nextVariable()
-
   addCommandDescription "editor", "<LEADER>g", "Global pickers"
   addCommandDescription "editor.text", "<LEADER>g", "Document pickers"
   addCommandDescription "editor", "<LEADER>a", "Debugger"
@@ -253,6 +111,14 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   addCommandDescription "editor", "<LEADER>r", "Run"
   addCommandDescription "editor", "<LEADER>f", "File"
   addCommandDescription "editor", "<LEADER>m", "Toggle fullscreen"
+
+  addCommandBlock "debugger", "<C-u>":
+    for i in 0..10:
+      prevVariable()
+
+  addCommandBlock "debugger", "<C-d>":
+    for i in 0..10:
+      nextVariable()
 
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 
