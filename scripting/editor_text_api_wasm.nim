@@ -402,6 +402,35 @@ proc findSurroundEnd*(editor: TextDocumentEditor; cursor: Cursor; count: int;
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_setConfig_void_TextDocumentEditor_string_JsonNode_wasm(
+    arg: cstring): cstring {.importc.}
+proc setConfig*(self: TextDocumentEditor; key: string; value: JsonNode) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add key.toJson()
+  argsJson.add value.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setConfig_void_TextDocumentEditor_string_JsonNode_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_getConfig_JsonNode_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc getConfig*(self: TextDocumentEditor; key: string): JsonNode {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add key.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getConfig_JsonNode_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_setMode_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
 proc setMode*(self: TextDocumentEditor; mode: string) {.gcsafe, raises: [].} =
@@ -2594,30 +2623,6 @@ proc runDragCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
   argsJson.add self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runDragCommand_void_TextDocumentEditor_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_addEventHandler_void_TextDocumentEditor_string_wasm(
-    arg: cstring): cstring {.importc.}
-proc addEventHandler*(self: TextDocumentEditor; name: string) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add name.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_addEventHandler_void_TextDocumentEditor_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_removeEventHandler_void_TextDocumentEditor_string_wasm(
-    arg: cstring): cstring {.importc.}
-proc removeEventHandler*(self: TextDocumentEditor; name: string) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add name.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_removeEventHandler_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
 
 

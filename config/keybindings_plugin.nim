@@ -18,6 +18,8 @@ proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
   infof"loadConfiguredKeybindings {keybindings}"
 
   clearCommands "editor"
+  clearCommands "editor.text"
+  clearCommands "editor.text.completion"
   clearCommands "editor.model.completion"
   clearCommands "editor.model.goto"
   clearCommands "command-line-low"
@@ -27,10 +29,8 @@ proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
 
   case keybindings
   of "vim":
-    loadDefaultKeybindings(false)
     loadVimKeybindings()
   of "vscode":
-    loadDefaultKeybindings(false)
     loadVSCodeKeybindings()
 
   when enableAst:

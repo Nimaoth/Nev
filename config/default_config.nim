@@ -29,96 +29,14 @@ proc exploreHelp*() {.expose("explore-help").} =
   exploreFiles("app://docs")
 
 proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default-keybindings").} =
-  let t = startTimer()
-  defer:
-    infof"loadDefaultKeybindings: {t.elapsed.ms} ms"
+  discard
+  # addCommandBlock "debugger", "<C-u>":
+  #   for i in 0..10:
+  #     prevVariable()
 
-  info "Applying default keybindings"
-
-  if clearExisting:
-    clearCommands "editor"
-    clearCommands "editor.model.completion"
-    clearCommands "editor.model.goto"
-    clearCommands "command-line-low"
-    clearCommands "command-line-high"
-    clearCommands "popup.selector"
-
-  addCommandDescription "popup.selector.file-explorer", "<C-g>", "File operations"
-  addCommandDescription "popup.selector", "<C-k>", "Scoring"
-  addCommandDescription "popup.selector.git", "<C-q>", "Revert"
-
-  # debugger stuff
-  addCommandBlockDesc "editor", "<LEADER>al", "Run last configuration":
-    runLastConfiguration()
-    showDebuggerView()
-
-  addCommandBlockDesc "editor", "<LEADER>av", "Choose run configuration":
-    chooseRunConfiguration()
-    showDebuggerView()
-
-  addCommandBlockDesc "editor", "<LEADER>ab", "Toggle breakpoint":
-    if getActiveEditor().isTextEditor editor:
-      addBreakpoint(editor.id, editor.selection.last.line)
-
-  addCommand "editor", "<LEADER>ac", "continue-execution"
-  addCommand "editor", "<LEADER>ar", "step-over"
-  addCommand "editor", "<LEADER>at", "step-in"
-  addCommand "editor", "<LEADER>an", "step-out"
-  addCommand "editor", "<LEADER>ae", "edit-breakpoints"
-  addCommand "editor", "<LEADER>am", "toggle-breakpoints-enabled"
-
-  addCommand "popup.selector.breakpoints", "<C-x>", "delete-breakpoint"
-  addCommand "popup.selector.breakpoints", "<C-e>", "toggle-breakpoint-enabled"
-  addCommand "popup.selector.breakpoints", "<C-o>", "toggle-all-breakpoints-enabled"
-
-  addCommand "editor", "<LEADER>gb", "show-debugger-view"
-
-  addCommand "debugger", "<C-k>", "prev-debugger-view"
-  addCommand "debugger", "<C-h>", "next-debugger-view"
-
-  addCommand "debugger.variables", "<UP>", "prev-variable"
-  addCommand "debugger.variables", "<C-p>", "prev-variable"
-  addCommand "debugger.variables", "<DOWN>", "next-variable"
-  addCommand "debugger.variables", "<C-n>", "next-variable"
-  addCommand "debugger.variables", "<RIGHT>", "expand-variable"
-  addCommand "debugger.variables", "<C-y>", "expand-variable"
-  addCommand "debugger.variables", "<LEFT>", "collapse-variable"
-  addCommand "debugger.variables", "<HOME>", "select-first-variable"
-  addCommand "debugger.variables", "<END>", "select-last-variable"
-
-  addCommand "debugger.threads", "<UP>", "prev-thread"
-  addCommand "debugger.threads", "<C-p>", "prev-thread"
-  addCommand "debugger.threads", "<DOWN>", "next-thread"
-  addCommand "debugger.threads", "<C-n>", "next-thread"
-  addCommand "debugger.threads", "<C-y>", "set-debugger-view", "StackTrace"
-
-  addCommand "debugger.stacktrace", "<UP>", "prev-stack-frame"
-  addCommand "debugger.stacktrace", "<C-p>", "prev-stack-frame"
-  addCommand "debugger.stacktrace", "<DOWN>", "next-stack-frame"
-  addCommand "debugger.stacktrace", "<C-n>", "next-stack-frame"
-  addCommand "debugger.stacktrace", "<ENTER>", "open-file-for-current-frame"
-  addCommand "debugger.stacktrace", "<C-y>", "open-file-for-current-frame"
-
-  addCommandDescription "editor", "<LEADER>g", "Global pickers"
-  addCommandDescription "editor.text", "<LEADER>g", "Document pickers"
-  addCommandDescription "editor", "<LEADER>a", "Debugger"
-  addCommandDescription "editor", "<LEADER>a", "Debugger"
-  addCommandDescription "editor", "<LEADER>o", "Options"
-  addCommandDescription "editor", "<LEADER>ff", "Rendering"
-  addCommandDescription "editor", "<LEADER>w", "Window"
-  addCommandDescription "editor", "<LEADER>wf", "Change font size"
-  addCommandDescription "editor", "<LEADER>wk", "Split size ratio"
-  addCommandDescription "editor", "<LEADER>r", "Run"
-  addCommandDescription "editor", "<LEADER>f", "File"
-  addCommandDescription "editor", "<LEADER>m", "Toggle fullscreen"
-
-  addCommandBlock "debugger", "<C-u>":
-    for i in 0..10:
-      prevVariable()
-
-  addCommandBlock "debugger", "<C-d>":
-    for i in 0..10:
-      nextVariable()
+  # addCommandBlock "debugger", "<C-d>":
+  #   for i in 0..10:
+  #     nextVariable()
 
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 

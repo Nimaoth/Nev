@@ -6,7 +6,6 @@ For examples and default values see [here](../config/settings.json)
 | ----------- | --- | --- | ------ |
 | `debug.draw-text-chunks` | bool | false | GUI only: Highlight text chunks |
 | `debug.log-text-render-time` | bool | false | Log how long it takes to generate the render commands for a text editor. |
-| `editor.base-input-context` | string | "editor" | If true then you will be prompted to confirm quitting even when no unsaved changes exist. |
 | `editor.base-modes` | string[] | ["editor"] | List of input modes which are always active (at the lowest priority). |
 | `editor.clear-input-history-delay` | int | 3000 | After how many milliseconds of no input the input history is cleared. |
 | `editor.close-unused-documents-timer` | int | 10 | How often the editor will check for unused documents and close them, in seconds. |
@@ -65,6 +64,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.indent-detection.samples` | int | 50 | How many indent characters to process when detecting the indent style. Increase this if it fails for files which start with many unindented lines. |
 | `text.indent-detection.timeout` | int | 20 | Max number of milliseconds to spend trying to detect the indent style. |
 | `text.line-comment` | string \| null | null | String which starts a line comment |
+| `text.modes` | string[] | ["editor.text"] | List of input modes text editors. |
 | `text.scroll-to-change-on-reload` | "first" \| "last" \| null | null | If not null then scroll to the changed region when a file is reloaded. |
 | `text.scroll-to-end-on-insert` | bool | false | If true then scroll to the end of the file when text is inserted at the end and the cursor is already at the end. |
 | `text.search-regexes.goto-declaration` | regex \| null | null | Regex to use when using the goto-declaration feature. |

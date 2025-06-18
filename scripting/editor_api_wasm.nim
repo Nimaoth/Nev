@@ -68,16 +68,6 @@ proc enableDebugPrintAsyncAwaitStackTrace*(enable: bool) {.gcsafe, raises: [].} 
       argsJsonString.cstring)
 
 
-proc editor_showDebuggerView_void_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc showDebuggerView*(slot: string = "") {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add slot.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_showDebuggerView_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_setLocationListFromCurrentPopup_void_App_wasm(arg: cstring): cstring {.
     importc.}
 proc setLocationListFromCurrentPopup*() {.gcsafe, raises: [].} =

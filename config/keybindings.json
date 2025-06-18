@@ -110,6 +110,28 @@
         "<LEADER>fl": ["load-file"],
         "<LEADER>fs": ["write-file"],
 
+        "<LEADER>ac": ["continue-execution"],
+        "<LEADER>ar": ["step-over"],
+        "<LEADER>at": ["step-in"],
+        "<LEADER>an": ["step-out"],
+        "<LEADER>ae": ["edit-breakpoints"],
+        "<LEADER>am": ["toggle-breakpoints-enabled"],
+        "<LEADER>gb": ["show-debugger-view"],
+        "<LEADER>al": { "command": ["all", "run-last-configuration", "show-debugger-view"], "description": "Run last configuration" },
+        "<LEADER>av": { "command": ["all", "choose-run-configuration", "show-debugger-view"], "description": "Choose run configuration" },
+        "<LEADER>ab": { "command": ["toggle-breakpoint"], "description": "Toggle breakpoint" },
+
+        "<LEADER>g": { "description": "Global pickers" },
+        "<LEADER>a": { "description": "Debugger" },
+        "<LEADER>o": { "description": "Options" },
+        "<LEADER>ff": { "description": "Rendering" },
+        "<LEADER>w": { "description": "Window" },
+        "<LEADER>wf": { "description": "Change font size" },
+        "<LEADER>wk": { "description": "Split size ratio" },
+        "<LEADER>r": { "description": "Run" },
+        "<LEADER>f": { "description": "File" },
+        "<LEADER>m": { "description": "Toggle fullscreen" },
+
           // addCommandBlockDesc "editor", "<LEADER>log", "Show log file": logs(slot = "#default", focus = false, scrollToBottom = true)
     },
 
@@ -161,6 +183,7 @@
     },
 
     "popup.selector": {
+        "<C-k>": { "description": "Scoring" },
         "<ENTER>": ["accept"],
         "<C-y>": ["accept"],
         "<TAB>": ["accept"],
@@ -190,7 +213,12 @@
         "<C-x>": ["close-selected"],
     },
 
+    "editor.text.normal": {
+        "<LEADER>g": { "description": "Pickers" },
+    },
+
     "popup.selector.git": {
+        "<C-q>": { "description": "Revert" },
         "<C-a>": ["stage-selected"],
         "<C-u>": ["unstage-selected"],
         "<C-q>a": ["revert-selected"],
@@ -201,6 +229,7 @@
     },
 
     "popup.selector.file-explorer": {
+        "<C-g>": { "description": "File operations" },
         "<C-UP>": { "command": ["go-up"], "description": "Go up to the parent directory" },
         "<C-r>": { "command": ["go-up"], "description": "Go up to the parent directory" },
         "<CS-y>": ["enter-normalized"],
@@ -228,6 +257,46 @@
 
     "popup.selector.terminals": {
         "<C-x>": "close-selected",
+    },
+
+    "popup.selector.breakpoints": {
+        "<C-x>": "delete-breakpoint",
+        "<C-e>": "toggle-breakpoint-enabled",
+        "<C-o>": "toggle-all-breakpoints-enabled",
+    },
+
+    "debugger": {
+        "<C-k>": "prev-debugger-view",
+        "<C-h>": "next-debugger-view",
+    },
+
+    "debugger.variables": {
+        "<UP>": "prev-variable",
+        "<C-p>": "prev-variable",
+        "<DOWN>": "next-variable",
+        "<C-n>": "next-variable",
+        "<RIGHT>": "expand-variable",
+        "<C-y>": "expand-variable",
+        "<LEFT>": "collapse-variable",
+        "<HOME>": "select-first-variable",
+        "<END>": "select-last-variable",
+    },
+
+    "debugger.threads": {
+        "<UP>": "prev-thread",
+        "<C-p>": "prev-thread",
+        "<DOWN>": "next-thread",
+        "<C-n>": "next-thread",
+        "<C-y>": ["set-debugger-view", "StackTrace"],
+    },
+
+    "debugger.stacktrace": {
+        "<UP>": "prev-stack-frame",
+        "<C-p>": "prev-stack-frame",
+        "<DOWN>": "next-stack-frame",
+        "<C-n>": "next-stack-frame",
+        "<ENTER>": "open-file-for-current-frame",
+        "<C-y>": "open-file-for-current-frame",
     },
 
     "terminal.normal": {
@@ -262,5 +331,237 @@
     "terminal.insert": {
         "cf": ["set-terminal-mode", "normal"],
         "<C-ENTER>": ["send-terminal-input-and-set-mode", "<ENTER>", "normal"],
+    },
+
+    "vim#text_object": {
+        "<?-count>iw": ["vim-select-text-object", "vim-word-inner", false, true, "<#move.count>"],
+        "<?-count>aw": ["vim-select-text-object", "vim-word-outer", false, true, "<#move.count>"],
+        "<?-count>iW": ["vim-select-text-object", "vim-WORD-inner", false, true, "<#move.count>"],
+        "<?-count>aW": ["vim-select-text-object", "vim-WORD-outer", false, true, "<#move.count>"],
+        "<?-count>ip": ["vim-select-text-object", "vim-paragraph-inner", false, true, "<#move.count>"],
+        "<?-count>ap": ["vim-select-text-object", "vim-paragraph-outer", false, true, "<#move.count>"],
+
+        "<?-count>i{": ["vim-select-surrounding", "vim-surround-{-inner", false, true, "<#move.count>"],
+        "<?-count>a{": ["vim-select-surrounding", "vim-surround-{-outer", false, true, "<#move.count>"],
+        "<?-count>i}": ["vim-select-surrounding", "vim-surround-{-inner", false, true, "<#move.count>"],
+        "<?-count>a}": ["vim-select-surrounding", "vim-surround-{-outer", false, true, "<#move.count>"],
+        "<?-count>i(": ["vim-select-surrounding", "vim-surround-(-inner", false, true, "<#move.count>"],
+        "<?-count>a(": ["vim-select-surrounding", "vim-surround-(-outer", false, true, "<#move.count>"],
+        "<?-count>i)": ["vim-select-surrounding", "vim-surround-(-inner", false, true, "<#move.count>"],
+        "<?-count>a)": ["vim-select-surrounding", "vim-surround-(-outer", false, true, "<#move.count>"],
+        "<?-count>i[": ["vim-select-surrounding", "vim-surround-[-inner", false, true, "<#move.count>"],
+        "<?-count>a[": ["vim-select-surrounding", "vim-surround-[-outer", false, true, "<#move.count>"],
+        "<?-count>i]": ["vim-select-surrounding", "vim-surround-[-inner", false, true, "<#move.count>"],
+        "<?-count>a]": ["vim-select-surrounding", "vim-surround-[-outer", false, true, "<#move.count>"],
+        "<?-count>i\\<": ["vim-select-surrounding", "vim-surround-angle-inner", false, true, "<#move.count>"],
+        "<?-count>a\\<": ["vim-select-surrounding", "vim-surround-angle-outer", false, true, "<#move.count>"],
+        "<?-count>i\\>": ["vim-select-surrounding", "vim-surround-angle-inner", false, true, "<#move.count>"],
+        "<?-count>a\\>": ["vim-select-surrounding", "vim-surround-angle-outer", false, true, "<#move.count>"],
+        "<?-count>i\"": ["vim-select-surrounding", "vim-surround-\"-inner", false, true, "<#move.count>"],
+        "<?-count>a\"": ["vim-select-surrounding", "vim-surround-\"-outer", false, true, "<#move.count>"],
+        "<?-count>i'": ["vim-select-surrounding", "vim-surround-'-inner", false, true, "<#move.count>"],
+        "<?-count>a'": ["vim-select-surrounding", "vim-surround-'-outer", false, true, "<#move.count>"],
+    },
+
+    "vim#move": {
+        "<?-count><LEFT>": ["vim-move-cursor-column", -1, "<#move.count>"],
+        "<?-count><RIGHT>": ["vim-move-cursor-column", 1, "<#move.count>"],
+        "<?-count><UP>": ["vim-move-cursor-visual-line", -1, "<#move.count>"],
+        "<?-count><DOWN>": ["vim-move-cursor-visual-line", 1, "<#move.count>"],
+        "<?-count>h": ["vim-move-cursor-column", -1, "<#move.count>"],
+        "<?-count>j": ["vim-move-cursor-visual-line", 1, "<#move.count>"],
+        "<?-count>k": ["vim-move-cursor-visual-line", -1, "<#move.count>"],
+        "<?-count>l": ["vim-move-cursor-column", 1, "<#move.count>"],
+        "<?-count>gm": ["move-cursor-line-center", "<#move.count>"],
+        "<?-count>gM": ["move-cursor-center", "<#move.count>"],
+
+        "0": ["vim-move-first", "line"],
+        "<HOME>": ["vim-move-first", "visual-line"],
+        "^": ["vim-move-first", "line-no-indent"],
+        "<?-count>$": ["vim-move-to-end-of-line", "<#move.count>"],
+        "<?-count><END>": ["vim-move-to-end-of-visual-line", "<#move.count>"],
+        "g0": ["vim-move-first", "line"],
+        "g^": ["vim-move-first", "line-no-indent"],
+        "<?-count>g$": ["vim-move-to-end-of-line", "<#move.count>"],
+        "<?-count>gg": ["vim-move-file-start", "<#move.count>"],
+        "<?-count>G": ["vim-move-file-end", "<#move.count>"],
+        "<?-count>%": ["vim-move-to-matching-or-file-offset", "<#move.count>"],
+
+        "<?-count>w": ["move-selection-next", "vim-word", false, true, "<#move.count>"],
+        "<?-count><S-RIGHT>": ["move-selection-next", "vim-word", false, true, "<#move.count>"],
+        "<?-count>W": ["move-selection-next", "vim-WORD", false, true, "<#move.count>"],
+        "<?-count><C-RIGHT>": ["move-selection-next", "vim-WORD", false, true, "<#move.count>"],
+        "<?-count>e": ["move-selection-end", "vim-word", false, false, "<#move.count>"],
+        "<?-count>E": ["move-selection-end", "vim-WORD", false, false, "<#move.count>"],
+        "<?-count>b": ["move-selection-end", "vim-word", true, true, "<#move.count>"],
+        "<?-count><S-LEFT>": ["move-selection-end", "vim-word", true, true, "<#move.count>"],
+        "<?-count>B": ["move-selection-end", "vim-WORD", true, true, "<#move.count>"],
+        "<?-count><C-LEFT>": ["move-selection-end", "vim-WORD", true, true, "<#move.count>"],
+        "<?-count>ge": ["move-selection-next", "vim-word", true, false, "<#move.count>"],
+        "<?-count>gE": ["move-selection-next", "vim-WORD", true, false, "<#move.count>"],
+        "<?-count>}": ["move-paragraph", false, "<#move.count>"],
+        "<?-count>{": ["move-paragraph", true, "<#move.count>"],
+        "<?-count>f<ANY>": ["vim-move-to <move.ANY>", false, "<#move.count>"],
+        "<?-count>t<ANY>": ["vim-move-to <move.ANY>", true, "<#move.count>"],
+
+        "<?-count><C-d>": ["vim-move-cursor-visual-line", 50, "<#move.count>", true],
+        "<?-count><PAGE_DOWN>": ["vim-move-cursor-visual-line", 100, "<#move.count>", true],
+        "<?-count><C-u>": ["vim-move-cursor-visual-line", -50, "<#move.count>", true],
+        "<?-count><PAGE_UP>": ["vim-move-cursor-visual-line", -100, "<#move.count>", true],
+    },
+
+    "vim": {
+        "<ESCAPE>": ["vim-normal-mode"],
+        ":": ["command-line"],
+        "<C-h>": ["vim-add-cursor-above"],
+        "<C-f>": ["vim-add-cursor-below"],
+
+        // special
+        "<?-count>d<move>": ["vim-delete-move <move> <#count>"],
+        "<?-count>c<move>": ["vim-change-move <move> <#count>"],
+        "<?-count>y<move>": ["vim-yank-move <move> <#count>"],
+
+        "<?-count>d<text_object>": ["vim-delete-move <text_object> <#count>"],
+        "<?-count>c<text_object>": ["vim-change-move <text_object> <#count>"],
+        "<?-count>y<text_object>": ["vim-yank-move <text_object> <#count>"],
+
+        "<C-e>": ["scroll-lines", -2],
+        "<CS-e>": ["scroll-text-horizontal", -4],
+        "<C-y>": ["scroll-lines", 2],
+        "<CS-y>": ["scroll-text-horizontal", 4],
+
+        // movement
+        "<move>": ["vim-select-last <move>"],
+
+        // copy/paste
+        "p": ["vim-paste", true, false, "vim-default-register"],
+        "P": ["vim-paste", true, false],
+
+        // editing
+        "x": ["vim-delete-right"],
+        "<DELETE>": ["vim-delete-right"],
+        "<X>": ["vim-delete-left"],
+        "<BACKSPACE>": ["vim-delete-left"],
+        "<BACKSPACE>": ["vim-delete-left"],
+
+        // undo/redo
+        "u": ["vim-undo", true],
+        "<C-r>": ["vim-redo", true],
+        "U": ["vim-redo", false],
+    },
+
+    // todo
+    // "vim#count": {
+    //   "<-1-9><o-0-9>": [""],
+    // },
+
+    // "#count": {
+    //   "<-1-9><o-0-9>": [""],
+    // },
+
+    "vim.normal": {
+        // special
+        "a": ["vim-insert-mode", "right"],
+        "i": ["vim-insert-mode"],
+        "A": ["vim-insert-mode", "line-end"],
+        "I": ["vim-insert-mode", "line-no-indent"],
+        "gI": ["vim-insert-mode", "line-start"],
+        "o": ["vim-insert-line-below"],
+        "O": ["vim-insert-line-above"],
+        "v": ["set-mode", "vim.visual"],
+        "V": ["vim-visual-line-mode"],
+
+        "dd": ["vim-delete-line"],
+        "cc": ["vim-change-line"],
+        "yy": ["vim-yank-line"],
+        "D": ["vim-delete-to-line-end"],
+        "C": ["vim-change-to-line-end"],
+        "Y": ["vim-yank-to-line-end"],
+
+        // navigation
+        "<C-r>": ["select-prev"],
+        "<C-m>": ["select-next"],
+
+        // editing
+        "~": ["vim-toggle-case", true],
+        "\\>\\>": ["vim-indent"],
+        "\\<\\<": ["vim-unindent"],
+
+        // lsp
+        "gd": ["goto-definition"],
+        "gD": ["goto-declaration"],
+        "gi": ["goto-implementation"],
+        "gT": ["goto-type-definition"],
+        "gs": ["goto-symbol"],
+        "gw": ["goto-workspace-symbol"],
+        "gr": ["goto-references"],
+        "go": ["switch-source-header"],
+        "ga": ["select-code-action"],
+        "gR": ["rename"],
+        "K": ["show-hover-for-current"],
+        "H": ["show-diagnostics-for-current"],
+
+        // scroll
+        "z<ENTER>": ["vim-scroll-line-to-top-and-move-line-start"],
+        "zt": ["vim-scroll-line-to-top"],
+        "z.": ["vim-center-line-and-move-line-start"],
+        "zz": ["vim-center-line"],
+        "z-": ["vim-scroll-line-to-bottom-and-move-line-start"],
+        "zb": ["vim-scroll-line-to-bottom"],
+    },
+
+    "vim.insert": {
+        "cf": ["set-mode", "vim.normal"],
+        "<SPACE>": ["insert-text", " "],
+        "<ENTER>": ["vim-enter"],
+
+    },
+
+    "vim.visual": {
+        // special
+        "A": ["vim-insert-mode", "right"],
+        "I": ["vim-insert-mode", "first"],
+        "<move>": ["vim-select <move>"],
+        "<?-count><text_object>": ["vim-select-move <text_object> <#count>"],
+
+        "y": ["vim-yank-selection"],
+        "gy": ["vim-yank-selection-clipboard"],
+        "d": ["vim-delete-selection", true],
+        "c": ["vim-change-selection", true],
+        "s": ["vim-change-selection", true],
+
+        // copy/paste
+        "p": ["vim-paste", false, true, "vim-default-register"],
+        "P": ["vim-paste", false, true],
+        "y": ["vim-yank-selection"],
+        "gy": ["vim-yank-selection-clipboard"],
+        "d": ["vim-delete-selection", true],
+        "c": ["vim-change-selection", true],
+        "s": ["vim-change-selection", true],
+
+        // editing
+        "~": ["vim-toggle-case", false],
+        "\\>": ["vim-indent"],
+        "\\<": ["vim-unindent"],
+    },
+
+    "vim.visual-line": {
+        // special
+        "<move>": ["vim-select <move>"],
+        "<?-count><text_object>": ["vim-select-move <text_object> <#count>"],
+
+        // copy/paste
+        "p": ["vim-paste", false, true, "vim-default-register"],
+        "P": ["vim-paste", false, true],
+        "y": ["vim-yank-selection"],
+        "gy": ["vim-yank-selection-clipboard"],
+        "d": ["vim-delete-selection", true],
+        "c": ["vim-change-selection", true],
+        "s": ["vim-change-selection", true],
+
+        // editing
+        "~": ["vim-toggle-case", false],
+        "\\>": ["vim-indent"],
+        "\\<": ["vim-unindent"],
     },
 }

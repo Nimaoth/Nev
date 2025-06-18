@@ -33,7 +33,7 @@ type
   CommandDFA* = ref object
     persistentState: int
     states: seq[DFAState]
-    functions: seq[(string, string)]
+    functions*: seq[(string, string)]
     functionIndices: Table[string, int]
     terminalStates: Table[int, string]
     postfixStates: Table[(string, string), int]
@@ -130,7 +130,7 @@ proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: 
 
 proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, beginEmpty: bool): seq[CommandState] =
   if currentInput == 0:
-    log(lvlError, "Input 0 is invalid")
+    # log(lvlError, "Input 0 is invalid")
     return @[]
 
   if beginEmpty:

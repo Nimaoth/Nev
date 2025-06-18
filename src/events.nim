@@ -100,22 +100,27 @@ proc buildDFA*(config: EventHandlerConfig): CommandDFA {.gcsafe, raises: [].} =
   config.combineCommands(commands)
   result = buildDFA(commands, config.keyDefinitions)
 
-  # let leaders = collect(newSeq):
-  #   for leader in config.keyDefinitions:
-  #     let (keys, _, _, _, _) = parseNextInput(leader.toRunes, 0)
-  #     for key in keys:
-  #       (key.inputCodes.a, key.mods)
+  let keyDefinitions = collect(initTable):
+    for name, defs in config.keyDefinitions:
+      let inputs = collect(newSeq):
+        for def in defs:
+          let (keys, _, _, _, _) = parseNextInput(def.toRunes, 0)
+          for key in keys:
+            (key.inputCodes.a, key.mods)
+      {name: inputs}
 
   config.stateToDescription.clear()
-  # todo
-  # for leader in leaders:
-  #   for (keys, desc) in config.descriptions.pairs:
-  #     var states: seq[CommandState]
-  #     for (inputCode, mods, _) in parseInputs(keys, [leader]):
-  #       states = result.stepAll(states, inputCode.a, mods)
 
-  #     for s in states:
-  #       config.stateToDescription[s.current] = desc
+  #
+  for name, inputs in keyDefinitions:
+    for leader in inputs:
+      for (keys, desc) in config.descriptions.pairs:
+        var states: seq[CommandState]
+        for (inputCode, mods, _) in parseInputs(keys, {name: @[leader]}.toTable):
+          states = result.stepAll(states, inputCode.a, mods)
+
+        for s in states:
+          config.stateToDescription[s.current] = desc
 
 proc maxRevision*(config: EventHandlerConfig): int =
   result = config.revision
@@ -554,7 +559,7 @@ proc addCommandDescription*(self: EventHandlerService, context: string, keys: st
   else:
     context
 
-  log lvlWarn, fmt"Adding command description to '{context}': '{keys}' -> '{description}'"
+  # log lvlDebug, &"Adding command description to '{context}': '{keys}' -> '{description}'"
 
   self.getEventHandlerConfig(context).addCommandDescription(keys, description)
 

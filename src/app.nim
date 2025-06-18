@@ -457,19 +457,19 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
     defer:
       self.plugins.currentScriptContext = oldScriptContext
 
-    for (scope, commands) in json.fields.pairs:
+    for (context, commands) in json.fields.pairs:
       let loc = (line: commands.loc.line.int, column: commands.loc.column.int + 1)
       try:
-        if (scope.startsWith("<set-") or scope.startsWith("<add-")) and scope.endsWith(">"):
-          let name = scope[5..^2]
+        if (context.startsWith("<set-") or context.startsWith("<add-")) and context.endsWith(">"):
+          let name = context[5..^2]
           var keys = newSeq[string]()
-          let addLeaders = scope.startsWith("<add-")
+          let addLeaders = context.startsWith("<add-")
 
           if commands.kind == JString:
             keys = @[commands.getStr]
           elif commands.kind == JArray:
             keys = commands.jsonTo(seq[string]).catch:
-              log lvlError, &"Invalid value for '{scope}': {commands}. Expected string | string[]"
+              log lvlError, &"Invalid value for '{context}': {commands}. Expected string | string[]"
               continue
 
           if addLeaders:
@@ -481,7 +481,7 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
         log(lvlError, &"Invalid key definition in '{filename}:{loc.line}{loc.column}': {getCurrentExceptionMsg()}")
 
       if commands.kind != JObject:
-        log lvlError, &"Invalid value for '{scope}' in '{filename}', expected object, got {commands}"
+        log lvlError, &"Invalid value for '{context}' in '{filename}', expected object, got {commands}"
         continue
 
       for (keys, command) in commands.fields.pairs:
@@ -490,16 +490,20 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
           if command.kind == JString or command.kind == JArray:
             let (name, args) = command.parseCommand()
             if name != "":
-              self.addCommandScript(scope, "", keys, name, args, source = loc)
+              self.addCommandScript(context, "", keys, name, args, source = loc)
 
           elif command.kind == JObject:
-            var (name, args) = command["command"].parseCommand()
-            if name != "":
+            if command.hasKey("command"):
+              var (name, args) = command["command"].parseCommand()
+              if name != "":
+                let description = command.fields.getOrDefault("description", newJexString("")).getStr
+                self.addCommandScript(context, "", keys, name, args, description, source = loc)
+            else:
               let description = command.fields.getOrDefault("description", newJexString("")).getStr
-              self.addCommandScript(scope, "", keys, name, args, description, source = loc)
+              self.events.addCommandDescription(context, keys, description)
 
           else:
-            log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}{loc.column}': Expected string | array | object for '{scope}.{keys}'"
+            log lvlError, &"Invalid command in keybinding settings '{filename}:{loc.line}{loc.column}': Expected string | array | object for '{context}.{keys}'"
         except CatchableError:
           log(lvlError, &"Invalid command in '{filename}:{loc.line}{loc.column}': {getCurrentExceptionMsg()}")
 
@@ -1128,10 +1132,6 @@ proc disableLogFrameTime*(self: App, disable: bool) {.expose("editor").} =
 proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("editor").} =
   when defined(debugAsyncAwaitMacro):
     debugPrintAsyncAwaitStackTrace = enable
-
-proc showDebuggerView*(self: App, slot: string = "") {.expose("editor").} =
-  # todo: reuse existing
-  self.layout.addView(DebuggerView(), slot)
 
 proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
   if self.layout.popups.len == 0:
@@ -2747,7 +2747,6 @@ proc baseEventHandlers(self: App): seq[EventHandler] =
         break
 
   if rebuild:
-    debugf"rebuild new base input handlers '{baseModes}'"
     self.mEventHandlers.setLen(0)
     for i, mode in baseModes:
       var eventHandler: EventHandler
@@ -2997,7 +2996,7 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
   else:
     context
 
-  # log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
+  log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
 
   let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
     (context[0..<i], context[i+1..^1] & subContext)
@@ -3151,11 +3150,13 @@ proc echoArgs*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
 proc all*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
   log lvlInfo, &"run all commands: {args}"
   if args.kind == JArray:
-    for command in args.elems:
-      if command.kind == JArray and command.len > 0:
-        let action = command[0].getStr
-        let arg = command.elems[1..^1].mapIt($it).join(" ")
-        discard self.handleAction(action, arg, record=false)
+    try:
+      for command in args.elems:
+        let (command, args) = command.toJsonEx.parseCommand()
+        if command.len > 0:
+          discard self.handleAction(command, args, record=false)
+    except CatchableError:
+      log lvlError, &"Failed to run all commands {args}: {getCurrentExceptionMsg()}"
 
 proc printStatistics*(self: App) {.expose("editor").} =
   {.gcsafe.}:

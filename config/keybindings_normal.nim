@@ -237,7 +237,7 @@ proc loadVSCodeKeybindings*() {.expose("load-vscode-keybindings").} =
 
   info "Applying vscode keybindings"
 
-  clearCommands("editor.text")
+  # clearCommands("editor.text")
   for id in getAllEditors():
     if id.isTextEditor(editor):
       editor.setMode("")

@@ -4,7 +4,8 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex,
+  array_set]
 import scripting/[expose, scripting_base]
 import platform/[platform]
 import language/[language_server_base]
@@ -198,6 +199,9 @@ declareSettings TextEditorSettings, "text":
   ## is already at the end.
   declare scrollToEndOnInsert, bool, false
 
+  ## List of input modes text editors.
+  declare modes, seq[string], @["editor.text"]
+
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
@@ -302,6 +306,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   eventHandlerNames: seq[string]
   eventHandlers: seq[EventHandler]
+  mEventHandlers: seq[EventHandler]
   modeEventHandlers: seq[EventHandler]
   completionEventHandler: EventHandler
   currentMode*: string
@@ -687,10 +692,36 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
   else: return false
 
-method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]
-    ): seq[EventHandler] =
-  result = self.eventHandlers
-  result.add self.modeEventHandlers
+proc getConfigEventHandlers(self: TextDocumentEditor): seq[EventHandler] =
+  let modes = self.settings.modes.get()
+
+  var rebuild = false
+  if modes.len != self.mEventHandlers.len:
+    rebuild = true
+  else:
+    for i, mode in modes:
+      if self.mEventHandlers[i].config.context != mode:
+        rebuild = true
+        break
+
+  if rebuild:
+    self.mEventHandlers.setLen(modes.len)
+    for i, mode in modes:
+      let config = self.events.getEventHandlerConfig(mode)
+      assignEventHandler(self.mEventHandlers[i], config):
+        onAction:
+          if self.handleAction(action, arg, record=true).isSome:
+            Handled
+          else:
+            Ignored
+        onInput:
+          self.handleInput input, record=true
+
+  return self.mEventHandlers
+
+method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
+  result = self.getConfigEventHandlers()
+  # result.add self.modeEventHandlers
 
   if inject.contains("above-mode"):
     result.add inject["above-mode"]
@@ -1499,6 +1530,12 @@ proc findSurroundEnd*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0
 
   return Cursor.none
 
+proc setConfig*(self: TextDocumentEditor, key: string, value: JsonNode) {.expose("editor.text").} =
+  self.config.set(key, value)
+
+proc getConfig*(self: TextDocumentEditor, key: string): JsonNode {.expose("editor.text").} =
+  self.config.get(key, newJexNull()).toJson()
+
 proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
   ## Sets the current mode of the editor.
   ## If `mode` is "", then no additional scope will be pushed on the scope stac.k
@@ -1518,6 +1555,13 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
 
   let oldMode = self.currentMode
   self.currentMode = mode
+
+  var modes = self.settings.modes.get()
+  modes.excl(oldMode)
+  if mode != "":
+    modes.incl(mode)
+  self.settings.modes.set(modes)
+  debugf"modes for '{self.getFileName()}': {modes}"
 
   self.updateModeEventHandlers()
 
@@ -4483,19 +4527,6 @@ proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
   elif self.lastPressedMouseButton == MouseButton.TripleClick:
     self.runTripleClickCommand()
 
-proc addEventHandler*(self: TextDocumentEditor, name: string) {.expose("editor.text").} =
-  if name notin self.eventHandlerNames:
-    self.eventHandlerNames.add name
-    self.updateEventHandlers()
-    self.updateModeEventHandlers()
-
-proc removeEventHandler*(self: TextDocumentEditor, name: string) {.expose("editor.text").} =
-  let idx = self.eventHandlerNames.find(name)
-  if idx != -1:
-    self.eventHandlerNames.removeShift(idx)
-    self.updateEventHandlers()
-    self.updateModeEventHandlers()
-
 proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] {.expose("editor.text").} =
   return self.eventHandlerNames
 
@@ -4608,7 +4639,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   return JsonNode.none
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
-  # debugf "handleAction {action}, '{arg}'"
+  # debugf "handleAction '{action}', '{arg}'"
 
   try:
     let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
@@ -4640,7 +4671,7 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
 
       return self.handleActionInternal(action, args)
     except CatchableError:
-      log(lvlError, fmt"handleCommmand: {action}, Failed to parse args: '{arg}'")
+      log(lvlError, fmt"handleCommand: '{action}', Failed to parse args: '{arg}'")
       return JsonNode.none
   except:
     discard

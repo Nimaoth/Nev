@@ -405,10 +405,9 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.editors = services.getService(DocumentEditorService).get
   popup.scale = vec2(0.5, 0.5)
   popup.scope = scopeName.get("")
-  let document = newTextDocument(services, createLanguageServer=false, filename="ed://selector_popup_search_bar")
+  let document = newTextDocument(services, createLanguageServer=false, filename="ed://.selector-popup-search-bar")
   popup.textEditor = newTextEditor(document, services)
   popup.textEditor.usage = "search-bar"
-  popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   popup.textEditor.settings.highlightMatches.enable.set(false)

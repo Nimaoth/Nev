@@ -1061,7 +1061,7 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
     discard editor.addSign(idNone(), breakpoint.breakpoint.line - 1, sign,
       group = "breakpoints", color = color, width = 2)
 
-proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
+proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
   ## Line is 0-based
   if self.editors.getEditorForId(editorId).getSome(editor) and editor of TextDocumentEditor:
     let path = editor.TextDocumentEditor.document.filename
@@ -1081,6 +1081,10 @@ proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("deb
     )
 
     self.updateBreakpointsForFile(path)
+
+proc toggleBreakpoint*(self: Debugger) {.expose("debugger").} =
+  if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
+    self.toggleBreakpointAt(view.editor.id, view.editor.TextDocumentEditor.selection.last.line)
 
 proc removeBreakpoint*(self: Debugger, path: string, line: int) {.expose("debugger").} =
   ## Line is 1-based
@@ -1241,6 +1245,10 @@ proc stepIn*(self: Debugger) {.expose("debugger").} =
 proc stepOut*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):
     asyncSpawn client.stepOut(thread.id)
+
+proc showDebuggerView*(self: Debugger, slot: string = "#debugger") {.expose("debugger").} =
+  # todo: reuse existing
+  self.layout.addView(DebuggerView(), slot)
 
 genDispatcher("debugger")
 addGlobalDispatchTable "debugger", genDispatchTable("debugger")

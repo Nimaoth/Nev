@@ -61,6 +61,7 @@
         "\\..lua$": "lua",
         "\\..log$": "log",
         "\\..shell-command-results$": "shell-command-results",
+        "\\..selector-popup-search-bar$": "selector-popup-search-bar",
         "\\..terminal-output$": "terminal-output",
         "nimble..*?\\..paths$": "nim-paths",
         "/(vector|string|thread|iostream)$": "cpp",
@@ -668,6 +669,12 @@
                 "scroll-to-end-on-insert": true,
             }
         },
+        "selector-popup-search-bar": {
+            "editor.save-in-session": false,
+            "+text": {
+                // "modes": [""],
+            },
+        },
         "shell-command-results": {
             "editor.save-in-session": false,
             "+text": {
@@ -827,6 +834,7 @@
         "slots.default": ".center.*+?",
         "slots.scratch-terminal": ".bottom.+",
         "slots.build-run-terminal": ".left",
+        "slots.debugger": ".left",
         "slots.new-tab": "+.center",
         "kind": "tab",
         "childTemplate": {
@@ -844,6 +852,7 @@
         "slots.default": ".+",
         "slots.scratch-terminal": ".+",
         "slots.build-run-terminal": ".+",
+        "slots.debugger": ".+",
         "slots.new-tab": "+",
         "kind": "tab",
         "childTemplate": {
@@ -854,6 +863,7 @@
         "slots.default": ".+",
         "slots.scratch-terminal": "1.+",
         "slots.build-run-terminal": "1.+",
+        "slots.debugger": "1.+",
         "slots.new-tab": "*.+",
         "kind": "alternating",
         "childTemplate": {
@@ -864,6 +874,7 @@
         "slots.default": "*+?",
         "slots.scratch-terminal": "*+<>?",
         "slots.build-run-terminal": "*+<>?",
+        "slots.debugger": "*+<>?",
         "slots.new-tab": "#default",
         "kind": "alternating",
         "max-children": 2,
@@ -872,6 +883,7 @@
         "slots.default": "**.*",
         "slots.scratch-terminal": "**.*<>",
         "slots.build-run-terminal": "**.*<>",
+        "slots.debugger": "**.*<>",
         "slots.new-tab": "#default",
         "kind": "horizontal",
         "max-children": 1,
@@ -880,6 +892,7 @@
         "slots.default": "**.*",
         "slots.scratch-terminal": "**.*<>",
         "slots.build-run-terminal": "**.*<>",
+        "slots.debugger": "**.*<>",
         "slots.new-tab": "+",
         "kind": "tab",
     },
@@ -887,6 +900,7 @@
         "slots.default": "center.*.+",
         "slots.scratch-terminal": "bottom.+",
         "slots.build-run-terminal": "left.+",
+        "slots.debugger": "left.+",
         "slots.new-tab": "**.+",
         "kind": "center",
         "center": {
@@ -905,4 +919,6 @@
             "kind": "tab",
         },
     },
+
+    "text.modes": ["editor.text"],
 }
