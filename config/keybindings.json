@@ -28,18 +28,18 @@
             }
         ],
 
-        "<WINDOW><*-f>-": ["change-font-size", -1],
-        "<WINDOW><*-f>+": ["change-font-size", 1],
-        "<WINDOW>x": ["hide-active-view"],
-        "<WINDOW>h": ["focus-view-left"],
-        "<WINDOW>j": ["focus-view-down"],
-        "<WINDOW>k": ["focus-view-up"],
-        "<WINDOW>l": ["focus-view-right"],
-        "<WINDOW>T": ["move-view", "#new-tab"],
-        "<WINDOW>z": ["open-prev-view"],
-        "<WINDOW>y": ["open-next-view"],
-        "<WINDOW>s": ["wrap-layout", "vertical-temp"],
-        "<WINDOW>v": ["wrap-layout", "horizontal-temp"],
+        // "<WINDOW><*-f>-": ["change-font-size", -1],
+        // "<WINDOW><*-f>+": ["change-font-size", 1],
+        // "<WINDOW>x": ["hide-active-view"],
+        // "<WINDOW>h": ["focus-view-left"],
+        // "<WINDOW>j": ["focus-view-down"],
+        // "<WINDOW>k": ["focus-view-up"],
+        // "<WINDOW>l": ["focus-view-right"],
+        // "<WINDOW>T": ["move-view", "#new-tab"],
+        // "<WINDOW>z": ["open-prev-view"],
+        // "<WINDOW>y": ["open-next-view"],
+        // "<WINDOW>s": ["wrap-layout", "vertical-temp"],
+        // "<WINDOW>v": ["wrap-layout", "horizontal-temp"],
 
         "<LEADER>w<*-f>-": ["change-font-size", -1],
         "<LEADER>w<*-f>+": ["change-font-size", 1],
@@ -92,7 +92,8 @@
         "<LEADER>gf": ["choose-file"],
         "<LEADER>go": ["choose-open"],
         "<LEADER>gd": ["choose-open-document"],
-        "<LEADER>gl": ["choose-location"],
+        "<LEADER>gl": [".fuzzy-search-lines"],
+        "<LEADER>gL": [".fuzzy-search-lines", 0.4, false],
         "<LEADER>gg": ["choose-git-active-files", false],
         "<LEADER>GG": ["choose-git-active-files", true],
         "<LEADER>ge": ["explore-root"],
@@ -130,7 +131,6 @@
         "<LEADER>wk": { "description": "Split size ratio" },
         "<LEADER>r": { "description": "Run" },
         "<LEADER>f": { "description": "File" },
-        "<LEADER>m": { "description": "Toggle fullscreen" },
 
           // addCommandBlockDesc "editor", "<LEADER>log", "Show log file": logs(slot = "#default", focus = false, scrollToBottom = true)
     },
@@ -140,53 +140,6 @@
         "<C-n>": ["select-next-completion"],
         "<C-y>": ["apply-selected-completion"],
         "<TAB>": ["apply-selected-completion"],
-    },
-
-    "vim": {
-        "<SPACE>sr": "open-recent-session",
-        "<SPACE>to": ["select-terminal"],
-        "<SPACE>ts": [
-            "run-in-terminal",
-            "default",
-            "",
-            {
-                "mode": "insert",
-                "closeOnTerminate": true,
-                "group": "scratch",
-            }
-        ],
-
-        "<A-n>": "focus-view-left",
-        "<A-t>": "focus-view-right",
-        "<A-g>": "focus-view-up",
-        "<A-r>": "focus-view-down",
-        "<A-f>": ["focus-next-view", "**"],
-        "<A-h>": ["focus-prev-view", "**"],
-        "<A-x>": "hide-active-view",
-        "<A-w>": ["move-view", "#new-tab"], // new tab in default layout
-        "<A-c>": ["move-view", ".center.*+?"], // new split in center of current tab
-        "<A-LEFT>": ["move-view", ".left"],
-        "<A-RIGHT>": ["move-view", ".right"],
-        "<A-UP>": ["move-view", ".top"],
-        "<A-DOWN>": ["move-view", ".bottom"],
-        "<A-m>": ["toggle-maximize-view"],
-        "<A-v>": ["wrap-layout", {"kind": "vertical", "temporary": true, "max-children": 2}],
-        "<A-l>": ["wrap-layout", {"kind": "horizontal", "temporary": true, "max-children": 2}],
-        "<CA-n>": ["change-split-size", -0.1, false],
-        "<CA-t>": ["change-split-size", 0.1, false],
-        "<CA-g>": ["change-split-size", -0.1, true],
-        "<CA-r>": ["change-split-size", 0.1, true],
-        "<C-TAB>": ["focus-next-view", ""],
-        "<CS-TAB>": ["focus-prev-view", ""],
-        "<A-1>": ["set-active-view-index", "", 0],
-        "<A-2>": ["set-active-view-index", "", 1],
-        "<A-3>": ["set-active-view-index", "", 2],
-        "<A-4>": ["set-active-view-index", "", 3],
-        "<A-5>": ["set-active-view-index", "", 4],
-        "<A-6>": ["set-active-view-index", "", 5],
-        "<A-7>": ["set-active-view-index", "", 6],
-        "<A-8>": ["set-active-view-index", "", 7],
-        "<A-9>": ["set-active-view-index", "", 8],
     },
 
     "popup.selector": {
@@ -418,6 +371,47 @@
         "<?-count><PAGE_UP>": ["vim-move-cursor-visual-line", -100, "<#move.count>", true],
     },
 
+    "vim.base": {
+        "<C-w>h": ["focus-view-left"],
+        "<C-w><C-h>": ["focus-view-left"],
+        "<C-w><LEFT>": ["focus-view-left"],
+        "<C-w>l": ["focus-view-right"],
+        "<C-w><C-l>": ["focus-view-right"],
+        "<C-w><RIGHT>": ["focus-view-right"],
+        "<C-w>k": ["focus-view-up"],
+        "<C-w><C-k>": ["focus-view-up"],
+        "<C-w><UP>": ["focus-view-up"],
+        "<C-w>j": ["focus-view-down"],
+        "<C-w><C-j>": ["focus-view-down"],
+        "<C-w><DOWN>": ["focus-view-down"],
+        "<C-w>w": ["focus-next-view"],
+        "<C-w>p": ["open-prev-view"],
+        "<C-w><C-p>": ["open-prev-view"],
+        "<C-w>q": ["vim-close-current-view-or-quit"],
+        "<C-w><C-q>": ["close-active-view"],
+        "<C-w>c": ["hide-active-view"],
+        "<C-w>C": ["close-active-view"],
+        "<C-w>o": ["close-other-views"],
+        "<C-w><C-o>": ["close-other-views"],
+
+        "<C-o>": ["open-prev-view"],
+
+        "<LEADER>m": ["toggle-maximize-view-local", "**"],
+
+        "<SPACE>sr": "open-recent-session",
+        "<SPACE>to": ["select-terminal"],
+        "<SPACE>ts": [
+            "run-in-terminal",
+            "default",
+            "",
+            {
+                "mode": "insert",
+                "closeOnTerminate": true,
+                "group": "scratch",
+            }
+        ],
+    },
+
     "vim": {
         "<ESCAPE>": ["vim-normal-mode"],
         ":": ["command-line"],
@@ -448,14 +442,20 @@
 
         ".": ["replay-commands", "."],
         "L": ["vim-select-word-or-add-cursor"],
+        "H": ["vim-move-last-selection-to-next-search-result"],
 
         "m<CHAR>": ["vim-add-mark <CHAR>"],
         "'<CHAR>": ["vim-goto-mark <CHAR>"],
+
+        "q<CHAR>": ["vim-start-macro <CHAR>"],
+        "@<CHAR>": ["vim-play-macro <CHAR>"],
+        "Q": ["vim-stop-macro"],
 
         "M": ["enter-choose-cursor-mode", "vim-handle-select-word"],
 
         // movement
         "<move>": ["vim-select-last <move>"],
+        "<C-g>o": ["vim-reverse-selections"],
 
         // copy/paste
         "p": ["vim-paste", true, false, "vim-default-register"],
@@ -473,6 +473,10 @@
         "u": ["vim-undo", true],
         "<C-r>": ["vim-redo", true],
         "U": ["vim-redo", false],
+
+        // vcs
+        "<LEADER>gx": ["close-diff"],
+        "<LEADER>gc": ["update-diff"],
     },
 
     // todo
@@ -503,7 +507,7 @@
         "C": ["vim-change-to-line-end"],
         "Y": ["vim-yank-to-line-end"],
 
-        // navigation
+        // cursor movement
         "<C-r>": ["select-prev"],
         "<C-m>": ["select-next"],
 
@@ -512,6 +516,8 @@
         "\\>\\>": ["vim-indent"],
         "\\<\\<": ["vim-unindent"],
         "s": ["all", [".set-mode", "vim.visual"], [".vim-change-selection", true]],
+        "J": ["vim-join-lines", true],
+        "gJ": ["vim-join-lines", false],
 
         // lsp
         "gd": ["goto-definition"],
@@ -534,6 +540,10 @@
         "zz": ["vim-center-line"],
         "z-": ["vim-scroll-line-to-bottom-and-move-line-start"],
         "zb": ["vim-scroll-line-to-bottom"],
+
+        // vcs
+        "<LEADER>gy": ["stage-selected", false],
+        "<LEADER>gr": ["revert-selected", false],
     },
 
     "vim.insert": {
@@ -545,6 +555,9 @@
         "<C-p>": ["get-completions"],
         "<C-n>": ["get-completions"],
         "<TAB>": ["insert-indent"],
+        "<C-t>": ["vim-indent"],
+        "<C-d>": ["vim-unindent"],
+        "<C-r>": ["set-mode", "vim.insert-register"],
     },
 
     "vim.visual": {
@@ -576,11 +589,19 @@
         "c": ["vim-change-selection", true],
         "s": ["vim-change-selection", true],
 
+        // cursor movement
+        "o": ["vim-invert-selections"],
+        "gp": ["select-parent-current-ts", false],
+
         // editing
         "~": ["vim-toggle-case", false],
         "\\>": ["vim-indent"],
         "\\<": ["vim-unindent"],
         "S<CHAR>": ["vim-surround <CHAR>"],
+
+        // vcs
+        "<LEADER>gy": ["stage-selected", true],
+        "<LEADER>gr": ["revert-selected", true],
     },
 
     "vim.visual-line": {
@@ -597,14 +618,26 @@
         "c": ["vim-change-selection", true],
         "s": ["vim-change-selection", true],
 
+        // cursor movement
+        "o": ["vim-invert-line-selections"],
+
         // editing
         "~": ["vim-toggle-case", false],
         "\\>": ["vim-indent"],
         "\\<": ["vim-unindent"],
+
+        // vcs
+        "<LEADER>gy": ["stage-selected", true],
+        "<LEADER>gr": ["revert-selected", true],
     },
 
     "vim.replace": {
         "<SPACE>": ["vim-replace", " "],
         "<ESCAPE>": ["set-mode", "vim.normal"],
+    },
+
+    "vim.insert-register": {
+        "<ESCAPE>": ["set-mode", "vim.insert"],
+        "<SPACE>": ["all", [".vim-paste", false, true, "vim-default-register"], [".set-mode", "vim.insert"]],
     },
 }
