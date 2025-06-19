@@ -43,7 +43,6 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   self.commandLineResultMode = false
   self.commandHandler = nil
   self.prefix = prefix
-  editor.setMode("insert")
   editor.disableCompletions = false
   editor.disableScrolling = true
   editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
@@ -123,7 +122,11 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
   self.commandLineInputMode = false
   self.commandLineResultMode = false
 
-  let commands = editor.document.contentString.split("\n")
+  let input = editor.document.contentString
+  if input == "":
+    return false
+
+  let commands = input.split("\n")
   editor.document.content = ""
 
   for command in commands:

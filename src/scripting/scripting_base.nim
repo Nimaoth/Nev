@@ -105,7 +105,6 @@ proc invokeCallback*(self: PluginService, context: string, args: JsonNode): bool
     return false
 
 proc invokeAnyCallback*(self: PluginService, context: string, args: JsonNode): JsonNode =
-  # debugf"invokeAnyCallback {context}: {args}"
   if self.callbacks.contains(context):
     try:
       let id = self.callbacks[context]

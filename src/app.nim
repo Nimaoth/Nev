@@ -1168,6 +1168,8 @@ proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 
 proc saveAppState*(self: App) {.expose("editor").} =
+  discard self.plugins.invokeAnyCallback("before-save-app-state", newJArray())
+
   var state = EditorState()
 
   if self.backend == api.Backend.Terminal:

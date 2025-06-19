@@ -3,13 +3,13 @@
     "<set-WINDOW>": ["<C-w>"],
 
     "command-line-low": {
-        "<ESCAPE>": "exit-command-line",
+        "<ESCAPE>": "vim-exit-command-line",
         "<ENTER>": "execute-command-line",
         "<UP>": "select-previous-command-in-history",
         "<DOWN>": "select-next-command-in-history",
     },
     "command-line-results-low": {
-        "<ESCAPE>": "exit-command-line",
+        "<ESCAPE>": "vim-exit-command-line",
     },
 
     "editor": {
@@ -135,6 +135,13 @@
           // addCommandBlockDesc "editor", "<LEADER>log", "Show log file": logs(slot = "#default", focus = false, scrollToBottom = true)
     },
 
+    "editor.text.completion": {
+        "<C-p>": ["select-prev-completion"],
+        "<C-n>": ["select-next-completion"],
+        "<C-y>": ["apply-selected-completion"],
+        "<TAB>": ["apply-selected-completion"],
+    },
+
     "vim": {
         "<SPACE>sr": "open-recent-session",
         "<SPACE>to": ["select-terminal"],
@@ -187,7 +194,8 @@
         "<ENTER>": ["accept"],
         "<C-y>": ["accept"],
         "<TAB>": ["accept"],
-        "<ESCAPE>": ["cancel"],
+        // "<ESCAPE>": ["cancel"],
+        "<ESCAPE>": ["vim-exit-popup"],
         "<UP>": ["prev"],
         "<C-p>": ["prev"],
         "<DOWN>": ["next"],
@@ -429,6 +437,22 @@
         "<CS-e>": ["scroll-text-horizontal", -4],
         "<C-y>": ["scroll-lines", 2],
         "<CS-y>": ["scroll-text-horizontal", 4],
+        "<C-UP>": ["scroll-lines", -1],
+        "<C-DOWN>": ["scroll-lines", 1],
+
+        "/": ["vim-open-search-bar"],
+        "gc": ["vim-toggle-line-comment"],
+        "*": ["vim-set-search-query-from-word"],
+        "n": ["vim-next-search-result"],
+        "N": ["vim-prev-search-result"],
+
+        ".": ["replay-commands", "."],
+        "L": ["vim-select-word-or-add-cursor"],
+
+        "m<CHAR>": ["vim-add-mark <CHAR>"],
+        "'<CHAR>": ["vim-goto-mark <CHAR>"],
+
+        "M": ["enter-choose-cursor-mode", "vim-handle-select-word"],
 
         // movement
         "<move>": ["vim-select-last <move>"],
@@ -443,6 +467,7 @@
         "<X>": ["vim-delete-left"],
         "<BACKSPACE>": ["vim-delete-left"],
         "<BACKSPACE>": ["vim-delete-left"],
+        "r": ["set-mode", "vim.replace"],
 
         // undo/redo
         "u": ["vim-undo", true],
@@ -486,6 +511,7 @@
         "~": ["vim-toggle-case", true],
         "\\>\\>": ["vim-indent"],
         "\\<\\<": ["vim-unindent"],
+        "s": ["all", [".set-mode", "vim.visual"], [".vim-change-selection", true]],
 
         // lsp
         "gd": ["goto-definition"],
@@ -514,7 +540,11 @@
         "cf": ["set-mode", "vim.normal"],
         "<SPACE>": ["insert-text", " "],
         "<ENTER>": ["vim-enter"],
-
+        "<C-w>": ["vim-delete-word-back"],
+        "<C-u>": ["vim-delete-line-back"],
+        "<C-p>": ["get-completions"],
+        "<C-n>": ["get-completions"],
+        "<TAB>": ["insert-indent"],
     },
 
     "vim.visual": {
@@ -527,8 +557,15 @@
         "y": ["vim-yank-selection"],
         "gy": ["vim-yank-selection-clipboard"],
         "d": ["vim-delete-selection", true],
+        "x": ["vim-delete-selection", true],
+        "X": ["vim-delete-selection", true],
+        "<DELETE>": ["vim-delete-selection", true],
+        "<BACKSPACE>": ["vim-delete-selection", true],
         "c": ["vim-change-selection", true],
         "s": ["vim-change-selection", true],
+        "*": ["vim-set-search-query-from-selection"],
+
+        "L": ["vim-set-search-query-or-add-cursor"],
 
         // copy/paste
         "p": ["vim-paste", false, true, "vim-default-register"],
@@ -543,6 +580,7 @@
         "~": ["vim-toggle-case", false],
         "\\>": ["vim-indent"],
         "\\<": ["vim-unindent"],
+        "S<CHAR>": ["vim-surround <CHAR>"],
     },
 
     "vim.visual-line": {
@@ -563,5 +601,10 @@
         "~": ["vim-toggle-case", false],
         "\\>": ["vim-indent"],
         "\\<": ["vim-unindent"],
+    },
+
+    "vim.replace": {
+        "<SPACE>": ["vim-replace", " "],
+        "<ESCAPE>": ["set-mode", "vim.normal"],
     },
 }

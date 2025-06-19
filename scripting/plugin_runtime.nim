@@ -331,6 +331,17 @@ proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEdit
   scriptSetCallback("editor.text.input-handler." & context, id)
   setHandleInputs("editor.text." & context, true)
 
+proc setTextInputHandler2*(context: string, action: proc(editor: TextDocumentEditor, input: string): bool) =
+  let id = addCallback proc(args: JsonNode): bool =
+    try:
+      let input = args.str
+      return action(TextDocumentEditor(id: getActiveEditor()), input)
+    except:
+      infof"TextInputHandler {context}: {getCurrentExceptionMsg()}"
+
+  scriptSetCallback("editor.text.input-handler." & context, id)
+  setHandleInputs(context, true)
+
 var customMoves = initTable[string, proc(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection]()
 proc handleCustomTextMove*(editor: TextDocumentEditor, move: string, cursor: Cursor, count: int): Option[Selection] =
   if customMoves.contains(move):

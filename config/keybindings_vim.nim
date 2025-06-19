@@ -1,4 +1,4 @@
-import std/[strutils, macros, genasts, sequtils, sets, algorithm]
+import std/[strutils, macros, genasts, sequtils, sets, algorithm, jsonutils]
 import plugin_runtime, keybindings_normal
 import misc/[timer, util, myjsonutils, custom_unicode, id, regex]
 import input_api
@@ -17,6 +17,7 @@ type EditorVimState = object
   currentUndoCheckpoint: string = "insert" ## Which checkpoint to undo to (depends on mode)
   revisionBeforeImplicitInsertMacro: int
   marks: Table[string, seq[(Anchor, Anchor)]]
+  unresolveMarks: Table[string, seq[Selection]]
 
 var editorStates: Table[EditorId, EditorVimState]
 var vimMotionNextMode = initTable[EditorId, string]()
@@ -176,6 +177,7 @@ proc vimUpdateSelections(editor: TextDocumentEditor, selections: Selections) =
 
   else:
     editor.selections = selections
+  editor.updateTargetColumn()
   editor.scrollToCursor Last
 
 proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.exposeActive(editorContext, "vim-delete-selection").} =
@@ -400,7 +402,7 @@ proc vimMotionSurround*(editor: TextDocumentEditor, cursor: Cursor, count: int, 
       return
 
 proc vimMoveToMatching(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-move-to-matching").} =
-  let which = if editor.mode == "visual" or editor.mode == "visual-line":
+  let which = if editor.mode == "vim.visual" or editor.mode == "vim.visual-line":
     SelectionCursor.Last
   else:
     SelectionCursor.Both
@@ -724,7 +726,7 @@ proc vimPaste(editor: TextDocumentEditor, pasteRight: bool = false, inclusiveEnd
   editor.selections = editor.delete(selectionsToDelete, inclusiveEnd=false)
 
   if yankedLines:
-    if editor.mode != "visual-line":
+    if editor.mode != "vim.visual-line":
       editor.moveLast "line", Both
       editor.insertText "\n", autoIndent=false
 
@@ -789,7 +791,7 @@ proc vimEnter(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-ent
 proc vimNormalMode(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-normal-mode").} =
   ## Exit to normal mode and clear things
   if editor.mode == "vim.normal":
-    editor.selection = editor.selection
+    editor.selection = editor.selection.last.toSelection
     editor.clearTabStops()
   editor.setMode("vim.normal")
 
@@ -941,6 +943,181 @@ proc vimInsertLineAbove(editor: TextDocumentEditor, move: string = "") {.exposeA
   editor.vimMoveCursorLine -1
   editor.setMode "vim.insert"
 
+proc vimSetSearchQueryFromWord(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-set-search-query-from-word").} =
+  editor.selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b").first.toSelection
+
+proc vimSetSearchQueryFromSelection(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-set-search-query-from-selection").} =
+  discard editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
+  editor.selection = editor.selection.first.toSelection
+  editor.setMode("vim.normal")
+
+proc vimNextSearchResult(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-next-search-result").} =
+  editor.selection = editor.getNextFindResult(editor.selection.last).first.toSelection
+  editor.scrollToCursor Last
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
+
+proc vimPrevSearchResult(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-prev-search-result").} =
+  editor.selection = editor.getPrevFindResult(editor.selection.last).first.toSelection
+  editor.scrollToCursor Last
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
+
+proc vimOpenSearchBar(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-open-search-bar").} =
+  editor.openSearchBar()
+  if getActiveEditor().isTextEditor(editor):
+    editor.setMode("vim.insert")
+
+proc vimExitCommandLine() {.expose("vim-exit-command-line").} =
+  if getActiveEditor().isTextEditor(editor):
+    if editor.mode == "vim.normal":
+      exitCommandLine()
+      return
+
+    editor.setMode("vim.normal")
+
+proc vimExitPopup() {.expose("vim-exit-popup").} =
+  if getActiveEditor().isTextEditor(editor):
+    if editor.mode == "vim.normal":
+      if getActivePopup().isSelectorPopup(popup):
+        popup.cancel()
+      return
+
+    editor.setMode("vim.normal")
+
+proc vimSelectWordOrAddCursor(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-select-word-or-add-cursor").} =
+  if editor.selections.len == 1:
+    var selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b")
+    selection.last.column -= 1
+    editor.selection = selection
+  else:
+    let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
+    editor.selections = editor.selections & next
+    editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
+    editor.updateTargetColumn()
+
+  editor.setMode("vim.visual")
+
+proc vimSetSearchQueryOrAddCursor(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-set-search-query-or-add-cursor").} =
+  if editor.selections.len == 1:
+    let text = editor.getText(editor.selection, inclusiveEnd=true)
+    let textEscaped = text.escapeRegex
+    let currentSearchQuery = editor.getSearchQuery()
+    # infof"'{text}' -> '{textEscaped}' -> '{currentSearchQuery}'"
+    if textEscaped != currentSearchQuery and r"\b" & textEscaped & r"\b" != currentSearchQuery:
+      if editor.setSearchQuery(text, escapeRegex=true):
+        return
+
+  let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
+  editor.selections = editor.selections & next
+  editor.scrollToCursor Last
+  editor.updateTargetColumn()
+
+proc vimSaveState() {.expose("vim-save-state").} =
+  try:
+    var states = initTable[string, JsonNode]()
+
+    for id, state in editorStates:
+      if id.isTextEditor(editor):
+        let filename = editor.getFileName()
+        if filename == "":
+          continue
+
+        var marks = initTable[string, seq[Selection]]()
+        for name, anchors in editor.vimState.marks:
+          let selections = editor.resolveAnchors(anchors)
+          marks[name] = selections
+        for name, selections in editor.vimState.unresolveMarks:
+          marks[name] = selections
+
+        if marks.len > 0:
+          states[filename] = %*{
+            "marks": marks.toJson,
+          }
+
+    setSessionData("vim.states", states)
+  except:
+    infof"Failed to save vim editor states"
+
+proc resolveMarks(editor: TextDocumentEditor) =
+  let unresolveMarks = editor.vimState.unresolveMarks
+  for name, selections in unresolveMarks:
+    let anchors = editor.createAnchors(selections)
+    if anchors.len > 0:
+      editor.vimState.marks[name] = anchors
+      editor.vimState.unresolveMarks.del(name)
+
+proc vimAddMark(editor: TextDocumentEditor, name: string) {.exposeActive(editorContext, "vim-add-mark").} =
+  editor.resolveMarks()
+  editor.vimState.marks[name] = editor.createAnchors(editor.selections)
+
+proc vimGotoMark(editor: TextDocumentEditor, name: string) {.exposeActive(editorContext, "vim-goto-mark").} =
+  editor.resolveMarks()
+
+  if name in editor.vimState.marks:
+    let newSelections = editor.resolveAnchors(editor.vimState.marks[name])
+    if newSelections.len == 0:
+      return
+
+    case editor.mode
+    of "vim.visual", "vim.visual-line":
+      let oldSelections = editor.selections
+      if newSelections.len == oldSelections.len:
+        editor.selections = collect:
+          for i in 0..newSelections.high:
+            oldSelections[i] or newSelections[i]
+      else:
+        editor.selections = newSelections
+    else:
+      editor.selections = newSelections
+
+    editor.updateTargetColumn()
+    editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
+
+proc vimDeleteWordBack(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-delete-word-back").} =
+  let selections = editor.applyMove(editor.selections, "vim-word", true, true, 1, which = SelectionCursor.Last.some)
+  editor.selections = editor.delete(selections)
+  editor.autoShowCompletions()
+
+proc vimDeleteLineBack(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-delete-line-back").} =
+  let selections = editor.applyMove(editor.selections, "vim-line", true, true, 1, which = SelectionCursor.Last.some)
+  editor.selections = editor.delete(selections)
+  editor.autoShowCompletions()
+
+proc vimSurround(editor: TextDocumentEditor, text: string) {.exposeActive(editorContext, "vim-surround").} =
+  # addCommand "editor.text.visual", "S<CHAR>", "<CHAR>"
+  let (left, right) = case text
+  of "(", ")": ("(", ")")
+  of "{", "}": ("{", "}")
+  of "[", "]": ("[", "]")
+  of "<", ">": ("<", ">")
+  else:
+    (text, text)
+
+  var insertSelections: Selections = @[]
+  var insertTexts: seq[string] = @[]
+  for s in editor.selections:
+    let s = s.normalized
+    insertSelections.add s.first.toSelection
+    insertSelections.add editor.doMoveCursorColumn(s.last, 1).toSelection
+    insertTexts.add left
+    insertTexts.add right
+
+  editor.addNextCheckpoint "insert"
+  let newSelections = editor.insertMulti(insertSelections, insertTexts)
+  if newSelections.len mod 2 != 0:
+    return
+
+  editor.selections = collect:
+    for i in 0..<newSelections.len div 2:
+      editor.includeSelectionEnd((newSelections[i * 2].first, newSelections[i * 2 + 1].last), false)
+
+proc vimToggleLineComment(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-toggle-line-comment").} =
+  editor.addNextCheckpoint "insert"
+  editor.toggleLineComment()
+
 var onModeChangedHandle: Id
 
 proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
@@ -952,12 +1129,33 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   var modes = getOption[seq[string]]("text.modes")
   setOption "text.modes", @["vim"]
-  setOption "lang.selector-popup-search-bar.text.modes", @["vim"]
+
+  # setOption "lang.selector-popup-search-bar.text.modes", @["vim"]
   for id in getAllEditors():
     if id.isTextEditor(editor):
       editor.setConfig("text.modes", @["vim"].toJson)
       editor.setMode("vim.normal")
       editor.setCustomHeader("vim")
+
+  let afterRestoreSessionHandle = addCallback proc(args: JsonNode): JsonNode =
+    let states = getSessionData[Table[string, JsonNode]]("vim.states")
+    for id in getAllEditors():
+      if id.isTextEditor(editor):
+        try:
+          let filename = editor.getFileName()
+          if states.hasKey(filename):
+            let editorState = states[filename]
+            if editorState.hasKey("marks"):
+              let marks = editorState["marks"].jsonTo(Table[string, seq[Selection]])
+              for name, selections in marks:
+                editor.vimState.unresolveMarks[name] = selections
+        except:
+          infof"Failed to restore marks for {editor}"
+  scriptSetCallback("after-restore-session", afterRestoreSessionHandle)
+
+  let beforeSaveAppStateHandle = addCallback proc(args: JsonNode): JsonNode =
+    vimSaveState()
+  scriptSetCallback("before-save-app-state", beforeSaveAppStateHandle)
 
   setHandleInputs "vim", false
   setSessionData "editor.text.vim-motion-action", "vim-select-last-cursor"
@@ -1014,7 +1212,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   setHandleKeys "terminal.insert", true
 
   addModeChangedHandler onModeChangedHandle, proc(editor, oldMode, newMode: auto) {.gcsafe, raises: [].} =
-    if not editor.getCurrentEventHandlers().contains("editor.text"):
+    if not editor.getCurrentEventHandlers().contains("vim"):
       return
 
     if newMode == "":
@@ -1022,9 +1220,9 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       return
 
     let recordModes = [
-      "visual",
-      "visual-line",
-      "insert",
+      "vim.visual",
+      "vim.visual-line",
+      "vim.insert",
     ].toHashSet
 
     # infof"vim: handle mode change {oldMode} -> {newMode}"
@@ -1072,44 +1270,10 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addCommand "#count", "<-1-9><o-0-9>", ""
 
   # Normal mode
-  addCommand "editor", ":", "command-line"
-
   addTextCommandBlockDesc "", "<C-e>", "exit to normal mode":
     editor.selection = editor.selection
     editor.setMode("vim.normal")
 
-  addCommandBlockDesc "command-line-low", "<ESCAPE>", "exit to normal mode and clear things":
-    if getActiveEditor().isTextEditor(editor):
-      if editor.mode == "normal":
-        exitCommandLine()
-        return
-
-      if editor.mode == "normal":
-        editor.clearTabStops()
-      editor.setMode("vim.normal")
-
-  addCommandBlockDesc "command-line-result-low", "<ESCAPE>", "exit to normal mode and clear things":
-    if getActiveEditor().isTextEditor(editor):
-      if editor.mode == "normal":
-        exitCommandLine()
-        return
-
-      if editor.mode == "normal":
-        editor.clearTabStops()
-      editor.setMode("vim.normal")
-
-  addCommandBlockDesc "popup.selector", "<ESCAPE>", "Close":
-    if getActiveEditor().isTextEditor(editor):
-      if editor.mode == "normal":
-        if getActivePopup().isSelectorPopup(popup):
-          popup.cancel()
-        return
-
-      if editor.mode == "normal":
-        editor.clearTabStops()
-      editor.setMode("vim.normal")
-
-  addTextCommandBlockDesc "", ".", "replay commands": replayCommands(".")
   addCommand "editor.text.normal", "@<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
     let register = if c == "@":
       getOption("editor.current-macro-register", "")
@@ -1174,14 +1338,6 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addCommandBlock "editor", "<LEADER>m":
     toggleMaximizeViewLocal("**")
 
-  # completion
-  addTextCommand "insert", "<C-p>", "get-completions"
-  addTextCommand "insert", "<C-n>", "get-completions"
-  addTextCommand "completion", "<C-p>", "select-prev-completion"
-  addTextCommand "completion", "<C-n>", "select-next-completion"
-  addTextCommand "completion", "<C-y>", "apply-selected-completion"
-  addTextCommand "completion", "<TAB>", "apply-selected-completion"
-
   # navigation (horizontal)
   # addSubCommand "", "move", "gm", "move-cursor-line-center"
   # addSubCommand "", "move", "gM", "move-cursor-center"
@@ -1196,32 +1352,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 
   addSubCommandWithCountBlock "", "move", "_": vimMoveToStartOfLine(editor, count)
 
-  addSubCommandWithCount "", "move", "k", "vim-move-cursor-visual-line", -1
-  addSubCommandWithCount "", "move", "j", "vim-move-cursor-visual-line", 1
-
   # search
-  addTextCommandBlockDesc "", "*", "set search query to word":
-    editor.selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b").first.toSelection
-  addTextCommandBlockDesc "visual", "*", "set search query to selection":
-    discard editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
-    editor.selection = editor.selection.first.toSelection
-    editor.setMode("vim.normal")
-  addTextCommandBlockDesc "", "n", "go to next search result":
-    editor.selection = editor.getNextFindResult(editor.selection.last).first.toSelection
-    editor.scrollToCursor Last
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
-    editor.updateTargetColumn()
-  addTextCommandBlockDesc "", "N", "go to previous search result":
-    editor.selection = editor.getPrevFindResult(editor.selection.last).first.toSelection
-    editor.scrollToCursor Last
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
-    editor.updateTargetColumn()
-
-  addTextCommandBlockDesc "", "/", "open search bar":
-    editor.openSearchBar()
-    if getActiveEditor().isTextEditor(editor):
-      editor.setMode("vim.insert")
-
   addTextCommandBlockDesc "", r"\\", "open global search bar":
     commandLine(r"search-global \")
     if getActiveEditor().isTextEditor(editor):
@@ -1231,45 +1362,14 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.setMode("vim.insert")
       editor.updateTargetColumn()
 
-  # marks
-  addCommand "editor.text", "m<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
-    editor.vimState.marks[c] = editor.createAnchors(editor.selections)
-
-  addCommand "editor.text", "'<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
-    if c in editor.vimState.marks:
-      let newSelections = editor.resolveAnchors(editor.vimState.marks[c])
-      case editor.mode
-      of "visual", "visual-line":
-        let oldSelections = editor.selections
-        if newSelections.len == oldSelections.len:
-          editor.selections = collect:
-            for i in 0..newSelections.high:
-              oldSelections[i] or newSelections[i]
-        else:
-          editor.selections = newSelections
-      else:
-        editor.selections = newSelections
-
-      editor.updateTargetColumn()
-      editor.scrollToCursor Last
-      editor.setNextSnapBehaviour(MinDistanceOffscreen)
-
   # replace
-  addTextCommand "", "r", "set-mode", "replace"
-  setHandleInputs "editor.text.replace", true
-  setTextInputHandler "replace", proc(editor: TextDocumentEditor, input: string): bool =
+  setHandleInputs "vim.replace", true
+  setTextInputHandler2 "vim.replace", proc(editor: TextDocumentEditor, input: string): bool =
     editor.vimReplace(input)
     return true
 
-  addTextCommand "replace", "<SPACE>", "vim-replace", " "
-  addTextCommand "replace", "<ESCAPE>", "set-mode", "normal"
-
   # addTextCommand "insert", "<C-z>", "vim-undo", enterNormalModeBefore=false
   # addTextCommand "insert", "<C-r>", "vim-redo", enterNormalModeBefore=false
-
-  addTextCommandBlock "normal", "s":
-    editor.setMode "vim.visual"
-    editor.vimChangeSelection(true)
 
   addTextCommandBlock "normal", "J":
     editor.addNextCheckpoint "insert"
@@ -1303,20 +1403,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommandBlock "insert-register", "<SPACE>":
     editor.vimPaste register=getVimDefaultRegister(), inclusiveEnd=true
     editor.setMode "vim.insert"
-  addTextCommand "insert-register", "<ESCAPE>", "set-mode", "insert"
-
-  addTextCommand "insert", "<SPACE>", "insert-text", " "
-  addTextCommand "insert", "<BACKSPACE>", "delete-left"
-  addTextCommand "insert", "<DELETE>", "delete-right"
-  addTextCommandBlock "insert", "<C-w>":
-    let selections = editor.applyMove(editor.selections, "vim-word", true, true, 1, which = SelectionCursor.Last.some)
-    editor.selections = editor.delete(selections)
-    editor.autoShowCompletions()
-
-  addTextCommandBlock "insert", "<C-u>":
-    let selections = editor.applyMove(editor.selections, "vim-line", true, true, 1, which = SelectionCursor.Last.some)
-    editor.selections = editor.delete(selections)
-    editor.autoShowCompletions()
+  addTextCommand "insert-register", "<ESCAPE>", "set-mode", "vim.insert"
 
   addTextCommand "insert", "<C-t>", "vim-indent"
   addTextCommand "insert", "<C-d>", "vim-unindent"
@@ -1327,48 +1414,7 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     setSessionData "editor.text.vim-motion-action", ""
     vimMotionNextMode[editor.id] = "vim.visual"
 
-  addTextCommandBlock "visual", "x":
-    editor.vimDeleteRight()
-    editor.setMode "vim.normal"
-  addTextCommandBlock "visual", "<DELETE>":
-    editor.vimDeleteRight()
-    editor.setMode "vim.normal"
-  addTextCommandBlock "visual", "X":
-    editor.vimDeleteLeft()
-    editor.setMode "vim.normal"
-
-  addTextCommand "visual-line", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
-
   # todo: not really vim keybindings
-
-  addTextCommandBlock "", "L":
-    if editor.selections.len == 1:
-      var selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b")
-      selection.last.column -= 1
-      editor.selection = selection
-    else:
-      let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
-      editor.selections = editor.selections & next
-      editor.scrollToCursor Last
-      editor.setNextSnapBehaviour(MinDistanceOffscreen)
-      editor.updateTargetColumn()
-
-    editor.setMode("vim.visual")
-
-  addTextCommandBlock "visual", "L":
-    if editor.selections.len == 1:
-      let text = editor.getText(editor.selection, inclusiveEnd=true)
-      let textEscaped = text.escapeRegex
-      let currentSearchQuery = editor.getSearchQuery()
-      # infof"'{text}' -> '{textEscaped}' -> '{currentSearchQuery}'"
-      if textEscaped != currentSearchQuery and r"\b" & textEscaped & r"\b" != currentSearchQuery:
-        if editor.setSearchQuery(text, escapeRegex=true):
-          return
-
-    let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
-    editor.selections = editor.selections & next
-    editor.scrollToCursor Last
-    editor.updateTargetColumn()
 
   addTextCommandBlock "", "H":
     if editor.selections.len == 1:
@@ -1411,33 +1457,6 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
       editor.scrollToCursor Last
       editor.setNextSnapBehaviour(MinDistanceOffscreen)
       editor.updateTargetColumn()
-
-  addCommand "editor.text.visual", "S<CHAR>", "<CHAR>", source = currentSourceLocation(), action = proc(editor: TextDocumentEditor, c: string) =
-    let (left, right) = case c
-    of "(", ")": ("(", ")")
-    of "{", "}": ("{", "}")
-    of "[", "]": ("[", "]")
-    of "<", ">": ("<", ">")
-    else:
-      (c, c)
-
-    var insertSelections: Selections = @[]
-    var insertTexts: seq[string] = @[]
-    for s in editor.selections:
-      let s = s.normalized
-      insertSelections.add s.first.toSelection
-      insertSelections.add editor.doMoveCursorColumn(s.last, 1).toSelection
-      insertTexts.add left
-      insertTexts.add right
-
-    editor.addNextCheckpoint "insert"
-    let newSelections = editor.insertMulti(insertSelections, insertTexts)
-    if newSelections.len mod 2 != 0:
-      return
-
-    editor.selections = collect:
-      for i in 0..<newSelections.len div 2:
-        editor.includeSelectionEnd((newSelections[i * 2].first, newSelections[i * 2 + 1].last), false)
 
   addTextCommandBlock "visual", "gi":
     editor.selections = editor.selections.mapIt(block:
@@ -1515,11 +1534,8 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
     editor.updateTargetColumn()
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-  addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-UP>", "scroll-lines", -1
   addTextCommand "", "<C-DOWN>", "scroll-lines", 1
-
-  addTextCommand "insert", "<TAB>", "insert-indent"
 
   addTextCommandBlock "", "<C-l>":
     if editor.hasTabStops():
@@ -1527,10 +1543,6 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addTextCommandBlock "", "<C-v>":
     if editor.hasTabStops():
       editor.selectPrevTabStop()
-
-  addTextCommandBlock "", "gc":
-    editor.addNextCheckpoint "insert"
-    editor.toggleLineComment()
 
   addTextCommand "", "<C-k><C-f>", "format"
   addTextCommand "", "<C-k><C-s>", "stage-file"
@@ -1543,8 +1555,6 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   addCommand "editor", "<C-k><C-r>", "reload-plugin"
   addCommand "editor", "<C-k><S-r>", "reload-config"
   addCommand "editor", "<C-k><CS-r>", "reload-state"
-
-  addTextCommand "", "M", "enter-choose-cursor-mode", "vim-handle-select-word"
 
   addTextCommandBlockDesc "", "gt", "Goto next diagnostic":
     let severity = getOption("text.jump-diagnostic-severity", 1)

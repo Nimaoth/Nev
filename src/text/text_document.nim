@@ -929,6 +929,7 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
     try:
       let oldRope = self.rope.clone()
       var diff = RopeDiff[int]()
+      debugf"reloadFromRope '{self.filename}'"
       await diffRopeAsync(oldRope.clone(), rope.clone(), diff.addr).wait(diffTimeout.milliseconds)
       log lvlDebug, &"Diff took {t.elapsed.ms} ms"
 
@@ -946,6 +947,9 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
         when defined(appCheckDiffReload):
           if $self.rope != $rope:
             log lvlError, &"Failed diff: {self.rope.len} != {rope.len}: {selections}, {texts}"
+            await self.vfs.write("app://failed_diffs/old.txt", oldRope)
+            await self.vfs.write("app://failed_diffs/new-edit.txt", self.rope)
+            await self.vfs.write("app://failed_diffs/new.txt", rope)
             self.replaceAll(rope.move)
             return @[((0, 0), (self.rope.endPoint.toCursor))]
 

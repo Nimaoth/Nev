@@ -721,7 +721,7 @@ proc getConfigEventHandlers(self: TextDocumentEditor): seq[EventHandler] =
 
 method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
   result = self.getConfigEventHandlers()
-  # result.add self.modeEventHandlers
+  result.add self.modeEventHandlers
 
   if inject.contains("above-mode"):
     result.add inject["above-mode"]
@@ -2211,10 +2211,15 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
     result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
 proc createAnchors*(self: TextDocumentEditor, selections: Selections): seq[(Anchor, Anchor)] {.expose("editor.text").} =
+  if self.document.requiresLoad:
+    return @[]
   let snapshot {.cursor.} = self.document.buffer.snapshot
-  return selections.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
+  result = selections.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
+  debugf"{result}"
 
 proc resolveAnchors*(self: TextDocumentEditor, anchors: seq[(Anchor, Anchor)]): Selections {.expose("editor.text").} =
+  if self.document.requiresLoad:
+    return @[]
   return anchors.mapIt (it[0].summaryOpt(Point, self.snapshot).get(Point()), it[1].summaryOpt(Point, self.snapshot).get(Point())).toSelection
 
 proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0,
@@ -4397,6 +4402,9 @@ proc setSelection*(self: TextDocumentEditor, selection: Selection) {.expose("edi
   self.selection = selection
 
 proc setSelections*(self: TextDocumentEditor, selections: Selections) {.expose("editor.text").} =
+  if selections.len == 0:
+    log lvlError, &"Failed to set selections for '{self.getFileName()}': no selections provided"
+    return
   self.selections = selections
 
 proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
@@ -4528,7 +4536,7 @@ proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.runTripleClickCommand()
 
 proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] {.expose("editor.text").} =
-  return self.eventHandlerNames
+  return self.settings.modes.get()
 
 proc setCustomHeader*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   self.customHeader = text
@@ -4635,7 +4643,6 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
     log(lvlError, fmt"Failed to dispatch command '{action} {argsText}': {getCurrentExceptionMsg()}")
     return JsonNode.none
 
-  log lvlError, fmt"Unknown command '{action}'"
   return JsonNode.none
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
@@ -4669,7 +4676,14 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
       if not self.isRunningSavedCommands:
         self.currentCommandHistory.commands.add Command(command: action, args: args)
 
-      return self.handleActionInternal(action, args)
+      result = self.handleActionInternal(action, args)
+      if result.isNone:
+        let res = self.commands.executeCommand(action & " " & arg)
+        if res.isSome:
+          return newJString(res.get).some
+
+      if result.isNone:
+        log lvlError, fmt"Unknown command '{action}'"
     except CatchableError:
       log(lvlError, fmt"handleCommand: '{action}', Failed to parse args: '{arg}'")
       return JsonNode.none
@@ -5007,18 +5021,18 @@ proc updateEventHandlers(self: TextDocumentEditor) =
 proc updateModeEventHandlers(self: TextDocumentEditor) =
   if self.currentMode.len == 0:
     self.modeEventHandlers.setLen(0)
-  else:
-    self.modeEventHandlers.setLen(self.eventHandlerNames.len)
-    for i, name in self.eventHandlerNames:
-      let config = self.events.getEventHandlerConfig(name & "." & self.currentMode)
-      assignEventHandler(self.modeEventHandlers[i], config):
-        onAction:
-          if self.handleAction(action, arg, record=true).isSome:
-            Handled
-          else:
-            Ignored
-        onInput:
-          self.handleInput input, record=true
+  # else:
+  #   self.modeEventHandlers.setLen(self.eventHandlerNames.len)
+  #   for i, name in self.eventHandlerNames:
+  #     let config = self.events.getEventHandlerConfig(name & "." & self.currentMode)
+  #     assignEventHandler(self.modeEventHandlers[i], config):
+  #       onAction:
+  #         if self.handleAction(action, arg, record=true).isSome:
+  #           Handled
+  #         else:
+  #           Ignored
+  #       onInput:
+  #         self.handleInput input, record=true
 
 proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
   var self = createTextEditorInstance()

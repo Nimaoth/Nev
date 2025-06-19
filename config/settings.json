@@ -196,7 +196,9 @@
         "command-line": {
             "editor.save-in-session": false,
             "+text": {
-                "completion-word-chars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"]
+                "completion-word-chars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"],
+                "modes": ["vim", "vim.insert"],
+                "default-mode": "vim.insert",
             }
         },
         "terminal-output": {
@@ -672,7 +674,8 @@
         "selector-popup-search-bar": {
             "editor.save-in-session": false,
             "+text": {
-                // "modes": [""],
+                "modes": ["vim", "vim.insert"],
+                "default-mode": "vim.insert",
             },
         },
         "shell-command-results": {
