@@ -1327,8 +1327,6 @@ proc vimModeChangedHandler(editor: TextDocumentEditor, oldMode: string, newMode:
   else:
     setOption "text.inclusive-selection", false
 
-var onModeChangedHandle: Id
-
 proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   for id in getAllEditors():
     if id.isTextEditor(editor):

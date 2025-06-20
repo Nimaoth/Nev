@@ -631,7 +631,7 @@ proc clear*(self: ConfigStore, key: string) =
   self.onConfigChanged.invoke(key)
 
 proc set*[T](self: ConfigStore, key: string, value: T) =
-  log lvlInfo, &"Set setting '{key}' to {value} in {self.desc()}"
+  # log lvlInfo, &"Set setting '{key}' to {value} in {self.desc()}"
 
   var prevI = 0
   var i = key.find('.')
