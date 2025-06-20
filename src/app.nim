@@ -518,6 +518,15 @@ proc preRender*(self: App, bounds: Rect) =
 proc loadSettingsFrom*(self: App, directory: string, changedFiles: seq[string] = @[], name: string,
     loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
 
+  var hasSettingsFiles = changedFiles.len == 0
+  for f in changedFiles:
+    if f.contains("settings") and f.endsWith(".json"):
+      hasSettingsFiles = true
+      break
+
+  if not hasSettingsFiles:
+    return
+
   {.gcsafe.}:
     let filenames = [
       &"{directory}/settings.json",
@@ -585,7 +594,16 @@ proc loadSettingsFrom*(self: App, directory: string, changedFiles: seq[string] =
   self.config.reconnectGroups()
 
 proc loadKeybindings*(self: App, directory: string,
-    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
+    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].},
+    changedFiles: seq[string] = @[]) {.async.} =
+  var relevantFilesCHanged = changedFiles.len == 0
+  for f in changedFiles:
+    if f.contains("keybindings") and f.endsWith(".json"):
+      relevantFilesCHanged = true
+      break
+
+  if not relevantFilesCHanged:
+    return
 
   {.gcsafe.}:
     let filenames = [
@@ -628,7 +646,7 @@ proc loadConfigFileFrom(self: App, context: string, path: string):
 proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.} =
   await allFutures(
     self.loadSettingsFrom(root, changedFiles, name, loadConfigFileFrom),
-    self.loadKeybindings(root, loadConfigFileFrom)
+    self.loadKeybindings(root, loadConfigFileFrom, changedFiles)
   )
 
 # import asynchttpserver, asyncnet
@@ -2973,11 +2991,13 @@ proc handleDropFile*(self: App, path, content: string) =
   self.editors.documents.add document
   discard self.layout.createAndAddView(document)
 
-proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
+proc scriptRunAction*(action: string, arg: string): JsonNode {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
-      return
-    discard gEditor.handleAction(action, arg, record=false)
+      return newJNull()
+    if gEditor.handleAction(action, arg, record=false).getSome(res):
+      return res
+    return newJNull()
 
 proc scriptLog*(message: string) {.expose("editor").} =
   logNoCategory lvlInfo, fmt"[script] {message}"

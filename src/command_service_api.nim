@@ -86,7 +86,6 @@ proc commandLineResult*(self: CommandService, value: string, showInCommandLine: 
     self.commandLineInputMode = false
     self.commandLineResultMode = true
     self.commandHandler = nil
-    editor.setMode("normal")
     editor.disableCompletions = false
     editor.disableScrolling = false
     editor.uiSettings.lineNumbers.set(api.LineNumbers.Absolute)

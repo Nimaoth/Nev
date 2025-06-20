@@ -176,10 +176,10 @@ proc callScriptAction*(self: PluginService, context: string, args: JsonNode): Js
 
 proc addScriptAction*(self: PluginService, name: string, docs: string = "",
     params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "", active: bool = false,
-    context: string = "script")
+    context: string = "script", override: bool = false)
     {.expose("plugins").} =
 
-  if self.scriptActions.contains(name):
+  if not override and self.scriptActions.contains(name):
     log lvlError, fmt"Duplicate script action {name}"
     return
 

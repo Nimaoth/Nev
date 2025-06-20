@@ -8,7 +8,7 @@
         "<UP>": "select-previous-command-in-history",
         "<DOWN>": "select-next-command-in-history",
     },
-    "command-line-results-low": {
+    "command-line-result-low": {
         "<ESCAPE>": "vim-exit-command-line",
     },
 

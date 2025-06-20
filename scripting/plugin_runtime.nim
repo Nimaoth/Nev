@@ -68,7 +68,7 @@ macro runAction*(action: string, args: varargs[untyped]): untyped =
 
   return quote do:
     `stmts`
-    scriptRunAction(`action`, `str`)
+    discard scriptRunAction(`action`, `str`)
 
 template isTextEditor*(editorId: EditorId, injected: untyped): bool =
   (scriptIsTextEditor(editorId) and ((let injected {.inject.} = TextDocumentEditor(id: editorId); true)))

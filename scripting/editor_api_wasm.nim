@@ -627,15 +627,20 @@ proc getContextWithMode*(context: string): string {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_scriptRunAction_void_string_string_wasm(arg: cstring): cstring {.
+proc editor_scriptRunAction_JsonNode_string_string_wasm(arg: cstring): cstring {.
     importc.}
-proc scriptRunAction*(action: string; arg: string) {.gcsafe, raises: [].} =
+proc scriptRunAction*(action: string; arg: string): JsonNode {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
   argsJson.add action.toJson()
   argsJson.add arg.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptRunAction_void_string_string_wasm(
+  let res {.used.} = editor_scriptRunAction_JsonNode_string_string_wasm(
       argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_scriptLog_void_string_wasm(arg: cstring): cstring {.importc.}

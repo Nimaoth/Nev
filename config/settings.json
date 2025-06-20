@@ -57,6 +57,7 @@
         "\\..toml$": "toml",
         "\\..ps1$": "powershell",
         "\\..wat$": "elisp",
+        "\\..lisp$": "lisp",
         "\\..talon$": "talon",
         "\\..lua$": "lua",
         "\\..log$": "log",
@@ -744,6 +745,20 @@
                 "line-comment": ";"
             }
         },
+        "lisp": {
+            "+text": {
+                "treesitter.repository": "Wilfred/tree-sitter-elisp",
+                "treesitter.language": "elisp",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": ";"
+            }
+        },
         "lua": {
             "+text": {
                 "treesitter.repository": "tjdevries/tree-sitter-lua",
@@ -924,4 +939,6 @@
     },
 
     "text.modes": ["editor.text"],
+
+    "lisp.default-files": ["app://config/nev-api.lisp"],
 }
