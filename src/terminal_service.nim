@@ -124,7 +124,10 @@ when defined(windows):
 
 declareSettings TerminalSettings, "terminal":
   ## Mode to enter when creating a new terminal, if no mode is specified otherwise.
-  declare defaultMode, string, "normal"
+  declare defaultMode, string, ""
+
+  ## Mode to enter when creating a new terminal, if no mode is specified otherwise.
+  declare baseMode, string, "terminal"
 
   ## After how many milliseconds of no data received from a terminal it is considered idle, and can be reused
   ## for running more commands.
@@ -260,7 +263,7 @@ type
 
   TerminalView* = ref object of View
     terminals*: TerminalService
-    eventHandler: EventHandler
+    eventHandlers: Table[string, EventHandler]
     modeEventHandler: EventHandler
     mode*: string
     size*: tuple[width, height: int]
@@ -984,6 +987,8 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
   result.thread.createThread(terminalThread, threadState)
 
 proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[string]
+proc handleInput(self: TerminalService, view: TerminalView, text: string)
+proc handleKey(self: TerminalService, view: TerminalView, input: int64, modifiers: Modifiers)
 
 method close*(self: TerminalView) =
   if not self.open:
@@ -1004,8 +1009,39 @@ method deactivate*(self: TerminalView) =
   self.active = false
   self.markDirty()
 
+template withActiveView*(self: TerminalService, view: TerminalView, body: untyped): untyped =
+  block:
+    let prev = self.activeView
+    defer:
+      self.activeView = prev
+    self.activeView = view
+    body
+
+proc getEventHandler(self: TerminalView, context: string): EventHandler =
+  if context notin self.eventHandlers:
+    var eventHandler: EventHandler
+    assignEventHandler(eventHandler, self.terminals.events.getEventHandlerConfig(context)):
+      onAction:
+          if self.terminals.handleAction(self, action, arg).isSome:
+            Handled
+          else:
+            Ignored
+
+      onInput:
+        self.terminals.handleInput(self, input)
+        Handled
+
+      onKey:
+        self.terminals.handleKey(self, input, mods)
+        Handled
+
+    self.eventHandlers[context] = eventHandler
+    return eventHandler
+
+  return self.eventHandlers[context]
+
 method getEventHandlers*(self: TerminalView, inject: Table[string, EventHandler]): seq[EventHandler] =
-  result = @[self.eventHandler]
+  result = @[self.getEventHandler(self.terminals.settings.baseMode.get())]
   if self.modeEventHandler != nil:
     result.add self.modeEventHandler
 
@@ -1020,7 +1056,7 @@ method saveState*(self: TerminalView): JsonNode =
   result["options"] = CreateTerminalOptions(
     group: self.terminal.group,
     autoRunCommand: self.terminal.autoRunCommand,
-    mode: "normal".some,
+    mode: "".some,
     closeOnTerminate: self.closeOnTerminate,
     slot: self.slot,
     focus: false,
@@ -1078,7 +1114,8 @@ method init*(self: TerminalService): Future[Result[void, ref CatchableError]] {.
       id: Id
       command: string
       options: CreateTerminalOptions
-    let config = config.jsonTo(Config, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+    var config = config.jsonTo(Config, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+    config.options.mode = self.settings.defaultMode.get().some
     return self.createTerminalView(config.command, config.options, id = config.id)
 
   return ok()
@@ -1089,14 +1126,6 @@ method deinit*(self: TerminalService) =
 
 proc requestRender(self: TerminalService) =
   self.services.getService(PlatformService).get.platform.requestRender()
-
-template withActiveView*(self: TerminalService, view: TerminalView, body: untyped): untyped =
-  block:
-    let prev = self.activeView
-    defer:
-      self.activeView = prev
-    self.activeView = view
-    body
 
 proc handleInput(self: TerminalService, view: TerminalView, text: string) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Text, text: text))
@@ -1157,27 +1186,11 @@ proc createTerminalView(self: TerminalService, command: string, options: CreateT
       slot: options.slot,
     )
 
-    assignEventHandler(view.eventHandler, self.events.getEventHandlerConfig("terminal")):
-      onAction:
-        self.withActiveView(view):
-          if self.handleAction(view, action, arg).isSome:
-            Handled
-          else:
-            Ignored
-
-      onInput:
-        self.handleInput(view, input)
-        Handled
-
-      onKey:
-        self.handleKey(view, input, mods)
-        Handled
-
-      if options.mode.getSome(mode):
-        view.mode = mode
-      else:
-        view.mode = self.settings.defaultMode.get()
-      self.updateModeEventHandlers(view)
+    if options.mode.getSome(mode):
+      view.mode = mode
+    else:
+      view.mode = self.settings.defaultMode.get()
+    self.updateModeEventHandlers(view)
 
     discard term.onUpdated.subscribe proc() =
       self.services.getService(PlatformService).get.platform.requestRender()
@@ -1187,7 +1200,7 @@ proc createTerminalView(self: TerminalService, command: string, options: CreateT
       if not view.open:
         return
       log lvlInfo, &"Terminal process '{command}' terminated with exit code {exitCode}"
-      view.mode = "normal"
+      view.mode = self.settings.defaultMode.get()
       self.updateModeEventHandlers(view)
       if view.closeOnTerminate:
         self.layout.closeView(view)
@@ -1240,7 +1253,7 @@ proc setTerminalMode*(self: TerminalService, mode: string) {.expose("terminal").
 
 proc escape*(self: TerminalService) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
-    view.setMode("normal")
+    view.setMode(self.settings.defaultMode.get())
 
 proc createTerminal*(self: TerminalService, command: string = "", options: CreateTerminalOptions = CreateTerminalOptions()) {.expose("terminal").} =
   ## Opens a new terminal by running `command`.

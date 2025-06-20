@@ -9,6 +9,10 @@ For examples and default values see [here](../config/settings.json)
 | `editor.base-modes` | string[] | ["editor"] | List of input modes which are always active (at the lowest priority). |
 | `editor.clear-input-history-delay` | int | 3000 | After how many milliseconds of no input the input history is cleared. |
 | `editor.close-unused-documents-timer` | int | 10 | How often the editor will check for unused documents and close them, in seconds. |
+| `editor.command-line-mode-high` | string | "command-line-high" | Global mode to apply while the command line is open. |
+| `editor.command-line-mode-low` | string | "command-line-low" | Global mode to apply while the command line is open. |
+| `editor.command-line-result-mode-high` | string | "command-line-result-high" | Global mode to apply while the command line is open showing a command result. |
+| `editor.command-line-result-mode-low` | string | "command-line-result-low" | Global mode to apply while the command line is open showing a command result. |
 | `editor.custom-mode-on-top` | bool | true | If true then the app mode event handler (if the app mode is not "") will be on top of the event handler stack, otherwise it will be at the bottom (but still above the "editor" event handler. |
 | `editor.insert-input-delay` | int | 150 | After how many milliseconds of no input a pending input gets inserted as text, if you bind a key which inserts text in e.g. a multi key keybinding aswell. Say you bind `jj` to exit insert mode, then if you press `j` once and wait for this delay then it will insert `j` into the document, but if you press `j` again it will will exit insert mode instead. If you press another key like `k` before the time ends it will immediately insert the `j` and the `k`. |
 | `editor.keep-session-history` | bool | true | If true then the editor will keep a history of opened sessions in home://.nev/sessions.json, which enables features like opening a recent session or opening the last session. |
@@ -26,7 +30,8 @@ For examples and default values see [here](../config/settings.json)
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
 | `lsp-merge.timeout` | int | 10000 | Timeout for LSP requests in milliseconds |
-| `terminal.default-mode` | string | "normal" | Mode to enter when creating a new terminal, if no mode is specified otherwise. |
+| `terminal.base-mode` | string | "terminal" | Mode to enter when creating a new terminal, if no mode is specified otherwise. |
+| `terminal.default-mode` | string | "" | Mode to enter when creating a new terminal, if no mode is specified otherwise. |
 | `terminal.idle-threshold` | int | 500 | After how many milliseconds of no data received from a terminal it is considered idle, and can be reused for running more commands. |
 | `text.auto-reload` | bool | false | If true then files will be automatically reloaded when the content on disk changes (except if you have unsaved changes). |
 | `text.choose-cursor-max` | int | 300 | Maximum number of locations to highlight choose cursor mode. |
@@ -36,6 +41,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.color-highlight.enable` | bool | false | Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language in `text.color-highlight.{language-id}.` |
 | `text.color-highlight.kind` | "hex" \| "float1" \| "float255" | "hex" | How to interpret the number. "hex" means the number is written as either 6 or 8 hex characters, e.g. ABBACA7. "float1" means the number is a float with 0 being black and 1 being white. "float255" means the number is a float or int with 0 being black and 255 being white. |
 | `text.color-highlight.regex` | regex | "#([0-9a-fA-F]{6})\|#([0-9a-fA-F]{8})" | Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind. |
+| `text.completion-mode` | string | "editor.text.completion" | Mode to activate while completion window is open. |
 | `text.completion-word-chars` | (string \| string[])[] | [["a","z"],["A","Z"],["0","9"],"_"] |  |
 | `text.context-lines` | bool | true | Show lines containing parent nodes (like function, type, if/for etc) at the top of the window. |
 | `text.control-click-command` | string | "goto-definition" | Command to run after control clicking on some text. |

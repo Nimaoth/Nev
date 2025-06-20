@@ -1132,6 +1132,18 @@ declareSettings GeneralSettings, "editor":
   ## List of input modes which are always active (at the lowest priority).
   declare baseModes, seq[string], @["editor"]
 
+  ## Global mode to apply while the command line is open.
+  declare commandLineModeHigh, string, "command-line-high"
+
+  ## Global mode to apply while the command line is open.
+  declare commandLineModeLow, string, "command-line-low"
+
+  ## Global mode to apply while the command line is open showing a command result.
+  declare commandLineResultModeHigh, string, "command-line-result-high"
+
+  ## Global mode to apply while the command line is open showing a command result.
+  declare commandLineResultModeLow, string, "command-line-result-low"
+
 declareSettings DebugSettings, "debug":
   ## Log how long it takes to generate the render commands for a text editor.
   declare logTextRenderTime, bool, false

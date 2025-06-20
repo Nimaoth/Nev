@@ -202,6 +202,9 @@ declareSettings TextEditorSettings, "text":
   ## List of input modes text editors.
   declare modes, seq[string], @["editor.text"]
 
+  ## Mode to activate while completion window is open.
+  declare completionMode, string, "editor.text.completion"
+
   ## Command to execute when the mode of the text editor changes
   declare modeChangedHandlerCommand, string, ""
 
@@ -733,6 +736,18 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
     result.add inject["above-mode"]
 
   if self.showCompletions:
+    let completionMode = self.settings.completionMode.get()
+    if self.completionEventHandler == nil or self.completionEventHandler.config.context != completionMode:
+      let config = self.events.getEventHandlerConfig(completionMode)
+      assignEventHandler(self.completionEventHandler, config):
+        onAction:
+          if self.handleAction(action, arg, record=true).isSome:
+            Handled
+          else:
+            Ignored
+        onInput:
+          self.handleInput input, record=true
+
     result.add self.completionEventHandler
 
   if inject.contains("above-completion"):
@@ -2702,7 +2717,8 @@ proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.tex
   var selections: seq[Selection] = @[]
   for s in self.searchResults:
     selections.add s.toSelection
-  self.selections = selections
+  if selections.len > 0:
+    self.selections = selections
 
 proc clearSelections*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selections.len > 1:
@@ -5097,15 +5113,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.editors.registerEditor(self)
 
   self.updateEventHandlers()
-
-  assignEventHandler(self.completionEventHandler, self.events.getEventHandlerConfig("editor.text.completion")):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      self.handleInput input, record=true
 
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 

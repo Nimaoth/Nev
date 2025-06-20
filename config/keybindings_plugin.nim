@@ -30,8 +30,6 @@ proc loadConfiguredKeybindings*() {.expose("load-configured-keybindings").} =
   case keybindings
   of "vim":
     loadVimKeybindings()
-  of "vscode":
-    loadVSCodeKeybindings()
 
   when enableAst:
     loadModelKeybindings()

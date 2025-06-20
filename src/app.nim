@@ -129,8 +129,8 @@ type
 
     logDocument: Document
 
-    mEventHandler*: EventHandler
     mEventHandlers*: seq[EventHandler]
+    eventHandlers*: Table[string, EventHandler]
     modeEventHandler: EventHandler
     currentMode*: string
 
@@ -778,6 +778,23 @@ proc runLateCommandsFromAppOptions(self: App) =
     let res = self.handleAction(action, args, record=false)
     log lvlInfo, &"'{command}' -> {res}"
 
+proc getEventHandler(self: App, context: string): EventHandler =
+  if context notin self.eventHandlers:
+    var eventHandler: EventHandler
+    assignEventHandler(eventHandler, self.events.getEventHandlerConfig(context)):
+      onAction:
+        if self.handleAction(action, arg, record=true).isSome:
+          Handled
+        else:
+          Ignored
+      onInput:
+        Ignored
+
+    self.eventHandlers[context] = eventHandler
+    return eventHandler
+
+  return self.eventHandlers[context]
+
 proc newApp*(backend: api.Backend, platform: Platform, services: Services, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
@@ -828,11 +845,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
   self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
 
-  # todo: refactor this
-  self.editors.editorDefaults.add TextDocumentEditor()
-  when enableAst:
-    self.editors.editorDefaults.add ModelDocumentEditor()
-
   self.setupDefaultKeybindings()
 
   self.applySettingsFromAppOptions()
@@ -882,51 +894,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     if self.handleAction(action, arg, record=true).getSome(res):
       return ($res).some
     return string.none
-
-  assignEventHandler(self.mEventHandler, self.events.getEventHandlerConfig("editor")):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      Ignored
-
-  assignEventHandler(self.commands.commandLineEventHandlerHigh, self.events.getEventHandlerConfig("command-line-high")):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      Ignored
-
-  assignEventHandler(self.commands.commandLineEventHandlerLow, self.events.getEventHandlerConfig("command-line-low")):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      Ignored
-
-  assignEventHandler(self.commands.commandLineResultEventHandlerHigh, self.events.getEventHandlerConfig("command-line-result-high")):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      Ignored
-
-  assignEventHandler(self.commands.commandLineResultEventHandlerLow, self.events.getEventHandlerConfig("command-line-result-low")):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      Ignored
 
   let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
@@ -2778,11 +2745,13 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
     result.add self.modeEventHandler
 
   if self.commands.commandLineInputMode:
-    result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": self.commands.commandLineEventHandlerLow}.toTable)
-    result.add self.commands.commandLineEventHandlerHigh
+    let commandLineEventHandlerLow = self.getEventHandler(self.generalSettings.commandLineModeLow.get())
+    result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": commandLineEventHandlerLow}.toTable)
+    result.add self.getEventHandler(self.generalSettings.commandLineModeHigh.get())
   elif self.commands.commandLineResultMode:
-    result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": self.commands.commandLineResultEventHandlerLow}.toTable)
-    result.add self.commands.commandLineResultEventHandlerHigh
+    let commandLineResultEventHandlerLow = self.getEventHandler(self.generalSettings.commandLineResultModeLow.get())
+    result.add self.commands.commandLineEditor.getEventHandlers({"above-mode": commandLineResultEventHandlerLow}.toTable)
+    result.add self.getEventHandler(self.generalSettings.commandLineResultModeHigh.get())
   elif self.layout.popups.len > 0:
     result.add self.layout.popups[self.layout.popups.high].getEventHandlers()
   elif self.layout.tryGetCurrentView().getSome(view):

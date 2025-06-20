@@ -813,8 +813,6 @@
         "eval": false,
     },
 
-    "terminal.default-mode": "insert",
-
     "editor.open-session.tmux": {
         "env": "TMUX",
         "command": "tmux",
@@ -937,44 +935,4 @@
     "lisp.default-files": ["app://config/nev-api.lisp"],
 
     "extra-settings": ["app://config/settings-vim.json"],
-
-    // vim settings
-    "input": {
-        "editor.text.handle-inputs": true,
-        "vim.insert.handle-inputs": true,
-        "vim.replace.handle-inputs": true,
-        "vim.replace.input-handler-command": "vim-replace-input-handler",
-        "vim.insert-register.handle-inputs": true,
-        "vim.insert-register.input-handler-command": "vim-insert-register-input-handler",
-
-        "editor.text.temp.choose-cursor.handle-actions": true,
-        "editor.text.temp.choose-cursor.handle-inputs": true,
-        "editor.text.temp.choose-cursor.consume-all-actions": true,
-        "editor.text.temp.choose-cursor.consume-all-input": true,
-
-        "terminal.handle-inputs": false,
-        "terminal.handle-keys": false,
-
-        "terminal.normal.handle-inputs": false,
-        "terminal.normal.handle-keys": false,
-
-        "terminal.insert.handle-inputs": true,
-        "terminal.insert.handle-keys": true,
-    },
-
-    "text.mode-changed-handler-command": "vim-mode-changed-handler",
-    "text.modes": ["vim", "vim.normal"],
-    "text.default-mode": "vim.normal",
-    "text.inclusive-selection": false,
-
-    "editor.text.cursor.movement.": "last",
-    "editor.text.cursor.movement.vim.normal": "last",
-    "editor.text.cursor.wide.": true,
-    "editor.text.cursor.wide.vim.normal": true,
-    "editor.text.cursor.wide.vim.insert": false,
-    "editor.text.cursor.wide.vim.visual": true,
-    "editor.text.cursor.movement.vim.visual": "last",
-    "editor.text.cursor.wide.vim.visual-line": true,
-    "editor.text.cursor.movement.vim.visual-line": "last",
-
 }
