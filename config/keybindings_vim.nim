@@ -1323,13 +1323,6 @@ proc vimModeChangedHandler(editor: TextDocumentEditor, oldModes: seq[string], ne
     editor.setConfig "text.inclusive-selection", false
 
 proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
-  for id in getAllEditors():
-    if id.isTextEditor(editor):
-      editor.setConfig("text.modes", @["vim"].toJson)
-      editor.setMode("vim.insert")
-      editor.setMode("vim.normal")
-      editor.setCustomHeader("vim")
-
   let afterRestoreSessionHandle = addCallback proc(args: JsonNode): JsonNode =
     let states = getSessionData[Table[string, JsonNode]]("vim.states")
     for id in getAllEditors():

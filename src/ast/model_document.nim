@@ -334,7 +334,7 @@ template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
 template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
 
 proc requestEditorForModel(self: ModelDocumentEditor, model: Model): Option[ModelDocumentEditor] =
-  let editor: Option[DocumentEditor] = self.app.openWorkspaceFile(model.path)
+  let editor: Option[DocumentEditor] = self.app.openFile(model.path)
   if editor.getSome(editor) and editor of ModelDocumentEditor:
     return editor.ModelDocumentEditor.some
   return ModelDocumentEditor.none
@@ -3395,7 +3395,7 @@ proc createNewModelAsync*(self: ModelDocumentEditor, name: string) {.async.} =
     let serialized = $model.toJson
     await ws.saveFile(model.path, serialized)
 
-    discard self.app.openWorkspaceFile(model.path)
+    discard self.app.openFile(model.path)
   else:
     log lvlError, fmt"Failed to create model: no workspace"
 

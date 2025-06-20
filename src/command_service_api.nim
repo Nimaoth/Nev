@@ -48,6 +48,7 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
   editor.clearOverlays(overlayIdPrefix)
+  editor.setDefaultMode()
   if self.prefix != "":
     editor.clearOverlays(overlayIdPrefix)
     editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)

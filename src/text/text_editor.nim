@@ -5109,8 +5109,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
-  self.setMode(self.settings.defaultMode.get())
-
   return self
 
 method getDocument*(self: TextDocumentEditor): Document = self.document

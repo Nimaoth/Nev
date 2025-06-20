@@ -676,23 +676,6 @@ proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true
 
   return DocumentEditor.none
 
-proc openWorkspaceFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
-  defer:
-    self.platform.requestRender()
-
-  let path = self.workspace.getAbsolutePath(path)
-
-  log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
-  if self.tryOpenExisting(path, slot = slot).getSome(editor):
-    log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
-    return editor.some
-
-  let document = self.editors.getOrOpenDocument(path).getOr:
-    log(lvlError, fmt"Failed to load file {path}")
-    return DocumentEditor.none
-
-  return self.createAndAddView(document, slot = slot)
-
 proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()

@@ -291,7 +291,7 @@ proc currentVariablesContext*(self: Debugger, varRef: VariablesReference):
     return (t.id, frame[].id, varRef).some
 
 proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor, slot: string = "") {.async.} =
-  let editor = self.layout.openWorkspaceFile(path, slot = slot)
+  let editor = self.layout.openFile(path, slot = slot)
 
   if editor.getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor

@@ -967,7 +967,7 @@
     },
 
     "text.mode-changed-handler-command": "vim-mode-changed-handler",
-    "text.modes": ["vim"],
+    "text.modes": ["vim", "vim.normal"],
     "text.default-mode": "vim.normal",
     "text.inclusive-selection": false,
 
