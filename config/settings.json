@@ -198,9 +198,23 @@
             "editor.save-in-session": false,
             "+text": {
                 "completion-word-chars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"],
-                "modes": ["vim", "vim.insert"],
-                "default-mode": "vim.insert",
             }
+        },
+        "log": {
+            "+text": {
+                "treesitter.repository": "Tudyx/tree-sitter-log",
+                "scroll-to-end-on-insert": true,
+            }
+        },
+        "selector-popup-search-bar": {
+            "editor.save-in-session": false,
+        },
+        "shell-command-results": {
+            "editor.save-in-session": false,
+            "+text": {
+                "auto-reload": true,
+                "scroll-to-change-on-reload": "last",
+            },
         },
         "terminal-output": {
             "editor.save-in-session": false,
@@ -666,26 +680,6 @@
                 "treesitter.repository": "alex-pinkus/tree-sitter-swift"
             }
         },
-        "log": {
-            "+text": {
-                "treesitter.repository": "Tudyx/tree-sitter-log",
-                "scroll-to-end-on-insert": true,
-            }
-        },
-        "selector-popup-search-bar": {
-            "editor.save-in-session": false,
-            "+text": {
-                "modes": ["vim", "vim.insert"],
-                "default-mode": "vim.insert",
-            },
-        },
-        "shell-command-results": {
-            "editor.save-in-session": false,
-            "+text": {
-                "auto-reload": true,
-                "scroll-to-change-on-reload": "last",
-            },
-        },
         "talon": {
             "+text": {
                 "treesitter.repository": "wenkokke/tree-sitter-talon",
@@ -941,6 +935,8 @@
     "text.modes": ["editor.text"],
 
     "lisp.default-files": ["app://config/nev-api.lisp"],
+
+    "extra-settings": ["app://config/settings-vim.json"],
 
     // vim settings
     "input": {

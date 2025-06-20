@@ -511,38 +511,30 @@ proc preRender*(self: App, bounds: Rect) =
     self.reloadThemeFromConfig = false
     asyncSpawn self.setTheme(self.uiSettings.theme.get())
 
-proc loadSettingsFrom*(self: App, directory: string, changedFiles: seq[string] = @[], name: string,
+proc loadSettings*(self: App, key: string, filenames: seq[string], changedFiles: seq[string] = @[], name: string,
     loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
 
-  var hasSettingsFiles = changedFiles.len == 0
-  for f in changedFiles:
-    if f.contains("settings") and f.endsWith(".json"):
-      hasSettingsFiles = true
-      break
+  var anyFilesChanged = changedFiles.len == 0
+  if changedFiles.len > 0:
+    for f in filenames:
+      if f.splitPath.tail in changedFiles:
+        anyFilesChanged = true
+        break
 
-  if not hasSettingsFiles:
+  if not anyFilesChanged:
     return
 
-  {.gcsafe.}:
-    let filenames = [
-      &"{directory}/settings.json",
-      &"{directory}/settings-{platformName}.json",
-      &"{directory}/settings-{self.backend}.json",
-      &"{directory}/settings-{platformName}-{self.backend}.json",
-    ]
+  let futs = collect:
+    for file in filenames:
+      loadFile(self, "settings", file)
 
-  let settings = allFinished(
-    loadFile(self, "settings", filenames[0]),
-    loadFile(self, "settings", filenames[1]),
-    loadFile(self, "settings", filenames[2]),
-    loadFile(self, "settings", filenames[3]),
-  ).await.mapIt(it.read)
+  let settings = allFinished(futs).await.mapIt(it.read)
 
   assert filenames.len == settings.len
 
-  if directory notin self.config.storeGroups:
-    self.config.storeGroups[directory] = @[]
-  var deletedStores = self.config.storeGroups[directory]
+  if key notin self.config.storeGroups:
+    self.config.storeGroups[key] = @[]
+  var deletedStores = self.config.storeGroups[key]
   var stores = newSeq[ConfigStore]()
 
   for i in 0..<filenames.len:
@@ -583,11 +575,22 @@ proc loadSettingsFrom*(self: App, directory: string, changedFiles: seq[string] =
     child.setParent(parent)
 
   if stores.len > 0:
-    self.config.storeGroups[directory] = stores
+    self.config.storeGroups[key] = stores
   else:
-    self.config.storeGroups.del(directory)
+    self.config.storeGroups.del(key)
 
   self.config.reconnectGroups()
+
+proc loadSettingsFrom*(self: App, directory: string, changedFiles: seq[string] = @[], name: string,
+    loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].}) {.async.} =
+  {.gcsafe.}:
+    let filenames = @[
+      &"{directory}/settings.json",
+      &"{directory}/settings-{platformName}.json",
+      &"{directory}/settings-{self.backend}.json",
+      &"{directory}/settings-{platformName}-{self.backend}.json",
+    ]
+  await self.loadSettings(directory, filenames, changedFiles, name, loadFile)
 
 proc loadKeybindings*(self: App, directory: string,
     loadFile: proc(self: App, context: string, path: string): Future[Option[string]] {.gcsafe, raises: [].},
@@ -832,13 +835,17 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.setupDefaultKeybindings()
 
+  self.applySettingsFromAppOptions()
+
   self.config.groups.add(appConfigDir)
   await self.loadConfigFrom(appConfigDir, "app")
   self.config.groups.add(homeConfigDir)
   await self.loadConfigFrom(homeConfigDir, "home")
   log lvlInfo, &"Finished loading app and user settings"
 
-  self.applySettingsFromAppOptions()
+  self.config.groups.add("extra-settings")
+  let extraSettings = self.config.runtime.get("extra-settings", newSeq[string]())
+  await self.loadSettings("extra-settings", extraSettings, @[], "extra-settings", loadConfigFileFrom)
 
   self.uiSettings = UiSettings.new(self.config.runtime)
   self.generalSettings = GeneralSettings.new(self.config.runtime)
@@ -1777,9 +1784,9 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
       data.add value.pretty(printUserData = printUserData)
 
       let detail = if sourceStore != nil:
-        &"{sourceStore.name}\t{sourceStore.detail}"
+        &"{sourceStore.filename}\t{sourceStore.detail}"
       else:
-        &"{store.name}\t{store.detail}"
+        &"{store.filename}\t{store.detail}"
       items.add FinderItem(
         displayName: key,
         data: data,
@@ -1829,7 +1836,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     if store.detail != "":
       prefix.add "(" & store.detail & ") "
     prefix.add if state.merged: "(merged) " else: "(raw) "
-    prefix.add store.name
+    prefix.add store.filename
     prefix.add "."
     popup.textEditor.clearOverlays(overlayIdPrefix)
     popup.textEditor.addOverlay(((0, 0), (0, 0)), prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
@@ -2999,7 +3006,7 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
   else:
     context
 
-  log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
+  # log(lvlInfo, fmt"Adding command to '{context}': ('{subContext}', '{keys}', '{command}')")
 
   let (baseContext, subContext) = if (let i = context.find('#'); i != -1):
     (context[0..<i], context[i+1..^1] & subContext)

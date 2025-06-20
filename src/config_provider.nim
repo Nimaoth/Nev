@@ -304,7 +304,7 @@ proc new*(_: typedesc[ConfigStore], name, filename: string, parent: ConfigStore 
       inc nextConfigStoreId
       id
 
-  result = ConfigStore(id: id, name: name, filename: name, settings: newJexObject())
+  result = ConfigStore(id: id, name: name, filename: filename, settings: newJexObject())
   result.settings.setUserData(id)
   settings.setUserData(id)
   result.settings.evaluateSettingsRec(settings)

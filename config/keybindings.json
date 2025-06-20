@@ -657,4 +657,124 @@
         "<ESCAPE>": ["set-mode", "vim.insert"],
         "<SPACE>": ["all", [".vim-paste", false, true, "vim-default-register"], [".set-mode", "vim.insert"]],
     },
+
+
+
+    // vscode
+    "vscode.base": {
+        "<C-w>h": ["focus-view-left"],
+        "<C-w><C-h>": ["focus-view-left"],
+        "<C-w><LEFT>": ["focus-view-left"],
+        "<C-w>l": ["focus-view-right"],
+        "<C-w><C-l>": ["focus-view-right"],
+        "<C-w><RIGHT>": ["focus-view-right"],
+        "<C-w>k": ["focus-view-up"],
+        "<C-w><C-k>": ["focus-view-up"],
+        "<C-w><UP>": ["focus-view-up"],
+        "<C-w>j": ["focus-view-down"],
+        "<C-w><C-j>": ["focus-view-down"],
+        "<C-w><DOWN>": ["focus-view-down"],
+        "<C-w>w": ["focus-next-view"],
+        "<C-w>p": ["open-prev-view"],
+        "<C-w><C-p>": ["open-prev-view"],
+        "<C-w>q": ["vim-close-current-view-or-quit"],
+        "<C-w><C-q>": ["close-active-view"],
+        "<C-w>c": ["hide-active-view"],
+        "<C-w>C": ["close-active-view"],
+        "<C-w>o": ["close-other-views"],
+        "<C-w><C-o>": ["close-other-views"],
+
+        "<C-o>": ["open-prev-view"],
+
+        "<LEADER>m": ["toggle-maximize-view-local", "**"],
+
+        "<SPACE>sr": "open-recent-session",
+        "<SPACE>to": ["select-terminal"],
+        "<SPACE>ts": [
+            "run-in-terminal",
+            "default",
+            "",
+            {
+                "mode": "insert",
+                "closeOnTerminate": true,
+                "group": "scratch",
+            }
+        ],
+    },
+
+    "vscode": {
+        "<ESCAPE>": ["vim-normal-mode"],
+        ":": ["command-line"],
+        "<C-h>": ["vim-add-cursor-above"],
+        "<C-f>": ["vim-add-cursor-below"],
+
+        // special
+        "<?-count>d<move>": ["vim-delete-move <move> <#count>"],
+        "<?-count>c<move>": ["vim-change-move <move> <#count>"],
+        "<?-count>y<move>": ["vim-yank-move <move> <#count>"],
+
+        "<?-count>d<text_object>": ["vim-delete-move <text_object> <#count>"],
+        "<?-count>c<text_object>": ["vim-change-move <text_object> <#count>"],
+        "<?-count>y<text_object>": ["vim-yank-move <text_object> <#count>"],
+
+        "<C-e>": ["scroll-lines", -2],
+        "<CS-e>": ["scroll-text-horizontal", -4],
+        "<C-y>": ["scroll-lines", 2],
+        "<CS-y>": ["scroll-text-horizontal", 4],
+        "<C-UP>": ["scroll-lines", -1],
+        "<C-DOWN>": ["scroll-lines", 1],
+
+        "/": ["vim-open-search-bar"],
+        "gc": ["vim-toggle-line-comment"],
+        "*": ["vim-set-search-query-from-word"],
+        "n": ["vim-next-search-result"],
+        "N": ["vim-prev-search-result"],
+
+        ".": ["replay-commands", "."],
+        "L": ["vim-select-word-or-add-cursor"],
+        "H": ["vim-move-last-selection-to-next-search-result"],
+
+        "m<CHAR>": ["vim-add-mark <CHAR>"],
+        "'<CHAR>": ["vim-goto-mark <CHAR>"],
+
+        "q<CHAR>": ["vim-start-macro <CHAR>"],
+        "@<CHAR>": ["vim-play-macro <CHAR>"],
+        "Q": ["vim-stop-macro"],
+
+        "M": ["enter-choose-cursor-mode", "vim-handle-select-word"],
+
+        // movement
+        "<move>": ["vim-select-last <move>"],
+        "<C-g>o": ["vim-reverse-selections"],
+        "<C-l>": ["select-next-tab-stop"],
+        "<C-v>": ["select-prev-tab-stop"],
+        "gt": ["vim-goto-next-diagnostic"],
+        "gn": ["vim-goto-prev-diagnostic"],
+        "gf": ["vim-goto-next-change"],
+        "gh": ["vim-goto-prev-change"],
+
+        // copy/paste
+        "p": ["vim-paste", true, false, "vim-default-register"],
+        "P": ["vim-paste", true, false],
+
+        // editing
+        "x": ["vim-delete-right"],
+        "<DELETE>": ["vim-delete-right"],
+        "<X>": ["vim-delete-left"],
+        "<BACKSPACE>": ["vim-delete-left"],
+        "<BACKSPACE>": ["vim-delete-left"],
+        "r": ["set-mode", "vim.replace"],
+
+        // undo/redo
+        "u": ["vim-undo", true],
+        "<C-r>": ["vim-redo", true],
+        "U": ["vim-redo", false],
+
+        // vcs
+        "<LEADER>gx": ["close-diff"],
+        "<LEADER>gc": ["update-diff"],
+    },
+
+
+
 }
