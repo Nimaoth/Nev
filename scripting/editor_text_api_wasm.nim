@@ -431,14 +431,27 @@ proc getConfig*(self: TextDocumentEditor; key: string): JsonNode {.gcsafe,
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_setMode_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
+proc editor_text_removeMode_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc setMode*(self: TextDocumentEditor; mode: string) {.gcsafe, raises: [].} =
+proc removeMode*(self: TextDocumentEditor; mode: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add mode.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setMode_void_TextDocumentEditor_string_wasm(
+  let res {.used.} = editor_text_removeMode_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setMode_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setMode*(self: TextDocumentEditor; mode: string; exclusive: bool = true) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add mode.toJson()
+  argsJson.add exclusive.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setMode_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
 
 

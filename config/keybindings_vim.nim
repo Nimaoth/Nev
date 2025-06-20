@@ -49,29 +49,6 @@ proc startRecordingCurrentCommandInPeriodMacro(editor: TextDocumentEditor) =
 
 type VimTextObjectRange* = enum Inner, Outer, CurrentToEnd
 
-macro addSubCommandWithCount*(mode: string, sub: string, keys: string, move: string, args: varargs[untyped]) =
-  let (stmts, str) = bindArgs(args)
-  return genAst(stmts, mode, keys, move, str, sub):
-    stmts
-    addCommandScript(getContextWithMode("editor.text", mode) & "#" & sub, "", keysPrefix & "<?-count>" & keys, move, str & " <#" & sub & ".count>", source = currentSourceLocation(-2))
-
-proc addSubCommandWithCount*(mode: string, sub: string, keys: string, action: proc(editor: TextDocumentEditor, count: int): void, source = currentSourceLocation()) =
-  addCommand getContextWithMode("editor.text", mode) & "#" & sub, "<?-count>" & keys, "<#" & sub & ".count>", action, source
-
-template addSubCommandWithCountBlock*(mode: string, sub: string, keys: string, body: untyped): untyped =
-  let p = proc(editor: TextDocumentEditor, count: int): void =
-    let editor {.inject.} = editor
-    let count {.inject.} = count
-    body
-  addSubCommandWithCount mode, sub, keys, p, currentSourceLocation(-2)
-
-template addSubCommand*(mode: string, sub: string, keys: string, move: string, args: varargs[untyped]) =
-  addTextCommand mode & "#" & sub, keys, move, args
-
-template addMoveCommandBlock*(mode: string, sub: string, keys: string, body: untyped): untyped =
-  addTextCommandBlock mode & "#" & sub, keys:
-    body
-
 proc getVimLineMargin*(): float = getOption[float]("editor.text.vim.line-margin", 5)
 proc getVimClipboard*(): string = getOption[string]("editor.text.vim.clipboard", "")
 proc getVimDefaultRegister*(): string =
@@ -91,9 +68,8 @@ proc getEnclosing(line: string, column: int, predicate: proc(c: char): bool): (i
     dec startColumn
   return (startColumn, endColumn)
 
-proc vimHandleSelectWorld(editor: TextDocumentEditor, cursor: Cursor, mode: string) {.exposeActive(editorContext, "vim-handle-select-word").} =
+proc vimHandleSelectWord(editor: TextDocumentEditor, cursor: Cursor) {.exposeActive(editorContext, "vim-handle-select-word").} =
   editor.setSelection(cursor.toSelection)
-  editor.setMode(mode)
 
 proc vimSelectLine(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-select-line").} =
   editor.selections = editor.selections.mapIt (if it.isBackwards:
@@ -382,6 +358,7 @@ proc vimMotionSurround*(editor: TextDocumentEditor, cursor: Cursor, count: int, 
       return
 
 proc vimMoveToMatching(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-move-to-matching").} =
+  # todo: pass as parameter
   let which = if editor.mode == "vim.visual" or editor.mode == "vim.visual-line":
     SelectionCursor.Last
   else:
@@ -706,6 +683,7 @@ proc vimPaste(editor: TextDocumentEditor, pasteRight: bool = false, inclusiveEnd
   editor.selections = editor.delete(selectionsToDelete, inclusiveEnd=false)
 
   if yankedLines:
+    # todo: pass bool as parameter
     if editor.mode != "vim.visual-line":
       editor.moveLast "line", Both
       editor.insertText "\n", autoIndent=false
@@ -1114,7 +1092,7 @@ proc vimStartMacro(editor: TextDocumentEditor, name: string) {.exposeActive(edit
 
 proc vimPlayMacro(editor: TextDocumentEditor, name: string) {.exposeActive(editorContext, "vim-play-macro").} =
   let register = if name == "@":
-    getOption("editor.current-macro-register", "")
+    getCurrentMacroRegister()
   else:
     name
 
@@ -1275,13 +1253,27 @@ proc vimInsertRegisterInputHandler(editor: TextDocumentEditor, input: string) {.
   editor.vimPaste register=input, inclusiveEnd=true
   editor.setMode "vim.insert"
 
-proc vimModeChangedHandler(editor: TextDocumentEditor, oldMode: string, newMode: string) {.exposeActive(editorContext, "vim-mode-changed-handler").} =
-  # echo &"vimModeChangedHandler {editor.getFileName()}, {oldMode} -> {newMode}"
+proc vimModeChangedHandler(editor: TextDocumentEditor, oldModes: seq[string], newModes: seq[string]) {.exposeActive(editorContext, "vim-mode-changed-handler").} =
+  # echo &"vimModeChangedHandler {editor.getFileName()}, {oldModes} -> {newModes}"
+
+  let oldMode = if oldModes.len > 0:
+    oldModes[0]
+  else:
+    ""
+
+  if newModes.len == 0:
+    return
+
+  let newMode = newModes[0]
+
   if not editor.getCurrentEventHandlers().contains("vim"):
     return
 
   if newMode == "":
     editor.setMode "vim.normal"
+    return
+
+  if not newMode.startsWith("vim"):
     return
 
   let recordModes = [
@@ -1299,8 +1291,8 @@ proc vimModeChangedHandler(editor: TextDocumentEditor, oldMode: string, newMode:
         infof"Record implicit macro because document was modified"
         let text = getRegisterText(".-temp")
         setRegisterText(text, ".")
-      else:
-        infof"Don't record implicit macro because nothing was modified"
+      # else:
+      #   infof"Don't record implicit macro because nothing was modified"
   else:
     if oldMode == "vim.normal" and newMode in recordModes:
       editor.startRecordingCurrentCommandInPeriodMacro()
@@ -1313,19 +1305,22 @@ proc vimModeChangedHandler(editor: TextDocumentEditor, oldMode: string, newMode:
 
   case newMode
   of "vim.normal":
-    setOption "text.inclusive-selection", false
+    editor.setConfig "text.inclusive-selection", false
     editor.selections = editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
     editor.saveCurrentCommandHistory()
     editor.hideCompletions()
 
   of "vim.insert":
-    setOption "text.inclusive-selection", false
+    editor.setConfig "text.inclusive-selection", false
 
   of "vim.visual":
-    setOption "text.inclusive-selection", true
+    editor.setConfig "text.inclusive-selection", true
+
+  of "vim.visual-line":
+    editor.setConfig "text.inclusive-selection", false
 
   else:
-    setOption "text.inclusive-selection", false
+    editor.setConfig "text.inclusive-selection", false
 
 proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   for id in getAllEditors():

@@ -138,6 +138,9 @@ proc getOption*[T](path: string, default: T = T.default): T =
 proc setOption*[T](path: string, value: T) =
   plugin_api.setOption(path, value.toJson)
 
+proc setConfig*[T](editor: TextDocumentEditor, path: string, value: T) =
+  plugin_api.setConfig(editor, path, value.toJson)
+
 proc getSessionData*[T](path: string, default: T = T.default): T =
   return getSessionDataJson(path, default.toJson).jsonTo(T)
 

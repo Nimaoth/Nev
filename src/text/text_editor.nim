@@ -310,9 +310,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   eventHandlerNames: seq[string]
   eventHandlers: seq[EventHandler]
   mEventHandlers: seq[EventHandler]
-  modeEventHandlers: seq[EventHandler]
+  eventHandlerOverrides: Table[string, proc(config: EventHandlerConfig): EventHandler {.gcsafe, raises: [].}]
   completionEventHandler: EventHandler
-  currentMode*: string
   commandCount*: int
   commandCountRestore*: int
   currentCommandHistory: CommandHistory
@@ -470,7 +469,6 @@ proc handleCompletionsUpdated(self: TextDocumentEditor)
 proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot)
 proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
 proc updateEventHandlers(self: TextDocumentEditor)
-proc updateModeEventHandlers(self: TextDocumentEditor)
 proc updateMatchingWordHighlight(self: TextDocumentEditor)
 proc updateColorOverlays(self: TextDocumentEditor) {.async.}
 
@@ -695,6 +693,19 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
   else: return false
 
+proc createEventHandler(self: TextDocumentEditor, config: EventHandlerConfig): EventHandler =
+  if self.eventHandlerOverrides.contains(config.context):
+    result = self.eventHandlerOverrides[config.context](config)
+  else:
+    assignEventHandler(result, config):
+      onAction:
+        if self.handleAction(action, arg, record=true).isSome:
+          Handled
+        else:
+          Ignored
+      onInput:
+        self.handleInput input, record=true
+
 proc getConfigEventHandlers(self: TextDocumentEditor): seq[EventHandler] =
   let modes = self.settings.modes.get()
 
@@ -711,20 +722,12 @@ proc getConfigEventHandlers(self: TextDocumentEditor): seq[EventHandler] =
     self.mEventHandlers.setLen(modes.len)
     for i, mode in modes:
       let config = self.events.getEventHandlerConfig(mode)
-      assignEventHandler(self.mEventHandlers[i], config):
-        onAction:
-          if self.handleAction(action, arg, record=true).isSome:
-            Handled
-          else:
-            Ignored
-        onInput:
-          self.handleInput input, record=true
+      self.mEventHandlers[i] = self.createEventHandler(config)
 
   return self.mEventHandlers
 
 method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
   result = self.getConfigEventHandlers()
-  result.add self.modeEventHandlers
 
   if inject.contains("above-mode"):
     result.add inject["above-mode"]
@@ -1539,7 +1542,26 @@ proc setConfig*(self: TextDocumentEditor, key: string, value: JsonNode) {.expose
 proc getConfig*(self: TextDocumentEditor, key: string): JsonNode {.expose("editor.text").} =
   self.config.get(key, newJexNull()).toJson()
 
-proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+proc removeMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
+
+  var modes = self.settings.modes.get()
+  let i = modes.find(mode)
+  if i == -1:
+    return
+
+  modes.removeShift(mode)
+  self.settings.modes.set(modes)
+
+  let handler = self.settings.modeChangedHandlerCommand.get()
+  if handler != "":
+    discard self.handleActionInternal(handler, [[mode].toJson, newJArray()].toJson)
+
+  self.markDirty()
+
+proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true) {.expose("editor.text").} =
   ## Sets the current mode of the editor.
   ## If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert",
@@ -1549,27 +1571,45 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
     log(lvlError, fmt"Can't set mode to '{mode}'")
     return
 
-  if self.currentMode == mode:
-    return
-
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
-  let oldMode = self.currentMode
-  self.currentMode = mode
+  let prefix = if exclusive:
+    let i = mode.find('.')
+    if i != -1:
+      mode[0..i]
+    else:
+      ""
+  else:
+    ""
 
+  var changed = false
+  var removedModes = newSeq[string]()
   var modes = self.settings.modes.get()
-  modes.excl(oldMode)
-  if mode != "":
-    modes.incl(mode)
-  self.settings.modes.set(modes)
+  let alreadyContained = modes.find(mode) != -1
+  var i = 0
+  if exclusive and prefix != "":
+    while i < modes.len:
+      if modes[i].startsWith(prefix) and modes[i] != mode:
+        removedModes.add(modes[i])
+        modes.removeShift(i)
+        changed = true
+        continue
+      inc i
 
-  self.updateModeEventHandlers()
+  if not alreadyContained and mode != "":
+    modes.add(mode)
+    changed = true
+
+  if not changed:
+    return
+
+  self.settings.modes.set(modes)
 
   let handler = self.settings.modeChangedHandlerCommand.get()
   if handler != "":
-    discard self.handleActionInternal(handler, [oldMode, self.currentMode].toJson)
+    discard self.handleActionInternal(handler, [removedModes.toJson, [mode].toJson].toJson)
 
   self.markDirty()
 
@@ -1578,11 +1618,14 @@ proc setDefaultMode*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
   ## Returns the current mode of the text editor, or "" if there is no mode
-  return self.currentMode
+  let modes = self.settings.modes.get()
+  if modes.len > 0:
+    return modes.last
+  return ""
 
 proc getContextWithMode(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
   ## Appends the current mode to context
-  return context & "." & $self.currentMode
+  return context & "." & $self.mode
 
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.
     expose("editor.text").} =
@@ -4415,18 +4458,13 @@ proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) {.expos
   self.targetSelection = selection
 
 proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("editor.text").} =
-  const mode = "choose-cursor"
-  let oldMode = self.currentMode
-
+  const mode = "temp.choose-cursor"
   let cursors = self.getAvailableCursors()
   let keys = self.assignKeys(cursors)
-  var config = EventHandlerConfig(
-    context: "editor.text.choose-cursor",
-    settings: self.config,
-  )
+  var config = self.events.getEventHandlerConfig(mode)
 
   for i in 0..min(cursors.high, keys.high):
-    config.addCommand("", keys[i] & "<SPACE>", action & " " & $cursors[i].toJson & " " & $oldMode.toJson)
+    config.addCommand("", keys[i] & "<SPACE>", action & " " & $cursors[i].toJson)
 
   var progress = ""
 
@@ -4452,7 +4490,8 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
         self.displayMap.overlay.clear(overlayIdChooseCursor)
         self.document.notifyTextChanged()
         self.markDirty()
-        discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson), record=false)
+        self.removeMode(mode)
+        discard self.handleAction(action, ($options[0].toJson), record=false)
     except:
       discard
 
@@ -4463,36 +4502,34 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   config.addCommand("", "<ESCAPE>", "setMode \"\"")
 
-  self.modeEventHandlers.setLen(1)
-  assignEventHandler(self.modeEventHandlers[0], config):
-    onAction:
-      self.displayMap.overlay.clear(overlayIdChooseCursor)
-      self.document.notifyTextChanged()
-      self.markDirty()
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
+  self.eventHandlerOverrides[mode] = proc(config: EventHandlerConfig): EventHandler =
+    assignEventHandler(result, config):
+      onAction:
+        self.displayMap.overlay.clear(overlayIdChooseCursor)
+        self.document.notifyTextChanged()
+        self.markDirty()
+        self.removeMode(mode)
+        if self.handleAction(action, arg, record=true).isSome:
+          Handled
+        else:
+          Ignored
+
+      onInput:
         Ignored
 
-    onInput:
-      Ignored
+      onProgress:
+        progress.add inputToString(input)
+        updateStyledTextOverrides()
 
-    onProgress:
-      progress.add inputToString(input)
-      updateStyledTextOverrides()
-
-    onCanceled:
-      self.displayMap.overlay.clear(overlayIdChooseCursor)
-      self.setMode(oldMode)
+      onCanceled:
+        self.displayMap.overlay.clear(overlayIdChooseCursor)
+        self.removeMode(mode)
 
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
-  self.currentMode = mode
-  let handler = self.settings.modeChangedHandlerCommand.get()
-  if handler != "":
-    discard self.handleActionInternal(handler, [oldMode, self.currentMode].toJson)
+  self.setMode(mode)
 
   self.markDirty()
 
@@ -5020,22 +5057,6 @@ proc updateEventHandlers(self: TextDocumentEditor) =
           Ignored
       onInput:
         self.handleInput input, record=true
-
-proc updateModeEventHandlers(self: TextDocumentEditor) =
-  if self.currentMode.len == 0:
-    self.modeEventHandlers.setLen(0)
-  # else:
-  #   self.modeEventHandlers.setLen(self.eventHandlerNames.len)
-  #   for i, name in self.eventHandlerNames:
-  #     let config = self.events.getEventHandlerConfig(name & "." & self.currentMode)
-  #     assignEventHandler(self.modeEventHandlers[i], config):
-  #       onAction:
-  #         if self.handleAction(action, arg, record=true).isSome:
-  #           Handled
-  #         else:
-  #           Ignored
-  #       onInput:
-  #         self.handleInput input, record=true
 
 proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
   var self = createTextEditorInstance()
