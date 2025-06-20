@@ -156,7 +156,6 @@ var gEditor* {.exportc.}: App = nil
 proc handleLog(self: App, level: Level, args: openArray[string])
 proc getActiveEditor*(self: App): Option[DocumentEditor]
 proc help*(self: App, about: string = "")
-proc setHandleInputs*(self: App, context: string, value: bool)
 proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none)
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
@@ -265,7 +264,6 @@ proc setupDefaultKeybindings(self: App) =
   let commandLineConfig = self.events.getEventHandlerConfig("command-line-high")
   let selectorPopupConfig = self.events.getEventHandlerConfig("popup.selector")
 
-  self.setHandleInputs("editor.text", true)
   self.config.runtime.set("editor.text.cursor.movement.", "both")
   self.config.runtime.set("editor.text.cursor.wide.", false)
 
@@ -489,15 +487,13 @@ proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
         try:
           if command.kind == JString or command.kind == JArray:
             let (name, args) = command.parseCommand()
-            if name != "":
-              self.addCommandScript(context, "", keys, name, args, source = loc)
+            self.addCommandScript(context, "", keys, name, args, source = loc)
 
           elif command.kind == JObject:
             if command.hasKey("command"):
               var (name, args) = command["command"].parseCommand()
-              if name != "":
-                let description = command.fields.getOrDefault("description", newJexString("")).getStr
-                self.addCommandScript(context, "", keys, name, args, description, source = loc)
+              let description = command.fields.getOrDefault("description", newJexString("")).getStr
+              self.addCommandScript(context, "", keys, name, args, description, source = loc)
             else:
               let description = command.fields.getOrDefault("description", newJexString("")).getStr
               self.events.addCommandDescription(context, keys, description)
@@ -1224,21 +1220,6 @@ proc saveAppState*(self: App) {.expose("editor").} =
 
 proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =
   self.platform.requestRender(redrawEverything)
-
-proc setHandleInputs*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.events.getEventHandlerConfig(context).setHandleInputs(value)
-
-proc setHandleActions*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.events.getEventHandlerConfig(context).setHandleActions(value)
-
-proc setHandleKeys*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.events.getEventHandlerConfig(context).setHandleKeys(value)
-
-proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.events.getEventHandlerConfig(context).setConsumeAllActions(value)
-
-proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
-  self.events.getEventHandlerConfig(context).setConsumeAllInput(value)
 
 proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
   self.workspace.clearDirectoryCache()

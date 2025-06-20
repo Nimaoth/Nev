@@ -294,6 +294,10 @@
         "<C-ENTER>": ["send-terminal-input-and-set-mode", "<ENTER>", "normal"],
     },
 
+    "#count": {
+      "<-1-9><o-0-9>": [""],
+    },
+
     "vim#text_object": {
         "<?-count>iw": ["vim-select-text-object", "vim-word-inner", false, true, "<#move.count>"],
         "<?-count>aw": ["vim-select-text-object", "vim-word-outer", false, true, "<#move.count>"],
@@ -333,8 +337,8 @@
         "<?-count>j": ["vim-move-cursor-visual-line", 1, "<#move.count>"],
         "<?-count>k": ["vim-move-cursor-visual-line", -1, "<#move.count>"],
         "<?-count>l": ["vim-move-cursor-column", 1, "<#move.count>"],
-        "<?-count>gm": ["move-cursor-line-center", "<#move.count>"],
-        "<?-count>gM": ["move-cursor-center", "<#move.count>"],
+        "gm": ["move-cursor-line-center"],
+        "gM": ["move-cursor-center"],
 
         "0": ["vim-move-first", "line"],
         "<HOME>": ["vim-move-first", "visual-line"],
@@ -369,6 +373,10 @@
         "<?-count><PAGE_DOWN>": ["vim-move-cursor-visual-line", 100, "<#move.count>", true],
         "<?-count><C-u>": ["vim-move-cursor-visual-line", -50, "<#move.count>", true],
         "<?-count><PAGE_UP>": ["vim-move-cursor-visual-line", -100, "<#move.count>", true],
+        "<?-count>|": ["vim-move-to-column", "<#move.count>"],
+        "<?-count>-": ["vim-move-cursor-line-first-char", -1, "<#move.count>"],
+        "<?-count>+": ["vim-move-cursor-line-first-char", 1, "<#move.count>"],
+        "<?-count>_": ["vim-move-to-start-of-line", "<#move.count>"],
     },
 
     "vim.base": {
@@ -456,6 +464,12 @@
         // movement
         "<move>": ["vim-select-last <move>"],
         "<C-g>o": ["vim-reverse-selections"],
+        "<C-l>": ["select-next-tab-stop"],
+        "<C-v>": ["select-prev-tab-stop"],
+        "gt": ["vim-goto-next-diagnostic"],
+        "gn": ["vim-goto-prev-diagnostic"],
+        "gf": ["vim-goto-next-change"],
+        "gh": ["vim-goto-prev-change"],
 
         // copy/paste
         "p": ["vim-paste", true, false, "vim-default-register"],
@@ -479,15 +493,6 @@
         "<LEADER>gc": ["update-diff"],
     },
 
-    // todo
-    // "vim#count": {
-    //   "<-1-9><o-0-9>": [""],
-    // },
-
-    // "#count": {
-    //   "<-1-9><o-0-9>": [""],
-    // },
-
     "vim.normal": {
         // special
         "a": ["vim-insert-mode", "right"],
@@ -510,6 +515,9 @@
         // cursor movement
         "<C-r>": ["select-prev"],
         "<C-m>": ["select-next"],
+        "gxf": ["vim-increment"],
+        "gxh": ["vim-decrement"],
+        "gxc": ["vim-increment-by-index"],
 
         // editing
         "~": ["vim-toggle-case", true],
@@ -592,6 +600,15 @@
         // cursor movement
         "o": ["vim-invert-selections"],
         "gp": ["select-parent-current-ts", false],
+        "gl": ["vim-add-next-same-node-to-selection"],
+        "gh": ["vim-move-selection-to-next-same-node"],
+        "gs": ["vim-add-next-sibling-to-selection"],
+        "gd": ["vim-move-selection-to-next-sibling"],
+        "gi": ["vim-shrink-selection"],
+        "gxx": ["vim-evaluate-selection"],
+        "gxf": ["vim-increment-selection"],
+        "gxh": ["vim-decrement-selection"],
+        "gxc": ["vim-increment-selection-by-index"],
 
         // editing
         "~": ["vim-toggle-case", false],

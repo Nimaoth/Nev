@@ -490,18 +490,25 @@ proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx) =
         i = key.findSep(prevI)
 
       var extend = field.extend
-      if key[prevI] == '+':
-        extend = true
-        inc prevI
-      elif key[prevI] == '*':
-        extend = false
-        inc prevI
-      let sub = key[prevI..^1].replace("..", ".")
+      if prevI < key.len:
+        if key[prevI] == '+':
+          extend = true
+          inc prevI
+        elif key[prevI] == '*':
+          extend = false
+          inc prevI
+        let sub = key[prevI..^1].replace("..", ".")
 
-      var evaluatedField: JsonNodeEx
-      evaluatedField.evaluateSettingsRec(field)
-      evaluatedField.extend = extend
-      subTarget[sub] = evaluatedField
+        var evaluatedField: JsonNodeEx
+        evaluatedField.evaluateSettingsRec(field)
+        evaluatedField.extend = extend
+        subTarget[sub] = evaluatedField
+      else:
+        # empty last key
+        var evaluatedField: JsonNodeEx
+        evaluatedField.evaluateSettingsRec(field)
+        evaluatedField.extend = extend
+        subTarget[""] = evaluatedField
 
   else:
     target = node

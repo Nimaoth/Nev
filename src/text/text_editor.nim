@@ -202,6 +202,9 @@ declareSettings TextEditorSettings, "text":
   ## List of input modes text editors.
   declare modes, seq[string], @["editor.text"]
 
+  ## Command to execute when the mode of the text editor changes
+  declare modeChangedHandlerCommand, string, ""
+
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
@@ -1561,11 +1564,12 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
   if mode != "":
     modes.incl(mode)
   self.settings.modes.set(modes)
-  debugf"modes for '{self.getFileName()}': {modes}"
 
   self.updateModeEventHandlers()
 
-  self.plugins.handleModeChanged(self, oldMode, self.currentMode)
+  let handler = self.settings.modeChangedHandlerCommand.get()
+  if handler != "":
+    discard self.handleActionInternal(handler, [oldMode, self.currentMode].toJson)
 
   self.markDirty()
 
@@ -4418,10 +4422,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   let keys = self.assignKeys(cursors)
   var config = EventHandlerConfig(
     context: "editor.text.choose-cursor",
-    handleActions: true,
-    handleInputs: true,
-    consumeAllActions: true,
-    consumeAllInput: true
+    settings: self.config,
   )
 
   for i in 0..min(cursors.high, keys.high):
@@ -4489,7 +4490,9 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
     self.blinkCursorTask.reschedule()
 
   self.currentMode = mode
-  self.plugins.handleModeChanged(self, oldMode, self.currentMode)
+  let handler = self.settings.modeChangedHandlerCommand.get()
+  if handler != "":
+    discard self.handleActionInternal(handler, [oldMode, self.currentMode].toJson)
 
   self.markDirty()
 

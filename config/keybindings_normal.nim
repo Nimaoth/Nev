@@ -96,7 +96,7 @@ proc loadModelKeybindings*() {.expose("load-model-keybindings").} =
 
   info "Applying model keybindings"
 
-  setHandleInputs "editor.model", true
+  # setHandleInputs "editor.model", true
   setOption "editor.model.cursor.wide.", false
 
   addCommand("editor.model", "<LEFT>", "move-cursor-left-line")
@@ -242,7 +242,6 @@ proc loadVSCodeKeybindings*() {.expose("load-vscode-keybindings").} =
     if id.isTextEditor(editor):
       editor.setMode("")
 
-  setHandleInputs "editor.text", true
   setOption "editor.text.cursor.movement.", "both"
   setOption "editor.text.cursor.wide.", false
 

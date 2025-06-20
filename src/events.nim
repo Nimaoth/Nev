@@ -1,7 +1,7 @@
-import std/[tables, sequtils, strutils, sugar, unicode]
+import std/[tables, sequtils, strutils, sugar, unicode, json]
 import misc/[custom_logger, util, custom_async]
 import scripting/expose
-import input, service, dispatch_tables
+import input, service, dispatch_tables, config_provider
 
 logCategory "events"
 
@@ -25,15 +25,11 @@ type
     parent*: EventHandlerConfig
     context*: string
     commands: Table[string, Table[string, Command]]
-    handleActions*: bool
-    handleInputs*: bool
-    handleKeys*: bool
-    consumeAllActions*: bool
-    consumeAllInput*: bool
     revision: int
     keyDefinitions: Table[string, seq[string]]
     descriptions*: Table[string, string]
     stateToDescription*: Table[int, string]
+    settings*: ConfigStore
 
   EventHandler* = ref object
     states: seq[CommandState]
@@ -61,32 +57,33 @@ type
     keyDefinitions: Table[string, seq[string]] # e.g. LEADER -> [<SPACE>], CUSTOM_LEADER -> [<C-w>]
     commandInfos*: CommandInfos
     commandDescriptions*: Table[string, string]
+    settings: ConfigStore
 
 func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerService"
-addBuiltinService(EventHandlerService)
+addBuiltinService(EventHandlerService, ConfigService)
 
 method init*(self: EventHandlerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   self.commandInfos = CommandInfos()
+  self.settings = self.services.getService(ConfigService).get.runtime
   return ok()
 
-func newEventHandlerConfig*(context: string, parent: EventHandlerConfig = nil): EventHandlerConfig =
+func newEventHandlerConfig(context: string, settings: ConfigStore, parent: EventHandlerConfig = nil): EventHandlerConfig =
   new result
   result.parent = parent
-  result.handleActions = true
-  result.handleInputs = false
-  result.handleKeys = false
   result.context = context
+  result.settings = settings
 
-proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]]) =
+proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]], includeMain: bool = true) =
   if config.parent.isNotNil:
-    config.parent.combineCommands(commands)
+    config.parent.combineCommands(commands, includeMain = false)
 
   for (subGraphName, bindings) in config.commands.mpairs:
     if subGraphName == "":
-      var temp = initTable[string, string]()
-      for (keys, commandInfo) in bindings.mpairs:
-        temp[keys] = commandInfo.command
-      commands[subGraphName] = temp
+      if includeMain:
+        var temp = initTable[string, string]()
+        for (keys, commandInfo) in bindings.mpairs:
+          temp[keys] = commandInfo.command
+        commands[subGraphName] = temp
     else:
       if not commands.contains(subGraphName):
         commands[subGraphName] = initTable[string, string]()
@@ -135,25 +132,23 @@ proc dfa*(handler: EventHandler): CommandDFA =
     handler.revision = configRevision
   return handler.dfaInternal
 
-proc setHandleInputs*(config: EventHandlerConfig, value: bool) =
-  config.handleInputs = value
-  config.revision += 1
+proc handleInputs*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".handle-inputs", false)
 
-proc setHandleKeys*(config: EventHandlerConfig, value: bool) =
-  config.handleKeys = value
-  config.revision += 1
+proc handleKeys*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".handle-keys", false)
 
-proc setHandleActions*(config: EventHandlerConfig, value: bool) =
-  config.handleActions = value
-  config.revision += 1
+proc handleActions*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".handle-actions", true)
 
-proc setConsumeAllActions*(config: EventHandlerConfig, value: bool) =
-  config.consumeAllActions = value
-  config.revision += 1
+proc consumeAllActions*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".consume-all-actions", false)
 
-proc setConsumeAllInput*(config: EventHandlerConfig, value: bool) =
-  config.consumeAllInput = value
-  config.revision += 1
+proc consumeAllInput*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".consume-all-input", false)
+
+proc inputHandlerAction*(config: EventHandlerConfig): string =
+  return config.settings.get("input." & config.context & ".input-handler-command", "")
 
 proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
   if not config.commands.contains(context):
@@ -209,8 +204,12 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
     template onInput(inputBody: untyped): untyped {.used.} =
       handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
         if handler.config.handleInputs:
-          let input {.inject, used.} = input
-          return inputBody
+          let inputHandlerAction = handler.config.inputHandlerAction()
+          if inputHandlerAction != "":
+            return handler.handleAction(inputHandlerAction, $newJString(input))
+          else:
+            let input {.inject, used.} = input
+            return inputBody
         else:
           return Ignored
 
@@ -261,8 +260,12 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
     template onInput(inputBody: untyped): untyped {.used.} =
       handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
         if handler.config.handleInputs:
-          let input {.inject, used.} = input
-          return inputBody
+          let inputHandlerAction = handler.config.inputHandlerAction()
+          if inputHandlerAction != "":
+            return handler.handleAction(inputHandlerAction, $newJString(input))
+          else:
+            let input {.inject, used.} = input
+            return inputBody
         else:
           return Ignored
 
@@ -500,7 +503,7 @@ proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHa
     else:
       nil
 
-    self.eventHandlerConfigs[context] = newEventHandlerConfig(context, parentConfig)
+    self.eventHandlerConfigs[context] = newEventHandlerConfig(context, self.settings, parentConfig)
     self.eventHandlerConfigs[context].setKeyDefinitions(self.keyDefinitions)
 
   return self.eventHandlerConfigs[context].catch(EventHandlerConfig())

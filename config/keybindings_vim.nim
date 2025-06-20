@@ -20,7 +20,6 @@ type EditorVimState = object
   unresolveMarks: Table[string, seq[Selection]]
 
 var editorStates: Table[EditorId, EditorVimState]
-var vimMotionNextMode = initTable[EditorId, string]()
 
 const editorContext = "editor.text"
 
@@ -274,25 +273,6 @@ proc vimYankMove(editor: TextDocumentEditor, move: string, count: int = 1) {.exp
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
   editor.vimYankSelection()
-
-proc vimFinishMotion(editor: TextDocumentEditor) =
-  let command = getSessionData[string]("editor.text.vim-motion-action")
-  let commandCount = editor.getCommandCount
-  # let commandCount = getOption[int]("text.command-count", 1)
-  # infof"finish motion {moveCommandCount}, {commandCount} {command}"
-  if commandCount > 1:
-    return
-
-  # infof"vimFinishMotion '{command}'"
-  if command.len > 0:
-    var args = newJArray()
-    # args.add newJString("move-before " & input)
-    discard editor.runAction(command, args)
-    setSessionData("editor.text.vim-motion-action", "")
-
-  editor.updateTargetColumn()
-  let nextMode = vimMotionNextMode.getOrDefault(editor.id, "vim.normal")
-  editor.setMode nextMode
 
 proc vimMoveTo*(editor: TextDocumentEditor, target: string, before: bool, count: int = 1) {.exposeActive(editorContext, "vim-move-to").} =
   # infof"vimMoveTo '{target}' {before}"
@@ -873,14 +853,12 @@ proc vimScrollLineToTopAndMoveLineStart(editor: TextDocumentEditor, count: int =
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, 0).toSelection
   editor.moveFirst "line-no-indent"
-  editor.vimFinishMotion()
   editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
 
 proc vimScrollLineToTop(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-top").} =
   # "", "zt", "scroll line to top":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
-    editor.vimFinishMotion()
   editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
 
 proc vimCenterLineAndMoveLineStart(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-center-line-and-move-line-start").} =
@@ -888,14 +866,12 @@ proc vimCenterLineAndMoveLineStart(editor: TextDocumentEditor, count: int = 1) {
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, 0).toSelection
   editor.moveFirst "line-no-indent"
-  editor.vimFinishMotion()
   editor.centerCursor()
 
 proc vimCenterLine(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-center-line").} =
   # "", "zz", "center line":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
-    editor.vimFinishMotion()
   editor.centerCursor()
 
 proc vimScrollLineToBottomAndMoveLineStart(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-bottom-and-move-line-start").} =
@@ -903,14 +879,12 @@ proc vimScrollLineToBottomAndMoveLineStart(editor: TextDocumentEditor, count: in
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, 0).toSelection
   editor.moveFirst "line-no-indent"
-  editor.vimFinishMotion()
   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
 
 proc vimScrollLineToBottom(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-bottom").} =
   # "", "zb", "scroll line to bottom":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
-    editor.vimFinishMotion()
   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
 
 proc vimInsertMode(editor: TextDocumentEditor, move: string = "") {.exposeActive(editorContext, "vim-insert-mode").} =
@@ -1101,7 +1075,6 @@ proc vimDeleteLineBack(editor: TextDocumentEditor) {.exposeActive(editorContext,
   editor.autoShowCompletions()
 
 proc vimSurround(editor: TextDocumentEditor, text: string) {.exposeActive(editorContext, "vim-surround").} =
-  # addCommand "editor.text.visual", "S<CHAR>", "<CHAR>"
   let (left, right) = case text
   of "(", ")": ("(", ")")
   of "{", "}": ("{", "}")
@@ -1191,22 +1164,176 @@ proc vimJoinLines(editor: TextDocumentEditor, reduceSpace: bool) {.exposeActive(
     )
     editor.selections = editor.delete(selectionsToDelete, inclusiveEnd=false).mapIt(it.first.toSelection)
 
+proc vimMoveToColumn(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-column").} =
+  editor.selections = editor.selections.mapIt((it.last.line, count).toSelection)
+  editor.scrollToCursor Last
+  editor.updateTargetColumn()
+
+proc vimAddNextSameNodeToSelection(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-add-next-same-node-to-selection").} =
+  if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
+    editor.selections = editor.selections & selection
+    editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
+    editor.updateTargetColumn()
+
+proc vimMoveSelectionToNextSameNode(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-move-selection-to-next-same-node").} =
+  if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
+    editor.selections = editor.selections[0..^2] & selection
+    editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
+    editor.updateTargetColumn()
+
+proc vimAddNextSiblingToSelection(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-add-next-sibling-to-selection").} =
+  if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
+    editor.selections = editor.selections & selection
+    editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
+    editor.updateTargetColumn()
+
+proc vimMoveSelectionToNextSibling(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-move-selection-to-next-sibling").} =
+  if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
+    editor.selections = editor.selections[0..^2] & selection
+    editor.scrollToCursor Last
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
+    editor.updateTargetColumn()
+
+proc vimShrinkSelection(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-shrink-selection").} =
+  editor.selections = editor.selections.mapIt(block:
+    if it.first.line == it.last.line and abs(it.first.column - it.last.column) < 2:
+      it
+    else:
+      (editor.doMoveCursorColumn(it.first, 1), editor.doMoveCursorColumn(it.last, -1))
+  )
+  editor.scrollToCursor Last
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
+
+proc vimEvaluateSelection(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-evaluate-selection").} =
+  editor.addNextCheckpoint("insert")
+  editor.evaluateExpressions(editor.selections, true)
+
+proc vimIncrementSelection(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-increment-selection").} =
+  editor.addNextCheckpoint("insert")
+  editor.evaluateExpressions(editor.selections, true, suffix = "+1")
+
+proc vimDecrementSelection(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-decrement-selection").} =
+  editor.addNextCheckpoint("insert")
+  editor.evaluateExpressions(editor.selections, true, suffix = "-1")
+
+proc vimIncrementSelectionByIndex(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-increment-selection-by-index").} =
+  editor.addNextCheckpoint("insert")
+  editor.evaluateExpressions(editor.selections, true, addSelectionIndex = true)
+
+proc vimIncrement(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-increment").} =
+  editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+  editor.addNextCheckpoint("insert")
+  editor.evaluateExpressions(editor.selections, false, suffix = "+1")
+  editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+
+proc vimDecrement(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-decrement").} =
+  editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+  editor.addNextCheckpoint("insert")
+  editor.evaluateExpressions(editor.selections, false, suffix = "-1")
+  editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+
+proc vimIncrementByIndex(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-increment-by-index").} =
+  editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
+  editor.addNextCheckpoint("insert")
+  editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
+  editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+
+proc vimGotoNextDiagnostic(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-goto-next-diagnostic").} =
+  let severity = getOption("text.jump-diagnostic-severity", 1)
+  editor.selection = editor.getNextDiagnostic(editor.selection.last, severity).first.toSelection
+  editor.scrollToCursor Last
+  editor.updateTargetColumn()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+
+proc vimGotoPrevDiagnostic(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-goto-prev-diagnostic").} =
+  let severity = getOption("text.jump-diagnostic-severity", 1)
+  editor.selection = editor.getPrevDiagnostic(editor.selection.last, severity).first.toSelection
+  editor.scrollToCursor Last
+  editor.updateTargetColumn()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+
+proc vimGotoNextChange(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-goto-next-change").} =
+  editor.selection = editor.getNextChange(editor.selection.last).first.toSelection
+  editor.scrollToCursor Last
+  editor.centerCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+
+proc vimGotoPrevChange(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-goto-prev-change").} =
+  editor.selection = editor.getPrevChange(editor.selection.last).first.toSelection
+  editor.scrollToCursor Last
+  editor.centerCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+
+proc vimReplaceInputHandler(editor: TextDocumentEditor, input: string) {.exposeActive(editorContext, "vim-replace-input-handler").} =
+  editor.vimReplace(input)
+
+proc vimInsertRegisterInputHandler(editor: TextDocumentEditor, input: string) {.exposeActive(editorContext, "vim-insert-register-input-handler").} =
+  editor.vimPaste register=input, inclusiveEnd=true
+  editor.setMode "vim.insert"
+
+proc vimModeChangedHandler(editor: TextDocumentEditor, oldMode: string, newMode: string) {.exposeActive(editorContext, "vim-mode-changed-handler").} =
+  # echo &"vimModeChangedHandler {editor.getFileName()}, {oldMode} -> {newMode}"
+  if not editor.getCurrentEventHandlers().contains("vim"):
+    return
+
+  if newMode == "":
+    editor.setMode "vim.normal"
+    return
+
+  let recordModes = [
+    "vim.visual",
+    "vim.visual-line",
+    "vim.insert",
+  ].toHashSet
+
+  # infof"vim: handle mode change {oldMode} -> {newMode}"
+  if newMode == "vim.normal":
+    if not isReplayingCommands() and isRecordingCommands(".-temp"):
+      stopRecordingCommands(".-temp")
+
+      if editor.getRevision > editor.vimState.revisionBeforeImplicitInsertMacro:
+        infof"Record implicit macro because document was modified"
+        let text = getRegisterText(".-temp")
+        setRegisterText(text, ".")
+      else:
+        infof"Don't record implicit macro because nothing was modified"
+  else:
+    if oldMode == "vim.normal" and newMode in recordModes:
+      editor.startRecordingCurrentCommandInPeriodMacro()
+
+    editor.clearCurrentCommandHistory(retainLast=true)
+
+  editor.vimState.selectLines = newMode == "vim.visual-line"
+  editor.vimState.cursorIncludeEol = newMode == "vim.insert"
+  editor.vimState.currentUndoCheckpoint = if newMode == "vim.insert": "word" else: "insert"
+
+  case newMode
+  of "vim.normal":
+    setOption "text.inclusive-selection", false
+    editor.selections = editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
+    editor.saveCurrentCommandHistory()
+    editor.hideCompletions()
+
+  of "vim.insert":
+    setOption "text.inclusive-selection", false
+
+  of "vim.visual":
+    setOption "text.inclusive-selection", true
+
+  else:
+    setOption "text.inclusive-selection", false
+
 var onModeChangedHandle: Id
 
 proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
-  let t = startTimer()
-  defer:
-    infof"loadVimKeybindings: {t.elapsed.ms} ms"
-
-  info "Applying Vim keybindings"
-
-  var modes = getOption[seq[string]]("text.modes")
-  setOption "text.modes", @["vim"]
-
-  # setOption "lang.selector-popup-search-bar.text.modes", @["vim"]
   for id in getAllEditors():
     if id.isTextEditor(editor):
       editor.setConfig("text.modes", @["vim"].toJson)
+      editor.setMode("vim.insert")
       editor.setMode("vim.normal")
       editor.setCustomHeader("vim")
 
@@ -1229,302 +1356,3 @@ proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
   let beforeSaveAppStateHandle = addCallback proc(args: JsonNode): JsonNode =
     vimSaveState()
   scriptSetCallback("before-save-app-state", beforeSaveAppStateHandle)
-
-  setHandleInputs "vim", false
-  setSessionData "editor.text.vim-motion-action", "vim-select-last-cursor"
-  setOption "editor.text.cursor.movement.", "last"
-  setOption "editor.text.cursor.movement.vim.normal", "last"
-  setOption "editor.text.cursor.wide.", true
-  setOption "text.default-mode", "vim.normal"
-  setOption "text.inclusive-selection", false
-
-  setHandleInputs "vim.normal", false
-  setOption "editor.text.cursor.wide.vim.normal", true
-
-  setHandleInputs "vim.insert", true
-  setOption "editor.text.cursor.wide.vim.insert", false
-
-  setHandleInputs "vim.visual", false
-  setOption "editor.text.cursor.wide.vim.visual", true
-  setOption "editor.text.cursor.movement.vim.visual", "last"
-
-  setHandleInputs "vim.visual-line", false
-  setOption "editor.text.cursor.wide.vim.visual-line", true
-  setOption "editor.text.cursor.movement.vim.visual-line", "last"
-  ###############
-
-  setHandleInputs "editor.text", false
-  setSessionData "editor.text.vim-motion-action", "vim-select-last-cursor"
-  setOption "editor.text.cursor.movement.", "last"
-  setOption "editor.text.cursor.movement.normal", "last"
-  setOption "editor.text.cursor.wide.", true
-  # setOption "text.default-mode", "normal"
-  setOption "text.inclusive-selection", false
-
-  setHandleInputs "editor.text.normal", false
-  setOption "editor.text.cursor.wide.normal", true
-
-  setHandleInputs "editor.text.insert", true
-  setOption "editor.text.cursor.wide.insert", false
-
-  setHandleInputs "editor.text.visual", false
-  setOption "editor.text.cursor.wide.visual", true
-  setOption "editor.text.cursor.movement.visual", "last"
-
-  setHandleInputs "editor.text.visual-line", false
-  setOption "editor.text.cursor.wide.visual-line", true
-  setOption "editor.text.cursor.movement.visual-line", "last"
-
-  setHandleInputs "terminal", false
-  setHandleKeys "terminal", false
-
-  setHandleInputs "terminal.normal", false
-  setHandleKeys "terminal.normal", false
-
-  setHandleInputs "terminal.insert", true
-  setHandleKeys "terminal.insert", true
-
-  addModeChangedHandler onModeChangedHandle, proc(editor, oldMode, newMode: auto) {.gcsafe, raises: [].} =
-    if not editor.getCurrentEventHandlers().contains("vim"):
-      return
-
-    if newMode == "":
-      editor.setMode "vim.normal"
-      return
-
-    let recordModes = [
-      "vim.visual",
-      "vim.visual-line",
-      "vim.insert",
-    ].toHashSet
-
-    # infof"vim: handle mode change {oldMode} -> {newMode}"
-    if newMode == "vim.normal":
-      if not isReplayingCommands() and isRecordingCommands(".-temp"):
-        stopRecordingCommands(".-temp")
-
-        if editor.getRevision > editor.vimState.revisionBeforeImplicitInsertMacro:
-          infof"Record implicit macro because document was modified"
-          let text = getRegisterText(".-temp")
-          setRegisterText(text, ".")
-        else:
-          infof"Don't record implicit macro because nothing was modified"
-    else:
-      if oldMode == "vim.normal" and newMode in recordModes:
-        editor.startRecordingCurrentCommandInPeriodMacro()
-
-      editor.clearCurrentCommandHistory(retainLast=true)
-
-    editor.vimState.selectLines = newMode == "vim.visual-line"
-    editor.vimState.cursorIncludeEol = newMode == "vim.insert"
-    editor.vimState.currentUndoCheckpoint = if newMode == "vim.insert": "word" else: "insert"
-
-    case newMode
-    of "vim.normal":
-      setSessionData "editor.text.vim-motion-action", "vim-select-last-cursor"
-      setOption "text.inclusive-selection", false
-      vimMotionNextMode[editor.id] = "vim.normal"
-      editor.selections = editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
-      editor.saveCurrentCommandHistory()
-      editor.hideCompletions()
-
-    of "vim.insert":
-      setOption "text.inclusive-selection", false
-      setSessionData "editor.text.vim-motion-action", ""
-      vimMotionNextMode[editor.id] = "vim.insert"
-
-    of "vim.visual":
-      setOption "text.inclusive-selection", true
-
-    else:
-      setOption "text.inclusive-selection", false
-
-  addTextCommand "#count", "<-1-9><o-0-9>", ""
-  addCommand "#count", "<-1-9><o-0-9>", ""
-
-  # Normal mode
-  addTextCommandBlockDesc "", "<C-e>", "exit to normal mode":
-    editor.selection = editor.selection
-    editor.setMode("vim.normal")
-
-  # addCommandBlock "editor", "<LEADER>m":
-  #   toggleMaximizeViewLocal("**")
-
-  # navigation (horizontal)
-  # addSubCommand "", "move", "gm", "move-cursor-line-center"
-  # addSubCommand "", "move", "gM", "move-cursor-center"
-
-  addSubCommandWithCountBlock "", "move", "|":
-    editor.selections = editor.selections.mapIt((it.last.line, count).toSelection)
-    editor.scrollToCursor Last
-    editor.updateTargetColumn()
-
-  addSubCommandWithCountBlock "", "move", "-": vimMoveCursorLineFirstChar(editor, -1, count)
-  addSubCommandWithCountBlock "", "move", "+": vimMoveCursorLineFirstChar(editor, 1, count)
-
-  addSubCommandWithCountBlock "", "move", "_": vimMoveToStartOfLine(editor, count)
-
-  # search
-  addTextCommandBlockDesc "", r"\\", "open global search bar":
-    commandLine(r"search-global \")
-    if getActiveEditor().isTextEditor(editor):
-      var arr = newJArray()
-      arr.add newJString("file")
-      discard editor.runAction("move-last", arr)
-      editor.setMode("vim.insert")
-      editor.updateTargetColumn()
-
-  # replace
-  setHandleInputs "vim.replace", true
-  setTextInputHandler2 "vim.replace", proc(editor: TextDocumentEditor, input: string): bool =
-    editor.vimReplace(input)
-    return true
-
-  # addTextCommand "insert", "<C-z>", "vim-undo", enterNormalModeBefore=false
-  # addTextCommand "insert", "<C-r>", "vim-redo", enterNormalModeBefore=false
-
-  # Insert mode
-  # addTextCommand "insert", "<C-r>", "set-mode", "insert-register"
-  setHandleInputs "editor.text.insert-register", true
-  setTextInputHandler "insert-register", proc(editor: TextDocumentEditor, input: string): bool =
-    editor.vimPaste register=input, inclusiveEnd=true
-    editor.setMode "vim.insert"
-    return true
-  # addTextCommandBlock "insert-register", "<SPACE>":
-  #   editor.vimPaste register=getVimDefaultRegister(), inclusiveEnd=true
-  #   editor.setMode "vim.insert"
-
-  # Visual mode
-  addTextCommandBlock "", "v":
-    editor.setMode "vim.visual"
-    setSessionData "editor.text.vim-motion-action", ""
-    vimMotionNextMode[editor.id] = "vim.visual"
-
-  # todo: not really vim keybindings
-
-  addTextCommandBlockDesc "visual", "gl", "Add next node of same type to selection":
-    if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
-      editor.selections = editor.selections & selection
-      editor.scrollToCursor Last
-      editor.setNextSnapBehaviour(MinDistanceOffscreen)
-      editor.updateTargetColumn()
-
-  addTextCommandBlockDesc "visual", "gh", "Move last selection to next node of same type":
-    if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
-      editor.selections = editor.selections[0..^2] & selection
-      editor.scrollToCursor Last
-      editor.setNextSnapBehaviour(MinDistanceOffscreen)
-      editor.updateTargetColumn()
-
-  addTextCommandBlockDesc "visual", "gs", "Add next sibling node to selection":
-    if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
-      editor.selections = editor.selections & selection
-      editor.scrollToCursor Last
-      editor.setNextSnapBehaviour(MinDistanceOffscreen)
-      editor.updateTargetColumn()
-
-  addTextCommandBlockDesc "visual", "gd", "Move last selection to next sibling node":
-    if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
-      editor.selections = editor.selections[0..^2] & selection
-      editor.scrollToCursor Last
-      editor.setNextSnapBehaviour(MinDistanceOffscreen)
-      editor.updateTargetColumn()
-
-  addTextCommandBlock "visual", "gi":
-    editor.selections = editor.selections.mapIt(block:
-      if it.first.line == it.last.line and abs(it.first.column - it.last.column) < 2:
-        it
-      else:
-        (editor.doMoveCursorColumn(it.first, 1), editor.doMoveCursorColumn(it.last, -1))
-    )
-    editor.scrollToCursor Last
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
-    editor.updateTargetColumn()
-
-  addTextCommandBlock "visual", "gxx":
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, true)
-  addTextCommandBlock "visual", "gxf":
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, true, suffix = "+1")
-  addTextCommandBlock "visual", "gxh":
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, true, suffix = "-1")
-  addTextCommandBlock "visual", "gxc":
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, true, addSelectionIndex = true)
-
-  addTextCommandBlock "normal", "gxf":
-    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, false, suffix = "+1")
-    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
-  addTextCommandBlock "normal", "gxh":
-    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, false, suffix = "-1")
-    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
-  addTextCommandBlock "normal", "gxc":
-    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
-    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
-
-  addTextCommandBlock "insert", "<C-g><*-x>f":
-    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, false, suffix = "+1")
-    editor.selections = editor.selections.mapIt(it.last.toSelection)
-  addTextCommandBlock "insert", "<C-g><*-x>h":
-    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, false, suffix = "-1")
-    editor.selections = editor.selections.mapIt(it.last.toSelection)
-  addTextCommandBlock "insert", "<C-g><*-x>c":
-    editor.selections = editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-    editor.addNextCheckpoint("insert")
-    editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
-    editor.selections = editor.selections.mapIt(it.last.toSelection)
-
-  addTextCommandBlock "", "<C-l>":
-    if editor.hasTabStops():
-      editor.selectNextTabStop()
-  addTextCommandBlock "", "<C-v>":
-    if editor.hasTabStops():
-      editor.selectPrevTabStop()
-
-  addTextCommand "", "<C-k><C-f>", "format"
-  addTextCommand "", "<C-k><C-s>", "stage-file"
-  addTextCommand "", "<C-k><C-a>", "clear-diagnostics"
-  addTextCommand "", "<C-k><C-u>", "print-undo-history"
-  addTextCommand "", "<C-k><C-d>", "print-treesitter-tree-under-cursor"
-  addTextCommand "", "<C-k><C-t>", "reload-treesitter"
-  addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
-  addCommand "editor", "<C-k><C-k>", "toggle-flag", "ui.new"
-  addCommand "editor", "<C-k><C-r>", "reload-plugin"
-  addCommand "editor", "<C-k><S-r>", "reload-config"
-  addCommand "editor", "<C-k><CS-r>", "reload-state"
-
-  addTextCommandBlockDesc "", "gt", "Goto next diagnostic":
-    let severity = getOption("text.jump-diagnostic-severity", 1)
-    editor.selection = editor.getNextDiagnostic(editor.selection.last, severity).first.toSelection
-    editor.scrollToCursor Last
-    editor.updateTargetColumn()
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  addTextCommandBlockDesc "", "gn", "Goto prev diagnostic":
-    let severity = getOption("text.jump-diagnostic-severity", 1)
-    editor.selection = editor.getPrevDiagnostic(editor.selection.last, severity).first.toSelection
-    editor.scrollToCursor Last
-    editor.updateTargetColumn()
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
-
-  addTextCommandBlockDesc "", "gf", "Goto next change":
-    editor.selection = editor.getNextChange(editor.selection.last).first.toSelection
-    editor.scrollToCursor Last
-    editor.centerCursor()
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  addTextCommandBlockDesc "", "gh", "Goto prev change":
-    editor.selection = editor.getPrevChange(editor.selection.last).first.toSelection
-    editor.scrollToCursor Last
-    editor.centerCursor()
-    editor.setNextSnapBehaviour(MinDistanceOffscreen)
