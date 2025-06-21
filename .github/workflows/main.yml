@@ -73,6 +73,10 @@ jobs:
             emsdk
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: Download emscripten
         run: git clone https://github.com/emscripten-core/emsdk.git
@@ -125,7 +129,7 @@ jobs:
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: Download emscripten
-        run: cd emsdk; ./emsdk.bat install latest; ./emsdk.bat activate latest; source ./ emsdk_env.bat; cd ..
+        run: cd emsdk; ./emsdk.bat install latest; ./emsdk.bat activate latest; cd ..
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: nimble setup
