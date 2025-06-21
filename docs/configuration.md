@@ -132,24 +132,10 @@ Language specific settings are applied in the language layer (between the runtim
 so a language settings store for e.g. `nim` behaves as if any setting in `lang.nim` was placed at the root of the language store.
 
 ## Keybindings
-Keybindings which just map to existing commands can be specified in a `keybindings.json` file alongside the `settings.json` files. They works the same as the settings (i.e. they also support platform/backend variants and can be placed in the app/user/workspace config directories)
-```json
-// ~/.nev/keybindings.json
-{
-    "editor": {
-        "<C-q>": "quit",
-    },
-    "editor.text": {
-        "<C-a>": "move-cursor-column 1",
-        "<C-b>": {
-            "command": "move-cursor-column",
-            "args": [1]
-        }
-    }
-}
-```
 
-For custom commands plugins have to be used.
+Keybindings which just map to existing commands can be specified in a `keybindings.json` file alongside the `settings.json` files. They works the same as the settings (i.e. they also support platform/backend variants and can be placed in the app/user/workspace config directories)
+
+For more details [go here](./keybindings.md)
 
 ## Plugins
 
