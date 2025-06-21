@@ -793,7 +793,6 @@ proc vimYankToLineEnd(editor: TextDocumentEditor) {.exposeActive(editorContext, 
   editor.vimState.selectLines = false
 
 proc vimMoveFileStart(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-file-start").} =
-   # "", "move", "gg":
   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
   editor.selection = (count - 1, 0).toSelection(editor.selection, which)
   editor.moveFirst "line-no-indent"
@@ -801,7 +800,6 @@ proc vimMoveFileStart(editor: TextDocumentEditor, count: int = 1) {.exposeActive
   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc vimMoveFileEnd(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-file-end").} =
-   # "", "move", "G":
   let line = if count == 0: editor.lineCount - 1 else: count - 1
   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
   var newSelection = (line, 0).toSelection(editor.selection, which)
@@ -815,7 +813,6 @@ proc vimMoveFileEnd(editor: TextDocumentEditor, count: int = 1) {.exposeActive(e
   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc vimMoveToMatchingOrFileOffset(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-matching-or-file-offset").} =
-   # "", "move", "%":
   if count == 0:
     editor.vimMoveToMatching()
   else:
@@ -827,40 +824,34 @@ proc vimMoveToMatchingOrFileOffset(editor: TextDocumentEditor, count: int = 1) {
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc vimScrollLineToTopAndMoveLineStart(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-top-and-move-line-start").} =
-  # "", "z<ENTER>", "scroll line to top":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, 0).toSelection
   editor.moveFirst "line-no-indent"
   editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
 
 proc vimScrollLineToTop(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-top").} =
-  # "", "zt", "scroll line to top":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
   editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
 
 proc vimCenterLineAndMoveLineStart(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-center-line-and-move-line-start").} =
-  # "", "z.", "center line":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, 0).toSelection
   editor.moveFirst "line-no-indent"
   editor.centerCursor()
 
 proc vimCenterLine(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-center-line").} =
-  # "", "zz", "center line":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
   editor.centerCursor()
 
 proc vimScrollLineToBottomAndMoveLineStart(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-bottom-and-move-line-start").} =
-  # "", "z-", "scroll line to bottom":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, 0).toSelection
   editor.moveFirst "line-no-indent"
   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
 
 proc vimScrollLineToBottom(editor: TextDocumentEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-bottom").} =
-  # "", "zb", "scroll line to bottom":
   if editor.getCommandCount != 0:
     editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()

@@ -123,10 +123,10 @@ when defined(windows):
       raiseOSError(osLastError())
 
 declareSettings TerminalSettings, "terminal":
-  ## Mode to enter when creating a new terminal, if no mode is specified otherwise.
+  ## Input mode to activate when creating a new terminal, if no mode is specified otherwise.
   declare defaultMode, string, ""
 
-  ## Mode to enter when creating a new terminal, if no mode is specified otherwise.
+  ## Input mode which is always active while a terminal view is active.
   declare baseMode, string, "terminal"
 
   ## After how many milliseconds of no data received from a terminal it is considered idle, and can be reused

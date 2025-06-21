@@ -2,13 +2,13 @@
     "<set-LEADER>": ["<SPACE>"],
     "<set-WINDOW>": ["<C-w>"],
 
-    "command-line-low": {
+    "vim.command-line-low": {
         "<ESCAPE>": "vim-exit-command-line",
         "<ENTER>": "execute-command-line",
         "<UP>": "select-previous-command-in-history",
         "<DOWN>": "select-next-command-in-history",
     },
-    "command-line-result-low": {
+    "vim.command-line-result-low": {
         "<ESCAPE>": "vim-exit-command-line",
     },
 

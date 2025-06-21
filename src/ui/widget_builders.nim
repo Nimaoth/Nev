@@ -266,7 +266,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
             ""
 
           let modes = if self.layout.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
-            let modes = editor.TextDocumentEditor.settings.modes.get() #.get("text.modes", newSeq[string]())
+            let modes = editor.TextDocumentEditor.settings.modes.get()
             "[" & modes.join(", ") & "]"
           else:
             ""

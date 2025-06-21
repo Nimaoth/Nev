@@ -929,7 +929,6 @@ proc reloadFromRope*(self: TextDocument, rope: sink Rope): Future[seq[Selection]
     try:
       let oldRope = self.rope.clone()
       var diff = RopeDiff[int]()
-      debugf"reloadFromRope '{self.filename}'"
       await diffRopeAsync(oldRope.clone(), rope.clone(), diff.addr).wait(diffTimeout.milliseconds)
       log lvlDebug, &"Diff took {t.elapsed.ms} ms"
 

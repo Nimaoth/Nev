@@ -1,5 +1,14 @@
 {
     "editor.base-modes": ["editor", "vim.base"],
+    "editor.command-line-mode-high": "vim.command-line-high",
+    "editor.command-line-mode-low": "vim.command-line-low",
+    "editor.command-line-result-mode-high": "vim.command-line-result-high",
+    "editor.command-line-result-mode-low": "vim.command-line-result-low",
+    "terminal.base-mode": "terminal",
+    "terminal.default-mode": "normal",
+    // "selector.base-mode": "vim.selector",
+    "text.modes": ["vim", "vim.normal"],
+    "text.default-mode": "vim.normal",
 
     "lang.command-line.text.modes": ["vim", "vim.insert"],
     "lang.command-line.text.default-mode": "vim.insert",
@@ -30,12 +39,7 @@
     },
 
     "text.mode-changed-handler-command": "vim-mode-changed-handler",
-    "text.modes": ["vim", "vim.normal"],
-    "text.default-mode": "vim.normal",
     "text.inclusive-selection": false,
-
-    "terminal.base-mode": "terminal",
-    "terminal.default-mode": "normal",
 
     "editor.text.cursor.movement.": "last",
     "editor.text.cursor.movement.vim.normal": "last",

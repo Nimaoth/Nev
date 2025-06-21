@@ -310,8 +310,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastDiagnosticsVersions: Table[string, int]
   codeActions: Table[string, Table[int, seq[CodeActionOrCommand]]] # LS name -> line -> code actions
 
-  eventHandlerNames: seq[string]
-  eventHandlers: seq[EventHandler]
   mEventHandlers: seq[EventHandler]
   eventHandlerOverrides: Table[string, proc(config: EventHandlerConfig): EventHandler {.gcsafe, raises: [].}]
   completionEventHandler: EventHandler
@@ -471,7 +469,6 @@ proc handleTextDocumentSaved(self: TextDocumentEditor)
 proc handleCompletionsUpdated(self: TextDocumentEditor)
 proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot)
 proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
-proc updateEventHandlers(self: TextDocumentEditor)
 proc updateMatchingWordHighlight(self: TextDocumentEditor)
 proc updateColorOverlays(self: TextDocumentEditor) {.async.}
 
@@ -2276,8 +2273,7 @@ proc createAnchors*(self: TextDocumentEditor, selections: Selections): seq[(Anch
   if self.document.requiresLoad:
     return @[]
   let snapshot {.cursor.} = self.document.buffer.snapshot
-  result = selections.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
-  debugf"{result}"
+  return selections.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
 
 proc resolveAnchors*(self: TextDocumentEditor, anchors: seq[(Anchor, Anchor)]): Selections {.expose("editor.text").} =
   if self.document.requiresLoad:
@@ -5061,19 +5057,6 @@ proc createTextEditorInstance(): TextDocumentEditor =
     allTextEditors.add editor
   return editor
 
-proc updateEventHandlers(self: TextDocumentEditor) =
-  self.eventHandlers.setLen(self.eventHandlerNames.len)
-  for i, name in self.eventHandlerNames:
-    let config = self.events.getEventHandlerConfig(name)
-    assignEventHandler(self.eventHandlers[i], config):
-      onAction:
-        if self.handleAction(action, arg, record=true).isSome:
-          Handled
-        else:
-          Ignored
-      onInput:
-        self.handleInput input, record=true
-
 proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.services = services
@@ -5088,7 +5071,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.workspace = self.services.getService(Workspace).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.commands = self.services.getService(CommandService).get
-  self.eventHandlerNames = @["editor.text"]
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
   discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
@@ -5111,8 +5093,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.startBlinkCursorTask()
 
   self.editors.registerEditor(self)
-
-  self.updateEventHandlers()
 
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 

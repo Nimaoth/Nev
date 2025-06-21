@@ -14,14 +14,6 @@
         "preset": "vim"
     },
 
-    "wasm-plugin-post-load-commands": [
-        "load-configured-keybindings"
-    ],
-
-    "wasm-plugin-post-reload-commands": [
-        "load-configured-keybindings"
-    ],
-
     "+language-mappings": {
         "\\..(agda|lagda)$": "agda",
         "\\..(c|cc|h|inc)$": "c",
@@ -930,9 +922,14 @@
         },
     },
 
-    "text.modes": ["editor.text"],
-
-    "lisp.default-files": ["app://config/nev-api.lisp"],
-
     "extra-settings": ["app://config/settings-vim.json"],
+
+    "alias": {
+        "explore-root": ["explore-files \"\""],
+        "explore-workspace": ["explore-files \"ws0://\""],
+        "explore-user-config": ["explore-files \"home://.nev\""],
+        "explore-app-config": ["explore-files \"app://config\""],
+        "explore-workspace-config": ["explore-files \"ws0://.nev\""],
+        "explore-help": ["explore-files \"app://docs\""],
+    }
 }

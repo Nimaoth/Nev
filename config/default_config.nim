@@ -4,42 +4,9 @@ import misc/[timer]
 
 embedSource()
 
-proc exploreRoot*() {.expose("explore-root").} =
-  ## Open file explorer in the root of the VFS
-  exploreFiles("")
-
-proc exploreWorkspace*(index: int = 0) {.expose("explore-workspace").} =
-  ## Open file explorer in the root of the first (nth) workspace (ws<index>://)
-  exploreFiles(&"ws{index}://")
-
-proc exploreUserConfig*() {.expose("explore-user-config").} =
-  ## Open file explorer in the user config directory (home://.nev)
-  exploreFiles("home://.nev")
-
-proc exploreAppConfig*() {.expose("explore-app-config").} =
-  ## Open file explorer in the app config directory (app://config)
-  exploreFiles("app://config")
-
-proc exploreWorkspaceConfig*() {.expose("explore-workspace-config").} =
-  ## Open file explorer in the workspace config directory (ws0://.nev)
-  exploreFiles("ws0://.nev")
-
-proc exploreHelp*() {.expose("explore-help").} =
-  ## Open file explorer in the documentation directory (app://docs)
-  exploreFiles("app://docs")
-
-proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default-keybindings").} =
-  discard
-  # addCommandBlock "debugger", "<C-u>":
-  #   for i in 0..10:
-  #     prevVariable()
-
-  # addCommandBlock "debugger", "<C-d>":
-  #   for i in 0..10:
-  #     nextVariable()
-
-  # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
-
+# todo: move these to keybindings.json at some point
+# proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default-keybindings").} =
+#   discard
   # setHandleInputs("editor.model", true)
   # addCommand("editor.model", "<LEFT>", "move-cursor-left-line")
   # addCommand("editor.model", "<RIGHT>", "move-cursor-right-line")
@@ -93,9 +60,3 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) {.expose("load-default
   # addCommand("editor.model.completion", "<TAB>", "apply-selected-completion")
 
   # addCommand "editor.model.goto", "<END>", "end"
-
-proc exampleScriptAction*(a: int, b: string): string {.expose("example-script-action").} =
-  ## Test documentation stuff
-  infof "exampleScriptAction called with {a}, {b}"
-  return b & $a
-
