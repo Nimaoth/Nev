@@ -169,7 +169,7 @@
         ".lsp-log-verbose true"
     ],
 
-    "+wasm-plugin-post-load-commands": [
-        "load-vscode-debugger-config \".vscode/launch.json\""
-    ]
+    // "+wasm-plugin-post-load-commands": [
+    //     "load-vscode-debugger-config \".vscode/launch.json\""
+    // ]
 }
