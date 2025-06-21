@@ -4,7 +4,8 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex,
+  array_set]
 import scripting/[expose, scripting_base]
 import platform/[platform]
 import language/[language_server_base]
@@ -198,6 +199,15 @@ declareSettings TextEditorSettings, "text":
   ## is already at the end.
   declare scrollToEndOnInsert, bool, false
 
+  ## List of input modes text editors.
+  declare modes, seq[string], @["editor.text"]
+
+  ## Mode to activate while completion window is open.
+  declare completionMode, string, "editor.text.completion"
+
+  ## Command to execute when the mode of the text editor changes
+  declare modeChangedHandlerCommand, string, ""
+
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
@@ -300,11 +310,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastDiagnosticsVersions: Table[string, int]
   codeActions: Table[string, Table[int, seq[CodeActionOrCommand]]] # LS name -> line -> code actions
 
-  eventHandlerNames: seq[string]
-  eventHandlers: seq[EventHandler]
-  modeEventHandlers: seq[EventHandler]
+  mEventHandlers: seq[EventHandler]
+  eventHandlerOverrides: Table[string, proc(config: EventHandlerConfig): EventHandler {.gcsafe, raises: [].}]
   completionEventHandler: EventHandler
-  currentMode*: string
   commandCount*: int
   commandCountRestore*: int
   currentCommandHistory: CommandHistory
@@ -461,8 +469,6 @@ proc handleTextDocumentSaved(self: TextDocumentEditor)
 proc handleCompletionsUpdated(self: TextDocumentEditor)
 proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot)
 proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
-proc updateEventHandlers(self: TextDocumentEditor)
-proc updateModeEventHandlers(self: TextDocumentEditor)
 proc updateMatchingWordHighlight(self: TextDocumentEditor)
 proc updateColorOverlays(self: TextDocumentEditor) {.async.}
 
@@ -687,15 +693,58 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
   else: return false
 
-method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]
-    ): seq[EventHandler] =
-  result = self.eventHandlers
-  result.add self.modeEventHandlers
+proc createEventHandler(self: TextDocumentEditor, config: EventHandlerConfig): EventHandler =
+  if self.eventHandlerOverrides.contains(config.context):
+    result = self.eventHandlerOverrides[config.context](config)
+  else:
+    assignEventHandler(result, config):
+      onAction:
+        if self.handleAction(action, arg, record=true).isSome:
+          Handled
+        else:
+          Ignored
+      onInput:
+        self.handleInput input, record=true
+
+proc getConfigEventHandlers(self: TextDocumentEditor): seq[EventHandler] =
+  let modes = self.settings.modes.get()
+
+  var rebuild = false
+  if modes.len != self.mEventHandlers.len:
+    rebuild = true
+  else:
+    for i, mode in modes:
+      if self.mEventHandlers[i].config.context != mode:
+        rebuild = true
+        break
+
+  if rebuild:
+    self.mEventHandlers.setLen(modes.len)
+    for i, mode in modes:
+      let config = self.events.getEventHandlerConfig(mode)
+      self.mEventHandlers[i] = self.createEventHandler(config)
+
+  return self.mEventHandlers
+
+method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
+  result = self.getConfigEventHandlers()
 
   if inject.contains("above-mode"):
     result.add inject["above-mode"]
 
   if self.showCompletions:
+    let completionMode = self.settings.completionMode.get()
+    if self.completionEventHandler == nil or self.completionEventHandler.config.context != completionMode:
+      let config = self.events.getEventHandlerConfig(completionMode)
+      assignEventHandler(self.completionEventHandler, config):
+        onAction:
+          if self.handleAction(action, arg, record=true).isSome:
+            Handled
+          else:
+            Ignored
+        onInput:
+          self.handleInput input, record=true
+
     result.add self.completionEventHandler
 
   if inject.contains("above-completion"):
@@ -1499,7 +1548,32 @@ proc findSurroundEnd*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0
 
   return Cursor.none
 
-proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+proc setConfig*(self: TextDocumentEditor, key: string, value: JsonNode) {.expose("editor.text").} =
+  self.config.set(key, value)
+
+proc getConfig*(self: TextDocumentEditor, key: string): JsonNode {.expose("editor.text").} =
+  self.config.get(key, newJexNull()).toJson()
+
+proc removeMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
+
+  var modes = self.settings.modes.get()
+  let i = modes.find(mode)
+  if i == -1:
+    return
+
+  modes.removeShift(mode)
+  self.settings.modes.set(modes)
+
+  let handler = self.settings.modeChangedHandlerCommand.get()
+  if handler != "":
+    discard self.handleActionInternal(handler, [[mode].toJson, newJArray()].toJson)
+
+  self.markDirty()
+
+proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true) {.expose("editor.text").} =
   ## Sets the current mode of the editor.
   ## If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert",
@@ -1509,19 +1583,45 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
     log(lvlError, fmt"Can't set mode to '{mode}'")
     return
 
-  if self.currentMode == mode:
-    return
-
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
-  let oldMode = self.currentMode
-  self.currentMode = mode
+  let prefix = if exclusive:
+    let i = mode.find('.')
+    if i != -1:
+      mode[0..i]
+    else:
+      ""
+  else:
+    ""
 
-  self.updateModeEventHandlers()
+  var changed = false
+  var removedModes = newSeq[string]()
+  var modes = self.settings.modes.get()
+  let alreadyContained = modes.find(mode) != -1
+  var i = 0
+  if exclusive and prefix != "":
+    while i < modes.len:
+      if modes[i].startsWith(prefix) and modes[i] != mode:
+        removedModes.add(modes[i])
+        modes.removeShift(i)
+        changed = true
+        continue
+      inc i
 
-  self.plugins.handleModeChanged(self, oldMode, self.currentMode)
+  if not alreadyContained and mode != "":
+    modes.add(mode)
+    changed = true
+
+  if not changed:
+    return
+
+  self.settings.modes.set(modes)
+
+  let handler = self.settings.modeChangedHandlerCommand.get()
+  if handler != "":
+    discard self.handleActionInternal(handler, [removedModes.toJson, [mode].toJson].toJson)
 
   self.markDirty()
 
@@ -1530,11 +1630,14 @@ proc setDefaultMode*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
   ## Returns the current mode of the text editor, or "" if there is no mode
-  return self.currentMode
+  let modes = self.settings.modes.get()
+  if modes.len > 0:
+    return modes.last
+  return ""
 
 proc getContextWithMode(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
   ## Appends the current mode to context
-  return context & "." & $self.currentMode
+  return context & "." & $self.mode
 
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.
     expose("editor.text").} =
@@ -2167,10 +2270,14 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
     result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
 proc createAnchors*(self: TextDocumentEditor, selections: Selections): seq[(Anchor, Anchor)] {.expose("editor.text").} =
+  if self.document.requiresLoad:
+    return @[]
   let snapshot {.cursor.} = self.document.buffer.snapshot
   return selections.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
 
 proc resolveAnchors*(self: TextDocumentEditor, anchors: seq[(Anchor, Anchor)]): Selections {.expose("editor.text").} =
+  if self.document.requiresLoad:
+    return @[]
   return anchors.mapIt (it[0].summaryOpt(Point, self.snapshot).get(Point()), it[1].summaryOpt(Point, self.snapshot).get(Point())).toSelection
 
 proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0,
@@ -2606,7 +2713,8 @@ proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.tex
   var selections: seq[Selection] = @[]
   for s in self.searchResults:
     selections.add s.toSelection
-  self.selections = selections
+  if selections.len > 0:
+    self.selections = selections
 
 proc clearSelections*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selections.len > 1:
@@ -4353,27 +4461,22 @@ proc setSelection*(self: TextDocumentEditor, selection: Selection) {.expose("edi
   self.selection = selection
 
 proc setSelections*(self: TextDocumentEditor, selections: Selections) {.expose("editor.text").} =
+  if selections.len == 0:
+    log lvlError, &"Failed to set selections for '{self.getFileName()}': no selections provided"
+    return
   self.selections = selections
 
 proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
   self.targetSelection = selection
 
 proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("editor.text").} =
-  const mode = "choose-cursor"
-  let oldMode = self.currentMode
-
+  const mode = "temp.choose-cursor"
   let cursors = self.getAvailableCursors()
   let keys = self.assignKeys(cursors)
-  var config = EventHandlerConfig(
-    context: "editor.text.choose-cursor",
-    handleActions: true,
-    handleInputs: true,
-    consumeAllActions: true,
-    consumeAllInput: true
-  )
+  var config = self.events.getEventHandlerConfig(mode)
 
   for i in 0..min(cursors.high, keys.high):
-    config.addCommand("", keys[i] & "<SPACE>", action & " " & $cursors[i].toJson & " " & $oldMode.toJson)
+    config.addCommand("", keys[i] & "<SPACE>", action & " " & $cursors[i].toJson)
 
   var progress = ""
 
@@ -4399,7 +4502,8 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
         self.displayMap.overlay.clear(overlayIdChooseCursor)
         self.document.notifyTextChanged()
         self.markDirty()
-        discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson), record=false)
+        self.removeMode(mode)
+        discard self.handleAction(action, ($options[0].toJson), record=false)
     except:
       discard
 
@@ -4410,34 +4514,34 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   config.addCommand("", "<ESCAPE>", "setMode \"\"")
 
-  self.modeEventHandlers.setLen(1)
-  assignEventHandler(self.modeEventHandlers[0], config):
-    onAction:
-      self.displayMap.overlay.clear(overlayIdChooseCursor)
-      self.document.notifyTextChanged()
-      self.markDirty()
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
+  self.eventHandlerOverrides[mode] = proc(config: EventHandlerConfig): EventHandler =
+    assignEventHandler(result, config):
+      onAction:
+        self.displayMap.overlay.clear(overlayIdChooseCursor)
+        self.document.notifyTextChanged()
+        self.markDirty()
+        self.removeMode(mode)
+        if self.handleAction(action, arg, record=true).isSome:
+          Handled
+        else:
+          Ignored
+
+      onInput:
         Ignored
 
-    onInput:
-      Ignored
+      onProgress:
+        progress.add inputToString(input)
+        updateStyledTextOverrides()
 
-    onProgress:
-      progress.add inputToString(input)
-      updateStyledTextOverrides()
-
-    onCanceled:
-      self.displayMap.overlay.clear(overlayIdChooseCursor)
-      self.setMode(oldMode)
+      onCanceled:
+        self.displayMap.overlay.clear(overlayIdChooseCursor)
+        self.removeMode(mode)
 
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
-  self.currentMode = mode
-  self.plugins.handleModeChanged(self, oldMode, self.currentMode)
+  self.setMode(mode)
 
   self.markDirty()
 
@@ -4483,24 +4587,75 @@ proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
   elif self.lastPressedMouseButton == MouseButton.TripleClick:
     self.runTripleClickCommand()
 
-proc addEventHandler*(self: TextDocumentEditor, name: string) {.expose("editor.text").} =
-  if name notin self.eventHandlerNames:
-    self.eventHandlerNames.add name
-    self.updateEventHandlers()
-    self.updateModeEventHandlers()
-
-proc removeEventHandler*(self: TextDocumentEditor, name: string) {.expose("editor.text").} =
-  let idx = self.eventHandlerNames.find(name)
-  if idx != -1:
-    self.eventHandlerNames.removeShift(idx)
-    self.updateEventHandlers()
-    self.updateModeEventHandlers()
-
 proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] {.expose("editor.text").} =
-  return self.eventHandlerNames
+  return self.settings.modes.get()
 
 proc setCustomHeader*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   self.customHeader = text
+  self.markDirty()
+
+type IdentifierCase = enum Camel, Pascal, Kebab, Snake, ScreamingSnake
+
+proc splitCase(s: string): tuple[cas: IdentifierCase, parts: seq[string]] =
+  if s == "":
+    return (IdentifierCase.Camel, @[])
+
+  if s.find('_') != -1:
+    result.cas = IdentifierCase.Snake
+    result.parts = s.split('_').mapIt(custom_unicode.toLower(it))
+    for r in s.runes:
+      if r != '_'.Rune and not r.isLower:
+        result.cas = IdentifierCase.ScreamingSnake
+        break
+
+  elif s.find('-') != -1:
+    result.cas = IdentifierCase.Kebab
+    result.parts = s.split('-').mapIt(custom_unicode.toLower(it))
+  else:
+    if s[0].isUpperAscii:
+      result.cas = IdentifierCase.Pascal
+    else:
+      result.cas = IdentifierCase.Camel
+
+    result.parts.add ""
+    for r in s.runes:
+      if not r.isLower and result.parts.last.len > 0:
+        result.parts.add ""
+      result.parts.last.add(custom_unicode.toLower(r))
+
+proc joinCase(parts: seq[string], cas: IdentifierCase): string =
+  assert parts.len > 0
+  case cas
+  of IdentifierCase.Camel:
+    parts[0] & parts[1..^1].mapIt(it.capitalize).join("")
+  of IdentifierCase.Pascal:
+    parts.mapIt(it.capitalize).join("")
+  of IdentifierCase.Kebab:
+    parts.join("-")
+  of IdentifierCase.Snake:
+    parts.join("_")
+  of IdentifierCase.ScreamingSnake:
+    parts.mapIt(custom_unicode.toUpper(it)).join("_")
+
+proc cycleCase(s: string): string =
+  if s.len == 0:
+    return s
+  let (cas, parts) = s.splitCase()
+  let nextCase = if cas == IdentifierCase.high:
+    IdentifierCase.low
+  else:
+    cas.succ
+  return parts.joinCase(nextCase)
+
+proc cycleCase*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool = false): string {.expose("editor.text").} =
+  return self.document.contentString(selection, inclusiveEnd).cycleCase()
+
+proc cycleSelectedCase*(self: TextDocumentEditor) {.expose("editor.text").} =
+  var newTexts = self.selections.mapIt(self.cycleCase(it, self.useInclusiveSelections))
+  self.selections = self.document.edit(self.selections, self.selections, newTexts, inclusiveEnd=self.useInclusiveSelections)
+  if self.useInclusiveSelections:
+    self.selections = self.selections.mapIt((it.first, self.doMoveCursorColumn(it.last, -1, wrap = false)))
+  self.updateTargetColumn()
   self.markDirty()
 
 genDispatcher("editor.text")
@@ -4540,11 +4695,10 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
     log(lvlError, fmt"Failed to dispatch command '{action} {argsText}': {getCurrentExceptionMsg()}")
     return JsonNode.none
 
-  log lvlError, fmt"Unknown command '{action}'"
   return JsonNode.none
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
-  # debugf "handleAction {action}, '{arg}'"
+  # debugf "handleAction '{action}', '{arg}'"
 
   try:
     let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
@@ -4574,9 +4728,16 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
       if not self.isRunningSavedCommands:
         self.currentCommandHistory.commands.add Command(command: action, args: args)
 
-      return self.handleActionInternal(action, args)
+      result = self.handleActionInternal(action, args)
+      if result.isNone:
+        let res = self.commands.executeCommand(action & " " & arg)
+        if res.isSome:
+          return newJString(res.get).some
+
+      if result.isNone:
+        log lvlError, fmt"Unknown command '{action}'"
     except CatchableError:
-      log(lvlError, fmt"handleCommmand: {action}, Failed to parse args: '{arg}'")
+      log(lvlError, fmt"handleCommand: '{action}', Failed to parse args: '{arg}'")
       return JsonNode.none
   except:
     discard
@@ -4896,35 +5057,6 @@ proc createTextEditorInstance(): TextDocumentEditor =
     allTextEditors.add editor
   return editor
 
-proc updateEventHandlers(self: TextDocumentEditor) =
-  self.eventHandlers.setLen(self.eventHandlerNames.len)
-  for i, name in self.eventHandlerNames:
-    let config = self.events.getEventHandlerConfig(name)
-    assignEventHandler(self.eventHandlers[i], config):
-      onAction:
-        if self.handleAction(action, arg, record=true).isSome:
-          Handled
-        else:
-          Ignored
-      onInput:
-        self.handleInput input, record=true
-
-proc updateModeEventHandlers(self: TextDocumentEditor) =
-  if self.currentMode.len == 0:
-    self.modeEventHandlers.setLen(0)
-  else:
-    self.modeEventHandlers.setLen(self.eventHandlerNames.len)
-    for i, name in self.eventHandlerNames:
-      let config = self.events.getEventHandlerConfig(name & "." & self.currentMode)
-      assignEventHandler(self.modeEventHandlers[i], config):
-        onAction:
-          if self.handleAction(action, arg, record=true).isSome:
-            Handled
-          else:
-            Ignored
-        onInput:
-          self.handleInput input, record=true
-
 proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.services = services
@@ -4939,7 +5071,6 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.workspace = self.services.getService(Workspace).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.commands = self.services.getService(CommandService).get
-  self.eventHandlerNames = @["editor.text"]
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
   discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
@@ -4963,20 +5094,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.editors.registerEditor(self)
 
-  self.updateEventHandlers()
-
-  assignEventHandler(self.completionEventHandler, self.events.getEventHandlerConfig("editor.text.completion")):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      self.handleInput input, record=true
-
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
-
-  self.setMode(self.settings.defaultMode.get())
 
   return self
 

@@ -53,6 +53,7 @@ Download latest [release](https://github.com/Nimaoth/Nev/releases) or [build fro
 - [Getting started](docs/getting_started.md)
 - [Cheatsheet](docs/cheatsheet.md)
 - [Configuration](docs/configuration.md)
+- [Keybindings](docs/keybindings.md)
 - [Finders](docs/finders.md)
 - [Plugin API](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
 - [Virtual filesystem](docs/virtual_file_system.md)

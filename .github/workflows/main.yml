@@ -3,7 +3,7 @@ name: Build and test the editor
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: ["main", "feature/layout"]
+    branches: ["main", "refactor_keybindings"]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -124,7 +124,7 @@ jobs:
         id: cache-nimble
         uses: actions/cache@v3
         env:
-          cache-name: cache-nimble-modules-2
+          cache-name: cache-nimble-modules-3
         with:
           path: ~/.nimble
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}

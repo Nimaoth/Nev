@@ -1,0 +1,31 @@
+{
+    "editor.base-modes": ["editor", "vscode.base"],
+    "editor.command-line-mode-high": "vscode.command-line-high",
+    "editor.command-line-mode-low": "vscode.command-line-low",
+    "editor.command-line-result-mode-high": "vscode.command-line-result-high",
+    "editor.command-line-result-mode-low": "vscode.command-line-result-low",
+    "terminal.base-mode": "vscode.terminal",
+    "selector.base-mode": "vscode.selector",
+    "text.modes": ["vscode"],
+    "text.default-mode": "vscode",
+    "text.completion-mode": "vscode.completion",
+
+    "input": {
+        "vscode.handle-inputs": true,
+
+        "editor.text.temp.choose-cursor.handle-actions": true,
+        "editor.text.temp.choose-cursor.handle-inputs": true,
+        "editor.text.temp.choose-cursor.consume-all-actions": true,
+        "editor.text.temp.choose-cursor.consume-all-input": true,
+
+        "vscode.terminal.handle-inputs": true,
+        "vscode.terminal.handle-keys": true,
+    },
+
+    "text.inclusive-selection": false,
+
+    "editor.text.cursor.movement.": "both",
+    "editor.text.cursor.movement.vscode": "both",
+    "editor.text.cursor.wide.": false,
+    "editor.text.cursor.wide.vscode": false,
+}

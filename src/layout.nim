@@ -6,7 +6,7 @@ import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex,
 import scripting/expose
 import workspaces/workspace
 import finder/finder
-import service, platform_service, dispatch_tables, document, document_editor, view, events, config_provider, popup, selector_popup_builder, vfs, vfs_service, session, layouts
+import service, platform_service, dispatch_tables, document, document_editor, view, events, config_provider, popup, selector_popup_builder, vfs, vfs_service, session, layouts, command_service
 from scripting_api import EditorId
 
 export layouts
@@ -36,6 +36,7 @@ type
     uiSettings: UiSettings
     editors: DocumentEditorService
     session: SessionService
+    commands: CommandService
     vfs: VFS
     popups*: seq[Popup]
     layout*: Layout
@@ -220,7 +221,7 @@ proc updateLayoutTree(self: LayoutService) =
 
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
-addBuiltinService(LayoutService, PlatformService, ConfigService, DocumentEditorService, Workspace, VFSService, SessionService)
+addBuiltinService(LayoutService, PlatformService, ConfigService, DocumentEditorService, Workspace, VFSService, SessionService, CommandService)
 
 method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"LayoutService.init"
@@ -234,6 +235,7 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   self.pushSelectorPopupImpl = ({.gcsafe.}: gPushSelectorPopupImpl)
   self.workspace = self.services.getService(Workspace).get
   self.session = self.services.getService(SessionService).get
+  self.commands = self.services.getService(CommandService).get
   self.uiSettings = UiSettings.new(self.config.runtime)
 
   self.addViewFactory "editor", proc(config: JsonNode): View {.raises: [ValueError].} =
@@ -415,6 +417,18 @@ proc getPopupForId*(self: LayoutService, id: EditorId): Option[Popup] =
   return Popup.none
 
 proc getActiveViewEditor*(self: LayoutService): Option[DocumentEditor] =
+  if self.tryGetCurrentEditorView().getSome(view):
+    return view.editor.some
+
+  return DocumentEditor.none
+
+proc getActiveEditor*(self: LayoutService): Option[DocumentEditor] =
+  if self.commands.commandLineMode:
+    return self.commands.commandLineEditor.some
+
+  if self.popups.len > 0 and self.popups[self.popups.high].getActiveEditor().getSome(editor):
+    return editor.some
+
   if self.tryGetCurrentEditorView().getSome(view):
     return view.editor.some
 
@@ -661,23 +675,6 @@ proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true
       return view.EditorView.editor.some
 
   return DocumentEditor.none
-
-proc openWorkspaceFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
-  defer:
-    self.platform.requestRender()
-
-  let path = self.workspace.getAbsolutePath(path)
-
-  log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {self.workspace.name} ({self.workspace.id})"
-  if self.tryOpenExisting(path, slot = slot).getSome(editor):
-    log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
-    return editor.some
-
-  let document = self.editors.getOrOpenDocument(path).getOr:
-    log(lvlError, fmt"Failed to load file {path}")
-    return DocumentEditor.none
-
-  return self.createAndAddView(document, slot = slot)
 
 proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[DocumentEditor] =
   defer:

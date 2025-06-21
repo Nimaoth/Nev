@@ -1141,7 +1141,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
       var header: UINode
 
       builder.panel(&{LayoutVertical} + sizeFlags):
-        header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
+        header = builder.createHeader(self.renderHeader, self.mode, self.document, headerColor, textColor):
           onRight:
             proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
             let readOnlyText = if self.document.readOnly: "-readonly- " else: ""

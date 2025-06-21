@@ -174,13 +174,12 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
       asyncSpawn self.diffStagedFileAsync(workspace, self.vfs.localize(fileInfo.path))
 
     else:
-      let currentVersionEditor = self.services.getService(LayoutService).get.openWorkspaceFile(self.vfs.localize(fileInfo.path))
-      if currentVersionEditor.getSome(editor):
-        if editor of TextDocumentEditor:
-          editor.TextDocumentEditor.updateDiff()
-          if popup.getPreviewSelection().getSome(selection):
-            editor.TextDocumentEditor.selection = selection
-            editor.TextDocumentEditor.centerCursor()
+      let currentVersionEditor = self.services.getService(LayoutService).get.openFile(fileInfo.path)
+      if currentVersionEditor.getSome(editor) and editor of TextDocumentEditor:
+        editor.TextDocumentEditor.updateDiff()
+        if popup.getPreviewSelection().getSome(selection):
+          editor.TextDocumentEditor.selection = selection
+          editor.TextDocumentEditor.centerCursor()
 
     return true
 

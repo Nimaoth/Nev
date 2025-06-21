@@ -25,10 +25,6 @@ type
 
     currentHistoryEntry*: int = 0
     eventHandler*: EventHandler
-    commandLineEventHandlerHigh*: EventHandler
-    commandLineEventHandlerLow*: EventHandler
-    commandLineResultEventHandlerHigh*: EventHandler
-    commandLineResultEventHandlerLow*: EventHandler
 
     shellCommandOutput*: Rope
     prefix*: string

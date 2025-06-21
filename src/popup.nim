@@ -11,7 +11,6 @@ from scripting_api import EditorId, newEditorId
 type Popup* = ref object of RootObj
   id*: EditorId
   userId*: Id
-  eventHandler*: EventHandler
   lastBounds*: Rect
   onMarkedDirty*: Event[void]
   mDirty: bool
@@ -38,7 +37,7 @@ proc init*(self: Popup) =
 method deinit*(self: Popup) {.base.} = discard
 
 method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
-  return @[self.eventHandler]
+  return @[]
 
 method handleScroll*(self: Popup, scroll: Vec2, mousePosWindow: Vec2) {.base.} =
   discard

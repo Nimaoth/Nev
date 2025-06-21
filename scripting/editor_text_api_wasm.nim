@@ -402,14 +402,56 @@ proc findSurroundEnd*(editor: TextDocumentEditor; cursor: Cursor; count: int;
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_setMode_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
+proc editor_text_setConfig_void_TextDocumentEditor_string_JsonNode_wasm(
+    arg: cstring): cstring {.importc.}
+proc setConfig*(self: TextDocumentEditor; key: string; value: JsonNode) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add key.toJson()
+  argsJson.add value.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setConfig_void_TextDocumentEditor_string_JsonNode_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_getConfig_JsonNode_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc setMode*(self: TextDocumentEditor; mode: string) {.gcsafe, raises: [].} =
+proc getConfig*(self: TextDocumentEditor; key: string): JsonNode {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add key.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getConfig_JsonNode_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_removeMode_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc removeMode*(self: TextDocumentEditor; mode: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add mode.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setMode_void_TextDocumentEditor_string_wasm(
+  let res {.used.} = editor_text_removeMode_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setMode_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setMode*(self: TextDocumentEditor; mode: string; exclusive: bool = true) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add mode.toJson()
+  argsJson.add exclusive.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setMode_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -2597,30 +2639,6 @@ proc runDragCommand*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_text_addEventHandler_void_TextDocumentEditor_string_wasm(
-    arg: cstring): cstring {.importc.}
-proc addEventHandler*(self: TextDocumentEditor; name: string) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add name.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_addEventHandler_void_TextDocumentEditor_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_removeEventHandler_void_TextDocumentEditor_string_wasm(
-    arg: cstring): cstring {.importc.}
-proc removeEventHandler*(self: TextDocumentEditor; name: string) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add self.toJson()
-  argsJson.add name.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_removeEventHandler_void_TextDocumentEditor_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_text_getCurrentEventHandlers_seq_string_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] {.gcsafe,
@@ -2645,5 +2663,32 @@ proc setCustomHeader*(self: TextDocumentEditor; text: string) {.gcsafe,
   argsJson.add text.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_setCustomHeader_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_cycleCase_string_TextDocumentEditor_Selection_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc cycleCase*(self: TextDocumentEditor; selection: Selection;
+                inclusiveEnd: bool = false): string {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add selection.toJson()
+  argsJson.add inclusiveEnd.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_cycleCase_string_TextDocumentEditor_Selection_bool_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
+
+
+proc editor_text_cycleSelectedCase_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc cycleSelectedCase*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_cycleSelectedCase_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
