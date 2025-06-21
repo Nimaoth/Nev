@@ -43,7 +43,7 @@ proc `$`*(val: LispVal): string {.raises: [].} =
     else:
       $val.num
   of Symbol: val.sym
-  of String: $newJString(val.str)
+  of String: val.str
   of List: "(" & val.elems.mapIt($it).join(" ") & ")"
   of Array: "[" & val.elems.mapIt($it).join(" ") & "]"
   of Map:
@@ -537,7 +537,16 @@ proc getTok*(my: var LispParser): TokKind =
   setLen(my.a, 0)
   skip(my) # skip whitespace, comments
   case my.buf[my.bufpos]
-  of '-', '0'..'9':
+  of '-':
+    if my.buf[my.bufpos + 1] != ' ':
+      parseNumber(my)
+      if {'.', 'e', 'E'} in my.a:
+        result = tkFloat
+      else:
+        result = tkInt
+    else:
+        result = parseSymbol(my)
+  of '0'..'9':
     parseNumber(my)
     if {'.', 'e', 'E'} in my.a:
       result = tkFloat
@@ -777,6 +786,10 @@ proc eval(expr: LispVal, env: var Env): LispVal =
           raise newException(KeyError, "undefined symbol: '" & expr.sym & "'")
 
         return value
+      of "eval":
+        let sub = expr.elems[1]
+        let value = eval(sub, env)
+        return eval(value, env)
       of "lambda":
         let params = expr.elems[1].elems.mapIt(it.sym)
         let body = expr.elems[2]
@@ -797,14 +810,24 @@ proc eval(expr: LispVal, env: var Env): LispVal =
           return eval(expr.elems[2], env)
         else:
           return eval(expr.elems[3], env)
+      of "repeat":
+        let name = expr.elems[1].sym
+        let count = eval(expr.elems[2], env)
+        if count.kind != Number:
+          raise newException(ValueError, "Count must be a number")
+
+        var res = newList()
+        for i in 0..<count.num.int:
+          if name != "":
+            env[name] = newNumber(i.float)
+          res.elems.add(eval(expr.elems[3], env))
+        return res
       of "len":
         let container = eval(expr.elems[1], env)
-        let key = eval(expr.elems[2], env)
-        let value = eval(expr.elems[3], env)
         if container.kind == Map:
           return newNumber(container.fields.len.float)
         if container.kind in {List, Array}:
-          return newNumber(container.fields.len.float)
+          return newNumber(container.elems.len.float)
         return newNumber(0)
       of ".=":
         let container = eval(expr.elems[1], env)
@@ -939,6 +962,25 @@ proc baseEnv(): Env =
         str.add " "
       str.add $arg
     echo str
+  )
+
+  result["build-str"] = newFunc("build-str", proc(args: seq[LispVal]): LispVal =
+    var str = ""
+    for i, arg in args:
+      str.add $arg
+    return newString(str)
+  )
+
+  result["join-str"] = newFunc("join-str", proc(args: seq[LispVal]): LispVal =
+    if args.len < 1: raise newException(ValueError, "join-str needs a seperator")
+    if args[0].kind notin {String, Symbol}: raise newException(ValueError, "join-str needs a seperator")
+    let sep = $args[0]
+    var str = ""
+    for i in 1..args.high:
+      if i > 1:
+        str.add sep
+      str.add $args[i]
+    return newString(str)
   )
 
   result["run-command"] = newFunc("run-command", proc(args: seq[LispVal]): LispVal =
