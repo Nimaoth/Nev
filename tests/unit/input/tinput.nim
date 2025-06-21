@@ -75,49 +75,65 @@ suite "Input DFA":
     check dfa.stepString("<C-w>") == "test"
 
   test "a":
-    var commands: seq[(string, string)] = @[]
-    commands.add ("a", "a")
-    var dfa = buildDFA(commands, @[""])
+    var commands = initTable[string, Table[string, string]]()
+    commands[""] = @[
+      ("a", "a"),
+    ].toTable
+    var dfa = buildDFA(commands)
     check dfa.stepString("a") == "a"
 
   test "A : A":
-    var commands: seq[(string, string)] = @[]
-    commands.add ("A", "A")
-    var dfa = buildDFA(commands, @[""])
+    var commands = initTable[string, Table[string, string]]()
+    commands[""] = @[
+      ("A", "A"),
+    ].toTable
+    var dfa = buildDFA(commands)
     check dfa.stepString("A") == "A"
 
   test "A : <S-a>":
-    var commands: seq[(string, string)] = @[]
-    commands.add ("A", "A")
-    var dfa = buildDFA(commands, @[""])
+    var commands = initTable[string, Table[string, string]]()
+    commands[""] = @[
+      ("A", "A"),
+    ].toTable
+    var dfa = buildDFA(commands)
     check dfa.stepString("<S-a>") == "A"
 
   test "<S-a> : A":
-    var commands: seq[(string, string)] = @[]
-    commands.add ("<S-a>", "A")
-    var dfa = buildDFA(commands, @[""])
+    var commands = initTable[string, Table[string, string]]()
+    commands[""] = @[
+      ("<S-a>", "A"),
+    ].toTable
+    var dfa = buildDFA(commands)
     check dfa.stepString("A") == "A"
 
   test "shift a : shift a":
-    var commands: seq[(string, string)] = @[]
-    commands.add ("<S-a>", "A")
-    var dfa = buildDFA(commands, @[""])
+    var commands = initTable[string, Table[string, string]]()
+    commands[""] = @[
+      ("<S-a>", "A"),
+    ].toTable
+    var dfa = buildDFA(commands)
     check dfa.stepString("<S-a>") == "A"
 
   test "escape":
-    var commands: seq[(string, string)] = @[]
-    commands.add ("<ESCAPE>", "escape")
-    var dfa = buildDFA(commands, @[""])
+    var commands = initTable[string, Table[string, string]]()
+    commands[""] = @[
+      ("<ESCAPE>", "escape"),
+    ].toTable
+    var dfa = buildDFA(commands)
     check dfa.stepString("<ESCAPE>") == "escape"
 
   test "aB<A-c><C-ENTER>":
-    var commands: seq[(string, string)] = @[]
-    commands.add ("aB<A-c><C-ENTER>", "success")
-    var dfa = buildDFA(commands, @[""])
+    var commands = initTable[string, Table[string, string]]()
+    commands[""] = @[
+      ("aB<A-c><C-ENTER>", "success"),
+    ].toTable
+    var dfa = buildDFA(commands)
     check dfa.stepString("aB<A-c><C-ENTER>") == "success"
 
   test "<S-:>":
-    var commands: seq[(string, string)] = @[]
-    commands.add ("<S-:>", "success")
-    var dfa = buildDFA(commands, @[""])
+    var commands = initTable[string, Table[string, string]]()
+    commands[""] = @[
+      ("<S-:>", "success"),
+    ].toTable
+    var dfa = buildDFA(commands)
     check dfa.stepString("<S-:>") == "success"

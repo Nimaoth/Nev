@@ -380,6 +380,8 @@
     },
 
     "vim.base": {
+        ":": ["command-line"],
+
         "<C-w>h": ["focus-view-left"],
         "<C-w><C-h>": ["focus-view-left"],
         "<C-w><LEFT>": ["focus-view-left"],
@@ -422,7 +424,6 @@
 
     "vim": {
         "<ESCAPE>": ["vim-normal-mode"],
-        ":": ["command-line"],
         "<C-h>": ["vim-add-cursor-above"],
         "<C-f>": ["vim-add-cursor-below"],
 
