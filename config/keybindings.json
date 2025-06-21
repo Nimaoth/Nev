@@ -392,7 +392,7 @@
         "<C-w>j": ["focus-view-down"],
         "<C-w><C-j>": ["focus-view-down"],
         "<C-w><DOWN>": ["focus-view-down"],
-        "<C-w>w": ["focus-next-view"],
+        "<C-w>w": ["focus-next-view", "**"],
         "<C-w>p": ["open-prev-view"],
         "<C-w><C-p>": ["open-prev-view"],
         "<C-w>q": ["vim-close-current-view-or-quit"],
@@ -609,6 +609,7 @@
         "gxf": ["vim-increment-selection"],
         "gxh": ["vim-decrement-selection"],
         "gxc": ["vim-increment-selection-by-index"],
+        "gxg": "cycle-selected-case",
 
         // editing
         "~": ["vim-toggle-case", false],

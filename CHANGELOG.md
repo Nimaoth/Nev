@@ -21,6 +21,8 @@
 - Added command line argument `--monitor` to specify which monitor to open the window on (Windows only).
 - Added support for line numbers for `goto-definition` for the path language server (supported formats: `path:line`, `path:line:column`, `path(line, column)`).
 - Added support for rendering bold and italic text (currently only for terminals)
+- More customizable [layout options](config/docs.md#Layout)
+- More configurable input modes, most default keybindings are now defined in [here](config/keybindings.json)
 
 ### Bug fixes
 
