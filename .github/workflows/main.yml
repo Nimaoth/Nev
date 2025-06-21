@@ -82,8 +82,11 @@ jobs:
         run: git clone https://github.com/emscripten-core/emsdk.git
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
-        name: Download emscripten
-        run: cd emsdk; ./emsdk install latest; ./emsdk activate latest; source ./ emsdk_env.sh; cd ..
+        name: Install emscripten
+        run: cd emsdk; ./emsdk install latest; ./emsdk activate latest; cd ..
+      - run: echo "${GITHUB_WORKSPACE}/emsdk" >> $GITHUB_PATH
+      - run: echo "${GITHUB_WORKSPACE}/emsdk/node/22.16.0_64bit/bin" >> $GITHUB_PATH
+      - run: echo "${GITHUB_WORKSPACE}/emsdk/upstream/emscripten" >> $GITHUB_PATH
 
       - name: nimble setup
         continue-on-error: true
@@ -128,8 +131,8 @@ jobs:
         run: git clone https://github.com/emscripten-core/emsdk.git
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
-        name: Download emscripten
-        run: cd emsdk; ./emsdk.bat install latest; ./emsdk.bat activate latest; cd ..
+        name: Install emscripten
+        run: ./emsdk/emsdk.ps1 install latest
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: nimble setup
@@ -141,5 +144,5 @@ jobs:
         run: nimble setup
 
       # windows builds
-      - run: nimble buildNimConfigWasmAll
+      - run: ./emsdk/emsdk.ps1 activate latest; nimble buildNimConfigWasmAll
 
