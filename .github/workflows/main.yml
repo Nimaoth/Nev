@@ -102,6 +102,7 @@ jobs:
       #- run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
       
       # create release packages
+      - run: rm -r ./config/nimcache
       - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims -l
 
       # make zips
@@ -180,6 +181,7 @@ jobs:
       - run: ./rcedit-x64.exe nevc.exe --set-icon ./res/icon.ico
 
       # create release packages
+      - run: rm -r ./config/nimcache
       - run: nim ./tools/package_release.nims -w
 
       # make zips
