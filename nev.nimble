@@ -160,6 +160,7 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm keybindings_plugin.nim"
   exec fmt"nimble buildNimConfigWasm harpoon.nim"
   exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
+  exec fmt"nimble buildNimConfigWasm lisp_plugin.nim"
 
 task flamegraph, "Perf/flamegraph":
   exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"
