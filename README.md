@@ -11,6 +11,8 @@ This feature is not included in release builds, and has to enabled by compiling 
 
 Nev is still relatively new, so many things are still missing or need improvement. If you want to contribute check out [this](CONTRIBUTING.md).
 
+There is a [Discord server](https://discord.gg/eJjBMcgP2V) where you can ask questions as well.
+
 ## Features
 - Vim motions (incomplete)
 - [LSP](docs/lsp.md) (incomplete)
