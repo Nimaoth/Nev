@@ -3069,7 +3069,7 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expo
     if gEditor.editors.getEditorForId(editorId).getSome(editor):
       discard editor.handleAction(action, arg, record=false)
     elif gEditor.layout.getPopupForId(editorId).getSome(popup):
-      discard popup.eventHandler.handleAction(action, arg)
+      discard popup.handleAction(action, arg)
 
 proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
   {.gcsafe.}:

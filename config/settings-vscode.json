@@ -5,6 +5,7 @@
     "editor.command-line-result-mode-high": "vscode.command-line-result-high",
     "editor.command-line-result-mode-low": "vscode.command-line-result-low",
     "terminal.base-mode": "vscode.terminal",
+    "selector.base-mode": "vscode.selector",
 
     "input": {
         "vscode.handle-inputs": true,

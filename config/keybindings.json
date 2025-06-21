@@ -840,4 +840,88 @@
         "<A-g>": "focus-view-up",
         "<A-r>": "focus-view-down",
     },
+
+    "vscode.selector": {
+        "<C-k>": { "description": "Scoring" },
+        "<ENTER>": ["accept"],
+        "<C-y>": ["accept"],
+        "<TAB>": ["accept"],
+        "<ESCAPE>": ["cancel"],
+        "<UP>": ["prev"],
+        "<C-p>": ["prev"],
+        "<DOWN>": ["next"],
+        "<C-n>": ["next"],
+        "<C-u>": ["prev", 5],
+        "<C-d>": ["next", 5],
+        "<C-b>": ["toggle-preview"],
+        "<TAB>": ["toggle-focus-preview"],
+        "<C-k>s": ["sort", "Toggle"],
+        "<C-k>n": ["normalize-scores", "Toggle"],
+        "<C-k>f": ["set-min-score", 0.0],
+        "<C-k>F": ["set-min-score", -1.0],
+        "<C-k>+": ["set-min-score", 0.2, true],
+        "<C-k>-": ["set-min-score", -0.2, true],
+        "<C-l>": ["set-location-list-from-current-popup"],
+    },
+
+    "vscode.selector.preview": {
+        "<TAB>": ["toggle-focus-preview"],
+    },
+
+    "vscode.selector.open": {
+        "<C-x>": ["close-selected"],
+    },
+
+    "editor.text.normal": {
+        "<LEADER>g": { "description": "Pickers" },
+    },
+
+    "vscode.selector.git": {
+        "<C-q>": { "description": "Revert" },
+        "<C-a>": ["stage-selected"],
+        "<C-u>": ["unstage-selected"],
+        "<C-q>a": ["revert-selected"],
+        "<C-h>": ["prev-change"],
+        "<C-f>": ["next-change"],
+        "<C-s>": ["stage-change"],
+        "<C-q>h": ["revert-change"],
+    },
+
+    "vscode.selector.file-explorer": {
+        "<C-g>": { "description": "File operations" },
+        "<C-UP>": { "command": ["go-up"], "description": "Go up to the parent directory" },
+        "<C-r>": { "command": ["go-up"], "description": "Go up to the parent directory" },
+        "<CS-y>": ["enter-normalized"],
+        "<C-a>": ["add-workspace-folder"],
+        "<C-x>": ["remove-workspace-folder"],
+        "<C-f>": ["create-file"],
+        "<C-g>f": ["create-file"],
+        "<C-g>d": ["create-directory"],
+        "<C-g>x": ["delete-file-or-dir"],
+        "<C-u>": ["refresh"],
+        "<C-g>n": "create-new-session",
+        "<C-g>o": "open-session",
+    },
+
+    "vscode.selector.settings": {
+        "<C-t>": ["toggle-flag"],
+        "<C-s>": ["update-setting"],
+        "<C-h>": "prev-store",
+        "<C-f>": "next-store",
+        "<C-g>": "toggle-merged",
+        "<C-k>": "show-preview-editor-settings",
+        "<C-c>": "delete-setting",
+        "<C-r>": "reload-store"
+    },
+
+    "vscode.selector.terminals": {
+        "<C-x>": "close-selected",
+    },
+
+    "vscode.selector.breakpoints": {
+        "<C-x>": "delete-breakpoint",
+        "<C-e>": "toggle-breakpoint-enabled",
+        "<C-o>": "toggle-all-breakpoints-enabled",
+    },
+
 }

@@ -13,6 +13,9 @@ export popup, selector_popup_builder, service
 
 logCategory "selector"
 
+declareSettings SelectorSettings, "selector":
+  declare baseMode, string, "popup.selector"
+
 type
   SelectorPopup* = ref object of Popup
     services*: Services
@@ -31,8 +34,9 @@ type
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
-    previewEventHandler: EventHandler
-    customEventHandler: EventHandler
+    settings: SelectorSettings
+
+    eventHandlers: Table[string,  EventHandler]
 
     viewMarkedDirtyHandle: Id
 
@@ -116,19 +120,40 @@ method getActiveEditor*(self: SelectorPopup): Option[DocumentEditor] =
 
   return DocumentEditor.none
 
+proc getEventHandler(self: SelectorPopup, context: string): EventHandler =
+  if context notin self.eventHandlers:
+    var eventHandler: EventHandler
+    assignEventHandler(eventHandler, self.events.getEventHandlerConfig(context)):
+      onAction:
+        if self.handleAction(action, arg).isSome:
+          Handled
+        else:
+          Ignored
+      onInput:
+        Ignored
+
+    self.eventHandlers[context] = eventHandler
+    return eventHandler
+
+  return self.eventHandlers[context]
+
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   if self.textEditor.isNil:
     return @[]
 
   if self.focusPreview and self.previewView.isNotNil:
-    result = self.previewView.getEventHandlers(initTable[string, EventHandler]()) & @[self.previewEventHandler]
+    let eventHandler = self.getEventHandler(self.settings.baseMode.get() & ".preview")
+    result = self.previewView.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
   elif self.focusPreview and self.previewEditor.isNotNil:
-    result = self.previewEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.previewEventHandler]
+    let eventHandler = self.getEventHandler(self.settings.baseMode.get() & ".preview")
+    result = self.previewEditor.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
   else:
-    result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
+    let eventHandler = self.getEventHandler(self.settings.baseMode.get())
+    result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
 
-    if self.customEventHandler.isNotNil:
-      result.add self.customEventHandler
+    if self.scope != "":
+      let eventHandler = self.getEventHandler(self.settings.baseMode.get() & "." & self.scope)
+      result.add eventHandler
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] {.gcsafe, raises: [].} =
   {.gcsafe.}:
@@ -403,6 +428,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.events = services.getService(EventHandlerService).get
   popup.plugins = services.getService(PluginService).get
   popup.editors = services.getService(DocumentEditorService).get
+  popup.settings = SelectorSettings.new(services.getService(ConfigService).get.runtime)
   popup.scale = vec2(0.5, 0.5)
   popup.scope = scopeName.get("")
   let document = newTextDocument(services, createLanguageServer=false, filename="ed://.selector-popup-search-bar")
@@ -444,33 +470,5 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.finder = finder
     discard popup.finder.onItemsChanged.subscribe () => popup.handleItemsUpdated()
     popup.finder.setQuery("")
-
-  assignEventHandler(popup.eventHandler, popup.events.getEventHandlerConfig("popup.selector")):
-    onAction:
-      if popup.handleAction(action, arg).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      Ignored
-
-  assignEventHandler(popup.previewEventHandler, popup.events.getEventHandlerConfig("popup.selector.preview")):
-    onAction:
-      if popup.handleAction(action, arg).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      Ignored
-
-  if scopeName.isSome:
-     assignEventHandler(popup.customEventHandler, popup.events.getEventHandlerConfig("popup.selector." & scopeName.get)):
-      onAction:
-        if popup.handleAction(action, arg).isSome:
-          Handled
-        else:
-          Ignored
-      onInput:
-        Ignored
 
   return popup
