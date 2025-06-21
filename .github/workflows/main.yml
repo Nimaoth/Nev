@@ -27,7 +27,7 @@ jobs:
 
     strategy:
       matrix:
-        container: ["ubuntu:22.04"]
+        container: ["ubuntu:20.04"]
 
     container:
       image: ${{ matrix.container }}
