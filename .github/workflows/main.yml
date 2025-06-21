@@ -68,8 +68,18 @@ jobs:
         env:
           cache-name: cache-nimble-modules-6
         with:
-          path: ~/.nimble
+          path: |
+            ~/.nimble
+            emsdk
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}
+
+      - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
+        name: Download emscripten
+        run: git clone https://github.com/emscripten-core/emsdk.git
+
+      - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
+        name: Download emscripten
+        run: cd emsdk; ./emsdk install latest; ./emsdk activate latest; source ./ emsdk_env.sh; cd ..
 
       - name: nimble setup
         continue-on-error: true
@@ -104,8 +114,18 @@ jobs:
         env:
           cache-name: cache-nimble-modules-3
         with:
-          path: ~/.nimble
+          path: |
+            ~/.nimble
+            emsdk
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('nimble.lock') }}
+
+      - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
+        name: Download emscripten
+        run: git clone https://github.com/emscripten-core/emsdk.git
+
+      - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
+        name: Download emscripten
+        run: cd emsdk; ./emsdk.bat install latest; ./emsdk.bat activate latest; source ./ emsdk_env.bat; cd ..
 
       - if: ${{ steps.cache-nimble.outputs.cache-hit != 'true' }}
         name: nimble setup
