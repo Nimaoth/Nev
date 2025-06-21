@@ -1,4 +1,4 @@
-import std/[sugar, os, sequtils, deques]
+import std/[sugar, os, sequtils, deques, strutils]
 import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
@@ -7,6 +7,7 @@ import ui/[widget_builders_base, widget_builder_text_document, widget_builder_se
   widget_builder_debugger, widget_builder_terminal, widget_library]
 import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
 import terminal_service
+import text/text_editor
 
 when enableAst:
   import ui/[widget_builder_model_document]
@@ -236,6 +237,8 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     var mainBounds: Rect
 
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
+
+      # todo: handle self.statusBarOnTop
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         proc section(text: string, foreground: Color, background: Color, extraFlags: UINodeFlags) =
           var flags = &{SizeToContentX, SizeToContentY, DrawText} + extraFlags
@@ -261,6 +264,15 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
               fmt"{layout.children.len}/{maxText}"
           else:
             ""
+
+          let modes = if self.layout.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
+            let modes = editor.TextDocumentEditor.settings.modes.get()
+            "[" & modes.join(", ") & "]"
+          else:
+            ""
+
+          if modes != "":
+            section(modes)
 
           section(&"[Layout {self.layout.layoutName} - {layout.desc} - {maximizedText}")
 

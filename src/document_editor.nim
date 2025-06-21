@@ -39,7 +39,6 @@ type
     pinnedEditors*: HashSet[EditorId]
     pinnedDocuments*: seq[Document]
     documents*: seq[Document]
-    editorDefaults*: seq[DocumentEditor]
     onEditorRegistered*: Event[DocumentEditor]
     onEditorDeregistered*: Event[DocumentEditor]
 

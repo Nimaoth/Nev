@@ -33,7 +33,7 @@ type
   CommandDFA* = ref object
     persistentState: int
     states: seq[DFAState]
-    functions: seq[(string, string)]
+    functions*: seq[(string, string)]
     functionIndices: Table[string, int]
     terminalStates: Table[int, string]
     postfixStates: Table[(string, string), int]
@@ -130,7 +130,7 @@ proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: 
 
 proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, beginEmpty: bool): seq[CommandState] =
   if currentInput == 0:
-    log(lvlError, "Input 0 is invalid")
+    # log(lvlError, "Input 0 is invalid")
     return @[]
 
   if beginEmpty:
@@ -373,7 +373,7 @@ proc handleNextInput(
     index: int,
     currentState: int,
     defaultState: int,
-    leaders: seq[(int64, Modifiers)],
+    leaders: Table[string, seq[(int64, Modifiers)]],
     functionIndex: int,
     capture = "",
     depth = 0,
@@ -525,17 +525,20 @@ proc handleNextInput(
 
 #   dfa.fillTransitionFunctionIndicesRec(0, {})
 
-proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[string] = @[]): CommandDFA =
+proc buildDFA*(commands: Table[string, Table[string, string]], leaders = initTable[string, seq[string]]()): CommandDFA =
   new(result)
 
   # debugf"commands: {commands}"
   result.states.add DFAState()
 
-  let leaders = collect(newSeq):
-    for leader in leaders:
-      let (keys, _, _, _, _) = parseNextInput(leader.toRunes, 0)
-      for key in keys:
-        (key.inputCodes.a, key.mods)
+  let leaders = collect(initTable):
+    for name, l in leaders:
+      let inputs = collect(newSeq):
+        for leader in l:
+          let (keys, _, _, _, _) = parseNextInput(leader.toRunes, 0)
+          for key in keys:
+            (key.inputCodes.a, key.mods)
+      {name: inputs}
 
   try:
     if commands.contains(""):
@@ -558,7 +561,7 @@ proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[stri
     discard
     # todo: handle errors
 
-proc buildDFA*(commands: seq[(string, string)], leaders: seq[string] = @[]): CommandDFA =
+proc buildDFA*(commands: seq[(string, string)], leaders = initTable[string, seq[string]]()): CommandDFA =
   return buildDFA({"": commands.toTable}.toTable, leaders)
 
 proc autoCompleteRec(dfa: CommandDFA, result: var seq[(string, string)], currentInputs: string, currentState: int) =

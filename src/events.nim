@@ -1,7 +1,7 @@
-import std/[tables, sequtils, strutils, sugar, unicode]
+import std/[tables, sequtils, strutils, sugar, unicode, json]
 import misc/[custom_logger, util, custom_async]
 import scripting/expose
-import input, service, dispatch_tables
+import input, service, dispatch_tables, config_provider
 
 logCategory "events"
 
@@ -25,15 +25,11 @@ type
     parent*: EventHandlerConfig
     context*: string
     commands: Table[string, Table[string, Command]]
-    handleActions*: bool
-    handleInputs*: bool
-    handleKeys*: bool
-    consumeAllActions*: bool
-    consumeAllInput*: bool
     revision: int
-    leaders: seq[string]
+    keyDefinitions: Table[string, seq[string]]
     descriptions*: Table[string, string]
     stateToDescription*: Table[int, string]
+    settings*: ConfigStore
 
   EventHandler* = ref object
     states: seq[CommandState]
@@ -58,35 +54,36 @@ type
 
   EventHandlerService* = ref object of Service
     eventHandlerConfigs*: Table[string, EventHandlerConfig]
-    leaders*: seq[string]
+    keyDefinitions: Table[string, seq[string]] # e.g. LEADER -> [<SPACE>], CUSTOM_LEADER -> [<C-w>]
     commandInfos*: CommandInfos
     commandDescriptions*: Table[string, string]
+    settings: ConfigStore
 
 func serviceName*(_: typedesc[EventHandlerService]): string = "EventHandlerService"
-addBuiltinService(EventHandlerService)
+addBuiltinService(EventHandlerService, ConfigService)
 
 method init*(self: EventHandlerService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   self.commandInfos = CommandInfos()
+  self.settings = self.services.getService(ConfigService).get.runtime
   return ok()
 
-func newEventHandlerConfig*(context: string, parent: EventHandlerConfig = nil): EventHandlerConfig =
+func newEventHandlerConfig(context: string, settings: ConfigStore, parent: EventHandlerConfig = nil): EventHandlerConfig =
   new result
   result.parent = parent
-  result.handleActions = true
-  result.handleInputs = false
-  result.handleKeys = false
   result.context = context
+  result.settings = settings
 
-proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]]) =
+proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]], includeMain: bool = true) =
   if config.parent.isNotNil:
-    config.parent.combineCommands(commands)
+    config.parent.combineCommands(commands, includeMain = false)
 
   for (subGraphName, bindings) in config.commands.mpairs:
     if subGraphName == "":
-      var temp = initTable[string, string]()
-      for (keys, commandInfo) in bindings.mpairs:
-        temp[keys] = commandInfo.command
-      commands[subGraphName] = temp
+      if includeMain:
+        var temp = initTable[string, string]()
+        for (keys, commandInfo) in bindings.mpairs:
+          temp[keys] = commandInfo.command
+        commands[subGraphName] = temp
     else:
       if not commands.contains(subGraphName):
         commands[subGraphName] = initTable[string, string]()
@@ -98,23 +95,29 @@ proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Tab
 proc buildDFA*(config: EventHandlerConfig): CommandDFA {.gcsafe, raises: [].} =
   var commands = initTable[string, Table[string, string]]()
   config.combineCommands(commands)
-  result = buildDFA(commands, config.leaders)
+  result = buildDFA(commands, config.keyDefinitions)
 
-  let leaders = collect(newSeq):
-    for leader in config.leaders:
-      let (keys, _, _, _, _) = parseNextInput(leader.toRunes, 0)
-      for key in keys:
-        (key.inputCodes.a, key.mods)
+  let keyDefinitions = collect(initTable):
+    for name, defs in config.keyDefinitions:
+      let inputs = collect(newSeq):
+        for def in defs:
+          let (keys, _, _, _, _) = parseNextInput(def.toRunes, 0)
+          for key in keys:
+            (key.inputCodes.a, key.mods)
+      {name: inputs}
 
   config.stateToDescription.clear()
-  for leader in leaders:
-    for (keys, desc) in config.descriptions.pairs:
-      var states: seq[CommandState]
-      for (inputCode, mods, _) in parseInputs(keys, [leader]):
-        states = result.stepAll(states, inputCode.a, mods)
 
-      for s in states:
-        config.stateToDescription[s.current] = desc
+  #
+  for name, inputs in keyDefinitions:
+    for leader in inputs:
+      for (keys, desc) in config.descriptions.pairs:
+        var states: seq[CommandState]
+        for (inputCode, mods, _) in parseInputs(keys, {name: @[leader]}.toTable):
+          states = result.stepAll(states, inputCode.a, mods)
+
+        for s in states:
+          config.stateToDescription[s.current] = desc
 
 proc maxRevision*(config: EventHandlerConfig): int =
   result = config.revision
@@ -129,25 +132,23 @@ proc dfa*(handler: EventHandler): CommandDFA =
     handler.revision = configRevision
   return handler.dfaInternal
 
-proc setHandleInputs*(config: EventHandlerConfig, value: bool) =
-  config.handleInputs = value
-  config.revision += 1
+proc handleInputs*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".handle-inputs", false)
 
-proc setHandleKeys*(config: EventHandlerConfig, value: bool) =
-  config.handleKeys = value
-  config.revision += 1
+proc handleKeys*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".handle-keys", false)
 
-proc setHandleActions*(config: EventHandlerConfig, value: bool) =
-  config.handleActions = value
-  config.revision += 1
+proc handleActions*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".handle-actions", true)
 
-proc setConsumeAllActions*(config: EventHandlerConfig, value: bool) =
-  config.consumeAllActions = value
-  config.revision += 1
+proc consumeAllActions*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".consume-all-actions", false)
 
-proc setConsumeAllInput*(config: EventHandlerConfig, value: bool) =
-  config.consumeAllInput = value
-  config.revision += 1
+proc consumeAllInput*(config: EventHandlerConfig): bool =
+  return config.settings.get("input." & config.context & ".consume-all-input", false)
+
+proc inputHandlerAction*(config: EventHandlerConfig): string =
+  return config.settings.get("input." & config.context & ".input-handler-command", "")
 
 proc addCommand*(config: EventHandlerConfig, context: string, keys: string, action: string, source: CommandSource = CommandSource.default) =
   if not config.commands.contains(context):
@@ -167,16 +168,12 @@ proc clearCommands*(config: EventHandlerConfig) =
   config.commands.clear
   config.revision += 1
 
-proc addLeader*(config: EventHandlerConfig, leader: string) =
-  config.leaders.add leader
+proc setKeyDefinitions*(config: EventHandlerConfig, name: string, keys: openArray[string]) =
+  config.keyDefinitions.mgetOrPut(name, @[]) = @keys
   config.revision += 1
 
-proc setLeader*(config: EventHandlerConfig, leader: string) =
-  config.leaders = @[leader]
-  config.revision += 1
-
-proc setLeaders*(config: EventHandlerConfig, leaders: openArray[string]) =
-  config.leaders = @leaders
+proc setKeyDefinitions*(config: EventHandlerConfig, definitions: Table[string, seq[string]]) =
+  config.keyDefinitions = definitions
   config.revision += 1
 
 proc getNextPossibleInputs*(handler: EventHandler): auto =
@@ -207,8 +204,12 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
     template onInput(inputBody: untyped): untyped {.used.} =
       handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
         if handler.config.handleInputs:
-          let input {.inject, used.} = input
-          return inputBody
+          let inputHandlerAction = handler.config.inputHandlerAction()
+          if inputHandlerAction != "":
+            return handler.handleAction(inputHandlerAction, $newJString(input))
+          else:
+            let input {.inject, used.} = input
+            return inputBody
         else:
           return Ignored
 
@@ -259,8 +260,12 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
     template onInput(inputBody: untyped): untyped {.used.} =
       handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
         if handler.config.handleInputs:
-          let input {.inject, used.} = input
-          return inputBody
+          let inputHandlerAction = handler.config.inputHandlerAction()
+          if inputHandlerAction != "":
+            return handler.handleAction(inputHandlerAction, $newJString(input))
+          else:
+            let input {.inject, used.} = input
+            return inputBody
         else:
           return Ignored
 
@@ -498,8 +503,8 @@ proc getEventHandlerConfig*(self: EventHandlerService, context: string): EventHa
     else:
       nil
 
-    self.eventHandlerConfigs[context] = newEventHandlerConfig(context, parentConfig)
-    self.eventHandlerConfigs[context].setLeaders(self.leaders)
+    self.eventHandlerConfigs[context] = newEventHandlerConfig(context, self.settings, parentConfig)
+    self.eventHandlerConfigs[context].setKeyDefinitions(self.keyDefinitions)
 
   return self.eventHandlerConfigs[context].catch(EventHandlerConfig())
 
@@ -519,20 +524,27 @@ proc getEventHandlerService(): Option[EventHandlerService] =
 static:
   addInjector(EventHandlerService, getEventHandlerService)
 
-proc setLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
-  self.leaders = @[leader]
+proc addKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) {.expose("events").} =
+  self.keyDefinitions.mgetOrPut(name, @[]).add(keys)
   for config in self.eventHandlerConfigs.values:
-    config.setLeaders self.leaders
+    config.setKeyDefinitions(self.keyDefinitions)
+
+proc setKeyDefinitions*(self: EventHandlerService, name: string, keys: seq[string]) {.expose("events").} =
+  self.keyDefinitions.mgetOrPut(name, @[]) = keys
+  for config in self.eventHandlerConfigs.values:
+    config.setKeyDefinitions(self.keyDefinitions)
+
+proc setLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
+  self.setKeyDefinitions("LEADER", @[leader])
 
 proc setLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
-  self.leaders = leaders
-  for config in self.eventHandlerConfigs.values:
-    config.setLeaders self.leaders
+  self.setKeyDefinitions("LEADER", leaders)
 
 proc addLeader*(self: EventHandlerService, leader: string) {.expose("events").} =
-  self.leaders.add leader
-  for config in self.eventHandlerConfigs.values:
-    config.setLeaders self.leaders
+  self.addKeyDefinitions("LEADER", @[leader])
+
+proc addLeaders*(self: EventHandlerService, leaders: seq[string]) {.expose("events").} =
+  self.addKeyDefinitions("LEADER", leaders)
 
 proc clearCommands*(self: EventHandlerService, context: string) {.expose("events").} =
   log(lvlInfo, fmt"Clearing keybindings for {context}")
@@ -550,7 +562,7 @@ proc addCommandDescription*(self: EventHandlerService, context: string, keys: st
   else:
     context
 
-  log lvlWarn, fmt"Adding command description to '{context}': '{keys}' -> '{description}'"
+  # log lvlDebug, &"Adding command description to '{context}': '{keys}' -> '{description}'"
 
   self.getEventHandlerConfig(context).addCommandDescription(keys, description)
 

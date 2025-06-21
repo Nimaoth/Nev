@@ -14,7 +14,6 @@ type
   ScriptContextWasm* = ref object of ScriptContext
     modules: seq[WasmModule]
 
-    editorModeChangedCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction, editor: int32, oldMode: cstring, newMode: cstring): void {.gcsafe.}]]
     postInitializeCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction): bool {.gcsafe.}]]
     handleCallbackCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction, id: int32, args: cstring): bool {.gcsafe.}]]
     handleAnyCallbackCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction, id: int32, args: cstring): cstring {.gcsafe.}]]
@@ -78,9 +77,6 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
         log(lvlInfo, fmt"Loaded wasm module '{file}'")
 
         # todo: shouldn't need to specify gcsafe here, findFunction should handle that
-        if findFunction(module, "handleEditorModeChangedWasm", void, proc(module: WasmModule, fun: PFunction, editor: int32, oldMode: cstring, newMode: cstring): void {.gcsafe.}).getSome(f):
-          self.editorModeChangedCallbacks.add (module, f.pfun, f.fun)
-
         if findFunction(module, "postInitializeWasm", bool, proc(module: WasmModule, fun: PFunction): bool {.gcsafe.}).getSome(f):
           self.postInitializeCallbacks.add (module, f.pfun, f.fun)
 
@@ -115,7 +111,6 @@ method init*(self: ScriptContextWasm, path: string, vfs: VFS): Future[void] {.as
 method deinit*(self: ScriptContextWasm) = discard
 
 method reload*(self: ScriptContextWasm): Future[void] {.async.} =
-  self.editorModeChangedCallbacks.setLen 0
   self.postInitializeCallbacks.setLen 0
   self.handleCallbackCallbacks.setLen 0
   self.handleAnyCallbackCallbacks.setLen 0
@@ -124,13 +119,6 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
   self.modules.setLen 0
 
   await self.loadModules("app://config/wasm")
-
-method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
-  try:
-    for (m, p, f) in self.editorModeChangedCallbacks:
-      f(m, p, editor.id.int32, oldMode.cstring, newMode.cstring)
-  except:
-    log lvlError, &"Failed to run handleEditorModeChanged: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 method postInitialize*(self: ScriptContextWasm): bool =
   result = false

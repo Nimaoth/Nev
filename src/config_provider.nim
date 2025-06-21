@@ -304,7 +304,7 @@ proc new*(_: typedesc[ConfigStore], name, filename: string, parent: ConfigStore 
       inc nextConfigStoreId
       id
 
-  result = ConfigStore(id: id, name: name, filename: name, settings: newJexObject())
+  result = ConfigStore(id: id, name: name, filename: filename, settings: newJexObject())
   result.settings.setUserData(id)
   settings.setUserData(id)
   result.settings.evaluateSettingsRec(settings)
@@ -490,18 +490,25 @@ proc evaluateSettingsRec(target: var JsonNodeEx, node: JsonNodeEx) =
         i = key.findSep(prevI)
 
       var extend = field.extend
-      if key[prevI] == '+':
-        extend = true
-        inc prevI
-      elif key[prevI] == '*':
-        extend = false
-        inc prevI
-      let sub = key[prevI..^1].replace("..", ".")
+      if prevI < key.len:
+        if key[prevI] == '+':
+          extend = true
+          inc prevI
+        elif key[prevI] == '*':
+          extend = false
+          inc prevI
+        let sub = key[prevI..^1].replace("..", ".")
 
-      var evaluatedField: JsonNodeEx
-      evaluatedField.evaluateSettingsRec(field)
-      evaluatedField.extend = extend
-      subTarget[sub] = evaluatedField
+        var evaluatedField: JsonNodeEx
+        evaluatedField.evaluateSettingsRec(field)
+        evaluatedField.extend = extend
+        subTarget[sub] = evaluatedField
+      else:
+        # empty last key
+        var evaluatedField: JsonNodeEx
+        evaluatedField.evaluateSettingsRec(field)
+        evaluatedField.extend = extend
+        subTarget[""] = evaluatedField
 
   else:
     target = node
@@ -624,7 +631,7 @@ proc clear*(self: ConfigStore, key: string) =
   self.onConfigChanged.invoke(key)
 
 proc set*[T](self: ConfigStore, key: string, value: T) =
-  log lvlInfo, &"Set setting '{key}' to {value} in {self.desc()}"
+  # log lvlInfo, &"Set setting '{key}' to {value} in {self.desc()}"
 
   var prevI = 0
   var i = key.find('.')
@@ -1121,6 +1128,21 @@ declareSettings GeneralSettings, "editor":
 
   ## If true then you will be prompted to confirm quitting even when no unsaved changes exist.
   declare promptBeforeQuit, bool, false
+
+  ## List of input modes which are always active (at the lowest priority).
+  declare baseModes, seq[string], @["editor"]
+
+  ## Global mode to apply while the command line is open.
+  declare commandLineModeHigh, string, "command-line-high"
+
+  ## Global mode to apply while the command line is open.
+  declare commandLineModeLow, string, "command-line-low"
+
+  ## Global mode to apply while the command line is open showing a command result.
+  declare commandLineResultModeHigh, string, "command-line-result-high"
+
+  ## Global mode to apply while the command line is open showing a command result.
+  declare commandLineResultModeLow, string, "command-line-result-low"
 
 declareSettings DebugSettings, "debug":
   ## Log how long it takes to generate the render commands for a text editor.

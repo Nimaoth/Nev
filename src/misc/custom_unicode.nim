@@ -4,7 +4,7 @@ from std/strutils import Digits
 
 export Rune
 export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes, `==`, `<%`, `<=%`,
-  isWhiteSpace, isAlpha, isLower, isUpper, toLower, toUpper, size, add
+  isWhiteSpace, isAlpha, isLower, isUpper, toLower, toUpper, size, add, capitalize
 
 type
   RuneIndex* = distinct int

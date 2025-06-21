@@ -15,12 +15,6 @@ proc newTerminalPreviewer*(services: Services, terminals: TerminalService): Term
   new result
   result.terminals = terminals
 
-method activate*(self: TerminalPreviewer) =
-  self.view.setMode("insert")
-
-method deactivate*(self: TerminalPreviewer) =
-  self.view.setMode("normal")
-
 method deinit*(self: TerminalPreviewer) =
   # logScope lvlInfo, &"[deinit] Destroying terminal previewer"
   self[] = default(typeof(self[]))

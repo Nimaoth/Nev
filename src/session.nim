@@ -1,6 +1,6 @@
 import std/[strutils, options, json, tables]
 import misc/[custom_async, custom_logger, util, myjsonutils, event, id]
-import scripting/expose
+import scripting/[expose, scripting_base]
 import dispatch_tables, service
 
 {.push gcsafe.}
@@ -10,6 +10,7 @@ logCategory "session"
 
 type
   SessionService* = ref object of Service
+    plugins*: PluginService
     sessionData*: JsonNode
     onSessionRestored*: Event[SessionService]
     hasSession*: bool
@@ -21,11 +22,12 @@ type
     ]]
 
 func serviceName*(_: typedesc[SessionService]): string = "SessionService"
-addBuiltinService(SessionService)
+addBuiltinService(SessionService, PluginService)
 
 method init*(self: SessionService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"SessionService.init"
   self.sessionData = newJObject()
+  self.plugins = self.services.getService(PluginService).get
   return ok()
 
 proc restoreSession*(self: SessionService, sessionData: JsonNode) =
@@ -40,8 +42,10 @@ proc restoreSession*(self: SessionService, sessionData: JsonNode) =
     else:
       log lvlError, &"Invalid data in session data: '{dynamic}' should be an object"
 
-  self.onSessionRestored.invoke(self)
   self.hasSession = true
+  self.onSessionRestored.invoke(self)
+
+  discard self.plugins.invokeAnyCallback("after-restore-session", newJArray())
 
 proc addSaveHandler*(self: SessionService, key: string,
     save: proc(): JsonNode {.gcsafe, raises: [].},

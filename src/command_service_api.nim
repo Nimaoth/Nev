@@ -43,12 +43,12 @@ proc commandLine*(self: CommandService, initialValue: string = "", prefix: strin
   self.commandLineResultMode = false
   self.commandHandler = nil
   self.prefix = prefix
-  editor.setMode("insert")
   editor.disableCompletions = false
   editor.disableScrolling = true
   editor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   editor.document.setReadOnly(false)
   editor.clearOverlays(overlayIdPrefix)
+  editor.setDefaultMode()
   if self.prefix != "":
     editor.clearOverlays(overlayIdPrefix)
     editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
@@ -87,7 +87,6 @@ proc commandLineResult*(self: CommandService, value: string, showInCommandLine: 
     self.commandLineInputMode = false
     self.commandLineResultMode = true
     self.commandHandler = nil
-    editor.setMode("normal")
     editor.disableCompletions = false
     editor.disableScrolling = false
     editor.uiSettings.lineNumbers.set(api.LineNumbers.Absolute)
@@ -123,7 +122,11 @@ proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
   self.commandLineInputMode = false
   self.commandLineResultMode = false
 
-  let commands = editor.document.contentString.split("\n")
+  let input = editor.document.contentString
+  if input == "":
+    return false
+
+  let commands = input.split("\n")
   editor.document.content = ""
 
   for command in commands:
