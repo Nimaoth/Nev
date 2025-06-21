@@ -414,6 +414,15 @@ when defined(wasm):
   proc emscripten_stack_init() {.importc.}
   # proc init_pthread_self() {.importc.} # todo
 
+  proc stackSave*(): uint32 {.wasmexport.} =
+    assert false, "stackSave not supported"
+
+  proc stackRestore*(n: uint32) {.wasmexport.} =
+    assert false, "stackRestore not supported"
+
+  proc stackAlloc*(n: uint32): pointer {.wasmexport.} =
+    assert false, "stackAlloc not supported"
+
   proc plugin_main*() {.wasmexport.} =
     emscripten_stack_init()
     # init_pthread_self()
