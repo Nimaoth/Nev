@@ -6,6 +6,9 @@
     "editor.command-line-result-mode-low": "vscode.command-line-result-low",
     "terminal.base-mode": "vscode.terminal",
     "selector.base-mode": "vscode.selector",
+    "text.modes": ["vscode"],
+    "text.default-mode": "vscode",
+    "text.completion-mode": "vscode.completion",
 
     "input": {
         "vscode.handle-inputs": true,
@@ -19,9 +22,6 @@
         "vscode.terminal.handle-keys": true,
     },
 
-    "text.completion-mode": "vscode.completion",
-    "text.modes": ["vscode"],
-    "text.default-mode": "vscode",
     "text.inclusive-selection": false,
 
     "editor.text.cursor.movement.": "both",
