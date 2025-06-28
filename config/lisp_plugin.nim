@@ -830,47 +830,79 @@ proc eval(expr: LispVal, env: var Env): LispVal =
           return newNumber(container.elems.len.float)
         return newNumber(0)
       of ".=":
+        if expr.elems.len < 4:
+          raise newException(ValueError, ".= requires at least 3 arguments: container, key, value")
         let container = eval(expr.elems[1], env)
-        let key = eval(expr.elems[2], env)
-        let value = eval(expr.elems[3], env)
-        if container.kind == Map:
-          if key.kind == String:
-            container.fields[key.str] = value
-          elif key.kind == Symbol:
-            container.fields[key.sym] = value
+        let value = eval(expr.elems[^1], env)  # last argument is the value
+
+        var current = container
+        for i in 2..<(expr.elems.len - 2):
+          let key = eval(expr.elems[i], env)
+          if current.kind == Map:
+            if key.kind == String:
+              current = current.fields.getOrDefault(key.str)
+            elif key.kind == Symbol:
+              current = current.fields.getOrDefault(key.sym)
+            else:
+              raise newException(ValueError, "Key must be string or symbol")
+          elif current.kind in {List, Array}:
+            if key.kind == Number:
+              let index = key.num.int
+              if index in 0..current.elems.high:
+                current = current.elems[index]
+              else:
+                raise newException(ValueError, &"Index out of bounds: {index} notin {0}..<{current.elems.len}")
+            else:
+              raise newException(ValueError, "Key must be int")
+          else:
+            raise newException(ValueError, &"Can't use . with {current.kind}")
+
+        let finalKey = eval(expr.elems[^2], env)
+        if current.kind == Map:
+          if finalKey.kind == String:
+            current.fields[finalKey.str] = value
+          elif finalKey.kind == Symbol:
+            current.fields[finalKey.sym] = value
           else:
             raise newException(ValueError, "Key must be string or symbol")
-        elif container.kind in {List, Array}:
-          if key.kind == Number:
-            let index = key.num.int
-            if index in 0..container.elems.high:
-              container.elems[index] = value
+        elif current.kind in {List, Array}:
+          if finalKey.kind == Number:
+            let index = finalKey.num.int
+            if index in 0..current.elems.high:
+              current.elems[index] = value
             else:
-              raise newException(ValueError, &"Index out of bounds: {index} notin {0}..<{container.elems.len}")
+              raise newException(ValueError, &"Index out of bounds: {index} notin {0}..<{current.elems.len}")
           else:
             raise newException(ValueError, "Key must be int")
-
         else:
-          raise newException(ValueError, &"Can't use . with {expr.kind}")
+          raise newException(ValueError, &"Can't use . with {current.kind}")
         return value
       of ".":
-        let container = eval(expr.elems[1], env)
-        let key = eval(expr.elems[2], env)
-        if container.kind == Map:
-          if key.kind == String:
-            return container.fields.getOrDefault(key.str)
-          if key.kind == Symbol:
-            return container.fields.getOrDefault(key.sym)
-          raise newException(ValueError, "Key must be string or symbol")
-        if container.kind in {List, Array}:
-          if key.kind == Number:
-            let index = key.num.int
-            if index in 0..container.elems.high:
-              return container.elems[index]
-            raise newException(ValueError, &"Index out of bounds: {index} notin {0}..<{container.elems.len}")
-          raise newException(ValueError, "Key must be int")
+        if expr.elems.len < 3:
+          raise newException(ValueError, ". requires at least 2 arguments: container, key")
 
-        raise newException(ValueError, &"Can't use . with {expr.kind}")
+        var current = eval(expr.elems[1], env)
+        for i in 2..<expr.elems.len:
+          let key = eval(expr.elems[i], env)
+          if current.kind == Map:
+            if key.kind == String:
+              current = current.fields.getOrDefault(key.str)
+            elif key.kind == Symbol:
+              current = current.fields.getOrDefault(key.sym)
+            else:
+              raise newException(ValueError, "Key must be string or symbol")
+          elif current.kind in {List, Array}:
+            if key.kind == Number:
+              let index = key.num.int
+              if index in 0..current.elems.high:
+                current = current.elems[index]
+              else:
+                raise newException(ValueError, &"Index out of bounds: {index} notin {0}..<{current.elems.len}")
+            else:
+              raise newException(ValueError, "Key must be int")
+          else:
+            raise newException(ValueError, &"Can't use . with {current.kind}")
+        return current
 
     # Evaluate macro if first is a macro
     let fun = eval(first, env)
