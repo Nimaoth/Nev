@@ -143,8 +143,12 @@ method getFileChanges*(self: VersionControlSystemGit, path: string, staged: bool
     let addedRaw = parts[2]
     # debug deletedRaw, " -> ", addedRaw
 
-    assert deletedRaw[0] == '-'
-    assert addedRaw[0] == '+'
+    if deletedRaw.len == 0 or deletedRaw[0] != '-':
+      log lvlError, &"Failed to handle removed line in git diff: '{line}'"
+      return
+    if addedRaw.len == 0 or addedRaw[0] != '+':
+      log lvlError, &"Failed to handle added line in git diff: '{line}'"
+      return
 
     let deletedRange = parseGitRange(deletedRaw).valueOr:
       log lvlError, &"Failed to parse deleted range: " & error.msg

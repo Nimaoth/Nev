@@ -130,8 +130,12 @@ proc getFileChanges*(path: string, staged: bool = false): Future[Option[seq[Line
     let addedRaw = parts[2]
     # debug deletedRaw, " -> ", addedRaw
 
-    assert deletedRaw[0] == '-'
-    assert addedRaw[0] == '+'
+    if deletedRaw.len == 0 or deletedRaw[0] != '-':
+      log lvlError, &"Failed to handle removed line in git diff: '{line}'"
+      return
+    if addedRaw.len == 0 or addedRaw[0] != '+':
+      log lvlError, &"Failed to handle added line in git diff: '{line}'"
+      return
 
     let deletedRange = parseGitRange(deletedRaw)
     let addedRange = parseGitRange(addedRaw)
