@@ -30,7 +30,7 @@
       ; find max column
       (let max-column 0)
       (repeat i (len selections) (do
-        (set max-column (max max-column (. (. (. selections i) 'last) 'column)))))
+        (set max-column (max max-column (. selections i 'last 'column)))))
 
       ; aligned selections
       (let aligned-selections (map selections
@@ -45,7 +45,7 @@
       (let texts (map selections
         (lambda (i v)
           (do
-            (let column (. (. (. selections i) 'last) 'column))
+            (let column (. selections i 'last 'column))
             (let diff (- max-column column))
             ; ` creates a list like (build-str " "  " "  " "  " ")
             ; use eval to actually run it
