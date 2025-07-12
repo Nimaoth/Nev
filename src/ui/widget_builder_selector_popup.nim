@@ -27,9 +27,9 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
   builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}):
     discard builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
 
-    if item.detail.len > 0:
+    if item.details.len > 0:
       builder.panel(&{FillY}, w = builder.charWidth * 4)
-      builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = item.detail,
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = $item.details,
         textColor = textColor.darken(0.2))
 
 method createUI*(self: FilePreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
@@ -156,9 +156,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
                     row.add builder.highlightedText(name, matchIndices, textColor,
                       highlightColor, maxDisplayNameWidth)
 
-                    if item.detail.len > 0:
-                      let details = item.detail.split('\t')
-                      for detail in details:
+                    if item.details.len > 0:
+                      for detail in item.details:
                         row.add builder.createTextWithMaxWidth(detail, maxColumnWidth, "...",
                           detailColor, &{TextItalic})
 

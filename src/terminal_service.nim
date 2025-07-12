@@ -1407,7 +1407,7 @@ proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float 
           displayName: name,
           filterText: name,
           data: $view.terminal.id,
-          detail: view.terminal.exitCode.mapIt("-> " & $it).get("") & "\t" & view.terminal.group & "\t" & $view.terminal.id,
+          details: @[view.terminal.exitCode.mapIt("-> " & $it).get(""), view.terminal.group, $view.terminal.id],
         )
 
     return items

@@ -1,4 +1,4 @@
-import std/[algorithm, sugar]
+import std/[algorithm, sugar, strutils]
 import misc/[regex, timer, fuzzy_matching, util, custom_async, event, id, custom_logger]
 
 logCategory "finder"
@@ -6,7 +6,7 @@ logCategory "finder"
 type
   FinderItem* = object
     displayName*: string
-    detail*: string
+    details*: seq[string]
     filterText*: string
     data*: string
     score*: float
@@ -26,13 +26,14 @@ type
 
   Finder* = ref object
     source*: DataSource
-    query*: string
+    queries*: seq[string]
     filteredItems*: Option[ItemList]
 
     filterAndSort: bool
     minScore*: float = 0
     sort*: bool
     filterThreshold*: float = 0
+    skipFirstQuery*: bool = false
 
     queryVersion: int
     itemsVersion: int
@@ -159,17 +160,18 @@ proc deinit*(finder: Finder) {.gcsafe, raises: [].} =
 proc `=destroy`*(finder: typeof(Finder()[])) =
   if finder.source.isNotNil:
     finder.source.close()
-  `=destroy`(finder.query)
+  `=destroy`(finder.queries)
   if finder.filteredItems.getSome(list):
     list.pool()
 
 proc handleItemsChanged(self: Finder, list: ItemList) {.gcsafe, raises: [].}
 
-proc newFinder*(source: DataSource, filterAndSort: bool = true, sort: bool = true, minScore: float = 0): Finder =
+proc newFinder*(source: DataSource, filterAndSort: bool = true, sort: bool = true, minScore: float = 0, skipFirstQuery: bool = false): Finder =
   new result
   var self = result
   result.source = source
   result.filterAndSort = filterAndSort
+  result.skipFirstQuery = skipFirstQuery
   result.sort = sort
   result.minScore = minScore
   result.onItemsChangedHandle = source.onItemsChanged.subscribe proc(items: ItemList) =
@@ -181,33 +183,57 @@ type FilterAndSortResult = object
   totalTime: float
   filtered: int
 
-proc filterAndSortItemsThread(args: tuple[query: string, list: ItemList, sort: bool, minScore: float]): FilterAndSortResult {.gcsafe.} =
+proc filterAndSortItemsThread(args: tuple[queries: seq[string], list: ItemList, sort: bool, minScore: float, skipFirstQuery: bool]): FilterAndSortResult {.gcsafe.} =
   try:
     var list = args.list
     let scoreTimer = startTimer()
     if list.len > 0:
-      var minScore = float.high
-      var maxScore = float.low
+      result.filtered = 0
+
       for i, item in list.items.mpairs:
-        let filterText = if item.filterText.len > 0:
-          item.filterText
-        else:
-          item.displayName
+        item.filtered = false
         if item.originalIndex.isNone:
           item.originalIndex = i.some
-        item.score = matchFuzzySublime(args.query, filterText, defaultCompletionMatchingConfig).score.float
-        maxScore = max(maxScore, item.score)
-        minScore = min(minScore, item.score)
 
-      result.filtered = 0
-      for item in list.items.mitems:
-        if item.score > 0:
-          item.score /= maxScore
-        elif item.score < 0:
-          item.score /= -minScore
-        item.filtered = item.score < args.minScore
-        if item.filtered:
-          inc result.filtered
+      let firstQueryIndex = if args.skipFirstQuery:
+        1
+      else:
+        0
+      var queryIndex = firstQueryIndex
+      while queryIndex < args.queries.len:
+        var minScore = float.high
+        var maxScore = float.low
+        for i, item in list.items.mpairs:
+          if item.filtered:
+            continue
+          let filterText = if queryIndex == firstQueryIndex:
+            if item.filterText.len > 0:
+              item.filterText
+            else:
+              item.displayName
+          else:
+            let detailIndex = (queryIndex - 1) - firstQueryIndex
+            if detailIndex in 0..item.details.high:
+              item.details[detailIndex]
+            else:
+              ""
+
+          item.score = matchFuzzySublime(args.queries[queryIndex], filterText, defaultCompletionMatchingConfig).score.float
+          maxScore = max(maxScore, item.score)
+          minScore = min(minScore, item.score)
+
+        for item in list.items.mitems:
+          if item.filtered:
+            continue
+          if item.score > 0:
+            item.score /= maxScore
+          elif item.score < 0:
+            item.score /= -minScore
+          item.filtered = item.score < args.minScore
+          if item.filtered:
+            inc result.filtered
+
+        inc queryIndex
 
     result.scoreTime = scoreTimer.elapsed.ms
 
@@ -232,7 +258,7 @@ proc filterAndSortItemsThread(args: tuple[query: string, list: ItemList, sort: b
     discard
 
 proc filterAndSortItems(self: Finder, list: ItemList): Future[void] {.async.} =
-  assert self.query.len > 0
+  assert self.queries.len > 0
 
   let versions = (query: self.queryVersion, items: self.itemsVersion)
 
@@ -243,7 +269,7 @@ proc filterAndSortItems(self: Finder, list: ItemList): Future[void] {.async.} =
   self.lastTriggeredFilterVersions = versions
 
   # todo: filter and sort on main thread if amount < threshold
-  var filterResult = spawnAsync(filterAndSortItemsThread, (self.query, list, self.sort, self.minScore)).await
+  var filterResult = spawnAsync(filterAndSortItemsThread, (self.queries, list, self.sort, self.minScore, self.skipFirstQuery)).await
 
   # debugf"[filterAndSortItems] -> {versions}, {filterResult.scoreTime}ms, {filterResult.sortTime}ms, {filterResult.totalTime}ms"
 
@@ -267,7 +293,7 @@ proc handleItemsChanged(self: Finder, list: ItemList) =
 
   inc self.itemsVersion
 
-  if self.filterAndSort and self.query.len > 0:
+  if self.filterAndSort and self.queries.len > 0:
     asyncSpawn self.filterAndSortItems(list)
   else:
     if self.filteredItems.getSome(list):
@@ -276,14 +302,14 @@ proc handleItemsChanged(self: Finder, list: ItemList) =
     self.onItemsChanged.invoke()
 
 proc setQuery*(self: Finder, query: string) =
-  self.query = query
+  self.queries = query.split("\t")
   self.queryVersion.inc
-  self.source.setQuery(query)
+  self.source.setQuery(self.queries[0])
 
   # todo: add optional delay so we don't spawn tasks on every keystroke, but only after stopping for a bit.
   if self.filterAndSort and self.filteredItems.getSome(list):
     var mlist = list
-    if self.query.len == 0:
+    if self.queries.len == 0:
       for i in 0..<mlist.len:
         mlist[i].filtered = false
       mlist.sort((a, b) => -cmp(a.originalIndex.get(0), b.originalIndex.get(0)), Descending)

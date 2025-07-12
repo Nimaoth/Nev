@@ -149,7 +149,7 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let border = ceil(builder.charWidth * 0.5)
 
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height + border * 2, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
+  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, MouseHover, SnapInitialBounds}, x = clampedX, y = top, h = height + border * 2, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
     hoverPanel = currentNode
 
     var textNode: UINode = nil
@@ -206,7 +206,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   var rows: seq[UINode] = @[]
 
   var completionsPanel: UINode = nil
-  builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
+  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
     let reverse = top + completionPanelHeight > completionsPanel.parent.bounds.h
     self.completionsDrawnInReverse = reverse
@@ -306,9 +306,9 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
           docText.add markup.value
 
       if docText.len > 0:
-        builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
+        builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap, DrawBorder},
           x = listNode.xw, w = docsWidth * charWidth, h = listNode.h,
-          backgroundColor = backgroundColor, textColor = docsColor, text = docText)
+          backgroundColor = backgroundColor, textColor = docsColor, text = docText, borderColor = borderColor)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
     completionsPanel.rawY = cursorBounds.y

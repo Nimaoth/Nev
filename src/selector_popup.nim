@@ -3,7 +3,7 @@ import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
 import scripting/[expose, scripting_base]
 import app_interface, text/text_editor, popup, events,
-  selector_popup_builder, dispatch_tables, layout, service, config_provider, view
+  selector_popup_builder, dispatch_tables, layout, service, config_provider, view, command_service
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 
@@ -23,6 +23,7 @@ type
     events*: EventHandlerService
     plugins: PluginService
     editors: DocumentEditorService
+    commands: CommandService
     textEditor*: TextDocumentEditor
     previewEditor*: TextDocumentEditor
     previewView*: View
@@ -79,7 +80,14 @@ proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: s
   if self.completionMatchPositions.contains(i):
     return self.completionMatchPositions[i]
 
-  discard matchFuzzySublime(pattern, text, result, true, config)
+  if self.finder.filteredItems.getSome(items) and i < items.len:
+    let query = if self.finder.skipFirstQuery and self.finder.queries.len > 1:
+      self.finder.queries[1]
+    else:
+      self.finder.queries[0]
+    discard matchFuzzySublime(query, text, result, true, config)
+  else:
+    discard matchFuzzySublime(pattern, text, result, true, config)
   self.completionMatchPositions[i] = result
 
 method initImpl*(self: SelectorPopup) {.gcsafe, raises: [].} =
@@ -367,6 +375,9 @@ method handleAction*(self: SelectorPopup, action: string, arg: string): Option[J
     if res2.isSome:
       return res2
 
+    let res = self.commands.executeCommand(action & " " & arg)
+    if res.isSome:
+      return newJString(res.get).some
   except:
     log lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}"
     log lvlError, getCurrentException().getStackTrace()
@@ -428,6 +439,7 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.events = services.getService(EventHandlerService).get
   popup.plugins = services.getService(PluginService).get
   popup.editors = services.getService(DocumentEditorService).get
+  popup.commands = services.getService(CommandService).get
   popup.settings = SelectorSettings.new(services.getService(ConfigService).get.runtime)
   popup.scale = vec2(0.5, 0.5)
   popup.scope = scopeName.get("")
@@ -437,7 +449,6 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.textEditor.renderHeader = false
   popup.textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
   popup.textEditor.settings.highlightMatches.enable.set(false)
-  popup.textEditor.document.singleLine = true
   popup.textEditor.disableScrolling = true
   popup.textEditor.disableCompletions = true
   popup.textEditor.active = true

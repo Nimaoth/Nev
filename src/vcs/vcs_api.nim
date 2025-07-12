@@ -47,18 +47,18 @@ proc getChangedFilesFromGitAsync(self: VCSService, workspace: Workspace, all: bo
           items.add FinderItem(
             displayName: $info1.stagedStatus & $info1.unstagedStatus & " " & name,
             data: $ %info1,
-            detail: relativeDirectory & "\t" & vcs.root,
+            details: @[relativeDirectory, vcs.root],
           )
           items.add FinderItem(
             displayName: $info2.stagedStatus & $info2.unstagedStatus & " " & name,
             data: $ %info2,
-            detail: relativeDirectory & "\t" & vcs.root,
+            details: @[relativeDirectory, vcs.root],
           )
         else:
           items.add FinderItem(
             displayName: $info.stagedStatus & $info.unstagedStatus & " " & name,
             data: $ %info,
-            detail: relativeDirectory & "\t" & vcs.root,
+            details: @[relativeDirectory, vcs.root],
           )
 
       if not all:
