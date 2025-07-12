@@ -227,8 +227,8 @@ proc glob*(pattern: string): Regex =
   return reg.re2(regexString)
 
 type Globs* = object
-  negatedPatterns: seq[string]
-  original: seq[string]
+  negatedPatterns*: seq[string]
+  original*: seq[string]
 
 proc parseGlobs*(globs: string): Globs =
   result = Globs()

@@ -3429,7 +3429,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
       let (_, name) = definition.filename.splitPath
       res.add FinderItem(
         displayName: name,
-        detail: relPath.splitPath[0],
+        details: @[relPath.splitPath[0]],
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
@@ -3612,13 +3612,12 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
 
   var res = newSeq[FinderItem]()
   for i, symbol in symbols:
-    var detail = $symbol.symbolType
+    var details = @[$symbol.symbolType]
     if detailFilename:
-      detail.add "\t"
-      detail.add symbol.filename
+      details.add symbol.filename
     res.add FinderItem(
       displayName: symbol.name,
-      detail: detail,
+      details: details,
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
 
@@ -3664,7 +3663,7 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
 
     items[index] = FinderItem(
       displayName: symbol.name,
-      detail: $symbol.symbolType & "\t" & relPath.splitPath[0],
+      details: @[$symbol.symbolType, relPath.splitPath[0]],
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
     inc index

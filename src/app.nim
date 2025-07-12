@@ -317,7 +317,6 @@ proc setupDefaultKeybindings(self: App) =
   commandLineConfig.addCommand("", "<ENTER>", "execute-command-line")
 
   selectorPopupConfig.addCommand("", "<ENTER>", "accept")
-  selectorPopupConfig.addCommand("", "<TAB>", "accept")
   selectorPopupConfig.addCommand("", "<ESCAPE>", "cancel")
   selectorPopupConfig.addCommand("", "<UP>", "prev")
   selectorPopupConfig.addCommand("", "<DOWN>", "next")
@@ -1537,7 +1536,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
           items.add FinderItem(
             displayName: name,
             data: file,
-            detail: relativeDirectory,
+            details: @[relativeDirectory],
           )
     except:
       discard
@@ -1604,7 +1603,7 @@ proc handleCachedFilesUpdated(self: WorkspaceFilesDataSource) =
     let (dir, name) = relPath.splitPath
     list[i] = FinderItem(
       displayName: name,
-      detail: root // dir,
+      details: @[root // dir],
       data: path,
     )
 
@@ -1643,7 +1642,7 @@ proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scale
         items.add(FinderItem(
           displayName: name,
           filterText: name & " |" & keys & "|" & commandInfo.command,
-          detail: keys & "\t" & context & "\t" & commandInfo.command & "\t" & commandInfo.source.filename,
+          details: @[keys, context, commandInfo.command, commandInfo.source.filename],
           data: $ %*{
             "path": commandInfo.source.filename,
             "line": commandInfo.source.line - 1,
@@ -1725,16 +1724,16 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     else:
       store.originalText
 
-    let detail = if state.merged:
-      store.name & " merged\t" & store.filename
+    let details = if state.merged:
+      @[store.name & " merged", store.filename]
     else:
-      store.name & " raw\t" & store.filename
+      @[store.name & " raw", store.filename]
 
     var items = newSeq[FinderItem]()
     items.add FinderItem(
       displayName: "",
       data: data,
-      detail: detail,
+      details: details,
     )
 
     for (key, value) in settings.getAllKeys():
@@ -1750,14 +1749,14 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
           data.add "\n"
       data.add value.pretty(printUserData = printUserData)
 
-      let detail = if sourceStore != nil:
-        &"{sourceStore.filename}\t{sourceStore.detail}"
+      let details = if sourceStore != nil:
+        @[sourceStore.filename, sourceStore.detail]
       else:
-        &"{store.filename}\t{store.detail}"
+        @[store.filename, store.detail]
       items.add FinderItem(
         displayName: key,
         data: data,
-        detail: detail,
+        details: details,
       )
 
     return items
@@ -1988,7 +1987,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
           displayName: dirtyMarker & name,
           filterText: name,
           data: $view.editor.id,
-          detail: root // relativeDirectory,
+          details: @[root // relativeDirectory],
         )
 
     self.layout.layout.forEachView proc(v: View): bool =
@@ -2007,7 +2006,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
           displayName: activeMarker & dirtyMarker & name,
           filterText: name,
           data: $view.editor.id,
-          detail: root // relativeDirectory,
+          details: @[root // relativeDirectory],
         )
 
     return items
@@ -2076,7 +2075,7 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
         displayName: dirtyMarker & name,
         filterText: name,
         data: path,
-        detail: relativeDirectory,
+        details: @[relativeDirectory],
       )
 
     return items
@@ -2197,7 +2196,7 @@ proc searchWorkspaceItemList(workspace: Workspace, query: string, maxResults: in
         "line": info.line - 1,
         "column": info.column,
       },
-      detail: fmt"{relativePath}:{info.line}"
+      details: @[fmt"{relativePath}:{info.line}"]
     )
 
   return list
@@ -2230,6 +2229,8 @@ method close*(self: WorkspaceSearchDataSource) =
   self.delayedTask = nil
 
 method setQuery*(self: WorkspaceSearchDataSource, query: string) =
+  if not self.delayedTask.isNil and self.query == query:
+    return
   self.query = query
 
   if self.delayedTask.isNil:
@@ -2246,7 +2247,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
 
   let maxResults = self.generalSettings.maxSearchResults.get()
   let source = newWorkspaceSearchDataSource(workspace, maxResults)
-  var finder = newFinder(source, filterAndSort=true)
+  var finder = newFinder(source, filterAndSort=true, skipFirstQuery=true)
 
   var popup = newSelectorPopup(self.services, "search".some, finder.some,
     newFilePreviewer(self.vfs, self.services).Previewer.toDisposableRef.some)
@@ -2427,11 +2428,10 @@ proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string, sh
     if relativeDirectory == ".":
       relativeDirectory = ""
 
-    var detail = directory
+    var details = @[directory]
     if showVFS:
       let (vfs, _) = vfs.getVFS(directory // name, 1)
-      detail.add "\t"
-      detail.add vfs.name
+      details.add vfs.name
 
     let icon = if isFile: fileIcon else: folderIcon
     list[i] = FinderItem(
@@ -2441,7 +2441,7 @@ proc getItemsFromDirectory(vfs: VFS, workspace: Workspace, directory: string, sh
         "path": directory // name,
         "isFile": isFile,
       },
-      detail: detail,
+      details: details,
     )
     inc i
 

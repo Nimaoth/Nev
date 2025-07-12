@@ -144,9 +144,10 @@
 
     "popup.selector": {
         "<C-k>": { "description": "Scoring" },
+        "<C-ENTER>": [".insert-text", "\n"],
+        "<TAB>": [".insert-text", "\t"],
         "<ENTER>": ["accept"],
         "<C-y>": ["accept"],
-        "<TAB>": ["accept"],
         // "<ESCAPE>": ["cancel"],
         "<ESCAPE>": ["vim-exit-popup"],
         "<UP>": ["prev"],
@@ -156,7 +157,7 @@
         "<C-u>": ["prev", 5],
         "<C-d>": ["next", 5],
         "<C-b>": ["toggle-preview"],
-        "<TAB>": ["toggle-focus-preview"],
+        "<C-TAB>": ["toggle-focus-preview"],
         "<C-k>s": ["sort", "Toggle"],
         "<C-k>n": ["normalize-scores", "Toggle"],
         "<C-k>f": ["set-min-score", 0.0],
@@ -167,7 +168,7 @@
     },
 
     "popup.selector.preview": {
-        "<TAB>": ["toggle-focus-preview"],
+        "<C-TAB>": ["toggle-focus-preview"],
     },
 
     "popup.selector.open": {
@@ -852,7 +853,6 @@
         "<C-k>": { "description": "Scoring" },
         "<ENTER>": ["accept"],
         "<C-y>": ["accept"],
-        "<TAB>": ["accept"],
         "<ESCAPE>": ["cancel"],
         "<UP>": ["prev"],
         "<C-p>": ["prev"],
@@ -861,7 +861,7 @@
         "<C-u>": ["prev", 5],
         "<C-d>": ["next", 5],
         "<C-b>": ["toggle-preview"],
-        "<TAB>": ["toggle-focus-preview"],
+        "<C-TAB>": ["toggle-focus-preview"],
         "<C-k>s": ["sort", "Toggle"],
         "<C-k>n": ["normalize-scores", "Toggle"],
         "<C-k>f": ["set-min-score", 0.0],
@@ -872,7 +872,7 @@
     },
 
     "vscode.selector.preview": {
-        "<TAB>": ["toggle-focus-preview"],
+        "<C-TAB>": ["toggle-focus-preview"],
     },
 
     "vscode.selector.open": {
