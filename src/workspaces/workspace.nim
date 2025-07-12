@@ -281,6 +281,9 @@ proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool
   if self.path.len == 0:
     self.path = path
     self.loadDefaultIgnoreFile()
+
+    # todo: make this configurable
+    self.ignore.original.add ".git"
   else:
     self.additionalPaths.add path
 
