@@ -695,25 +695,40 @@ proc openFile*(self: LayoutService, path: string, slot: string = ""): Option[Doc
 
   return self.createAndAddView(document, slot = slot)
 
-proc closeView*(self: LayoutService, view: View, keepHidden: bool = false) =
+proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, restoreHidden: bool = true) =
   ## Closes the current view.
   self.platform.requestRender()
 
-  discard self.layout.removeView(view)
-  self.layout.collapseTemporaryViews()
-  if keepHidden:
-    return
+  try:
+    var remove = true
+    if restoreHidden:
+      let hiddenViews = self.getHiddenViews()
+      if hiddenViews.len > 0:
+        let activeSlot = self.layout.getSlot(view)
+        let removedView = self.layout.addView(hiddenViews.last, activeSlot)
+        assert removedView == view
+        remove = false
 
-  # remove from all other layouts as well
-  for l in self.layouts.values:
-    if l != self.layout:
-      discard l.removeView(view)
-      l.collapseTemporaryViews()
+    if remove:
+      discard self.layout.removeView(view)
+      self.layout.collapseTemporaryViews()
 
-  self.allViews.removeShift(view)
-  view.close()
-  if view of EditorView:
-    self.editors.closeEditor(view.EditorView.editor)
+    if keepHidden:
+      return
+
+    # remove from all other layouts as well
+    for l in self.layouts.values:
+      if l != self.layout:
+        discard l.removeView(view)
+        l.collapseTemporaryViews()
+
+    self.allViews.removeShift(view)
+    view.close()
+    if view of EditorView:
+      self.editors.closeEditor(view.EditorView.editor)
+
+  except LayoutError as e:
+    log lvlError, "Failed to close view: " & e.msg
 
 proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bool =
   if document in self.pinnedDocuments:
@@ -750,7 +765,7 @@ proc hideActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose(
   self.layout.collapseTemporaryViews()
   self.platform.requestRender()
 
-proc closeActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose("layout").} =
+proc closeActiveView*(self: LayoutService, closeOpenPopup: bool = true, restoreHidden: bool = true) {.expose("layout").} =
   ## Permanently close the active view.
   if closeOpenPopup and self.popups.len > 0:
     self.popPopup()
@@ -760,7 +775,7 @@ proc closeActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose
       log lvlError, &"Failed to destroy view"
       return
 
-    self.closeView(view)
+    self.closeView(view, keepHidden = false, restoreHidden = restoreHidden)
 
 proc hideOtherViews*(self: LayoutService) {.expose("layout").} =
   ## Hides all views except for the active one.
@@ -785,7 +800,7 @@ proc closeOtherViews*(self: LayoutService) {.expose("layout").} =
   let views = self.layout.leafViews()
   for v in views:
     if v != view:
-      self.closeView(v)
+      self.closeView(v, restoreHidden = false)
 
   self.platform.requestRender()
 
@@ -899,20 +914,11 @@ proc openNextView*(self: LayoutService) {.expose("layout").} =
     break
 
 proc openLastView*(self: LayoutService) {.expose("layout").} =
-  var view: View
-  if self.viewHistory.len > 0:
-    let viewId = self.viewHistory.popLast
-    view = self.getView(viewId).getOr:
-      log lvlError, &"No view with id {viewId} exists"
-      return
-  else:
-    let hiddenViews = self.getHiddenViews()
-    if hiddenViews.len > 0:
-      view = hiddenViews[0]
-    else:
-      return
-  assert view != nil
+  let hiddenViews = self.getHiddenViews()
+  if hiddenViews.len == 0:
+    return
 
+  let view = hiddenViews.last
   let slot = self.layout.activeLeafSlot()
   log lvlInfo, &"openLastView viewId={view.id}, view={view.desc} in '{slot}'"
   self.showView(view, slot)
