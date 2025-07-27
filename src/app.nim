@@ -2046,7 +2046,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
 
     if self.editors.getEditorForId(editorId).getSome(editor):
       if self.layout.getViewForEditor(editor).getSome(view):
-        self.layout.closeView(view)
+        self.layout.closeView(view, restoreHidden = false)
       else:
         self.editors.closeEditor(editor)
 
