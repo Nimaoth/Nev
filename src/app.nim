@@ -1877,7 +1877,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
     let store = state.stores[state.index]
     let key = item.displayName
     let value = store.get(key, JsonNodeEx)
-    if value.kind == JBool:
+    if value != nil and value.kind == JBool:
       store.set(key, not value.getBool())
 
       if state.targetEditor != nil:
@@ -1885,7 +1885,7 @@ proc browseSettings*(self: App, includeActiveEditor: bool = false, scaleX: float
       for editor in self.layout.visibleEditors:
         editor.markDirty()
     else:
-      log lvlError, &"Failed to toggle setting '{key}', not a bool: {value}"
+      log lvlError, &"Failed to toggle setting '{key}', not a bool"
 
     return true
 

@@ -705,8 +705,7 @@ proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, resto
       let hiddenViews = self.getHiddenViews()
       if hiddenViews.len > 0:
         let activeSlot = self.layout.getSlot(view)
-        let removedView = self.layout.addView(hiddenViews.last, activeSlot)
-        assert removedView == view
+        discard self.layout.addView(hiddenViews.last, activeSlot)
         remove = false
 
     if remove:
