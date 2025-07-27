@@ -626,6 +626,27 @@ proc vimMoveCursorVisualLine(editor: TextDocumentEditor, direction: int, count: 
   if editor.vimState.selectLines:
     editor.vimSelectLine()
 
+proc vimMoveCursorPage(editor: TextDocumentEditor, direction: float, count: int = 1, center: bool = false) {.exposeActive(editorContext, "vim-move-cursor-page").} =
+  editor.moveCursorPage(direction * max(count, 1).float, includeAfter=editor.vimState.cursorIncludeEol)
+  let nextScrollBehaviour = if center: CenterAlways.some else: ScrollBehaviour.none
+  editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
+  editor.setNextSnapBehaviour(Never)
+  if editor.vimState.selectLines:
+    editor.vimSelectLine()
+
+proc vimMoveCursorVisualPage(editor: TextDocumentEditor, direction: float, count: int = 1, center: bool = false) {.exposeActive(editorContext, "vim-move-cursor-visual-page").} =
+  if editor.vimState.selectLines:
+    editor.moveCursorPage(direction * max(count, 1).float, includeAfter=editor.vimState.cursorIncludeEol)
+  else:
+    editor.moveCursorVisualPage(direction * max(count, 1).float, includeAfter=editor.vimState.cursorIncludeEol)
+  let defaultScrollBehaviour = editor.getDefaultScrollBehaviour
+  let defaultCenter = defaultScrollBehaviour in {CenterAlways, CenterOffscreen}
+  let nextScrollBehaviour = if center and defaultCenter: CenterAlways.some else: ScrollBehaviour.none
+  editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
+  editor.setNextSnapBehaviour(Never)
+  if editor.vimState.selectLines:
+    editor.vimSelectLine()
+
 proc vimMoveFirst(editor: TextDocumentEditor, move: string) {.exposeActive(editorContext, "vim-move-first").} =
   editor.moveFirst(move)
   if editor.vimState.selectLines:

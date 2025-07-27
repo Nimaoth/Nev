@@ -2752,6 +2752,22 @@ proc moveCursorVisualLine*(self: TextDocumentEditor, distance: int,
     self.doMoveCursorVisualLine(cursor, offset, wrap, includeAfter, targetColumn.some)
   self.moveCursor(cursor, doMoveCursor, distance, all, wrap, includeAfter)
 
+proc moveCursorPage*(self: TextDocumentEditor, distance: float,
+    cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true,
+    includeAfter: bool = true) {.expose("editor.text").} =
+
+  let visibleLines = self.screenLineCount()
+  let linesToMove = int(visibleLines.float * distance)
+  self.moveCursorLine(linesToMove, cursor, all, wrap, includeAfter)
+
+proc moveCursorVisualPage*(self: TextDocumentEditor, distance: float,
+    cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true,
+    includeAfter: bool = true) {.expose("editor.text").} =
+
+  let visibleLines = self.screenLineCount()
+  let linesToMove = int(visibleLines.float * distance)
+  self.moveCursorVisualLine(linesToMove, cursor, all, wrap, includeAfter)
+
 proc moveCursorHome*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
     all: bool = true) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorHome, 0, all)

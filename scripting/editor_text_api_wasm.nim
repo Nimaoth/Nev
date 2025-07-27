@@ -1452,6 +1452,42 @@ proc moveCursorVisualLine*(self: TextDocumentEditor; distance: int;
       argsJsonString.cstring)
 
 
+proc editor_text_moveCursorPage_void_TextDocumentEditor_float_SelectionCursor_bool_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc moveCursorPage*(self: TextDocumentEditor; distance: float;
+                     cursor: SelectionCursor = SelectionCursor.Config;
+                     all: bool = true; wrap: bool = true;
+                     includeAfter: bool = true) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add distance.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_moveCursorPage_void_TextDocumentEditor_float_SelectionCursor_bool_bool_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_moveCursorVisualPage_void_TextDocumentEditor_float_SelectionCursor_bool_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc moveCursorVisualPage*(self: TextDocumentEditor; distance: float;
+                           cursor: SelectionCursor = SelectionCursor.Config;
+                           all: bool = true; wrap: bool = true;
+                           includeAfter: bool = true) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add distance.toJson()
+  argsJson.add cursor.toJson()
+  argsJson.add all.toJson()
+  argsJson.add wrap.toJson()
+  argsJson.add includeAfter.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_moveCursorVisualPage_void_TextDocumentEditor_float_SelectionCursor_bool_bool_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_moveCursorHome_void_TextDocumentEditor_SelectionCursor_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorHome*(self: TextDocumentEditor;
