@@ -464,6 +464,8 @@
         "M": ["enter-choose-cursor-mode", "vim-handle-select-word"],
 
         // movement
+        "<C-r>": ["select-prev"],
+        "<C-m>": ["select-next"],
         "<move>": ["vim-select-last <move>"],
         "<C-g>o": ["vim-reverse-selections"],
         "<C-l>": ["select-next-tab-stop"],
@@ -487,7 +489,6 @@
 
         // undo/redo
         "u": ["vim-undo", true],
-        "<C-r>": ["vim-redo", true],
         "U": ["vim-redo", false],
 
         // vcs
@@ -515,8 +516,6 @@
         "Y": ["vim-yank-to-line-end"],
 
         // cursor movement
-        "<C-r>": ["select-prev"],
-        "<C-m>": ["select-next"],
         "gxf": ["vim-increment"],
         "gxh": ["vim-decrement"],
         "gxc": ["vim-increment-by-index"],
