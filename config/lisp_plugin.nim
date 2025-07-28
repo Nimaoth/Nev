@@ -974,6 +974,20 @@ proc baseEnv(): Env =
   result["eq"] = newFunc("eq", proc(args: seq[LispVal]): LispVal =
     if args[0].kind == args[1].kind and $args[0] == $args[1]: newNumber(1) else: newNumber(0))
 
+  result["add"] = newFunc("add", proc(args: seq[LispVal]): LispVal =
+    if args[0].kind notin {List, Array}: raise newException(ValueError, "add needs list or array")
+    for i in 1..args.high:
+      args[0].elems.add args[i]
+  )
+
+  result["append"] = newFunc("append", proc(args: seq[LispVal]): LispVal =
+    if args[0].kind notin {List, Array}: raise newException(ValueError, "append needs list or array")
+    for i in 1..args.high:
+      if args[i].kind notin {List, Array}:
+        raise newException(ValueError, "append needs list or array")
+      args[0].elems.add args[i].elems
+  )
+
   result["info"] = newFunc("info", proc(args: seq[LispVal]): LispVal =
     var str = ""
     for i, arg in args:
@@ -993,7 +1007,7 @@ proc baseEnv(): Env =
       if i > 0:
         str.add " "
       str.add $arg
-    echo str
+    infof"lisp: {str}"
   )
 
   result["build-str"] = newFunc("build-str", proc(args: seq[LispVal]): LispVal =

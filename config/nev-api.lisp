@@ -58,3 +58,52 @@
       (: .edit selections texts)
       (: .set-selections aligned-selections)
       nil)))
+
+(let cursor.< (lambda (a b)
+  (if (< (. a 'line) (. b 'line))
+    true
+    (if (eq (. a 'line) (. b 'line))
+      (< (. a 'column) (. b 'column))
+      false))))
+
+(let selection.normalize (lambda (selection)
+  (if (cursor.< (. selection 'first) (. selection 'last))
+    selection
+    {first: (. selection 'last), last: (. selection 'first)})))
+
+(let selection.normalize (lambda (selection)
+  (if (cursor.< (. selection 'first) (. selection 'last))
+    selection
+    {first: (. selection 'last), last: (. selection 'first)})))
+
+; Split selections at new lines
+(add-command-raw 'editor.text 'split-selection-into-lines true
+  (lambda (editor)
+    (do
+      (let selections (: .get-selections editor))
+
+      (let newSelections [])
+
+      ; find max column
+      (let max-column 0)
+      (repeat i (len selections) (do
+        (let s (selection.normalize (. selections i)))
+        (let startLine (. s 'first 'line))
+        (repeat k (+ (- (. s 'last 'line) (. s 'first 'line)) 1)
+          (add newSelections {
+            first: {
+              line: (+ startLine k),
+              column: 0,
+            },
+            last: {
+              line: (+ startLine k),
+              column: 0,
+            },
+          }))
+        ;(set max-column (max max-column (. selections i 'last 'column)))
+        ))
+
+      (echo newSelections)
+      (: .set-selections newSelections)
+      (: .set-mode "vim.normal")
+      nil)))
