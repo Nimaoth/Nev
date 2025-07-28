@@ -40,9 +40,12 @@
 ./scripting/commands_api_wasm.nim
 ./scripting/plugins_api_wasm.nim
 ./scripting/editors_api_wasm.nim
+./scripting/terminal_api_wasm.nim
+./scripting/toast_api_wasm.nim
 ./release_windows
 ./release_windows_old
 ./release_linux
 ./release_linux_old
 ./nim_std
 ./patches
+./src/ast
