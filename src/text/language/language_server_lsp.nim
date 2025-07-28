@@ -61,6 +61,11 @@ proc updateLanguageServersForDocument(self: LanguageServerLspService, doc: TextD
           log lvlError, &"Invalid LSP config (expected object): {config}"
         continue
 
+      if config.hasKey("enabled"):
+        let enabled = config["enabled"]
+        if enabled.kind == JBool and enabled.getBool == false:
+          continue
+
       if not config.hasKey("command"):
         continue
 
