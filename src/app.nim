@@ -20,7 +20,8 @@ import misc/async_process
 when enableAst:
   import ast/[model, project]
 
-import scripting/[scripting_wasm, scripting_wasm_components]
+import scripting/[scripting_wasm]
+import plugin_service
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
