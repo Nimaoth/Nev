@@ -118,13 +118,18 @@ task buildDebugVcc, "Build the debug version":
   selfExec fmt"c -o:nevd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopClang, "Build the desktop version":
-  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime --lineDir:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:off --linetrace:off --nimcache:nimcache/release_clang {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime --lineDir:on --passC:-g --passC:-std=gnu11 --nimcache:nimcache/release_clang {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebugClang, "Build the desktop version (debug)":
-  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib -d:enableSystemClipboard=true -d:exposeScriptingApi -d:enableSysFatalStackTrace --debuginfo:on -g --lineDir:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:off --linetrace:off --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib -d:enableSystemClipboard=true -d:exposeScriptingApi --passC:-std=gnu11 --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
+
+task buildDesktopDebugClangLinux, "Build the desktop version (debug)":
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:on --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
+
+ktrace:off --linetrace:off --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
   # selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":

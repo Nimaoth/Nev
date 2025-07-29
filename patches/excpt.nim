@@ -46,6 +46,7 @@ else:
 ##### patch begin - Use stacktracer lib for stacktraces
 when defined(stacktracer):
   proc stacktracerGetStacktrace(): cstring {.importc: "stacktracer_get_stacktrace".}
+  proc stacktracerFreeStacktrace(str: cstring) {.importc: "stacktracer_free_stacktrace".}
   when defined(windows):
     when defined(clang):
       {.passL: "-lstacktracer/target/release/stacktracer.dll.lib".}
@@ -356,7 +357,7 @@ when hasSomeStackTrace:
     when defined(stacktracer):
       let bt = stacktracerGetStacktrace()
       add(s, bt)
-      c_free(bt)
+      stacktracerFreeStacktrace(bt)
       ##### patch end - Use stacktracer lib for stacktraces
     elif defined(nimStackTraceOverride):
       add(s, "Traceback (most recent call last, using override)\n")

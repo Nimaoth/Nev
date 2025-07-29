@@ -346,12 +346,11 @@ proc crash*(message: string = "") {.gcsafe, raises: [].} =
   let res {.used.} = editor_crash_void_App_string_wasm(argsJsonString.cstring)
 
 
-proc editor_crash2_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc crash2*(message: string = "") {.gcsafe, raises: [].} =
+proc editor_crash2_void_App_wasm(arg: cstring): cstring {.importc.}
+proc crash2*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
-  argsJson.add message.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_crash2_void_App_string_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_crash2_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_createFile_void_App_string_wasm(arg: cstring): cstring {.importc.}
