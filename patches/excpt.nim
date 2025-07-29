@@ -357,7 +357,7 @@ when hasSomeStackTrace:
       let bt = stacktracerGetStacktrace()
       add(s, bt)
       c_free(bt)
-    ##### patch end - Use stacktracer lib for stacktraces
+      ##### patch end - Use stacktracer lib for stacktraces
     elif defined(nimStackTraceOverride):
       add(s, "Traceback (most recent call last, using override)\n")
       auxWriteStackTraceWithOverride(s)
