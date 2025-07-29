@@ -166,6 +166,9 @@ block: ## Parse command line options
           echo "Expected integer for monitor: --monitor:1"
           quit(1)
 
+      of "int3":
+        enableSysFatalInt3 = true
+
       of "ts-mem-tracking":
         enableTreesitterMemoryTracking()
 

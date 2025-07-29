@@ -338,6 +338,22 @@ proc chooseTheme*() {.gcsafe, raises: [].} =
   let res {.used.} = editor_chooseTheme_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_crash_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc crash*(message: string = "") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add message.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_crash_void_App_string_wasm(argsJsonString.cstring)
+
+
+proc editor_crash2_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc crash2*(message: string = "") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add message.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_crash2_void_App_string_wasm(argsJsonString.cstring)
+
+
 proc editor_createFile_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc createFile*(path: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()

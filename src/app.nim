@@ -1569,6 +1569,15 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
+proc crash*(self: App, message: string = "") {.expose("editor").} =
+  ## This command will cause the editor to crash by failing an assertion.
+  assert false, message
+
+proc crash2*(self: App) {.expose("editor").} =
+  ## This command will cause the editor to crash by accessing a nil reference.
+  var app: App = nil
+  echo app.handleAction("crash", "", true)
+
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isVfsPath:
     path

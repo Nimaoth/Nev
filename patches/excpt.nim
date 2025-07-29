@@ -22,6 +22,11 @@ var
     ## instead of `stdmsg.write` when printing stacktrace.
     ## Unstable API.
 
+##### patch begin - Break in the debugger
+when defined(sysFatalInt3):
+  var enableSysFatalInt3* = false
+##### patch end - Break in the debugger
+
 when defined(windows):
   proc GetLastError(): int32 {.header: "<windows.h>", nodecl.}
   const ERROR_BAD_EXE_FORMAT = 193
@@ -37,6 +42,18 @@ else:
     discard MessageBoxA(nil, msg, nil, 0)
   proc writeToStdErr(msg: cstring, length: int) =
     discard MessageBoxA(nil, msg, nil, 0)
+
+##### patch begin - Use stacktracer lib for stacktraces
+when defined(stacktracer):
+  proc stacktracerGetStacktrace(): cstring {.importc: "stacktracer_get_stacktrace".}
+  when defined(windows):
+    when defined(clang):
+      {.passL: "-lstacktracer/target/release/stacktracer.dll.lib".}
+    else:
+      {.passL: "-l:stacktracer/target/release/stacktracer.dll.lib".}
+  else:
+    {.passL: "-l:stacktracer/target/release/stacktracer.dll.a".}
+##### patch end - Use stacktracer lib for stacktraces
 
 proc writeToStdErr(msg: string) {.inline.} =
   # fix bug #13115: handles correctly '\0' unlike default implicit conversion to cstring
@@ -173,9 +190,10 @@ proc closureIterSetupExc(e: ref Exception) {.compilerproc, inline.} =
 const
   nativeStackTraceSupported = (defined(macosx) or defined(linux)) and
                               not NimStackTrace
+  ##### patch begin - Use stacktracer lib for stacktraces
   hasSomeStackTrace = NimStackTrace or defined(nimStackTraceOverride) or
-    (defined(nativeStackTrace) and nativeStackTraceSupported)
-
+    (defined(nativeStackTrace) and nativeStackTraceSupported) or defined(stacktracer)
+  ##### patch end - Use stacktracer lib for stacktraces
 
 when defined(nativeStacktrace) and nativeStackTraceSupported:
   type
@@ -334,7 +352,13 @@ when hasSomeStackTrace:
   proc stackTraceAvailable*(): bool
 
   proc rawWriteStackTrace(s: var string) =
-    when defined(nimStackTraceOverride):
+    ##### patch begin - Use stacktracer lib for stacktraces
+    when defined(stacktracer):
+      let bt = stacktracerGetStacktrace()
+      add(s, bt)
+      c_free(bt)
+    ##### patch end - Use stacktracer lib for stacktraces
+    elif defined(nimStackTraceOverride):
       add(s, "Traceback (most recent call last, using override)\n")
       auxWriteStackTraceWithOverride(s)
     elif NimStackTrace:
@@ -462,6 +486,11 @@ proc raiseExceptionAux(e: sink(ref Exception)) {.nodestroy.} =
   when defined(nimPanics):
     if e of Defect:
       reportUnhandledError(e)
+      ##### patch begin - Break in the debugger
+      when defined(sysFatalInt3):
+        if enableSysFatalInt3:
+          asm "int3"
+      ##### patch end - Break in the debugger
       rawQuit(1)
 
   if localRaiseHook != nil:

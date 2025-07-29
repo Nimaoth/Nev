@@ -49,27 +49,10 @@ elif quirkyExceptions and not defined(nimscript):
     sysFatal(exceptn, message, "")
 
 else:
-  ##### patch begin - Can't call writeStackTrace here directly, call a c function defined in desktop_main.nim
-  when defined(enableSysFatalStackTrace) and not defined(wasm):
-    proc writeStackTrace2() {.importc: "writeStackTrace2".}
-  ##### patch end
-
   func sysFatal(exceptn: typedesc[Defect], message: string) {.inline, noreturn.} =
-    ##### patch begin - I want that stacktrace
-    when defined(enableSysFatalStackTrace) and not defined(wasm):
-      writeStackTrace2()
-    ##### patch end
-    when defined(sysFatalInt3):
-      asm "int3"
     raise (ref exceptn)(msg: message)
 
   func sysFatal(exceptn: typedesc[Defect], message, arg: string) {.inline, noreturn.} =
-    ##### patch begin - I want that stacktrace
-    when defined(enableSysFatalStackTrace) and not defined(wasm):
-      writeStackTrace2()
-    ##### patch end
-    when defined(sysFatalInt3):
-      asm "int3"
     raise (ref exceptn)(msg: message & arg)
 
 {.pop.}

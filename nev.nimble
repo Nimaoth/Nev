@@ -164,3 +164,9 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
 
 task flamegraph, "Perf/flamegraph":
   exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"
+
+task buildStacktracer, "Build stacktracer (Rust library for getting stack traces)":
+  withDir "stacktracer":
+    exec "cargo build --release"
+  when defined(windows):
+    exec "cp ./stacktracer/target/release/stacktracer.dll ."
