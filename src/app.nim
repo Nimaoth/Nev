@@ -20,7 +20,7 @@ import misc/async_process
 when enableAst:
   import ast/[model, project]
 
-import scripting/scripting_wasm
+import scripting/[scripting_wasm, scripting_wasm_components]
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
@@ -114,6 +114,7 @@ type
     logBuffer = ""
 
     wasmScriptContext*: ScriptContextWasm
+    wasmCompScriptContext*: ScriptContextWasmComp
     initializeCalled: bool
 
     statusBarOnTop*: bool
@@ -160,6 +161,7 @@ proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previe
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
+proc scriptRunAction*(action: string, arg: string): JsonNode
 proc defaultHandleCommand*(self: App, command: string): Option[string]
 proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
 proc runLateCommandsFromAppOptions(self: App)
@@ -252,6 +254,27 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 
   self.runConfigCommands("wasm-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
+
+  if not options.disableWasmPlugins:
+    try:
+      log(lvlInfo, fmt"load wasm components")
+      self.wasmCompScriptContext = new ScriptContextWasmComp
+      self.plugins.scriptContexts.add self.wasmCompScriptContext
+      self.wasmCompScriptContext.services = self.services
+      self.wasmCompScriptContext.moduleVfs = VFS()
+      self.wasmCompScriptContext.vfs = self.vfs
+      self.vfs.mount("plugs://", self.wasmCompScriptContext.moduleVfs)
+
+      withScriptContext self.plugins, self.wasmCompScriptContext:
+        let t1 = startTimer()
+        await self.wasmCompScriptContext.init("app://config", self.vfs)
+        log(lvlInfo, fmt"init wasm components ({t1.elapsed.ms}ms)")
+
+        let t2 = startTimer()
+        # discard self.wasmCompScriptContext.postInitialize()
+        log(lvlInfo, fmt"post init wasm components ({t2.elapsed.ms}ms)")
+    except CatchableError:
+      log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
   log lvlInfo, &"Finished loading plugins"
 
@@ -819,6 +842,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.timer = startTimer()
   self.frameTimer = startTimer()
+
+  {.gcsafe.}:
+    scriptRunActionImpl = scriptRunAction
 
   self.layout = services.getService(LayoutService).get
   self.config = services.getService(ConfigService).get

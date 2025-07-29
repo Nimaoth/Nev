@@ -89,6 +89,13 @@ nev_linkerArgs.txt
 config/wasm/callback_test_plugin.wasm
 config/callback_test_plugin.nim
 config/rust_plugin
+stacktracer/target
+stacktracer/Cargo.lock
+launch.json
+colortest.ps1
+custom.lisp
+.clangd
+main.yml
 
 #
 .nev/keybindings.json

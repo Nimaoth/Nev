@@ -983,6 +983,9 @@ proc loadAsync*(self: TextDocument, isReload: bool): Future[void] {.async.} =
     log lvlError, &"[loadAsync] Failed to load file {self.filename}: {e.msg}"
     return
 
+  if not self.isInitialized:
+    return
+
   self.onPreLoaded.invoke self
 
   let changedRegions = if isReload:

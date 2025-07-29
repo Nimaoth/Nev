@@ -126,8 +126,6 @@ task buildDesktopDebugClang, "Build the desktop version (debug)":
 task buildDesktopDebugClangLinux, "Build the desktop version (debug)":
   selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:on --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
 
-ktrace:off --linetrace:off --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
-
 task buildDesktopDebug, "Build the desktop version (debug)":
   selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
   # selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
@@ -166,6 +164,14 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm harpoon.nim"
   exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
   exec fmt"nimble buildNimConfigWasm lisp_plugin.nim"
+
+task buildWasmComponent, "":
+  let name = "comp_test"
+  withDir "config":
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/{name}.m.wasm\" {getCommandLineParams()} ./{name}.nim"
+
+    # exec &"wasm-tools component embed ../scripting/plugin_api.wit --world plugin ./wasm/{name}.m.wasm -o ./wasm/{name}.me.wasm"
+    # exec &"wasm-tools component new ./wasm/{name}.me.wasm -o ./wasm/{name}.c.wasm --adapt ../scripting/wasi_snapshot_preview1.reactor.wasm"
 
 task flamegraph, "Perf/flamegraph":
   exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"
