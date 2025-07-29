@@ -16,6 +16,8 @@ proc emscripten_stack_init() {.importc.}
 
 proc NimMain() {.importc.}
 
+proc addCallback(a: proc(x: int): int) {.importc.}
+
 echo "global stuff"
 
 proc initPlugin() =
@@ -23,6 +25,16 @@ proc initPlugin() =
   NimMain()
 
   echo "[guest] initPlugin"
+
+  echo "[guest] addCallback"
+  addCallback proc(x: int): int =
+    echo "[guest] inside callback 1"
+    return x + 1
+
+  addCallback proc(x: int): int =
+    echo "[guest] inside callback 2"
+    return x + 2
+
   echo getSelection()
 
   let r = newRope(ws"hello, what is going on today?")

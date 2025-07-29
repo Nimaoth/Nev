@@ -16,6 +16,7 @@ type WasmContext = ref object
   counter: int
   layout: LayoutService
   plugins: PluginService
+  callbacks: seq[int32] = @[]
 
 func createRope(str: string): Rope =
   Rope.new(str)
@@ -37,6 +38,17 @@ proc getMemoryFor(host: WasmContext, caller: ptr CallerT): Option[ExternT] =
   # item.kind = WASMTIME_EXTERN_SHAREDMEMORY
   # item.of_field.sharedmemory = host.sharedMemory
   # item.some
+
+proc getMemory(caller: ptr CallerT, store: ptr ContextT, host: WasmContext): WasmMemory =
+  var mainMemory = caller.getExport("memory")
+  if mainMemory.isNone:
+    mainMemory = host.getMemoryFor(caller)
+  if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+    return initWasmMemory(mainMemory.get.of_field.sharedmemory)
+  elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+    return initWasmMemory(store, mainMemory.get.of_field.memory.addr)
+  else:
+    assert false
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
@@ -112,7 +124,27 @@ proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
 
     self.modules.add instance
 
-    instance.call[:void](self.store.context, "init_plugin", [], 0)
+    let context = self.store.context
+
+    instance.call[:void](context, "init_plugin", [], 0)
+
+    let functionTableExport = instance.getExport(context, "__indirect_function_table")
+    var functionTable = functionTableExport.get.of_field.table
+    echo &"function table {context.size(functionTable.addr)}"
+
+    for cb in self.context.callbacks:
+      echo &"[host] ============== call callback {cb}"
+      let fun = functionTable.get(context, cb)
+      if fun.isNone:
+        echo &"[host] Failed to find callback {cb}"
+        continue
+
+      var results: array[1, ValT]
+      fun.get.of_field.funcref.addr.call(context, [38.int32.toWasmVal], results, trap.addr).toResult(void).okOr(err):
+        echo &"[host] Failed to call callback {cb}: ", err.msg
+        continue
+
+      echo &"[host] callback {cb} -> {results[0].of_field.i32}"
 
 proc textEditorGetSelection(host: WasmContext; store: ptr ContextT): Selection =
   if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
@@ -162,6 +194,18 @@ proc coreRunCommand(host: WasmContext, store: ptr ContextT, name: string, args: 
   {.gcsafe.}:
     discard scriptRunActionImpl(name, args)
 
+proc init2*(self: WasmPluginSystem) =
+  let e = block:
+    self.linker.defineFuncUnchecked("env", "addCallback", newFunctype([WasmValkind.I32], [])):
+      discard
+      let mem = getMemory(caller, store, self.context)
+      let funcIdxPtr = parameters[0].i32.WasmPtr
+      let funcIdx = mem.read[:int32](funcIdxPtr)
+      echo &"[host] addCallback {funcIdxPtr.int} -> {funcIdx}"
+      self.context.callbacks.add(funcIdx)
+  if e.isErr:
+    echo "[host] Failed to define component: ", e.err.msg
+
 method init*(self: WasmPluginSystem, path: string, vfs: VFS): Future[void] {.async.} =
   self.vfs = vfs
 
@@ -183,6 +227,8 @@ method init*(self: WasmPluginSystem, path: string, vfs: VFS): Future[void] {.asy
   self.linker.defineWasi().okOr(err):
     echo "[host] Failed to create linker: ", err.msg
     return
+
+  self.init2()
 
   var ctx = WasmContext(counter: 1)
   self.context = ctx
