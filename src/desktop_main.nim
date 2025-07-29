@@ -167,7 +167,8 @@ block: ## Parse command line options
           quit(1)
 
       of "int3":
-        enableSysFatalInt3 = true
+        when defined(sysFatalInt3):
+          enableSysFatalInt3 = true
 
       of "ts-mem-tracking":
         enableTreesitterMemoryTracking()
