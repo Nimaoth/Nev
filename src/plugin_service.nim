@@ -1,6 +1,6 @@
 import std/[macros, macrocache, genasts, json, strutils, os, strformat]
 import misc/[custom_logger, custom_async, util]
-import scripting_base, document_editor, expose, vfs, service
+import scripting/scripting_base, document_editor, scripting/expose, vfs, service
 import nimsumtree/[rope, sumtree]
 import layout
 import text/[text_editor, text_document]
@@ -40,17 +40,17 @@ proc getMemoryFor(host: WasmContext, caller: ptr CallerT): Option[ExternT] =
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
-  importWit "../../scripting/plugin_api.wit", WasmContext:
+  importWit "../scripting/plugin_api.wit", WasmContext:
     world = "plugin"
-    cacheFile = "plugin_api_host.nim"
+    cacheFile = "generated/plugin_api_host.nim"
     mapName "rope", RopeResource
 
 else:
   static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
-  include plugin_api_host
+  include generated/plugin_api_host
 
 type
-  ScriptContextWasmComp* = ref object of ScriptContext
+  WasmPluginSystem* = ref object of ScriptContext
     engine: ptr WasmEngineT
     store: ptr StoreT
     linker: ptr LinkerT
@@ -82,7 +82,7 @@ proc call[T](instance: InstanceT, context: ptr ContextT, name: string, parameter
   when T isnot void:
     res[0].to(T)
 
-proc loadModules(self: ScriptContextWasmComp, path: string): Future[void] {.async.} =
+proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
   let listing = await self.vfs.getDirectoryListing(path)
 
   # {.gcsafe.}:
@@ -162,7 +162,7 @@ proc coreRunCommand(host: WasmContext, store: ptr ContextT, name: string, args: 
   {.gcsafe.}:
     discard scriptRunActionImpl(name, args)
 
-method init*(self: ScriptContextWasmComp, path: string, vfs: VFS): Future[void] {.async.} =
+method init*(self: WasmPluginSystem, path: string, vfs: VFS): Future[void] {.async.} =
   self.vfs = vfs
 
   let config = newConfig()
@@ -195,12 +195,12 @@ method init*(self: ScriptContextWasmComp, path: string, vfs: VFS): Future[void] 
 
   await self.loadModules("app://config/wasm")
 
-method deinit*(self: ScriptContextWasmComp) = discard
+method deinit*(self: WasmPluginSystem) = discard
 
-method reload*(self: ScriptContextWasmComp): Future[void] {.async.} =
+method reload*(self: WasmPluginSystem): Future[void] {.async.} =
   await self.loadModules("app://config/wasm")
 
-method handleScriptAction*(self: ScriptContextWasmComp, name: string, arg: JsonNode): JsonNode =
+method handleScriptAction*(self: WasmPluginSystem, name: string, arg: JsonNode): JsonNode =
   echo &"handleScriptAction {name}, {arg}"
   try:
     result = nil
