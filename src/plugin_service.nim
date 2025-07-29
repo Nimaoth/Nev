@@ -62,16 +62,19 @@ else:
   include generated/plugin_api_host
 
 type
+  WasmModule = object
+    instance: InstanceT
+    store: ptr StoreT
+
   WasmPluginSystem* = ref object of ScriptContext
     engine: ptr WasmEngineT
-    store: ptr StoreT
     linker: ptr LinkerT
     moduleVfs*: VFS
     vfs*: VFS
     services*: Services
 
     context: WasmContext
-    modules: seq[InstanceT]
+    modules: seq[WasmModule]
 
 proc call[T](instance: InstanceT, context: ptr ContextT, name: string, parameters: openArray[ValT], nresults: static[int]): T =
 
@@ -102,6 +105,8 @@ proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
 
   await sleepAsync(1.seconds)
 
+  # let ctx = self.store.context
+
   for file2 in listing.files:
     if not file2.endsWith(".m.wasm"):
       continue
@@ -113,8 +118,19 @@ proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
       log lvlError, &"[host] Failed to create wasm module: {err.msg}"
       continue
 
+    let store = self.engine.newStore(nil, nil)
+    let ctx = store.context
+
+    let wasiConfig = newWasiConfig()
+    wasiConfig.inheritStdin()
+    wasiConfig.inheritStderr()
+    wasiConfig.inheritStdout()
+    ctx.setWasi(wasiConfig).toResult(void).okOr(err):
+      echo "[host] Failed to setup wasi: ", err.msg
+      continue
+
     var trap: ptr WasmTrapT = nil
-    var instance: InstanceT = self.linker.instantiate(self.store.context, module, trap.addr).okOr(err):
+    var instance: InstanceT = self.linker.instantiate(ctx, module, trap.addr).okOr(err):
       log lvlError, &"[host] Failed to create module instance: {err.msg}"
       continue
 
@@ -122,25 +138,23 @@ proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
       log lvlError, &"[host][trap] Failed to create module instance: {err.msg}"
       continue
 
-    self.modules.add instance
+    self.modules.add WasmModule(instance: instance, store: store)
 
-    let context = self.store.context
+    instance.call[:void](ctx, "init_plugin", [], 0)
 
-    instance.call[:void](context, "init_plugin", [], 0)
-
-    let functionTableExport = instance.getExport(context, "__indirect_function_table")
+    let functionTableExport = instance.getExport(ctx, "__indirect_function_table")
     var functionTable = functionTableExport.get.of_field.table
-    echo &"function table {context.size(functionTable.addr)}"
+    echo &"function table {ctx.size(functionTable.addr)}"
 
     for cb in self.context.callbacks:
       echo &"[host] ============== call callback {cb}"
-      let fun = functionTable.get(context, cb)
+      let fun = functionTable.get(ctx, cb)
       if fun.isNone:
         echo &"[host] Failed to find callback {cb}"
         continue
 
       var results: array[1, ValT]
-      fun.get.of_field.funcref.addr.call(context, [38.int32.toWasmVal], results, trap.addr).toResult(void).okOr(err):
+      fun.get.of_field.funcref.addr.call(ctx, [38.int32.toWasmVal], results, trap.addr).toResult(void).okOr(err):
         echo &"[host] Failed to call callback {cb}: ", err.msg
         continue
 
@@ -194,7 +208,15 @@ proc coreRunCommand(host: WasmContext, store: ptr ContextT, name: string, args: 
   {.gcsafe.}:
     discard scriptRunActionImpl(name, args)
 
-proc init2*(self: WasmPluginSystem) =
+proc initWasm(self: WasmPluginSystem) =
+  let config = newConfig()
+  self.engine = newEngine(config)
+  self.linker = self.engine.newLinker()
+
+  self.linker.defineWasi().okOr(err):
+    echo "[host] Failed to create linker: ", err.msg
+    return
+
   let e = block:
     self.linker.defineFuncUnchecked("env", "addCallback", newFunctype([WasmValkind.I32], [])):
       discard
@@ -206,39 +228,17 @@ proc init2*(self: WasmPluginSystem) =
   if e.isErr:
     echo "[host] Failed to define component: ", e.err.msg
 
-method init*(self: WasmPluginSystem, path: string, vfs: VFS): Future[void] {.async.} =
-  self.vfs = vfs
+  self.context = WasmContext(counter: 1)
+  self.context.layout = self.services.getService(LayoutService).get
+  self.context.plugins = self.services.getService(PluginService).get
 
-  let config = newConfig()
-  self.engine = newEngine(config)
-  self.linker = self.engine.newLinker()
-  self.store = self.engine.newStore(nil, nil)
-
-  let context = self.store.context()
-
-  let wasiConfig = newWasiConfig()
-  wasiConfig.inheritStdin()
-  wasiConfig.inheritStderr()
-  wasiConfig.inheritStdout()
-  context.setWasi(wasiConfig).toResult(void).okOr(err):
-    echo "[host] Failed to setup wasi: ", err.msg
-    return
-
-  self.linker.defineWasi().okOr(err):
-    echo "[host] Failed to create linker: ", err.msg
-    return
-
-  self.init2()
-
-  var ctx = WasmContext(counter: 1)
-  self.context = ctx
-  ctx.layout = self.services.getService(LayoutService).get
-  ctx.plugins = self.services.getService(PluginService).get
-
-  self.linker.defineComponent(ctx).okOr(err):
+  self.linker.defineComponent(self.context).okOr(err):
     echo "[host] Failed to define component: ", err.msg
     return
 
+method init*(self: WasmPluginSystem, path: string, vfs: VFS): Future[void] {.async.} =
+  self.vfs = vfs
+  self.initWasm()
   await self.loadModules("app://config/wasm")
 
 method deinit*(self: WasmPluginSystem) = discard
@@ -251,12 +251,12 @@ method handleScriptAction*(self: WasmPluginSystem, name: string, arg: JsonNode):
   try:
     result = nil
     let argStr = $arg
-    for instance in self.modules:
+    for module in self.modules:
       # self.stack.add m
       # defer: discard self.stack.pop
       try:
         discard
-        # let str = instance.call[:string](self.store.context, "handle-command", [name.toWasmVal, argStr.toWasmVal], 1)
+        # let str = module.instance.call[:string](module.store.context, "handle-command", [name.toWasmVal, argStr.toWasmVal], 1)
         # return str.parseJson
       except:
         # log lvlError, &"Failed to parse json from callback {id}({arg}): '{str}' is not valid json.\n{getCurrentExceptionMsg()}"
