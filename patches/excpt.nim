@@ -50,7 +50,7 @@ when defined(stacktracer):
     when defined(clang):
       {.passL: "-lstacktracer/target/release/stacktracer.dll.lib".}
     else:
-      {.passL: "-l:stacktracer/target/release/stacktracer.dll.lib".}
+      {.passL: "./stacktracer/target/release/stacktracer.dll.lib".}
   else:
     {.passL: "-l:stacktracer/target/release/stacktracer.dll.a".}
 ##### patch end - Use stacktracer lib for stacktraces
