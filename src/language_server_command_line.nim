@@ -1,42 +1,82 @@
-import std/[options, tables, strutils]
-import misc/[custom_logger, custom_async, util, response]
+import std/[options, tables]
+import nimsumtree/rope
+import misc/[custom_logger, custom_async, util, response, rope_utils, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
-import dispatch_tables, document_editor, service, layout, events
+import dispatch_tables, document_editor, service, layout, events, config_provider
+import text/text_document
 
 logCategory "language-server-command-line"
 
-type LanguageServerCommandLine* = ref object of LanguageServer
-  services: Services
-  events: EventHandlerService
-  files: Table[string, string]
+type
+  LanguageServerCommandLine* = ref object of LanguageServer
+    services: Services
+    documents: DocumentEditorService
+    events: EventHandlerService
+    files: Table[string, string]
+    commandHistory*: seq[string]
 
-proc newLanguageServerCommandLine*(services: Services): LanguageServer =
+  LanguageServerCommandLineService* = ref object of Service
+    languageServer*: LanguageServerCommandLine
+    config: ConfigStore
+
+proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine =
   var server = new LanguageServerCommandLine
+  server.name = "command-line"
   server.services = services
   server.events = services.getService(EventHandlerService).get
+  server.documents = services.getService(DocumentEditorService).get
+  server.capabilities.completionProvider = lsp_types.CompletionOptions().some
   return server
+
+func serviceName*(_: typedesc[LanguageServerCommandLineService]): string = "LanguageServerCommandLineService"
+
+addBuiltinService(LanguageServerCommandLineService, DocumentEditorService, EventHandlerService)
+
+method init*(self: LanguageServerCommandLineService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  self.languageServer = newLanguageServerCommandLine(self.services)
+  self.config = self.services.getService(ConfigService).get.runtime
+  discard self.languageServer.documents.onEditorRegistered.subscribe proc(editor: DocumentEditor) =
+    let doc = editor.getDocument()
+    if doc of TextDocument:
+      let textDoc = doc.TextDocument
+      let languages = self.config.get("lsp.command-line.languages", newSeq[string]())
+      if textDoc.languageId in languages and not textDoc.hasLanguageServer(self.languageServer):
+        discard textDoc.addLanguageServer(self.languageServer)
+  return ok()
 
 method getDefinition*(self: LanguageServerCommandLine, filename: string, location: Cursor):
     Future[seq[Definition]] {.async.} =
   return newSeq[Definition]()
 
-method saveTempFile*(self: LanguageServerCommandLine, filename: string, content: string): Future[void] {.async.} =
-  # debugf"LanguageServerCommandLine.saveTempFile '{filename}' '{content}'"
-  self.files[filename] = content
-
 method getCompletions*(self: LanguageServerCommandLine, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   let layout = self.services.getService(LayoutService).get
 
+  var completions: seq[CompletionItem]
+
   var useActive = false
-  if self.files.contains(filename):
-    let commandName = self.files[filename]
-    if commandName.startsWith("."):
+  if self.documents.getDocument(filename).getSome(document) and document of TextDocument:
+    let textDoc = document.TextDocument
+    if textDoc.rope.startsWith(".") or document.TextDocument.rope.startsWith("^"):
       useActive = true
 
-  var completions: seq[CompletionItem]
+    let rope = textDoc.rope
+
+    if location.line >= rope.lines:
+      return CompletionList(items: completions).success
+
+    if location.column > rope.lineLen(location.line):
+      return CompletionList(items: completions).success
+
+    let spaceIndex = rope.slice(point(location.line, 0)...location.toPoint).find(" ")
+    if spaceIndex >= 0:
+      return CompletionList(items: completions).success
+
   if useActive:
-    let currentNamespace = layout.getActiveViewEditor().mapIt(it.getNamespace)
+    let currentNamespace = if layout.popups.len > 0:
+      "popup.selector".some
+    else:
+      layout.getActiveViewEditor().mapIt(it.getNamespace)
     {.gcsafe.}:
       for table in activeDispatchTables.mitems:
         if not table.global and table.namespace.some != currentNamespace:
@@ -83,6 +123,12 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
             detail: value.signature.some,
             documentation: CompletionItemDocumentationVariant.init(docs).some,
           )
+
+  for h in self.commandHistory:
+    completions.add CompletionItem(
+      label: h,
+      kind: CompletionKind.Function,
+    )
 
   return CompletionList(items: completions).success
 

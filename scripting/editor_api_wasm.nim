@@ -6,8 +6,8 @@ import scripting_api, misc/myjsonutils
 
 proc editor_getOptionJson_JsonNode_ConfigService_string_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
-proc getOptionJson*(path: string; default: JsonNode): JsonNode {.gcsafe,
-    raises: [].} =
+proc getOptionJson*(path: string; default: JsonNode = newJNull()): JsonNode {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add path.toJson()
   argsJson.add default.toJson()
@@ -20,16 +20,18 @@ proc getOptionJson*(path: string; default: JsonNode): JsonNode {.gcsafe,
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_reapplyConfigKeybindings_void_App_bool_bool_bool_wasm(arg: cstring): cstring {.
-    importc.}
+proc editor_reapplyConfigKeybindings_void_App_bool_bool_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
 proc reapplyConfigKeybindings*(app: bool = false; home: bool = false;
-                               workspace: bool = false) {.gcsafe, raises: [].} =
+                               workspace: bool = false; wait: bool = false) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add app.toJson()
   argsJson.add home.toJson()
   argsJson.add workspace.toJson()
+  argsJson.add wait.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_reapplyConfigKeybindings_void_App_bool_bool_bool_wasm(
+  let res {.used.} = editor_reapplyConfigKeybindings_void_App_bool_bool_bool_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -63,14 +65,6 @@ proc enableDebugPrintAsyncAwaitStackTrace*(enable: bool) {.gcsafe, raises: [].} 
   argsJson.add enable.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_enableDebugPrintAsyncAwaitStackTrace_void_App_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_showDebuggerView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc showDebuggerView*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_showDebuggerView_void_App_wasm(
       argsJsonString.cstring)
 
 
@@ -126,50 +120,6 @@ proc requestRender*(redrawEverything: bool = false) {.gcsafe, raises: [].} =
   argsJson.add redrawEverything.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_requestRender_void_App_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_setHandleInputs_void_App_string_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc setHandleInputs*(context: string; value: bool) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add context.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setHandleInputs_void_App_string_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_setHandleActions_void_App_string_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc setHandleActions*(context: string; value: bool) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add context.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setHandleActions_void_App_string_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_setConsumeAllActions_void_App_string_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc setConsumeAllActions*(context: string; value: bool) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add context.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setConsumeAllActions_void_App_string_bool_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_setConsumeAllInput_void_App_string_bool_wasm(arg: cstring): cstring {.
-    importc.}
-proc setConsumeAllInput*(context: string; value: bool) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add context.toJson()
-  argsJson.add value.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_setConsumeAllInput_void_App_string_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -294,12 +244,16 @@ proc toggleStatusBarLocation*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_logs_void_App_bool_wasm(arg: cstring): cstring {.importc.}
-proc logs*(scrollToBottom: bool = false) {.gcsafe, raises: [].} =
+proc editor_logs_void_App_string_bool_bool_wasm(arg: cstring): cstring {.importc.}
+proc logs*(slot: string = ""; focus: bool = true; scrollToBottom: bool = false) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
+  argsJson.add focus.toJson()
   argsJson.add scrollToBottom.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_logs_void_App_bool_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_logs_void_App_string_bool_bool_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_toggleConsoleLogger_void_App_wasm(arg: cstring): cstring {.importc.}
@@ -308,52 +262,6 @@ proc toggleConsoleLogger*() {.gcsafe, raises: [].} =
   let argsJsonString = $argsJson
   let res {.used.} = editor_toggleConsoleLogger_void_App_wasm(
       argsJsonString.cstring)
-
-
-proc editor_commandLine_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc commandLine*(initialValue: string = "") {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add initialValue.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_commandLine_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_exitCommandLine_void_App_wasm(arg: cstring): cstring {.importc.}
-proc exitCommandLine*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_exitCommandLine_void_App_wasm(argsJsonString.cstring)
-
-
-proc editor_selectPreviousCommandInHistory_void_App_wasm(arg: cstring): cstring {.
-    importc.}
-proc selectPreviousCommandInHistory*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_selectPreviousCommandInHistory_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_selectNextCommandInHistory_void_App_wasm(arg: cstring): cstring {.
-    importc.}
-proc selectNextCommandInHistory*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_selectNextCommandInHistory_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_executeCommandLine_bool_App_wasm(arg: cstring): cstring {.importc.}
-proc executeCommandLine*(): bool {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_executeCommandLine_bool_App_wasm(
-      argsJsonString.cstring)
-  try:
-    result = parseJson($res).jsonTo(typeof(result))
-  except:
-    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_writeFile_void_App_string_bool_wasm(arg: cstring): cstring {.importc.}
@@ -374,12 +282,52 @@ proc loadFile*(path: string = "") {.gcsafe, raises: [].} =
   let res {.used.} = editor_loadFile_void_App_string_wasm(argsJsonString.cstring)
 
 
-proc editor_loadTheme_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc loadTheme*(name: string) {.gcsafe, raises: [].} =
+proc editor_loadTheme_void_App_string_bool_wasm(arg: cstring): cstring {.importc.}
+proc loadTheme*(name: string; force: bool = false) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add name.toJson()
+  argsJson.add force.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_loadTheme_void_App_string_wasm(
+  let res {.used.} = editor_loadTheme_void_App_string_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_vsync_void_App_bool_wasm(arg: cstring): cstring {.importc.}
+proc vsync*(enabled: bool) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add enabled.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_vsync_void_App_bool_wasm(argsJsonString.cstring)
+
+
+proc editor_openSession_void_App_string_bool_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc openSession*(root: string = "home://"; preview: bool = true;
+                  scaleX: float = 0.9; scaleY: float = 0.8;
+                  previewScale: float = 0.4) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add root.toJson()
+  argsJson.add preview.toJson()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_openSession_void_App_string_bool_float_float_float_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_openRecentSession_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc openRecentSession*(preview: bool = true; scaleX: float = 0.9;
+                        scaleY: float = 0.8; previewScale: float = 0.4) {.
+    gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add preview.toJson()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_openRecentSession_void_App_bool_float_float_float_wasm(
       argsJsonString.cstring)
 
 
@@ -414,6 +362,21 @@ proc browseKeybinds*(preview: bool = true; scaleX: float = 0.9;
       argsJsonString.cstring)
 
 
+proc editor_browseSettings_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc browseSettings*(includeActiveEditor: bool = false; scaleX: float = 0.8;
+                     scaleY: float = 0.8; previewScale: float = 0.5) {.gcsafe,
+    raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add includeActiveEditor.toJson()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_browseSettings_void_App_bool_float_float_float_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_chooseFile_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
     importc.}
 proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
@@ -426,13 +389,6 @@ proc chooseFile*(preview: bool = true; scaleX: float = 0.8; scaleY: float = 0.8;
   let argsJsonString = $argsJson
   let res {.used.} = editor_chooseFile_void_App_bool_float_float_float_wasm(
       argsJsonString.cstring)
-
-
-proc editor_openLastEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc openLastEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openLastEditor_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_chooseOpen_void_App_bool_float_float_float_wasm(arg: cstring): cstring {.
@@ -541,21 +497,6 @@ proc exploreCurrentFileDirectory*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_openPreviousEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc openPreviousEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openPreviousEditor_void_App_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_openNextEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc openNextEditor*() {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_openNextEditor_void_App_wasm(argsJsonString.cstring)
-
-
 proc editor_reloadConfig_void_App_bool_wasm(arg: cstring): cstring {.importc.}
 proc reloadConfig*(clearOptions: bool = false) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
@@ -572,11 +513,11 @@ proc reloadPlugin*() {.gcsafe, raises: [].} =
   let res {.used.} = editor_reloadPlugin_void_App_wasm(argsJsonString.cstring)
 
 
-proc editor_reloadState_void_App_wasm(arg: cstring): cstring {.importc.}
-proc reloadState*() {.gcsafe, raises: [].} =
+proc editor_reloadTheme_void_App_wasm(arg: cstring): cstring {.importc.}
+proc reloadTheme*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_reloadState_void_App_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_reloadTheme_void_App_wasm(argsJsonString.cstring)
 
 
 proc editor_saveSession_void_App_string_wasm(arg: cstring): cstring {.importc.}
@@ -631,15 +572,20 @@ proc getContextWithMode*(context: string): string {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_scriptRunAction_void_string_string_wasm(arg: cstring): cstring {.
+proc editor_scriptRunAction_JsonNode_string_string_wasm(arg: cstring): cstring {.
     importc.}
-proc scriptRunAction*(action: string; arg: string) {.gcsafe, raises: [].} =
+proc scriptRunAction*(action: string; arg: string): JsonNode {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
   argsJson.add action.toJson()
   argsJson.add arg.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptRunAction_void_string_string_wasm(
+  let res {.used.} = editor_scriptRunAction_JsonNode_string_string_wasm(
       argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except:
+    raiseAssert(getCurrentExceptionMsg())
 
 
 proc editor_scriptLog_void_string_wasm(arg: cstring): cstring {.importc.}
@@ -775,18 +721,6 @@ proc scriptRunActionFor*(editorId: EditorId; action: string; arg: string) {.
       argsJsonString.cstring)
 
 
-proc editor_scriptInsertTextInto_void_EditorId_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc scriptInsertTextInto*(editorId: EditorId; text: string) {.gcsafe,
-    raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add editorId.toJson()
-  argsJson.add text.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_scriptInsertTextInto_void_EditorId_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_scriptSetCallback_void_string_int_wasm(arg: cstring): cstring {.
     importc.}
 proc scriptSetCallback*(path: string; id: int) {.gcsafe, raises: [].} =
@@ -830,6 +764,23 @@ proc collectGarbage*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_collectGarbage_void_App_wasm(argsJsonString.cstring)
+
+
+proc editor_echoArgs_void_App_JsonNode_wasm(arg: cstring): cstring {.importc.}
+proc echoArgs*(args: JsonNode) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add args.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_echoArgs_void_App_JsonNode_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_all_void_App_JsonNode_wasm(arg: cstring): cstring {.importc.}
+proc all*(args: JsonNode) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add args.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_all_void_App_JsonNode_wasm(argsJsonString.cstring)
 
 
 proc editor_printStatistics_void_App_wasm(arg: cstring): cstring {.importc.}

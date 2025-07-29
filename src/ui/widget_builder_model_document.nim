@@ -320,7 +320,7 @@ proc createCompletions(self: ModelDocumentEditor, builder: UINodeBuilder, app: A
     completionsPanel = currentNode
 
     proc handleScroll(delta: float) =
-      let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
+      let scrollAmount = delta * app.config.runtime.get("text.scroll-speed", 40.0)
       self.scrollOffset += scrollAmount
       self.markDirty()
 
@@ -1021,7 +1021,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
         builder.panel(&{FillX, FillY, FillBackground, MaskContent, OverlappingChildren}, backgroundColor = backgroundColor):
           onScroll:
-            let scrollAmount = delta.y * app.asConfigProvider.getValue("model.scroll-speed", 10.0)
+            let scrollAmount = delta.y * app.config.runtime.get("model.scroll-speed", 10.0)
             self.scrollOffset += scrollAmount
 
             if AnimatePosition in animate:

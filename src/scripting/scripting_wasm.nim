@@ -1,4 +1,4 @@
-import std/[macros, macrocache, genasts, json, strutils, os]
+import std/[macros, macrocache, genasts, json, strutils, os, sugar]
 import misc/[custom_logger, custom_async, util]
 import scripting_base, document_editor, expose, vfs
 import wasm
@@ -14,7 +14,6 @@ type
   ScriptContextWasm* = ref object of ScriptContext
     modules: seq[WasmModule]
 
-    editorModeChangedCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction, editor: int32, oldMode: cstring, newMode: cstring): void {.gcsafe.}]]
     postInitializeCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction): bool {.gcsafe.}]]
     handleCallbackCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction, id: int32, args: cstring): bool {.gcsafe.}]]
     handleAnyCallbackCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction, id: int32, args: cstring): cstring {.gcsafe.}]]
@@ -27,15 +26,29 @@ type
 
 var createEditorWasmImports: proc(): WasmImports {.raises: [].}
 
+proc getVfsPath*(self: WasmModule): string =
+  result = "plugs://"
+  result.add self.path.splitFile.name
+  result.add "/"
+
 method getCurrentContext*(self: ScriptContextWasm): string =
   result = "plugs://"
   if self.stack.len > 0:
-    result.add self.stack[^1].path.splitFile.name
-    result.add "/"
+    result = self.stack[^1].getVfsPath()
 
 macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; returnType: typedesc): untyped =
   result = quote do:
     default(`returnType`)
+
+proc newWasmModuleAsync(file: string, editorImports: WasmImports, vfs: VFS): Future[Option[WasmModule]] {.async.} =
+  try:
+    log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"
+    let module = await newWasmModule(file, @[editorImports], vfs)
+    log lvlInfo, fmt"Loaded wasm module '{file}' from app directory"
+    return module
+  except:
+    log lvlError, &"Failde to load wasm module '{file}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+    return WasmModule.none
 
 proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} =
   let listing = await self.vfs.getDirectoryListing(path)
@@ -43,21 +56,26 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
   {.gcsafe.}:
     var editorImports = createEditorWasmImports()
 
-  for file2 in listing.files:
-    if not file2.endsWith(".wasm"):
-      continue
-    if file2.endsWith(".m.wasm"):
-      continue
-    if file2.endsWith(".me.wasm"):
-      continue
-    if file2.endsWith(".c.wasm"):
-      continue
+  var wasmModuleFutures = collect:
+    for file2 in listing.files:
+      if not file2.endsWith(".wasm"):
+        continue
+      if file2.endsWith(".m.wasm"):
+        continue
+      if file2.endsWith(".me.wasm"):
+        continue
+      if file2.endsWith(".c.wasm"):
+        continue
+      if not file2.endsWith(".wasm"):
+        continue
 
-    let file = path // file2
+      let file = path // file2
+      let module = newWasmModuleAsync(file, editorImports, self.vfs)
+      (file, module)
 
+  for (file, future) in wasmModuleFutures:
     try:
-      log lvlInfo, fmt"Try to load wasm module '{file}' from app directory"
-      let module = await newWasmModule(file, @[editorImports], self.vfs)
+      let module = await future
 
       if module.getSome(module):
         self.moduleVfs.mount(file.splitFile.name, newInMemoryVFS())
@@ -67,9 +85,6 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
         log(lvlInfo, fmt"Loaded wasm module '{file}'")
 
         # todo: shouldn't need to specify gcsafe here, findFunction should handle that
-        if findFunction(module, "handleEditorModeChangedWasm", void, proc(module: WasmModule, fun: PFunction, editor: int32, oldMode: cstring, newMode: cstring): void {.gcsafe.}).getSome(f):
-          self.editorModeChangedCallbacks.add (module, f.pfun, f.fun)
-
         if findFunction(module, "postInitializeWasm", bool, proc(module: WasmModule, fun: PFunction): bool {.gcsafe.}).getSome(f):
           self.postInitializeCallbacks.add (module, f.pfun, f.fun)
 
@@ -104,7 +119,6 @@ method init*(self: ScriptContextWasm, path: string, vfs: VFS): Future[void] {.as
 method deinit*(self: ScriptContextWasm) = discard
 
 method reload*(self: ScriptContextWasm): Future[void] {.async.} =
-  self.editorModeChangedCallbacks.setLen 0
   self.postInitializeCallbacks.setLen 0
   self.handleCallbackCallbacks.setLen 0
   self.handleAnyCallbackCallbacks.setLen 0
@@ -113,13 +127,6 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
   self.modules.setLen 0
 
   await self.loadModules("app://config/wasm")
-
-method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
-  try:
-    for (m, p, f) in self.editorModeChangedCallbacks:
-      f(m, p, editor.id.int32, oldMode.cstring, newMode.cstring)
-  except:
-    log lvlError, &"Failed to run handleEditorModeChanged: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 method postInitialize*(self: ScriptContextWasm): bool =
   result = false
@@ -144,10 +151,12 @@ method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool =
     log lvlError, &"Failed to run callback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): JsonNode =
+  var path = ""
   try:
     result = nil
     let argStr = $arg
     for (m, p, f) in self.handleAnyCallbackCallbacks:
+      path = m.path
       self.stack.add m
       defer: discard self.stack.pop
       let str = $f(m, p, id.int32, argStr.cstring)
@@ -160,7 +169,7 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
         log lvlError, &"Failed to parse json from callback {id}({arg}): '{str}' is not valid json.\n{getCurrentExceptionMsg()}"
         continue
   except:
-    log lvlError, &"Failed to run handleAnyCallback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+    log lvlError, &"Failed to run handleAnyCallback '{path}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 
 method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode =
@@ -171,7 +180,7 @@ method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode
       self.stack.add m
       defer: discard self.stack.pop
       let res = $f(m, p, name.cstring, argStr.cstring)
-      if res.len == 0:
+      if res.len == 0 or res.startsWith("error: "):
         continue
 
       try:

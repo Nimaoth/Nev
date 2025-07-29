@@ -10,6 +10,7 @@ type
   OpenEditorPreviewer* = ref object of Previewer
     services*: Services
     editors*: DocumentEditorService
+    editor*: DocumentEditor
 
 proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
   new result
@@ -17,7 +18,7 @@ proc newOpenEditorPreviewer*(services: Services): OpenEditorPreviewer =
   result.editors = services.getService(DocumentEditorService).get
 
 method deinit*(self: OpenEditorPreviewer) =
-  logScope lvlInfo, &"[deinit] Destroying open editor previewer"
+  # logScope lvlInfo, &"[deinit] Destroying open editor previewer"
 
   self[] = default(typeof(self[]))
 
@@ -25,8 +26,9 @@ method delayPreview*(self: OpenEditorPreviewer) =
   discard
 
 method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: DocumentEditor) =
-  logScope lvlInfo, &"previewItem {item}"
+  # logScope lvlInfo, &"previewItem {item}"
 
+  self.editor = editor
   if not (editor of TextDocumentEditor):
     return
 
@@ -45,4 +47,8 @@ method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: Documen
   let textEditorToPreview = editorToPreview.TextDocumentEditor
   editor.setDocument(textEditorToPreview.document)
   editor.selection = textEditorToPreview.selection
-  editor.centerCursor()
+  if editor.selection == (0, 0).toSelection:
+    editor.scrollToTop()
+  else:
+    editor.centerCursor()
+  editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)

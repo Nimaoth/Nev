@@ -5,13 +5,13 @@
 
 ## Settings
 
+[List of (most) settings](settings.gen.md)
+
 Settings are specified using JSON files.
 These files contain simple values like `ui.background.transparent` as well as more complex things
 like debugger launch configurations and LSP settings.
 
-Settings and basic keybindings can be specified in multiple places. The final settings are computed by loading the following files
-in order:
-
+Settings and basic keybindings can be specified in multiple places:
 - `{app_dir}/config/settings.json` and `{app_dir}/config/keybindings.json`, where `{app_dir}` is the directory
   where the editor is installed.
 - `~/.nev/settings.json` and `~/.nev/keybindings.json`, where `~` is the users home directory.
@@ -24,140 +24,129 @@ Additionally to the `settings.json` and `keybindings.json` files, the editor als
 - `settings-{backend}.json`
 - `settings-{platform}-{backend}.json`
 
-`{platform}` is one of (`windows`, `linux`, `wasm`, `js`, `other`) and `{backend}` is one of (`gui`, `terminal`, `browser`)
+`{platform}` is one of (`windows`, `linux`, `other`) and `{backend}` is one of (`gui`, `terminal`, `browser`)
 
-These additional settings files are useful for having different cofiguration on different operating systems
+These additional settings files are useful for having different configuration on different operating systems
 (e.g. different paths to LSP executables)
-
-As these config files just specify plain values and can't contain any logic, more complex configuration has
-to be done using plugins.
 
 The `keybindings*.json` files can only bind existing commands (builtin or from plugins).
 To create new commands plugins have to be used.
 
-### How to override/extend configuration
+### Overview
 
-Each configuration file is applied on top of the previous one.
-The following example shows how to override and extend values.
-Prefixing a property name with `+` will cause the json object/array value of that property to be
-extended, without the `+` the property will be overriden. Number, bool and string properties are always overriden.
-```json
-// ~/.nev/settings.json
-{
-    "editor": {
-        "text": {
-            "lsp": {
-                "cpp": {
-                    "path": "clangd"
-                }
-            }
-        }
-    },
-    "ui": {
-        "background": {
-            "transparent": false
-        }
-    }
-}
+Settings are internally stored in stores, where each settings store consists of a JSON object, optionally a reference to a parent store and metadata for each setting (e.g. whether the store overrides or extends a specific setting).
 
-// ~/.nev/settings-terminal.json
-{
-    "ui": {
-        "background": {
-            "transparent": true
-        }
-    }
-}
+Setting stores can override or extend the settings from the parent. Some stores are loaded from a file, some are only in memory.
 
-// {workspace_dir}/.nev/settings-windows.json
-{
-    "+editor": {
-        "+text": {
-            "+lsp": {
-                "rust": {
-                    "path": "rust-analyzer.exe"
-                }
-            }
-        }
-    }
-}
+Setting stores form a tree, with the base store at the root and individual text editors (for individual files) as leaves.
 
-// Final settings when run on windows in the terminal
-{
-    "editor": {
-        "text": {
-            "lsp": {
-                "cpp": {
-                    "path": "clangd"
-                },
-                "rust": {
-                    "path": "rust-analyzer.exe"
-                }
-            }
-        }
-    },
-    "ui": {
-        "background": {
-            "transparent": true
-        }
-    }
-}
-
-// Final settings when run on windows in the gui version
-{
-    "editor": {
-        "text": {
-            "lsp": {
-                "cpp": {
-                    "path": "clangd"
-                },
-                "rust": {
-                    "path": "rust-analyzer.exe"
-                }
-            }
-        }
-    },
-    "ui": {
-        "background": {
-            "transparent": false
-        }
-    }
-}
+When the application reads the value of a setting, depending on the context it reads it from either an editor store, document store, language store or the runtime store.
 
 ```
+              base                                      // Base layer. Settings in here contain the default values for all compiletime known settings.
+               ^
+               |
+    app://config/settings.json                          // Settings files loaded from different locations. They auto reload when the file on disk changes by default.
+               ^
+               |
+    app://config/settings-windows.json                  // Platform specific settings, if they exist.
+               ^
+               |
+    app://config/settings-windows-gui.json
+               ^
+               |
+    home://.nev/settings.json                           // User settings.
+               ^
+               |
+    ws0://.nev/settings.json                            // Workspace settings.
+               ^
+               |
+            runtime                                     // Runtime layer. Not backed by a file, by default changing settings at runtime changes them in here.
+               ^
+               |-------------------------
+               |                        |
+              nim                      c++              // Language layer. One settings store per language.
+               ^                        ^
+               |------------            |
+               |           |            |
+            a.nim        b.nim        c.cpp             // Document layer. Every document has it's own settings store.
+               ^           ^            ^
+               |           |            |-----------
+               |           |            |          |
+            editor1     editor2      editor3    editor4 // Editor layer. Every editor has it's own settings store.
+```
 
-Currently there is no complete list of settings yet.
+### Changing settings
+There are a few places where you can change settings:
+- `home://.nev/settings.json`: Put settings in here if you want to set something globally (for your user). These settings will always be loaded when you open Nev.
+- `{workspace_dir}/.nev/settings.json`: Put settings in here if you only want to change them for a specific project.
+- `browse-settings`: This command can be used to change settings in any store, but it defaults to the runtime store. Use this if you want to change settings temporarily, figure out where a setting is overridden [and more](finders.md#browse-settings)
+- `set-option`, `set-flag`, `toggle-flag`: These commands can be used to change settings in the runtime store. Use this for temporarily changing settings, or from plugins.
+
+### Config files
+
+When specifying settings in config files there are three ways to set the value of a setting `a.b`:
+
+```json
+{
+    "a.b": "value"
+}
+```
+or
+```json
+{
+    "+a": {
+        "b": "value"
+    }
+}
+```
+or
+```json
+{
+    "a": {
+        "b": "value"
+    }
+}
+```
+
+The first two are equivalent and extend the object `a` and set/override the key `b` within `a`.
+
+The third variant overrides the entire object `a` with a new one containing only the key `b`.
+
+When a config file is loaded all keys containing a period will be expanded to the full object form.
+To escape the period simply use two periods (`..`).
+
+### Changing settings per language
+
+Some settings can be overridden per language. The exact list of settings is not documented (as it depends on how it's used in the editor),
+but if in doubt just try overriding it.
+
+To change a setting for e.g. Nim, prefix the setting name with `lang.nim`. So let's say you want to disable line wrapping only for Nim files.
+The setting for line wrapping is `text.wrap-lines`. So to change it for Nim, just use:
+
+```json
+"lang.nim.text.wrap-lines": false
+```
+
+Language specific settings are applied in the language layer (between the runtime and document layer),
+so a language settings store for e.g. `nim` behaves as if any setting in `lang.nim` was placed at the root of the language store.
 
 ## Keybindings
-Keybindings which just map to existing commands can be specified in a `keybindings.json` file alongside the `settings.json` files. They works the same as the settings (i.e. they also support platform/backend variants and can be placed in the app/user/workspace config directories)
-```json
-// ~/.nev/keybindings.json
-{
-    "editor": {
-        "<C-q>": "quit",
-    },
-    "editor.text": {
-        "<C-a>": "move-cursor-column 1",
-        "<C-b>": {
-            "command": "move-cursor-column",
-            "args": [1]
-        }
-    }
-}
-```
 
-For custom commands plugins have to be used.
+Keybindings which just map to existing commands can be specified in a `keybindings.json` file alongside the `settings.json` files. They works the same as the settings (i.e. they also support platform/backend variants and can be placed in the app/user/workspace config directories)
+
+For more details [go here](./keybindings.md)
 
 ## Plugins
 
-Nev currently only supports wasm plugins. It might support other plugin mechanisms in the future (e.g. native dynamic libraries or Lua)
+Nev currently only supports WASM plugins. It might support other plugin mechanisms in the future (e.g. native dynamic libraries or Lua)
 
 The editor API is exposed to plugins and can be used to create new commands, change settings, etc.
 
-WASM plugins are loaded from `{app_dir}/config/wasm`. The wasm modules have to conform to a certain
+WASM plugins are loaded from `{app_dir}/config/wasm`. The WASM modules have to conform to a certain
 API and can only use a subset of WASI right now, so it is recommended not to rely on WASI for now.
 
-In theory WASM plugins can be written in any language that supports compiling to wasm, but there
+In theory WASM plugins can be written in any language that supports compiling to WASM, but there
 are currently no C header files for the editor API, so for now the recommended way
 to write plugins is to use Nim and Emscripten.
 
@@ -215,7 +204,7 @@ You can get the current value of a setting with `proc getOption*[T](path: string
 ```
 
 # Mouse settings
-To change the behaviour of single/double/triple clicking you can specify which command should be executed after clicking:
+To change the behavior of single/double/triple clicking you can specify which command should be executed after clicking:
 
 ```nim
 # To make triple click select the entire line (this is the default behaviour), use e.g. the command 'extend-select-move "line" true':
@@ -232,148 +221,6 @@ setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %tr
 # and "double-click-command"/"double-click-command-args"
 ```
 
-# Key bindings
-You can bind different key combinations to __commands__. Each function exposed by the editor (see `plugin_api.nim`) has a corresponding command,
-which has two names. If the function is called `myCommand`, then the command can be executed using either `myCommand` or `my-command`.
-
-Key combinations are bound to a command and arguments for that command. The following binds the command `quit` to the key combination `CTRL-x + x`
-
-```nim
-addCommand "editor", "<C-x>x", "quit"
-```
-
-Key combinations can be as long as you want, and contain any combination of modifiers, as long as the OS supports that combination.
-Most keys can be specified using their ASCII value, i.e. to bind to e.g. the `k` key you would use `addCommand "editor", "k", "command-name"`.
-Special keys like the space bar are specified using < and >: `addCommand "editor", "<SPACE>", "command-name"`.
-The following special keys are defined:
-- ENTER
-- ESCAPE
-- BACKSPACE
-- SPACE
-- DELETE
-- TAB
-- LEFT
-- RIGHT
-- UP
-- DOWN
-- HOME
-- END
-- PAGE_UP
-- PAGE_DOWN
-- F1, ..., F12
-
-To specify that a modifier should be held down together with another key you need to used `<XXX-YYY>`, where `XXX` is any combination of modifiers
-(`S` = shift, `C` = control, `A` = alt) and `YYY` is either a single ascii character for the key, or one of the special keys (e.g. `ENTER`).
-
-If you use a upper case ascii character as key then this automatically means it uses shift, so `A` is equivalent to `<S-a>` and `<S-A>`
-
-Some examples:
-
-```nim
-addCommand "editor", "a", "command-name"
-addCommand "editor", "<C-a>", "command-name" # CTRL+a
-addCommand "editor", "<CS-a>", "command-name" # CTRL+SHIFT+a
-addCommand "editor", "<CS-SPACE>", "command-name" # CTRL+SHIFT+SPACE
-addCommand "editor", "SPACE<C-g>", "command-name" # SPACE, followed by CTRL+g
-```
-
-Be careful not to to this:
-
-```nim
-addCommand "editor", "a", "command-name"
-addCommand "editor", "aa", "command-name" # Will never be used, because pressing a once will immediately execute the first binding
-```
-
-There is one special modifier `*` which means the following keys can be repeated without having to press the first keys again:
-
-```nim
-# after pressing "<C-w>F", you can press "+" or "-" multiple times, and the input state machine resets to the <*-F> state instead of
-# to the beginning
-addCommand "editor", "<C-w><*-F>-", "change-font-size", -1
-addCommand "editor", "<C-w><*-F>+", "change-font-size", 1
-```
-
-
-All key bindings in the same scope (e.g. `editor`) will be compiled into a state machine. When you press a key, the state machine will advance,
-and if it reaches and end state it will execute the command stored in the state (with the arguments also stored in the state).
-Each `addCommand` corresponds to one end state.
-
-# Scopes/Context
-The first parameter to `addCommand` is a scope. Different scopes can have different key bindings, even conflicting ones.
-Depending on which scopes are active the corresponding commands will be executed.
-Which scopes are active depends on which editor view is selected, whether there is e.g. a auto completion window open.
-The scope stack looks like this
-At the bottom of the scope stack is always `editor`.
-- `editor`
-- `editor.<MODE>`, if the editor mode is not `""` and `editor.custom-mode-on-top` is false. `<MODE>` is the current editor mode.
-- One of the following:
-  - `commandLine`, if the editor is in commandLine mode
-
-  - If there is a popup open, then the following scopes:
-    - If the popup is a goto popup, then the following scopes:
-      - Same as a text editor (i.e. `editor.text`, etc)
-    - If the popup is a selector popup, then the following scopes:
-      - Same as a text editor (i.e. `editor.text`, etc)
-      - `popup.selector`, always
-
-  - If the selected view contains a text document, then the following scopes:
-    - `editor.text`, always
-    - `editor.text.<MODE>`, if the text editor mode is not `""`
-    - `editor.text.completion`, if the text editor has a completion window open.
-
-  - If the selected view contains a model document, then the following scopes:
-    - `editor.model`, always
-    - `editor.model.<MODE>`, if the model editor mode is not `""`
-
-- `editor.<MODE>`, if the editor mode is not `""` and `editor.custom-mode-on-top` is true. `<MODE>` is the current editor mode.
-
-So if you for example have text editor selected and a completion window is open, and the text editor is in `insert` mode, the scope stack would look like this:
-
-- `editor` (bottom, handled by Editor)
-- `editor.text` (handled by TextEditor)
-- `editor.text.insert` (handled by TextEditor)
-- `editor.text.completion` (top, handled by TextEditor)
-
-If you have no completion window open and no mode selected then it would look like this:
-
-- `editor` (bottom, handled by Editor)
-- `editor.text` (top, handled by TextEditor)
-
-When a key is pressed, the editor will advance the state machine for every scope in the stack, from top to bottom (i.e. the `editor` scope will always be last).
-The first scope which reaches an end state will execute its' command, which will be handled by the owner of the scope. Then all state machines in the stack are reset.
-The owners of the scopes are the following:
-- `Editor`: `editor`, `commandLine`, `editor.<MODE>`
-- `TextEditor`: `editor.text`, `editor.text.<MODE>`, `editor.text.completion`
-- `ModelEditor`: `editor.model`, `editor.model.<MODE>`, `editor.model.completion`
-- `SelectorPopup`: `popup.selector`
-
-# Summary
-To define keybindings specific for text documents (TextEditor), use:
-
-```nim
-addCommand "editor.text", "a", "command-name"
-addTextCommand "", "a", "command-name"                  # Same as above
-
-addCommand "editor.text.insert", "a", "command-name"    # Insert mode
-addTextCommand "insert", "a", "command-name"            # Same as above
-
-addTextCommand "completion", "a", "command-name"        # Only active while completion window is open
-
-addTextCommandBlock "", "s":                            # First parameter is mode/"completion"
-  ## Creates an anonymous action which runs this block. `editor` (automatically defined) is the text editor handling this command
-  editor.setMode("insert")
-  editor.selections = editor.delete(editor.selections)
-
-addTextCommand "", "a", proc(editor: TextDocumentEditor) =
-  ## Creates an anonymous action which runs this lambda. `editor` is the text editor handling this command.
-  # ...
-
-proc foo(editor: TextDocumentEditor) =
-  # ...
-
-addTextCommand "", "a", foo                                 # Like above, but uses existing function
-```
-
 # Scripting API Documentation
 The documentation for the scripting API is in scripting/htmldocs. You can see the current version [here](https://raw.githack.com/Nimaoth/AbsytreeDocs/main/scripting_nim/htmldocs/theindex.html) (using raw.githack.com) or [here](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
 
@@ -381,7 +228,7 @@ Here is an overview of the modules:
 - `plugin_runtime`: Exports everything you need, so you can just include this in your script file.
 - `scripting_api`: Part of the editor source, defines types used by both the editor and the script, as well as some utility functions for those types.
 - `plugin_api_internal`: Ignore this. You shouldn't need to call these functions directly.
-- `editor_api`: Contains general functions like changing font size, manipulating views, opening and closing files, etc.
-- `editor_text_api`: Contains functions for interacting with a text editor (e.g. modifiying the content).
-- `editor_model_api`: Contains functions for interacting with an model editor (e.g. modifying the content).
+- `editor_api`: Contains general functions like changing font size, manipulating views, opening, and closing files, etc.
+- `editor_text_api`: Contains functions for interacting with a text editor (e.g. modifying the content).
+- `editor_model_api`: Contains functions for interacting with a model editor (e.g. modifying the content).
 - `popup_selector_api`: Contains functions for interacting with a selector popup.

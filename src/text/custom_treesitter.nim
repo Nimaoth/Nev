@@ -1,5 +1,5 @@
 import std/[options, json, tables]
-import misc/[custom_logger, custom_async, util, custom_unicode]
+import misc/[custom_logger, custom_async, util, custom_unicode, jsonex]
 import vfs
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
@@ -58,6 +58,8 @@ when useBuiltinTreesitterLanguage("typescript"):
   import treesitter_typescript/treesitter_typescript/typescript
 when useBuiltinTreesitterLanguage("json"):
   import treesitter_json/treesitter_json/json
+when useBuiltinTreesitterLanguage("markdown"):
+  import treesitter_markdown/treesitter_markdown/markdown
 
 type TSQuery* = ref object
   impl: ptr ts.TSQuery
@@ -111,10 +113,12 @@ type TSInputEdit* = object
 
 type TSLanguageCtor = proc(): ptr ts.TSLanguage {.stdcall.}
 
+type TSTreeCursor* = ts.TSTreeCursor
+
 func `=destroy`(t: TsTree) {.raises: [].} = discard
 
-func setLanguage*(self: TSParser, language: TSLanguage) =
-  assert ts.tsParserSetLanguage(self.impl, language.impl)
+func setLanguage*(self: TSParser, language: TSLanguage): bool =
+  return ts.tsParserSetLanguage(self.impl, language.impl)
 
 func isNil*(self: TSParser): bool = self.impl.isNil
 func isNil*(self: TSTree): bool = self.impl.isNil
@@ -132,7 +136,7 @@ proc delete*(self: sink TSTree) =
   if self.impl != nil:
     ts.tsTreeDelete(self.impl)
 
-proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
+proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true, logSourceOnError = true):
     Future[Option[TSQuery]] {.async.} =
 
   if self.queries.contains(id):
@@ -146,7 +150,11 @@ proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
   let query = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
 
   if queryError != ts.TSQueryErrorNone:
-    log lvlError, &"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}\n{source}"
+    if logSourceOnError:
+      log lvlError, &"Failed to load '{id}' query for '{self.languageId}': {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}\n{source}"
+    else:
+      log lvlError, &"Failed to load '{id}' query for '{self.languageId}': {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}"
+
     if cacheOnFail:
       self.queries[id] = TSQuery.none
     return TSQuery.none
@@ -156,7 +164,7 @@ proc query*(self: TSLanguage, id: string, source: string, cacheOnFail = true):
 proc queryFileImpl(self: TSLanguage, vfs: VFS, id: string, path: string, cacheOnFail = true): Future[Option[TSQuery]] {.async.} =
   try:
     let queryString = await vfs.read(path)
-    return await self.query(id, queryString, cacheOnFail)
+    return await self.query(id, queryString, cacheOnFail, logSourceOnError = false)
   except FileNotFoundError:
     return TSQuery.none
   except IOError as e:
@@ -175,6 +183,7 @@ proc queryFile*(self: TSLanguage, vfs: VFS, id: string, path: string, cacheOnFai
   let query = await queryFuture
   self.queryFutures.del(id)
   self.queries[id] = query
+  log lvlInfo, fmt"Loaded {id} query '{path}' for {self.languageId}"
   return query
 
 proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
@@ -283,7 +292,7 @@ proc currentFieldName*(cursor: var ts.TSTreeCursor): cstring = tsTreeCursorCurre
 proc currentFieldId*(cursor: var ts.TSTreeCursor): ts.TSFieldId = tsTreeCursorCurrentFieldId(addr cursor)
 
 proc setPointRange*(cursor: ptr ts.TSQueryCursor, rang: TSRange) =
-  cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)
+  discard cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)
 
 proc getCaptureName*(query: TSQuery, index: uint32): string =
   var length: uint32
@@ -416,7 +425,7 @@ proc getLanguageWasmStore(): ptr TSWasmStore =
 
   return wasmStore
 
-proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
+proc loadLanguageDynamically*(vfs: VFS, languageId: string, pathOverride: Option[string]): Future[Option[TSLanguage]] {.async.} =
   try:
     const fileExtension = when defined(windows):
       "dll"
@@ -426,17 +435,19 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): F
     var candidates: seq[tuple[path: string, ctor: string]] = @[]
 
     proc addCandidate(path: string) {.gcsafe, async: (raises: []).} =
-      let path = "app://" & path
-      if vfs.getFileKind(path).await.mapIt(it == FileKind.File).get(false):
-        let ctor = if path.endsWith(".wasm"):
-          languageId
-        else:
-          &"tree_sitter_{languageId}"
-        candidates.add (path, ctor)
+      for base in ["app://", homeConfigDir]:
+        let path = base & path
+        if vfs.getFileKind(path).await.mapIt(it == FileKind.File).get(false):
+          let ctor = if path.endsWith(".wasm"):
+            languageId
+          else:
+            &"tree_sitter_{languageId}"
+          candidates.add (path, ctor)
 
-    if config.hasKey("path"):
-      await addCandidate config["path"].getStr
+    if pathOverride.getSome(path):
+      await addCandidate path
     else:
+      # todo: rename directory from languages to treesitter
       await addCandidate &"languages/tree-sitter-{languageId}.wasm"
       await addCandidate &"languages/{languageId}.wasm"
       await addCandidate &"languages/tree-sitter-{languageId}.{fileExtension}"
@@ -467,7 +478,6 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): F
 
         var err: TSWasmError
         let language = block:
-          logScope lvlDebug, &"tsWasmStoreLoadLanguage {languageId}"
           # todo: load in separate thread
           # let res = await spawnAsync(loadLanguageThread, (wasmStore, ctorSymbolName.cstring, wasmBytes.cstring, wasmBytes.len.uint32, err.addr))
           # res
@@ -517,19 +527,21 @@ proc loadLanguageDynamically*(vfs: VFS, languageId: string, config: JsonNode): F
 var loadedLanguages: Table[string, TSLanguage]
 var loadingLanguages: Table[string, Future[Option[TSLanguage]]]
 
-proc loadLanguage(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
-  let language = await loadLanguageDynamically(vfs, languageId, config)
+proc loadLanguage(vfs: VFS, languageId: string, pathOverride: Option[string]): Future[Option[TSLanguage]] {.async.} =
+  let language = await loadLanguageDynamically(vfs, languageId, pathOverride)
   if language.isSome:
     return language
-
-  log(lvlInfo, fmt"No dll language for {languageId}, try builtin")
 
   template tryGetLanguage(constructor: untyped): untyped =
     block:
       var l: Option[TSLanguage] = TSLanguage.none
       when declared(constructor):
-        log lvlInfo, fmt"Loading builtin language"
-        l = TSLanguage(languageId: languageId, impl: constructor()).some
+        log lvlInfo, fmt"Loading builtin language '{languageId}'"
+        let languageRaw = constructor()
+        if languageRaw == nil:
+          log lvlError, &"Failed to create builtin language parser for '{languageId}'"
+        else:
+          l = TSLanguage(languageId: languageId, impl: languageRaw).some
       l
 
   return case languageId
@@ -554,8 +566,8 @@ proc loadLanguage(vfs: VFS, languageId: string, config: JsonNode): Future[Option
   of "nim": tryGetLanguage(treeSitterNim)
   of "zig": tryGetLanguage(treeSitterZig)
   of "json": tryGetLanguage(treeSitterJson)
+  of "markdown": tryGetLanguage(treeSitterMarkdown)
   else:
-    log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
     TSLanguage.none
 
 proc unloadTreesitterLanguage*(languageId: string) {.gcsafe, raises: [].} =
@@ -563,8 +575,8 @@ proc unloadTreesitterLanguage*(languageId: string) {.gcsafe, raises: [].} =
     loadedLanguages.del(languageId)
     loadingLanguages.del(languageId)
 
-proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
-  log lvlInfo, &"getTreesitterLanguage {languageId}: {config}"
+proc getTreesitterLanguage*(vfs: VFS, languageId: string, pathOverride: Option[string] = string.none): Future[Option[TSLanguage]] {.async.} =
+  # log lvlInfo, &"getTreesitterLanguage {languageId}: {pathOverride}"
   let loadingLanguages = ({.gcsafe.}: loadingLanguages.addr)
   let loadedLanguages = ({.gcsafe.}: loadedLanguages.addr)
   if loadingLanguages[].contains(languageId):
@@ -575,7 +587,7 @@ proc getTreesitterLanguage*(vfs: VFS, languageId: string, config: JsonNode): Fut
     return loadedLanguages[][languageId].some
 
   else:
-    loadingLanguages[][languageId] = loadLanguage(vfs, languageId, config)
+    loadingLanguages[][languageId] = loadLanguage(vfs, languageId, pathOverride)
     let language = await loadingLanguages[][languageId]
     if language.getSome(language):
       loadedLanguages[][languageId] = language
@@ -595,6 +607,9 @@ proc createTsParser*(): TSParser =
     nil
 
   let parser = ts.tsParserNew()
+  if parser.isNil:
+    log lvlError, &"Failed to create treesitter parser"
+    return
 
   if wasmStore != nil:
     log lvlInfo, &"Use wasm store"
@@ -628,14 +643,17 @@ var parsers: seq[TSParser]
 template withParser*(p: untyped, body: untyped): untyped =
   var parsers = ({.gcsafe.}: parsers.addr)
   if parsers[].len == 0:
-    parsers[].add createTsParser()
+    let parser = createTsParser()
+    if parser.isNotNil:
+      parsers[].add parser
 
-  let p = parsers[].pop()
-  defer:
-    parsers[].add p
+  if parsers[].len > 0:
+    let p = parsers[].pop()
+    defer:
+      parsers[].add p
 
-  block:
-    body
+    block:
+      body
 
 proc deinit*(self: TSParser) =
   self.impl.tsParserDelete()

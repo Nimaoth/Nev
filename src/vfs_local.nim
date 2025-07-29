@@ -1,7 +1,8 @@
-import std/[os, options, unicode, strutils, streams, atomics]
+import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm]
 import nimsumtree/[rope, static_array]
-import misc/[custom_async, custom_logger, util, timer, regex]
+import misc/[custom_async, custom_logger, util, timer, regex, id]
 import vfs
+import fsnotify
 
 when defined(windows):
   import winim/lean
@@ -13,8 +14,46 @@ logCategory "vfs-local"
 
 type
   VFSLocal* = ref object of VFS
+    watcher: Watcher
+    updateRate: int
 
-proc loadFileThread(args: tuple[path: string, data: ptr string, flags: set[ReadFlag]]): bool =
+proc process(self: VFSLocal) {.async.}
+
+proc new*(_: typedesc[VFSLocal]): VFSLocal =
+  new(result)
+  result.watcher = initWatcher()
+  result.updateRate = 200
+
+  asyncSpawn result.process()
+
+proc process(self: VFSLocal) {.async.} =
+  while true:
+    await sleepAsync(self.updateRate.milliseconds)
+    try:
+      process(self.watcher)
+    except Exception as e:
+      log lvlError, &"Failed to process file watcher: {e.msg}"
+
+proc subscribe*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
+  try:
+    proc cbWrapper(events: seq[PathEvent]) {.gcsafe, raises: [].} = cb(events.deduplicate(isSorted = true))
+    register(self.watcher, path, cbWrapper)
+    # todo
+    return newId()
+  except OSError as e:
+    log lvlError, &"Failed to register file watcher for '{path}': {e.msg}"
+    return idNone()
+
+method normalizeImpl*(self: VFSLocal, path: string): string =
+  return path.normalizePath.normalizeNativePath
+
+method watchImpl*(self: VFSLocal, path: string, cb: proc(events: seq[PathEvent]) {.gcsafe, raises: [].}): Id =
+  log lvlInfo, &"Register watcher for local file system at '{path}'"
+  return self.subscribe(path, cb)
+
+# todo: unwatch
+
+proc loadFileThread(args: tuple[path: string, data: ptr string, invalidUtf8Error: ptr bool, flags: set[ReadFlag]]): bool =
   try:
     args.data[] = readFile(args.path)
 
@@ -22,6 +61,7 @@ proc loadFileThread(args: tuple[path: string, data: ptr string, flags: set[ReadF
       let invalidUtf8Index = args.data[].validateUtf8
       if invalidUtf8Index >= 0:
         args.data[] = &"Invalid utf-8 byte at {invalidUtf8Index}"
+        args.invalidUtf8Error[] = true
         return false
 
     return true
@@ -39,11 +79,15 @@ method readImpl*(self: VFSLocal, path: string, flags: set[ReadFlag]): Future[str
     raise newException(FileNotFoundError, &"Not found '{path}'")
 
   try:
-    logScope lvlInfo, &"[loadFile] '{path}'"
+    # logScope lvlInfo, &"[loadFile] '{path}'"
     var data = ""
-    let ok = await spawnAsync(loadFileThread, (path, data.addr, flags))
+    var invalidUtf8Error = false
+    let ok = await spawnAsync(loadFileThread, (path, data.addr, invalidUtf8Error.addr, flags))
     if not ok:
-      raise newException(IOError, data)
+      if invalidUtf8Error:
+        raise newException(InvalidUtf8Error, data)
+      else:
+        raise newException(IOError, data)
 
     return data.move
   except:
@@ -64,11 +108,24 @@ proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref C
       if args.cancel[].load:
         return
 
+      var localBuffer = array[chunkBase, char].default
+
       let len = buffer.len
       buffer.setLen(len + bytesToRead)
       try:
-        let bytesRead = s.readData(buffer[len].addr, bytesToRead)
-        buffer.setLen(len + bytesRead)
+        var totalBytesRead = 0
+        while totalBytesRead < bytesToRead:
+          let bytesToReadLocal = min(localBuffer.len, bytesToRead - totalBytesRead)
+          let bytesRead = s.readData(localBuffer[0].addr, bytesToReadLocal)
+          for i in 0..<bytesRead:
+            if localBuffer[i] != '\r':
+              buffer[len + totalBytesRead] = localBuffer[i]
+              inc totalBytesRead
+
+          if bytesRead < bytesToReadLocal:
+            break
+
+        buffer.setLen(len + totalBytesRead)
       except CatchableError as e:
         args.err[] = e
         buffer.setLen(len)
@@ -78,7 +135,7 @@ proc loadFileRopeThread(args: tuple[path: string, data: ptr Rope, err: ptr ref C
     if res.isSome:
       args.data[] = res.take
     else:
-      args.err[] = newException(IOError, &"Invalid utf-8 byte at {errorIndex}")
+      args.err[] = newException(InvalidUtf8Error, &"Invalid utf-8 byte at {errorIndex}")
 
     args.threadDone[].store(true)
 
@@ -92,7 +149,7 @@ method readRopeImpl*(self: VFSLocal, path: string, rope: ptr Rope): Future[void]
     raise newException(FileNotFoundError, &"Not found '{path}'")
 
   try:
-    logScope lvlInfo, &"[loadFileRope] '{path}'"
+    # logScope lvlInfo, &"[loadFileRope] '{path}'"
 
     var err: ref CatchableError = nil
     var cancel: Atomic[bool]
@@ -109,8 +166,13 @@ method readRopeImpl*(self: VFSLocal, path: string, rope: ptr Rope): Future[void]
           discard
 
     if err != nil:
-      raise newException(IOError, err.msg, err)
+      if err of IOError:
+        raise err
+      else:
+        raise newException(IOError, err.msg, err)
 
+  except IOError as e:
+    raise e
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
@@ -138,7 +200,9 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
     logScope lvlInfo, &"[saveFile] '{path}'"
     # todo: reimplement async
     let dir = path.splitPath.head
-    createDir(dir)
+    if not dirExists(dir):
+      logScope lvlInfo, &"[saveFile] Create directory '{dir}'"
+      createDir(dir)
 
     let s = openFileStream(path, fmWrite, 1024)
     defer:
@@ -147,13 +211,10 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
     # var file = openAsync(path, fmWrite)
     var t = startTimer()
     for chunk in content.iterateChunks:
-      # await file.writeBuffer(chunk.chars[0].addr, chunk.chars.len)
       s.writeData(chunk.startPtr, chunk.chars.len)
       if t.elapsed.ms > 5:
         await sleepAsync(10.milliseconds)
         t = startTimer()
-
-    # file.close()
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
@@ -162,7 +223,22 @@ method deleteImpl*(self: VFSLocal, path: string): Future[bool] {.async: (raises:
     return false
 
   logScope lvlInfo, &"[deleteFile] '{path}'"
+  if dirExists(path):
+    try:
+      removeDir(path)
+      return true
+    except:
+      return false
   return tryRemoveFile(path)
+
+method createDirImpl*(self: VFSLocal, path: string): Future[void] {.async: (raises: [IOError]).} =
+  if not path.isAbsolute:
+    raise newException(IOError, &"Path not absolute '{path}'")
+
+  try:
+    createDir(path)
+  except:
+    raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
 method getFileKindImpl*(self: VFSLocal, path: string): Future[Option[FileKind]] {.async: (raises: []).} =
   if fileExists(path):
@@ -175,7 +251,7 @@ method getFileKindImpl*(self: VFSLocal, path: string): Future[Option[FileKind]] 
 method getFileAttributesImpl*(self: VFSLocal, path: string): Future[Option[FileAttributes]] {.async: (raises: []).} =
   try:
     let permissions = path.getFilePermissions()
-    log lvlInfo, &"[isFileReadOnly] Permissions for '{path}': {permissions}"
+    # log lvlInfo, &"[isFileReadOnly] Permissions for '{path}': {permissions}"
     return FileAttributes(writable: fpUserWrite in permissions, readable: fpUserRead in permissions).some
   except:
     return FileAttributes.none
@@ -208,8 +284,10 @@ proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string, 
         directoryListing.files.add name
       of pcDir:
         directoryListing.folders.add name
-      else:
-        log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {name}"
+      of pcLinkToFile:
+        directoryListing.files.add name
+      of pcLinkToDir:
+        directoryListing.folders.add name
 
   except OSError:
     discard
@@ -253,8 +331,11 @@ method copyFileImpl*(self: VFSLocal, src: string, dest: string): Future[void] {.
   except Exception as e:
     raise newException(IOError, &"Failed to copy file '{src}' to '{dest}': {e.msg}", e)
 
-proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int, res: var seq[string]) =
+proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int, res: var seq[string], maxDepth: int, depth: int = 0) =
   try:
+    if depth > maxDepth:
+      return
+
     for (kind, name) in walkDir(dir, relative=true):
       case kind
       of pcFile:
@@ -264,7 +345,7 @@ proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int,
             return
 
       of pcDir:
-        findFilesRec(dir // name, relDir // name, filename, maxResults, res)
+        findFilesRec(dir // name, relDir // name, filename, maxResults, res, maxDepth, depth + 1)
         if res.len >= maxResults:
           return
       else:
@@ -273,17 +354,18 @@ proc findFilesRec(dir: string, relDir: string, filename: Regex, maxResults: int,
   except:
     discard
 
-proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string]]) =
+proc findFileThread(args: tuple[root: string, filename: string, maxResults: int, res: ptr seq[string], options: ptr FindFilesOptions]) =
   try:
     let filenameRegex = re(args.filename)
-    findFilesRec(args.root, "", filenameRegex, args.maxResults, args.res[])
+    findFilesRec(args.root, "", filenameRegex, args.maxResults, args.res[], args.options[].maxDepth)
   except RegexError:
     discard
 
-method findFilesImpl*(self: VFSLocal, root: string, filenameRegex: string, maxResults: int = int.high): Future[seq[string]] {.async: (raises: []).} =
+method findFilesImpl*(self: VFSLocal, root: string, filenameRegex: string, maxResults: int = int.high, options: FindFilesOptions = FindFilesOptions()): Future[seq[string]] {.async: (raises: []).} =
   var res = newSeq[string]()
   try:
-    await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr))
+    var options = options
+    await spawnAsync(findFileThread, (root, filenameRegex, maxResults, res.addr, options.addr))
   except Exception as e:
     log lvlError, &"Failed to find files in {self.name}/{root}: {e.msg}"
   return res

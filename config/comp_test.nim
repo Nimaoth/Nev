@@ -2,7 +2,9 @@ import wit_guest
 
 when defined(witRebuild):
   static: echo "Rebuilding plugin_api.wit"
-  importWit "../scripting/plugin_api.wit", "plugin_api_guest.nim"
+  importWit "../scripting":
+    world = "plugin"
+    cacheFile = "plugin_api_guest.nim"
 else:
   static: echo "Using cached plugin_api.wit (plugin_api_guest.nim)"
   include plugin_api_guest

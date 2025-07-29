@@ -28,16 +28,29 @@ type Selection* = tuple[first, last: Cursor]
 type RuneCursor* = tuple[line: int, column: RuneIndex]
 type RuneSelection* = tuple[first, last: RuneCursor]
 type SelectionCursor* = enum Config = "config", Both = "both", First = "first", Last = "last", LastToFirst = "last-to-first"
-type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relative"
+type LineNumbers* = enum None = "none", Absolute = "absolute", Relative = "relative"
 type Backend* = enum Gui = "gui", Terminal = "terminal", Browser = "browser"
 
 type ScrollBehaviour* = enum
   CenterAlways = "CenterAlways"
   CenterOffscreen = "CenterOffscreen"
+  CenterMargin = "CenterMargin"
   ScrollToMargin = "ScrollToMargin"
   TopOfScreen = "TopOfScreen"
 
+type ScrollSnapBehaviour* = enum
+  Never = "Never"
+  Always = "Always"
+  MinDistanceOffscreen = "MinDistanceOffscreen"
+  MinDistanceCenter = "MinDistanceCenter"
+
 type ToggleBool* = enum False, True, Toggle
+
+type RunShellCommandOptions* = object
+  shell*: string = "default"
+  initialValue*: string = ""
+  prompt*: string = "> "
+  filename*: string = "ed://.shell-command-results"
 
 converter toToggleBool*(b: bool): ToggleBool =
   if b:
@@ -247,3 +260,36 @@ proc getChangedSelection*(selection: Selection, text: string): Selection =
     (selection.first.line + lines - 1, lastLineLen)
 
   return (selection.last, newLast).normalized
+
+type CreateTerminalOptions* = object
+  group*: string = ""
+  autoRunCommand*: string = ""
+  mode*: Option[string]
+  closeOnTerminate*: bool = true
+  slot*: string = ""
+  focus*: bool = true
+
+type RunInTerminalOptions* = object
+  group*: string = ""
+  autoRunCommand*: string = ""
+  mode*: Option[string]
+  closeOnTerminate*: bool = true
+  reuseExisting*: bool = true
+  slot*: string = ""
+  focus*: bool = true
+
+when defined(wasm):
+  # todo: this should use the types from the nimsumtree library so it doesn't go out of sync
+  type
+    ReplicaId* = distinct uint16
+    SeqNumber* = uint32
+    Lamport* = object
+      replicaId*: ReplicaId
+      value*: SeqNumber
+    Bias* = enum Left, Right
+    BufferId* = distinct range[1.uint64..uint64.high]
+    Anchor* = object
+      timestamp*: Lamport
+      offset*: int
+      bias: Bias
+      bufferId*: Option[BufferId]

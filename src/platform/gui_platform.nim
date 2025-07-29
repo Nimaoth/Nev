@@ -1,9 +1,9 @@
-import std/[tables, strutils, options, sets, os]
+import std/[tables, strutils, options, sets, os, strformat]
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
-import misc/[custom_logger, util, event, id, rect_utils, custom_async]
+import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer]
 import ui/node
 import platform
-import input, monitors, lrucache, theme, compilation_config, vfs
+import input, monitors, lrucache, theme, compilation_config, vfs, app_options
 
 export platform
 
@@ -43,11 +43,14 @@ type
     framebuffer: Texture
 
     typefaces: Table[string, Typeface]
-    glyphCache: LruCache[Rune, string]
+    glyphCache: LruCache[(Rune, UINodeFlags), string]
+    asciiGlyphCache: array[128, string]
 
     lastEvent: Option[(int64, Modifiers, Button)]
 
     drawnNodes: seq[UINode]
+
+    vsync: bool
 
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
@@ -56,6 +59,9 @@ proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
 
+method moveToMonitor*(self: GuiPlatform, index: int) {.gcsafe, raises: [].} =
+  centerWindowOnMonitor(self.window, index)
+
 method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Typefaces: {self.typefaces.len}\n"
   result.add &"Glyph Cache: {self.glyphCache.len}\n"
@@ -63,13 +69,20 @@ method getStatisticsString*(self: GuiPlatform): string =
 
 {.pop.} # gcsafe
 
-method init*(self: GuiPlatform) =
+method init*(self: GuiPlatform, options: AppOptions) =
   try:
-    self.glyphCache = newLruCache[Rune, string](5000, true)
-    self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=false)
+    self.glyphCache = newLruCache[(Rune, UINodeFlags), string](5000, true)
+    self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
     self.window.runeInputEnabled = true
     self.supportsThinCursor = true
     self.focused = self.window.focused
+    self.vsync = true
+
+    try:
+      let icon = readImage("res/icon.png")
+      self.window.icon = icon
+    except:
+      discard
 
     # Use virtual key codes so that we can take into account the keyboard language
     # and the behaviour is more consistent with the browser/terminal.
@@ -81,7 +94,12 @@ method init*(self: GuiPlatform) =
     self.builder = newNodeBuilder()
     self.builder.useInvalidation = true
 
-    # self.window.centerWindowOnMonitor(1)
+    if options.monitor.getSome(index):
+      when defined(windows):
+        self.window.centerWindowOnMonitor(index)
+      else:
+        log lvlWarn, &"Opening window on specific monitor not implemented on this platform yet."
+
     self.window.maximized = true
     makeContextCurrent(self.window)
     loadExtensions()
@@ -130,18 +148,23 @@ method init*(self: GuiPlatform) =
         let arrangement = font.typeset(" ")
         result = vec2(0, arrangement.layoutBounds().y)
       else:
-        let arrangement = font.typeset(text)
+        let arrangement = font.typeset(text, snapToPixel = false)
         result = arrangement.layoutBounds()
 
     self.builder.textWidthImpl = proc(node: UINode): float32 =
       let font = self.getFont(self.ctx.fontSize, node.flags)
-      let arrangement = font.typeset(node.text)
+      let arrangement = font.typeset(node.text, snapToPixel = false)
       result = arrangement.layoutBounds().x
 
     self.builder.textWidthStringImpl = proc(text: string): float32 =
       let font = self.getFont(self.ctx.fontSize, 0.UINodeFlags)
-      let arrangement = font.typeset(text)
+      let arrangement = font.typeset(text, snapToPixel = false)
       result = arrangement.layoutBounds().x
+
+    self.builder.textBoundsImpl = proc(node: UINode): Vec2 =
+      let font = self.getFont(self.ctx.fontSize, node.flags)
+      let arrangement = font.typeset(node.text, bounds = node.bounds.wh, wrap = TextWrap in node.flags, snapToPixel = false)
+      result = arrangement.layoutBounds()
 
     self.window.onFocusChange = proc() =
       inc self.eventCounter
@@ -169,8 +192,8 @@ method init*(self: GuiPlatform) =
 
     self.window.onScroll = proc() =
       inc self.eventCounter
-      if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, {}):
-        self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, {})
+      if not self.builder.handleMouseScroll(self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers):
+        self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, self.currentModifiers)
 
     self.window.onMouseMove = proc() =
       # inc self.eventCounter
@@ -311,6 +334,36 @@ proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
     return self.getFont(self.fontBold, fontSize)
   return self.getFont(self.fontRegular, fontSize)
 
+proc getTypeface*(self: GuiPlatform, flags: UINodeFlags): Typeface =
+  if TextItalic in flags and TextBold in flags:
+    return self.getTypeface(self.fontBoldItalic)
+  if TextItalic in flags:
+    return self.getTypeface(self.fontItalic)
+  if TextBold in flags:
+    return self.getTypeface(self.fontBold)
+  return self.getTypeface(self.fontRegular)
+
+method getFontInfo*(self: GuiPlatform, fontSize: float, flags: UINodeFlags): FontInfo {.gcsafe, raises: [].} =
+  let typeface = self.getTypeface(flags)
+  let fontScale = fontSize / typeface.scale
+  let lineHeight = round((typeface.ascent - typeface.descent + typeface.lineGap) * fontScale)
+
+  # todo
+  # proc kerningAdjustment(left, right: Rune): float =
+  #   return typeface.getKerningAdjustment(left, right)
+
+  proc advance (rune: Rune): float =
+    typeface.getAdvance(rune)
+
+  FontInfo(
+    ascent: typeface.ascent,
+    lineHeight: lineHeight,
+    lineGap: typeface.lineGap,
+    scale: fontScale,
+    # kerningAdjustment: kerningAdjustment,
+    advance: advance,
+  )
+
 method size*(self: GuiPlatform): Vec2 =
   try:
     let size = self.window.size
@@ -324,8 +377,8 @@ method sizeChanged*(self: GuiPlatform): bool =
 
 proc updateCharWidth*(self: GuiPlatform) =
   let font = self.getFont(self.ctx.font, self.ctx.fontSize)
-  let bounds = font.typeset(repeat("#_", 50)).layoutBounds()
-  let boundsSingle = font.typeset("#_").layoutBounds()
+  let bounds = font.typeset(repeat("#_", 50), snapToPixel = false).layoutBounds()
+  let boundsSingle = font.typeset("#_", snapToPixel = false).layoutBounds()
   self.mCharWidth = bounds.x / 100
   self.mCharGap = (bounds.x / 100) - boundsSingle.x / 2
   self.mLineHeight = bounds.y
@@ -351,6 +404,11 @@ method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontIt
 
     for (_, image) in self.glyphCache.pairs:
       self.boxy.removeImage(image)
+
+    for image in self.asciiGlyphCache.mitems:
+      if image.len > 0:
+        self.boxy.removeImage(image)
+      image.setLen(0)
   except:
     discard
 
@@ -371,7 +429,16 @@ method lineHeight*(self: GuiPlatform): float = self.mLineHeight
 method charWidth*(self: GuiPlatform): float = self.mCharWidth
 method charGap*(self: GuiPlatform): float = self.mCharGap
 
-method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
+method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text, snapToPixel = false).layoutBounds()
+method layoutText*(self: GuiPlatform, text: string): seq[Rect] = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).selectionRects
+
+method setVsync*(self: GuiPlatform, enabled: bool) {.gcsafe, raises: [].} =
+  try:
+    self.vsync = enabled
+    {.gcsafe.}:
+      self.window.vsync = enabled
+  except WindyError as e:
+    log lvlError, &"Failed to change vsync to {enabled}: {e.msg}"
 
 method processEvents*(self: GuiPlatform): int =
   self.eventCounter = 0
@@ -457,66 +524,73 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
-method render*(self: GuiPlatform) =
+method render*(self: GuiPlatform, rerender: bool) =
   try:
-    if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
-      self.framebuffer.width = self.size.x.int32
-      self.framebuffer.height = self.size.y.int32
-      bindTextureData(self.framebuffer, nil)
-      self.redrawEverything = true
+    if rerender:
+      if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
+        self.framebuffer.width = self.size.x.int32
+        self.framebuffer.height = self.size.y.int32
+        bindTextureData(self.framebuffer, nil)
+        self.redrawEverything = true
 
-    # Clear the screen and begin a new frame.
-    self.boxy.beginFrame(self.window.size, clearFrame=false)
+      # Clear the screen and begin a new frame.
+      self.boxy.beginFrame(self.window.size, clearFrame=false)
 
-    var count = 0
-    for image in self.glyphCache.removedKeys:
-      self.boxy.removeImage($image)
-      inc count
+      var count = 0
+      for image in self.glyphCache.removedKeys:
+        self.boxy.removeImage($image)
+        inc count
 
-    if logDeletedImageCount and count > 0:
-      log lvlInfo, fmt"Cleared {count} images from cache"
+      if logDeletedImageCount and count > 0:
+        log lvlInfo, fmt"Cleared {count} images from cache"
 
-    self.glyphCache.clearRemovedKeys()
+      self.glyphCache.clearRemovedKeys()
 
-    if self.ctx.fontSize != self.lastFontSize:
-      self.lastFontSize = self.ctx.fontSize
-      for (_, image) in self.glyphCache.pairs:
-        self.boxy.removeImage(image)
-      self.glyphCache.clear()
+      if self.ctx.fontSize != self.lastFontSize:
+        self.lastFontSize = self.ctx.fontSize
+        for (_, image) in self.glyphCache.pairs:
+          self.boxy.removeImage(image)
+        self.glyphCache.clear()
+        for image in self.asciiGlyphCache.mitems:
+          if image.len > 0:
+            self.boxy.removeImage(image)
+          image.setLen(0)
 
-    if self.builder.root.lastSizeChange == self.builder.frameIndex:
-      self.redrawEverything = true
+      if self.builder.root.lastSizeChange == self.builder.frameIndex:
+        self.redrawEverything = true
 
-    self.drawnNodes.setLen 0
-    defer:
       self.drawnNodes.setLen 0
-
-    var renderedSomething = true
-    self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
-
-    if self.showDrawnNodes and renderedSomething:
-      let size = if self.showDrawnNodes: self.size * vec2(0.5, 1) else: self.size
-
-      self.boxy.pushLayer()
       defer:
+        self.drawnNodes.setLen 0
+
+      self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+
+      if self.showDrawnNodes:
+        let size = if self.showDrawnNodes: self.size * vec2(0.5, 1) else: self.size
+
         self.boxy.pushLayer()
-        self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(1, 0, 0, 1))
-        self.boxy.popLayer(blendMode = MaskBlend)
-        self.boxy.popLayer()
+        defer:
+          self.boxy.pushLayer()
+          self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(1, 0, 0, 1))
+          self.boxy.popLayer(blendMode = MaskBlend)
+          self.boxy.popLayer()
 
-      self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(0, 0, 0))
+        self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(0, 0, 0))
 
-      for node in self.drawnNodes:
-        let c = node.randomColor(0.3)
-        self.boxy.drawRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), c)
+        for node in self.drawnNodes:
+          let c = node.randomColor(0.3)
+          self.boxy.drawRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), c)
 
-        if DrawBorder in node.flags:
-          self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
+          if DrawBorder in node.flags:
+            self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
 
-    # End this frame, flushing the draw commands. Draw to framebuffer.
-    self.boxy.endFrame()
+      # End this frame, flushing the draw commands. Draw to framebuffer.
+      self.boxy.endFrame()
 
-    if renderedSomething:
+      self.redrawEverything = false
+      self.lastSize = self.size
+
+    if rerender or self.renderedSomethingLastFrame:
       glBindFramebuffer(GL_READ_FRAMEBUFFER, self.framebufferId)
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
       glBlitFramebuffer(
@@ -524,12 +598,136 @@ method render*(self: GuiPlatform) =
         0, 0, self.window.size.x.GLint, self.window.size.y.GLint,
         GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
 
+    if rerender or self.renderedSomethingLastFrame or self.vsync:
       self.window.swapBuffers()
 
-    self.renderedSomethingLastFrame = renderedSomething;
-    self.redrawEverything = false
-    self.lastSize = self.size
+    self.renderedSomethingLastFrame = rerender
   except:
+    discard
+
+var solidPaint = newPaint(SolidPaint)
+proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: string, arrangementIndex: int, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1)) =
+  let wrap = TextWrap in flags
+  let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
+    vec2(bounds.w, bounds.h)
+  else:
+    vec2(0, 0)
+
+  let hAlign = if TextAlignHorizontalLeft in flags:
+    HorizontalAlignment.LeftAlign
+  elif TextAlignHorizontalCenter in flags:
+    HorizontalAlignment.CenterAlign
+  elif TextAlignHorizontalRight in flags:
+    HorizontalAlignment.RightAlign
+  else:
+    HorizontalAlignment.LeftAlign
+
+  let vAlign = if TextAlignVerticalTop in flags:
+    VerticalAlignment.TopAlign
+  elif TextAlignVerticalCenter in flags:
+    VerticalAlignment.MiddleAlign
+  elif TextAlignVerticalBottom in flags:
+    VerticalAlignment.BottomAlign
+  else:
+    VerticalAlignment.TopAlign
+
+  let textFlags = flags * &{TextItalic, TextBold}
+
+  proc tintRune(r: Rune): bool =
+    return true
+
+  # todo: convert typeset to not use strings to avoid copying
+  try:
+    let font = platform.getFont(platform.ctx.fontSize, flags)
+
+    if arrangementIndex == -1 or arrangementIndex >= uint32.high.int:
+      let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
+      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+        let color = if tintRune(rune):
+          inColor
+        else:
+          color(1, 1, 1)
+
+        if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags:
+          if platform.asciiGlyphCache[rune.int].len == 0:
+            var path = font.typeface.getGlyphPath(rune)
+            let rect = arrangement.selectionRects[i]
+            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+            var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+            for paint in font.paints:
+              image.fillPath(path, paint)
+            platform.boxy.addImage($rune, image, genMipmaps=false)
+            platform.asciiGlyphCache[rune.int] = $rune
+
+          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+          platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
+
+        else:
+          let key = (rune, textFlags)
+          if not platform.glyphCache.contains(key):
+            var path = font.typeface.getGlyphPath(rune)
+            let rect = arrangement.selectionRects[i]
+            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+            var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+            for paint in font.paints:
+              image.fillPath(path, paint)
+            platform.boxy.addImage($key, image, genMipmaps=false)
+            platform.glyphCache[key] = $key
+
+          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+          platform.boxy.drawImage($key, pos, color)
+
+      if TextDrawSpaces in flags:
+        let spaceRune = renderCommands.space
+        for i, rune in arrangement.runes:
+          let (rune, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
+          drawRune(i, rune, color)
+      else:
+        for i, rune in arrangement.runes:
+          drawRune(i, rune, color)
+
+      if TextUndercurl in flags:
+        platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
+
+    else:
+      let typeface = platform.getTypeface(flags)
+      let fontScale = platform.ctx.fontSize / typeface.scale
+      let indices {.cursor.} = renderCommands.arrangements[arrangementIndex]
+      let solidPaint = ({.cast(gcsafe).}: solidPaint)
+      solidPaint.color = color(1, 1, 1)
+      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+        let color = if tintRune(rune):
+          inColor
+        else:
+          color(1, 1, 1)
+        let key = (rune, textFlags)
+        if not platform.glyphCache.contains(key):
+          var path = typeface.getGlyphPath(rune)
+          let rect = renderCommands.arrangement.selectionRects[i]
+          path.transform(translate(renderCommands.arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
+          var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+          image.fillPath(path, solidPaint)
+          platform.boxy.addImage($key, image, genMipmaps=false)
+          platform.glyphCache[key] = $key
+
+        let pos = (vec2(pos.x, pos.y) + renderCommands.arrangement.selectionRects[i].xy).round
+        platform.boxy.drawImage($key, pos, color)
+
+      if TextDrawSpaces in flags:
+        let spaceRune = renderCommands.space
+        for i in indices.runes:
+          let rune = renderCommands.arrangement.runes[i]
+          let (rune2, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
+          drawRune(i, rune2, color)
+      else:
+        for i in indices.runes:
+          let rune = renderCommands.arrangement.runes[i]
+          drawRune(i, rune, color)
+
+      if TextUndercurl in flags:
+        platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
+
+  except GLerror, Exception:
     discard
 
 proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
@@ -571,54 +769,37 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
         platform.boxy.popLayer()
 
     if DrawText in node.flags:
-      let font = platform.getFont(platform.ctx.fontSize, node.flags)
-
-      let wrap = TextWrap in node.flags
-      let wrapBounds = if node.flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
-        vec2(node.w, node.h)
-      else:
-        vec2(0, 0)
-
-      let hAlign = if TextAlignHorizontalLeft in node.flags:
-        HorizontalAlignment.LeftAlign
-      elif TextAlignHorizontalCenter in node.flags:
-        HorizontalAlignment.CenterAlign
-      elif TextAlignHorizontalRight in node.flags:
-        HorizontalAlignment.RightAlign
-      else:
-        HorizontalAlignment.LeftAlign
-
-      let vAlign = if TextAlignVerticalTop in node.flags:
-        VerticalAlignment.TopAlign
-      elif TextAlignVerticalCenter in node.flags:
-        VerticalAlignment.MiddleAlign
-      elif TextAlignVerticalBottom in node.flags:
-        VerticalAlignment.BottomAlign
-      else:
-        VerticalAlignment.TopAlign
-
-      let arrangement = font.typeset(node.text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
-      for i, rune in arrangement.runes:
-        if not platform.glyphCache.contains(rune):
-          var path = font.typeface.getGlyphPath(rune)
-          let rect = arrangement.selectionRects[i]
-          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-          var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
-          for paint in font.paints:
-            image.fillPath(path, paint)
-          platform.boxy.addImage($rune, image, genMipmaps=false)
-          platform.glyphCache[rune] = $rune
-
-        let pos = vec2(nodePos.x.floor, nodePos.y.floor) + arrangement.selectionRects[i].xy
-        platform.boxy.drawImage($rune, pos, node.textColor)
-
-      if TextUndercurl in node.flags:
-        platform.boxy.drawRect(rect(bounds.x, bounds.yh - 2, bounds.w, 2), node.underlineColor)
+      platform.drawText(node.renderCommands, node.text, -1, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor)
 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
 
     if DrawBorder in node.flags:
       platform.boxy.strokeRect(bounds, node.borderColor)
+
+    var maskBounds: seq[Rect]
+    for command in node.renderCommands.commands:
+      case command.kind
+      of RenderCommandKind.Rect:
+        platform.boxy.strokeRect(command.bounds + nodePos, command.color)
+      of RenderCommandKind.FilledRect:
+        platform.boxy.drawRect(command.bounds + nodePos, command.color)
+      of RenderCommandKind.Text:
+        # todo: don't copy string data
+        let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
+        platform.drawText(node.renderCommands, text, command.arrangementIndex.int, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags, command.underlineColor)
+      of RenderCommandKind.ScissorStart:
+        platform.boxy.pushLayer()
+        maskBounds.add(command.bounds + nodePos)
+      of RenderCommandKind.ScissorEnd:
+        if maskBounds.len == 0:
+          log lvlError, &"Unbalanced ScisscorStart/End pairs"
+          break
+        let bounds = maskBounds.pop()
+        platform.boxy.pushLayer()
+        platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+        platform.boxy.popLayer(blendMode = MaskBlend)
+        platform.boxy.popLayer()
+
   except GLerror, Exception:
     discard

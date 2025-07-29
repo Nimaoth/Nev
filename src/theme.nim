@@ -1,7 +1,7 @@
 import std/[json, tables, strutils, options]
 import chroma, results
-import misc/[custom_logger, myjsonutils, util, custom_async]
-import vfs
+import misc/[custom_logger, myjsonutils, util, custom_async, event]
+import vfs, service
 
 logCategory "theme"
 
@@ -24,7 +24,23 @@ type
     colors*: Table[string, Color]
     tokenColors*: Table[string, Style]
 
-var gTheme*: Theme = nil
+  ThemeService* = ref object of Service
+    # config: ConfigService
+    theme*: Theme
+    onThemeChanged*: Event[Theme]
+
+func serviceName*(_: typedesc[ThemeService]): string = "ThemeService"
+addBuiltinService(ThemeService) #, ConfigService)
+
+method init*(self: ThemeService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
+  log lvlInfo, &"ThemeService.init"
+  # self.config = self.services.getService(ConfigService).get
+
+  return ok()
+
+proc setTheme*(self: ThemeService, theme: Theme) =
+  self.theme = theme
+  self.onThemeChanged.invoke(theme)
 
 proc parseHexVar*(text: string): Result[Color, string] =
   try:
@@ -60,11 +76,12 @@ proc color*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0,
       return val[]
   return default.color
 
-proc tokenColor*(theme: Theme, name: cstring, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
-  let res = theme.tokenColors.getCascading($name, Style()).foreground
-  return res.get default.color
-
 proc tokenColor*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+  if name.startsWith("#"):
+    try:
+      return name.parseHtmlHex
+    except InvalidColor:
+      return default
   return theme.tokenColors.getCascading(name, Style()).foreground.get default.color
 
 proc tokenColor*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
@@ -111,11 +128,25 @@ proc anyColor*(theme: Theme, color: string, default: Color = Color(r: 0, g: 0, b
 {.pop.} # gcsafe
 
 proc fromJsonHook*(color: var Color, jsonNode: JsonNode) =
-  if jsonNode.kind == JNull:
+  case jsonNode.kind
+  of JNull:
     color = Color()
     return
 
-  color = parseHexVar(jsonNode.str).valueOr(Color())
+  of JString:
+    color = parseHexVar(jsonNode.str).valueOr(Color())
+
+  of JObject:
+    color.r = jsonNode["r"].getFloat
+    color.g = jsonNode["g"].getFloat
+    color.b = jsonNode["b"].getFloat
+    if jsonNode.hasKey("a"):
+      color.a = jsonNode["a"].getFloat
+    else:
+      color.a = 1
+
+  else:
+    assert false, "Can't convert json " & $jsonNode & " to Color"
 
 proc fromJsonHook*(style: var set[FontStyle], jsonNode: JsonNode) =
   style = {}
@@ -136,7 +167,8 @@ proc fromJsonHook*(style: var Style, jsonNode: JsonNode) {.raises: [ValueError].
 
 proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme {.raises: [ValueError].} =
   result = Theme()
-  result.name = json["name"].jsonTo string
+  if json.hasKey("name"):
+    result.name = json["name"].jsonTo string
 
   if json.hasKey("type"):
     result.typ = json["type"].jsonTo string
@@ -181,6 +213,8 @@ proc loadFromString*(input: string, path: string = "string"): Option[Theme] =
   try:
     let json = input.parseJson
     var newTheme = json.jsonToTheme
+    if newTheme.name == "":
+      newTheme.name = path
     newTheme.path = path
     return some(newTheme)
   except CatchableError:

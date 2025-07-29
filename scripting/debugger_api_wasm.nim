@@ -82,12 +82,13 @@ proc nextStackFrame*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc debugger_openFileForCurrentFrame_void_Debugger_wasm(arg: cstring): cstring {.
+proc debugger_openFileForCurrentFrame_void_Debugger_string_wasm(arg: cstring): cstring {.
     importc.}
-proc openFileForCurrentFrame*() {.gcsafe, raises: [].} =
+proc openFileForCurrentFrame*(slot: string = "") {.gcsafe, raises: [].} =
   var argsJson = newJArray()
+  argsJson.add slot.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = debugger_openFileForCurrentFrame_void_Debugger_wasm(
+  let res {.used.} = debugger_openFileForCurrentFrame_void_Debugger_string_wasm(
       argsJsonString.cstring)
 
 
@@ -170,14 +171,23 @@ proc runLastConfiguration*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc debugger_addBreakpoint_void_Debugger_EditorId_int_wasm(arg: cstring): cstring {.
+proc debugger_toggleBreakpointAt_void_Debugger_EditorId_int_wasm(arg: cstring): cstring {.
     importc.}
-proc addBreakpoint*(editorId: EditorId; line: int) {.gcsafe, raises: [].} =
+proc toggleBreakpointAt*(editorId: EditorId; line: int) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add editorId.toJson()
   argsJson.add line.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = debugger_addBreakpoint_void_Debugger_EditorId_int_wasm(
+  let res {.used.} = debugger_toggleBreakpointAt_void_Debugger_EditorId_int_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_toggleBreakpoint_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleBreakpoint*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_toggleBreakpoint_void_Debugger_wasm(
       argsJsonString.cstring)
 
 
@@ -258,4 +268,14 @@ proc stepOut*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_stepOut_void_Debugger_wasm(argsJsonString.cstring)
+
+
+proc debugger_showDebuggerView_void_Debugger_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc showDebuggerView*(slot: string = "#debugger") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add slot.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_showDebuggerView_void_Debugger_string_wasm(
+      argsJsonString.cstring)
 

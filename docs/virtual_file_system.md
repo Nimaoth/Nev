@@ -1,9 +1,9 @@
-# Virtual file system (VFS)
+# Virtual filesystem (VFS)
 
-Nev uses a virtual file system internally. The VFS is a tree of different types of file systems (local, in-memory, remote, etc.).
+Nev uses a virtual filesystem internally. The VFS is a tree of different types of file systems (local, in-memory, remote, etc.).
 
 Here are the types of file systems that are supported:
-- `VFS` - The base type for all other file systems, which can be used as a container/folder for other VFSs.
+- `VFS` - The base type for all other filesystems, which can be used as a container/folder for other VFSs.
 - `VFSInMemory` - This file system stores files in RAM.
 - `VFSLocal` - This represents your local filesystem.
 - `VFSLink` - This file system can link into a subfolder of another file systems. Cycles are not allowed.
@@ -13,11 +13,11 @@ By default Nev creates a VFS hierarchy which contains the local file system unde
 - `home://` links to the user home directory under `local://`
 - `ws0://`, `ws1://` etc. link to the workspace folders.
 - `ws://0`, `ws://1` etc. link to the workspace folders.
-- `plugs://`, contains plugin sources (if available)
+- `temp://` links to the temp directory
 
 To explore the entire VFS in the builtin file explorer you can run the command `explore-file "" true` (to see some more info about the VFSs) or just `explore-files`
 
-![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/vfs.png)
+![alt](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/vfs.png)
 
 You can also see the VFS hierarchy by running the command `dump-vfs-hierarchy`, which will output something like this to the log file:
 ```
@@ -35,7 +35,7 @@ VFS()
 ```
 
 Here is a visual representation of what the above VFS hierarchy:
-![VFS graph](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/graph.png)
+![VFS graph](https://raw.githubusercontent.com/Nimaoth/NevScreenshots/main/graph.png)
 
 With the given VFS, the following paths would refer to these files:
 

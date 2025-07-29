@@ -5,7 +5,7 @@ when defined(nimsuggest):
   import system/nimscript
   var commandLineParams: seq[string]
 
-version       = "0.2.2"
+version       = "0.4.0"
 author        = "Nimaoth"
 description   = "Text Editor"
 license       = "MIT"
@@ -17,7 +17,7 @@ bin           = @["nev"]
 requires "nim >= 2.0.0"
 requires "nimgen >= 0.5.4"
 requires "https://github.com/Nimaoth/vmath#661bdaa"
-requires "pixie >= 5.0.7"
+requires "https://github.com/Nimaoth/pixie >= 5.0.10"
 requires "chroma >= 0.2.7"
 requires "winim >= 3.9.4"
 requires "fusion >= 1.2"
@@ -31,17 +31,19 @@ requires "asynctools#a1a17d0"
 requires "stew >= 0.1.0"
 requires "results >= 0.5.0"
 requires "chronos >= 4.0.3"
+requires "https://github.com/Nimaoth/fsnotify >= 0.1.6"
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
-requires "https://github.com/Nimaoth/windy >= 0.0.2"
-requires "https://github.com/Nimaoth/wasm3 >= 0.1.15"
+requires "https://github.com/Nimaoth/windy >= 0.0.5"
+requires "https://github.com/Nimaoth/wasm3 >= 0.1.17"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
-requires "https://github.com/Nimaoth/nimtreesitter-api#498d284"
-requires "https://github.com/Nimaoth/nimwasmtime#d70a21b"
-requires "https://github.com/Nimaoth/nimsumtree >= 0.3.8"
+requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
+requires "https://github.com/Nimaoth/nimwasmtime >= 0.2.1"
+requires "https://github.com/Nimaoth/nimsumtree >= 0.5.6"
+requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 
 # Use this to include all treesitter languages (takes longer to download)
-requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.6"
+requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.11"
 
 # Use these to only install specific treesitter languages. These don't work with the lock file
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.3"
@@ -115,8 +117,14 @@ task buildDebug, "Build the debug version":
 task buildDebugVcc, "Build the debug version":
   selfExec fmt"c -o:nevd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
 
+task buildDesktopClang, "Build the desktop version":
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime --lineDir:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:off --linetrace:off --nimcache:nimcache/release_clang {getCommandLineParams()} ./src/desktop_main.nim"
+
+task buildDesktopDebugClang, "Build the desktop version (debug)":
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib -d:enableSystemClipboard=true -d:exposeScriptingApi -d:enableSysFatalStackTrace --debuginfo:on -g --lineDir:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:off --linetrace:off --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
+
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --nilChecks:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
   # selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
@@ -152,14 +160,15 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm keybindings_plugin.nim"
   exec fmt"nimble buildNimConfigWasm harpoon.nim"
   exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
+  exec fmt"nimble buildNimConfigWasm lisp_plugin.nim"
 
 task buildWasmComponent, "":
   let name = "comp_test"
   withDir "config":
     exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/{name}.m.wasm\" {getCommandLineParams()} ./{name}.nim"
 
-    exec &"wasm-tools component embed ../scripting/plugin_api.wit --world plugin ./wasm/{name}.m.wasm -o ./wasm/{name}.me.wasm"
-    exec &"wasm-tools component new ./wasm/{name}.me.wasm -o ./wasm/{name}.c.wasm --adapt ../scripting/wasi_snapshot_preview1.reactor.wasm"
+    # exec &"wasm-tools component embed ../scripting/plugin_api.wit --world plugin ./wasm/{name}.m.wasm -o ./wasm/{name}.me.wasm"
+    # exec &"wasm-tools component new ./wasm/{name}.me.wasm -o ./wasm/{name}.c.wasm --adapt ../scripting/wasi_snapshot_preview1.reactor.wasm"
 
 task flamegraph, "Perf/flamegraph":
   exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"

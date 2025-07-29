@@ -8,6 +8,29 @@ export options, results
 {.push raises: [].}
 {.push warning[ProveInit]:off.}
 
+# from std/sequtils
+macro evalOnceAs(expAlias, exp: untyped,
+                 letAssigneable: static[bool]): untyped =
+  ## Injects `expAlias` in caller scope, to avoid bugs involving multiple
+  ## substitution in macro arguments such as
+  ## https://github.com/nim-lang/Nim/issues/7187.
+  ## `evalOnceAs(myAlias, myExp)` will behave as `let myAlias = myExp`
+  ## except when `letAssigneable` is false (e.g. to handle openArray) where
+  ## it just forwards `exp` unchanged.
+  expectKind(expAlias, nnkIdent)
+  var val = exp
+
+  result = newStmtList()
+  # If `exp` is not a symbol we evaluate it once here and then use the temporary
+  # symbol as alias
+  if exp.kind != nnkSym and letAssigneable:
+    val = genSym()
+    result.add(newLetStmt(val, exp))
+
+  result.add(
+    newProc(name = genSym(nskTemplate, $expAlias), params = [getType(untyped)],
+      body = val, procType = nnkTemplateDef))
+
 template getSome*[T](opt: Option[T], injected: untyped): bool =
   ((let o = opt; o.isSome())) and ((let injected {.inject, cursor.} = o.get(); true))
 
@@ -43,6 +66,13 @@ template take*[T](opt: sink Option[T], otherwise: sink T): T =
 template take*[T](opt: sink Option[T]): T =
   if opt.isSome:
     opt.get.move
+  else:
+    raise newException(UnpackDefect, "Can't obtain a value from a `none`")
+
+proc take*[T](opt: var Option[T]): T =
+  if opt.isSome:
+    result = opt.get.move
+    opt = T.none
   else:
     raise newException(UnpackDefect, "Can't obtain a value from a `none`")
 
@@ -140,20 +170,30 @@ template mapIt*[T](self: Option[T], op: untyped): untyped =
     block:
       var it {.inject.}: typeof(self.get, typeOfProc);
       op), typeOfProc)
-  if self.isSome:
-    let it {.inject.} = self.get
-    some(op)
-  else:
-    OutType.none
+  block:
+    evalOnceAs(self2, self, compiles((let _ = self)))
+    if self2.isSome:
+      let it {.inject.} = self2.get
+      some(op)
+    else:
+      OutType.none
 
 template applyIt*[T, E](self: Result[T, E], op: untyped, opErr: untyped): untyped =
-  let s = self
-  if s.isOk:
-    template it: untyped {.inject.} = s.unsafeValue
-    op
-  else:
-    template it: untyped {.inject.} = s.unsafeError
-    opErr
+  block:
+    evalOnceAs(self2, self, compiles((let _ = self)))
+    if self2.isOk:
+      template it: untyped {.inject, used.} = self2.unsafeValue
+      op
+    else:
+      template it: untyped {.inject, used.} = self2.unsafeError
+      opErr
+
+template applyIt*[T, E](self: Result[T, E], op: untyped): untyped =
+  block:
+    evalOnceAs(self2, self, compiles((let _ = self)))
+    if self2.isOk:
+      template it: untyped {.inject.} = self2.unsafeValue
+      op
 
 template findIt*(self: untyped, op: untyped): untyped =
   block:
@@ -178,6 +218,57 @@ template findItOpt*(self: untyped, op: untyped): untyped =
 
 template maybeFlatten*[T](self: Option[T]): Option[T] = self
 template maybeFlatten*[T](self: Option[Option[T]]): Option[T] = self.flatten
+
+template mapItIndex*(s: typed, op: untyped): untyped =
+  ## Returns a new sequence with the results of the `op` proc applied to every
+  ## item in the container `s`.
+  ##
+  ## Since the input is not modified you can use it to
+  ## transform the type of the elements in the input container.
+  ##
+  ## The template injects the `it` variable which you can use directly in an
+  ## expression.
+  ##
+  ## Instead of using `mapItIndex` and `filterIt`, consider using the `collect` macro
+  ## from the `sugar` module.
+  ##
+  ## **See also:**
+  ## * `sugar.collect macro<sugar.html#collect.m%2Cuntyped%2Cuntyped>`_
+  ## * `map proc<#map,openArray[T],proc(T)>`_
+  ## * `applyIt template<#applyIt.t,untyped,untyped>`_ for the in-place version
+  ##
+  runnableExamples:
+    let
+      nums = @[1, 2, 3, 4]
+      strings = nums.mapItIndex($(4 * it))
+    assert strings == @["4", "8", "12", "16"]
+
+  type OutType = typeof((
+    block:
+      var it {.inject.}: typeof(items(s), typeOfIter);
+      var itIndex {.inject.}: int
+      op), typeOfProc)
+  # Here, we avoid to create closures in loops.
+  # This avoids https://github.com/nim-lang/Nim/issues/12625
+  when compiles(s.len):
+    block: # using a block avoids https://github.com/nim-lang/Nim/issues/8580
+
+      # BUG: `evalOnceAs(s2, s, false)` would lead to C compile errors
+      # (`error: use of undeclared identifier`) instead of Nim compile errors
+      evalOnceAs(s2, s, compiles((let _ = s)))
+
+      var i = 0
+      var result = newSeq[OutType](s2.len)
+      for itIndex {.inject.}, it {.inject.} in s2:
+        result[i] = op
+        i += 1
+      result
+  else:
+    var result: seq[OutType]# = @[]
+    # use `items` to avoid https://github.com/nim-lang/Nim/issues/12639
+    for itIndex {.inject.}, it {.inject.} in items(s):
+      result.add(op)
+    result
 
 proc neww*[T](value: T): ref T =
   new result
@@ -206,6 +297,16 @@ template softAssert*(condition: bool, message: string): untyped =
 
 func removeSwap*[T](s: var seq[T]; index: int) = s.del(index)
 func removeShift*[T](s: var seq[T]; index: int) = s.delete(index)
+
+func removeSwap*[T](s: var seq[T]; item: T) =
+  let index = s.find(item)
+  if index != -1:
+    s.del(index)
+
+func removeShift*[T](s: var seq[T]; item: T) =
+  let index = s.find(item)
+  if index != -1:
+    s.delete(index)
 
 func indentExtraLines*(s: string, count: Natural, padding: string = " "): string =
   ## Indents each line except the first in `s` by `count` amount of `padding`.
@@ -255,3 +356,28 @@ func endsWith*[T](s, suffix: openArray[T]): bool =
     if s[i+j] != suffix[i]: return false
     inc(i)
   if i >= suffixLen: return true
+
+iterator splitOpenArray*(s: string, sep: char, maxsplit: int = -1): tuple[p: ptr UncheckedArray[char], len: int] =
+  var last = 0
+  var splits = maxsplit
+
+  while last <= len(s):
+    var first = last
+    while last < len(s) and s[last] != sep:
+      inc(last)
+    if splits == 0: last = len(s)
+    let p = if s.len > 0:
+      cast[ptr UncheckedArray[char]](cast[int](s[0].addr) + first)
+    else:
+      nil
+    yield (p, last - first)
+    if splits == 0: break
+    dec(splits)
+    inc(last, 1)
+
+template boolLock*(l): untyped =
+  if l:
+    return
+  l = true
+  defer:
+    l = false

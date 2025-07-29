@@ -1,56 +1,11 @@
 {
     "$schema": "../config/settings.schema.json",
     "+lsp": {
+        "nimlangserver": null,
 
-        "+cpp": {
-            "args": [
-                "--offset-encoding=utf-8",
-                "--background-index",
-                "--limit-results=100",
-                "--limit-references=2000",
-                "--clang-tidy"
-            ]
-        },
+        "clangd.command": ["clangd", "--offset-encoding=utf-8", "--background-index", "--limit-results=100", "--limit-references=2000", "--clang-tidy"],
 
-        "+c": {
-            "args": [
-                "--offset-encoding=utf-8",
-                "--background-index",
-                "--limit-results=100",
-                "--limit-references=2000"
-            ]
-        },
-
-        "+nim": {
-            "settings": {
-                "project": [],
-                "xprojectMapping": [],
-                "test-project": "",
-                "buildOnSave": false,
-                "buildCommand": "c",
-                "runOutputDirectory": "",
-                "lintOnSave": true,
-                "enableNimsuggest": false,
-                "useNimsuggestCheck": false,
-                "logNimsuggest": true,
-                "licenseString": "",
-                "nimsuggestRestartTimeout": 10,
-                "nimprettyIndent": 0,
-                "nimprettyMaxLineLen": 80,
-                "inlayHints": {
-                    "typeHints": {
-                        "enable": true
-                    },
-                    "exceptionHints": {
-                        "enable": true,
-                        "hintStringLeft": "🔔",
-                        "hintStringRight": ""
-                    }
-                }
-            }
-        },
-
-        "+rust": {
+        "+rust-analyzer": {
             "rust-analyzer": {
                 "linkedProjects": ["temp/rust_test/Cargo.toml"]
             }
@@ -214,7 +169,7 @@
         ".lsp-log-verbose true"
     ],
 
-    "+wasm-plugin-post-load-commands": [
-        "load-vscode-debugger-config \".vscode/launch.json\""
-    ]
+    // "+wasm-plugin-post-load-commands": [
+    //     "load-vscode-debugger-config \".vscode/launch.json\""
+    // ]
 }

@@ -1,6 +1,6 @@
-import std/[options, os, tables, json]
+import std/[os, tables, json]
 import results
-import misc/[custom_logger, regex]
+import misc/[custom_logger, regex, jsonex]
 import config_provider
 
 {.push gcsafe.}
@@ -8,7 +8,7 @@ import config_provider
 
 logCategory "language-detection"
 
-proc getLanguageForFile*(config: ConfigProvider, filename: string): Result[string, string] =
+proc getLanguageForFile*(config: ConfigStore, filename: string): Result[string, string] =
   if filename == "":
     result.err "Can't determine language for empty filename"
     return
@@ -17,7 +17,7 @@ proc getLanguageForFile*(config: ConfigProvider, filename: string): Result[strin
   if extension.len > 0:
     extension = extension[1..^1]
 
-  let mappings = config.getValue[:JsonNode]("language-mappings", newJObject())
+  let mappings = config.get("language-mappings", newJexObject())
   if mappings.kind != JObject:
     log lvlError, &"Expected object for 'language-mappings' but got {mappings.kind}:\n{mappings.pretty}"
 

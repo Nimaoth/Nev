@@ -3,7 +3,7 @@ import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
 import scripting/[expose, scripting_base]
 import app_interface, text/text_editor, popup, events,
-  selector_popup_builder, dispatch_tables, layout, service
+  selector_popup_builder, dispatch_tables, layout, service, config_provider, view, command_service
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
 
@@ -13,6 +13,9 @@ export popup, selector_popup_builder, service
 
 logCategory "selector"
 
+declareSettings SelectorSettings, "selector":
+  declare baseMode, string, "popup.selector"
+
 type
   SelectorPopup* = ref object of Popup
     services*: Services
@@ -20,8 +23,10 @@ type
     events*: EventHandlerService
     plugins: PluginService
     editors: DocumentEditorService
+    commands: CommandService
     textEditor*: TextDocumentEditor
     previewEditor*: TextDocumentEditor
+    previewView*: View
     selected*: int
     scrollOffset*: int
     handleItemConfirmed*: proc(finderItem: FinderItem): bool {.gcsafe, raises: [].}
@@ -30,8 +35,11 @@ type
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
-    previewEventHandler: EventHandler
-    customEventHandler: EventHandler
+    settings: SelectorSettings
+
+    eventHandlers: Table[string,  EventHandler]
+
+    viewMarkedDirtyHandle: Id
 
     scale*: Vec2
     previewScale*: float = 0.5
@@ -50,9 +58,13 @@ type
 
     focusPreview*: bool
 
+    scope*: string
+    title*: string
+
 proc getSearchString*(self: SelectorPopup): string {.gcsafe, raises: [].}
 proc closed*(self: SelectorPopup): bool {.gcsafe, raises: [].}
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] {.gcsafe, raises: [].}
+proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].}
 
 implTrait ISelectorPopup, SelectorPopup:
   getSearchString(string, SelectorPopup)
@@ -68,8 +80,18 @@ proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: s
   if self.completionMatchPositions.contains(i):
     return self.completionMatchPositions[i]
 
-  discard matchFuzzySublime(pattern, text, result, true, config)
+  if self.finder.filteredItems.getSome(items) and i < items.len:
+    let query = if self.finder.skipFirstQuery and self.finder.queries.len > 1:
+      self.finder.queries[1]
+    else:
+      self.finder.queries[0]
+    discard matchFuzzySublime(query, text, result, true, config)
+  else:
+    discard matchFuzzySublime(pattern, text, result, true, config)
   self.completionMatchPositions[i] = result
+
+method initImpl*(self: SelectorPopup) {.gcsafe, raises: [].} =
+  self.handleItemsUpdated()
 
 method deinit*(self: SelectorPopup) {.gcsafe, raises: [].} =
   logScope lvlInfo, &"[deinit] Destroying selector popup"
@@ -106,17 +128,40 @@ method getActiveEditor*(self: SelectorPopup): Option[DocumentEditor] =
 
   return DocumentEditor.none
 
+proc getEventHandler(self: SelectorPopup, context: string): EventHandler =
+  if context notin self.eventHandlers:
+    var eventHandler: EventHandler
+    assignEventHandler(eventHandler, self.events.getEventHandlerConfig(context)):
+      onAction:
+        if self.handleAction(action, arg).isSome:
+          Handled
+        else:
+          Ignored
+      onInput:
+        Ignored
+
+    self.eventHandlers[context] = eventHandler
+    return eventHandler
+
+  return self.eventHandlers[context]
+
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   if self.textEditor.isNil:
     return @[]
 
-  if self.focusPreview and self.previewEditor.isNotNil:
-    result = self.previewEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.previewEventHandler]
+  if self.focusPreview and self.previewView.isNotNil:
+    let eventHandler = self.getEventHandler(self.settings.baseMode.get() & ".preview")
+    result = self.previewView.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
+  elif self.focusPreview and self.previewEditor.isNotNil:
+    let eventHandler = self.getEventHandler(self.settings.baseMode.get() & ".preview")
+    result = self.previewEditor.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
   else:
-    result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
+    let eventHandler = self.getEventHandler(self.settings.baseMode.get())
+    result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[eventHandler]
 
-    if self.customEventHandler.isNotNil:
-      result.add self.customEventHandler
+    if self.scope != "":
+      let eventHandler = self.getEventHandler(self.settings.baseMode.get() & "." & self.scope)
+      result.add eventHandler
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] {.gcsafe, raises: [].} =
   {.gcsafe.}:
@@ -138,6 +183,22 @@ proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
 proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
+proc updatePreview(self: SelectorPopup) =
+  if self.previewer.isSome and self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+    let view = self.previewer.get.get.previewItem(list[self.selected])
+    if view != self.previewView:
+      if self.previewView != nil:
+        self.previewView.onMarkedDirty.unsubscribe(self.viewMarkedDirtyHandle)
+
+      self.previewView = view
+
+      if self.previewView != nil:
+        self.viewMarkedDirtyHandle = self.previewView.onMarkedDirty.subscribe () =>
+          self.markDirty()
+
+    if view == nil and self.previewEditor.isNotNil:
+      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+
 proc setPreviewVisible*(self: SelectorPopup, visible: bool) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
@@ -149,9 +210,7 @@ proc setPreviewVisible*(self: SelectorPopup, visible: bool) {.expose("popup.sele
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.isSome:
-      assert self.previewEditor.isNotNil
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+    self.updatePreview()
 
   self.markDirty()
 
@@ -168,6 +227,12 @@ proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.expose("popup.selecto
   #   return selected.itemToJson
   return newJNull()
 
+proc getNumItems*(self: SelectorPopup): int =
+  assert self.finder.isNotNil
+
+  if self.finder.filteredItems.getSome(list) and list.filteredLen > 0:
+    return list.filteredLen
+
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] =
   assert self.finder.isNotNil
 
@@ -175,6 +240,9 @@ proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] =
     assert self.selected >= 0
     assert self.selected < list.filteredLen
     result = list[self.selected].some
+
+proc pop*(self: SelectorPopup) {.expose("popup.selector").} =
+  self.layout.popPopup(self)
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
@@ -238,9 +306,7 @@ proc prev*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.isSome:
-      assert self.previewEditor.isNotNil
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+    self.updatePreview()
 
   self.markDirty()
 
@@ -256,35 +322,37 @@ proc next*(self: SelectorPopup, count: int = 1) {.expose("popup.selector").} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.isSome:
-      assert self.previewEditor.isNotNil
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+    self.updatePreview()
 
   self.markDirty()
-
-proc toggleFocusPreview*(self: SelectorPopup) {.expose("popup.selector").} =
-  if self.previewEditor.isNil:
-    return
-
-  self.focusPreview = not self.focusPreview
-  self.markDirty()
-  self.previewEditor.markDirty()
 
 proc setFocusPreview*(self: SelectorPopup, focus: bool) {.expose("popup.selector").} =
-  if self.previewEditor.isNil:
+  if self.previewer.isNone:
     return
+
+  if self.previewView != nil:
+    if focus:
+      self.previewer.get.get.activate()
+      self.previewView.activate()
+    else:
+      self.previewer.get.get.deactivate()
+      self.previewView.deactivate()
+  else:
+    self.previewEditor.markDirty()
 
   self.focusPreview = focus
   self.markDirty()
-  self.previewEditor.markDirty()
+
+proc toggleFocusPreview*(self: SelectorPopup) {.expose("popup.selector").} =
+  self.setFocusPreview(not self.focusPreview)
 
 genDispatcher("popup.selector")
 addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
 
-proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
+method handleAction*(self: SelectorPopup, action: string, arg: string): Option[JsonNode] {.gcsafe, raises: [].} =
   # debugf"SelectorPopup.handleAction {action} '{arg}'"
   if self.textEditor.isNil:
-    return
+    return JsonNode.none
 
   try:
     if self.customCommands.contains(action):
@@ -292,25 +360,31 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
       for a in newStringStream(arg).parseJsonFragments():
         args.add a
       if self.customCommands[action](self, args):
-        return Handled
+        return newJNull().some
 
     var args = newJArray()
     args.add api.SelectorPopup(id: self.id).toJson
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.plugins.invokeAnyCallback(action, args).isNotNil:
-      return Handled
+    let res1 = self.plugins.invokeAnyCallback(action, args)
+    if res1.isNotNil:
+      return res1.some
 
-    if dispatch(action, args).isSome:
-      return Handled
+    let res2 = dispatch(action, args)
+    if res2.isSome:
+      return res2
 
-    return Ignored
+    let res = self.commands.executeCommand(action & " " & arg)
+    if res.isSome:
+      return newJString(res.get).some
   except:
-    log lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}"
+    log lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}"
     log lvlError, getCurrentException().getStackTrace()
+    return JsonNode.none
 
-  return Failed
+  log lvlError, fmt"Unknown command '{action}'"
+  return JsonNode.none
 
 proc handleTextChanged*(self: SelectorPopup) =
   if self.textEditor.isNil:
@@ -343,9 +417,7 @@ proc handleItemsUpdated*(self: SelectorPopup) {.gcsafe, raises: [].} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.isSome:
-      assert self.previewEditor.isNotNil
-      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
+    self.updatePreview()
 
   else:
     self.selected = 0
@@ -367,14 +439,16 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
   popup.events = services.getService(EventHandlerService).get
   popup.plugins = services.getService(PluginService).get
   popup.editors = services.getService(DocumentEditorService).get
+  popup.commands = services.getService(CommandService).get
+  popup.settings = SelectorSettings.new(services.getService(ConfigService).get.runtime)
   popup.scale = vec2(0.5, 0.5)
-  let document = newTextDocument(services, createLanguageServer=false, filename="ed://selector_popup_search_bar")
+  popup.scope = scopeName.get("")
+  let document = newTextDocument(services, createLanguageServer=false, filename="ed://.selector-popup-search-bar")
   popup.textEditor = newTextEditor(document, services)
   popup.textEditor.usage = "search-bar"
-  popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
-  popup.textEditor.lineNumbers = api.LineNumbers.None.some
-  popup.textEditor.document.singleLine = true
+  popup.textEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
+  popup.textEditor.settings.highlightMatches.enable.set(false)
   popup.textEditor.disableScrolling = true
   popup.textEditor.disableCompletions = true
   popup.textEditor.active = true
@@ -396,8 +470,9 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.previewEditor = newTextEditor(previewDocument, services)
     popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
-    popup.previewEditor.lineNumbers = api.LineNumbers.None.some
+    popup.previewEditor.uiSettings.lineNumbers.set(api.LineNumbers.None)
     popup.previewEditor.disableCompletions = true
+    popup.previewEditor.settings.cursorMargin.set(0.0)
 
     discard popup.previewEditor.onMarkedDirty.subscribe () =>
       popup.markDirty()
@@ -406,24 +481,5 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.finder = finder
     discard popup.finder.onItemsChanged.subscribe () => popup.handleItemsUpdated()
     popup.finder.setQuery("")
-
-  assignEventHandler(popup.eventHandler, popup.events.getEventHandlerConfig("popup.selector")):
-    onAction:
-      popup.handleAction action, arg
-    onInput:
-      Ignored
-
-  assignEventHandler(popup.previewEventHandler, popup.events.getEventHandlerConfig("popup.selector.preview")):
-    onAction:
-      popup.handleAction action, arg
-    onInput:
-      Ignored
-
-  if scopeName.isSome:
-     assignEventHandler(popup.customEventHandler, popup.events.getEventHandlerConfig("popup.selector." & scopeName.get)):
-      onAction:
-        popup.handleAction action, arg
-      onInput:
-        Ignored
 
   return popup

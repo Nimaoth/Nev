@@ -1,4 +1,5 @@
 *.exe
+*.rdi
 *.pdb
 *.ttf
 *.log
@@ -12,6 +13,7 @@
 *.otf
 *.png
 *.paths
+*.txt
 .git
 src/input_tests
 nimcache
@@ -42,6 +44,7 @@ perf.data*
 scripting/nim/lib
 casts
 nim_std
+dumps
 
 *.nev-session
 
@@ -85,6 +88,7 @@ tools/uht.nim
 nev_linkerArgs.txt
 config/wasm/callback_test_plugin.wasm
 config/callback_test_plugin.nim
+config/rust_plugin
 
 #
 .nev/keybindings.json
@@ -94,3 +98,15 @@ config/callback_test_plugin.nim
 wasm
 languages/tree-sitter-*
 languages/**/*.scm
+jstest.wasm
+.nev-session2
+collect_highlight_captures.nims
+config/custom.nim
+big.txt
+bigger.txt
+callback_test_plugin.wasm
+final.txt
+linux.absytree-session
+paper.json
+test
+editing-trace.js

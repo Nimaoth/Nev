@@ -151,7 +151,7 @@ type
 
   ModelDocumentEditor* = ref object of DocumentEditor
     app*: AppInterface
-    configProvider*: ConfigProvider
+    config*: ConfigStore
     document*: ModelDocument
 
     projectService*: AstProjectService
@@ -234,9 +234,9 @@ method init*(self: ModelDocumentEditorService): Future[Result[void, ref Catchabl
   return ok()
 
 method canOpenFile*(self: ModelDocumentFactory, path: string): bool =
-  return path.endsWith(".ast-model"):
+  return path.endsWith(".ast-model")
 
-method createDocument*(self: ModelDocumentFactory, services: Services, path: string): Document =
+method createDocument*(self: ModelDocumentFactory, services: Services, path: string, load: bool): Document =
   let fs = ({.gcsafe.}: fs)
   let workspace = ({.gcsafe.}: gWorkspace)
 
@@ -334,7 +334,7 @@ template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
 template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
 
 proc requestEditorForModel(self: ModelDocumentEditor, model: Model): Option[ModelDocumentEditor] =
-  let editor: Option[DocumentEditor] = self.app.openWorkspaceFile(model.path)
+  let editor: Option[DocumentEditor] = self.app.openFile(model.path)
   if editor.getSome(editor) and editor of ModelDocumentEditor:
     return editor.ModelDocumentEditor.some
   return ModelDocumentEditor.none
@@ -947,7 +947,7 @@ proc getItemAtPixelPosition(self: ModelDocumentEditor, posWindow: Vec2): Option[
   #     return index.some
 
 method handleScroll*(self: ModelDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
-  let scrollAmount = scroll.y * self.configProvider.getValue("model.scroll-speed", 20.0)
+  let scrollAmount = scroll.y * self.config.get("model.scroll-speed", 20.0)
 
   # todo
   # if self.showCompletions and not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
@@ -1013,9 +1013,9 @@ method getEventHandlers*(self: ModelDocumentEditor, inject: Table[string, EventH
 
 method getDocument*(self: ModelDocumentEditor): Document = self.document
 
-method createWithDocument*(_: ModelDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
+method createWithDocument*(_: ModelDocumentEditor, document: Document, config: ConfigStore): DocumentEditor =
   let self = ModelDocumentEditor(eventHandler: nil, document: ModelDocument(document))
-  self.configProvider = configProvider
+  self.config = config
   self.unfilteredCompletions = initHashSet[ModelCompletion]()
 
   self.cursorsId = newId()
@@ -1822,7 +1822,7 @@ proc getContextWithMode*(self: ModelDocumentEditor, context: string): string {.e
 proc isThickCursor*(self: ModelDocumentEditor): bool {.expose("editor.model").} =
   if not self.app.platform.supportsThinCursor:
     return true
-  return self.configProvider.getValue(self.getContextWithMode("editor.model.cursor.wide"), false)
+  return self.config.get(self.getContextWithMode("editor.model.cursor.wide"), false)
 
 proc gotoDefinition*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
@@ -3395,7 +3395,7 @@ proc createNewModelAsync*(self: ModelDocumentEditor, name: string) {.async.} =
     let serialized = $model.toJson
     await ws.saveFile(model.path, serialized)
 
-    discard self.app.openWorkspaceFile(model.path)
+    discard self.app.openFile(model.path)
   else:
     log lvlError, fmt"Failed to create model: no workspace"
 

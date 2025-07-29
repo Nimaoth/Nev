@@ -1,4 +1,4 @@
-import std/[options]
+import std/[options, json]
 import vmath, bumpy
 import misc/[event, id]
 import events, input
@@ -11,7 +11,6 @@ from scripting_api import EditorId, newEditorId
 type Popup* = ref object of RootObj
   id*: EditorId
   userId*: Id
-  eventHandler*: EventHandler
   lastBounds*: Rect
   onMarkedDirty*: Event[void]
   mDirty: bool
@@ -28,14 +27,17 @@ proc markDirty*(self: Popup) =
 proc resetDirty*(self: Popup) =
   self.mDirty = false
 
+method initImpl*(self: Popup) {.base.} = discard
+
 proc init*(self: Popup) =
   self.id = newEditorId()
   self.userId = newId()
+  self.initImpl()
 
 method deinit*(self: Popup) {.base.} = discard
 
 method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
-  return @[self.eventHandler]
+  return @[]
 
 method handleScroll*(self: Popup, scroll: Vec2, mousePosWindow: Vec2) {.base.} =
   discard
@@ -53,3 +55,5 @@ import document_editor
 
 method getActiveEditor*(self: Popup): Option[DocumentEditor] {.base.} =
   discard
+
+method handleAction*(self: Popup, action: string, arg: string): Option[JsonNode] {.base, gcsafe, raises: [].} = JsonNode.none

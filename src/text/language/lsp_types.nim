@@ -85,6 +85,10 @@ type
     SourceOrganizeImports = "source.organizeImports"
     SourceFixAll = "source.fixAll"
 
+  CodeActionTriggerKind* {.pure.} = enum
+    Invoked = 1
+    Automatic = 2
+
   CompletionTriggerKind* {.pure.} = enum
     Invoked = 1
     TriggerCharacter = 2
@@ -126,6 +130,7 @@ type
     Warning = 2
     Info = 3
     Log = 4
+    Debug = 5
 
   CompletionItemTag* {.pure.} = enum
     Deprecated = 1
@@ -158,7 +163,7 @@ type
     change*: TextDocumentSyncKind
     willSave*: Option[bool]
     willSaveWaitUntil*: Option[bool]
-    save*: Option[TextDocumentSyncOptionsSave]
+    save*: JsonNode
 
   CompletionItemOptions* = object
     labelDetailsSupport*: bool
@@ -436,6 +441,20 @@ type
     `range`*: Range
     newText*: string
 
+  WorkspaceEdit* = object
+    changes*: Option[JsonNode]
+    documentChanges*: Option[JsonNode]
+    changeAnnotations*: Option[JsonNode]
+
+  ApplyWorkspaceEditParams* = object
+    label*: Option[string]
+    edit*: WorkspaceEdit
+
+  ApplyWorkspaceEditResponse* = object
+    applied*: bool
+    failureReason*: Option[string]
+    failedChanged*: Option[int]
+
   InsertReplaceEdit* = object
     newText*: string
     insert*: Range
@@ -444,7 +463,7 @@ type
   Command* = object
     title*: string
     command*: string
-    argument*: seq[JsonNode]
+    arguments*: seq[JsonNode]
 
   WorkspaceFolder* = object
     uri*: string
@@ -485,6 +504,7 @@ type
     command*: seq[Command]
     score*: Option[float]
     data*: Option[JsonNode]
+    showCompletionsAgain*: Option[bool]
 
   CompletionList* = object
     isIncomplete*: bool
@@ -615,6 +635,12 @@ type
     textDocument*: TextDocumentIdentifier
     range*: Range
 
+  RenameParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    newName*: string
+
   InlayHint* = object
     position*: Position
     label*: JsonNode # string # | InlayHintLabelPart[] # todo
@@ -650,10 +676,10 @@ type
     `range`*: Range
     severity*: Option[DiagnosticSeverity]
     code*: Option[JsonNode]
-    codeDescription*: CodeDescription
+    codeDescription*: Option[CodeDescription]
     source*: Option[string]
     message*: string
-    tags*: seq[DiagnosticTag]
+    tags*: Option[seq[DiagnosticTag]]
     relatedInformation*: Option[seq[DiagnosticRelatedInformation]]
     data*: Option[JsonNode]
 
@@ -678,6 +704,29 @@ type
   ConfigurationParams* = object
     items*: seq[ConfigurationItem]
 
+  CodeActionContext* = object
+    diagnostics*: seq[Diagnostic]
+    only*: Option[seq[CodeActionKind]]
+    triggerKind*: Option[CodeActionTriggerKind]
+
+  CodeAction* = object
+    title*: string
+    kind*: Option[CodeActionKind]
+    diagnostics*: Option[seq[Diagnostic]]
+    isPreferred*: Option[bool]
+    disabled*: Option[tuple[reason: string]]
+    edit*: Option[WorkspaceEdit]
+    command*: Option[Command]
+    data*: Option[JsonNode]
+
+  CodeActionParams* = object
+    textDocument*: TextDocumentIdentifier
+    `range`*: Range
+    context*: CodeActionContext
+
+proc toJsonHook*(a: DiagnosticSeverity): JsonNode =
+  return a.int.toJson
+
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
 variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DeclarationResponseVariant, Location, seq[Location], seq[LocationLink])
@@ -688,6 +737,7 @@ variant(DocumentSymbolResponseVariant, seq[DocumentSymbol], seq[SymbolInformatio
 variant(DocumentHoverResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
 variant(DocumentDiagnosticResponse, RelatedFullDocumentDiagnosticReport, RelatedUnchangedDocumentDiagnosticReport)
 variant(WorkspaceSymbolResponseVariant, seq[WorkspaceSymbol], seq[SymbolInformation])
+variant(CodeActionResponseVariant, Command, CodeAction)
 
 type CompletionResponse* = CompletionResponseVariant
 type DefinitionResponse* = DefinitionResponseVariant
@@ -698,6 +748,7 @@ type ReferenceResponse* = ReferenceResponseVariant
 type DocumentSymbolResponse* = DocumentSymbolResponseVariant
 type InlayHintResponse* = Option[seq[InlayHint]]
 type WorkspaceSymbolResponse* = WorkspaceSymbolResponseVariant
+type CodeActionResponse* = seq[CodeActionResponseVariant]
 
 variant(TextDocumentSyncVariant, TextDocumentSyncOptions, TextDocumentSyncKind)
 variant(HoverProviderVariant, bool, HoverOptions)

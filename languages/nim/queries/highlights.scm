@@ -11,24 +11,9 @@
 ; Special
 (blank_identifier) @variable.builtin
 
+; Currently #match? and friends on nodes which exist a lot (like identifiers) are quite expensive, so disable them for now.
 ((identifier) @type
-  (#match? @type "^[A-Z].*$"))
-((identifier) @type
-  (#match? @type "^(openArray|typedesc)$"))
-
-; Calls
-(call
-  function: [
-    (identifier) @function.call
-    (dot_expression
-      right: (identifier) @function.call)
-  ])
-(generalized_string
-  function: [
-    (identifier) @function.call
-    (dot_expression
-      right: (identifier) @function.call)
-  ])
+  (#match? @type "^([A-Z].*|openArray|typedesc)$"))
 
 ; Declarations
 (exported_symbol "*" @type.qualifier)
@@ -170,9 +155,7 @@
   "mod"
   "shl"
   "shr"
-  "from"
   "as"
-  "of"
   "in"
   "notin"
   "is"
@@ -190,3 +173,17 @@
 ; Operators
 (infix_expression operator: _ @operator)
 (prefix_expression operator: _ @operator)
+
+; Calls
+(call
+  function: [
+    (identifier) @function.call
+    (dot_expression
+      right: (identifier) @function.call)
+  ])
+(generalized_string
+  function: [
+    (identifier) @function.call
+    (dot_expression
+      right: (identifier) @function.call)
+  ])

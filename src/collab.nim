@@ -19,7 +19,7 @@ proc connectCollaboratorAsync(port: int) {.async.} =
     let services: Services = ({.gcsafe.}: gServices)
     let editors = services.getService(DocumentEditorService).get
     let config = services.getService(ConfigService).get
-    let delay = config.getOption[:int]("sync.delay", 100)
+    let delay = config.runtime.get("sync.delay", 100)
 
     var opsToSend = newSeq[(string, Operation)]()
     var transp = await connect(initTAddress("127.0.0.1:" & $port))
@@ -118,7 +118,7 @@ proc processCollabClient(server: StreamServer, transp: StreamTransport) {.async:
     let services: Services = ({.gcsafe.}: gServices)
     let editors = services.getService(DocumentEditorService).get
     let config = services.getService(ConfigService).get
-    let delay = config.getOption[:int]("sync.delay", 100)
+    let delay = config.runtime.get("sync.delay", 100)
 
     var opsToSend = newSeq[(string, Operation)]()
     var reader = newAsyncStreamReader(transp)

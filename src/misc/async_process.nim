@@ -7,6 +7,16 @@ import std/[threadpool]
 
 logCategory "asyncprocess"
 
+# Create a job which is used to kill assigned sub processes when the editor is closed.
+when defined(windows):
+  import winim/[lean]
+  const JobObjectExtendedLimitInformation: DWORD = 9
+  let jobObject = CreateJobObjectA(nil, nil)
+  var limitInformation: JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+  limitInformation.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+  const length = sizeof(limitInformation)
+  discard SetInformationJobObject(jobObject, JobObjectExtendedLimitInformation, limitInformation.addr, length.DWORD)
+
 type AsyncChannel*[T] = ref object
   chan: ptr Channel[T]
   closed: bool
@@ -29,6 +39,8 @@ type AsyncProcess* = ref object
   readerFlowVar: FlowVarBase
   errorReaderFlowVar: FlowVarBase
   writerFlowVar: FlowVarBase
+  killOnExit: bool = false
+  eval: bool = false
 
 proc isAlive*(process: AsyncProcess): bool =
   return process.process.isNotNil and process.process.running
@@ -324,10 +336,17 @@ proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): 
 proc start*(process: AsyncProcess): bool =
   log(lvlInfo, fmt"start process {process.name} {process.args}")
   try:
-    process.process = startProcess(process.name, args=process.args, options={poUsePath, poDaemon})
+    var options: set[ProcessOption] = {poUsePath, poDaemon}
+    if process.eval:
+      options.incl poEvalCommand
+    process.process = startProcess(process.name, args=process.args, options=options)
   except CatchableError as e:
     log(lvlError, fmt"Failed to start {process.name}: {e.msg}")
     return false
+
+  when defined(windows):
+    if process.killOnExit:
+      discard AssignProcessToJobObject(jobObject, process.process.osProcessHandle())
 
   process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))
   process.inputStreamChannel[].send process.process.outputStream()
@@ -368,7 +387,7 @@ proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
     if not process.onRestarted.isNil:
       process.onRestarted().await
 
-proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true): AsyncProcess {.gcsafe.} =
+proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true, killOnExit = false, eval: bool = false): AsyncProcess {.gcsafe.} =
   let process = AsyncProcess()
   process.name = name
   process.args = @args
@@ -376,6 +395,8 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
   process.input = newAsyncChannel[char]()
   process.error = newAsyncChannel[char]()
   process.output = newAsyncChannel[Option[string]]()
+  process.killOnExit = killOnExit
+  process.eval = eval
 
   process.inputStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
   process.inputStreamChannel[].open()
@@ -419,6 +440,26 @@ type RunProcessThreadArgs = tuple
   captureErr: bool = true
   evalCommand: bool = false
 
+proc readLineIncludingLast*(s: Stream, line: var string, last: char): tuple[eof: bool, last: char] =
+  ## Like streams.readLine, but also returns an empty string for the last line if the last line is empty,
+  ## which streams.readLine doesn't.
+  line.setLen(0)
+  while true:
+    var c = readChar(s)
+    if c == '\c':
+      c = readChar(s)
+      result.last = c
+      break
+    elif c == '\L':
+      result.last = c
+      break
+    elif c == '\0':
+      result.last = c
+      if line.len > 0 or last == '\L': break
+      else: return (true, c)
+    line.add(c)
+  result.eof = false
+
 proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[string], ref Exception) {.gcsafe.} =
   try:
     when debugAsyncProcess:
@@ -434,7 +475,9 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
     if args.captureOut:
       var outp = process.outputStream
       var line = newStringOfCap(120)
-      while outp.readLine(line):
+      var last = '\n'
+      var eof = false
+      while ((eof, last) = outp.readLineIncludingLast(line, last); not eof):
         result[0].add(line)
         if result[0].len >= args.maxLines:
           when debugAsyncProcess:
@@ -444,7 +487,9 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
     if args.captureErr:
       var errp = process.errorStream
       var line = newStringOfCap(120)
-      while errp.readLine(line):
+      var last = '\n'
+      var eof = false
+      while ((eof, last) = errp.readLineIncludingLast(line, last); not eof):
         result[1].add(line)
         if result[1].len >= args.maxLines:
           when debugAsyncProcess:
@@ -494,16 +539,19 @@ proc readProcessErrorCallback(process: AsyncProcess,
 proc runProcessAsyncCallback*(name: string, args: seq[string] = @[], workingDir: string = "",
     handleOutput: proc(line: string) {.closure, gcsafe, raises: [].} = nil,
     handleError: proc(line: string) {.closure, gcsafe, raises: [].} = nil,
-    maxLines: int = int.high) {.async.} =
+    maxLines: int = int.high, eval: bool = false) {.async.} =
 
   var process: AsyncProcess = nil
   try:
-    process = startAsyncProcess(name, args, autoRestart = false, autoStart = false)
+    process = startAsyncProcess(name, args, autoRestart = false, autoStart = false, eval = eval)
     if not process.start():
       log lvlError, &"Failed to start process {name}, {args}"
       return
 
-    await allFutures(readProcessOutputCallback(process, handleOutput), readProcessErrorCallback(process, handleError))
+    asyncSpawn readProcessOutputCallback(process, handleOutput)
+    asyncSpawn readProcessErrorCallback(process, handleError)
+    while process.isAlive:
+      await sleepAsync 10.milliseconds
     log lvlInfo, &"Command {name}, {args} finished."
 
   except:

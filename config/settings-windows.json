@@ -1,0 +1,12 @@
+{
+    "editor.shells.default": {
+        "command": "powershell",
+        "args": ["-Command"],
+        "eval": false,
+    },
+    "editor.shells.powershell": {
+        "command": "powershell",
+        "args": ["-Command"],
+        "eval": false,
+    },
+}

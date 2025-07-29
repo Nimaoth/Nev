@@ -26,7 +26,6 @@ method init*(self: ScriptContext, path: string, vfs: VFS): Future[void] {.base.}
 method deinit*(self: ScriptContext) {.base.} = discard
 method reload*(self: ScriptContext): Future[void] {.base.} = discard
 
-method handleEditorModeChanged*(self: ScriptContext, editor: DocumentEditor, oldMode: string, newMode: string) {.base.} = discard
 method postInitialize*(self: ScriptContext): bool {.base.} = discard
 method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base.} = discard
 method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode {.base.} = discard
@@ -107,7 +106,6 @@ proc invokeCallback*(self: PluginService, context: string, args: JsonNode): bool
     return false
 
 proc invokeAnyCallback*(self: PluginService, context: string, args: JsonNode): JsonNode =
-  # debugf"invokeAnyCallback {context}: {args}"
   if self.callbacks.contains(context):
     try:
       let id = self.callbacks[context]
@@ -135,15 +133,6 @@ proc invokeAnyCallback*(self: PluginService, context: string, args: JsonNode): J
       log(lvlError, fmt"Failed to run script handleScriptAction {context}: {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
       return nil
-
-proc handleModeChanged*(self: PluginService, editor: DocumentEditor, oldMode: string, newMode: string) =
-  try:
-    for sc in self.scriptContexts:
-      withScriptContext self, sc:
-        sc.handleEditorModeChanged(editor, oldMode, newMode)
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
 
 proc clearScriptActionsFor*(self: PluginService, scriptContext: ScriptContext) =
   var keysToRemove: seq[string]
@@ -198,10 +187,10 @@ proc callScriptAction*(self: PluginService, context: string, args: JsonNode): Js
 
 proc addScriptAction*(self: PluginService, name: string, docs: string = "",
     params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "", active: bool = false,
-    context: string = "script")
+    context: string = "script", override: bool = false)
     {.expose("plugins").} =
 
-  if self.scriptActions.contains(name):
+  if not override and self.scriptActions.contains(name):
     log lvlError, fmt"Duplicate script action {name}"
     return
 

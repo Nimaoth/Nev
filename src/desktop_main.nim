@@ -66,9 +66,12 @@ Options:
   -w, --no-wasm          Don't load wasm plugins
   -c, --no-config        Don't load json config files.
   -s, --session          Load a specific session.
+  -e, --restore-session  Load the last session which was opened.
+  --skip-user            Don't load config files or keybindings from the user home directory.
   --attach               Open the passed files in an existing instance if it already exists.
   --clean                Don't load any configs/sessions/plugins
   --ts-mem-tracking      Enable treesitter memory tracking (for debugging)
+  --monitor:n            Open nev on the specified monitor (0, 1, ...). Windows only for now.
 
 Examples:
   nev                                              Open .{appName}-session if it exists
@@ -140,8 +143,14 @@ block: ## Parse command line options
         opts.disableNimScriptPlugins = true
         opts.disableWasmPlugins = true
 
+      of "skip-user":
+        opts.skipUserSettings = true
+
       of "no-attach":
         attach = false.some
+
+      of "restore-session", "e":
+        opts.restoreLastSession = true
 
       of "attach":
         attach = true.some
@@ -151,6 +160,11 @@ block: ## Parse command line options
 
       of "session", "s":
         opts.sessionOverride = val.some
+
+      of "monitor":
+        opts.monitor = val.parseInt.some.catch:
+          echo "Expected integer for monitor: --monitor:1"
+          quit(1)
 
       of "ts-mem-tracking":
         enableTreesitterMemoryTracking()
@@ -181,7 +195,6 @@ if not disableLogging: ## Enable loggers
 import misc/[timer, custom_async]
 import platform/[platform]
 import ui/widget_builders
-import text/language/language_server
 import app, platform_service
 
 # import asynctools/asyncipc
@@ -244,12 +257,16 @@ import text/language/debugger
 import scripting/scripting_base
 import vcs/vcs_api
 import wasm3, wasm3/[wasm3c, wasmconversions]
-import selector_popup, collab, layout, config_provider, document_editor, session, events, register, selector_popup_builder_impl, vfs_service
+import selector_popup, collab, layout, config_provider, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, command_service_api, toast, terminal_service
+import language_server_paths
+import language_server_regex
 import plugin_api/[process]
 
 generatePluginBindings()
 static:
   generateScriptingApiPerModule()
+
+defineSetAllDefaultSettings()
 
 # Initialize renderer
 var plat: Platform = nil
@@ -286,10 +303,18 @@ proc run(app: App, plat: Platform, backend: Backend) =
   var renderedLastFrame = false
 
   let maxPollPerFrameMs = 2.5
+  let totalTime = startTimer()
+  var lastTime = totalTime.elapsed.float
+
+  var lowPowerMode = false
 
   while not app.closeRequested:
     defer:
       inc frameIndex
+
+    let now = totalTime.elapsed.float
+    plat.deltaTime = now - lastTime
+    lastTime = now
 
     let totalTimer = startTimer()
 
@@ -338,9 +363,9 @@ proc run(app: App, plat: Platform, backend: Backend) =
 
       renderedLastFrame = rerender
 
-      if rerender:
+      if rerender or not lowPowerMode:
         let renderTimer = startTimer()
-        plat.render()
+        plat.render(rerender)
         renderTime = renderTimer.elapsed.ms
 
       frameTime = app.frameTimer.elapsed.ms
@@ -374,22 +399,28 @@ proc run(app: App, plat: Platform, backend: Backend) =
     var outlierTime = 20.0
 
     let frameSoFar = totalTimer.elapsed.ms
-    if lastEvent.elapsed.ms > app.config.getOption("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
-      let time = app.config.getOption("platform.reduced-fps-2.ms", 30)
+    let terminalSleepThreshold = app.config.runtime.get("platform.terminal-sleep-threshold", 0)
+    if lastEvent.elapsed.ms > app.config.runtime.get("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
+      let time = app.config.runtime.get("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
-    elif lastEvent.elapsed.ms > app.config.getOption("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
-      let time = app.config.getOption("platform.reduced-fps-2.ms", 15)
+      lowPowerMode = true
+    elif lastEvent.elapsed.ms > app.config.runtime.get("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
+      let time = app.config.runtime.get("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
-    elif backend == Terminal and frameSoFar < 5:
-      sleep(5 - frameSoFar.int)
-      outlierTime += 5
+      lowPowerMode = true
+    elif backend == Terminal and frameSoFar < terminalSleepThreshold.float:
+      sleep(terminalSleepThreshold - frameSoFar.int)
+      outlierTime += terminalSleepThreshold.float
+      lowPowerMode = false
+    else:
+      lowPowerMode = false
 
     let totalTime = totalTimer.elapsed.ms
     if not app.disableLogFrameTime and
         (eventCounter > 0 or totalTime > outlierTime or app.logNextFrameTime):
-      log(lvlDebug, fmt"Total: {totalTime:>5.2f}, Poll: {pollTime:>5.2f}ms, Event: {eventTime:>5.2f}ms, Frame: {frameTime:>5.2f}ms (u: {updateTime:>5.2f}ms, r: {renderTime:>5.2f}ms)")
+      log(lvlDebug, fmt"Total: {totalTime:>5.2f} ms, Poll: {pollTime:>5.2f} ms, Event: {eventTime:>5.2f} ms, Frame: {frameTime:>5.2f} ms (u: {updateTime:>5.2f} ms, r: {renderTime:>5.2f} ms)")
     app.logNextFrameTime = false
 
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
@@ -397,12 +428,12 @@ proc run(app: App, plat: Platform, backend: Backend) =
     {.gcsafe.}:
       logger.flush()
 
-import service
+import service, text/language/language_server_lsp
 gServices = Services()
 gServices.addBuiltinServices()
 
 plat.vfs = gServices.getService(VFSService).get.vfs
-plat.init()
+plat.init(opts)
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
 
@@ -415,6 +446,13 @@ proc main() =
     app.shutdown()
     log lvlInfo, "Shutting down platform"
     plat.deinit()
+
+    log lvlInfo, "Deinit language servers"
+    deinitLanguageServers()
+
+    # Give language server threads some time to deinit properly before force quitting.
+    sleep(100)
+    log lvlInfo, "All done"
   except:
     discard
 
@@ -433,7 +471,7 @@ when enableGui:
 
 when defined(windows) and copyWasmtimeDll:
   import std/[compilesettings]
-  import wasmh
+  import wasmtime
 
   static:
     const dllIn = wasmDir / "target/release/wasmtime.dll"

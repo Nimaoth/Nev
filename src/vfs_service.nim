@@ -1,8 +1,11 @@
-import std/[tables, options, json, os, random]
+import std/[tables, options, json, os]
 import results
 import misc/[custom_async, custom_logger, myjsonutils, util]
 import scripting/expose
-import service, dispatch_tables, vfs, vfs_local
+import service, dispatch_tables, vfs, vfs_local, vfs_config, config_provider
+import fsnotify
+
+export vfs
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -15,12 +18,12 @@ type
 
 func serviceName*(_: typedesc[VFSService]): string = "VFSService"
 
-addBuiltinService(VFSService)
+addBuiltinService(VFSService, ConfigService)
 
 method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"VFSService.init"
 
-  let localVfs = VFSLocal()
+  let localVfs = VFSLocal.new()
 
   self.vfs = VFS()
   self.vfs.mount("", VFS())
@@ -28,6 +31,7 @@ method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async
   self.vfs.mount("", VFSLink(target: localVfs, targetPrefix: ""))
   self.vfs.mount("app://", VFSLink(target: localVfs, targetPrefix: getAppDir().normalizeNativePath))
   self.vfs.mount("temp://", VFSLink(target: localVfs, targetPrefix: getTempDir().normalizeNativePath))
+  self.vfs.mount("settings://", VFSConfig.new(self.services.getService(ConfigService).get))
   self.vfs.mount("ed://", VFSInMemory())
   self.vfs.mount("plugs://", VFSNull())
   self.vfs.mount("ws://", VFS())
@@ -128,32 +132,8 @@ proc deleteFileSync*(self: VFSService, path: string) {.expose("vfs").} =
   except IOError as e:
     log lvlError, &"Failed to delete file '{path}': {e.msg}"
 
-type
-  NimTempPathState = object
-    state: Rand
-    isInit: bool
-
-var nimTempPathState {.threadvar.}: NimTempPathState
-
-const
-  maxRetry = 10000
-  letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-template randomPathName(length: Natural): string =
-  var res = newString(length)
-  if not nimTempPathState.isInit:
-    nimTempPathState.isInit = true
-    nimTempPathState.state = initRand()
-
-  for i in 0 ..< length:
-    res[i] = nimTempPathState.state.sample(letters)
-  res
-
 proc genTempPath*(self: VFSService, prefix: string, suffix: string, dir: string = "temp://", randLen: int = 8, checkExists: bool = true): string {.expose("vfs").} =
-  for i in 0..maxRetry:
-    result = dir // (prefix & randomPathName(randLen) & suffix)
-    if not checkExists or self.vfs.getFileKind(result).waitFor.isNone:
-      break
+  self.vfs.genTempPath(prefix, suffix, dir, randLen, checkExists)
 
 proc dumpVfsHierarchy*(self: VFSService) {.expose("vfs").} =
   log lvlInfo, "\n" & self.vfs.prettyHierarchy()

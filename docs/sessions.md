@@ -17,10 +17,57 @@ To use a different session you can use `-s` like this: `nev -s:foo.nev-session`.
 
 If you launch with a file path (like `nev foo.txt`) then it will only open that file, but not load a session.
 
+## Opening sessions
+
+- Nev keeps track of recently opened sessions in `~/.nev/sessions.json`
+- You can open the last session you opened using `nev --restore-session` or `nev -e`
+- You can open a session from your history using the `open-recent-session` command.
+- You can open a session using the `open-session` command. This command takes a root directory and will
+  search for `.nev-session` files in that directory and subdirectories and allow you to pick from the found sessions.
+
+When opening a session, Nev will start a new process for the new session.
+By default the command it runs to open the new session is `nev --session=...`.
+`nev` in this case refers to the own executable, so if e.g. on windows you run the GUI version (`nevg`) it will run `nevg --session=...`.
+
+On Windows this will mean it opens a new window if you run the GUI version.
+
+Nev supports basic integration with terminal multiplexers like tmux, Zellij and Wezterm, meaning you can open a new session
+in e.g. a new pane in tmux.
+
+This is done using the commands specified in `editor.open-session.xzy`.
+The default configuration looks like this:
+```json
+"editor.open-session.tmux": {
+    "env": "TMUX",
+    "command": "tmux",
+    "args": ["split-window", ["exe"] , ["args"], "--terminal"],
+},
+"editor.open-session.zellij": {
+    "env": "ZELLIJ",
+    "command": "zellij",
+    "args": ["run", "--", ["exe"] , ["args"], "--terminal"],
+},
+"editor.open-session.wezterm": {
+    "env": "WEZTERM_EXECUTABLE",
+    "command": "wezterm",
+    "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
+},
+```
+
+The `env` key specifies the name of an environment variable which Nev checks for existence to determine if it runs inside of a
+terminal multiplexer.
+
+`["exe"]` gets replaced with the path of the current Nev executable, `["args"]` gets replaced with some arguments Nev generates to open the session, which you need to forward.
+
+### Example
+If you select session `/home/my/project/.nev-session` in the recent session browser and you are running inside tmux,
+then Nev will run the following command to launch the new session (the session argument comes from the `["args"]` substitution):
+
+`tmux split-window nev --session=/home/my/project/.nev-session --terminal`
+
 ### Workspace
 
-Session files contain the configuration of a [workspace](workspaces.md). The recommended way to change workspace settings
-is by modifying the session file and restarting the editor.
+Session files contain the configuration of a [workspace](workspaces.md).
 
 ## Saving sessions
 
@@ -33,62 +80,3 @@ Open the command line and use the command `save-session` to save the current edi
 You can also specify a session name like this: `save-session ".nev-session"`
 
 `.nev-session` is the default session file that will be loaded when you run it without any arguments, so this name is recommended.
-
-Here is an example of a session file
-```json
-// .nev-session
-{
-    // ...
-    "workspaceFolders": [ // Although this is an array only one workspace is supported.
-        {
-            "kind": 0, // 0 - Local, 1 - Remote
-            "id": "663f8b0ad15f6f2f4922322a", // Generated automatically, but currently not really used
-            "name": "My workspace", // Name, can be anything
-            "settings": {
-                "path": "/some/path", // Primary workspace folder
-                "additionalPaths": [ // Additional folders which are available for e.g. choose-file command
-                    "/some/other/path"
-                ]
-            }
-        }
-    ],
-    "openEditors": [ // Which files you had open (and visible)
-        {
-            "filename": "/some/file.js",
-            "languageID": "javascript",
-            "appFile": false,
-            "workspaceId": "663f8b0ad15f6f2f4922322a",
-            "customOptions": { // Different kinds of editors can store their own state
-                "selection": {
-                    "first": {
-                        "line": 1,
-                        "column": 29
-                    },
-                    "last": {
-                        "line": 1,
-                        "column": 29
-                    }
-                }
-            }
-        }
-    ],
-    "hiddenEditors": [], // Which files you had open (but hidden)
-    "commandHistory": [
-        "set-search-query \\, ,",
-        "save-session \".nev-session\""
-    ],
-    "debuggerState": {
-        "breakpoints": {
-            "/some/other/file": [
-                {
-                    "path": "/some/other/file",
-                    "enabled": true,
-                    "breakpoint": {
-                        "line": 61
-                    }
-                }
-            ]
-        }
-    }
-}
-```

@@ -131,11 +131,11 @@ proc getWorkspacePath*(self: Workspace): string =
   except ValueError, OSError:
     return ""
 
-proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int):
+proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResults: int, customArgs: seq[string]):
     Future[seq[SearchResult]] {.async: (raises: []).} =
   try:
-    let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root],
-      maxLines=maxResults).await
+    let args = @["--line-number", "--column", "--heading"] & customArgs & @[query, root]
+    let output = runProcessAsync("rg", args, maxLines=maxResults).await
     var res: seq[SearchResult]
 
     var currentFile = ""
@@ -172,11 +172,11 @@ proc searchWorkspaceFolder(self: Workspace, query: string, root: string, maxResu
   except CatchableError:
     return @[]
 
-proc searchWorkspace*(self: Workspace, query: string, maxResults: int): Future[seq[SearchResult]] {.async: (raises: []).} =
+proc searchWorkspace*(self: Workspace, query: string, maxResults: int, customArgs: seq[string] = @[]): Future[seq[SearchResult]] {.async: (raises: []).} =
   var futs: seq[InternalRaisesFuture[seq[SearchResult], void]]
-  futs.add self.searchWorkspaceFolder(query, self.path, maxResults)
+  futs.add self.searchWorkspaceFolder(query, self.path, maxResults, customArgs)
   for path in self.additionalPaths:
-    futs.add self.searchWorkspaceFolder(query, path, maxResults)
+    futs.add self.searchWorkspaceFolder(query, path, maxResults, customArgs)
 
   var res: seq[SearchResult]
   for fut in futs:
@@ -205,6 +205,17 @@ proc getRelativePathSync*(self: Workspace, absolutePath: string): Option[string]
     return string.none
   except:
     return string.none
+
+proc getRelativePathAndWorkspaceSync*(self: Workspace, absolutePath: string): Option[tuple[root, path: string]] =
+  try:
+    if absolutePath.startsWith(self.path):
+      return ("ws0://", absolutePath.relativePath(self.path, '/').normalizePathUnix).some
+
+    for i, path in self.additionalPaths:
+      if absolutePath.startsWith(path):
+        return (&"ws{i + 1}://", absolutePath.relativePath(path, '/').normalizePathUnix).some
+  except:
+    discard
 
 proc getRelativePath*(self: Workspace, absolutePath: string): Future[Option[string]] {.async.} =
   return self.getRelativePathSync(absolutePath)
@@ -270,6 +281,9 @@ proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool
   if self.path.len == 0:
     self.path = path
     self.loadDefaultIgnoreFile()
+
+    # todo: make this configurable
+    self.ignore.original.add ".git"
   else:
     self.additionalPaths.add path
 

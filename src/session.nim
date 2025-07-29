@@ -1,6 +1,6 @@
 import std/[strutils, options, json, tables]
-import misc/[custom_async, custom_logger, util, myjsonutils, event]
-import scripting/expose
+import misc/[custom_async, custom_logger, util, myjsonutils, event, id]
+import scripting/[expose, scripting_base]
 import dispatch_tables, service
 
 {.push gcsafe.}
@@ -10,22 +10,59 @@ logCategory "session"
 
 type
   SessionService* = ref object of Service
+    plugins*: PluginService
     sessionData*: JsonNode
     onSessionRestored*: Event[SessionService]
     hasSession*: bool
+    sessionSaveHandlers: seq[tuple[
+      id: Id,
+      key: string,
+      save: proc(): JsonNode {.gcsafe, raises: [].},
+      load: proc(data: JsonNode) {.gcsafe, raises: [].},
+    ]]
 
 func serviceName*(_: typedesc[SessionService]): string = "SessionService"
-addBuiltinService(SessionService)
+addBuiltinService(SessionService, PluginService)
 
 method init*(self: SessionService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"SessionService.init"
   self.sessionData = newJObject()
+  self.plugins = self.services.getService(PluginService).get
   return ok()
 
 proc restoreSession*(self: SessionService, sessionData: JsonNode) =
+  log lvlInfo, &"SessionService.restoreSession"
   self.sessionData = sessionData
-  self.onSessionRestored.invoke(self)
+  if self.sessionData.hasKey("dynamic"):
+    let dynamic = self.sessionData["dynamic"]
+    if dynamic.kind == JObject:
+      for handler in self.sessionSaveHandlers:
+        if dynamic.hasKey(handler.key):
+          handler.load(dynamic[handler.key])
+    else:
+      log lvlError, &"Invalid data in session data: '{dynamic}' should be an object"
+
   self.hasSession = true
+  self.onSessionRestored.invoke(self)
+
+  discard self.plugins.invokeAnyCallback("after-restore-session", newJArray())
+
+proc addSaveHandler*(self: SessionService, key: string,
+    save: proc(): JsonNode {.gcsafe, raises: [].},
+    load: proc(data: JsonNode) {.gcsafe, raises: [].}) =
+  self.sessionSaveHandlers.add (newId(), key, save, load)
+
+proc saveSession*(self: SessionService): JsonNode =
+  log lvlInfo, &"SessionService.saveSession"
+  result = self.sessionData.shallowCopy()
+  if result == nil:
+    result = newJObject()
+  var dynamic = newJObject()
+  for saveHandler in self.sessionSaveHandlers:
+    let data = saveHandler.save()
+    if data != nil:
+      dynamic[saveHandler.key] = data
+  result["dynamic"] = dynamic
 
 ###########################################################################
 

@@ -4,7 +4,8 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex,
+  array_set]
 import scripting/[expose, scripting_base]
 import platform/[platform]
 import language/[language_server_base]
@@ -12,19 +13,21 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
-import config_provider, service, layout, platform_service, vfs, vfs_service
+import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
 import diff
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
+import overlay_map, tab_map, wrap_map, diff_map, display_map
 
 from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
-  TextEdit, Range, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
+  TextEdit, Position, asTextEdit, asInsertReplaceEdit, toJsonHook, CodeAction, CodeActionResponse, CodeActionKind,
+  Command, WorkspaceEdit, asCommand, asCodeAction
 
 import nimsumtree/[buffer, clock, static_array, rope]
-from nimsumtree/sumtree as st import summaryType, itemSummary, Bias
+from nimsumtree/sumtree as st import summaryType, itemSummary, Bias, mapOpt
 
-export text_document, document_editor, id
+export text_document, document_editor, id, Bias
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -32,7 +35,12 @@ export text_document, document_editor, id
 logCategory "texted"
 
 let searchResultsId = newId()
-let errorNodesHighlightId = newId()
+let wordHighlightId = newId()
+
+const overlayIdPrefix* = 12
+const overlayIdColorHighlight* = 13
+const overlayIdInlayHint* = 14
+const overlayIdChooseCursor* = 15
 
 type
   Command = object
@@ -42,9 +50,177 @@ type
   CommandHistory = object
     commands: seq[Command]
 
+  ColorType* = enum Hex = "hex", Float1 = "float1", Float255 = "float255"
+
+  ScrollToChangeOnReload* {.pure.} = enum First = "first", Last = "last"
+
+  SignColumnShowKind* {.pure.} = enum Auto = "auto", Yes = "yes", No = "no", Number = "number"
+
+proc typeNameToJson*(T: typedesc[ScrollToChangeOnReload]): string =
+  return "\"first\" | \"last\""
+
+proc typeNameToJson*(T: typedesc[ColorType]): string =
+  return "\"hex\" | \"float1\" | \"float255\""
+
+proc typeNameToJson*(T: typedesc[SignColumnShowKind]): string =
+  return "\"auto\" | \"yes\" | \"no\" | \"number\""
+
+declareSettings SignColumnSettings, "":
+  ## Defines how the sign column is displayed.
+  ## - auto: Signs are next to line numbers, width is based on amount of signs in a line.
+  ## - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width`
+  ## - no: Don't show the sign column
+  ## - number: Show signs instead of the line number, no extra sign column.
+  declare show, SignColumnShowKind, SignColumnShowKind.Number
+
+  ## If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width.
+  declare maxWidth, Option[int], 2
+
+declareSettings CodeActionSettings, "":
+  ## Character to use as sign for lines where code actions are available. Empty string or null means no sign will be shown for code actions.
+  declare sign, string, "⚑"
+
+  ## How many columns the sign occupies.
+  declare signWidth, int, 1
+
+  ## What color the sign for code actions should be. Can be a theme color name or hex code (e.g. `#12AB34`).
+  declare signColor, string, "info"
+
+declareSettings ColorHighlightSettings, "":
+  ## Add colored inlay hints before any occurance of a string representing a color. Color detection is configured per language
+  ## in `text.color-highlight.{language-id}.`
+  declare enable, bool, false
+
+  ## Regex used to find colors. Use capture groups to match one or more numbers within a color definition, depending on the kind.
+  declare regex, RegexSetting, "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})"
+
+  ## How to interpret the number.
+  ## "hex" means the number is written as either 6 or 8 hex characters, e.g. ABBACA7.
+  ## "float1" means the number is a float with 0 being black and 1 being white.
+  ## "float255" means the number is a float or int with 0 being black and 255 being white.
+  declare kind, ColorType, ColorType.Hex
+
+declareSettings MatchingWordHighlightSettings, "":
+  ## Enable highlighting of text matching the current selection or word containing the cursor (if the selection is empty).
+  declare enable, bool, true
+
+  ## How long after moving the cursor matching text is highlighted.
+  declare delay, int, 250
+
+  ## Don't highlight matching text if the selection spans more bytes than this.
+  declare maxSelectionLength, int, 1024
+
+  ## Don't highlight matching text if the selection spans more lines than this.
+  declare maxSelectionLines, int, 5
+
+  ## Don't highlight matching text in files above this size (in bytes).
+  declare maxFileSize, int, 1024*1024*100
+
+declareSettings TextEditorSettings, "text":
+  use colorHighlight, ColorHighlightSettings
+
+  ## Settings for how signs are displayed
+  use signs, SignColumnSettings
+
+  ## Settings for highlighting text matching the current selection or word containing the cursor.
+  use highlightMatches, MatchingWordHighlightSettings
+
+  ## Configure search regexes.
+  use searchRegexes, SearchRegexSettings
+
+  ## Configure code actions.
+  use codeActions, CodeActionSettings
+
+  ## Specifies whether a selection includes the character after the end cursor.
+  ## If true then a selection like (0:0...0:4) with the text "Hello world" would select "Hello".
+  ## If false then the selected text would be "Hell".
+  ## If you use Vim motions then the Vim plugin manages this setting.
+  declare inclusiveSelection, bool, false
+
+  ## How many characters wide a tab is.
+  declare tabWidth, int, 4
+
+  ## Whether `text.cursor-margin` is relative to the screen height (0-1) or an absolute number of lines.
+  declare cursorMarginRelative, bool, true
+
+  ## How far from the edge to keep the cursor, either percentage of screen height (0-1) or number of lines,
+  ## depending on `text.cursor-margin-relative`.
+  declare cursorMargin, float, 0.15
+
+  ## How many milliseconds after hovering a word the lsp hover request is sent.
+  declare hoverDelay, int, 200
+
+  ## Enable line wrapping.
+  declare wrapLines, bool, true
+
+  ## How many characters from the right edge to start wrapping text.
+  declare wrapMargin, int, 1
+
+  ## Show lines containing parent nodes (like function, type, if/for etc) at the top of the window.
+  declare contextLines, bool, true
+
+  ## Default mode to set when opening/creating text documents.
+  declare defaultMode, string, ""
+
+  ## Maximum number of results to display for regex based workspace symbol search.
+  declare searchWorkspaceRegexMaxResults, int, 50_000
+
+  ## Maximum number of locations to highlight choose cursor mode.
+  declare chooseCursorMax, int, 300
+
+  ## Command to run after control clicking on some text.
+  declare controlClickCommand, string, "goto-definition"
+
+  ## Arguments to the command which is run when control clicking on some text.
+  declare controlClickCommandArgs, JsonNode, newJArray()
+
+  ## Command to run after single clicking on some text.
+  declare singleClickCommand, string, ""
+
+  ## Arguments to the command which is run when single clicking on some text.
+  declare singleClickCommandArgs, JsonNode, newJArray()
+
+  ## Command to run after double clicking on some text.
+  declare doubleClickCommand, string, "extend-select-move"
+
+  ## Arguments to the command which is run when double clicking on some text.
+  declare doubleClickCommandArgs, JsonNode, %[newJString("word"), newJBool(true)]
+
+  ## Command to run after triple clicking on some text.
+  declare tripleClickCommand, string, "extend-select-move"
+
+  ## Arguments to the command which is run when triple clicking on some text.
+  declare tripleClickCommandArgs, JsonNode, %[newJString("line"), newJBool(true)]
+
+  ## If not null then scroll to the changed region when a file is reloaded.
+  declare scrollToChangeOnReload, Option[ScrollToChangeOnReload], nil
+
+  ## If true then scroll to the end of the file when text is inserted at the end and the cursor
+  ## is already at the end.
+  declare scrollToEndOnInsert, bool, false
+
+  ## List of input modes text editors.
+  declare modes, seq[string], @["editor.text"]
+
+  ## Mode to activate while completion window is open.
+  declare completionMode, string, "editor.text.completion"
+
+  ## Command to execute when the mode of the text editor changes
+  declare modeChangedHandlerCommand, string, ""
+
+type
+  CodeActionKind {.pure.} = enum Command, CodeAction
+  CodeActionOrCommand = object
+    languageServerName: string
+    selection: Selection
+    case kind: CodeActionKind
+    of CodeActionKind.Command:
+      command: lsp_types.Command
+    of CodeActionKind.CodeAction:
+      action: lsp_types.CodeAction
+
 type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
-  configProvider*: ConfigProvider
   editors*: DocumentEditorService
   layout*: LayoutService
   services*: Services
@@ -53,13 +229,20 @@ type TextDocumentEditor* = ref object of DocumentEditor
   plugins: PluginService
   registers: Registers
   workspace: Workspace
-
-  vfs: VFS
+  vfsService: VFSService
+  vfs*: VFS
+  commands*: CommandService
+  configService*: ConfigService
+  configChanged: bool = false
 
   document*: TextDocument
   snapshot: BufferSnapshot
   selectionAnchors: seq[(Anchor, Anchor)]
 
+  displayMap*: DisplayMap
+  diffDisplayMap*: DisplayMap
+
+  showDiff: bool = false
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
   diffRevision: int = 0
@@ -75,30 +258,39 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastHoverLocationBounds*: Option[Rect]
 
   selectionsBeforeReload: Selections
+  wasAtEndBeforeReload: bool = false
   selectionsInternal: Selections
   targetSelectionsInternal: Option[Selections] # The selections we want to have once
                                                # the document is loaded
   selectionHistory: Deque[Selections]
   dontRecordSelectionHistory: bool
 
+  cursorHistories*: seq[seq[Vec2]]
+
   searchQuery*: string
-  searchRegex*: Option[Regex]
-  searchResults*: Table[int, seq[Selection]]
+  searchResults*: seq[Range[Point]]
+  isUpdatingSearchResults: bool
+  lastSearchResultUpdate: tuple[buffer: BufferId, version: Global, searchQuery: string]
+  isUpdatingMatchingWordHighlights: bool
 
   styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
 
   customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
-  signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color]]]
+  signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color, color: string, width: int]]]
 
   defaultScrollBehaviour*: ScrollBehaviour = CenterOffscreen
   nextScrollBehaviour*: Option[ScrollBehaviour]
+  defaultSnapBehaviour*: ScrollSnapBehaviour = MinDistanceOffscreen
+  nextSnapBehaviour*: Option[ScrollSnapBehaviour]
   targetLineMargin*: Option[float]
-  targetLine*: Option[int]
+  targetLineRelativeY*: float = 0.5
+  targetPoint*: Option[Point]
   targetColumn: int
   hideCursorWhenInactive*: bool
   cursorVisible*: bool = true
   blinkCursor: bool = true
   blinkCursorTask: DelayedTask
+  updateMatchingWordsTask: DelayedTask
 
   # hover
   showHoverTask: DelayedTask    # for showing hover info after a delay
@@ -112,25 +304,31 @@ type TextDocumentEditor* = ref object of DocumentEditor
   # inline hints
   inlayHints: seq[tuple[anchor: Anchor, hint: InlayHint]]
   inlayHintsTask: DelayedTask
+  lastInlayHintTimestamp: Global
+  lastInlayHintDisplayRange: Range[Point]
+  lastInlayHintBufferRange: Range[Point]
+  lastDiagnosticsVersions: Table[string, int]
+  codeActions: Table[string, Table[int, seq[CodeActionOrCommand]]] # LS name -> line -> code actions
 
+  mEventHandlers: seq[EventHandler]
+  eventHandlerOverrides: Table[string, proc(config: EventHandlerConfig): EventHandler {.gcsafe, raises: [].}]
   completionEventHandler: EventHandler
-  modeEventHandler: EventHandler
-  currentMode*: string
   commandCount*: int
   commandCountRestore*: int
   currentCommandHistory: CommandHistory
   savedCommandHistory: CommandHistory
   bIsRunningSavedCommands: bool
-  bRecordCurrentCommand: bool = false
-  bIsRecordingCurrentCommand: bool = false
-  bScrollToEndOnInsert*: bool = false
+  recordCurrentCommandRegisters: seq[string] # List of registers the current command should be recorded into.
+  bIsRecordingCurrentCommand: bool = false # True while running a command which is being recorded
 
   disableScrolling*: bool
-  scrollOffset*: float
-  previousBaseIndex*: int
-  lineNumbers*: Option[LineNumbers]
+  scrollOffset*: Vec2
+  interpolatedScrollOffset*: Vec2
 
-  lastRenderedLines*: seq[StyledLine]
+  currentCenterCursor*: Cursor # Cursor representing the center of the screen
+  currentCenterCursorRelativeYPos*: float # 0: top of screen, 1: bottom of screen
+
+  lastRenderedChunks*: seq[tuple[range: Range[Point], displayRange: Range[DisplayPoint]]]
   lastTextAreaBounds*: Rect
   lastPressedMouseButton*: MouseButton
   dragStartSelection*: Selection
@@ -145,16 +343,21 @@ type TextDocumentEditor* = ref object of DocumentEditor
   selectedCompletion*: int
   completionsBaseIndex*: int
   completionsScrollOffset*: float
+  completionsDirty: bool
+  completionEngine: CompletionEngine
+  lastCompletionTrigger: (Global, Cursor)
   lastItems*: seq[tuple[index: int, bounds: Rect]]
   showCompletions*: bool
   scrollToCompletion*: Option[int]
+  completionsDrawnInReverse*: bool = false
 
-  completionEngine: CompletionEngine
+  lastEndDisplayPoint: DisplayPoint
 
   currentSnippetData*: Option[SnippetData]
 
   onBufferChangedHandle: Id
   textChangedHandle: Id
+  onEditHandle: Id
   onRequestRerenderHandle: Id
   onRequestRerenderDiffHandle: Id
   loadedHandle: Id
@@ -163,12 +366,17 @@ type TextDocumentEditor* = ref object of DocumentEditor
   textInsertedHandle: Id
   textDeletedHandle: Id
   languageServerAttachedHandle: Id
+  onDiagnosticsHandle: Id
   onCompletionsUpdatedHandle: Id
   onFocusChangedHandle: Id
 
-  lastCompletionTrigger: (Global, Cursor)
-  completionsDirty: bool
-  searchResultsDirty: bool
+  customHeader*: string
+
+  onSearchResultsUpdated*: Event[TextDocumentEditor]
+
+  uiSettings*: UiSettings
+  debugSettings*: DebugSettings
+  settings*: TextEditorSettings
 
 type
   TextDocumentEditorService* = ref object of Service
@@ -191,8 +399,8 @@ method init*(self: TextDocumentEditorService): Future[Result[void, ref Catchable
 method canOpenFile*(self: TextDocumentFactory, path: string): bool =
   return true
 
-method createDocument*(self: TextDocumentFactory, services: Services, path: string): Document =
-  return newTextDocument(services, path, app=false, load=true)
+method createDocument*(self: TextDocumentFactory, services: Services, path: string, load: bool): Document =
+  return newTextDocument(services, path, app=false, load=load)
 
 method canEditDocument*(self: TextDocumentEditorFactory, document: Document): bool =
   return document of TextDocument
@@ -212,7 +420,9 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Inlay Hints: {self.inlayHints.len}\n"
   result.add &"Current Command History: {self.currentCommandHistory.commands.len}\n"
   result.add &"Saved Command History: {self.savedCommandHistory.commands.len}\n"
-  result.add &"Last Rendered Lines: {self.lastRenderedLines.len}\n"
+  result.add &"Overlay map: {st.stats(self.displayMap.overlay.snapshot.map)}\n"
+  result.add &"Wrap map: {st.stats(self.displayMap.diffMap.snapshot.map)}\n"
+  result.add &"Diff map: {st.stats(self.displayMap.wrapMap.snapshot.map)}\n"
 
   var temp = 0
   for s in self.completionMatchPositions.values:
@@ -237,22 +447,37 @@ proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection,
 proc clearCustomHighlights*(self: TextDocumentEditor, id: Id)
 proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5)
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
-proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
+proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, margin: Option[float] = float.none, scrollBehaviour: Option[ScrollBehaviour] = ScrollBehaviour.none, relativePosition: float = 0.5)
+proc getFileName(self: TextDocumentEditor): string
+proc closeDiff*(self: TextDocumentEditor)
+proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour)
+proc numDisplayLines*(self: TextDocumentEditor): int
+proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true, includeAfter: bool = true): Cursor
+proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string)
+proc setDefaultMode*(self: TextDocumentEditor)
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer)
+proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]])
 proc handleTextDocumentTextChanged(self: TextDocumentEditor)
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument)
-proc handleTextDocumentLoaded(self: TextDocumentEditor)
+proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection])
 proc handleTextDocumentPreLoaded(self: TextDocumentEditor)
 proc handleTextDocumentSaved(self: TextDocumentEditor)
 proc handleCompletionsUpdated(self: TextDocumentEditor)
+proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot)
+proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap)
+proc updateMatchingWordHighlight(self: TextDocumentEditor)
+proc updateColorOverlays(self: TextDocumentEditor) {.async.}
 
 proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
   includeAfter: bool = true, wrap: bool = true): Selection
 proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
   includeAfter: bool = true, wrap: bool = true): Selection
+
+import workspace_edit
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor =
   self.document.clampCursor(cursor, includeAfter)
@@ -268,11 +493,12 @@ proc selections*(self: TextDocumentEditor): Selections =
   self.selectionsInternal
 
 proc selection*(self: TextDocumentEditor): Selection =
+  assert self.selectionsInternal.len > 0, "[selection] Empty selection"
   self.selectionsInternal[self.selectionsInternal.high]
 
 proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   let selections = self.clampAndMergeSelections(selections)
-  assert selections.len > 0
+  assert selections.len > 0, "[selections=] Empty selections"
 
   if not self.dontRecordSelectionHistory:
     if self.selectionHistory.len == 0 or
@@ -297,6 +523,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
 
   self.showHover = false
   self.hideCompletions()
+  self.updateMatchingWordHighlight()
   # self.document.addNextCheckpoint("move")
 
   self.markDirty()
@@ -305,16 +532,18 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   self.selections = @[selection]
 
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
-  self.targetSelectionsInternal = @[selection].some
-  self.selection = selection
-  self.updateTargetColumn(Last)
+  if self.document.isLoadingAsync or self.document.requiresLoad:
+    self.targetSelectionsInternal = @[selection].some
+  else:
+    self.selection = selection
+    self.updateTargetColumn(Last)
 
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
   self.markDirty()
 
-func useInclusiveSelections*(self: TextDocumentEditor): bool =
-  self.configProvider.getValue("editor.text.inclusive-selection", false)
+proc useInclusiveSelections*(self: TextDocumentEditor): bool =
+  self.settings.inclusiveSelection.get()
 
 proc startBlinkCursorTask(self: TextDocumentEditor) =
   if not self.blinkCursor:
@@ -333,29 +562,29 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 proc clearDocument*(self: TextDocumentEditor) =
+  self.closeDiff()
   if self.document.isNotNil:
-    log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
+    # log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
     self.document.onBufferChanged.unsubscribe(self.onBufferChangedHandle)
+    self.document.onEdit.unsubscribe(self.onEditHandle)
     self.document.textChanged.unsubscribe(self.textChangedHandle)
     self.document.onRequestRerender.unsubscribe(self.onRequestRerenderHandle)
     self.document.onLoaded.unsubscribe(self.loadedHandle)
     self.document.onPreLoaded.unsubscribe(self.preLoadedHandle)
     self.document.onSaved.unsubscribe(self.savedHandle)
     self.document.onLanguageServerAttached.unsubscribe(self.languageServerAttachedHandle)
+    self.document.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
 
     let document = self.document
     self.document = nil
     self.editors.tryCloseDocument(document)
 
     self.selectionHistory.clear()
-    self.styledTextOverrides.clear()
     self.customHighlights.clear()
     self.signs.clear()
     self.showHover = false
     self.inlayHints.setLen 0
-    self.scrollOffset = 0
-    self.previousBaseIndex = 0
-    self.lastRenderedLines.setLen 0
+    self.scrollOffset = vec2(0, 0)
     self.currentSnippetData = SnippetData.none
 
 proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
@@ -364,7 +593,7 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   if document == self.document:
     return
 
-  logScope lvlInfo, &"[setDocument] ({self.id}): '{document.filename}'"
+  # logScope lvlInfo, &"[setDocument] ({self.id}): '{document.filename}'"
 
   if self.completionEngine.isNotNil:
     self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
@@ -372,6 +601,11 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.clearDocument()
   self.document = document
   self.snapshot = document.buffer.snapshot.clone()
+  self.displayMap.setBuffer(self.snapshot.clone())
+  self.config.setParent(self.document.config)
+
+  self.onEditHandle = document.onEdit.subscribe (arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =>
+    self.handleEdits(arg.edits)
 
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
@@ -382,10 +616,10 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.onRequestRerenderHandle = document.onRequestRerender.subscribe () =>
     self.markDirty()
 
-  self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) => (block:
+  self.loadedHandle = document.onLoaded.subscribe (args: tuple[document: TextDocument, changed: seq[Selection]]) => (block:
       if self.isNil or self.document.isNil:
         return
-      self.handleTextDocumentLoaded()
+      self.handleTextDocumentLoaded(args.changed)
   )
 
   self.preLoadedHandle = document.onPreLoaded.subscribe (_: TextDocument) => (block:
@@ -401,15 +635,19 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
       arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
     self.handleLanguageServerAttached(arg.document, arg.languageServer)
 
+  self.onDiagnosticsHandle = document.onDiagnostics.subscribe (
+      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
+    self.handleDiagnosticsChanged(arg.document, arg.languageServer)
+
   self.completionEngine = CompletionEngine()
   self.onCompletionsUpdatedHandle = self.completionEngine.onCompletionsUpdated.subscribe () =>
     self.handleCompletionsUpdated()
 
-  if self.document.languageServer.getSome(ls):
+  if self.document.getLanguageServer().getSome(ls):
     self.handleLanguageServerAttached(self.document, ls)
 
   if self.document.createLanguageServer:
-    self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
+    self.completionEngine.addProvider newCompletionProviderSnippet(self.config, self.document)
       .withMergeStrategy(MergeStrategy(kind: TakeAll))
       .withPriority(1)
     self.completionEngine.addProvider newCompletionProviderDocument(self.document)
@@ -419,10 +657,9 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.handleDocumentChanged()
 
 method deinit*(self: TextDocumentEditor) =
-  let filename = if self.document.isNotNil: self.document.filename else: ""
-  logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
-
   self.platform.onFocusChanged.unsubscribe self.onFocusChangedHandle
+
+  self.configService.removeStore(self.config)
 
   self.unregister()
 
@@ -456,23 +693,66 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
   else: return false
 
-method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]
-    ): seq[EventHandler] =
-  result = @[self.eventHandler]
-  if not self.modeEventHandler.isNil:
-    result.add self.modeEventHandler
+proc createEventHandler(self: TextDocumentEditor, config: EventHandlerConfig): EventHandler =
+  if self.eventHandlerOverrides.contains(config.context):
+    result = self.eventHandlerOverrides[config.context](config)
+  else:
+    assignEventHandler(result, config):
+      onAction:
+        if self.handleAction(action, arg, record=true).isSome:
+          Handled
+        else:
+          Ignored
+      onInput:
+        self.handleInput input, record=true
+
+proc getConfigEventHandlers(self: TextDocumentEditor): seq[EventHandler] =
+  let modes = self.settings.modes.get()
+
+  var rebuild = false
+  if modes.len != self.mEventHandlers.len:
+    rebuild = true
+  else:
+    for i, mode in modes:
+      if self.mEventHandlers[i].config.context != mode:
+        rebuild = true
+        break
+
+  if rebuild:
+    self.mEventHandlers.setLen(modes.len)
+    for i, mode in modes:
+      let config = self.events.getEventHandlerConfig(mode)
+      self.mEventHandlers[i] = self.createEventHandler(config)
+
+  return self.mEventHandlers
+
+method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
+  result = self.getConfigEventHandlers()
 
   if inject.contains("above-mode"):
     result.add inject["above-mode"]
 
   if self.showCompletions:
+    let completionMode = self.settings.completionMode.get()
+    if self.completionEventHandler == nil or self.completionEventHandler.config.context != completionMode:
+      let config = self.events.getEventHandlerConfig(completionMode)
+      assignEventHandler(self.completionEventHandler, config):
+        onAction:
+          if self.handleAction(action, arg, record=true).isSome:
+            Handled
+          else:
+            Ignored
+        onInput:
+          self.handleInput input, record=true
+
     result.add self.completionEventHandler
 
   if inject.contains("above-completion"):
     result.add inject["above-completion"]
 
 proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
-  if self.inlayHints.len > 0 and self.inlayHints[0].anchor.timestamp != self.document.buffer.timestamp:
+  if self.inlayHints.len > 0 and self.lastInlayHintTimestamp != self.document.buffer.snapshot.version:
+    self.lastInlayHintTimestamp = self.document.buffer.snapshot.version
     let snapshot = self.document.buffer.snapshot.clone()
 
     for i in countdown(self.inlayHints.high, 0):
@@ -482,21 +762,101 @@ proc updateInlayHintsAfterChange(self: TextDocumentEditor) =
       else:
         self.inlayHints.removeSwap(i)
 
-proc preRender*(self: TextDocumentEditor) =
-  if self.configProvider.isNil or self.document.isNil:
+proc tabWidth*(self: TextDocumentEditor): int =
+  result = self.settings.tabWidth.get()
+  if result == 0:
+    log lvlError, &"Invalid tab width of 0 for editor '{self.getFileName()}'"
+    return 4
+
+proc requiredSignColumnWidth*(self: TextDocumentEditor): int =
+  case self.settings.signs.show.get()
+  of SignColumnShowKind.Auto:
+    var width = 0
+    let selection = self.visibleTextRange(1)
+    for line in selection.first.line..selection.last.line:
+      self.signs.withValue(line, value):
+        var subWidth = 0
+        for s in value[]:
+          subWidth += s.width
+        width = max(width, subWidth)
+
+    if self.settings.signs.maxWidth.get().getSome(maxWidth):
+      width = min(width, maxWidth)
+    return width
+
+  of SignColumnShowKind.Yes:
+    if self.settings.signs.maxWidth.get().getSome(maxWidth):
+      return maxWidth
+    return 1
+
+  of SignColumnShowKind.No:
+    return 0
+
+  of SignColumnShowKind.Number:
+    return 0
+
+proc lineNumberBounds*(self: TextDocumentEditor): Vec2 =
+  # line numbers
+  let lineNumbers = self.uiSettings.lineNumbers.get()
+  let maxLineNumber = case lineNumbers
+    of LineNumbers.Absolute: self.document.numLines
+    of LineNumbers.Relative: 99
+    else: 0
+  let maxLineNumberLen = ($maxLineNumber).len + 1
+
+  let lineNumberPadding = self.platform.charWidth
+  result = if lineNumbers != LineNumbers.None:
+    vec2(maxLineNumberLen.float32 * self.platform.charWidth + lineNumberPadding, self.platform.totalLineHeight)
+  else:
+    vec2()
+
+  result.x += self.requiredSignColumnWidth().float * self.platform.charWidth
+
+proc lineNumberWidth*(self: TextDocumentEditor): float =
+  return self.lineNumberBounds.x.ceil
+
+proc preRender*(self: TextDocumentEditor, bounds: Rect) =
+  if self.document.isNil:
     return
 
-  self.clearCustomHighlights(errorNodesHighlightId)
-  if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
-    let errorNodes = self.document.getErrorNodesInRange(
-      self.visibleTextRange(buffer = 10))
-    for node in errorNodes:
-      self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
+  if self.document.requiresLoad:
+    self.document.load()
 
-  if self.searchResultsDirty:
-    self.updateSearchResults()
+  # todo: this should account for the line number width
+  let wrapWidth = if self.settings.wrapLines.get():
+    let wrapMargin = self.settings.wrapMargin.get()
+    let lineNumberWidth = self.lineNumberWidth()
+    var wrapWidth = max(floor((bounds.w - lineNumberWidth) / self.platform.charWidth).int - wrapMargin, 10)
+    if self.diffDocument.isNotNil:
+      wrapWidth = max(floor((bounds.w / 2 - lineNumberWidth) / self.platform.charWidth).int - wrapMargin, 10)
+    wrapWidth
+  else:
+    0
+
+  self.displayMap.setTabWidth(self.tabWidth())
+
+  if self.displayMap.remoteId != self.document.buffer.remoteId:
+    self.displayMap.setBuffer(self.document.buffer.snapshot.clone())
+
+  if self.diffDocument.isNotNil:
+    if self.diffDisplayMap.remoteId != self.diffDocument.buffer.remoteId:
+      self.diffDisplayMap.setBuffer(self.diffDocument.buffer.snapshot.clone())
+    if self.diffDocument.rope.len > 1:
+      self.diffDisplayMap.update(wrapWidth)
+
+  if self.document.rope.len > 1:
+    self.displayMap.update(wrapWidth)
+
+  if self.configChanged:
+    self.configChanged = false
+    asyncSpawn self.updateColorOverlays()
 
   self.updateInlayHintsAfterChange()
+  self.document.resolveDiagnosticAnchors()
+  let visibleRange = self.visibleTextRange.toRange
+  let bufferRange = self.lastInlayHintBufferRange
+  if visibleRange.a < bufferRange.a or visibleRange.b > bufferRange.b:
+    self.updateInlayHints()
 
   let newVersion = (self.document.buffer.version, self.selections[^1].last)
   if self.showCompletions and newVersion != self.lastCompletionTrigger:
@@ -565,41 +925,61 @@ proc clearSigns*(self: TextDocumentEditor, group: string = "") =
   self.markDirty()
 
 proc addSign*(self: TextDocumentEditor, id: Id, line: int, text: string, group: string = "",
-    tint: Color = color(1, 1, 1)): Id =
+    tint: Color = color(1, 1, 1), color: string = "", width: int = 1): Id =
   self.signs.withValue(line, val):
-    val[].add (id, group, text, tint)
+    val[].add (id, group, text, tint, color, width)
   do:
-    self.signs[line] = @[(id, group, text, tint)]
+    self.signs[line] = @[(id, group, text, tint, color, width)]
   self.markDirty()
+
+proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
+  if self.isUpdatingSearchResults:
+    return
+  self.isUpdatingSearchResults = true
+  defer:
+    self.isUpdatingSearchResults = false
+
+  while true:
+    let buffer = self.document.buffer.snapshot.clone()
+    let searchQuery = self.searchQuery
+    if searchQuery.len == 0:
+      self.clearCustomHighlights(searchResultsId)
+      self.searchResults.setLen(0)
+      self.markDirty()
+      return
+
+    if self.lastSearchResultUpdate == (buffer.remoteId, buffer.version, searchQuery):
+      return
+
+    let searchResults = await findAllAsync(buffer.visibleText.slice(int), searchQuery)
+    if self.document.isNil:
+      return
+
+    self.searchResults = searchResults
+    self.lastSearchResultUpdate = (buffer.remoteId, buffer.version, searchQuery)
+    self.clearCustomHighlights(searchResultsId)
+    for s in searchResults:
+      self.addCustomHighlight(searchResultsId, s.toSelection, "editor.findMatchBackground")
+
+    self.onSearchResultsUpdated.invoke(self)
+
+    if self.document.buffer.remoteId != buffer.remoteId or self.document.buffer.version != buffer.version:
+      continue
+
+    if self.searchQuery != searchQuery:
+      continue
+
+    self.markDirty()
+    break
 
 proc updateSearchResults(self: TextDocumentEditor) =
-  if not self.searchResultsDirty:
-    return
-
-  self.searchResultsDirty = false
-
-  self.clearCustomHighlights(searchResultsId)
-
-  if self.searchRegex.isNone:
-    self.searchResults.clear()
-    self.markDirty()
-    return
-
-  for i in 0..<self.document.numLines:
-    # todo: don't use getLine. Figure out how to run regex on Rope
-    let selections = ($self.document.getLine(i)).findAllBounds(i, self.searchRegex.get)
-    for s in selections:
-      self.addCustomHighlight(searchResultsId, s, "editor.findMatchBackground")
-
-    if selections.len > 0:
-      self.searchResults[i] = selections
-    else:
-      self.searchResults.del i
-  self.markDirty()
+  asyncSpawn self.updateSearchResultsAsync()
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
-  self.searchResultsDirty = true
+  self.cursorHistories.setLen(0)
+  self.updateSearchResults()
+  self.config.detail = self.document.filename
 
 method handleActivate*(self: TextDocumentEditor) =
   self.startBlinkCursorTask()
@@ -611,54 +991,99 @@ method handleDeactivate*(self: TextDocumentEditor) =
     self.cursorVisible = true
     self.markDirty()
 
-  self.document.clearStyledTextCache()
-  if self.diffDocument.isNotNil:
-    self.diffDocument.clearStyledTextCache()
+proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
+    scrollBehaviour = ScrollBehaviour.none, relativePosition: float = 0.5) =
+  if self.disableScrolling:
+    return
+
+  # debugf"scrollToCursor {cursor}, {margin}, {scrollBehaviour}"
+
+  self.targetPoint = cursor.toPoint.some
+  self.targetLineMargin = margin
+  self.targetLineRelativeY = relativePosition
+
+  let targetPoint = cursor.toPoint
+  let textHeight = self.platform.totalLineHeight
+  let charWidth = self.platform.charWidth
+  let displayPoint = self.displayMap.toDisplayPoint(targetPoint)
+  let targetDisplayLine = displayPoint.row.int
+  let targetLineY = targetDisplayLine.float32 * textHeight + self.interpolatedScrollOffset.y
+  let targetColumnX = displayPoint.column.float32 * charWidth + self.interpolatedScrollOffset.x
+
+  let configMarginRelative = self.settings.cursorMarginRelative.get()
+  let configMargin = self.settings.cursorMargin.get()
+  let margin = if margin.getSome(margin):
+    clamp(margin, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
+  elif configMarginRelative:
+    clamp(configMargin, 0.0, 1.0) * 0.5 * self.lastContentBounds.h
+  else:
+    clamp(configMargin * textHeight, 0.0, self.lastContentBounds.h * 0.5 - textHeight * 0.5)
+
+  # todo: make this configurable
+  let marginX = charWidth * 5
+
+  let centerY = case scrollBehaviour.get(self.defaultScrollBehaviour):
+    of CenterAlways: true
+    of CenterOffscreen: targetLineY < 0 or targetLineY + textHeight > self.lastContentBounds.h
+    of CenterMargin: targetLineY < margin or targetLineY + textHeight > self.lastContentBounds.h - margin
+    of ScrollToMargin: false
+    of TopOfScreen: false
+
+  let centerX = case scrollBehaviour.get(self.defaultScrollBehaviour):
+    of CenterAlways: true
+    of CenterOffscreen: targetColumnX < 0 or targetColumnX + charWidth > self.lastContentBounds.w
+    of CenterMargin: targetColumnX < marginX or targetColumnX + charWidth > self.lastContentBounds.w - marginX
+    of ScrollToMargin: false
+    of TopOfScreen: false
+
+  self.nextScrollBehaviour = if centerY:
+    CenterAlways.some
+  else:
+    scrollBehaviour
+
+  if centerY:
+    self.scrollOffset.y = self.lastContentBounds.h * relativePosition - textHeight * 0.5 - targetDisplayLine.float * textHeight
+  else:
+    case scrollBehaviour.get(self.defaultScrollBehaviour)
+    of TopOfScreen:
+      self.scrollOffset.y = margin - targetDisplayLine.float * textHeight
+    else:
+      if targetLineY < margin:
+        self.scrollOffset.y = margin - targetDisplayLine.float * textHeight
+      elif targetLineY + textHeight > self.lastContentBounds.h - margin:
+        self.scrollOffset.y = self.lastContentBounds.h - margin - textHeight - targetDisplayLine.float * textHeight
+
+  if self.scrollOffset.x != 0 or not self.settings.wrapLines.get():
+    if centerX:
+      self.scrollOffset.x = self.lastContentBounds.w * 0.5 - (displayPoint.column.float + 0.5) * charWidth
+    else:
+      case scrollBehaviour.get(self.defaultScrollBehaviour)
+      of TopOfScreen:
+        self.scrollOffset.x = self.lastContentBounds.w * 0.5 - (displayPoint.column.float + 0.5) * charWidth
+      else:
+        if targetColumnX < marginX:
+          self.scrollOffset.x = marginX - displayPoint.column.float * charWidth
+        elif targetColumnX + charWidth > self.lastContentBounds.w - marginX:
+          self.scrollOffset.x = self.lastContentBounds.w - marginX - charWidth - displayPoint.column.float * charWidth
+
+  self.markDirty()
 
 proc scrollToTop*(self: TextDocumentEditor) =
-  if self.disableScrolling:
-    return
+  self.scrollToCursor((0, 0), scrollBehaviour = TopOfScreen.some)
 
-  self.targetLine = 0.some
-  self.nextScrollBehaviour = TopOfScreen.some
-  self.targetLineMargin = float.none
-
-  self.updateInlayHints()
-  self.markDirty()
-
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
-  if self.disableScrolling:
-    return
-
-  self.targetLine = cursor.line.some
-  self.nextScrollBehaviour = CenterAlways.some
-  self.targetLineMargin = float.none
-
-  self.updateInlayHints()
-  self.markDirty()
-
-proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none,
-    scrollBehaviour = ScrollBehaviour.none) =
-  if self.disableScrolling:
-    return
-
-  self.targetLine = cursor.line.some
-  self.nextScrollBehaviour = scrollBehaviour
-  self.targetLineMargin = margin
-
-  self.updateInlayHints()
-  self.markDirty()
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5) =
+  self.scrollToCursor(cursor, scrollBehaviour = CenterAlways.some, relativePosition = relativePosition)
 
 proc isThickCursor*(self: TextDocumentEditor): bool =
   if not self.platform.supportsThinCursor:
     return true
-  return self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.wide"), false)
+  return self.config.get(self.getContextWithMode("editor.text.cursor.wide"), false)
 
 proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor =
   case which
   of Config:
     let key = self.getContextWithMode("editor.text.cursor.movement")
-    let configCursor = self.configProvider.getValue(key, SelectionCursor.Both)
+    let configCursor = self.config.get(key, SelectionCursor.Both)
     return self.getCursor(selection, configCursor)
   of Both, Last, LastToFirst:
     return selection.last
@@ -674,7 +1099,7 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor,
   case cursor
   of Config:
     let key = self.getContextWithMode("editor.text.cursor.movement")
-    let configCursor = self.configProvider.getValue(key, SelectionCursor.Both)
+    let configCursor = self.config.get(key, SelectionCursor.Both)
     self.moveCursor(configCursor, movement, offset, all, wrap, includeAfter)
 
   of Both:
@@ -739,7 +1164,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   if self.disableScrolling:
     return
 
-  let scrollAmount = scroll.y * self.configProvider.getValue("text.scroll-speed", 40.0)
+  let scrollAmount = scroll * self.uiSettings.scrollSpeed.get()
   # todo
   # if not self.lastCompletionsWidget.isNil and
   #     self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
@@ -756,9 +1181,6 @@ proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocument
           return editor.TextDocumentEditor.some
   return TextDocumentEditor.none
 
-proc getModeConfig(self: TextDocumentEditor, mode: string): EventHandlerConfig =
-  return self.events.getEventHandlerConfig("editor.text." & mode)
-
 static:
   addTypeMap(TextDocumentEditor, api.TextDocumentEditor, getTextDocumentEditor)
 
@@ -773,6 +1195,9 @@ proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) {.raises: 
 proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor.text".} =
   self.document.enableAutoReload(enabled)
 
+proc setLanguage(self: TextDocumentEditor, language: string) {.expose: "editor.text".} =
+  self.document.languageId = language
+
 proc getFileName(self: TextDocumentEditor): string {.expose: "editor.text".} =
   if self.document.isNil:
     return ""
@@ -784,18 +1209,156 @@ proc lineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
 proc lineLength*(self: TextDocumentEditor, line: int): int {.expose: "editor.text".} =
   return self.document.lineLength(line)
 
+proc numDisplayLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
+  return self.displayMap.toDisplayPoint(self.document.rope.summary.lines).row.int + 1
+
+proc displayEndPoint*(self: TextDocumentEditor): DisplayPoint =
+  return self.displayMap.toDisplayPoint(self.document.rope.summary.lines)
+
+proc endDisplayPoint*(self: TextDocumentEditor): DisplayPoint =
+  return self.displayMap.endDisplayPoint
+
+proc endPoint*(self: TextDocumentEditor): Point =
+  return self.displayMap.buffer.visibleText.endPoint
+
+proc numWrapLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
+  return self.displayMap.wrapMap.endWrapPoint.row.int + 1
+
+proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint =
+  return self.displayMap.wrapMap.endWrapPoint
+
 proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## Returns the number of lines that can be shown on the screen
   ## This value depends on the size of the view this editor is in and the font size
+  # todo
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
+proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[DisplayPoint] =
+  assert self.numDisplayLines > 0
+  let baseLine = int(-self.interpolatedScrollOffset.y / self.platform.totalLineHeight)
+  var displayRange: Range[DisplayPoint]
+  displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
+  displayRange.b.row = clamp(baseLine + self.screenLineCount + buffer + 1, 0, self.numDisplayLines).uint32
+  if displayRange.b > self.endDisplayPoint:
+    displayRange.b = self.endDisplayPoint
+
+  return displayRange
+
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
-  assert self.lineCount > 0
-  let baseLine = int(self.scrollOffset / self.platform.totalLineHeight)
-  result.first.line = clamp(self.previousBaseIndex - baseLine - buffer, 0, self.lineCount - 1)
-  result.last.line = clamp(self.previousBaseIndex - baseLine + self.screenLineCount + buffer,
-    0, self.lineCount - 1)
-  result.last.column = self.document.rope.lastValidIndex(result.last.line)
+  let displayRange = self.visibleDisplayRange(buffer)
+  result.first = self.displayMap.toPoint(displayRange.a).toCursor
+  result.last = self.displayMap.toPoint(displayRange.b).toCursor
+
+proc evaluateJsNode(c: var TSTreeCursor, rope: Rope, floatingPoint: var bool): float64 =
+  let node = c.currentNode
+
+  template checkRes(b: untyped): untyped =
+    if not b:
+      return 0
+
+  case node.nodeType
+  of "program":
+    checkRes c.gotoFirstChild()
+    return c.evaluateJsNode(rope, floatingPoint)
+
+  of "expression_statement":
+    checkRes c.gotoFirstChild()
+    return c.evaluateJsNode(rope, floatingPoint)
+
+  of "binary_expression":
+    checkRes c.gotoFirstChild()
+    checkRes c.gotoNextSibling()
+    let op = c.currentNode.nodeType
+    checkRes c.gotoParent()
+
+    checkRes c.gotoFirstChild()
+    let a = c.evaluateJsNode(rope, floatingPoint)
+    checkRes c.gotoLastChild()
+    let b = c.evaluateJsNode(rope, floatingPoint)
+    checkRes c.gotoParent()
+    return case op
+    of "+": a + b
+    of "-": a - b
+    of "*": a * b
+    of "/":
+      let res = a / b
+      if res != res.int.float:
+        floatingPoint = true
+      res
+    of "%": a mod b
+    else: a
+
+  of "unary_expression":
+    checkRes c.gotoFirstChild()
+    let op = c.currentNode.nodeType
+    checkRes c.gotoNextSibling()
+    let a = c.evaluateJsNode(rope, floatingPoint)
+    checkRes c.gotoParent()
+    return case op
+    of "+": a
+    of "-": -a
+    else: a
+
+  of "parenthesized_expression":
+    checkRes c.gotoFirstChild()
+    checkRes c.gotoNextSibling()
+    let a = c.evaluateJsNode(rope, floatingPoint)
+    checkRes c.gotoParent()
+    return a
+
+  of "number":
+    let valStr = $rope.slice(node.getRange.toSelection.toRange)
+    if valStr.contains("."):
+      floatingPoint = true
+    let val = valStr.parseFloat.catch(0)
+    checkRes c.gotoParent()
+    return val
+
+  else:
+    log lvlWarn, &"Unknown js tree node type '{node.nodeType}': {node}"
+    return 0
+
+proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.async.} =
+  let l = self.vfs.getTreesitterLanguage("javascript").await
+  if l.getSome(l):
+    withParser(p):
+      if not p.setLanguage(l):
+        log lvlError, &"Failed to parse: couldn't set parser language"
+        return
+
+      var texts: seq[string]
+      for i, selection in selections:
+        let originalText = self.document.contentString(selection, inclusiveEnd)
+        var text = prefix & originalText & suffix
+        if addSelectionIndex:
+          text.add "+"
+          text.add $i
+
+        let rope = Rope.new(text)
+        let tree = p.parseString(text)
+        if tree.isNotNil:
+          defer:
+            tree.delete()
+          tree.root.withTreeCursor(c):
+            var floatingPoint = false
+            let res = c.evaluateJsNode(rope, floatingPoint)
+            let resStr = if floatingPoint:
+              $res
+            else:
+              $int(res.round)
+            texts.add resStr
+        else:
+          texts.add originalText
+
+      assert selections.len == texts.len
+      let selections = self.document.edit(selections, self.selections, texts, inclusiveEnd=inclusiveEnd)
+      if inclusiveEnd:
+        self.selections = selections.mapIt((it.first, self.doMoveCursorColumn(it.last, -1)))
+      else:
+        self.selections = selections
+
+proc evaluateExpressions(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.expose: "editor.text".} =
+  asyncSpawn self.evaluateExpressionAsync(selections, inclusiveEnd, prefix, suffix, addSelectionIndex)
 
 proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
@@ -807,84 +1370,43 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
     cursor = (self.document.numLines - 1, cursor.column)
   else:
     cursor.line = line
-    cursor.column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
+    let wrapPoint = self.displayMap.toWrapPoint(Point.init(line, 0))
+    cursor.column = self.displayMap.toPoint(wrapPoint(wrapPoint.row.int, self.targetColumn)).column.int
   return self.clampCursor(cursor, includeAfter)
 
-proc getLastRenderedVisualLine(self: TextDocumentEditor, line: int): Option[StyledLine] =
-  for l in self.lastRenderedLines:
-    if l.index == line:
-      return l.some
+proc getDefaultScrollBehaviour(self: TextDocumentEditor): ScrollBehaviour {.expose: "editor.text".} =
+  self.defaultScrollBehaviour
 
-proc getPartContaining(line: StyledLine, column: int): Option[ptr StyledText] =
-  for i in countdown(line.parts.high, 0):
-    template part: untyped = line.parts[i]
-    if part.visualRange.isSome:
-      if column in part.textRange.get.startOffset..part.textRange.get.endOffset:
-        return part.addr.some
+proc setDefaultScrollBehaviour(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) {.expose: "editor.text".} =
+  self.defaultScrollBehaviour = scrollBehaviour
 
-proc getPartContainingVisual(line: StyledLine, subLine: int, visualColumn: int): Option[ptr StyledText] =
-  var closest = int.high
-  for part in line.parts.mitems:
-    if part.visualRange.getSome(r) and r.subLine == subLine:
+proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false, targetColumn: Option[int] = int.none): Cursor {.expose: "editor.text".} =
+  let targetColumn = targetColumn.get(self.targetColumn)
+  let wrapPointOld = self.displayMap.toWrapPoint(cursor.toPoint)
+  let wrapPoint = wrapPoint(max(wrapPointOld.row.int + offset, 0), targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
+  let newCursor = self.displayMap.toPoint(wrapPoint, if offset < 0: Bias.Left else: Bias.Right).toCursor
+  if offset < 0 and newCursor.line > 0 and newCursor.line == cursor.line and self.displayMap.toWrapPoint(newCursor.toPoint).row == wrapPointOld.row:
+    let newCursor2 = point(cursor.line - 1, self.document.rope.lineLen(cursor.line - 1))
+    let displayPoint = self.displayMap.toDisplayPoint(newCursor2)
+    let displayPoint2 = displayPoint(displayPoint.row, targetColumn.uint32)
+    let point = self.displayMap.toPoint(displayPoint2)
 
-      if visualColumn in part.visualRange.get.startColumn..<part.visualRange.get.endColumn:
-        closest = 0
-        return part.addr.some
-      else:
-        let distance = min(
-          (visualColumn - part.visualRange.get.startColumn).abs,
-          (visualColumn - part.visualRange.get.endColumn + 1).abs,
-        )
-        if distance < closest:
-          closest = distance
-          result = part.addr.some
+    # echo &"doMoveCursorVisualLine {cursor}, {offset} -> {newCursor2} -> {displayPoint} -> {displayPoint2} -> {point}"
+    return point.toCursor
+  elif offset > 0:
+    # go to wrap point and back to point one more time because if we land inside of e.g an overlay then the position will
+    # be clamped which can screw up the target column we set before, so we need to calculate the target column again.
+    let wrapPoint2 = wrapPoint(self.displayMap.toWrapPoint(newCursor.toPoint).row, targetColumn).clamp(wrapPoint()...self.wrapEndPoint)
+    let newCursor2 = self.displayMap.toPoint(wrapPoint2, if offset < 0: Bias.Left else: Bias.Right).toCursor
 
-proc numSubLines(line: StyledLine): int =
-  for i in countdown(line.parts.high, 0):
-    if line.parts[i].visualRange.getSome(r):
-      return r.subLine + 1
+    # echo &"doMoveCursorVisualLine {cursor}, {offset} -> {newCursor}, wp: {wrapPointOld} -> {wrapPoint} -> {self.displayMap.toWrapPoint(newCursor.toPoint)}, {wrapPoint2} -> {newCursor2}"
+    if newCursor2.line >= self.document.numLines:
+      return cursor
+    return self.clampCursor(newCursor2, includeAfter)
 
-proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false): Cursor {.expose: "editor.text".} =
-  var cursor = cursor
-  let step = offset.sign
-  let targetVisualColumn = self.targetColumn
-  var currentNumSubLines = 1
-  var currentSubLine = 0
-
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line):
-    currentNumSubLines = line.numSubLines
-    if line.getPartContaining(cursor.column).getSome(part):
-      let r = part[].visualRange.get
-      currentSubLine = r.subLine
-
-  for i in 0..<offset.abs:
-    currentSubLine.inc step
-    if currentSubLine notin 0..<currentNumSubLines:
-      cursor.line.inc step
-      if step > 0:
-        currentNumSubLines = 1
-        currentSubLine = 0
-      elif self.getLastRenderedVisualLine(cursor.line).getSome(line):
-        currentNumSubLines = line.numSubLines
-        currentSubLine = line.numSubLines - 1
-      else:
-        currentNumSubLines = 1
-        currentSubLine = 0
-
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line):
-    if line.getPartContainingVisual(currentSubLine, targetVisualColumn).getSome(part):
-      let offset = targetVisualColumn - part[].visualRange.get.startColumn
-      cursor.column = clamp(
-        part[].textRange.get.startOffset + offset,
-        part[].textRange.get.startOffset,
-        part[].textRange.get.endOffset - 1)
-
-  if cursor.line < 0:
-    cursor = (0, cursor.column)
-  elif cursor.line >= self.document.numLines:
-    cursor = (self.document.numLines - 1, cursor.column)
-
-  return self.clampCursor(cursor, includeAfter)
+  if newCursor.line >= self.document.numLines:
+    return cursor
+  return self.clampCursor(newCursor, includeAfter)
 
 proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
@@ -892,30 +1414,6 @@ proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wra
 
 proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
-  return (cursor.line, self.document.rope.lastValidIndex cursor.line)
-
-proc doMoveCursorVisualHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
-    includeAfter: bool): Cursor {.expose: "editor.text".} =
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line) and line.getPartContaining(cursor.column).getSome(part):
-
-    let r = part[].visualRange.get
-    if line.getPartContainingVisual(r.subLine, 0).getSome(part):
-      return (cursor.line, part[].textRange.get.startOffset)
-
-  return (cursor.line, 0)
-
-proc doMoveCursorVisualEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
-    includeAfter: bool): Cursor {.expose: "editor.text".} =
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line) and
-      line.getPartContaining(cursor.column).getSome(part):
-
-    let r = part[].visualRange.get
-    if line.getPartContainingVisual(r.subLine, int.high).getSome(part):
-      if includeAfter:
-        return (cursor.line, part[].textRange.get.endOffset)
-      else:
-        return (cursor.line, part[].textRange.get.endOffset - 1)
-
   return (cursor.line, self.document.rope.lastValidIndex cursor.line)
 
 proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int,
@@ -932,13 +1430,9 @@ proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: in
 
 proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool,
     includeAfter: bool): Cursor {.expose: "editor.text".} =
-  if self.lastRenderedLines.len == 0:
-    return cursor
-
-  let r = self.visibleTextRange()
-  let line = clamp((r.first.line + r.last.line) div 2, 0, self.document.numLines - 1)
-  let column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
-  return (line, column)
+  let r = self.visibleDisplayRange()
+  let line = clamp((r.a.row.int + r.b.row.int) div 2, 0, self.numDisplayLines - 1)
+  return self.displayMap.toPoint(displayPoint(line, self.targetColumn)).toCursor
 
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
     wrap: bool = true, includeAfter: bool = true): Cursor {.expose: "editor.text".} =
@@ -947,9 +1441,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
   if cursor.line notin 0..<self.document.numLines:
     return cursor
 
-  # todo: use rope cursor
-  var currentLine = $self.document.getLine(cursor.line)
-
+  var c = self.document.rope.cursorT(cursor.toPoint)
   var lastIndex = self.document.rope.lastValidIndex(cursor.line, includeAfter)
 
   if offset > 0:
@@ -961,13 +1453,14 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
           cursor.line = cursor.line + 1
           cursor.column = 0
           lastIndex = self.document.rope.lastValidIndex(cursor.line, includeAfter)
-          currentLine = $self.document.getLine(cursor.line)
+          c.seekForward(point(cursor.line, 0))
           continue
         else:
           cursor.column = lastIndex
           break
 
-      cursor.column = currentLine.nextRuneStart(cursor.column)
+      c.seekNextRune()
+      cursor = c.position.toCursor
 
   elif offset < 0:
     for i in 0..<(-offset):
@@ -977,14 +1470,17 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int,
         if cursor.line > 0:
           cursor.line = cursor.line - 1
           lastIndex = self.document.rope.lastValidIndex(cursor.line, includeAfter)
-          currentLine = $self.document.getLine(cursor.line)
+          c.seekPrevRune()
+          if not includeAfter:
+            c.seekPrevRune()
           cursor.column = lastIndex
           continue
         else:
           cursor.column = 0
           break
 
-      cursor.column = currentLine.runeStart(cursor.column - 1)
+      c.seekPrevRune()
+      cursor = c.position.toCursor
 
   return self.clampCursor(cursor, includeAfter)
 
@@ -1052,7 +1548,32 @@ proc findSurroundEnd*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0
 
   return Cursor.none
 
-proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+proc setConfig*(self: TextDocumentEditor, key: string, value: JsonNode) {.expose("editor.text").} =
+  self.config.set(key, value)
+
+proc getConfig*(self: TextDocumentEditor, key: string): JsonNode {.expose("editor.text").} =
+  self.config.get(key, newJexNull()).toJson()
+
+proc removeMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
+
+  var modes = self.settings.modes.get()
+  let i = modes.find(mode)
+  if i == -1:
+    return
+
+  modes.removeShift(mode)
+  self.settings.modes.set(modes)
+
+  let handler = self.settings.modeChangedHandlerCommand.get()
+  if handler != "":
+    discard self.handleActionInternal(handler, [[mode].toJson, newJArray()].toJson)
+
+  self.markDirty()
+
+proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true) {.expose("editor.text").} =
   ## Sets the current mode of the editor.
   ## If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert",
@@ -1062,55 +1583,67 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
     log(lvlError, fmt"Can't set mode to '{mode}'")
     return
 
-  if self.currentMode == mode:
-    return
-
-  if mode.len == 0:
-    self.modeEventHandler = nil
-  else:
-    let config = self.getModeConfig(mode)
-    assignEventHandler(self.modeEventHandler, config):
-      onAction:
-        if self.handleAction(action, arg, record=true).isSome:
-          Handled
-        else:
-          Ignored
-      onInput:
-        self.handleInput input, record=true
-
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
-  let oldMode = self.currentMode
-  self.currentMode = mode
+  let prefix = if exclusive:
+    let i = mode.find('.')
+    if i != -1:
+      mode[0..i]
+    else:
+      ""
+  else:
+    ""
 
-  self.plugins.handleModeChanged(self, oldMode, self.currentMode)
+  var changed = false
+  var removedModes = newSeq[string]()
+  var modes = self.settings.modes.get()
+  let alreadyContained = modes.find(mode) != -1
+  var i = 0
+  if exclusive and prefix != "":
+    while i < modes.len:
+      if modes[i].startsWith(prefix) and modes[i] != mode:
+        removedModes.add(modes[i])
+        modes.removeShift(i)
+        changed = true
+        continue
+      inc i
+
+  if not alreadyContained and mode != "":
+    modes.add(mode)
+    changed = true
+
+  if not changed:
+    return
+
+  self.settings.modes.set(modes)
+
+  let handler = self.settings.modeChangedHandlerCommand.get()
+  if handler != "":
+    discard self.handleActionInternal(handler, [removedModes.toJson, [mode].toJson].toJson)
 
   self.markDirty()
 
+proc setDefaultMode*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.setMode(self.settings.defaultMode.get())
+
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
   ## Returns the current mode of the text editor, or "" if there is no mode
-  return self.currentMode
+  let modes = self.settings.modes.get()
+  if modes.len > 0:
+    return modes.last
+  return ""
 
 proc getContextWithMode(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
   ## Appends the current mode to context
-  return context & "." & $self.currentMode
+  return context & "." & $self.mode
 
-proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last ) {.
+proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.
     expose("editor.text").} =
   let cursor = self.getCursor(cursor)
-  if self.getLastRenderedVisualLine(cursor.line).getSome(line):
-    if line.getPartContaining(cursor.column).getSome(part):
-      let r = part[].visualRange.get
-      self.targetColumn = clamp(
-        r.startColumn + (cursor.column - part[].textRange.get.startOffset),
-        r.startColumn,
-        r.endColumn)
-    else:
-      self.targetColumn = self.document.cursorToVisualColumn(cursor)
-  else:
-    self.targetColumn = self.document.cursorToVisualColumn(cursor)
+  let wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
+  self.targetColumn = wrapPoint.column.int
 
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Inverts the current selection. Discards all but the last cursor.
@@ -1121,6 +1654,9 @@ proc getRevision*(self: TextDocumentEditor): int {.expose("editor.text").} =
 
 proc getUsage*(self: TextDocumentEditor): string {.expose("editor.text").} =
   return self.usage
+
+proc getChar*(self: TextDocumentEditor, cursor: Cursor): char {.expose("editor.text").} =
+  return self.document.rope.slice(Point).charAt(cursor.toPoint)
 
 proc getText*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool = false):
     string {.expose("editor.text").} =
@@ -1163,22 +1699,26 @@ proc deleteLines(self: TextDocumentEditor, slice: Slice[int], oldSelections: Sel
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
     let selection = self.selectionHistory.popLast
+    assert selection.len > 0, "[selectPrev] Empty selection"
     self.selectionHistory.addFirst self.selections
     self.selectionsInternal = selection
     self.cursorVisible = true
     if self.blinkCursorTask.isNotNil and self.active:
       self.blinkCursorTask.reschedule()
   self.scrollToCursor(self.selection.last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
     let selection = self.selectionHistory.popFirst
+    assert selection.len > 0, "[selectNext] Empty selection"
     self.selectionHistory.addLast self.selections
     self.selectionsInternal = selection
     self.cursorVisible = true
     if self.blinkCursorTask.isNotNil and self.active:
       self.blinkCursorTask.reschedule()
   self.scrollToCursor(self.selection.last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
 
 proc selectInside*(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
   self.selection = self.getSelectionForMove(cursor, "word")
@@ -1221,7 +1761,7 @@ proc getParentNodeSelection(self: TextDocumentEditor, selection: Selection, incl
 
   let tree = self.document.tsTree
 
-  var node = self.document.tsTree.root.descendantForRange(selection.tsRange)
+  var node = tree.root.descendantForRange(selection.tsRange)
   while node != tree.root:
     var r = self.includeSelectionEnd(node.getRange.toSelection, includeAfter)
     if r != selection:
@@ -1296,6 +1836,8 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
   let selectionRange = self.selection.tsRange
   let node = self.document.tsTree.root.descendantForRange(selectionRange)
 
+  if self.services.getService(ToastService).getSome(toasts):
+    toasts.showToast("Treesitter tree", $node, "info")
   log lvlInfo, $node
 
 proc selectParentCurrentTs*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
@@ -1362,28 +1904,26 @@ proc getNextNodeWithSameType*(self: TextDocumentEditor, selection: Selection, of
 proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.expose("editor.text").} =
   ## Returns true if the completion window should automatically open at the given position
   # todo: use RopeCursor
-  let line = self.document.getLine(cursor.line)
-  if cursor.column <= 0 or cursor.column > line.len:
+  if cursor.column <= 0 or cursor.column > self.document.rope.lineLen(cursor.line):
     return false
 
-  let previousRune = line.runeAt(line.clip(cursor.column - 1, Bias.Left))
-  let wordChars = self.document.languageConfig.mapIt(it.completionWordChars).get(IdentChars)
+  var c = self.document.rope.cursorT(cursor.toPoint)
+  c.seekPrevRune()
+  let previousRune = c.currentRune()
+  let wordRunes {.cursor.} = self.document.settings.completionWordChars.get()
   let extraTriggerChars = if self.document.completionTriggerCharacters.len > 0:
     self.document.completionTriggerCharacters
   else:
     {'.'}
 
-  let allTriggerChars = wordChars + extraTriggerChars
-
-  if previousRune.int <= char.high.int and previousRune.char in allTriggerChars:
-    return true
-
-  if previousRune.isAlpha:
+  if previousRune in wordRunes or (previousRune.int <= char.high.int and previousRune.char in extraTriggerChars):
     return true
 
   return false
 
 proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.disableCompletions:
+    return
   if self.shouldShowCompletionsAt(self.selection.last):
     self.showCompletionWindow()
   else:
@@ -1424,8 +1964,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       for i, selection in selections:
         # todo: don't use getLine
         let line = $self.document.getLine(selection.last.line)
-        let indent = indentForNewLine(self.document.languageConfig, line, self.document.indentStyle,
-          self.document.tabWidth, selection.last.column)
+        let indent = indentForNewLine(self.document.settings.indentAfter.get(), line, self.document.settings.indent.get(), self.document.settings.tabWidth.get(), selection.last.column)
         texts[i] = "\n" & indent
 
   elif autoIndent and (text == "}" or text == ")" or text == "]"):
@@ -1481,8 +2020,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
   self.updateTargetColumn(Last)
 
-  if not self.disableCompletions:
-    self.autoShowCompletions()
+  self.autoShowCompletions()
 
 proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()
@@ -1496,7 +2034,7 @@ proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
           continue
       linesToIndent.incl l
 
-  let indent = self.document.indentStyle.getString()
+  let indent = self.document.getIndentString()
   var indentSelections: Selections = @[]
   for l in linesToIndent:
     indentSelections.add (l, 0).toSelection
@@ -1506,9 +2044,9 @@ proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var selections = self.selections
   for s in selections.mitems:
     if s.first.line in linesToIndent:
-      s.first.column += self.document.indentStyle.indentColumns
+      s.first.column += self.document.getIndentColumns()
     if s.last.line in linesToIndent:
-      s.last.column += self.document.indentStyle.indentColumns
+      s.last.column += self.document.getIndentColumns()
   self.selections = selections
 
 proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1525,10 +2063,10 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   var indentSelections: Selections = @[]
   for l in linesToIndent:
-    case self.document.indentStyle.kind
+    case self.document.settings.indent.get()
     of Spaces:
       let firstNonWhitespace = self.document.rope.indentBytes(l)
-      indentSelections.add ((l, 0), (l, min(self.document.indentStyle.indentColumns, firstNonWhitespace)))
+      indentSelections.add ((l, 0), (l, min(self.document.getIndentColumns(), firstNonWhitespace)))
     of Tabs:
       indentSelections.add ((l, 0), (l, 1))
 
@@ -1537,16 +2075,16 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   for s in selections.mitems:
     if s.first.line in linesToIndent:
-      s.first.column = max(0, s.first.column - self.document.indentStyle.indentColumns)
+      s.first.column = max(0, s.first.column - self.document.getIndentColumns())
     if s.last.line in linesToIndent:
-      s.last.column = max(0, s.last.column - self.document.indentStyle.indentColumns)
+      s.last.column = max(0, s.last.column - self.document.getIndentColumns())
   self.selections = selections
 
 proc insertIndent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var insertTexts = newSeq[string]()
 
   # todo: for spaces, calculate alignment
-  let indent = self.document.indentStyle.getString()
+  let indent = self.document.getIndentString()
   for selection in self.selections:
     insertTexts.add indent
 
@@ -1557,11 +2095,13 @@ proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("edit
   if self.document.undo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
   if self.document.redo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("editor.text").} =
   self.document.addNextCheckpoint checkpoint
@@ -1578,7 +2118,7 @@ proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool):
       text.add "\n"
 
     if c.position.toCursor > selection.first:
-      c.reset()
+      c.resetCursor()
     c.seekForward(selection.first.toPoint)
 
     var target = selection.last
@@ -1605,7 +2145,6 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
     return
 
   let numLines = register.numLines()
-  debugf"paste {numLines} lines"
 
   let newSelections = if numLines == self.selections.len and numLines > 1:
     case register.kind
@@ -1614,7 +2153,6 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
       self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
     of RegisterKind.Rope:
       let lines = register.rope.splitLines()
-      echo lines
       self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
   else:
     case register.kind
@@ -1632,6 +2170,7 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
 
   self.selections = newSelections
   self.scrollToCursor(Last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.markDirty()
 
 proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: bool = false) {.
@@ -1641,8 +2180,13 @@ proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: b
 proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
     return
-  self.scrollOffset += amount
-  self.updateInlayHints()
+  self.scrollOffset.y += amount
+  self.markDirty()
+
+proc scrollTextHorizontal*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
+  if self.disableScrolling:
+    return
+  self.scrollOffset.x += amount * self.platform.charWidth
   self.markDirty()
 
 proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").} =
@@ -1651,17 +2195,8 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
   if self.disableScrolling:
     return
 
-  self.previousBaseIndex += amount
+  self.scrollOffset.y += self.platform.totalLineHeight * amount.float
 
-  while self.previousBaseIndex <= 0:
-    self.previousBaseIndex.inc
-    self.scrollOffset += self.platform.totalLineHeight
-
-  while self.previousBaseIndex >= self.document.numLines - 1:
-    self.previousBaseIndex.dec
-    self.scrollOffset -= self.platform.totalLineHeight
-
-  self.updateInlayHints()
   self.markDirty()
 
 proc duplicateLastSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1682,48 +2217,68 @@ proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
     includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   self.updateSearchResults()
 
-  var i = 0
-  for line in countdown(cursor.line, 0):
-    self.searchResults.withValue(line, val):
-      let selections = val[]
-      for k in countdown(selections.high, 0):
-        if selections[k].last < cursor:
-          if i == offset:
-            if includeAfter:
-              return selections[k]
-            else:
-              return (selections[k].first, self.doMoveCursorColumn(selections[k].last, -1, wrap = false))
-          inc i
+  if self.searchResults.len == 0:
+    return cursor.toSelection
 
-  let nextSearchStart = (self.lineCount, 0)
-  if cursor != nextSearchStart:
-    let wrapped = self.getPrevFindResult(nextSearchStart, offset - i,
-      includeAfter=includeAfter, wrap=wrap)
-    if not wrapped.isEmpty:
-      return wrapped
-  return cursor.toSelection
+  let (found, index) = self.searchResults.binarySearchRange(cursor.toPoint, Bias.Left, (r, p) => cmp(r.a, p))
+  if found:
+    if index > 0:
+      result = self.searchResults[index - 1].toSelection
+    elif wrap:
+      result = self.searchResults.last.toSelection
+    else:
+      return cursor.toSelection
+  elif index == 0 and cursor.toPoint < self.searchResults[0].a:
+    if wrap:
+      result = self.searchResults.last.toSelection
+    else:
+      return cursor.toSelection
+  elif index >= 0:
+    result = self.searchResults[index].toSelection
+  else:
+    return cursor.toSelection
+
+  if not includeAfter:
+    result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
 proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0,
     includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   self.updateSearchResults()
 
-  var i = 0
-  for line in cursor.line..<self.document.numLines:
-    self.searchResults.withValue(line, val):
-      for selection in val[]:
-        if cursor < selection.first:
-          if i == offset:
-            if includeAfter:
-              return selection
-            else:
-              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
-          inc i
+  if self.searchResults.len == 0:
+    return cursor.toSelection
 
-  if cursor != (0, 0):
-    let wrapped = self.getNextFindResult((0, 0), offset - i, includeAfter=includeAfter, wrap=wrap)
-    if not wrapped.isEmpty:
-      return wrapped
-  return cursor.toSelection
+  let (found, index) = self.searchResults.binarySearchRange(cursor.toPoint, Bias.Right, (r, p) => cmp(r.a, p))
+  if found:
+    if index < self.searchResults.high:
+      result = self.searchResults[index + 1].toSelection
+    elif wrap:
+      result = self.searchResults[0].toSelection
+    else:
+      return cursor.toSelection
+  elif index == self.searchResults.len:
+    if wrap:
+      result = self.searchResults[0].toSelection
+    else:
+      return cursor.toSelection
+  elif index >= 0 and index <= self.searchResults.high:
+    result = self.searchResults[index].toSelection
+  else:
+    return cursor.toSelection
+
+  if not includeAfter:
+    result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
+
+proc createAnchors*(self: TextDocumentEditor, selections: Selections): seq[(Anchor, Anchor)] {.expose("editor.text").} =
+  if self.document.requiresLoad:
+    return @[]
+  let snapshot {.cursor.} = self.document.buffer.snapshot
+  return selections.mapIt (snapshot.anchorAfter(it.first.toPoint), snapshot.anchorBefore(it.last.toPoint))
+
+proc resolveAnchors*(self: TextDocumentEditor, anchors: seq[(Anchor, Anchor)]): Selections {.expose("editor.text").} =
+  if self.document.requiresLoad:
+    return @[]
+  return anchors.mapIt (it[0].summaryOpt(Point, self.snapshot).get(Point()), it[1].summaryOpt(Point, self.snapshot).get(Point())).toSelection
 
 proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0,
     offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
@@ -1732,29 +2287,30 @@ proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 
   var i = 0
   for line in countdown(cursor.line, 0):
-    self.document.diagnosticsPerLine.withValue(line, val):
-      let diagnosticsOnCurrentLine {.cursor.} = val[]
-      for k in countdown(diagnosticsOnCurrentLine.high, 0):
-        let diagnosticIndex = diagnosticsOnCurrentLine[k]
-        if diagnosticIndex > self.document.currentDiagnostics.high:
-          continue
+    for diagnosticsData in self.document.diagnosticsPerLS.mitems:
+      diagnosticsData.diagnosticsPerLine.withValue(line, val):
+        let diagnosticsOnCurrentLine {.cursor.} = val[]
+        for k in countdown(diagnosticsOnCurrentLine.high, 0):
+          let diagnosticIndex = diagnosticsOnCurrentLine[k]
+          if diagnosticIndex > diagnosticsData.currentDiagnostics.high:
+            continue
 
-        let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndex]
-        if diagnostic.removed:
-          continue
+          let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[diagnosticIndex]
+          if diagnostic.removed:
+            continue
 
-        if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
-          continue
+          if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
+            continue
 
-        let selection = diagnostic.selection
+          let selection = diagnostic.selection
 
-        if selection.last < cursor:
-          if i == offset:
-            if includeAfter:
-              return selection
-            else:
-              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
-          inc i
+          if selection.last < cursor:
+            if i == offset:
+              if includeAfter:
+                return selection
+              else:
+                return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
+            inc i
 
   let nextSearchStart = (self.lineCount, 0)
   if cursor != nextSearchStart:
@@ -1771,27 +2327,28 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 
   var i = 0
   for line in cursor.line..<self.document.numLines:
-    self.document.diagnosticsPerLine.withValue(line, val):
-      for diagnosticIndex in val[]:
-        if diagnosticIndex > self.document.currentDiagnostics.high:
-          continue
+    for diagnosticsData in self.document.diagnosticsPerLS.mitems:
+      diagnosticsData.diagnosticsPerLine.withValue(line, val):
+        for diagnosticIndex in val[]:
+          if diagnosticIndex > diagnosticsData.currentDiagnostics.high:
+            continue
 
-        let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndex]
-        if diagnostic.removed:
-          continue
+          let diagnostic {.cursor.} = diagnosticsData.currentDiagnostics[diagnosticIndex]
+          if diagnostic.removed:
+            continue
 
-        if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
-          continue
+          if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
+            continue
 
-        let selection = diagnostic.selection
+          let selection = diagnostic.selection
 
-        if cursor < selection.first:
-          if i == offset:
-            if includeAfter:
-              return selection
-            else:
-              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
-          inc i
+          if cursor < selection.first:
+            if i == offset:
+              if includeAfter:
+                return selection
+              else:
+                return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
+            inc i
 
   if cursor != (0, 0):
     let wrapped = self.getNextDiagnostic((0, 0), severity, offset - i,
@@ -1803,6 +2360,13 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 proc closeDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.diffDocument.isNil:
     return
+  self.showDiff = false
+  self.displayMap.diffMap.clear()
+  self.diffDisplayMap = DisplayMap.new()
+  discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+
+  self.cursorHistories.setLen(0)
   self.diffDocument.onRequestRerender.unsubscribe(self.onRequestRerenderDiffHandle)
   self.diffDocument.deinit()
   self.diffDocument = nil
@@ -1843,40 +2407,42 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
   log lvlInfo, fmt"Diff document '{localizedPath}'"
 
   let relPath = self.workspace.getRelativePathSync(localizedPath).get(localizedPath)
-  if self.document.isNil or self.diffRevision > revision:
+  if self.document.isNil or self.diffRevision > revision or not self.showDiff:
     return
 
   if self.document.staged:
     let committedFileContent = vcs.getCommittedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
 
     let stagedFileContent = vcs.getStagedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
 
     let changes = vcs.getFileChanges(relPath, staged = true).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
+
+    # Note: this currently clears the diff document
+    self.document.content = stagedFileContent
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
       self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
         self.markDirty()
 
+    self.diffChanges = changes
     self.diffDocument.languageId = self.document.languageId
     self.diffDocument.readOnly = true
-    self.document.content = stagedFileContent
-    self.diffChanges = changes
     self.diffDocument.content = committedFileContent
 
   else:
     let stagedFileContent = vcs.getStagedFileContent(relPath).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
 
     let changes = vcs.getFileChanges(relPath, staged = false).await
-    if self.document.isNil or self.diffRevision > revision:
+    if self.document.isNil or self.diffRevision > revision or not self.showDiff:
       return
 
     if self.diffDocument.isNil:
@@ -1884,20 +2450,231 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
       self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
         self.markDirty()
 
+    self.diffChanges = changes
     self.diffDocument.languageId = self.document.languageId
     self.diffDocument.readOnly = true
-    self.diffChanges = changes
     self.diffDocument.content = stagedFileContent
+
+  assert self.diffDocument.isNotNil
+  self.diffDisplayMap.setBuffer(self.diffDocument.buffer.snapshot.clone())
+  self.displayMap.diffMap.update(self.diffChanges, self.diffDisplayMap.wrapMap.snapshot, reverse = true)
+  self.diffDisplayMap.diffMap.update(self.diffChanges, self.displayMap.wrapMap.snapshot, reverse = false)
 
   if gotoFirstDiff and self.diffChanges.getSome(changes) and changes.len > 0:
     self.selection = (changes[0].target.first, 0).toSelection
     self.updateTargetColumn(Last)
     self.centerCursor(self.selection.last)
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
+  self.cursorHistories.setLen(0)
+  self.markDirty()
+
+proc clearOverlays*(self: TextDocumentEditor, id: int = -1) {.expose("editor.text").} =
+  self.displayMap.overlay.clear(id)
+  self.markDirty()
+
+proc addOverlay*(self: TextDocumentEditor, selection: Selection, text: string, id: int, scope: string, bias: Bias) {.expose("editor.text").} =
+  self.displayMap.overlay.addOverlay(selection.toRange, text, id, scope, bias)
   self.markDirty()
 
 proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
+  self.showDiff = true
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
+
+proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
+  if self.diffDocument.isNil or self.diffChanges.isNone:
+    return
+
+  var selection = self.selection.normalized
+  if inclusiveEnd:
+    selection.last = self.doMoveCursorColumn(selection.last, 1)
+
+  log lvlInfo, &"Revert ranges {selection}"
+
+  let ropeOld = self.diffDocument.rope.clone()
+  var ropeDiff: RopeDiff[Point]
+
+  for mapping in self.diffChanges.get:
+    var rangeOld: Range[Point]
+    var rangeNew: Range[Point]
+    rangeOld.a.row = mapping.source.first.uint32
+    rangeOld.b.row = mapping.source.last.uint32
+    rangeNew.a.row = mapping.target.first.uint32
+    rangeNew.b.row = mapping.target.last.uint32
+
+    var text = Rope.new("")
+    for line in mapping.lines:
+      text.add line
+      text.add "\n"
+
+    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+      ropeDiff.edits.add (rangeNew, rangeOld, ropeOld.slice(rangeOld))
+
+  let selections = ropeDiff.edits.mapIt(it.old.toSelection)
+  let texts = ropeDiff.edits.mapIt(it.text)
+  discard self.document.edit(selections, self.selections, texts)
+  await self.document.saveAsync()
+  self.updateDiff()
+
+proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
+  if self.diffDocument.isNil or self.diffChanges.isNone:
+    return
+
+  var selection = self.selection.normalized
+  if inclusiveEnd:
+    selection.last = self.doMoveCursorColumn(selection.last, 1)
+
+  log lvlInfo, &"Revert ranges {selection}"
+
+  let ropeOld = self.diffDocument.rope.clone()
+  var ropeDiff: RopeDiff[Point]
+
+  for mapping in self.diffChanges.get:
+    var rangeOld: Range[Point]
+    var rangeNew: Range[Point]
+    rangeOld.a.row = mapping.source.first.uint32
+    rangeOld.b.row = mapping.source.last.uint32
+    rangeNew.a.row = mapping.target.first.uint32
+    rangeNew.b.row = mapping.target.last.uint32
+
+    var text = Rope.new("")
+    for line in mapping.lines:
+      text.add line
+      text.add "\n"
+
+    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+      # todo
+      discard
+
+    else:
+      ropeDiff.edits.add (rangeOld, rangeNew, text.slice(Point))
+
+  let new = ropeOld.slice(Point).apply(ropeDiff)
+  let filename = self.getFileName().extractFilename
+  let backupPath = &"ws0://temp/git/backup.{filename}"
+  let originalPath = self.document.filename
+  let originalPathLocalized = self.document.localizedPath
+  let backupPathLocalized = self.vfs.localize(backupPath)
+  if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
+    log lvlInfo, &"backup {originalPath} to {backupPath}"
+    await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+    await self.vfs.write(originalPath, new)
+    discard await vcs.stageFile(originalPathLocalized)
+    log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
+    await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+    discard await self.vfs.delete(backupPath)
+
+    self.updateDiff()
+
+proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
+  if self.diffDocument.isNil or self.diffChanges.isNone:
+    return
+
+  var selection = self.selection.normalized
+  if inclusiveEnd:
+    selection.last = self.doMoveCursorColumn(selection.last, 1)
+
+  log lvlInfo, &"Stage ranges {selection}"
+
+  var ropeDiff: RopeDiff[Point]
+
+  let stagedRope = self.diffDocument.rope.clone()
+
+  for mapping in self.diffChanges.get:
+    var rangeOld: Range[Point]
+    var rangeNew: Range[Point]
+    rangeOld.a.row = mapping.source.first.uint32
+    rangeOld.b.row = mapping.source.last.uint32
+    rangeNew.a.row = mapping.target.first.uint32
+    rangeNew.b.row = mapping.target.last.uint32
+
+    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+      var rangeNewClamped = rangeNew
+      rangeNewClamped.a = max(rangeNew.a, selection.first.toPoint)
+      rangeNewClamped.b = min(rangeNew.b, selection.last.toPoint)
+
+      var text = Rope.new("")
+      for line in mapping.lines:
+        text.add line
+        text.add "\n"
+
+      let rangeNewRel = (rangeNewClamped.a - rangeNew.a).toPoint...(rangeNewClamped.b - rangeNew.a).toPoint
+      if selection.isEmpty or (selection.first.toPoint <= rangeNew.a and selection.last.toPoint >= rangeNew.b):
+        ropeDiff.edits.add (rangeOld, rangeNew, text.slice(Point))
+
+      else:
+        let textOld = stagedRope.slice(rangeOld)
+        let diff = diff(textOld, text.slice(Point))
+        let rangeOldRel = diff.newToOld(rangeNewRel)
+        let rangeOldClamped = rangeOld.a + rangeOldRel
+
+        ropeDiff.edits.add (rangeOldClamped, rangeNewClamped, text.slice(rangeNewRel))
+
+  let new = self.diffDocument.rope.slice(Point).apply(ropeDiff)
+  let filename = self.getFileName().extractFilename
+  let backupPath = &"ws0://temp/git/backup.{filename}"
+  let originalPath = self.document.filename
+  let originalPathLocalized = self.document.localizedPath
+  let backupPathLocalized = self.vfs.localize(backupPath)
+  if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
+    log lvlInfo, &"backup {originalPath} to {backupPath}"
+    await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+    await self.vfs.write(originalPath, new)
+    discard await vcs.stageFile(originalPathLocalized)
+    log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
+    await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+    discard await self.vfs.delete(backupPath)
+
+    self.updateDiff()
+
+  # this tries to create a patch and apply it to the index directly, but git refuses the patch and the line indices
+  # are maybe wrong
+
+  # let stagedPath = &"ws0://temp/git/staged.{filename}"
+  # let newPath = &"ws0://temp/git/new.{filename}"
+  # let diffPath = &"ws0://temp/git/{filename}.diff"
+  # await self.vfs.write(stagedPath, self.diffDocument.rope.clone())
+  # await self.vfs.write(newPath, new)
+
+  # let workspaceRoot = self.vfs.localize("ws0://")
+
+  # let pathA = self.vfs.localize(stagedPath)
+  # let pathB = self.vfs.localize(newPath)
+  # let gitDiff = await runProcessAsyncOutput("git", @["diff", "--no-index", "-U0", pathA, pathB])
+
+  # let originalPath = self.document.localizedPath.relativePath(workspaceRoot).catch(self.document.localizedPath)
+  # var patch = gitDiff.output.replace(pathA, originalPath).replace(pathB, originalPath)
+  # let nl1 = patch.find("\n")
+  # let nl2 = patch.find("\n", nl1 + 1)
+  # if nl2 > 0:
+  #   patch = patch[nl2+1..^1]
+  # await self.vfs.write(diffPath, patch)
+
+  # let gitApply = await runProcessAsyncOutput("git", @["apply", "--cached", "-v", self.vfs.localize(diffPath)])
+  # echo &"git apply -> \n{gitApply.output}\n--------\n{gitApply.err}\n=============="
+  # self.updateDiff()
+
+proc revertSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.expose("editor.text").} =
+  asyncSpawn self.revertSelectedAsync(inclusiveEnd)
+
+proc stageSelected*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.expose("editor.text").} =
+  if self.document.staged:
+    asyncSpawn self.unstageSelectedAsync(inclusiveEnd)
+  else:
+    asyncSpawn self.stageSelectedAsync(inclusiveEnd)
+
+proc stageFileAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  if self.vcs.getVcsForFile(self.document.filename).getSome(vcs):
+    discard await vcs.stageFile(self.document.localizedPath)
+
+    if self.diffDocument.isNotNil:
+      self.updateDiff()
+
+proc stageFile*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.stageFileAsync()
+
+proc format*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.document.format(runOnTempFile = true)
 
 proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
   if self.document.isNil:
@@ -1934,10 +2711,10 @@ proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.tex
   self.updateSearchResults()
 
   var selections: seq[Selection] = @[]
-  for searchResults in self.searchResults.values:
-    for s in searchResults:
-      selections.add s
-  self.selections = selections
+  for s in self.searchResults:
+    selections.add s.toSelection
+  if selections.len > 0:
+    self.selections = selections
 
 proc clearSelections*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selections.len > 1:
@@ -1959,7 +2736,37 @@ proc moveCursorLine*(self: TextDocumentEditor, distance: int,
 proc moveCursorVisualLine*(self: TextDocumentEditor, distance: int,
     cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true,
     includeAfter: bool = true) {.expose("editor.text").} =
-  self.moveCursor(cursor, doMoveCursorVisualLine, distance, all, wrap, includeAfter)
+
+  var minLine = int.high
+  var maxLine = int.low
+  for s in self.selections:
+    minLine = min(minLine, s.last.line)
+    maxLine = max(maxLine, s.last.line)
+
+  proc doMoveCursor(self: TextDocumentEditor, cursor: Cursor, offset: int,
+      wrap: bool = true, includeAfter: bool = true): Cursor =
+    let targetColumn = if maxLine - minLine + 1 < self.selections.len:
+      self.displayMap.toDisplayPoint(cursor.toPoint).column.int
+    else:
+      self.targetColumn
+    self.doMoveCursorVisualLine(cursor, offset, wrap, includeAfter, targetColumn.some)
+  self.moveCursor(cursor, doMoveCursor, distance, all, wrap, includeAfter)
+
+proc moveCursorPage*(self: TextDocumentEditor, distance: float,
+    cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true,
+    includeAfter: bool = true) {.expose("editor.text").} =
+
+  let visibleLines = self.screenLineCount()
+  let linesToMove = int(visibleLines.float * distance)
+  self.moveCursorLine(linesToMove, cursor, all, wrap, includeAfter)
+
+proc moveCursorVisualPage*(self: TextDocumentEditor, distance: float,
+    cursor: SelectionCursor = SelectionCursor.Config, all: bool = true, wrap: bool = true,
+    includeAfter: bool = true) {.expose("editor.text").} =
+
+  let visibleLines = self.screenLineCount()
+  let linesToMove = int(visibleLines.float * distance)
+  self.moveCursorVisualLine(linesToMove, cursor, all, wrap, includeAfter)
 
 proc moveCursorHome*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
     all: bool = true) {.expose("editor.text").} =
@@ -1969,16 +2776,6 @@ proc moveCursorHome*(self: TextDocumentEditor, cursor: SelectionCursor = Selecti
 proc moveCursorEnd*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
     all: bool = true, includeAfter: bool = true) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorEnd, 0, all, includeAfter=includeAfter)
-  self.updateTargetColumn(cursor)
-
-proc moveCursorVisualHome*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
-    all: bool = true) {.expose("editor.text").} =
-  self.moveCursor(cursor, doMoveCursorVisualHome, 0, all)
-  self.updateTargetColumn(cursor)
-
-proc moveCursorVisualEnd*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
-    all: bool = true, includeAfter: bool = true) {.expose("editor.text").} =
-  self.moveCursor(cursor, doMoveCursorVisualEnd, 0, all, includeAfter=includeAfter)
   self.updateTargetColumn(cursor)
 
 proc moveCursorTo*(self: TextDocumentEditor, str: string,
@@ -2029,23 +2826,29 @@ proc moveCursorCenter*(self: TextDocumentEditor, cursor: SelectionCursor = Selec
     all: bool = true) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorCenter, 0, all)
 
-proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.
-    expose("editor.text").} =
-  self.scrollToCursor(self.getCursor(cursor))
+proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config,
+    margin: Option[float] = float.none, scrollBehaviour: Option[ScrollBehaviour] = ScrollBehaviour.none, relativePosition: float = 0.5) {.expose("editor.text").} =
+  self.scrollToCursor(self.getCursor(cursor), margin, scrollBehaviour, relativePosition)
 
-proc setNextScrollBehaviour*(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) {.
-    expose("editor.text").} =
+proc setNextScrollBehaviour*(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) {.expose("editor.text").} =
   self.nextScrollBehaviour = scrollBehaviour.some
+
+proc setDefaultSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) {.expose("editor.text").} =
+  self.defaultSnapBehaviour = snapBehaviour
+
+proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour) {.expose("editor.text").} =
+  self.nextSnapBehaviour = snapBehaviour.some
+  if snapBehaviour == Always:
+    self.interpolatedScrollOffset = self.scrollOffset
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float,
     cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
-  let line = self.getCursor(cursor).line
-  self.previousBaseIndex = line
-  self.scrollOffset = offset
-  self.updateInlayHints()
+  let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
+  self.scrollOffset.y = offset - displayPoint.row.float * self.platform.totalLineHeight
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 {.expose("editor.text").} =
+  # todo
   return self.lastContentBounds.wh
 
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.
@@ -2069,11 +2872,11 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
     if selection.isEmpty:
       selections[i] = (self.doMoveCursorColumn(selection.first, -1), selection.first)
 
+  # echo &"delete left {self.selections} -> {selections}"
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
 
-  if not self.disableCompletions:
-    self.autoShowCompletions()
+  self.autoShowCompletions()
 
 proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
   var selections = self.selections
@@ -2084,8 +2887,7 @@ proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose(
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections).mapIt(self.clampSelection(it, includeAfter))
 
-  if not self.disableCompletions:
-    self.autoShowCompletions()
+  self.autoShowCompletions()
 
 proc getCommandCount*(self: TextDocumentEditor): int {.expose("editor.text").} =
   return self.commandCount
@@ -2098,13 +2900,6 @@ proc setCommandCountRestore*(self: TextDocumentEditor, count: int) {.expose("edi
 
 proc updateCommandCount*(self: TextDocumentEditor, digit: int) {.expose("editor.text").} =
   self.commandCount = self.commandCount * 10 + digit
-
-proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("editor.text").} =
-  self.configProvider.setFlag("editor.text." & name, value)
-  self.markDirty()
-
-proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
-  return self.configProvider.getFlag("editor.text." & name, false)
 
 proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] {.
     expose("editor.text").} =
@@ -2131,6 +2926,55 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
   if selection.isBackwards:
     result = result.reverse
 
+proc getEnclosing(text: RopeSlice, column: int, predicate: proc(c: char): bool {.gcsafe, raises: [].}): (int, int) =
+  var cf = text.cursor(column)
+  var cb = cf.clone()
+  while cf.offset < text.len - 1:
+    cf.seekNextRune()
+    if not predicate(cf.currentChar()):
+      cf.seekPrevRune()
+      break
+  while cb.offset > 0:
+    cb.seekPrevRune()
+    if not predicate(cb.currentChar()):
+      cb.seekNextRune()
+      break
+  return (cb.offset, cf.offset)
+
+proc vimMotionWord*(self: TextDocumentEditor, cursor: Cursor, count: int = 0): Selection {.expose("editor.text").} =
+  const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
+
+  var line = self.document.getLine(cursor.line)
+  if line.len == 0:
+    return (cursor.line, 0).toSelection
+
+  let c = line.charAt(cursor.column.clamp(0, line.len - 1))
+  if c in Whitespace:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  elif c in AlphaNumeric:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in AlphaNumeric)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  else:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace and c notin AlphaNumeric)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+proc vimMotionWordBig*(self: TextDocumentEditor, cursor: Cursor, count: int = 0): Selection {.expose("editor.text").} =
+  var line = self.document.getLine(cursor.line)
+  if line.len == 0:
+    return (cursor.line, 0).toSelection
+
+  let c = line.charAt(cursor.column.clamp(0, line.len - 1))
+  if c in Whitespace:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  else:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
     count: int = 0): Selection {.expose("editor.text").} =
   case move
@@ -2138,6 +2982,26 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result = self.findWordBoundary(cursor)
     for _ in 1..<count:
       result = result or self.findWordBoundary(result.last) or self.findWordBoundary(result.first)
+
+  of "vim-word":
+    result = self.vimMotionWord(cursor)
+    for _ in 1..<count:
+      result = result or self.vimMotionWord(result.last) or self.vimMotionWord(result.first)
+
+  of "vim-WORD":
+    result = self.vimMotionWordBig(cursor)
+    for _ in 1..<count:
+      result = result or self.vimMotionWordBig(result.last) or self.vimMotionWordBig(result.first)
+
+  of "vim-word-inner":
+    result = self.vimMotionWord(cursor)
+    for _ in 1..<count:
+      result = result or self.vimMotionWord(result.last) or self.vimMotionWord(result.first)
+
+  of "vim-WORD-inner":
+    result = self.vimMotionWordBig(cursor)
+    for _ in 1..<count:
+      result = result or self.vimMotionWordBig(result.last) or self.vimMotionWordBig(result.first)
 
   of "word-line":
     # todo: use RopeCursor
@@ -2162,6 +3026,28 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
   of "word-line-back":
     return self.getSelectionForMove((cursor.line, max(0, cursor.column - 1)), "word-line", count).reverse
 
+  of "number":
+    var r = cursor.toPoint...cursor.toPoint
+    var c = self.document.rope.cursorT(cursor.toPoint)
+    while c.currentChar in {'0'..'9'}:
+      c.seekNextRune()
+      r.b = c.position
+
+    if r.a.column > 0:
+      c = self.document.rope.cursorT(cursor.toPoint)
+      while c.position.column > 0:
+        c.seekPrevRune()
+        if c.currentChar == '-':
+          r.a = c.position
+          break
+
+        if c.currentChar notin {'0'..'9'}:
+          c.seekNextRune()
+          break
+        r.a = c.position
+
+    return r.toSelection
+
   of "line-back":
     let first = if cursor.line > 0 and cursor.column == 0:
       (cursor.line - 1, self.document.lineLength(cursor.line - 1))
@@ -2173,13 +3059,14 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
 
   of "visual-line":
-    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
-    if not result.isEmpty and self.getLastRenderedVisualLine(cursor.line).getSome(line):
-      if line.getPartContaining(cursor.column).getSome(part):
-        let r = part[].visualRange.get
-        if line.getPartContainingVisual(r.subLine, 0).getSome(part1) and
-            line.getPartContainingVisual(r.subLine, int.high).getSome(part2):
-          result = ((cursor.line, part1[].textRange.get.startOffset), (cursor.line, part2[].textRange.get.endOffset))
+    let wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
+    let displayLineStart = wrapPoint(wrapPoint.row)
+    let displayLineEnd = wrapPoint(wrapPoint.row + 1)
+    result[0] = self.displayMap.toPoint(displayLineStart, Right).toCursor
+    result[1] = self.displayMap.toPoint(displayLineEnd, Right).toCursor
+    if result[1].column == 0:
+      result[1].line -= 1
+      result[1].column = self.document.lineLength(result[1].line)
 
   of "line-next":
     result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
@@ -2290,7 +3177,7 @@ proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCurs
   case which
   of Config:
     let key = self.getContextWithMode("editor.text.cursor.movement")
-    let cursorSelector = self.configProvider.getValue(key, SelectionCursor.Both)
+    let cursorSelector = self.config.get(key, SelectionCursor.Both)
     return self.cursor(selection, cursorSelector)
   of Both:
     return selection.last
@@ -2300,19 +3187,19 @@ proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCurs
     return selection.last
 
 proc applyMove*(self: TextDocumentEditor, args {.varargs.}: JsonNode) {.expose("editor.text").} =
-  self.configProvider.setValue("text.move-count", self.getCommandCount)
-  self.setMode self.configProvider.getValue("text.move-next-mode", "")
-  self.setCommandCount self.configProvider.getValue("text.move-command-count", 0)
-  let command = self.configProvider.getValue("text.move-action", "")
+  self.config.set("text.move-count", self.getCommandCount)
+  self.setMode self.config.get("text.move-next-mode", "")
+  self.setCommandCount self.config.get("text.move-command-count", 0)
+  let command = self.config.get("text.move-action", "")
   discard self.runAction(command, args)
-  self.configProvider.setValue("text.move-action", "")
+  self.config.set("text.move-action", "")
 
 proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
   ## Deletes text based on the current selections.
   ##
   ## `move` specifies which move should be applied to each selection.
-  let count = self.configProvider.getValue("text.move-count", 0)
+  let count = self.config.get("text.move-count", 0)
 
   # echo fmt"delete-move {move}, {which}, {count}, {inside}"
 
@@ -2327,11 +3214,12 @@ proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false,
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
   self.scrollToCursor(Last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.updateTargetColumn(Last)
 
 proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = self.configProvider.getValue("text.move-count", 0)
+  let count = self.config.get("text.move-count", 0)
 
   self.selections = if inside:
     self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.getSelectionForMove(s.last, move, count))
@@ -2342,11 +3230,12 @@ proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     ))
 
   self.scrollToCursor(Last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.updateTargetColumn(Last)
 
 proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = self.configProvider.getValue("text.move-count", 0)
+  let count = self.config.get("text.move-count", 0)
 
   self.selections = if inside:
     self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.extendSelectionWithMove(s, move, count))
@@ -2367,7 +3256,7 @@ proc copyMove*(self: TextDocumentEditor, move: string, inside: bool = false,
 
 proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false,
     which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = self.configProvider.getValue("text.move-count", 0)
+  let count = self.config.get("text.move-count", 0)
 
   let selections = if inside:
     self.selections.mapAllOrLast(all, (s) {.gcsafe, raises: [].} => self.getSelectionForMove(s.last, move, count))
@@ -2380,13 +3269,14 @@ proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false,
   self.selections = self.document.edit(selections, self.selections, [""],
     inclusiveEnd=self.useInclusiveSelections)
   self.scrollToCursor(Last)
+  self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   self.updateTargetColumn(Last)
 
 proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config,
     all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    let cursorSelector = self.configProvider.getValue(
+    let cursorSelector = self.config.get(
       self.getContextWithMode("editor.text.cursor.movement"),
       SelectionCursor.Both
     )
@@ -2403,7 +3293,7 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
     all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    let cursorSelector = self.configProvider.getValue(
+    let cursorSelector = self.config.get(
       self.getContextWithMode("editor.text.cursor.movement"),
       SelectionCursor.Both
     )
@@ -2416,64 +3306,113 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
 
+proc getSearchQuery*(self: TextDocumentEditor): string {.expose("editor.text").} =
+  return self.searchQuery
+
 proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false,
-    prefix: string = "", suffix: string = "") {.expose("editor.text").} =
-  if self.searchQuery == query:
+    prefix: string = "", suffix: string = ""): bool {.expose("editor.text").} =
+
+  let query = if escapeRegex:
+    query.escapeRegex
+  else:
+    query
+
+  let finalQuery = prefix & query & suffix
+  if self.searchQuery == finalQuery:
+    return false
+
+  self.searchQuery = finalQuery
+  self.updateSearchResults()
+  return true
+
+proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPreview: bool = true, select: bool = true) {.expose("editor.text").} =
+  let commandLineEditor = self.editors.commandLineEditor.TextDocumentEditor
+  if commandLineEditor == self:
     return
 
-  if query.len == 0:
-    return
-
-  try:
-    let query = if escapeRegex:
-      query.escapeRegex
+  let prevSearchQuery = self.searchQuery
+  self.commands.openCommandLine "", "/", proc(command: Option[string]): Option[string] =
+    if command.getSome(command):
+      discard self.setSearchQuery(command)
+      if select:
+        self.selection = self.getNextFindResult(self.selection.last).first.toSelection
+      self.scrollToCursor(self.selection.last)
     else:
-      query
+      discard self.setSearchQuery(prevSearchQuery)
+      if scrollToPreview:
+        self.scrollToCursor(self.selection.last)
 
-    self.searchRegex = re(prefix & query & suffix).some
-    self.searchResultsDirty = true
-    self.searchQuery = query
+  let document = commandLineEditor.document
 
-  except:
-    discard
-    # todo: can't log here because the auto generated popCurrentException() raises
-    # because currException is nil at the end of this scope when we add some code here
-    # Maybe log raises an exception internally?
-    # log lvlError, &"[setSearchQuery] Invalid regex query: '{query}', escape: {escapeRegex}"
+  commandLineEditor.disableCompletions = true
+  commandLineEditor.moveLast("file")
+  commandLineEditor.updateTargetColumn()
+
+  var onEditHandle = Id.new
+  var onActiveHandle = Id.new
+  var onSearchHandle = Id.new
+
+  onEditHandle[] = document.onEdit.subscribe proc(arg: tuple[document: TextDocument, edits: seq[tuple[old, new: Selection]]]) =
+    discard self.setSearchQuery(arg.document.contentString.replace(r".set-search-query \"))
+
+  onActiveHandle[] = commandLineEditor.onActiveChanged.subscribe proc(editor: DocumentEditor) =
+    if not editor.active:
+      document.onEdit.unsubscribe(onEditHandle[])
+      commandLineEditor.onActiveChanged.unsubscribe(onActiveHandle[])
+      self.onSearchResultsUpdated.unsubscribe(onSearchHandle[])
+
+  onSearchHandle[] = self.onSearchResultsUpdated.subscribe proc(_: TextDocumentEditor) =
+    if self.searchResults.len == 0:
+      self.scrollToCursor(self.selection.last)
+    else:
+      let s = self.getNextFindResult(self.selection.last)
+      if scrollToPreview:
+        self.scrollToCursor(s.last)
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string,
     count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
   let selection = self.getSelectionForMove(self.selection.last, move, count)
   let searchText = self.document.contentString(selection)
-  self.setSearchQuery(searchText, escapeRegex=true, prefix, suffix)
+  discard self.setSearchQuery(searchText, escapeRegex=true, prefix, suffix)
   return selection
 
 proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
 
 proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Selection]) =
-  let editor = self.layout.openFile(filename)
-
-  if editor.getSome(editor):
+  if self.document.filename == filename:
     if location.getSome(location):
-      if editor == self:
-        self.selection = location
-        self.updateTargetColumn(Last)
-        self.centerCursor()
-
-      elif editor of TextDocumentEditor:
-        let textEditor = editor.TextDocumentEditor
-        textEditor.targetSelection = location
-        textEditor.centerCursor()
+      self.selection = location
+      self.updateTargetColumn(Last)
+      self.centerCursor()
+      self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+      self.layout.showEditor(self.id)
 
   else:
-    log lvlError, fmt"Failed to open file '{filename}' at {location}"
+    let editor = self.layout.openFile(filename)
+
+    if editor.getSome(editor):
+      if location.getSome(location):
+        if editor == self:
+          self.selection = location
+          self.updateTargetColumn(Last)
+          self.centerCursor()
+          self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+
+        elif editor of TextDocumentEditor:
+          let textEditor = editor.TextDocumentEditor
+          textEditor.targetSelection = location
+          textEditor.centerCursor()
+          textEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
+
+    else:
+      log lvlError, fmt"Failed to open file '{filename}' at {location}"
 
 import finder/[file_previewer]
 
 proc openLocationFromFinderItem(self: TextDocumentEditor, item: FinderItem) =
   try:
-    let (path, location, _) = item.parsePathAndLocationFromItemData().getOr:
+    let (path, location, _, _) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
       return
@@ -2506,7 +3445,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
       let (_, name) = definition.filename.splitPath
       res.add FinderItem(
         displayName: name,
-        detail: relPath.splitPath[0],
+        details: @[relPath.splitPath[0]],
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
@@ -2522,58 +3461,69 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
     discard self.layout.pushSelectorPopup(builder)
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    # todo: absolute paths
-    let locations = await ls.getDefinition(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getDefinition(self.document.filename, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getDeclaration(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getDeclaration(self.document.filename, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getTypeDefinition(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getTypeDefinition(self.document.filename, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getImplementation(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getImplementation(self.document.filename, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let locations = await ls.getReferences(self.document.localizedPath, self.selection.last)
+    let locations = await ls.getReferences(self.document.filename, self.selection.last)
+    if self.document.isNil:
+      return
     await self.gotoLocationAsync(locations)
 
 proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.document.getLanguageServer()
-  if self.document.isNil or languageServer.isNone:
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let filename = await ls.switchSourceHeader(self.document.localizedPath)
+    let filename = await ls.switchSourceHeader(self.document.filename)
+    if self.document.isNil:
+      return
     if filename.getSome(filename):
       discard self.layout.openFile(filename)
 
@@ -2581,12 +3531,12 @@ proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Fu
   let revision = self.completionEngine.revision
 
   await sleepAsync(0.milliseconds)
-  if revision != self.completionEngine.revision or self.document.isNil:
+  if self.document.isNil or revision != self.completionEngine.revision:
     return
 
   while gAsyncFrameTimer.elapsed.ms > 5:
     await sleepAsync(0.milliseconds)
-    if revision != self.completionEngine.revision or self.document.isNil:
+    if self.document.isNil or revision != self.completionEngine.revision:
       return
 
   if completionIndex notin 0..self.completionMatches.high:
@@ -2670,7 +3620,7 @@ proc openLineSelectorPopup(self: TextDocumentEditor, minScore: float, sort: bool
 
   discard self.layout.pushSelectorPopup(builder)
 
-proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool) =
+proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool, detailFilename: bool = false) =
   var builder = SelectorPopupBuilder()
   builder.scope = "text-lsp-locations".some
   builder.scaleX = 0.85
@@ -2678,9 +3628,12 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
 
   var res = newSeq[FinderItem]()
   for i, symbol in symbols:
+    var details = @[$symbol.symbolType]
+    if detailFilename:
+      details.add symbol.filename
     res.add FinderItem(
       displayName: symbol.name,
-      detail: $symbol.symbolType,
+      details: details,
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
 
@@ -2695,10 +3648,14 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
   discard self.layout.pushSelectorPopup(builder)
 
 proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  if self.document.getLanguageServer().await.getSome(ls):
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
+    return
+
+  if languageServer.getSome(ls):
+    let symbols = await ls.getSymbols(self.document.filename)
     if self.document.isNil:
       return
-    let symbols = await ls.getSymbols(self.document.localizedPath)
     if symbols.len == 0:
       return
 
@@ -2710,37 +3667,35 @@ type
     languageServer: LanguageServer
     query: string
     delayedTask: DelayedTask
+    filename: string
 
 proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
-  let symbols = self.languageServer.getWorkspaceSymbols(self.query).await
-
-  let t = startTimer()
+  let symbols = self.languageServer.getWorkspaceSymbols(self.filename, self.query).await
+  # let t = startTimer()
   var items = newItemList(symbols.len)
   var index = 0
   for symbol in symbols:
-    if self.workspace.ignorePath(symbol.filename):
-      continue
-
     let relPath = self.workspace.getRelativePathSync(symbol.filename).get(symbol.filename)
 
     items[index] = FinderItem(
       displayName: symbol.name,
-      detail: $symbol.symbolType & "\t" & relPath.splitPath[0],
+      details: @[$symbol.symbolType, relPath.splitPath[0]],
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
     inc index
 
-  debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
+  # debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
 
   items.setLen(index)
   self.onItemsChanged.invoke items
 
-proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: Workspace):
+proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: Workspace, filename: string):
     LspWorkspaceSymbolsDataSource =
 
   new result
   result.languageServer = languageServer
   result.workspace = workspace
+  result.filename = filename
 
 method close*(self: LspWorkspaceSymbolsDataSource) =
   self.delayedTask.deinit()
@@ -2750,23 +3705,26 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
   self.query = query
 
   if self.delayedTask.isNil:
-    self.delayedTask = startDelayed(200, repeat=false):
+    asyncSpawn self.getWorkspaceSymbols()
+    self.delayedTask = startDelayedPaused(200, repeat=false):
       asyncSpawn self.getWorkspaceSymbols()
   else:
-    self.delayedTask.reschedule()
+    if self.languageServer.refetchWorkspaceSymbolsOnQueryChange:
+      self.delayedTask.reschedule()
 
 proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
-  if self.document.getLanguageServer().await.getSome(ls):
-    if self.document.isNil:
-      return
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
+    return
 
+  if languageServer.getSome(ls):
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.85
     builder.scaleY = 0.8
 
     builder.previewer = newFilePreviewer(self.vfs, self.services).Previewer.some
-    let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, self.workspace), filterAndSort=true)
+    let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, self.workspace, self.getFileName()), filterAndSort=true)
     builder.finder = finder.some
 
     builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
@@ -2794,6 +3752,11 @@ proc switchSourceHeader*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.switchSourceHeaderAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.completionEngine.isNotNil:
+    self.completionEngine.setCurrentLocations(self.selections)
+    self.completionEngine.updateCompletions()
+    self.lastCompletionTrigger = (self.document.buffer.version, self.selections[^1].last)
+  self.completionsDirty = true
   self.showCompletionWindow()
 
 proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -2804,6 +3767,43 @@ proc fuzzySearchLines*(self: TextDocumentEditor, minScore: float = 0.2, sort: bo
 
 proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose("editor.text").} =
   asyncSpawn self.gotoWorkspaceSymbolAsync(query)
+
+proc renameAsync(self: TextDocumentEditor) {.async.} =
+  let languageServer = self.document.getLanguageServer()
+  if self.document.isNil:
+    return
+
+  if languageServer.isNone:
+    log lvlError, &"Can't rename, no language server"
+    return
+
+  let commandLineEditor = self.editors.commandLineEditor.TextDocumentEditor
+  if commandLineEditor == self:
+    return
+
+  let s = self.getSelectionForMove(self.selection.last, "word")
+  let text = self.document.contentString(s)
+
+  self.commands.openCommandLine text, "new name: ", proc(newName: Option[string]): Option[string] =
+    if newName.getSome(newName):
+      let name = newName
+      languageServer.get.rename(self.document.filename, self.selection.last, name).thenIt:
+        if self.document.isNil:
+          return
+
+        if it.isSuccess and it.result.len > 0:
+          log lvlInfo, &"Apply workspace edit for rename:\n{it.result[0]}"
+          # todo: handle multiple workspace edits by allowing to choose one.
+          asyncSpawn asyncDiscard applyWorkspaceEdit(self.editors, self.vfs, it.result[0])
+        elif it.isError:
+          log lvlError, &"Failed to rename to '{name}': {it.error}"
+
+  commandLineEditor.disableCompletions = true
+  commandLineEditor.moveLast("file")
+  commandLineEditor.updateTargetColumn()
+
+proc rename*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.renameAsync()
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   # log lvlInfo, fmt"hideCompletions {self.document.filename}"
@@ -2826,6 +3826,18 @@ proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
+
+proc selectPrevCompletionVisual*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.completionsDrawnInReverse:
+    self.selectNextCompletion()
+  else:
+    self.selectPrevCompletion()
+
+proc selectNextCompletionVisual*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.completionsDrawnInReverse:
+    self.selectPrevCompletion()
+  else:
+    self.selectNextCompletion()
 
 proc hasTabStops*(self: TextDocumentEditor): bool {.expose("editor.text").} =
   return self.currentSnippetData.isSome
@@ -2897,12 +3909,15 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
         editSelection = selection
         editSelection.last = cursor
 
-      for s in self.selections:
-        cursorEditSelections.add self.document.getCompletionSelectionAt(s.last)
-        cursorInsertTexts.add edit.newText
+      for i, s in self.selections:
+        if i < self.selections.high:
+          cursorEditSelections.add self.document.getCompletionSelectionAt(s.last)
+          cursorInsertTexts.add edit.newText
 
-    elif edit.asInsertReplaceEdit().getSome(edit):
-      debugf"text edit: {edit.insert}, {edit.replace} -> '{edit.newText}'"
+      cursorEditSelections.add editSelection
+      cursorInsertTexts.add edit.newText
+
+    elif edit.asInsertReplaceEdit().isSome:
       return
 
     else:
@@ -2938,9 +3953,10 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
       let indents = cursorEditSelections.mapIt(self.document.rope.indentBytes(it.first.line))
       try:
         var data = snippet.get.createSnippetData(cursorEditSelections, variables, indents)
-        let indent = self.document.indentStyle.getString()
+        let indent = self.document.getIndentString()
         for i, insertText in cursorInsertTexts.mpairs:
-          insertText = data.text.indentExtraLines(self.document.getIndentLevelForLine(cursorEditSelections[i].first.line), indent)
+          let indentLevel = self.document.getIndentLevelForLine(cursorEditSelections[i].first.line, self.document.tabWidth())
+          insertText = data.text.indentExtraLines(indentLevel, indent)
         snippetData = data.some
       except CatchableError:
         discard
@@ -2973,7 +3989,8 @@ proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
   self.currentSnippetData = snippetData
   self.selectNextTabStop()
 
-  self.hideCompletions()
+  if completion.item.showCompletionsAgain.get(false):
+    self.autoShowCompletions()
 
 proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("editor.text").} =
   try:
@@ -2981,6 +3998,9 @@ proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("
     self.applyCompletion(completion)
   except:
     log lvlError, &"[applyCompletion] Failed to parse completion {completion}"
+
+proc isShowingCompletions*(self: TextDocumentEditor): bool {.expose("editor.text").} =
+  return self.showCompletions and self.completions.len > 0
 
 proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if not self.showCompletions:
@@ -2996,6 +4016,8 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   self.addNextCheckpoint("insert")
   self.applyCompletion(completion)
 
+  # apply-selected-completion commands are not recorded, instead the specific selected completion is so that
+  # repeating always inserts what was completed when recording.
   if self.bIsRecordingCurrentCommand:
     completion.origin = runeCursor.some
     self.registers.recordCommand("." & "apply-completion", $completion.toJson)
@@ -3004,12 +4026,14 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
   if self.hideHoverTask.isNotNil:
     self.hideHoverTask.pause()
 
-  let languageServer = await self.document.getLanguageServer()
+  let languageServer = self.document.getLanguageServer()
   if self.document.isNil:
     return
 
   if languageServer.getSome(ls):
-    let hoverInfo = await ls.getHover(self.document.localizedPath, cursor)
+    let hoverInfo = await ls.getHover(self.document.filename, cursor)
+    if self.document.isNil:
+      return
     if hoverInfo.getSome(hoverInfo):
       self.showHover = true
       self.hoverScrollOffset = 0
@@ -3044,7 +4068,7 @@ proc hideHoverDelayed*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.showHoverTask.isNotNil:
     self.showHoverTask.pause()
 
-  let hoverDelayMs = self.configProvider.getValue("text.hover-delay", 200)
+  let hoverDelayMs = self.settings.hoverDelay.get()
   if self.hideHoverTask.isNil:
     self.hideHoverTask = startDelayed(hoverDelayMs, repeat=false):
       self.hideHover()
@@ -3059,7 +4083,7 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   if self.hideHoverTask.isNotNil:
     self.hideHoverTask.pause()
 
-  let hoverDelayMs = self.configProvider.getValue("text.hover-delay", 200)
+  let hoverDelayMs = self.settings.hoverDelay.get()
   if self.showHoverTask.isNil:
     self.showHoverTask = startDelayed(hoverDelayMs, repeat=false):
       self.showHoverFor(self.currentHoverLocation)
@@ -3069,36 +4093,270 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
+proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
+  if self.document.tsTree.isNil:
+    return @[]
+
+  let tree = self.document.tsTree
+
+  var node = tree.root.descendantForRange(cursor.toSelection.tsRange)
+  var lastColumn = int.high
+  while node != tree.root:
+    var r = node.getRange.toSelection
+    # echo &"getContextLines {cursor}, last: {lastColumn}, node: {r.first}, -> {result}"
+    let indent = self.document.getIndentLevelForLine(r.first.line, self.document.tabWidth())
+    if r.first.line != cursor.line and (result.len == 0 or r.first.line != result.last):
+      if result.len > 0 and indent == lastColumn:
+        result[result.high] = r.first.line
+      elif (result.len > 0 and result.last != r.first.line) or indent < lastColumn:
+        result.add r.first.line
+        lastColumn = indent
+
+    node = node.parent
+
 proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.isNil:
     return
+  if self.document.requiresLoad or self.document.isLoadingAsync:
+    return
 
-  if self.document.getLanguageServer().await.getSome(ls):
+  if self.document.getLanguageServer().getSome(ls):
     if self.document.isNil:
       return
 
-    let visibleRange = self.visibleTextRange(self.screenLineCount)
+    let screenLineCount = self.screenLineCount
+    let visibleRangeHalf = self.visibleTextRange(screenLineCount div 2)
+    let visibleRange = self.visibleTextRange(screenLineCount)
     let snapshot = self.document.buffer.snapshot.clone()
-    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.localizedPath, visibleRange)
+    let inlayHints: Response[seq[language_server_base.InlayHint]] = await ls.getInlayHints(self.document.filename, visibleRange)
+    if self.document.isNil:
+      return
+
     # todo: detect if canceled instead
     if inlayHints.isSuccess:
-      # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
-      self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, Left), it)
+      template getBias(hint: untyped): Bias =
+        if hint.paddingRight:
+          Bias.Right
+        else:
+          Bias.Left
+
+      self.inlayHints = inlayHints.result.mapIt (snapshot.anchorAt(it.location.toPoint, it.getBias), it)
+      self.lastInlayHintTimestamp = snapshot.version
+      self.updateInlayHintsAfterChange()
+      self.lastInlayHintDisplayRange = visibleRange.toRange
+      self.lastInlayHintBufferRange = visibleRangeHalf.toRange
+
+      self.displayMap.overlay.clear(overlayIdInlayHint)
+      for hint in self.inlayHints:
+        let point = hint.hint.location.toPoint
+        let bias = hint.hint.getBias
+        if hint.hint.paddingLeft:
+          self.displayMap.overlay.addOverlay(point...point, " " & hint.hint.label, overlayIdInlayHint, "comment", bias)
+        elif hint.hint.paddingRight:
+          self.displayMap.overlay.addOverlay(point...point, hint.hint.label & " ", overlayIdInlayHint, "comment", bias)
+        else:
+          self.displayMap.overlay.addOverlay(point...point, hint.hint.label, overlayIdInlayHint, "comment", bias)
+
       self.markDirty()
+
+proc getDiagnosticsWithNoCodeActionFetched(self: TextDocumentEditor, languageServer: LanguageServer): seq[lsp_types.Diagnostic] =
+  let codeActions = self.codeActions.mgetOrPut(languageServer.name).addr
+  let visibleRange = self.visibleTextRange(0)
+  for diagnosticsData in self.document.diagnosticsPerLS.mitems:
+    if languageServer != nil and diagnosticsData.languageServer != languageServer:
+      continue
+
+    for d in diagnosticsData.currentDiagnostics.mitems:
+      if d.selection.first > visibleRange.last or d.selection.last < visibleRange.first:
+        continue
+
+      if codeActions[].contains(d.selection.first.line):
+        continue
+      codeActions[][d.selection.first.line] = @[]
+
+      # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
+      result.add lsp_types.Diagnostic(
+        range: lsp_types.Range(
+          start: lsp_types.Position(line: d.selection.first.line, character: d.selection.first.column),
+          `end`: lsp_types.Position(line: d.selection.last.line, character: d.selection.last.column),
+        ),
+        severity: d.severity,
+        code: d.code,
+        codeDescription: d.codeDescription,
+        source: d.source,
+        message: d.message,
+        tags: d.tags,
+        relatedInformation: d.relatedInformation,
+        data: d.data,
+      )
+
+proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeActionOrCommand) {.async.} =
+  if self.document.getLanguageServer().getSome(ls):
+    if self.document.isNil:
+      return
+
+    case commandOrAction.kind:
+    of CodeActionKind.Command:
+      log lvlInfo, &"Run lsp command {commandOrAction.command}"
+      let res = await ls.executeCommand(commandOrAction.command.command, commandOrAction.command.arguments)
+      if res.isError:
+        log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
+
+    of CodeActionKind.CodeAction:
+      if commandOrAction.action.edit.getSome(edit):
+        discard await applyWorkspaceEdit(self.editors, self.vfs, edit)
+        if self.document.isNil:
+          return
+
+      if commandOrAction.action.command.getSome(command):
+        log lvlInfo, &"Run lsp command {command}"
+        let res = await ls.executeCommand(command.command, command.arguments)
+        if res.isError:
+          log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
+
+proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId,
+    diagnosticsVersion: int, addSign: bool): Future[void] {.async.} =
+  # todo: correctly convert selection coordinate (line, bytes) to lsp (line, rune?)
+  let codeActions = self.codeActions.mgetOrPut(ls.name).addr
+  let actions = await ls.getCodeActions(self.document.filename, selection, @[])
+  let lastDiagnosticsVersion = self.lastDiagnosticsVersions.getOrDefault(ls.name, 0)
+  if self.document == nil or self.document.buffer.versionId != versionId or lastDiagnosticsVersion != diagnosticsVersion:
+    return
+  if actions.kind == Success and actions.result.len > 0:
+    if addSign:
+      let sign = self.settings.codeActions.sign.get()
+      if sign.len > 0:
+        let signWidth = self.settings.codeActions.signWidth.get()
+        let color = self.settings.codeActions.signColor.get()
+        discard self.addSign(idNone(), selection.first.line, sign, group = "code-actions-" & ls.name, color = color, width = signWidth)
+
+    for actionOrCommand in actions.result:
+      if actionOrCommand.asCommand().getSome(command):
+        codeActions[].mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.Command, command: command, selection: selection, languageServerName: ls.name)
+      elif actionOrCommand.asCodeAction().getSome(codeAction):
+        codeActions[].mgetOrPut(selection.first.line, @[]).add CodeActionOrCommand(kind: CodeActionKind.CodeAction, action: codeAction, selection: selection, languageServerName: ls.name)
+      else:
+        log lvlError, &"Failed to parse code action: {actionOrCommand}"
+
+  self.markDirty()
+
+proc selectCodeActionAsync(self: TextDocumentEditor) {.async.} =
+  let line = self.selection.last.line
+  var res = newSeq[FinderItem]()
+
+  proc collectCodeActions() =
+    for codeActions in self.codeActions.mvalues:
+      if line notin codeActions:
+        continue
+
+      for i, commandOrAction in codeActions[line]:
+        if commandOrAction.selection.first > self.selection.last or commandOrAction.selection.last < self.selection.last:
+          continue
+
+        case commandOrAction.kind:
+        of CodeActionKind.Command:
+          res.add FinderItem(
+            displayName: commandOrAction.command.title,
+            data: $commandOrAction.toJson,
+          )
+        of CodeActionKind.CodeAction:
+          res.add FinderItem(
+            displayName: commandOrAction.action.title,
+            data: $commandOrAction.toJson,
+          )
+
+  collectCodeActions()
+
+  if res.len == 0:
+    if self.document.getLanguageServer().getSome(ls):
+      let lastDiagnosticsVersion = self.lastDiagnosticsVersions.getOrDefault(ls.name, 0)
+      await self.updateCodeActionAsync(ls, self.selection, self.document.buffer.versionId, lastDiagnosticsVersion, addSign = false)
+    else:
+      log lvlError, &"Can't select code actions: No language server attached."
+      return
+
+    collectCodeActions()
+
+  if res.len == 0:
+    return
+
+  var builder = SelectorPopupBuilder()
+  builder.scope = "code-actions".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.4
+
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    try:
+      let commandOrAction = item.data.parseJson.jsonTo(CodeActionOrCommand)
+      asyncSpawn self.executeCommandOrCodeAction(commandOrAction)
+    except:
+      discard
+    true
+
+  discard self.layout.pushSelectorPopup(builder)
+
+proc selectCodeAction(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.selectCodeActionAsync()
+
+proc updateCodeActionsAsync*(self: TextDocumentEditor, languageServer: Option[LanguageServer]): Future[void] {.async.} =
+  if self.document.isNil:
+    return
+
+  if self.document.requiresLoad or self.document.isLoadingAsync:
+    return
+
+  let languageServers = if languageServer.getSome(ls):
+    @[ls]
+  else:
+    self.document.languageServerList.languageServers
+
+  for ls in languageServers:
+    let versionId = self.document.buffer.versionId
+    let diagnostics = self.getDiagnosticsWithNoCodeActionFetched(ls)
+    if diagnostics.len == 0:
+      return
+
+    let diagnosticsVersion = self.lastDiagnosticsVersions.getOrDefault(ls.name, 0)
+
+    for d in diagnostics:
+      let selection: Selection = (
+        (d.`range`.start.line, d.`range`.start.character),
+        (d.`range`.`end`.line, d.`range`.`end`.character))
+      asyncSpawn self.updateCodeActionAsync(ls, selection, versionId, diagnosticsVersion, addSign = true)
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.clearDiagnostics()
   self.markDirty()
 
-proc updateInlayHints*(self: TextDocumentEditor) =
+proc updateInlayHints*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
       asyncSpawn self.updateInlayHintsAsync()
+      asyncSpawn self.updateCodeActionsAsync(LanguageServer.none)
   else:
     self.inlayHintsTask.reschedule()
 
+proc lspInfo(self: TextDocumentEditor) {.expose("editor.text").} =
+  var builder = SelectorPopupBuilder()
+  builder.scope = "lsp-info".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.4
+
+  var res = newSeq[FinderItem]()
+  for ls in self.document.languageServerList.languageServers:
+    res.add FinderItem(
+      displayName: ls.name,
+    )
+
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
+
+  discard self.layout.pushSelectorPopup(builder)
+
 proc setReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
-  ## Sets the interal readOnly flag, but doesn't not change permissions of the underlying file
+  ## Sets the internal readOnly flag, but doesn't not change permissions of the underlying file
   self.document.setReadOnly(readOnly)
   self.markDirty()
 
@@ -3150,39 +4408,36 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text"
   self.currentCommandHistory.commands.setLen 0
 
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
-  let pattern = catch(re"[_a-zA-Z0-9]+").expect("Invalid regex???")
+  let wordRunes {.cursor.} = self.document.settings.completionWordChars.get()
+  let rope {.cursor.} = self.document.rope
 
-  # todo: use RopeCursor
-  for li, line in self.lastRenderedLines:
-    for s in ($self.document.getLine(line.index)).findAllBounds(line.index, pattern):
-      result.add s.first
+  let max = self.settings.chooseCursorMax.get()
+  for chunk in self.lastRenderedChunks:
+    var startsWithWord = true
+    if chunk.range.a.column > 0:
+      let currentIsWord = rope.runeAt(chunk.range.a) in wordRunes
+      let prevIsWord = rope.runeAt(rope.clipPoint(point(chunk.range.a.row, chunk.range.a.column - 1), Bias.Left)) in wordRunes
+      if prevIsWord == currentIsWord:
+        startsWithWord = false
 
-    # continue
+    let str = self.document.contentString((chunk.range.a.toCursor, chunk.range.b.toCursor))
+    var i = 0
+    while i < str.len:
+      while i < str.len and str[i] == ' ':
+        inc i
+        startsWithWord = true
 
-    # let lineNumber = line.index
-    # var column = 0
-    # for i, part in line.parts:
-    #   defer:
-    #     column += part.text.len
+      var endIndex = str.find(' ', i)
+      if endIndex == -1:
+        endIndex = str.len
 
-    #   if part.text.isEmptyOrWhitespace:
-    #     continue
+      if startsWithWord and endIndex - i >= 2:
+        result.add (chunk.range.a + point(0, i)).toCursor
+        if result.len >= max:
+          break
 
-    #   if not part.text.strip().match(pattern, 0):
-    #     continue
-
-    #   echo part.text
-
-    #   let offset = part.text.firstNonWhitespace
-    #   result.add (lineNumber, column + offset)
-
-  let line = self.selection.last.line
-  result.sort proc(a, b: auto): int =
-    let lineDistA = abs(a.line - line)
-    let lineDistB = abs(b.line - line)
-    if lineDistA != lineDistB:
-      return cmp(lineDistA, lineDistB)
-    return cmp(a.column, b.column)
+      i = endIndex
+      startsWithWord = true
 
 proc getCombinationsOfLength*(self: TextDocumentEditor, keys: openArray[string],
     disallowedPairs: HashSet[string], length: int, disallowDoubles: bool): seq[string] =
@@ -3203,7 +4458,7 @@ proc assignKeys*(self: TextDocumentEditor, cursors: openArray[Cursor]): seq[stri
     "ao", "io", "rs", "ts", "iv", "al", "ec", "eo", "ns",
     "nh", "rg", "tf", "ui", "dt", "sd", "ou", "uv", "df"
   ].toHashSet
-  for length in 1..3:
+  for length in 2..4:
     if result.len == cursors.len:
       return
     for c in self.getCombinationsOfLength(possibleKeys, disallowedPairs, length, disallowDoubles=true):
@@ -3221,32 +4476,27 @@ proc setSelection*(self: TextDocumentEditor, selection: Selection) {.expose("edi
   self.selection = selection
 
 proc setSelections*(self: TextDocumentEditor, selections: Selections) {.expose("editor.text").} =
+  if selections.len == 0:
+    log lvlError, &"Failed to set selections for '{self.getFileName()}': no selections provided"
+    return
   self.selections = selections
 
 proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
   self.targetSelection = selection
 
 proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("editor.text").} =
-  const mode = "choose-cursor"
-  let oldMode = self.currentMode
-
+  const mode = "temp.choose-cursor"
   let cursors = self.getAvailableCursors()
   let keys = self.assignKeys(cursors)
-  var config = EventHandlerConfig(
-    context: "editor.text.choose-cursor",
-    handleActions: true,
-    handleInputs: true,
-    consumeAllActions: true,
-    consumeAllInput: true
-  )
+  var config = self.events.getEventHandlerConfig(mode)
 
   for i in 0..min(cursors.high, keys.high):
-    config.addCommand("", keys[i] & "<SPACE>", action & " " & $cursors[i].toJson & " " & $oldMode.toJson)
+    config.addCommand("", keys[i] & "<SPACE>", action & " " & $cursors[i].toJson)
 
   var progress = ""
 
   proc updateStyledTextOverrides() =
-    self.styledTextOverrides.clear()
+    self.displayMap.overlay.clear(overlayIdChooseCursor)
     try:
 
       var options: seq[Cursor] = @[]
@@ -3254,23 +4504,21 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
         if not keys[i].startsWith(progress):
           continue
 
-        if not self.styledTextOverrides.contains(cursors[i].line):
-          self.styledTextOverrides[cursors[i].line] = @[]
-
         if progress.len > 0:
-          self.styledTextOverrides[cursors[i].line].add (cursors[i], progress, "entity.name.function")
+          self.displayMap.overlay.addOverlay(cursors[i].toPoint...point(cursors[i].line, cursors[i].column + progress.len), progress, overlayIdChooseCursor, "string")
 
-        let cursor = (cursors[i].line, cursors[i].column + progress.len)
+        let cursor = (line: cursors[i].line, column: cursors[i].column + progress.len)
         let text = keys[i][progress.len..^1]
-        self.styledTextOverrides[cursors[i].line].add (cursor, text, "constant.numeric")
+        self.displayMap.overlay.addOverlay(cursor.toPoint...point(cursor.line, cursor.column + text.len), text, overlayIdChooseCursor, "constant.numeric")
 
         options.add cursors[i]
 
       if options.len == 1:
-        self.styledTextOverrides.clear()
+        self.displayMap.overlay.clear(overlayIdChooseCursor)
         self.document.notifyTextChanged()
         self.markDirty()
-        discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson), record=false)
+        self.removeMode(mode)
+        discard self.handleAction(action, ($options[0].toJson), record=false)
     except:
       discard
 
@@ -3281,59 +4529,67 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   config.addCommand("", "<ESCAPE>", "setMode \"\"")
 
-  assignEventHandler(self.modeEventHandler, config):
-    onAction:
-      self.styledTextOverrides.clear()
-      self.document.notifyTextChanged()
-      self.markDirty()
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
+  self.eventHandlerOverrides[mode] = proc(config: EventHandlerConfig): EventHandler =
+    assignEventHandler(result, config):
+      onAction:
+        self.displayMap.overlay.clear(overlayIdChooseCursor)
+        self.document.notifyTextChanged()
+        self.markDirty()
+        self.removeMode(mode)
+        if self.handleAction(action, arg, record=true).isSome:
+          Handled
+        else:
+          Ignored
+
+      onInput:
         Ignored
 
-    onInput:
-      Ignored
+      onProgress:
+        progress.add inputToString(input)
+        updateStyledTextOverrides()
 
-    onProgress:
-      progress.add inputToString(input)
-      updateStyledTextOverrides()
-
-    onCanceled:
-      self.styledTextOverrides.clear()
-      self.setMode(oldMode)
+      onCanceled:
+        self.displayMap.overlay.clear(overlayIdChooseCursor)
+        self.removeMode(mode)
 
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
-  self.currentMode = mode
-
-  self.plugins.handleModeChanged(self, oldMode, self.currentMode)
+  self.setMode(mode)
 
   self.markDirty()
 
-proc recordCurrentCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.bRecordCurrentCommand = true
+proc recordCurrentCommand*(self: TextDocumentEditor, registers: seq[string] = @[]) {.expose("editor.text").} =
+  self.recordCurrentCommandRegisters = if registers.len > 0:
+    registers
+  else:
+    self.registers.recordingCommands
+
+proc runControlClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let commandName = self.settings.controlClickCommand.get()
+  let args = self.settings.controlClickCommandArgs.get()
+  if commandName.len == 0:
+    return
+  discard self.runAction(commandName, args)
 
 proc runSingleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.single-click-command", "")
-  let args = self.configProvider.getValue("editor.text.single-click-command-args", newJArray())
+  let commandName = self.settings.singleClickCommand.get()
+  let args = self.settings.singleClickCommandArgs.get()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runDoubleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.double-click-command", "extend-select-move")
-  let args = self.configProvider.getValue("editor.text.double-click-command-args",
-    %[newJString("word"), newJBool(true)])
+  let commandName = self.settings.doubleClickCommand.get()
+  let args = self.settings.doubleClickCommandArgs.get()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
 
 proc runTripleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.triple-click-command", "extend-select-move")
-  let args = self.configProvider.getValue("editor.text.triple-click-command-args",
-    %[newJString("line"), newJBool(true)])
+  let commandName = self.settings.tripleClickCommand.get()
+  let args = self.settings.tripleClickCommandArgs.get()
   if commandName.len == 0:
     return
   discard self.runAction(commandName, args)
@@ -3346,57 +4602,79 @@ proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
   elif self.lastPressedMouseButton == MouseButton.TripleClick:
     self.runTripleClickCommand()
 
+proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] {.expose("editor.text").} =
+  return self.settings.modes.get()
+
+proc setCustomHeader*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
+  self.customHeader = text
+  self.markDirty()
+
+type IdentifierCase = enum Camel, Pascal, Kebab, Snake, ScreamingSnake
+
+proc splitCase(s: string): tuple[cas: IdentifierCase, parts: seq[string]] =
+  if s == "":
+    return (IdentifierCase.Camel, @[])
+
+  if s.find('_') != -1:
+    result.cas = IdentifierCase.Snake
+    result.parts = s.split('_').mapIt(custom_unicode.toLower(it))
+    for r in s.runes:
+      if r != '_'.Rune and not r.isLower:
+        result.cas = IdentifierCase.ScreamingSnake
+        break
+
+  elif s.find('-') != -1:
+    result.cas = IdentifierCase.Kebab
+    result.parts = s.split('-').mapIt(custom_unicode.toLower(it))
+  else:
+    if s[0].isUpperAscii:
+      result.cas = IdentifierCase.Pascal
+    else:
+      result.cas = IdentifierCase.Camel
+
+    result.parts.add ""
+    for r in s.runes:
+      if not r.isLower and result.parts.last.len > 0:
+        result.parts.add ""
+      result.parts.last.add(custom_unicode.toLower(r))
+
+proc joinCase(parts: seq[string], cas: IdentifierCase): string =
+  assert parts.len > 0
+  case cas
+  of IdentifierCase.Camel:
+    parts[0] & parts[1..^1].mapIt(it.capitalize).join("")
+  of IdentifierCase.Pascal:
+    parts.mapIt(it.capitalize).join("")
+  of IdentifierCase.Kebab:
+    parts.join("-")
+  of IdentifierCase.Snake:
+    parts.join("_")
+  of IdentifierCase.ScreamingSnake:
+    parts.mapIt(custom_unicode.toUpper(it)).join("_")
+
+proc cycleCase(s: string): string =
+  if s.len == 0:
+    return s
+  let (cas, parts) = s.splitCase()
+  let nextCase = if cas == IdentifierCase.high:
+    IdentifierCase.low
+  else:
+    cas.succ
+  return parts.joinCase(nextCase)
+
+proc cycleCase*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool = false): string {.expose("editor.text").} =
+  return self.document.contentString(selection, inclusiveEnd).cycleCase()
+
+proc cycleSelectedCase*(self: TextDocumentEditor) {.expose("editor.text").} =
+  var newTexts = self.selections.mapIt(self.cycleCase(it, self.useInclusiveSelections))
+  self.selections = self.document.edit(self.selections, self.selections, newTexts, inclusiveEnd=self.useInclusiveSelections)
+  if self.useInclusiveSelections:
+    self.selections = self.selections.mapIt((it.first, self.doMoveCursorColumn(it.last, -1, wrap = false)))
+  self.updateTargetColumn()
+  self.markDirty()
+
 genDispatcher("editor.text")
 addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
-
-proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
-  assert i in 0..<self.document.numLines
-  result = self.document.getStyledText(i)
-
-  # Since the original StyledLine is cached, if we modify it here we need to create a copy
-  var copied = false
-  template copyLine(): untyped =
-    if not copied:
-      copied = true
-      result = StyledLine(index: i, parts: result.parts)
-
-  let chars = (self.lastTextAreaBounds.w / self.platform.charWidth - 2).RuneCount
-  if chars > 0.RuneCount:
-    var i = 0
-    while i < result.parts.len:
-      if result.parts[i].text.runeLen > chars:
-        copyLine()
-        splitPartAt(result, i, chars.RuneIndex)
-      inc i
-
-  # Highlight the indentation of the cursor line
-  let cursorIndentLevel = self.document.rope.indentBytes(self.selection.last.line)
-  let currentIndentLevel = self.document.rope.indentBytes(i)
-  if currentIndentLevel > cursorIndentLevel:
-    copyLine()
-    let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
-    let start = self.document.rope.runeIndexInLine((i, cursorIndentLevel))
-    result.splitAt(start)
-    result.splitAt(start + 1.RuneCount)
-    result.overrideStyleAndText(start, "|", "comment", -1, opacity=opacity.some)
-
-  if self.styledTextOverrides.contains(i):
-    copyLine()
-    result.overrideStyle(0.RuneIndex, result.runeLen.RuneIndex, "comment", -1)
-
-    for override in self.styledTextOverrides[i]:
-      self.document.splitAt(result, override.cursor.column)
-      self.document.splitAt(result, override.cursor.column + override.text.len)
-      self.document.overrideStyleAndText(result, override.cursor.column, override.text,
-        override.scope, -2, joinNext = true)
-
-  for inlay in self.inlayHints:
-    if inlay.hint.location.line != i:
-      continue
-
-    copyLine()
-    self.document.insertText(result, inlay.hint.location.column.RuneIndex, inlay.hint.label,
-      "comment", containCursor=true)
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): Option[JsonNode] =
   # debugf"[textedit] handleAction {action}, '{args}'"
@@ -3429,13 +4707,13 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
       return res.some
   except:
     let argsText = if args.isNil: "nil" else: $args
-    log(lvlError, fmt"Failed to dispatch action '{action} {argsText}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"Failed to dispatch command '{action} {argsText}': {getCurrentExceptionMsg()}")
+    return JsonNode.none
 
   return JsonNode.none
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
-  # debugf "handleAction {action}, '{arg}'"
+  # debugf "handleAction '{action}', '{arg}'"
 
   try:
     let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
@@ -3453,9 +4731,9 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
       self.registers.recordCommand("." & action, arg)
 
     defer:
-      if record and self.bRecordCurrentCommand:
-        self.registers.recordCommand("." & action, arg)
-      self.bRecordCurrentCommand = false
+      if record and self.recordCurrentCommandRegisters.len > 0:
+        self.registers.recordCommand("." & action, arg, self.recordCurrentCommandRegisters)
+      self.recordCurrentCommandRegisters.setLen(0)
 
     var args = newJArray()
     try:
@@ -3465,9 +4743,16 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
       if not self.isRunningSavedCommands:
         self.currentCommandHistory.commands.add Command(command: action, args: args)
 
-      return self.handleActionInternal(action, args)
+      result = self.handleActionInternal(action, args)
+      if result.isNone:
+        let res = self.commands.executeCommand(action & " " & arg)
+        if res.isSome:
+          return newJString(res.get).some
+
+      if result.isNone:
+        log lvlError, fmt"Unknown command '{action}'"
     except CatchableError:
-      log(lvlError, fmt"handleAction: {action}, Failed to parse args: '{arg}'")
+      log(lvlError, fmt"handleCommand: '{action}', Failed to parse args: '{arg}'")
       return JsonNode.none
   except:
     discard
@@ -3496,29 +4781,175 @@ proc handleFocusChanged*(self: TextDocumentEditor, focused: bool) =
 
 proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
     languageServer: LanguageServer) =
-  # log lvlInfo, fmt"[handleLanguageServerAttached] {self.document.filename}"
-  self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
-    .withMergeStrategy(MergeStrategy(kind: TakeAll))
-    .withPriority(2)
+  # log lvlInfo, fmt"[handleLanguageServerAttached] '{self.document.filename}'"
+  if languageServer.capabilities.completionProvider.isSome:
+    self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
+      .withMergeStrategy(MergeStrategy(kind: TakeAll))
+      .withPriority(2)
+
   self.updateInlayHints()
+
+proc handleDiagnosticsChanged(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer) =
+  if document != self.document:
+    return
+
+  self.lastDiagnosticsVersions.mgetOrPut(languageServer.name).inc
+  self.codeActions.mgetOrPut(languageServer.name).clear()
+  self.clearSigns("code-actions-" & languageServer.name)
+  asyncSpawn self.updateCodeActionsAsync(languageServer.some)
 
 proc handleTextDocumentBufferChanged(self: TextDocumentEditor, document: TextDocument) =
   if document != self.document:
     return
 
+  self.closeDiff()
   self.snapshot = self.document.buffer.snapshot.clone()
+  self.displayMap.setBuffer(self.snapshot.clone())
   self.selections = self.selections
-  self.searchResultsDirty = true
   self.inlayHints.setLen(0)
+  self.cursorHistories.setLen(0)
   self.hideCompletions()
   self.updateInlayHints()
+  self.updateSearchResults()
   self.markDirty()
+
+proc handleEdits(self: TextDocumentEditor, edits: openArray[tuple[old, new: Selection]]) =
+  self.displayMap.edit(self.document.buffer.snapshot.clone(), edits)
+  if self.settings.wrapLines.get():
+    self.displayMap.wrapMap.update(self.displayMap.tabMap.snapshot.clone(), force = true)
+
+proc updateMatchingWordHighlightAsync(self: TextDocumentEditor) {.async.} =
+  if self.isUpdatingMatchingWordHighlights:
+    return
+  self.isUpdatingMatchingWordHighlights = true
+  defer:
+    self.isUpdatingMatchingWordHighlights = false
+
+  while true:
+    if self.document.rope.len > self.settings.highlightMatches.maxFileSize.get():
+      return
+
+    let oldSelection = self.selection.normalized
+    if oldSelection.last.line - oldSelection.first.line > self.settings.highlightMatches.maxSelectionLines.get():
+      return
+
+    let (selection, inclusive, addWordBoundary) = if oldSelection.isEmpty:
+      var s = self.vimMotionWord(oldSelection.last).normalized
+      const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
+      if self.document.rope.charAt(s.first.toPoint) notin AlphaNumeric:
+        let prev = (oldSelection.last.line, oldSelection.last.column - 1)
+        if s.first.column > 0 and self.document.rope.charAt(prev.toPoint) in AlphaNumeric:
+          s = self.vimMotionWord(prev).normalized
+        else:
+          self.clearCustomHighlights(wordHighlightId)
+          return
+      if self.document.rope.charAt(s.first.toPoint) notin AlphaNumeric:
+        self.clearCustomHighlights(wordHighlightId)
+        return
+      (s, true, true)
+    else:
+      (oldSelection.normalized, self.useInclusiveSelections, false)
+
+    let startByte = self.document.rope.pointToOffset(selection.first.toPoint)
+    let endByte = self.document.rope.pointToOffset(selection.last.toPoint)
+    assert endByte >= startByte
+
+    if endByte - startByte > self.settings.highlightMatches.maxSelectionLength.get():
+      return
+
+    let text = self.document.contentString(selection, inclusive)
+    var regex = text.escapeRegex
+    if addWordBoundary:
+      regex = "\\b" & regex & "\\b"
+
+    try:
+      let version = self.document.buffer.version
+      let rope = self.document.rope.clone()
+      let ranges = await findAllAsync(rope.slice(int), regex)
+      if self.document.isNil:
+        return
+      if self.document.buffer.version != version or self.selection != oldSelection:
+        continue
+
+      self.clearCustomHighlights(wordHighlightId)
+      for r in ranges:
+        self.addCustomHighlight(wordHighlightId, r.toSelection, "matching-text-highlight")
+
+      break
+    except Exception as e:
+      log lvlError, &"Failed to find matching words: {e.msg}"
+
+proc updateMatchingWordHighlight(self: TextDocumentEditor) =
+  if not self.settings.highlightMatches.enable.get():
+    self.clearCustomHighlights(wordHighlightId)
+    return
+
+  if self.isUpdatingMatchingWordHighlights:
+    return
+
+  if self.updateMatchingWordsTask.isNil:
+    self.updateMatchingWordsTask = startDelayed(2, repeat=false):
+      if self.document.isNil:
+        return
+      asyncSpawn self.updateMatchingWordHighlightAsync()
+
+  self.updateMatchingWordsTask.interval = self.settings.highlightMatches.delay.get()
+  self.updateMatchingWordsTask.schedule()
+
+proc updateColorOverlays(self: TextDocumentEditor) {.async.} =
+  if not self.settings.colorHighlight.enable.get():
+    self.displayMap.overlay.clear(overlayIdColorHighlight)
+    return
+
+  let regex = self.settings.colorHighlight.regex.getRegex()
+  let kind = self.settings.colorHighlight.kind.get()
+  let floatRegex = re"(\d+(\.\d+)?)"
+
+  try:
+    let rope = self.document.rope.clone()
+    let colorRanges = await findAllAsync(rope.slice(int), regex)
+    if self.document.isNil:
+      return
+
+    # todo: this can scale up pretty quickly, could be done in a background thread
+    self.displayMap.overlay.clear(overlayIdColorHighlight)
+    for r in colorRanges:
+      let text = rope[r]
+      let color = case kind
+      of Hex:
+        if text.startsWith("#"):
+          $text
+        else:
+          "#" & $text
+      of Float1:
+        var c = color(0, 0, 0)
+        let text = $text
+        let numbers = text.findAllBounds(0, floatRegex)
+        if numbers.len >= 3:
+          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat
+          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat
+          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat
+        "#" & c.toHex
+      of Float255:
+        var c = color(0, 0, 0)
+        let text = $text
+        let numbers = text.findAllBounds(0, floatRegex)
+        if numbers.len >= 3:
+          c.r = (text[numbers[0].first.column..<numbers[0].last.column]).parseFloat / 255.0
+          c.g = (text[numbers[1].first.column..<numbers[1].last.column]).parseFloat / 255.0
+          c.b = (text[numbers[2].first.column..<numbers[2].last.column]).parseFloat / 255.0
+        "#" & c.toHex
+
+      self.displayMap.overlay.addOverlay(r.a...r.a, "■", overlayIdColorHighlight, color)
+
+  except Exception as e:
+    log lvlError, &"Failed to find colors: {e.msg}"
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   let oldSnapshot = self.snapshot.move
   self.snapshot = self.document.buffer.snapshot.clone()
 
-  if self.bScrollToEndOnInsert and self.selections.len == 1 and self.selection == oldSnapshot.visibleText.summary.lines.toCursor.toSelection:
+  if self.settings.scrollToEndOnInsert.get() and self.selections.len == 1 and self.selection == oldSnapshot.visibleText.summary.lines.toCursor.toSelection:
     self.selection = self.document.lastCursor.toSelection
     self.scrollToCursor()
 
@@ -3534,9 +4965,10 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
       self.selectionAnchors = @[]
 
   self.clampSelection()
-  self.searchResultsDirty = true
-
+  self.updateSearchResults()
   self.updateInlayHints()
+
+  asyncSpawn self.updateColorOverlays()
 
   self.markDirty()
 
@@ -3545,28 +4977,41 @@ proc handleTextDocumentPreLoaded(self: TextDocumentEditor) =
     return
 
   self.selectionsBeforeReload = self.selections
+  self.wasAtEndBeforeReload = self.selectionsBeforeReload.len == 1 and self.selectionsBeforeReload[0] == self.document.lastCursor.toSelection
 
-proc handleTextDocumentLoaded(self: TextDocumentEditor) =
+proc handleTextDocumentLoaded(self: TextDocumentEditor, changes: seq[Selection]) =
   if self.document.isNil:
     return
 
-  log lvlInfo, &"handleTextDocumentLoaded {self.document.filename}: targetSelectionsInternal: {self.targetSelectionsInternal}, selectionsBeforeReload: {self.selectionsBeforeReload}"
+  # debugf"handleTextDocumentLoaded {self.id}, {self.usage}, '{self.document.filename}': targetSelectionsInternal: {self.targetSelectionsInternal}"
 
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
     self.centerCursor()
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
-  elif self.document.autoReload:
-    if self.selection == self.selectionsBeforeReload[self.selectionsBeforeReload.high]:
-      self.selection = self.document.lastCursor.toSelection
-      self.scrollToCursor()
+  elif self.settings.scrollToChangeOnReload.get().getSome(scrollToChangeOnReload):
+    case scrollToChangeOnReload
+    of ScrollToChangeOnReload.First:
+      if changes.len > 0:
+        self.selection = changes[0].first.toSelection
+        self.scrollToCursor()
+    of ScrollToChangeOnReload.Last:
+      if changes.len > 0 and self.wasAtEndBeforeReload:
+        self.selection = changes[^1].last.toSelection
+        self.scrollToCursor()
 
   elif self.selectionsBeforeReload.len > 0:
     self.selections = self.selectionsBeforeReload
     self.scrollToCursor()
+    self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
+  self.cursorHistories.setLen(0)
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
+
+  if self.diffDocument.isNotNil:
+    asyncSpawn self.updateDiffAsync(gotoFirstDiff=false)
 
 proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
@@ -3578,24 +5023,60 @@ proc handleCompletionsUpdated(self: TextDocumentEditor) =
   self.completionsDirty = true
   self.markDirty()
 
+proc handleWrapMapUpdated(self: TextDocumentEditor, wrapMap: WrapMap, old: WrapMapSnapshot) =
+  if self.document.isNil or self.diffDocument.isNil:
+    return
+  if wrapMap == self.displayMap.wrapMap:
+    self.diffDisplayMap.diffMap.update(self.diffChanges, self.displayMap.wrapMap.snapshot, reverse = false)
+  elif wrapMap == self.diffDisplayMap.wrapMap:
+    self.displayMap.diffMap.update(self.diffChanges, self.diffDisplayMap.wrapMap.snapshot, reverse = true)
+
+proc handleDisplayMapUpdated(self: TextDocumentEditor, displayMap: DisplayMap) =
+  if self.document.isNil:
+    return
+
+  if self.lastContentBounds.w == 0 or self.lastContentBounds.h == 0:
+    return
+
+  if displayMap == self.displayMap:
+    if displayMap.endDisplayPoint.row != self.lastEndDisplayPoint.row:
+      self.lastEndDisplayPoint = displayMap.endDisplayPoint
+      self.updateTargetColumn()
+      # let oldScrollOffset = self.scrollOffset.y
+
+      # debugf"handleDisplayMapUpdated '{self.getFileName()}': target {self.targetPoint}, {displayMap.endDisplayPoint.row} -> {self.lastEndDisplayPoint.row}, {self.lastContentBounds}"
+      if self.targetPoint.getSome(point):
+        self.scrollToCursor(point.toCursor, self.targetLineMargin, self.nextScrollBehaviour, self.targetLineRelativeY)
+        self.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
+      else:
+        self.scrollOffset = self.interpolatedScrollOffset
+
+      # let oldInterpolatedScrollOffset = self.interpolatedScrollOffset.y
+      let displayPoint = self.displayMap.toDisplayPoint(self.currentCenterCursor.toPoint)
+      self.interpolatedScrollOffset.y = self.lastContentBounds.h * self.currentCenterCursorRelativeYPos - self.platform.totalLineHeight * 0.5 - displayPoint.row.float * self.platform.totalLineHeight
+      # debugf"handleDisplayMapUpdated '{self.getFileName()}': {oldScrollOffset} -> {self.scrollOffset}, {oldInterpolatedScrollOffset} -> {self.interpolatedScrollOffset.y}, target {self.targetPoint}"
+
+    self.markDirty()
+  elif displayMap == self.diffDisplayMap:
+    self.markDirty()
+
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
-  let editor = TextDocumentEditor(eventHandler: nil, selectionsInternal: @[(0, 0).toSelection])
+  let editor = TextDocumentEditor(selectionsInternal: @[(0, 0).toSelection])
   editor.cursorsId = newId()
   editor.completionsId = newId()
   editor.hoverId = newId()
   editor.inlayHints = @[]
+  editor.init()
   {.gcsafe.}:
     allTextEditors.add editor
   return editor
 
-proc newTextEditor*(document: TextDocument, services: Services):
-    TextDocumentEditor =
-
+proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
-  self.configProvider = services.getService(ConfigService).get.asConfigProvider
+  self.configService = services.getService(ConfigService).get
   self.editors = services.getService(DocumentEditorService).get
   self.layout = services.getService(LayoutService).get
   self.vcs = self.services.getService(VCSService).get
@@ -3604,37 +5085,33 @@ proc newTextEditor*(document: TextDocument, services: Services):
   self.registers = self.services.getService(Registers).get
   self.workspace = self.services.getService(Workspace).get
   self.vfs = self.services.getService(VFSService).get.vfs
+  self.commands = self.services.getService(CommandService).get
+  self.displayMap = DisplayMap.new()
+  self.diffDisplayMap = DisplayMap.new()
+  discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
+  discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+
+  self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}")
+  discard self.config.onConfigChanged.subscribe proc(key: string) =
+    # Keep this simple and cheap, this is called often
+    self.configChanged = true
+    self.markDirty()
+
+  self.uiSettings = UiSettings.new(self.config)
+  self.debugSettings = DebugSettings.new(self.config)
+  self.settings = TextEditorSettings.new(self.config)
 
   self.setDocument(document)
 
-  self.init()
   self.startBlinkCursorTask()
 
   self.editors.registerEditor(self)
 
-  let config = self.events.getEventHandlerConfig("editor.text")
-  assignEventHandler(self.eventHandler, config):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      self.handleInput input, record=true
-
-  assignEventHandler(self.completionEventHandler, self.events.getEventHandlerConfig("editor.text.completion")):
-    onAction:
-      if self.handleAction(action, arg, record=true).isSome:
-        Handled
-      else:
-        Ignored
-    onInput:
-      self.handleInput input, record=true
-
   self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
 
-  self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
-
+  self.setDefaultMode()
 
   return self
 
@@ -3644,8 +5121,12 @@ method unregister*(self: TextDocumentEditor) =
   self.editors.unregisterEditor(self)
 
 method getStateJson*(self: TextDocumentEditor): JsonNode =
+  let selection = if self.targetSelectionsInternal.getSome(s) and s.len > 0:
+    s.last
+  else:
+    self.selection
   return %*{
-    "selection": self.selection.toJson
+    "selection": selection.toJson
   }
 
 method restoreStateJson*(self: TextDocumentEditor, state: JsonNode) =

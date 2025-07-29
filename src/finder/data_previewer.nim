@@ -9,7 +9,7 @@ logCategory "data-previewer"
 
 type
   DataPreviewer* = ref object of Previewer
-    editor: TextDocumentEditor
+    editor*: TextDocumentEditor
     tempDocument: TextDocument
     getPreviewTextImpl: proc(item: FinderItem): string {.gcsafe, raises: [].}
 
@@ -19,7 +19,6 @@ proc newDataPreviewer*(services: Services, language = string.none,
   new result
 
   result.tempDocument = newTextDocument(services, language=language, createLanguageServer=false)
-  result.tempDocument.readOnly = true
   result.getPreviewTextImpl = getPreviewTextImpl
 
 method deinit*(self: DataPreviewer) =
@@ -28,6 +27,9 @@ method deinit*(self: DataPreviewer) =
     self.tempDocument.deinit()
 
   self[] = default(typeof(self[]))
+
+proc setPath*(self: DataPreviewer, path: string) =
+  self.tempDocument.filename = path
 
 method delayPreview*(self: DataPreviewer) =
   discard

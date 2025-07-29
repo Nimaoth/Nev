@@ -1,4 +1,4 @@
-import std/[os, parseopt, compilesettings]
+import std/[os, parseopt, compilesettings, strformat]
 
 # Helper functions
 
@@ -31,8 +31,10 @@ template catch(exp: untyped, then: untyped): untyped =
 
 ############################################################################################################
 
-const releaseWindows = "release_windows"
-const releaseLinux = "release_linux"
+const version = "0.4.0"
+const releaseWindows = &"nev-{version}-x86_64-pc-windows-gnu"
+const releaseLinux = &"nev-{version}-x86_64-unknown-linux-gnu"
+const releaseLinuxMusl = &"nev-{version}-x86_64-unknown-linux-musl"
 
 proc copySharedFilesTo(dir: string) =
   cpDir2 "config", dir
@@ -41,19 +43,21 @@ proc copySharedFilesTo(dir: string) =
   cpDir2 "themes", dir
   cpDir2 "scripting", dir
   cpDir2 "docs", dir
+  cpDir2 "res", dir
   mkDir dir / "src"
   mkDir dir / "src/misc"
-  cpFile2 "src/scripting_api.nim", dir / "src"
   cpFile2 "src/input_api.nim", dir / "src"
-  cpFile2 "src/misc/timer.nim", dir / "src/misc"
-  cpFile2 "src/misc/id.nim", dir / "src/misc"
-  cpFile2 "src/misc/myjsonutils.nim", dir / "src/misc"
-  cpFile2 "src/misc/event.nim", dir / "src/misc"
-  cpFile2 "src/misc/util.nim", dir / "src/misc"
-  cpFile2 "src/misc/macro_utils.nim", dir / "src/misc"
-  cpFile2 "src/misc/wrap.nim", dir / "src/misc"
   cpFile2 "src/misc/custom_unicode.nim", dir / "src/misc"
   cpFile2 "src/misc/embed_source.nim", dir / "src/misc"
+  cpFile2 "src/misc/event.nim", dir / "src/misc"
+  cpFile2 "src/misc/id.nim", dir / "src/misc"
+  cpFile2 "src/misc/macro_utils.nim", dir / "src/misc"
+  cpFile2 "src/misc/myjsonutils.nim", dir / "src/misc"
+  cpFile2 "src/misc/timer.nim", dir / "src/misc"
+  cpFile2 "src/misc/util.nim", dir / "src/misc"
+  cpFile2 "src/misc/wrap.nim", dir / "src/misc"
+  cpFile2 "src/scripting_api.nim", dir / "src"
+  cpDir2 "patches", dir
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
   cpFile2 "nev.nimble", dir
@@ -87,7 +91,7 @@ for kind, key, val in optParser.getopt():
   of cmdEnd: assert(false) # cannot happen
 
 if packageWindows:
-  echo "Package windows..."
+  echo &"Package windows..."
   mkDir releaseWindows
   copySharedFilesTo releaseWindows
   if fileExists "nev.exe":
@@ -95,19 +99,28 @@ if packageWindows:
     cpFile2 "nev.exe", releaseWindows
     cpFile2 "nevt.exe", releaseWindows, optional=true
     cpFile2 "wasmtime.dll", releaseWindows, optional=true
-    # cpFile2 "tools/remote-workspace-host.exe", releaseWindows
-    # cpFile2 "tools/lsp-ws.exe", releaseWindows
+
+  echo &"Create {releaseWindows}.zip"
+  exec(&"powershell -Command Compress-Archive -Path {releaseWindows} -DestinationPath {releaseWindows}.zip")
 
 if packageLinux:
-  echo "Package linux..."
+  echo &"Package linux..."
   mkDir releaseLinux
   copySharedFilesTo releaseLinux
   if fileExists "nev":
-    cpFile2 "nevg", releaseLinux
     cpFile2 "nev", releaseLinux
-    cpFile2 "nevt", releaseLinux, optional=true
-    cpFile2 "nev-musl", releaseLinux
-    # cpFile2 "tools/remote-workspace-host", releaseLinux
-    # cpFile2 "tools/lsp-ws", releaseLinux
+    cpFile2 "nevg", releaseLinux
+
+  mkDir releaseLinuxMusl
+  copySharedFilesTo releaseLinuxMusl
+  if fileExists "nev":
+    cpFile2 "nev-musl", releaseLinuxMusl
+    mvFile(releaseLinuxMusl / "nev-musl", releaseLinuxMusl / "nev")
+
+  echo &"Create {releaseLinux}.tar"
+  exec(&"tar -jcvf {releaseLinux}.tar {releaseLinux}")
+
+  echo &"Create {releaseLinuxMusl}.tar"
+  exec(&"tar -jcvf {releaseLinuxMusl}.tar {releaseLinuxMusl}")
 
 quit exitCode

@@ -15,10 +15,8 @@ var anyCallbacks = initTable[int, proc(args: JsonNode): JsonNode]()
 var onEditorModeChanged* = initEvent[tuple[editor: EditorId, oldMode: string, newMode: string]]()
 var callbackId = 0
 
-when defined(wasm):
-  const env* = "wasm"
-else:
-  const env* = "nims"
+proc emscripten_notify_memory_growth*(a: int32) {.exportc.} = discard
+const env* = "wasm"
 
 proc info*(args: varargs[string, `$`]) =
   var msgLen = 0
@@ -70,7 +68,7 @@ macro runAction*(action: string, args: varargs[untyped]): untyped =
 
   return quote do:
     `stmts`
-    scriptRunAction(`action`, `str`)
+    discard scriptRunAction(`action`, `str`)
 
 template isTextEditor*(editorId: EditorId, injected: untyped): bool =
   (scriptIsTextEditor(editorId) and ((let injected {.inject.} = TextDocumentEditor(id: editorId); true)))
@@ -139,6 +137,9 @@ proc getOption*[T](path: string, default: T = T.default): T =
 
 proc setOption*[T](path: string, value: T) =
   plugin_api.setOption(path, value.toJson)
+
+proc setConfig*[T](editor: TextDocumentEditor, path: string, value: T) =
+  plugin_api.setConfig(editor, path, value.toJson)
 
 proc getSessionData*[T](path: string, default: T = T.default): T =
   return getSessionDataJson(path, default.toJson).jsonTo(T)
@@ -246,6 +247,8 @@ template addCommandBlockDesc*(context: string, keys: string, desc: string, body:
     addCommandDesc context, keys, desc, p, currentSourceLocation(-2)
 
 func getContextWithMode*(context: string, mode: string): string =
+  if mode.contains("."):
+    return mode
   if mode.len == 0 or mode[0] == '#':
     return context & mode
   else:
@@ -320,17 +323,6 @@ macro addTextCommand*(mode: string, keys: string, action: string, args: varargs[
     stmts
     addCommandScript(getContextWithMode("editor.text", mode), "", keysPrefix & keys, action, str, source = currentSourceLocation(-2))
 
-proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEditor, input: string): bool) =
-  let id = addCallback proc(args: JsonNode): bool =
-    try:
-      let input = args.str
-      return action(TextDocumentEditor(id: getActiveEditor()), input)
-    except:
-      infof"TextInputHandler {context}: {getCurrentExceptionMsg()}"
-
-  scriptSetCallback("editor.text.input-handler." & context, id)
-  setHandleInputs("editor.text." & context, true)
-
 var customMoves = initTable[string, proc(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection]()
 proc handleCustomTextMove*(editor: TextDocumentEditor, move: string, cursor: Cursor, count: int): Option[Selection] =
   if customMoves.contains(move):
@@ -397,7 +389,7 @@ proc setModelInputHandler*(context: string, action: proc(editor: ModelDocumentEd
     let input = args.str
     action(ModelDocumentEditor(id: getActiveEditor()), input)
   scriptSetCallback("editor.model.input-handler." & context, id)
-  setHandleInputs("editor.model." & context, true)
+  # setHandleInputs("editor.model." & context, true)
 
 when defined(wasm):
   macro wasmexport*(t: typed): untyped =
@@ -421,6 +413,15 @@ when defined(wasm):
   proc NimMain() {.importc.}
   proc emscripten_stack_init() {.importc.}
   # proc init_pthread_self() {.importc.} # todo
+
+  proc stackSave*(): uint32 {.wasmexport.} =
+    assert false, "stackSave not supported"
+
+  proc stackRestore*(n: uint32) {.wasmexport.} =
+    assert false, "stackRestore not supported"
+
+  proc stackAlloc*(n: uint32): pointer {.wasmexport.} =
+    assert false, "stackAlloc not supported"
 
   proc plugin_main*() {.wasmexport.} =
     emscripten_stack_init()

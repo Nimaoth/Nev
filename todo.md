@@ -3,19 +3,13 @@
 - x86_64-w64-mingw32-gcc -print-file-name=libstdc++.a
 
 ## General stuff
-- horizontal scrolling
 - improve indentation handling to auto fix incorrect indentation
-- implement marks
 - add command to restart languageserver
 - fix choose cursor mode interaction with command recording
-- add options for trimming trailing whitespace on save (e.g. only for certain file types, enable/disable, keybinding?)
 - text folding
-- command for switching first and last cursor
 - command for switching active selection
 - command for aligning cursors
 - fuzzy matching with a single character somewhere in the string should result in a positive score
-
-- implement text decorations api for scripting (inserting virtual text, replacing text)
 
 - get [https://github.com/treeform/vmath/pull/67] merged and change vmath back to original repo
 - finish [https://github.com/tree-sitter/tree-sitter/pull/2091]
@@ -30,12 +24,10 @@
 ## LSP
 - command for inserting the inlay hint under the cursor
 - rename
-- inlay hints: space left/right
 
 ## text editor
 - includeAfter names should be named includeLineLen or something like that
 - don't render multi line diagnostics inline but in a popup which can be opened/closed
-- don't show completion window when no completions available
 - read file when on disk changes, e.g. after revert
 
 - terminal undercurl/underline:
@@ -80,9 +72,21 @@
 - finish/revise using string as parameter type for wasm functions (see createWasmWrapper, createHostWrapper)
 - fix potential issues because of loading order when loading test-language and test-language-playground
 - git: use workspace directory instead of working directory
-- make sure that after every await in text editor/model editor we check if the editor has beeen deinitialized
-- named UI nodes are never cleaned up
-- use github raw link for github workspace
+- Named UI nodes are never cleaned up
+- Use GitHub raw link for GitHub workspace
 - move git stuff to workspace to support multiple git repositories
 - global search:
   - figure out how to specify file filters and other options (case sensitive, whole word match, regex)
+
+- show aliases in command line auto complete.
+
+- fix multiple code actions for the same diagnostic
+- code action sorting
+
+- slicing a rope slice does't work
+
+- disable tab for switching preview focus for terminal selector
+- add Cursor flag to UINodeFlags, draw active editor cursor with that flag, handle it platform to draw
+  native terminal cursor instead of rect
+- add foreground color highlights
+

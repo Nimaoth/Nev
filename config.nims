@@ -53,7 +53,8 @@ switch("d", "wasm3VerboseErrorMessages")
 
 # Configure which treesitter languages are compiled into the editor (ignored on js backend)
 # switch("d", "treesitterBuiltins=cpp,nim,agda,bash,c,css,go,html,java,javascript,python,ruby,rust,scala,csharp,zig,haskell")
-switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript,json")
+switch("d", "treesitterBuiltins=cpp,c,nim,csharp,rust,python,javascript,json,markdown")
+switch("d", "treesitterWasmtimeIncludePath=crates/c-api/include")
 
 # Automatically build wasmtime when compiling the editor
 const appBuildWasmtime {.booldefine.} = false
@@ -101,11 +102,9 @@ when defined(musl):
   switch("d", "enableSystemClipboard=false")
   switch("d", "nimWasmtimeBuildMusl=true")
 
-else:
-  switch("d", "ssl")
-
 when defined(enableSysFatalStackTrace):
   patchFile("stdlib", "fatal", "patches/fatal")
+patchFile("stdlib", "osproc", "patches/osproc")
 patchFile("stdlib", "excpt", "patches/excpt")
 patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")
 patchFile("stdlib", "tables", "patches/tables") # Patch tables.nim to remove exceptions

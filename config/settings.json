@@ -1,22 +1,95 @@
 {
     "$schema": "settings.schema.json",
-    "lsp": {
-        "cpp": {
-            "path": "clangd",
-            "args": [
-                "--offset-encoding=utf-8"
-            ]
+
+    "+ui": {
+        "theme": "app://themes/green.json",
+        "hide-tab-bar-when-single": true,
+    },
+
+    "+platform": {
+        "terminal-sleep-threshold": 5
+    },
+
+    "keybindings": {
+        "preset": "vim"
+    },
+
+    "+language-mappings": {
+        "\\..(agda|lagda)$": "agda",
+        "\\..(c|cc|h|inc)$": "c",
+        "\\..sh$": "bash",
+        "\\..cs$": "c_sharp",
+        "\\..(cpp|tcc|hpp)$": "cpp",
+        "\\..css$": "css",
+        "\\..go$": "go",
+        "\\..hs$": "haskell",
+        "\\..(html|htmx)$": "html",
+        "\\..java$": "java",
+        "\\..(js|jsx)$": "javascript",
+        "\\..json$": "json",
+        "\\..nev-session$": "json",
+        "\\..lock$": "json",
+        "\\..code-workspace$": "json",
+        "\\..yml$": "yaml",
+        "\\..clangd$": "yaml",
+        "\\..nix$": "nix",
+        "\\..wit$": "wit",
+        "\\..ocaml$": "ocaml",
+        "\\..php$": "php",
+        "\\..(py|pyi)$": "python",
+        "\\..ruby$": "ruby",
+        "\\..rs$": "rust",
+        "\\..scala$": "scala",
+        "\\..(ts|tsx)$": "typescript",
+        "\\..(nim|nims|nimble)$": "nim",
+        "\\..zig$": "zig",
+        "\\..odin$": "odin",
+        "\\..md$": "markdown",
+        "\\..scm$": "query",
+        "\\..toml$": "toml",
+        "\\..ps1$": "powershell",
+        "\\..wat$": "elisp",
+        "\\..lisp$": "lisp",
+        "\\..talon$": "talon",
+        "\\..lua$": "lua",
+        "\\..log$": "log",
+        "\\..shell-command-results$": "shell-command-results",
+        "\\..selector-popup-search-bar$": "selector-popup-search-bar",
+        "\\..terminal-output$": "terminal-output",
+        "nimble..*?\\..paths$": "nim-paths",
+        "/(vector|string|thread|iostream)$": "cpp",
+        "..+/MSVC/..+/include(/..+?)*/[a-z0-9_]+$": "cpp",
+        "..+/include/c\\+\\+(/..+?)+/[a-z0-9_]+$": "cpp"
+    },
+
+    "+debugger": {
+        "+type": {
+            "lldb-dap": {
+                "connection": "stdio",
+                "path": "lldb-dap",
+                "args": []
+            },
+            "lldb-dap-tcp-launch": {
+                "connection": "tcp",
+                "path": "lldb-dap"
+            },
+            "lldb": {
+                "connection": "tcp",
+                "port": 0,
+                "path": "lldb-dap"
+            }
+        }
+    },
+
+    "+lsp": {
+        "clangd": {
+            "languages": ["c", "cpp"],
+            "command": ["clangd", "--offset-encoding=utf-8"],
         },
 
-        "c": {
-            "path": "clangd",
-            "args": [
-                "--offset-encoding=utf-8"
-            ]
-        },
-
-        "zig": {
-            "path": "zls",
+        "zls": {
+            "languages": ["zig"],
+            "command": ["zls"],
             "settings": {
                 "zls": {
                     "enable_snippets": true,
@@ -43,526 +116,820 @@
             }
         },
 
-        "odin": {
-            "path": "ols"
+        "ols": {
+            "languages": ["odin"],
+            "command": ["ols"],
         },
 
-        "rust": {
-            "path": "rust-analyzer",
+        "rust-analyzer": {
+            "languages": ["rust"],
+            "command": ["rust-analyzer"],
             "initialization-options-name": "rust-analyzer",
             "initial-configuration": "",
             "workspace-configuration-name": "",
             "rust-analyzer": {}
         },
 
-        "c_sharp": {
-            "path": "OmniSharp"
+        "OmniSharp": {
+            "languages": ["c_sharp"],
+            "command": ["OmniSharp"],
         },
 
-        "javascript": {
-            "path": "typescript-language-server",
-            "args": ["--stdio"]
+        "typescript-language-server": {
+            "languages": ["typescript", "javascript"],
+            "command": ["typescript-language-server"],
         },
 
-        "typescript": {
-            "path": "typescript-language-server",
-            "args": ["--stdio"]
+        "vscode-json-languageserver": {
+            "languages": ["json"],
+            "command": ["vscode-json-languageserver"],
         },
 
-        "json": {
-            "path": "vscode-json-languageserver",
-            "args": ["--stdio"]
+        "pylspython": {
+            "languages": ["python"],
+            "command": ["pylsp"],
         },
 
-        "python": {
-            "path": "pylsp"
-        },
-
-        "nim": {
-            "path": "nimlangserver",
-            "args": [
-                "--stdio"
-            ],
+        "nimlangserver": {
+            "languages": ["nim"],
+            "command": ["nimlangserver", "--stdio"],
             "settings": {}
-        }
+        },
+
+        "harper-ls": {
+            "languages": ["markdown"],
+            "command": ["harper-ls", "--stdio"],
+            "settings": {
+                "harper-ls": {
+                },
+            },
+        },
+
+        "lua-language-server": {
+            "languages": ["lua"],
+            "command": ["lua-language-server"],
+        },
+
+        "paths": {
+            "languages": ["markdown", "command-line"],
+            "priority": -1,
+        },
+
+        "regex": {
+            "languages": ["markdown"],
+            "priority": -2,
+        },
+
+        "command-line.languages": ["command-line"],
     },
 
-    "language-mappings": {
-        "\\.(agda|lagda)$": "agda",
-        "\\.(c|cc|h|inc)$": "c",
-        "\\.sh$": "bash",
-        "\\.cs$": "c_sharp",
-        "\\.(cpp|tcc|hpp)$": "cpp",
-        "\\.css$": "css",
-        "\\.go$": "go",
-        "\\.hs$": "haskell",
-        "\\.(html|htmx)$": "html",
-        "\\.java$": "java",
-        "\\.(js|jsx)$": "javascript",
-        "\\.json$": "json",
-        "\\.nev-session$": "json",
-        "\\.lock$": "json",
-        "\\.yml$": "yaml",
-        "\\.nix$": "nix",
-        "\\.wit$": "wit",
-        "\\.ocaml$": "ocaml",
-        "\\.php$": "php",
-        "\\.(py|pyi)$": "python",
-        "\\.ruby$": "ruby",
-        "\\.rs$": "rust",
-        "\\.scala$": "scala",
-        "\\.(ts|tsx)$": "typescript",
-        "\\.(nim|nims|nimble)$": "nim",
-        "\\.zig$": "zig",
-        "\\.odin$": "odin",
-        "\\.md$": "markdown",
-        "\\.scm$": "query",
-        "\\.toml$": "toml",
-        "\\.ps1$": "powershell",
-        "\\.wat$": "elisp",
-        "\\.talon$": "talon",
-        "/(vector|string|thread|iostream)$": "cpp",
-        ".+/MSVC/.+/include(/.+?)*/[a-z0-9_]+$": "cpp",
-        ".+/include/c\\+\\+(/.+?)+/[a-z0-9_]+$": "cpp"
-    },
+    "lsp-merge.timeout": 10000,
 
-    "languages": {
+    "+lang": {
         "command-line": {
-            "completionWordChars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"]
+            "editor.save-in-session": false,
+            "+text": {
+                "completion-word-chars": [["a", "z"], ["A", "Z"], ["0", "9"], "_", "-"],
+            }
+        },
+        "log": {
+            "+text": {
+                "treesitter.repository": "Tudyx/tree-sitter-log",
+                "scroll-to-end-on-insert": true,
+            }
+        },
+        "selector-popup-search-bar": {
+            "editor.save-in-session": false,
+        },
+        "shell-command-results": {
+            "editor.save-in-session": false,
+            "+text": {
+                "auto-reload": true,
+                "scroll-to-change-on-reload": "last",
+            },
+        },
+        "terminal-output": {
+            "editor.save-in-session": false,
         },
         "html": {
-            "treesitter": "tree-sitter/tree-sitter-html",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                ">"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-html",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    ">"
+                ]
+            }
         },
         "query": {
-            "treesitter": "tree-sitter-grammars/tree-sitter-query",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": ";"
+            "+text": {
+                "treesitter.repository": "tree-sitter-grammars/tree-sitter-query",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": ";"
+            }
         },
         "nim": {
-            "treesitter": "alaviss/tree-sitter-nim",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "[",
-                "enum",
-                "object"
-            ],
-            "lineComment": "#"
+            "+text": {
+                "color-highlight": {
+                    "enable": false,
+                    "regex": "color\\((\\d+(\\.\\d+)?(,\\s*))(\\d+(\\.\\d+)?(,\\s*))(\\d+(\\.\\d+)?)\\)",
+                    "kind": "float1"
+                },
+                "treesitter.repository": "alaviss/tree-sitter-nim",
+                "formatter.command": ["nph"],
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "[",
+                    "enum",
+                    "object"
+                ],
+                "line-comment": "#",
+                "+search-regexes": {
+                    "goto-definition": "((proc|method|func|template|macro|iterator|type|declare|declareSettings|^var|^let) [[0]]\\b)|(\\b[[0]]\\b.*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))|((type |  +)\\b[[0]]\\b\\*?( \\{.*?)?:.+[^,;]$)",
+                    "goto-implementation": "object of [[0]]",
+                    "symbols": "((proc|method|func|template|macro|iterator|type|declare|declareSettings) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|enum|distinct|proc))",
+                    "workspace-symbols-by-kind": {
+                        "Class": "(\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (object|ref|ptr|array|set|tuple|distinct)",
+                        "Function": "((proc|func|template|macro|iterator|type|declare|declareSettings) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))|((\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (proc))",
+                        "Method": "((method) (\\b([a-zA-Z0-9_]+\\b)|(`.+?`)))",
+                        "Enum": "(\\b([a-zA-Z0-9_]+)|(`.+?`)\\b).*?= (enum)"
+                    }
+                }
+            }
+        },
+        "nim-paths": {
+            "+text": {
+                "treesitter.repository": "alaviss/tree-sitter-nim",
+                "treesitter.language": "nim",
+                "formatter": "nph",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "[",
+                    "enum",
+                    "object"
+                ],
+                "line-comment": "#"
+            }
         },
         "python": {
-            "treesitter": "tree-sitter/tree-sitter-python",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "#"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-python",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "#"
+            }
         },
         "javascript": {
-            "treesitter": "tree-sitter/tree-sitter-javascript",
-            "tabWidth": 4,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ],
-            "ignoreContextLinePrefix": "{"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-javascript",
+                "tab-width": 4,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ],
+                "ignoreContextLinePrefix": "{"
+            }
         },
         "typescript": {
-            "treesitter": "tree-sitter/tree-sitter-typescript/typescript",
-            "tabWidth": 4,
-            "indent": "tab",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-typescript/typescript",
+                "tab-width": 4,
+                "indent": "tabs",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
+            }
         },
         "tsx": {
-            "treesitter": "tree-sitter/tree-sitter-typescript/tsx",
-            "tabWidth": 4,
-            "indent": "tab",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-typescript/tsx",
+                "tab-width": 4,
+                "indent": "tabs",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
+            }
         },
         "rust": {
-            "treesitter": "tree-sitter/tree-sitter-rust",
-            "tabWidth": 4,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "ignoreContextLineRegex": "\\W*(where|\\{|\\)).*",
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-rust",
+                "tab-width": 4,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "ignoreContextLineRegex": "\\W*(where|\\{|\\)).*",
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
+            }
         },
         "c": {
-            "treesitter": "tree-sitter/tree-sitter-c",
-            "tabWidth": 4,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-c",
+                "tab-width": 4,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ],
+                "+search-regexes": {
+                    "goto-definition": [
+                        "^\\s*(\\w+[\\*\\s]+)[[0]]\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                        "^\\s*(typedef\\s+)?(struct|enum|union)\\s+[[0]]"
+                     ],
+                    "symbols": [
+                        "^\\s*(\\w+[\\*\\s]+)\\w+\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                        "^\\s*(typedef\\s+)?(struct|enum|union)\\s+\\w+"
+                    ],
+                    "workspace-symbols-by-kind": {
+                        "Function": "^\\s*(\\w+[\\*\\s]+)\\w+\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                        "Class": "^\\s*(typedef\\s+)?(struct|enum|union)\\s+\\w+"
+                    }
+                }
+            }
         },
         "cpp": {
-            "treesitter": "tree-sitter/tree-sitter-cpp",
-            "tabWidth": 4,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-cpp",
+                "tab-width": 4,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
+            }
         },
         "c_sharp": {
-            "treesitter": "tree-sitter/tree-sitter-c-sharp",
-            "tabWidth": 4,
-            "indent": "tab",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-c-sharp",
+                "tab-width": 4,
+                "indent": "tabs",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
+            }
         },
         "java": {
-            "treesitter": "tree-sitter/tree-sitter-java",
-            "tabWidth": 4,
-            "indent": "tab",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-java",
+                "tab-width": 4,
+                "indent": "tabs",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
+            }
         },
         "zig": {
-            "treesitter": "maxxnino/tree-sitter-zig",
-            "tabWidth": 4,
-            "indent": "tab",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//"
+            "+text": {
+                "treesitter.repository": "maxxnino/tree-sitter-zig",
+                "tab-width": 4,
+                "indent": "tabs",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "+search-regexes": {
+                    "goto-definition": [
+                        "fn \\b[[0]]\\b",
+                        "\\b[[0]]\\b = (struct|enum|union|@import)"
+                    ],
+                    "symbols": [
+                        "fn \\b[a-zA-Z0-9_]+\\b",
+                        "\\b[a-zA-Z0-9_]+\\b = (struct|enum|union|@import)"
+                    ],
+                    "workspace-symbols-by-kind": {
+                        "Class": "\\b[a-zA-Z0-9_]+\\b = (struct|enum|union|@import)",
+                        "Function": "fn \\b[a-zA-Z0-9_]+\\b"
+                    }
+                }
+            }
         },
         "odin": {
-            "treesitter": "ap29600/tree-sitter-odin",
-            "tabWidth": 4,
-            "indent": "tab",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
+            "+text": {
+                "treesitter.repository": "ap29600/tree-sitter-odin",
+                "tab-width": 4,
+                "indent": "tabs",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/",
+                ],
+            },
         },
         "json": {
-            "treesitter": "maxxnino/tree-sitter-json",
-            "tabWidth": 4,
-            "indent": "tab",
-            "indentAfter": [
-                ":",
-                "{",
-                "["
-            ],
-            "lineComment": "//"
+            "+text": {
+                "treesitter.repository": "maxxnino/tree-sitter-json",
+                "tab-width": 4,
+                "indent": "tabs",
+                "indent-after": [
+                    ":",
+                    "{",
+                    "[",
+                ],
+                "line-comment": "//",
+                "color-highlight": {
+                    "enable": false,
+                    "regex": "#([0-9a-fA-F]{6})|#([0-9a-fA-F]{8})",
+                    "kind": "hex",
+                },
+            },
         },
         "yaml": {
-            "treesitter": "tree-sitter-grammars/tree-sitter-yaml",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "{",
-                "["
-            ],
-            "lineComment": "#"
+            "+text": {
+                "treesitter.repository": "tree-sitter-grammars/tree-sitter-yaml",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "{",
+                    "["
+                ],
+                "line-comment": "#"
+            }
         },
         "markdown": {
-            "treesitter": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
-            "treesitter-queries": "tree-sitter-markdown/queries",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "blockComment": [ "<!--", "-->" ]
+            "+text": {
+                "color-highlight": {
+                    "enable": false,
+                    "regex": "#([0-9a-fA-F]{6})",
+                    "kind": "hex",
+                },
+                "context-lines": false,
+                "treesitter.repository": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown",
+                "treesitter.queries": "tree-sitter-markdown/queries",
+                "tab-width": 2,
+                "indent": "spaces",
+                "block-comment": [ "<!--", "-->" ],
+                "+search-regexes": {
+                    "symbols": "^#+.*",
+                    "workspace-symbols-by-kind": {
+                        "Function": "^#+.*",
+                    }
+                }
+            }
         },
         "markdown_inline": {
-            "treesitter": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown-inline",
-            "treesitter-queries": "tree-sitter-markdown-inline/queries",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "blockComment": [ "<!--", "-->" ]
+            "+text": {
+                "treesitter.repository": "tree-sitter-grammars/tree-sitter-markdown/tree-sitter-markdown-inline",
+                "treesitter.queries": "tree-sitter-markdown-inline/queries",
+                "tab-width": 2,
+                "indent": "spaces",
+                "block-comment": [ "<!--", "-->" ]
+            }
         },
         "scala": {
-            "treesitter": "tree-sitter/tree-sitter-scala"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-scala"
+            }
         },
         "regex": {
-            "treesitter": "tree-sitter/tree-sitter-regex"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-regex"
+            }
         },
         "ocaml-interface": {
-            "treesitter": "tree-sitter/tree-sitter-ocaml/grammars/interface"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-ocaml/grammars/interface"
+            }
         },
         "ocaml": {
-            "treesitter": "tree-sitter/tree-sitter-ocaml/grammars/ocaml"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-ocaml/grammars/ocaml"
+            }
         },
         "ocaml-type": {
-            "treesitter": "tree-sitter/tree-sitter-ocaml/grammars/type"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-ocaml/grammars/type"
+            }
         },
         "php": {
-            "treesitter": "tree-sitter/tree-sitter-php/php"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-php/php"
+            }
         },
         "php-only": {
-            "treesitter": "tree-sitter/tree-sitter-php/php_only"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-php/php_only"
+            }
         },
         "ruby": {
-            "treesitter": "tree-sitter/tree-sitter-ruby"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-ruby"
+            }
         },
         "jsdoc": {
-            "treesitter": "tree-sitter/tree-sitter-jsdoc"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-jsdoc"
+            }
         },
         "go": {
-            "treesitter": "tree-sitter/tree-sitter-go"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-go"
+            }
         },
         "ql": {
-            "treesitter": "tree-sitter/tree-sitter-ql"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-ql"
+            }
         },
         "bash": {
-            "treesitter": "tree-sitter/tree-sitter-bash"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-bash"
+            }
         },
         "powershell": {
-            "treesitter": "airbus-cert/tree-sitter-powershell",
-            "tabWidth": 4,
-            "indent": "spaces",
-            "lineComment": "#"
+            "+text": {
+                "treesitter.repository": "airbus-cert/tree-sitter-powershell",
+                "tab-width": 4,
+                "indent": "spaces",
+                "line-comment": "#"
+            }
         },
         "css": {
-            "treesitter": "tree-sitter/tree-sitter-css"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-css"
+            }
         },
         "haskell": {
-            "treesitter": "tree-sitter/tree-sitter-haskell"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-haskell"
+            }
         },
         "agda": {
-            "treesitter": "tree-sitter/tree-sitter-agda"
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-agda"
+            }
         },
         "toml": {
-            "treesitter": "tree-sitter-grammars/tree-sitter-toml"
+            "+text": {
+                "treesitter.repository": "tree-sitter-grammars/tree-sitter-toml"
+            }
         },
         "swift": {
-            "treesitter": "alex-pinkus/tree-sitter-swift"
+            "+text": {
+                "treesitter.repository": "alex-pinkus/tree-sitter-swift"
+            }
         },
         "talon": {
-            "treesitter": "wenkokke/tree-sitter-talon",
-            "tabWidth": 4,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "#"
+            "+text": {
+                "treesitter.repository": "wenkokke/tree-sitter-talon",
+                "tab-width": 4,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "#"
+            }
         },
         "nix": {
-            "treesitter": "nix-community/tree-sitter-nix",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "#"
+            "+text": {
+                "treesitter.repository": "nix-community/tree-sitter-nix",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "#"
+            }
         },
         "commonlisp": {
-            "treesitter": "tree-sitter-grammars/tree-sitter-commonlisp",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": ";",
-            "blockComment": [
-                "(;",
-                ";)"
-            ]
+            "+text": {
+                "treesitter.repository": "tree-sitter-grammars/tree-sitter-commonlisp",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": ";",
+                "block-comment": [
+                    "(;",
+                    ";)"
+                ]
+            }
         },
         "elisp": {
-            "treesitter": "Wilfred/tree-sitter-elisp",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": ";"
+            "+text": {
+                "treesitter.repository": "Wilfred/tree-sitter-elisp",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": ";"
+            }
+        },
+        "lisp": {
+            "+text": {
+                "treesitter.repository": "Wilfred/tree-sitter-elisp",
+                "treesitter.language": "elisp",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": ";"
+            }
+        },
+        "lua": {
+            "+text": {
+                "treesitter.repository": "tjdevries/tree-sitter-lua",
+                "tab-width": 4,
+                "indent": "spaces",
+                "indent-after": [
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "--"
+            }
         },
         "wit": {
-            "treesitter": "liamwh/tree-sitter-wit",
-            "tabWidth": 2,
-            "indent": "spaces",
-            "indentAfter": [
-                ":",
-                "=",
-                "(",
-                "{",
-                "["
-            ],
-            "lineComment": "//",
-            "blockComment": [
-                "/*",
-                "*/"
-            ]
-        }
-    },
-
-    "editor": {
-        "text": {
-            "auto-start-language-server": true,
-            "triple-click-command": "extend-select-move",
-            "triple-click-command-args": [
-                "line",
-                true
-            ],
-            "whitespace": {
-                "char": "·"
-            },
-            "highlight-treesitter-errors": false
-        },
-        "restore-open-workspaces": true,
-        "restore-open-editors": true,
-        "frame-time-smoothing": 0.8,
-        "close-unused-documents-timer": 10,
-        "maxViews": 2
-    },
-
-    "debugger": {
-        "type": {
-            "lldb-dap": {
-                "connection": "stdio",
-                "path": "lldb-dap",
-                "args": []
-            },
-            "lldb-dap-tcp-launch": {
-                "connection": "tcp",
-                "path": "lldb-dap"
-            },
-            "lldb": {
-                "connection": "tcp",
-                "port": 0,
-                "path": "lldb-dap"
+            "+text": {
+                "treesitter.repository": "liamwh/tree-sitter-wit",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ]
             }
-        }
+        },
     },
 
-    "ui": {
-        "background": {
-            "transparent": false
-        }
+    "editor.shells.wsl": {
+        "command": "wsl",
+        "args": ["--"],
+        "eval": false,
+    },
+    "editor.shells.powershell": {
+        "command": "powershell",
+        "args": ["-Command"],
+        "eval": false,
+    },
+    "editor.shells.bash": {
+        "command": "bash",
+        "args": ["-c"],
+        "eval": false,
+    },
+    "editor.shells.sh": {
+        "command": "sh",
+        "args": ["-c"],
+        "eval": false,
+    },
+    "editor.shells.zsh": {
+        "command": "zsh",
+        "args": ["-c"],
+        "eval": false,
     },
 
-    "keybindings": {
-        "preset": "vim"
+    "editor.open-session.tmux": {
+        "env": "TMUX",
+        "command": "tmux",
+        "args": ["split-window", ["exe"] , ["args"], "--terminal"],
+    },
+    "editor.open-session.zellij": {
+        "env": "ZELLIJ",
+        "command": "zellij",
+        "args": ["run", "--", ["exe"] , ["args"], "--terminal"],
+    },
+    "editor.open-session.wezterm": {
+        "env": "WEZTERM_EXECUTABLE",
+        "command": "wezterm",
+        "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
     },
 
-    "wasm-plugin-post-load-commands": [
-        "load-theme \"tokyo-night-color-theme\"",
-        "load-configured-keybindings"
-    ],
+    "ui.layout.default": "vim",
+    "ui.layout.vertical-temp": {
+        "kind": "vertical",
+        "temporary": true,
+        "max-children": 2
+    },
+    "ui.layout.horizontal-temp": {
+        "kind": "horizontal",
+        "temporary": true,
+        "max-children": 2
+    },
+    "ui.layout.tab-center-alternating": {
+        "slots.default": ".center.*+?",
+        "slots.scratch-terminal": ".bottom.+",
+        "slots.build-run-terminal": ".left",
+        "slots.debugger": ".left",
+        "slots.new-tab": "+.center",
+        "kind": "tab",
+        "childTemplate": {
+            "kind": "center",
+            "center": {
+                "kind": "alternating",
+                "max-children": 2,
+            },
+            "bottom": {
+                "kind": "tab"
+            }
+        },
+    },
+    "ui.layout.splits-in-tabs": {
+        "slots.default": ".+",
+        "slots.scratch-terminal": ".+",
+        "slots.build-run-terminal": ".+",
+        "slots.debugger": ".+",
+        "slots.new-tab": "+",
+        "kind": "tab",
+        "childTemplate": {
+            "kind": "alternating",
+        },
+    },
+    "ui.layout.tabbed-splits": {
+        "slots.default": ".+",
+        "slots.scratch-terminal": "1.+",
+        "slots.build-run-terminal": "1.+",
+        "slots.debugger": "1.+",
+        "slots.new-tab": "*.+",
+        "kind": "alternating",
+        "childTemplate": {
+            "kind": "tab",
+        },
+    },
+    "ui.layout.nev-old": {
+        "slots.default": "*+?",
+        "slots.scratch-terminal": "*+<>?",
+        "slots.build-run-terminal": "*+<>?",
+        "slots.debugger": "*+<>?",
+        "slots.new-tab": "#default",
+        "kind": "alternating",
+        "max-children": 2,
+    },
+    "ui.layout.raw-splits": {
+        "slots.default": "**.*",
+        "slots.scratch-terminal": "**.*<>",
+        "slots.build-run-terminal": "**.*<>",
+        "slots.debugger": "**.*<>",
+        "slots.new-tab": "#default",
+        "kind": "horizontal",
+        "max-children": 1,
+    },
+    "ui.layout.vim": {
+        "slots.default": "**.*",
+        "slots.scratch-terminal": "**.*<>",
+        "slots.build-run-terminal": "**.*<>",
+        "slots.debugger": "**.*<>",
+        "slots.new-tab": "+",
+        "kind": "tab",
+    },
+    "ui.layout.vscode": {
+        "slots.default": "center.*.+",
+        "slots.scratch-terminal": "bottom.+",
+        "slots.build-run-terminal": "left.+",
+        "slots.debugger": "left.+",
+        "slots.new-tab": "**.+",
+        "kind": "center",
+        "center": {
+            "kind": "alternating",
+            "childTemplate": {
+                "kind": "tab"
+            }
+        },
+        "bottom": {
+            "kind": "tab",
+        },
+        "left": {
+            "kind": "tab",
+        },
+        "right": {
+            "kind": "tab",
+        },
+    },
 
-    "wasm-plugin-post-reload-commands": [
-        "load-configured-keybindings"
-    ]
+    "extra-settings": ["app://config/settings-vim.json"],
+
+    "alias": {
+        "explore-root": ["explore-files \"\""],
+        "explore-workspace": ["explore-files \"ws0://\""],
+        "explore-user-config": ["explore-files \"home://.nev\""],
+        "explore-app-config": ["explore-files \"app://config\""],
+        "explore-workspace-config": ["explore-files \"ws0://.nev\""],
+        "explore-help": ["explore-files \"app://docs\""],
+    }
 }

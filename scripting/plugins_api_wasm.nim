@@ -39,12 +39,13 @@ proc callScriptAction*(context: string; args: JsonNode): JsonNode {.gcsafe,
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc plugins_addScriptAction_void_PluginService_string_string_seq_tuple_name_string_typ_string_string_bool_string_wasm(
+proc plugins_addScriptAction_void_PluginService_string_string_seq_tuple_name_string_typ_string_string_bool_string_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc addScriptAction*(name: string; docs: string = "";
                       params: seq[tuple[name: string, typ: string]] = @[];
                       returnType: string = ""; active: bool = false;
-                      context: string = "script") {.gcsafe, raises: [].} =
+                      context: string = "script"; override: bool = false) {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add name.toJson()
   argsJson.add docs.toJson()
@@ -52,7 +53,8 @@ proc addScriptAction*(name: string; docs: string = "";
   argsJson.add returnType.toJson()
   argsJson.add active.toJson()
   argsJson.add context.toJson()
+  argsJson.add override.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = plugins_addScriptAction_void_PluginService_string_string_seq_tuple_name_string_typ_string_string_bool_string_wasm(
+  let res {.used.} = plugins_addScriptAction_void_PluginService_string_string_seq_tuple_name_string_typ_string_string_bool_string_bool_wasm(
       argsJsonString.cstring)
 

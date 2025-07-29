@@ -96,6 +96,30 @@
                             "type": "string",
                             "description": "Subdirectory of the repository which contains the queries. By default the queries are found by searching for highlights.scm"
                         },
+                        "formatter": {
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "description": "Path of the formatter executable"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "path": {
+                                            "type": "string",
+                                            "description": "Path of the formatter executable"
+                                        },
+                                        "args": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "description": "Arguments passed to the formatter"
+                                        }
+                                    }
+                                }
+                            ],
+                        },
                         "tabWidth": {
                             "type": "integer"
                         },
@@ -207,15 +231,41 @@
             "additionalProperties": false
         },
 
+        "^\\+?text$": {
+            "type": "object",
+            "properties": {
+                "reload-diff": {
+                    "type": "boolean",
+                    "description": "When set then the editor will, when reloading a file, calculate the diff between the content on disk and in memory, and apply the diff to update the in memory representation match the on disk representation.\nThis will reduce memory usage over time, but increase memory usage quite a bit while diffing.\nThe diffing has a timeout of 'text.reload-diff-timeout'. When this timeout is reached then diffing will be aborted and the file content will be loaded normally."
+                },
+                "reload-diff-timeout": {
+                    "type": "integer",
+                    "description": "Timeout in milliseconds for diffing when reloading files from disk."
+                },
+                "format-on-save": {
+                    "type": "boolean",
+                    "description": "When set the editor will run the specified formatter when saving. See 'languages.*.formatter'"
+                },
+                "^\\+?whitespace$": {
+                    "type": "object",
+                    "properties": {
+                        "char": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "highlight-treesitter-errors": {
+                    "type": "boolean"
+                }
+            }
+        },
+
         "^\\+?editor$": {
             "type": "object",
             "properties": {
                 "^\\+?text$": {
                     "type": "object",
                     "properties": {
-                        "auto-start-language-server": {
-                            "type": "boolean"
-                        },
                         "triple-click-command": {
                             "type": "string"
                         },
@@ -241,7 +291,7 @@
                 "restore-open-editors": {
                     "type": "boolean"
                 },
-                "maxViews": {
+                "max-views": {
                     "type": "integer"
                 },
                 "close-unused-documents-timer": {
@@ -262,6 +312,11 @@
                             "description": "If true then the background is transparent. Should only be set for the terminal version if you use a transparent background in the terminal."
                         }
                     }
+                },
+                "^theme$": {
+                    "type": "string",
+                    "description": "Path to theme to be used.",
+                    "default": "app://themes/tokyo-night-color-theme.json"
                 }
             }
         },

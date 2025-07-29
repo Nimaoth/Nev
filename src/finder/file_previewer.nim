@@ -15,7 +15,7 @@ type
     services*: Services
     editors*: DocumentEditorService
     vfs: VFS
-    editor: TextDocumentEditor
+    editor*: TextDocumentEditor
     tempDocument: TextDocument
     reuseExistingDocuments: bool
     openNewDocuments: bool
@@ -55,10 +55,10 @@ method deinit*(self: FilePreviewer) =
   self[] = default(typeof(self[]))
 
 proc parsePathAndLocationFromItemData*(item: FinderItem):
-    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool]]] {.gcsafe, raises: [].} =
+    Option[tuple[path: string, location: Option[Cursor], isFile: Option[bool], editorId: Option[EditorId]]] {.gcsafe, raises: [].} =
   try:
     if not item.data.startsWith("{"):
-      return (item.data, Cursor.none, bool.none).some
+      return (item.data, Cursor.none, bool.none, EditorId.none).some
 
     let jsonData = item.data.parseJson.catch:
       return
@@ -68,6 +68,11 @@ proc parsePathAndLocationFromItemData*(item: FinderItem):
 
     if not jsonData.hasKey "path":
       return
+
+    let editorId = if jsonData.hasKey "editorId":
+      jsonData["editorId"].jsonTo(Option[EditorId])
+    else:
+      EditorId.none
 
     let path = jsonData.fields["path"]
     if path.kind != JString:
@@ -87,7 +92,7 @@ proc parsePathAndLocationFromItemData*(item: FinderItem):
     else:
       Cursor.none
 
-    return (path.getStr, cursor, isFile).some
+    return (path.getStr, cursor, isFile, editorId).some
 
   except:
     return
@@ -97,10 +102,10 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
   let path = self.currentPath
   let location = self.currentLocation
   let editor = self.editor
-
-  logScope lvlInfo, &"loadAsync '{path}'"
-
   let isFile = self.currentIsFile.get(true)
+
+  logScope lvlInfo, &"loadAsync '{path}', (staged: {self.currentStaged}, is file: {isFile}, reuse existing: {self.reuseExistingDocuments}, open new: {self.openNewDocuments})"
+
   let document = if self.currentStaged or not self.reuseExistingDocuments or not isFile:
     Document.none
   elif self.openNewDocuments:
@@ -135,6 +140,9 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
     of FileKind.File:
       try:
         self.vfs.readRope(path, content.addr).await
+      except InvalidUtf8Error as e:
+        log lvlWarn, &"Failed to load file: {e.msg}"
+        content = Rope.new(e.msg)
       except IOError as e:
         log lvlError, &"Failed to load file: {e.msg}"
         content = Rope.new(e.msg)
@@ -170,13 +178,16 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
   if location.getSome(location):
     editor.targetSelection = location.toSelection
     editor.centerCursor()
+    editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   else:
     editor.targetSelection = (0, 0).toSelection
     editor.scrollToTop()
+    editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
   if self.currentDiff:
     self.editor.document.staged = self.currentStaged
     self.editor.updateDiff(gotoFirstDiff=true)
+    self.editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
   else:
     self.editor.document.staged = false
     self.editor.closeDiff()
@@ -191,7 +202,7 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
   if not (editor of TextDocumentEditor):
     return
 
-  logScope lvlInfo, &"previewItem {item}"
+  # logScope lvlInfo, &"previewItem {item}"
 
   inc self.revision
   self.editor = editor.TextDocumentEditor
@@ -232,9 +243,11 @@ method previewItem*(self: FilePreviewer, item: FinderItem, editor: DocumentEdito
     if location.getSome(location):
       self.editor.targetSelection = location.toSelection
       self.editor.centerCursor()
+      self.editor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
     else:
       self.editor.targetSelection = (0, 0).toSelection
       self.editor.scrollToTop()
+      self.editor.setNextSnapBehaviour(ScrollSnapBehaviour.Always)
 
     if self.currentDiff:
       self.editor.document.staged = self.currentStaged

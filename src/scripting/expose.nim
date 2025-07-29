@@ -194,12 +194,20 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         block:
           when `originalArgumentType` is JsonNode:
             when `isVarargs`:
-              `jsonArg`[`index`..^1]
+              if `jsonArg`.len >= `index`:
+                `jsonArg`[`index`..^1]
+              else:
+                @[]
             else:
-              `jsonArg`[`index`]
+              if `jsonArg`.len > `index`:
+                `jsonArg`[`index`]
+              else:
+                raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
           else:
             if `jsonArg`.len > `index`:
-              `jsonArg`[`index`].jsonTo `mappedArgumentType`
+              var a = `mappedArgumentType`.default
+              a.fromJson(`jsonArg`[`index`], JOptions(allowExtraKeys: true, allowMissingKeys: true))
+              a
             else:
               `default`
     else:
@@ -207,11 +215,22 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         block:
           when `originalArgumentType` is JsonNode:
             when `isVarargs`:
-              `jsonArg`[`index`..^1]
+              if `jsonArg`.len >= `index`:
+                `jsonArg`[`index`..^1]
+              else:
+                @[]
             else:
-              `jsonArg`[`index`]
+              if `jsonArg`.len > `index`:
+                `jsonArg`[`index`]
+              else:
+                raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
           else:
-            `jsonArg`[`index`].jsonTo `mappedArgumentType`
+            if `jsonArg`.len > `index`:
+              var a = `mappedArgumentType`.default
+              a.fromJson(`jsonArg`[`index`], JOptions(allowExtraKeys: true, allowMissingKeys: true))
+              a
+            else:
+              raise newException(JsonCallError, "Failed to call json wrapped function: Not enough arguments! ")
 
     #
     var callFromScriptArg = scriptFunction.argName(i)
@@ -420,10 +439,5 @@ macro genDispatcher*(moduleName: static string): untyped =
   switch.add nnkElse.newTree(quote do: JsonNode.none)
 
   return quote do:
-    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] {.gcsafe.} =
-      try:
-        result = `switch`
-      except JsonCallError as e:
-        # todo: handle errors
-        echo e.msg
-        return JsonNode.none
+    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] {.gcsafe, raises: [JsonCallError].} =
+      result = `switch`

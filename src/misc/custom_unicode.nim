@@ -3,12 +3,14 @@ import std/unicode
 from std/strutils import Digits
 
 export Rune
-export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes, `==`,
-  isWhiteSpace, isAlpha, isLower, isUpper, toLower, toUpper, size, add
+export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes, `==`, `<%`, `<=%`,
+  isWhiteSpace, isAlpha, isLower, isUpper, toLower, toUpper, size, add, capitalize
 
 type
   RuneIndex* = distinct int
   RuneCount* = distinct int
+
+proc `<=`*(a, b: Rune): bool = a <=% b
 
 func isDigit*(r: Rune): bool = r.int <= char.high.int and r.char in Digits
 

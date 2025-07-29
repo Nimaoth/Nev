@@ -5,6 +5,8 @@ export scripting_api
 
 import collab_api_wasm
 export collab_api_wasm
+import commands_api_wasm
+export commands_api_wasm
 import config_api_wasm
 export config_api_wasm
 import debugger_api_wasm
@@ -31,6 +33,10 @@ import registers_api_wasm
 export registers_api_wasm
 import session_api_wasm
 export session_api_wasm
+import terminal_api_wasm
+export terminal_api_wasm
+import toast_api_wasm
+export toast_api_wasm
 import vcs_api_wasm
 export vcs_api_wasm
 import vfs_api_wasm

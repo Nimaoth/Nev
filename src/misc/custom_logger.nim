@@ -60,8 +60,8 @@ let isTerminal {.used.} = when declared(isatty): isatty(stdout) else: false
 
 func formatTime(t: float64): string =
   if t >= 1000:
-    return &"{int(t / 1000)}s {(t mod 1000.0):>6.2f}ms"
-  return &"{t:6.3f}ms"
+    return &"{int(t / 1000)}s {(t mod 1000.0):>6.2f} ms"
+  return &"{t:6.3f} ms"
 
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
   let time = self.timer.elapsed.ms
@@ -162,20 +162,19 @@ template logCategory*(category: static string, noDebug = false): untyped =
       except:
         discard
       inc logger.indentLevel
-      let timer = startTimer()
-      defer:
-        block:
-          let elapsedMs = timer.elapsed.ms
-          let split = elapsedMs.splitDecimal
-          let elapsedMsInt = split.intpart.int
-          let elapsedUsInt = (split.floatpart * 1000).int
-          dec logger.indentLevel
-          assert logger.indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
-          try:
-            {.gcsafe.}:
-              logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
-          except:
-            discard
+    let timer = startTimer()
+    defer:
+      {.gcsafe.}:
+        let elapsedMs = timer.elapsed.ms
+        let split = elapsedMs.splitDecimal
+        let elapsedMsInt = split.intpart.int
+        let elapsedUsInt = (split.floatpart * 1000).int
+        dec logger.indentLevel
+        assert logger.indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
+        try:
+          logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMs & ", " & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
+        except:
+          discard
 
   when noDebug:
     macro debug(x: varargs[typed, `$`]): untyped {.used.} =
