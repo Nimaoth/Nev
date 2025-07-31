@@ -373,6 +373,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   customHeader*: string
 
   onSearchResultsUpdated*: Event[TextDocumentEditor]
+  onModeChanged*: Event[tuple[removed: seq[string], added: seq[string]]]
 
   uiSettings*: UiSettings
   debugSettings*: DebugSettings
@@ -1619,6 +1620,7 @@ proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true) {.
 
   self.settings.modes.set(modes)
 
+  self.onModeChanged.invoke (removedModes, @[mode])
   let handler = self.settings.modeChangedHandlerCommand.get()
   if handler != "":
     discard self.handleActionInternal(handler, [removedModes.toJson, [mode].toJson].toJson)

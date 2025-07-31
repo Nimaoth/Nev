@@ -19,7 +19,177 @@ type
 when not declared(RopeResource):
   {.error: "Missing resource type definition for " & "RopeResource" &
       ". Define the type before the importWit statement.".}
+type
+  ExportedFuncs* = object
+    mContext*: ptr ContextT
+    mMemory*: Option[ExternT]
+    mRealloc*: Option[ExternT]
+    mDealloc*: Option[ExternT]
+    mStackAlloc*: Option[ExternT]
+    mStackSave*: Option[ExternT]
+    mStackRestore*: Option[ExternT]
+    initPlugin*: FuncT
+    handleCommand*: FuncT
+    handleModeChanged*: FuncT
+proc mem(funcs: ExportedFuncs): WasmMemory =
+  if funcs.mMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+    return initWasmMemory(funcs.mMemory.get.of_field.sharedmemory)
+  elif funcs.mMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+    return initWasmMemory(funcs.mContext, funcs.mMemory.get.of_field.memory.addr)
+
+proc collectExports(funcs: var ExportedFuncs; instance: InstanceT;
+                    context: ptr ContextT) =
+  funcs.mContext = context
+  funcs.mMemory = instance.getExport(context, "memory")
+  funcs.mRealloc = instance.getExport(context, "cabi_realloc")
+  funcs.mDealloc = instance.getExport(context, "cabi_dealloc")
+  funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
+  funcs.mStackSave = instance.getExport(context, "mem_stack_save")
+  funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
+  let f_8405386636 = instance.getExport(context, "init_plugin")
+  if f_8405386636.isSome:
+    assert f_8405386636.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8405386636.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "init_plugin", "\'"
+  let f_8405386652 = instance.getExport(context, "handle_command")
+  if f_8405386652.isSome:
+    assert f_8405386652.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8405386652.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "handle_command", "\'"
+  let f_8405386702 = instance.getExport(context, "handle_mode_changed")
+  if f_8405386702.isSome:
+    assert f_8405386702.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8405386702.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "handle_mode_changed", "\'"
+
+proc initPlugin(funcs: ExportedFuncs): WasmtimeResult[void] =
+  var args: array[max(1, 0), ValT]
+  var results: array[max(1, 0), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  let res = funcs.initPlugin.addr.call(funcs.mContext,
+                                       args.toOpenArray(0, 0 - 1),
+                                       results.toOpenArray(0, 0 - 1), trap.addr).toResult(
+      void)
+  if res.isErr:
+    return res.toResult(void)
+  
+proc handleCommand(funcs: ExportedFuncs; name: string; arg: string): WasmtimeResult[
+    string] =
+  var args: array[max(1, 4), ValT]
+  var results: array[max(1, 1), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  var dataPtrWasm0: WasmPtr
+  var dataPtrWasm1: WasmPtr
+  if name.len > 0:
+    dataPtrWasm0 = block:
+      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
+                            funcs.mContext, (name.len * 1).int32, 4)
+      if temp.isErr:
+        return temp.toResult(string)
+      temp.val
+    args[0] = toWasmVal(cast[int32](dataPtrWasm0))
+    block:
+      for i0 in 0 ..< name.len:
+        memory[dataPtrWasm0 + i0] = cast[uint8](name[i0])
+  else:
+    args[0] = toWasmVal(0.int32)
+  args[1] = toWasmVal(cast[int32](name.len))
+  if arg.len > 0:
+    dataPtrWasm1 = block:
+      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
+                            funcs.mContext, (arg.len * 1).int32, 4)
+      if temp.isErr:
+        return temp.toResult(string)
+      temp.val
+    args[2] = toWasmVal(cast[int32](dataPtrWasm1))
+    block:
+      for i0 in 0 ..< arg.len:
+        memory[dataPtrWasm1 + i0] = cast[uint8](arg[i0])
+  else:
+    args[2] = toWasmVal(0.int32)
+  args[3] = toWasmVal(cast[int32](arg.len))
+  let res = funcs.handleCommand.addr.call(funcs.mContext,
+      args.toOpenArray(0, 4 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
+      string)
+  if res.isErr:
+    return res.toResult(string)
+  var retVal: string
+  let retArea: ptr UncheckedArray[uint8] = memory.getRawPtr(
+      results[0].to(WasmPtr))
+  block:
+    let p0 = cast[ptr UncheckedArray[char]](memory.getRawPtr(
+        cast[ptr int32](retArea[0].addr)[].WasmPtr))
+    retVal = newString(cast[ptr int32](retArea[4].addr)[])
+    for i0 in 0 ..< retVal.len:
+      retVal[i0] = p0[i0]
+  return wasmtime.ok(retVal)
+
+proc handleModeChanged(funcs: ExportedFuncs; fun: uint32; old: string;
+                       new: string): WasmtimeResult[void] =
+  var args: array[max(1, 5), ValT]
+  var results: array[max(1, 0), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  var dataPtrWasm0: WasmPtr
+  var dataPtrWasm1: WasmPtr
+  args[0] = toWasmVal(fun)
+  if old.len > 0:
+    dataPtrWasm0 = block:
+      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
+                            funcs.mContext, (old.len * 1).int32, 4)
+      if temp.isErr:
+        return temp.toResult(void)
+      temp.val
+    args[1] = toWasmVal(cast[int32](dataPtrWasm0))
+    block:
+      for i0 in 0 ..< old.len:
+        memory[dataPtrWasm0 + i0] = cast[uint8](old[i0])
+  else:
+    args[1] = toWasmVal(0.int32)
+  args[2] = toWasmVal(cast[int32](old.len))
+  if new.len > 0:
+    dataPtrWasm1 = block:
+      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
+                            funcs.mContext, (new.len * 1).int32, 4)
+      if temp.isErr:
+        return temp.toResult(void)
+      temp.val
+    args[3] = toWasmVal(cast[int32](dataPtrWasm1))
+    block:
+      for i0 in 0 ..< new.len:
+        memory[dataPtrWasm1 + i0] = cast[uint8](new[i0])
+  else:
+    args[3] = toWasmVal(0.int32)
+  args[4] = toWasmVal(cast[int32](new.len))
+  let res = funcs.handleModeChanged.addr.call(funcs.mContext,
+      args.toOpenArray(0, 5 - 1), results.toOpenArray(0, 0 - 1), trap.addr).toResult(
+      void)
+  if res.isErr:
+    return res.toResult(void)
+  
 proc textEditorGetSelection(host: WasmContext; store: ptr ContextT): Selection
+proc textEditorAddModeChangedHandler(host: WasmContext; store: ptr ContextT;
+                                     fun: uint32): int32
 proc textNewRope(host: WasmContext; store: ptr ContextT; content: string): RopeResource
 proc textClone(host: WasmContext; store: ptr ContextT; self: var RopeResource): RopeResource
 proc textText(host: WasmContext; store: ptr ContextT; self: var RopeResource): string
@@ -69,6 +239,18 @@ proc defineComponent*(linker: ptr LinkerT; host: WasmContext): WasmtimeResult[
         cast[ptr int32](memory[retArea + 4].addr)[] = res.first.column
         cast[ptr int32](memory[retArea + 8].addr)[] = res.last.line
         cast[ptr int32](memory[retArea + 12].addr)[] = res.last.column
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "add-mode-changed-handler", ty):
+        var fun: uint32
+        fun = convert(parameters[0].i32, uint32)
+        let res = textEditorAddModeChangedHandler(host, store, fun)
+        parameters[0].i32 = cast[int32](res)
     if e.isErr:
       return e
   block:
@@ -150,9 +332,9 @@ proc defineComponent*(linker: ptr LinkerT; host: WasmContext): WasmtimeResult[
           cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
           block:
             for i0 in 0 ..< res.len:
-              cast[ptr char](memory[dataPtrWasm0 + i0].addr)[] = res[i0]
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
         else:
-          cast[ptr int32](memory[retArea + 0].addr)[] = 0
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
         cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
@@ -197,9 +379,9 @@ proc defineComponent*(linker: ptr LinkerT; host: WasmContext): WasmtimeResult[
           cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
           block:
             for i0 in 0 ..< res.len:
-              cast[ptr char](memory[dataPtrWasm0 + i0].addr)[] = res[i0]
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
         else:
-          cast[ptr int32](memory[retArea + 0].addr)[] = 0
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
         cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
@@ -212,8 +394,8 @@ proc defineComponent*(linker: ptr LinkerT; host: WasmContext): WasmtimeResult[
         var a: int64
         var b: int64
         self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
-        a = cast[int64](parameters[1].i64)
-        b = cast[int64](parameters[2].i64)
+        a = convert(parameters[1].i64, int64)
+        b = convert(parameters[2].i64, int64)
         let res = textSlice(host, store, self[], a, b)
         parameters[0].i32 = ?host.resources.resourceNew(res)
     if e.isErr:
@@ -228,10 +410,10 @@ proc defineComponent*(linker: ptr LinkerT; host: WasmContext): WasmtimeResult[
         var a: Cursor
         var b: Cursor
         self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
-        a.line = cast[int32](parameters[1].i32)
-        a.column = cast[int32](parameters[2].i32)
-        b.line = cast[int32](parameters[3].i32)
-        b.column = cast[int32](parameters[4].i32)
+        a.line = convert(parameters[1].i32, int32)
+        a.column = convert(parameters[2].i32, int32)
+        b.line = convert(parameters[3].i32, int32)
+        b.column = convert(parameters[4].i32, int32)
         let res = textSlicePoints(host, store, self[], a, b)
         parameters[0].i32 = ?host.resources.resourceNew(res)
     if e.isErr:
@@ -307,8 +489,8 @@ proc defineComponent*(linker: ptr LinkerT; host: WasmContext): WasmtimeResult[
           source[0] = newString(parameters[13].i32)
           for i1 in 0 ..< source[0].len:
             source[0][i1] = p1[i1]
-        source[1] = cast[int32](parameters[14].i32)
-        source[2] = cast[int32](parameters[15].i32)
+        source[1] = convert(parameters[14].i32, int32)
+        source[2] = convert(parameters[15].i32, int32)
         coreBindKeys(host, store, context, subcontext, keys, action, arg,
                      description, source)
     if e.isErr:

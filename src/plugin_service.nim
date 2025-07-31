@@ -1,7 +1,7 @@
 import std/[macros, macrocache, genasts, json, strutils, os, strformat]
-import misc/[custom_logger, custom_async, util]
+import misc/[custom_logger, custom_async, util, event]
 import scripting/scripting_base, document_editor, scripting/expose, vfs, service
-import nimsumtree/[rope, sumtree]
+import nimsumtree/[rope, sumtree, arc]
 import layout
 import text/[text_editor, text_document]
 
@@ -65,6 +65,7 @@ type
   WasmModule = object
     instance: InstanceT
     store: ptr StoreT
+    funcs: ExportedFuncs
 
   WasmPluginSystem* = ref object of ScriptContext
     engine: ptr WasmEngineT
@@ -74,7 +75,7 @@ type
     services*: Services
 
     context: WasmContext
-    modules: seq[WasmModule]
+    modules: seq[Arc[WasmModule]]
 
 proc call[T](instance: InstanceT, context: ptr ContextT, name: string, parameters: openArray[ValT], nresults: static[int]): T =
 
@@ -118,8 +119,9 @@ proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
       log lvlError, &"[host] Failed to create wasm module: {err.msg}"
       continue
 
-    let store = self.engine.newStore(nil, nil)
-    let ctx = store.context
+    var wasmModule = Arc[WasmModule].new()
+    wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
+    let ctx = wasmModule.get.store.context
 
     let wasiConfig = newWasiConfig()
     wasiConfig.inheritStdin()
@@ -130,7 +132,7 @@ proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
       continue
 
     var trap: ptr WasmTrapT = nil
-    var instance: InstanceT = self.linker.instantiate(ctx, module, trap.addr).okOr(err):
+    wasmModule.getMut.instance = self.linker.instantiate(ctx, module, trap.addr).okOr(err):
       log lvlError, &"[host] Failed to create module instance: {err.msg}"
       continue
 
@@ -138,11 +140,21 @@ proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
       log lvlError, &"[host][trap] Failed to create module instance: {err.msg}"
       continue
 
-    self.modules.add WasmModule(instance: instance, store: store)
+    wasmModule.getMut.funcs.collectExports(wasmModule.get.instance, ctx)
+    self.modules.add wasmModule
 
-    instance.call[:void](ctx, "init_plugin", [], 0)
+    # wasmModule.get.instance.call[:void](ctx, "init_plugin", [], 0)
 
-    let functionTableExport = instance.getExport(ctx, "__indirect_function_table")
+    wasmModule.get.funcs.initPlugin().okOr(err):
+      echo &"Failed to call init-plugin: {err}"
+      continue
+    let res = wasmModule.get.funcs.handleCommand("hello", "world").okOr(err):
+      echo &"Failed to call init-plugin: {err}"
+      continue
+    echo &"[host] handleCommand -> '{res}'"
+    # wasmModule.get.instance.call[:void](ctx, "init_plugin", [], 0)
+
+    let functionTableExport = wasmModule.get.instance.getExport(ctx, "__indirect_function_table")
     var functionTable = functionTableExport.get.of_field.table
     echo &"function table {ctx.size(functionTable.addr)}"
 
@@ -167,6 +179,21 @@ proc textEditorGetSelection(host: WasmContext; store: ptr ContextT): Selection =
     Selection(first: Cursor(line: s.first.line.int32, column: s.first.column.int32), last: Cursor(line: s.last.line.int32, column: s.last.column.int32))
   else:
     Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9))
+
+proc textEditorAddModeChangedHandler(host: WasmContext, store: ptr ContextT, fun: uint32): int32 =
+  echo &"[host] textEditorAddModeChangedHandler {fun}"
+  if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
+    let editor = view.editor.TextDocumentEditor
+    discard editor.onModeChanged.subscribe proc(args: tuple[removed: seq[string], added: seq[string]]) =
+      echo &"[host] textEditorAddModeChangedHandler {args.removed} -> {args.added}"
+
+      let module = cast[ptr WasmModule](store.getData())
+      # let str = module[].instance.call[:string](store, "handle_mode_changed", [cast[int32](fun).toWasmVal], 0)
+
+      let res = module[].funcs.handleModeChanged(fun, $args.removed, $args.added)
+      if res.isErr:
+        echo &"[host] failed to call handleModeChanged: {res}"
+  return 123
 
 proc textNewRope(host: WasmContext; store: ptr ContextT, content: string): RopeResource =
   RopeResource(rope: createRope(content).slice().suffix(Point()))

@@ -16,6 +16,7 @@ interface text-editor {
   use types.{cursor, selection};
   // set-selection: func(s: selection);
   get-selection: func() -> selection;
+  add-mode-changed-handler: func(fun: u32) -> s32;
 }
 
 interface core {
@@ -46,4 +47,6 @@ world plugin {
 
   export init-plugin: func();
   export handle-command: func(name: string, arg: string) -> string;
+  export handle-mode-changed: func(fun: u32, old: string, new: string);
+  // export handle-mode-changed: func(fun: u32);
 }

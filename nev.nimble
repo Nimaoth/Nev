@@ -38,7 +38,7 @@ requires "https://github.com/Nimaoth/wasm3 >= 0.1.17"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
-requires "https://github.com/Nimaoth/nimwasmtime#1ef9d85"
+requires "https://github.com/Nimaoth/nimwasmtime#a2404c6"
 requires "https://github.com/Nimaoth/nimsumtree >= 0.5.6"
 requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 
@@ -165,7 +165,7 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
   exec fmt"nimble buildNimConfigWasm lisp_plugin.nim"
 
-task buildWasmComponent, "":
+task buildWasmModule, "":
   let name = "comp_test"
   withDir "config":
     exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/{name}.m.wasm\" {getCommandLineParams()} ./{name}.nim"

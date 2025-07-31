@@ -30,10 +30,18 @@ proc textEditorGetSelectionImported(a0: int32): void {.
 proc getSelection*(): Selection {.nodestroy.} =
   var retArea: array[16, uint8]
   textEditorGetSelectionImported(cast[int32](retArea[0].addr))
-  result.first.line = cast[int32](cast[ptr int32](retArea[0].addr)[])
-  result.first.column = cast[int32](cast[ptr int32](retArea[4].addr)[])
-  result.last.line = cast[int32](cast[ptr int32](retArea[8].addr)[])
-  result.last.column = cast[int32](cast[ptr int32](retArea[12].addr)[])
+  result.first.line = convert(cast[ptr int32](retArea[0].addr)[], int32)
+  result.first.column = convert(cast[ptr int32](retArea[4].addr)[], int32)
+  result.last.line = convert(cast[ptr int32](retArea[8].addr)[], int32)
+  result.last.column = convert(cast[ptr int32](retArea[12].addr)[], int32)
+
+proc textEditorAddModeChangedHandlerImported(a0: uint32): int32 {.
+    wasmimport("add-mode-changed-handler", "nev:plugins/text-editor").}
+proc addModeChangedHandler*(fun: uint32): int32 {.nodestroy.} =
+  var arg0: uint32
+  arg0 = fun
+  let res = textEditorAddModeChangedHandlerImported(arg0)
+  result = convert(res, int32)
 
 proc textNewRopeImported(a0: int32; a1: int32): int32 {.
     wasmimport("[constructor]rope", "nev:plugins/text").}
@@ -44,7 +52,7 @@ proc newRope*(content: WitString): Rope {.nodestroy.} =
   if content.len > 0:
     arg0 = cast[int32](content[0].addr)
   else:
-    arg0 = 0
+    arg0 = 0.int32
   arg1 = cast[int32](content.len)
   let res = textNewRopeImported(arg0, arg1)
   result.handle = res + 1
@@ -144,37 +152,37 @@ proc bindKeys*(context: WitString; subcontext: WitString; keys: WitString;
   if context.len > 0:
     arg0 = cast[int32](context[0].addr)
   else:
-    arg0 = 0
+    arg0 = 0.int32
   arg1 = cast[int32](context.len)
   if subcontext.len > 0:
     arg2 = cast[int32](subcontext[0].addr)
   else:
-    arg2 = 0
+    arg2 = 0.int32
   arg3 = cast[int32](subcontext.len)
   if keys.len > 0:
     arg4 = cast[int32](keys[0].addr)
   else:
-    arg4 = 0
+    arg4 = 0.int32
   arg5 = cast[int32](keys.len)
   if action.len > 0:
     arg6 = cast[int32](action[0].addr)
   else:
-    arg6 = 0
+    arg6 = 0.int32
   arg7 = cast[int32](action.len)
   if arg.len > 0:
     arg8 = cast[int32](arg[0].addr)
   else:
-    arg8 = 0
+    arg8 = 0.int32
   arg9 = cast[int32](arg.len)
   if description.len > 0:
     arg10 = cast[int32](description[0].addr)
   else:
-    arg10 = 0
+    arg10 = 0.int32
   arg11 = cast[int32](description.len)
   if source[0].len > 0:
     arg12 = cast[int32](source[0][0].addr)
   else:
-    arg12 = 0
+    arg12 = 0.int32
   arg13 = cast[int32](source[0].len)
   arg14 = source[1]
   arg15 = source[2]
@@ -203,28 +211,28 @@ proc defineCommand*(name: WitString; active: bool; docs: WitString;
   if name.len > 0:
     arg0 = cast[int32](name[0].addr)
   else:
-    arg0 = 0
+    arg0 = 0.int32
   arg1 = cast[int32](name.len)
   arg2 = active
   if docs.len > 0:
     arg3 = cast[int32](docs[0].addr)
   else:
-    arg3 = 0
+    arg3 = 0.int32
   arg4 = cast[int32](docs.len)
   if params.len > 0:
     arg5 = cast[int32](params[0].addr)
   else:
-    arg5 = 0
+    arg5 = 0.int32
   arg6 = cast[int32](params.len)
   if returntype.len > 0:
     arg7 = cast[int32](returntype[0].addr)
   else:
-    arg7 = 0
+    arg7 = 0.int32
   arg8 = cast[int32](returntype.len)
   if context.len > 0:
     arg9 = cast[int32](context[0].addr)
   else:
-    arg9 = 0
+    arg9 = 0.int32
   arg10 = cast[int32](context.len)
   coreDefineCommandImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7,
                             arg8, arg9, arg10)
@@ -240,12 +248,12 @@ proc runCommand*(name: WitString; args: WitString): void {.nodestroy.} =
   if name.len > 0:
     arg0 = cast[int32](name[0].addr)
   else:
-    arg0 = 0
+    arg0 = 0.int32
   arg1 = cast[int32](name.len)
   if args.len > 0:
     arg2 = cast[int32](args[0].addr)
   else:
-    arg2 = 0
+    arg2 = 0.int32
   arg3 = cast[int32](args.len)
   coreRunCommandImported(arg0, arg1, arg2, arg3)
 
@@ -266,6 +274,19 @@ proc handleCommandExported(a0: int32; a1: int32; a2: int32; a3: int32): int32 {.
   if res.len > 0:
     cast[ptr int32](handleCommandRetArea[0].addr)[] = cast[int32](res[0].addr)
   else:
-    cast[ptr int32](handleCommandRetArea[0].addr)[] = 0
+    cast[ptr int32](handleCommandRetArea[0].addr)[] = 0.int32
   cast[ptr int32](handleCommandRetArea[4].addr)[] = cast[int32](res.len)
   cast[int32](handleCommandRetArea[0].addr)
+
+proc handleModeChanged(fun: uint32; old: WitString; new: WitString): void
+proc handleModeChangedExported(a0: uint32; a1: int32; a2: int32; a3: int32;
+                               a4: int32): void {.
+    wasmexport("handle-mode-changed", "").} =
+  var
+    fun: uint32
+    old: WitString
+    new: WitString
+  fun = convert(a0, uint32)
+  old = ws(cast[ptr char](a1), a2)
+  new = ws(cast[ptr char](a3), a4)
+  handleModeChanged(fun, old, new)
