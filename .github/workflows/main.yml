@@ -43,7 +43,7 @@ jobs:
         continue-on-error: true
 
       - name: Install stable rust toolchain
-        uses: dtolnay/rust-toolchain@1.78
+        uses: dtolnay/rust-toolchain@1.81
 
       - run: rustup target add x86_64-unknown-linux-musl
 
