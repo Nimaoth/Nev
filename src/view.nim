@@ -8,19 +8,29 @@ import events, document_editor
 type
   View* = ref object of RootObj
     mId*: Id
+    mId2*: int32
     active*: bool
     mDirty: bool
     onMarkedDirty*: Event[void]
 
   DebuggerView* = ref object of View
 
+var viewIdCounter: int32 = 1
+
 proc id*(self: View): Id =
   if self.mId == idNone():
     self.mId = newId()
   self.mId
 
+proc id2*(self: View): int32 =
+  if self.mId2 == 0:
+    self.mId2 = viewIdCounter
+    inc(viewIdCounter)
+  self.mId2
+
 proc initView*(self: View) =
   self.mId = newId()
+  discard self.id2()
 
 func dirty*(self: View): bool = self.mDirty
 
@@ -35,6 +45,9 @@ method activate*(view: View) {.base.} =
 
 method deactivate*(view: View) {.base.} =
   view.active = false
+
+method checkDirty*(view: View) {.base.} =
+  discard
 
 proc markDirtyBase*(self: View, notify: bool = true) =
   if not self.mDirty and notify:

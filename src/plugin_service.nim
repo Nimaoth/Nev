@@ -1,9 +1,12 @@
 import std/[macros, macrocache, genasts, json, strutils, os, strformat]
-import misc/[custom_logger, custom_async, util, event]
+import misc/[custom_logger, custom_async, util, event, jsonex]
 import scripting/scripting_base, document_editor, scripting/expose, vfs, service
 import nimsumtree/[rope, sumtree, arc]
 import layout
 import text/[text_editor, text_document]
+import render_view, view
+import ui/render_command
+import scripting/binary_encoder, config_provider
 
 import wasmtime, wit_host_module
 
@@ -16,6 +19,7 @@ type WasmContext = ref object
   counter: int
   layout: LayoutService
   plugins: PluginService
+  settings: ConfigStore
   callbacks: seq[int32] = @[]
 
 func createRope(str: string): Rope =
@@ -24,12 +28,20 @@ func createRope(str: string): Rope =
 type RopeResource = object
   rope: RopeSlice[Point]
 
+type ViewResource = object
+  view: RenderView
+
 proc `=destroy`*(self: RopeResource) =
   if not self.rope.rope.tree.isNil:
     let l = min(50, self.rope.len)
     echo &"destroy rope {self.rope[0...l]}"
 
+proc `=destroy`*(self: ViewResource) =
+  if not self.view.isNil:
+    echo &"destroy view"
+
 template typeId*(_: typedesc[RopeResource]): int = 123
+# template typeId*(_: typedesc[RopeResource]): int = 123
 
 proc getMemoryFor(host: WasmContext, caller: ptr CallerT): Option[ExternT] =
   # echo &"[host] getMemoryFor"
@@ -56,6 +68,7 @@ when defined(witRebuild):
     world = "plugin"
     cacheFile = "generated/plugin_api_host.nim"
     mapName "rope", RopeResource
+    mapName "view", ViewResource
 
 else:
   static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
@@ -181,11 +194,11 @@ proc textEditorGetSelection(host: WasmContext; store: ptr ContextT): Selection =
     Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9))
 
 proc textEditorAddModeChangedHandler(host: WasmContext, store: ptr ContextT, fun: uint32): int32 =
-  echo &"[host] textEditorAddModeChangedHandler {fun}"
+  # echo &"[host] textEditorAddModeChangedHandler {fun}"
   if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
     let editor = view.editor.TextDocumentEditor
     discard editor.onModeChanged.subscribe proc(args: tuple[removed: seq[string], added: seq[string]]) =
-      echo &"[host] textEditorAddModeChangedHandler {args.removed} -> {args.added}"
+      # echo &"[host] textEditorAddModeChangedHandler {args.removed} -> {args.added}"
 
       let module = cast[ptr WasmModule](store.getData())
       # let str = module[].instance.call[:string](store, "handle_mode_changed", [cast[int32](fun).toWasmVal], 0)
@@ -235,6 +248,73 @@ proc coreRunCommand(host: WasmContext, store: ptr ContextT, name: string, args: 
   {.gcsafe.}:
     discard scriptRunActionImpl(name, args)
 
+proc coreGetSettingRaw(host: WasmContext, store: ptr ContextT, name: string): string =
+  return $host.settings.get(name, JsonNodeEx)
+
+proc coreSetSettingRaw(host: WasmContext, store: ptr ContextT, name: string, value: string) =
+  try:
+    host.settings.set(name, parseJsonex(value))
+  except Exception as e:
+    echo &"[host] coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
+
+proc renderNewView(host: WasmContext; store: ptr ContextT): ViewResource =
+  let view = RenderView()
+  host.layout.addView(view, "**")
+  return ViewResource(view: view)
+
+proc renderCreate(host: WasmContext; store: ptr ContextT): ViewResource =
+  let view = RenderView()
+  host.layout.addView(view, "**")
+  return ViewResource(view: view)
+
+proc renderFromId(host: WasmContext; store: ptr ContextT; id: int32): ViewResource =
+  let view = RenderView()
+  host.layout.addView(view, "**")
+  return ViewResource(view: view)
+
+proc renderId(host: WasmContext; store: ptr ContextT; self: var ViewResource): int32 =
+  return self.view.id2
+
+proc renderSize(host: WasmContext; store: ptr ContextT; self: var ViewResource): Vec2f =
+  return Vec2f(x: self.view.size.x, y: self.view.size.y)
+
+proc renderSetRenderInterval(host: WasmContext; store: ptr ContextT; self: var ViewResource; ms: int32): void =
+  self.view.setRenderInterval(ms.int)
+
+proc renderSetRenderCommands(host: WasmContext; store: ptr ContextT; self: var ViewResource; data: seq[uint8]): void =
+  # echo &"[host] renderSetRenderCommands {buffer}, {len}"
+  self.view.commands.raw = data #.ensureMove # todo
+
+proc renderSetRenderCommandsRaw(host: WasmContext; store: ptr ContextT; self: var ViewResource; buffer: uint32; len: uint32): void =
+  # echo &"[host] renderSetRenderCommands {buffer}, {len}"
+  let module = cast[ptr WasmModule](store.getData())
+  let mem = module[].funcs.mem
+
+  let buffer = buffer.WasmPtr
+  let len = len.int
+  var data = mem.getRawPtr(buffer)
+
+  self.view.commands.clear()
+  var decoder = BinaryDecoder.init(mem.getOpenArray[:byte](buffer, len))
+  for command in decoder.decodeRenderCommands():
+    # if command.kind == RenderCommandKind.TextRaw:
+    #   self.view.commands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: 0, textLen, command.len))
+    self.view.commands.commands.add(command)
+
+  # echo &"[host] {self.view.commands.commands.len} commands, {len} bytes"
+
+proc renderMarkDirty(host: WasmContext; store: ptr ContextT; self: var ViewResource): void =
+  self.view.markDirty()
+
+proc renderSetRenderCallback(host: WasmContext; store: ptr ContextT; self: var ViewResource; fun: uint32; data: uint32): void =
+  # echo &"[host] renderSetRenderCallback {fun}, {data}"
+  self.view.render = proc(view: RenderView) =
+    # echo &"[host] render {fun}, {data}"
+    let module = cast[ptr WasmModule](store.getData())
+    module[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
+      echo &"[host] Failed to call handleViewRenderCallback: {err}"
+
+
 proc initWasm(self: WasmPluginSystem) =
   let config = newConfig()
   self.engine = newEngine(config)
@@ -258,6 +338,7 @@ proc initWasm(self: WasmPluginSystem) =
   self.context = WasmContext(counter: 1)
   self.context.layout = self.services.getService(LayoutService).get
   self.context.plugins = self.services.getService(PluginService).get
+  self.context.settings = self.services.getService(ConfigService).get.runtime
 
   self.linker.defineComponent(self.context).okOr(err):
     echo "[host] Failed to define component: ", err.msg

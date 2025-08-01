@@ -26,7 +26,9 @@ type
     onCloseRequested*: Event[void]
     onDropFile*: Event[tuple[path: string, content: string]]
     onFocusChanged*: Event[bool]
+    onPreRender*: Event[Platform]
     layoutOptions*: WLayoutOptions
+    logNextFrameTime*: bool
 
     vfs*: VFS
 

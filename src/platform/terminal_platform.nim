@@ -676,6 +676,12 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
           platform.cursor.row = pos.y.int
         else:
           platform.fillRect(command.bounds + nodePos, command.color)
+      of RenderCommandKind.TextRaw:
+        var text = newStringOfCap(command.len)
+        text.setLen(command.len)
+        copyMem(text[0].addr, command.data, command.len)
+        platform.buffer.setBackgroundColor(bgNone)
+        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
       of RenderCommandKind.Text:
         # todo: don't copy string data
         let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]

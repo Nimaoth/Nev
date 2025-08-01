@@ -16,8 +16,20 @@ type
   Selection* = object
     first*: Cursor
     last*: Cursor
+  Vec2f* = object
+    x*: float32
+    y*: float32
+  View* = object
+    handle*: int32
   Rope* = object
     handle*: int32
+proc renderViewDrop(a: int32): void {.wasmimport("[resource-drop]view",
+    "nev:plugins/render").}
+proc `=copy`*(a: var View; b: View) {.error.}
+proc `=destroy`*(a: View) =
+  if a.handle != 0:
+    renderViewDrop(a.handle - 1)
+
 proc textRopeDrop(a: int32): void {.wasmimport("[resource-drop]rope",
     "nev:plugins/text").}
 proc `=copy`*(a: var Rope; b: Rope) {.error.}
@@ -257,14 +269,146 @@ proc runCommand*(name: WitString; args: WitString): void {.nodestroy.} =
   arg3 = cast[int32](args.len)
   coreRunCommandImported(arg0, arg1, arg2, arg3)
 
+proc coreGetSettingRawImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("get-setting-raw", "nev:plugins/core").}
+proc getSettingRaw*(name: WitString): WitString {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+    arg1: int32
+  if name.len > 0:
+    arg0 = cast[int32](name[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](name.len)
+  coreGetSettingRawImported(arg0, arg1, cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
+proc coreSetSettingRawImported(a0: int32; a1: int32; a2: int32; a3: int32): void {.
+    wasmimport("set-setting-raw", "nev:plugins/core").}
+proc setSettingRaw*(name: WitString; value: WitString): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: int32
+  if name.len > 0:
+    arg0 = cast[int32](name[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](name.len)
+  if value.len > 0:
+    arg2 = cast[int32](value[0].addr)
+  else:
+    arg2 = 0.int32
+  arg3 = cast[int32](value.len)
+  coreSetSettingRawImported(arg0, arg1, arg2, arg3)
+
+proc renderNewViewImported(): int32 {.wasmimport("[constructor]view",
+    "nev:plugins/render").}
+proc newView*(): View {.nodestroy.} =
+  let res = renderNewViewImported()
+  result.handle = res + 1
+
+proc renderIdImported(a0: int32): int32 {.
+    wasmimport("[method]view.id", "nev:plugins/render").}
+proc id*(self: View): int32 {.nodestroy.} =
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = renderIdImported(arg0)
+  result = convert(res, int32)
+
+proc renderSizeImported(a0: int32; a1: int32): void {.
+    wasmimport("[method]view.size", "nev:plugins/render").}
+proc size*(self: View): Vec2f {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  renderSizeImported(arg0, cast[int32](retArea[0].addr))
+  result.x = convert(cast[ptr float32](retArea[0].addr)[], float32)
+  result.y = convert(cast[ptr float32](retArea[4].addr)[], float32)
+
+proc renderSetRenderIntervalImported(a0: int32; a1: int32): void {.
+    wasmimport("[method]view.set-render-interval", "nev:plugins/render").}
+proc setRenderInterval*(self: View; ms: int32): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = ms
+  renderSetRenderIntervalImported(arg0, arg1)
+
+proc renderSetRenderCommandsRawImported(a0: int32; a1: uint32; a2: uint32): void {.
+    wasmimport("[method]view.set-render-commands-raw", "nev:plugins/render").}
+proc setRenderCommandsRaw*(self: View; buffer: uint32; len: uint32): void {.
+    nodestroy.} =
+  var
+    arg0: int32
+    arg1: uint32
+    arg2: uint32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = buffer
+  arg2 = len
+  renderSetRenderCommandsRawImported(arg0, arg1, arg2)
+
+proc renderSetRenderCommandsImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[method]view.set-render-commands", "nev:plugins/render").}
+proc setRenderCommands*(self: View; data: WitList[uint8]): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  if data.len > 0:
+    arg1 = cast[int32](data[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](data.len)
+  renderSetRenderCommandsImported(arg0, arg1, arg2)
+
+proc renderMarkDirtyImported(a0: int32): void {.
+    wasmimport("[method]view.mark-dirty", "nev:plugins/render").}
+proc markDirty*(self: View): void {.nodestroy.} =
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  renderMarkDirtyImported(arg0)
+
+proc renderSetRenderCallbackImported(a0: int32; a1: uint32; a2: uint32): void {.
+    wasmimport("[method]view.set-render-callback", "nev:plugins/render").}
+proc setRenderCallback*(self: View; fun: uint32; data: uint32): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: uint32
+    arg2: uint32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = fun
+  arg2 = data
+  renderSetRenderCallbackImported(arg0, arg1, arg2)
+
+proc renderCreateImported(): int32 {.wasmimport("[static]view.create",
+    "nev:plugins/render").}
+proc create*(): View {.nodestroy.} =
+  let res = renderCreateImported()
+  result.handle = res + 1
+
+proc renderFromIdImported(a0: int32): int32 {.
+    wasmimport("[static]view.from-id", "nev:plugins/render").}
+proc fromId*(id: int32): View {.nodestroy.} =
+  var arg0: int32
+  arg0 = id
+  let res = renderFromIdImported(arg0)
+  result.handle = res + 1
+
 proc initPlugin(): void
-proc initPluginExported(): void {.wasmexport("init-plugin", "").} =
+proc initPluginExported(): void {.wasmexport("init-plugin", "nev:plugins/guest").} =
   initPlugin()
 
 proc handleCommand(name: WitString; arg: WitString): WitString
 var handleCommandRetArea: array[16, uint8]
 proc handleCommandExported(a0: int32; a1: int32; a2: int32; a3: int32): int32 {.
-    wasmexport("handle-command", "").} =
+    wasmexport("handle-command", "nev:plugins/guest").} =
   var
     name: WitString
     arg: WitString
@@ -281,7 +425,7 @@ proc handleCommandExported(a0: int32; a1: int32; a2: int32; a3: int32): int32 {.
 proc handleModeChanged(fun: uint32; old: WitString; new: WitString): void
 proc handleModeChangedExported(a0: uint32; a1: int32; a2: int32; a3: int32;
                                a4: int32): void {.
-    wasmexport("handle-mode-changed", "").} =
+    wasmexport("handle-mode-changed", "nev:plugins/guest").} =
   var
     fun: uint32
     old: WitString
@@ -290,3 +434,15 @@ proc handleModeChangedExported(a0: uint32; a1: int32; a2: int32; a3: int32;
   old = ws(cast[ptr char](a1), a2)
   new = ws(cast[ptr char](a3), a4)
   handleModeChanged(fun, old, new)
+
+proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void
+proc handleViewRenderCallbackExported(a0: int32; a1: uint32; a2: uint32): void {.
+    wasmexport("handle-view-render-callback", "nev:plugins/guest").} =
+  var
+    id: int32
+    fun: uint32
+    data: uint32
+  id = convert(a0, int32)
+  fun = convert(a1, uint32)
+  data = convert(a2, uint32)
+  handleViewRenderCallback(id, fun, data)

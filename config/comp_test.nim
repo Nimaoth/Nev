@@ -1,5 +1,8 @@
-import std/[strformat]
+import std/[strformat, json, jsonutils]
 import wit_guest
+
+import scripting/binary_encoder
+import ui/render_command
 
 when defined(witRebuild):
   static: echo "Rebuilding plugin_api.wit"
@@ -84,14 +87,73 @@ proc stackWitList*[T](arr: openArray[T]): WitList[T] =
     p[i] = arr[i]
   result = wl[T](p, arr.len)
 
+var views: seq[View] = @[]
+var renderCommandEncoder: BinaryEncoder
+
+proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void =
+  # echo &"[guest] handleViewRenderCallback {id}, {fun}, {data}"
+  let fun = cast[proc(view: View) {.cdecl.}](fun)
+  fun(views[0])
+
+proc getSetting(name: string, T: typedesc): T =
+  try:
+    return getSettingRaw(name).parseJson().jsonTo(T)
+  except:
+    return T.default
+
+proc getSetting[T](name: string, def: T): T =
+  try:
+    return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
+  except:
+    return def
+
+var num = 1
+proc handleViewRender(view: View): void {.cdecl.} =
+  # echo &"[guest] handleViewRender"
+
+  try:
+    let target = getSetting("test.num-squares", 50)
+    inc num
+    if num > target:
+      num = 1
+
+    # num = target
+
+    let size = view.size
+    # echo &"[guest] size: {size}"
+
+    const s = 20.0
+    renderCommandEncoder.buffer.setLen(0)
+    buildCommands(renderCommandEncoder):
+      for y in 0..<num:
+        for x in 0..<num:
+          fillRect(rect(x.float * s, y.float * s, s, s), color(x.float / num.float, y.float / num.float, 0, 1))
+
+    # view.setRenderCommandsRaw(cast[uint32](renderCommandEncoder.buffer[0].addr), renderCommandEncoder.buffer.len.uint32)
+    view.setRenderCommands(@@(renderCommandEncoder.buffer.toOpenArray(0, renderCommandEncoder.buffer.high)))
+
+    let interval = getSetting("test.render-interval", 500)
+    view.setRenderInterval(interval)
+  except Exception as e:
+    echo &"[guest] Failed to render: {e.msg}\n{e.getStackTrace()}"
+
 proc handleCommand(name: WitString; arg: WitString): WitString =
-  echo "handleCommand ", name, ", ", arg
+  echo "[guest] handleCommand ", name, ", ", arg
+
+  let view = create()
+  view.setRenderCallback(cast[uint32](handleViewRender), 123)
+  view.setRenderInterval(500)
+  views.add(view)
+  # submitRenderCommands(1, 0, 123)
 
   case $name:
   of "uiaeuiae":
     runCommand(ws"next-view", ws"")
 
+  # of "render":
+  #   submitRenderCommands(1, 0, 123)
+
   else:
     discard
 
-  return stackWitString ($name & " " & $arg)
+  return stackWitString ($name & "-" & $arg)

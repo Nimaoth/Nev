@@ -730,6 +730,35 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
   except GLerror, Exception:
     discard
 
+proc handleRenderCommand(node: UINode, platform: GuiPlatform, command: RenderCommand, nodePos: Vec2, maskBounds: var seq[Rect]) {.inline, raises: [Exception].} =
+  case command.kind
+  of RenderCommandKind.Rect:
+    platform.boxy.strokeRect(command.bounds + nodePos, command.color)
+  of RenderCommandKind.FilledRect:
+    platform.boxy.drawRect(command.bounds + nodePos, command.color)
+  of RenderCommandKind.TextRaw:
+    # todo: don't copy string data
+    var text = newStringOfCap(command.len)
+    text.setLen(command.len)
+    copyMem(text[0].addr, command.data, command.len)
+    platform.drawText(node.renderCommands, text, -1, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags, command.underlineColor)
+  of RenderCommandKind.Text:
+    # todo: don't copy string data
+    let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
+    platform.drawText(node.renderCommands, text, command.arrangementIndex.int, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags, command.underlineColor)
+  of RenderCommandKind.ScissorStart:
+    platform.boxy.pushLayer()
+    maskBounds.add(command.bounds + nodePos)
+  of RenderCommandKind.ScissorEnd:
+    if maskBounds.len == 0:
+      log lvlError, &"Unbalanced ScisscorStart/End pairs"
+      return
+    let bounds = maskBounds.pop()
+    platform.boxy.pushLayer()
+    platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+    platform.boxy.popLayer(blendMode = MaskBlend)
+    platform.boxy.popLayer()
+
 proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
   try:
     var nodePos = offset
@@ -779,27 +808,9 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
 
     var maskBounds: seq[Rect]
     for command in node.renderCommands.commands:
-      case command.kind
-      of RenderCommandKind.Rect:
-        platform.boxy.strokeRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.FilledRect:
-        platform.boxy.drawRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.Text:
-        # todo: don't copy string data
-        let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-        platform.drawText(node.renderCommands, text, command.arrangementIndex.int, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags, command.underlineColor)
-      of RenderCommandKind.ScissorStart:
-        platform.boxy.pushLayer()
-        maskBounds.add(command.bounds + nodePos)
-      of RenderCommandKind.ScissorEnd:
-        if maskBounds.len == 0:
-          log lvlError, &"Unbalanced ScisscorStart/End pairs"
-          break
-        let bounds = maskBounds.pop()
-        platform.boxy.pushLayer()
-        platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
-        platform.boxy.popLayer(blendMode = MaskBlend)
-        platform.boxy.popLayer()
+      handleRenderCommand(node, platform, command, nodePos, maskBounds)
+    for command in node.renderCommands.decodeRenderCommands:
+      handleRenderCommand(node, platform, command, nodePos, maskBounds)
 
   except GLerror, Exception:
     discard

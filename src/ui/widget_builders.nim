@@ -8,6 +8,7 @@ import ui/[widget_builders_base, widget_builder_text_document, widget_builder_se
 import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
 import terminal_service
 import text/text_editor
+import render_view
 
 when enableAst:
   import ui/[widget_builder_model_document]
@@ -20,6 +21,20 @@ logCategory "widget_builder"
 method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
   self.editor.createUI(builder, app)
+
+method createUI*(self: RenderView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+  let dirty = self.dirty
+  self.resetDirty()
+
+  builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
+    self.size = currentNode.bounds.wh
+    if dirty and self.render != nil:
+      try:
+        self.render(self)
+      except Exception:
+        discard
+    currentNode.renderCommands = self.commands
+    currentNode.markDirty(builder)
 
 method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()
@@ -215,8 +230,6 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   var headerColor = if self.commands.commandLineMode: self.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
   let textColor = self.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-
-  self.layout.preRender()
 
   let newActiveView = self.layout.layout.activeLeafView()
   if newActiveView != self.layout.activeView and newActiveView != nil:
