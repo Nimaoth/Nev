@@ -21,9 +21,15 @@ else:
 --noMain:on
 --threads:off # 1.7.1 defaults this on
 
+# Put custom build configs which shouldn't be commited in local.nims
+when withDir(thisDir(), fileExists("local.nims")):
+  include "local.nims"
+
 --noNimblePath
 when withDir(thisDir(), fileExists("../nimble.paths")):
   include "../nimble.paths"
+
+patchFile("stdlib", "tables", "../patches/tables") # Patch tables.nim to remove exceptions
 
 switch("path", "$nim")
 switch("path", "../scripting")

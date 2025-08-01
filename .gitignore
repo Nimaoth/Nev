@@ -45,6 +45,7 @@ scripting/nim/lib
 casts
 nim_std
 dumps
+local.nims
 
 *.nev-session
 
