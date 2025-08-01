@@ -46,6 +46,9 @@ casts
 nim_std
 dumps
 local.nims
+todo.md
+tutorial.md
+rad
 
 *.nev-session
 
