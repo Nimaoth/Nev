@@ -142,6 +142,11 @@ proc apiVersion*(): int32 {.nodestroy.} =
   let res = coreApiVersionImported()
   result = convert(res, int32)
 
+proc coreGetTimeImported(): float64 {.wasmimport("get-time", "nev:plugins/core").}
+proc getTime*(): float64 {.nodestroy.} =
+  let res = coreGetTimeImported()
+  result = convert(res, float64)
+
 proc coreBindKeysImported(a0: int32; a1: int32; a2: int32; a3: int32; a4: int32;
                           a5: int32; a6: int32; a7: int32; a8: int32; a9: int32;
                           a10: int32; a11: int32; a12: int32; a13: int32;

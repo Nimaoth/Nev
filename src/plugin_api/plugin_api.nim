@@ -1,5 +1,5 @@
 import std/[macros, strutils, os, strformat]
-import misc/[custom_logger, custom_async, util, event, jsonex]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer]
 import nimsumtree/[rope, sumtree, arc]
 import service
 import layout
@@ -21,6 +21,7 @@ type
     layout*: LayoutService
     plugins*: PluginService
     settings*: ConfigStore
+    timer*: Timer
 
 proc getMemoryFor(host: HostContext, caller: ptr CallerT): Option[ExternT] =
   # echo &"[host] getMemoryFor"
@@ -94,6 +95,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
+  self.host.timer = startTimer()
 
   self.engine = engine
   self.linker = engine.newLinker()
@@ -184,6 +186,9 @@ proc textGetCurrentEditorRope(host: HostContext, store: ptr ContextT): RopeResou
     RopeResource(rope: editor.document.rope.clone().slice().suffix(Point()))
   else:
     RopeResource(rope: createRope("no editor").slice().suffix(Point()))
+
+proc coreGetTime(host: HostContext; store: ptr ContextT): float64 =
+  return host.timer.elapsed.ms
 
 proc coreApiVersion(host: HostContext, store: ptr ContextT): int32 =
   return apiVersion

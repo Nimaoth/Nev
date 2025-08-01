@@ -157,7 +157,7 @@ task buildLspWsWindows, "Build the websocket proxy for language servers":
 
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":
-    selfExec fmt"c -d:release -o:wasm/{projectName()}.wasm {getCommandLineParams()}"
+    selfExec fmt"c -d:release --skipParentCfg -o:wasm/{projectName()}.wasm {getCommandLineParams()}"
 
 task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm keybindings_plugin.nim"
@@ -169,7 +169,7 @@ task buildWasmModule, "":
   let name = "comp_test"
   withDir "config":
     exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/{name}.m.wasm\" {getCommandLineParams()} ./{name}.nim"
-    exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/test_plugin_v1.1.m.wasm\" {getCommandLineParams()} ./test_plugin_v1.nim"
+    # exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/test_plugin_v1.1.m.wasm\" {getCommandLineParams()} ./test_plugin_v1.nim"
 
     # exec &"wasm-tools component embed ../scripting/plugin_api.wit --world plugin ./wasm/{name}.m.wasm -o ./wasm/{name}.me.wasm"
     # exec &"wasm-tools component new ./wasm/{name}.me.wasm -o ./wasm/{name}.c.wasm --adapt ../scripting/wasi_snapshot_preview1.reactor.wasm"

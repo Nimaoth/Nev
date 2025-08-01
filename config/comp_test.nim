@@ -22,6 +22,18 @@ proc NimMain() {.importc.}
 
 proc handleViewRender(view: View): void {.cdecl.}
 
+proc getSetting(name: string, T: typedesc): T =
+  try:
+    return getSettingRaw(name).parseJson().jsonTo(T)
+  except:
+    return T.default
+
+proc getSetting[T](name: string, def: T): T =
+  try:
+    return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
+  except:
+    return def
+
 # proc addCallback(a: proc(x: int): int) {.importc.}
 
 echo "global stuff"
@@ -101,18 +113,6 @@ proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void =
   # echo &"[guest] handleViewRenderCallback {id}, {fun}, {data}"
   let fun = cast[proc(view: View) {.cdecl.}](fun)
   fun(views[0])
-
-proc getSetting(name: string, T: typedesc): T =
-  try:
-    return getSettingRaw(name).parseJson().jsonTo(T)
-  except:
-    return T.default
-
-proc getSetting[T](name: string, def: T): T =
-  try:
-    return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
-  except:
-    return def
 
 var num = 1
 proc handleViewRender(view: View): void {.cdecl.} =
