@@ -135,6 +135,9 @@ block: ## Parse command line options
       of "no-wasm", "w":
         opts.disableWasmPlugins = true
 
+      of "no-wasm-old", "W":
+        opts.disableOldWasmPlugins = true
+
       of "no-config", "c":
         opts.dontRestoreConfig = true
 
@@ -142,6 +145,7 @@ block: ## Parse command line options
         opts.dontRestoreConfig = true
         opts.disableNimScriptPlugins = true
         opts.disableWasmPlugins = true
+        opts.disableOldWasmPlugins = true
 
       of "skip-user":
         opts.skipUserSettings = true

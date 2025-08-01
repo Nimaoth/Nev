@@ -2,6 +2,7 @@ import std/options
 
 type AppOptions* = object
   disableNimScriptPlugins*: bool
+  disableOldWasmPlugins*: bool
   disableWasmPlugins*: bool
   dontRestoreOptions*: bool
   dontRestoreConfig*: bool

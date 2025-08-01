@@ -233,7 +233,7 @@ proc runConfigCommands(self: App, key: string) =
       discard self.handleAction(action, arg, record=false)
 
 proc initScripting(self: App, options: AppOptions) {.async.} =
-  if not options.disableWasmPlugins:
+  if not options.disableOldWasmPlugins:
     try:
       log(lvlInfo, fmt"load wasm configs")
       self.wasmScriptContext = new ScriptContextWasm
