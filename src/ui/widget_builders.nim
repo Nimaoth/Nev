@@ -23,17 +23,17 @@ method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[Overla
 
 method createUI*(self: RenderView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   let dirty = self.dirty
-  self.resetDirty()
 
   builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
+    onClickAny btn:
+      self.layout.tryActivateView(self)
+
     self.size = currentNode.bounds.wh
-    if dirty and self.render != nil:
-      try:
-        self.render(self)
-      except Exception:
-        discard
+    self.render()
     currentNode.renderCommands = self.commands
     currentNode.markDirty(builder)
+
+  self.resetDirty()
 
 method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   self.resetDirty()

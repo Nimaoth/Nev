@@ -106,7 +106,7 @@ proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
 
     #   echo &"[host] callback {cb} -> {results[0].of_field.i32}"
 
-proc initVersionGroup[T](self: WasmPluginSystem, api: var PluginApiBase) =
+proc initPluginApi[T](self: WasmPluginSystem, api: var PluginApiBase) =
   # this doesn't work
   # api = newWasmContext(self.services)
   # but this does
@@ -121,9 +121,9 @@ proc initWasm(self: WasmPluginSystem) =
   let config = newConfig()
   self.engine = newEngine(config)
 
-  self.initVersionGroup[:v0.PluginApi](self.v0)
+  self.initPluginApi[:v0.PluginApi](self.v0)
   when enableOldPluginVersions:
-    self.initVersionGroup[:v1.PluginApi](self.v1)
+    self.initPluginApi[:v1.PluginApi](self.v1)
 
   # let e = block:
   #   self.linker.defineFuncUnchecked("env", "addCallback", newFunctype([WasmValkind.I32], [])):

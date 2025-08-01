@@ -352,7 +352,6 @@ proc preRender*(self: LayoutService) =
     if v.dirty:
       self.platform.requestRender()
       self.platform.logNextFrameTime = true
-      return true
 
 method desc*(self: EditorView): string =
   if self.document == nil:

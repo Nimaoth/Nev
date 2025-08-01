@@ -59,6 +59,8 @@ proc initPlugin() =
   echo "[guest] initPlugin"
 
   let view = create()
+  view.setRenderWhenInactive(true)
+  view.setPreventThrottling(true)
   view.setRenderCallback(cast[uint32](handleViewRender), 123)
   view.setRenderInterval(500)
   views.add(view)

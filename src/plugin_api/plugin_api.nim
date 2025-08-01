@@ -18,6 +18,7 @@ const apiVersion: int32 = 0
 type
   HostContext* = ref object
     resources*: WasmModuleResources
+    services: Services
     layout*: LayoutService
     plugins*: PluginService
     settings*: ConfigStore
@@ -92,6 +93,7 @@ type
 
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
+  self.host.services = services
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
@@ -215,17 +217,17 @@ proc coreSetSettingRaw(host: HostContext, store: ptr ContextT, name: sink string
     echo &"[host] coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
 
 proc renderNewView(host: HostContext; store: ptr ContextT): ViewResource =
-  let view = RenderView()
+  let view = newRenderView(host.services)
   host.layout.addView(view, "**")
   return ViewResource(view: view)
 
 proc renderCreate(host: HostContext; store: ptr ContextT): ViewResource =
-  let view = RenderView()
+  let view = newRenderView(host.services)
   host.layout.addView(view, "**")
   return ViewResource(view: view)
 
 proc renderFromId(host: HostContext; store: ptr ContextT; id: int32): ViewResource =
-  let view = RenderView()
+  let view = newRenderView(host.services)
   host.layout.addView(view, "**")
   return ViewResource(view: view)
 
@@ -234,6 +236,12 @@ proc renderId(host: HostContext; store: ptr ContextT; self: var ViewResource): i
 
 proc renderSize(host: HostContext; store: ptr ContextT; self: var ViewResource): Vec2f =
   return Vec2f(x: self.view.size.x, y: self.view.size.y)
+
+proc renderSetRenderWhenInactive(host: HostContext; store: ptr ContextT; self: var ViewResource; enabled: bool): void =
+  self.view.setRenderWhenInactive(enabled)
+
+proc renderSetPreventThrottling(host: HostContext; store: ptr ContextT; self: var ViewResource; enabled: bool): void =
+  self.view.preventThrottling = enabled
 
 proc renderSetRenderInterval(host: HostContext; store: ptr ContextT; self: var ViewResource; ms: int32): void =
   self.view.setRenderInterval(ms.int)
@@ -258,7 +266,7 @@ proc renderMarkDirty(host: HostContext; store: ptr ContextT; self: var ViewResou
   self.view.markDirty()
 
 proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var ViewResource; fun: uint32; data: uint32): void =
-  self.view.render = proc(view: RenderView) =
+  self.view.onRender = proc(view: RenderView) =
     let module = cast[ptr WasmModule](store.getData())
     module[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
       echo &"[host] Failed to call handleViewRenderCallback: {err}"

@@ -379,6 +379,26 @@ proc setRenderCommands*(self: View; data: WitList[uint8]): void {.nodestroy.} =
   arg2 = cast[int32](data.len)
   renderSetRenderCommandsImported(arg0, arg1, arg2)
 
+proc renderSetRenderWhenInactiveImported(a0: int32; a1: bool): void {.
+    wasmimport("[method]view.set-render-when-inactive", "nev:plugins/render").}
+proc setRenderWhenInactive*(self: View; enabled: bool): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: bool
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = enabled
+  renderSetRenderWhenInactiveImported(arg0, arg1)
+
+proc renderSetPreventThrottlingImported(a0: int32; a1: bool): void {.
+    wasmimport("[method]view.set-prevent-throttling", "nev:plugins/render").}
+proc setPreventThrottling*(self: View; enabled: bool): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: bool
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = enabled
+  renderSetPreventThrottlingImported(arg0, arg1)
+
 proc renderMarkDirtyImported(a0: int32): void {.
     wasmimport("[method]view.mark-dirty", "nev:plugins/render").}
 proc markDirty*(self: View): void {.nodestroy.} =

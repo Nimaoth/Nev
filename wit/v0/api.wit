@@ -34,6 +34,8 @@ interface render {
     set-render-interval: func(ms: s32);
     set-render-commands-raw: func(buffer: u32, len: u32);
     set-render-commands: func(data: list<u8>);
+    set-render-when-inactive: func(enabled: bool);
+    set-prevent-throttling: func(enabled: bool);
     mark-dirty: func();
     set-render-callback: func(fun: u32, data: u32);
     create: static func() -> view;

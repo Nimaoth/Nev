@@ -307,7 +307,7 @@ proc run(app: App, plat: Platform, backend: Backend) =
   var frameIndex = 0
   var frameTime = 0.0
 
-  var lastEvent = startTimer()
+  plat.lastEventTime = startTimer()
   var renderedLastFrame = false
 
   let maxPollPerFrameMs = 2.5
@@ -333,7 +333,7 @@ proc run(app: App, plat: Platform, backend: Backend) =
     let eventTime = eventTimer.elapsed.ms
 
     if eventCounter > 0:
-      lastEvent = startTimer()
+      plat.lastEventTime = startTimer()
 
     var updateTime, renderTime: float
     block:
@@ -409,12 +409,12 @@ proc run(app: App, plat: Platform, backend: Backend) =
 
     let frameSoFar = totalTimer.elapsed.ms
     let terminalSleepThreshold = app.config.runtime.get("platform.terminal-sleep-threshold", 0)
-    if lastEvent.elapsed.ms > app.config.runtime.get("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
+    if plat.lastEventTime.elapsed.ms > app.config.runtime.get("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
       let time = app.config.runtime.get("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
       lowPowerMode = true
-    elif lastEvent.elapsed.ms > app.config.runtime.get("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
+    elif plat.lastEventTime.elapsed.ms > app.config.runtime.get("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
       let time = app.config.runtime.get("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float

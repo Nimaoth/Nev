@@ -53,28 +53,28 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8438941145 = instance.getExport(context, "init_plugin")
-  if f_8438941145.isSome:
-    assert f_8438941145.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8438941145.get.of_field.func_field
+  let f_8438941146 = instance.getExport(context, "init_plugin")
+  if f_8438941146.isSome:
+    assert f_8438941146.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8438941146.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8438941161 = instance.getExport(context, "handle_command")
-  if f_8438941161.isSome:
-    assert f_8438941161.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8438941161.get.of_field.func_field
+  let f_8438941162 = instance.getExport(context, "handle_command")
+  if f_8438941162.isSome:
+    assert f_8438941162.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8438941162.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8438941211 = instance.getExport(context, "handle_mode_changed")
-  if f_8438941211.isSome:
-    assert f_8438941211.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8438941211.get.of_field.func_field
-  else:
-    echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8438941212 = instance.getExport(context, "handle_view_render_callback")
+  let f_8438941212 = instance.getExport(context, "handle_mode_changed")
   if f_8438941212.isSome:
     assert f_8438941212.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8438941212.get.of_field.func_field
+    funcs.handleModeChanged = f_8438941212.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "handle_mode_changed", "\'"
+  let f_8438941213 = instance.getExport(context, "handle_view_render_callback")
+  if f_8438941213.isSome:
+    assert f_8438941213.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8438941213.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
@@ -258,6 +258,10 @@ proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT;
                                 len: uint32): void
 proc renderSetRenderCommands(host: HostContext; store: ptr ContextT;
                              self: var ViewResource; data: sink seq[uint8]): void
+proc renderSetRenderWhenInactive(host: HostContext; store: ptr ContextT;
+                                 self: var ViewResource; enabled: bool): void
+proc renderSetPreventThrottling(host: HostContext; store: ptr ContextT;
+                                self: var ViewResource; enabled: bool): void
 proc renderMarkDirty(host: HostContext; store: ptr ContextT;
                      self: var ViewResource): void
 proc renderSetRenderCallback(host: HostContext; store: ptr ContextT;
@@ -856,6 +860,32 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           for i0 in 0 ..< data.len:
             data[i0] = convert(cast[ptr uint8](p0[i0 * 1 + 0].addr)[], uint8)
         renderSetRenderCommands(host, store, self[], data)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]view.set-render-when-inactive", ty):
+        var self: ptr ViewResource
+        var enabled: bool
+        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        enabled = parameters[1].i32.bool
+        renderSetRenderWhenInactive(host, store, self[], enabled)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]view.set-prevent-throttling", ty):
+        var self: ptr ViewResource
+        var enabled: bool
+        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        enabled = parameters[1].i32.bool
+        renderSetPreventThrottling(host, store, self[], enabled)
     if e.isErr:
       return e
   block:
