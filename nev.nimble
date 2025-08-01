@@ -38,7 +38,7 @@ requires "https://github.com/Nimaoth/wasm3 >= 0.1.17"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
-requires "https://github.com/Nimaoth/nimwasmtime#a2404c6"
+requires "https://github.com/Nimaoth/nimwasmtime#d36d549"
 requires "https://github.com/Nimaoth/nimsumtree >= 0.5.6"
 requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 
