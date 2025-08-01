@@ -1,4 +1,4 @@
-import std/[sugar, os, sequtils, deques, strutils]
+import std/[sugar, os, strutils]
 import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
@@ -6,7 +6,6 @@ import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger, widget_builder_terminal, widget_library]
 import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
-import terminal_service
 import text/text_editor
 import render_view
 

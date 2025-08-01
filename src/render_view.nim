@@ -1,12 +1,7 @@
-import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
-import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex, delayed_task]
-import scripting/[expose, scripting_base]
-import app_interface, events, view, platform_service
-import platform/platform
-import workspaces/workspace
+import std/[strformat]
+import misc/[custom_logger, util, delayed_task]
+import view
 import ui/render_command
-
-import chroma
 
 {.push gcsafe, raises: [].}
 

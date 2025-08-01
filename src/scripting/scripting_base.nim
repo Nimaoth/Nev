@@ -1,6 +1,6 @@
 import std/[macros, macrocache, json, strutils, tables, options, sequtils]
 import misc/[custom_logger, custom_async, util, myjsonutils]
-import expose, document_editor, compilation_config, service, vfs, dispatch_tables, events
+import expose, compilation_config, service, vfs, dispatch_tables, events
 
 {.push gcsafe.}
 {.push raises: [].}

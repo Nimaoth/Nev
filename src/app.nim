@@ -1,4 +1,4 @@
-import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc, envvars]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, parsejsonex]
 import ui/node
@@ -46,12 +46,6 @@ elif defined(wasm):
   "wasm"
 else:
   "other"
-
-type OpenEditor = object
-  filename: string
-  languageID: string
-  appFile: bool
-  customOptions: JsonNode
 
 type
   # todo: this isn't necessary anymore
@@ -844,9 +838,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.timer = startTimer()
   self.frameTimer = startTimer()
 
-  {.gcsafe.}:
-    scriptRunActionImpl = scriptRunAction
-
   self.layout = services.getService(LayoutService).get
   self.config = services.getService(ConfigService).get
   self.editors = services.getService(DocumentEditorService).get
@@ -1090,14 +1081,14 @@ proc shutdown*(self: App) =
     custom_treesitter.freeDynamicLibraries()
 
 proc handleLog(self: App, level: Level, args: openArray[string]) =
-  let str = substituteLog(defaultFmtStr, level, args) & "\n"
-  if self.logDocument.isNotNil:
-    let selection = self.logDocument.TextDocument.lastCursor.toSelection
-    discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
-    self.logBuffer = ""
+  # let str = substituteLog(defaultFmtStr, level, args) & "\n"
+  # if self.logDocument.isNotNil:
+  #   let selection = self.logDocument.TextDocument.lastCursor.toSelection
+  #   discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
+  #   self.logBuffer = ""
 
-  else:
-    self.logBuffer.add str
+  # else:
+  #   self.logBuffer.add str
 
   if level == lvlError:
     let str = substituteLog("", level, args)

@@ -20,9 +20,12 @@ proc emscripten_stack_init() {.importc.}
 
 proc NimMain() {.importc.}
 
-proc addCallback(a: proc(x: int): int) {.importc.}
+proc handleViewRender(view: View): void {.cdecl.}
+
+# proc addCallback(a: proc(x: int): int) {.importc.}
 
 echo "global stuff"
+var views: seq[View] = @[]
 
 proc handleModeChanged(fun: uint32, old: WitString; new: WitString) =
   echo &"[guest] handleModeChanged {old} -> {new}"
@@ -43,17 +46,22 @@ proc initPlugin() =
 
   echo "[guest] initPlugin"
 
+  let view = create()
+  view.setRenderCallback(cast[uint32](handleViewRender), 123)
+  view.setRenderInterval(500)
+  views.add(view)
+
   addModeChangedHandler proc(old: WitString, new: WitString) {.cdecl.} =
     echo &"[guest] mode changed handler {old} -> {new}"
 
-  echo "[guest] addCallback"
-  addCallback proc(x: int): int =
-    echo "[guest] inside callback 1"
-    return x + 1
+  # echo "[guest] addCallback"
+  # addCallback proc(x: int): int =
+  #   echo "[guest] inside callback 1"
+  #   return x + 1
 
-  addCallback proc(x: int): int =
-    echo "[guest] inside callback 2"
-    return x + 2
+  # addCallback proc(x: int): int =
+  #   echo "[guest] inside callback 2"
+  #   return x + 2
 
   echo getSelection()
 
@@ -87,7 +95,6 @@ proc stackWitList*[T](arr: openArray[T]): WitList[T] =
     p[i] = arr[i]
   result = wl[T](p, arr.len)
 
-var views: seq[View] = @[]
 var renderCommandEncoder: BinaryEncoder
 
 proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void =
@@ -112,6 +119,7 @@ proc handleViewRender(view: View): void {.cdecl.} =
   # echo &"[guest] handleViewRender"
 
   try:
+    let version = apiVersion()
     let target = getSetting("test.num-squares", 50)
     inc num
     if num > target:
@@ -129,7 +137,7 @@ proc handleViewRender(view: View): void {.cdecl.} =
         for x in 0..<num:
           fillRect(rect(x.float * s, y.float * s, s, s), color(x.float / num.float, y.float / num.float, 0, 1))
 
-      drawText("hello", rect(100, 100, 0, 0), color(0.5, 0.5, 1, 1), 0.UINodeFlags)
+      drawText("version " & $version, rect(100, 100, 0, 0), color(0.5, 0.5, 1, 1), 0.UINodeFlags)
 
     # view.setRenderCommandsRaw(cast[uint32](renderCommandEncoder.buffer[0].addr), renderCommandEncoder.buffer.len.uint32)
     view.setRenderCommands(@@(renderCommandEncoder.buffer.toOpenArray(0, renderCommandEncoder.buffer.high)))
@@ -141,12 +149,6 @@ proc handleViewRender(view: View): void {.cdecl.} =
 
 proc handleCommand(name: WitString; arg: WitString): WitString =
   echo "[guest] handleCommand ", name, ", ", arg
-
-  let view = create()
-  view.setRenderCallback(cast[uint32](handleViewRender), 123)
-  view.setRenderInterval(500)
-  views.add(view)
-  # submitRenderCommands(1, 0, 123)
 
   case $name:
   of "uiaeuiae":

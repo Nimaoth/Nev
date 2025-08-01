@@ -42,6 +42,7 @@ interface render {
 }
 
 interface core {
+  api-version: func() -> s32;
   bind-keys: func(context: string, subcontext: string, keys: string, action: string, arg: string, description: string, source: tuple<string, s32, s32>);
   define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string);
   run-command: func(name: string, args: string);

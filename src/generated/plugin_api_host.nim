@@ -44,8 +44,8 @@ proc mem(funcs: ExportedFuncs): WasmMemory =
   elif funcs.mMemory.get.kind == WASMTIME_EXTERN_MEMORY:
     return initWasmMemory(funcs.mContext, funcs.mMemory.get.of_field.memory.addr)
 
-proc collectExports(funcs: var ExportedFuncs; instance: InstanceT;
-                    context: ptr ContextT) =
+proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
+                     context: ptr ContextT) =
   funcs.mContext = context
   funcs.mMemory = instance.getExport(context, "memory")
   funcs.mRealloc = instance.getExport(context, "cabi_realloc")
@@ -53,33 +53,33 @@ proc collectExports(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8405386835 = instance.getExport(context, "init_plugin")
-  if f_8405386835.isSome:
-    assert f_8405386835.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8405386835.get.of_field.func_field
+  let f_8438941143 = instance.getExport(context, "init_plugin")
+  if f_8438941143.isSome:
+    assert f_8438941143.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8438941143.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8405386851 = instance.getExport(context, "handle_command")
-  if f_8405386851.isSome:
-    assert f_8405386851.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8405386851.get.of_field.func_field
+  let f_8438941159 = instance.getExport(context, "handle_command")
+  if f_8438941159.isSome:
+    assert f_8438941159.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8438941159.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8405386901 = instance.getExport(context, "handle_mode_changed")
-  if f_8405386901.isSome:
-    assert f_8405386901.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8405386901.get.of_field.func_field
+  let f_8438941209 = instance.getExport(context, "handle_mode_changed")
+  if f_8438941209.isSome:
+    assert f_8438941209.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8438941209.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8405386902 = instance.getExport(context, "handle_view_render_callback")
-  if f_8405386902.isSome:
-    assert f_8405386902.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8405386902.get.of_field.func_field
+  let f_8438941210 = instance.getExport(context, "handle_view_render_callback")
+  if f_8438941210.isSome:
+    assert f_8438941210.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8438941210.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
 
-proc initPlugin(funcs: ExportedFuncs): WasmtimeResult[void] =
+proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   var args: array[max(1, 0), ValT]
   var results: array[max(1, 0), ValT]
   var trap: ptr WasmTrapT = nil
@@ -96,7 +96,7 @@ proc initPlugin(funcs: ExportedFuncs): WasmtimeResult[void] =
   if res.isErr:
     return res.toResult(void)
   
-proc handleCommand(funcs: ExportedFuncs; name: string; arg: string): WasmtimeResult[
+proc handleCommand*(funcs: ExportedFuncs; name: string; arg: string): WasmtimeResult[
     string] =
   var args: array[max(1, 4), ValT]
   var results: array[max(1, 1), ValT]
@@ -153,8 +153,8 @@ proc handleCommand(funcs: ExportedFuncs; name: string; arg: string): WasmtimeRes
       retVal[i0] = p0[i0]
   return wasmtime.ok(retVal)
 
-proc handleModeChanged(funcs: ExportedFuncs; fun: uint32; old: string;
-                       new: string): WasmtimeResult[void] =
+proc handleModeChanged*(funcs: ExportedFuncs; fun: uint32; old: string;
+                        new: string): WasmtimeResult[void] =
   var args: array[max(1, 5), ValT]
   var results: array[max(1, 0), ValT]
   var trap: ptr WasmTrapT = nil
@@ -201,8 +201,8 @@ proc handleModeChanged(funcs: ExportedFuncs; fun: uint32; old: string;
   if res.isErr:
     return res.toResult(void)
   
-proc handleViewRenderCallback(funcs: ExportedFuncs; id: int32; fun: uint32;
-                              data: uint32): WasmtimeResult[void] =
+proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
+                               data: uint32): WasmtimeResult[void] =
   var args: array[max(1, 3), ValT]
   var results: array[max(1, 0), ValT]
   var trap: ptr WasmTrapT = nil
@@ -221,47 +221,49 @@ proc handleViewRenderCallback(funcs: ExportedFuncs; id: int32; fun: uint32;
   if res.isErr:
     return res.toResult(void)
   
-proc textEditorGetSelection(host: WasmContext; store: ptr ContextT): Selection
-proc textEditorAddModeChangedHandler(host: WasmContext; store: ptr ContextT;
+proc textEditorGetSelection(host: HostContext; store: ptr ContextT): Selection
+proc textEditorAddModeChangedHandler(host: HostContext; store: ptr ContextT;
                                      fun: uint32): int32
-proc textNewRope(host: WasmContext; store: ptr ContextT; content: string): RopeResource
-proc textClone(host: WasmContext; store: ptr ContextT; self: var RopeResource): RopeResource
-proc textText(host: WasmContext; store: ptr ContextT; self: var RopeResource): string
-proc textDebug(host: WasmContext; store: ptr ContextT; self: var RopeResource): string
-proc textSlice(host: WasmContext; store: ptr ContextT; self: var RopeResource;
+proc textNewRope(host: HostContext; store: ptr ContextT; content: sink string): RopeResource
+proc textClone(host: HostContext; store: ptr ContextT; self: var RopeResource): RopeResource
+proc textText(host: HostContext; store: ptr ContextT; self: var RopeResource): string
+proc textDebug(host: HostContext; store: ptr ContextT; self: var RopeResource): string
+proc textSlice(host: HostContext; store: ptr ContextT; self: var RopeResource;
                a: int64; b: int64): RopeResource
-proc textSlicePoints(host: WasmContext; store: ptr ContextT;
+proc textSlicePoints(host: HostContext; store: ptr ContextT;
                      self: var RopeResource; a: Cursor; b: Cursor): RopeResource
-proc textGetCurrentEditorRope(host: WasmContext; store: ptr ContextT): RopeResource
-proc coreBindKeys(host: WasmContext; store: ptr ContextT; context: string;
-                  subcontext: string; keys: string; action: string; arg: string;
-                  description: string; source: (string, int32, int32)): void
-proc coreDefineCommand(host: WasmContext; store: ptr ContextT; name: string;
-                       active: bool; docs: string;
-                       params: seq[(string, string)]; returntype: string;
-                       context: string): void
-proc coreRunCommand(host: WasmContext; store: ptr ContextT; name: string;
-                    args: string): void
-proc coreGetSettingRaw(host: WasmContext; store: ptr ContextT; name: string): string
-proc coreSetSettingRaw(host: WasmContext; store: ptr ContextT; name: string;
-                       value: string): void
-proc renderNewView(host: WasmContext; store: ptr ContextT): ViewResource
-proc renderId(host: WasmContext; store: ptr ContextT; self: var ViewResource): int32
-proc renderSize(host: WasmContext; store: ptr ContextT; self: var ViewResource): Vec2f
-proc renderSetRenderInterval(host: WasmContext; store: ptr ContextT;
+proc textGetCurrentEditorRope(host: HostContext; store: ptr ContextT): RopeResource
+proc coreApiVersion(host: HostContext; store: ptr ContextT): int32
+proc coreBindKeys(host: HostContext; store: ptr ContextT; context: sink string;
+                  subcontext: sink string; keys: sink string;
+                  action: sink string; arg: sink string;
+                  description: sink string; source: sink (string, int32, int32)): void
+proc coreDefineCommand(host: HostContext; store: ptr ContextT;
+                       name: sink string; active: bool; docs: sink string;
+                       params: sink seq[(string, string)];
+                       returntype: sink string; context: sink string): void
+proc coreRunCommand(host: HostContext; store: ptr ContextT; name: sink string;
+                    args: sink string): void
+proc coreGetSettingRaw(host: HostContext; store: ptr ContextT; name: sink string): string
+proc coreSetSettingRaw(host: HostContext; store: ptr ContextT;
+                       name: sink string; value: sink string): void
+proc renderNewView(host: HostContext; store: ptr ContextT): ViewResource
+proc renderId(host: HostContext; store: ptr ContextT; self: var ViewResource): int32
+proc renderSize(host: HostContext; store: ptr ContextT; self: var ViewResource): Vec2f
+proc renderSetRenderInterval(host: HostContext; store: ptr ContextT;
                              self: var ViewResource; ms: int32): void
-proc renderSetRenderCommandsRaw(host: WasmContext; store: ptr ContextT;
+proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT;
                                 self: var ViewResource; buffer: uint32;
                                 len: uint32): void
-proc renderSetRenderCommands(host: WasmContext; store: ptr ContextT;
-                             self: var ViewResource; data: seq[uint8]): void
-proc renderMarkDirty(host: WasmContext; store: ptr ContextT;
+proc renderSetRenderCommands(host: HostContext; store: ptr ContextT;
+                             self: var ViewResource; data: sink seq[uint8]): void
+proc renderMarkDirty(host: HostContext; store: ptr ContextT;
                      self: var ViewResource): void
-proc renderSetRenderCallback(host: WasmContext; store: ptr ContextT;
+proc renderSetRenderCallback(host: HostContext; store: ptr ContextT;
                              self: var ViewResource; fun: uint32; data: uint32): void
-proc renderCreate(host: WasmContext; store: ptr ContextT): ViewResource
-proc renderFromId(host: WasmContext; store: ptr ContextT; id: int32): ViewResource
-proc defineComponent*(linker: ptr LinkerT; host: WasmContext): WasmtimeResult[
+proc renderCreate(host: HostContext; store: ptr ContextT): ViewResource
+proc renderFromId(host: HostContext; store: ptr ContextT; id: int32): ViewResource
+proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     void] =
   block:
     let e = block:
@@ -485,6 +487,14 @@ proc defineComponent*(linker: ptr LinkerT; host: WasmContext): WasmtimeResult[
                                  "[static]rope.get-current-editor-rope", ty):
         let res = textGetCurrentEditorRope(host, store)
         parameters[0].i32 = ?host.resources.resourceNew(res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/core", "api-version", ty):
+        let res = coreApiVersion(host, store)
+        parameters[0].i32 = cast[int32](res)
     if e.isErr:
       return e
   block:
