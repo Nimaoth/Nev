@@ -64,7 +64,7 @@ proc `=destroy`*(self: ViewResource) =
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
-  importWit "../../scripting/plugin_api.wit", HostContext:
+  importWit "../../wit/v0/api.wit", HostContext:
     world = "plugin"
     cacheFile = "../generated/plugin_api_host.nim"
     mapName "rope", RopeResource

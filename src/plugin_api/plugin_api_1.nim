@@ -64,15 +64,15 @@ proc `=destroy`*(self: ViewResource) =
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
-  importWit "../../scripting/plugin_api.wit", HostContext:
+  importWit "../../wit/v1/api.wit", HostContext:
     world = "plugin"
-    cacheFile = "../generated/plugin_api_host.nim"
+    cacheFile = "../generated/plugin_api_host_1.nim"
     mapName "rope", RopeResource
     mapName "view", ViewResource
 
 else:
-  static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
-  include generated/plugin_api_host
+  static: hint("Using cached plugin_api.wit (plugin_api_host_1.nim)")
+  include generated/plugin_api_host_1
 
 type
   WasmModule* = object
@@ -255,5 +255,5 @@ proc renderMarkDirty(host: HostContext; store: ptr ContextT; self: var ViewResou
 proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var ViewResource; fun: uint32; data: uint32): void =
   self.view.render = proc(view: RenderView) =
     let module = cast[ptr WasmModule](store.getData())
-    module[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
-      echo &"[host] Failed to call handleViewRenderCallback: {err}"
+    module[].funcs.handleViewRender(view.id2, fun, data).okOr(err):
+      echo &"[host] Failed to call handleViewRender: {err}"

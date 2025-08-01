@@ -6,12 +6,12 @@ import ui/render_command
 
 when defined(witRebuild):
   static: echo "Rebuilding plugin_api.wit"
-  importWit "../wit/v0":
+  importWit "../wit/v1":
     world = "plugin"
-    cacheFile = "generated/plugin_api_guest.nim"
+    cacheFile = "generated/plugin_api_guest_1.nim"
 else:
-  static: echo "Using cached plugin_api.wit (generated/plugin_api_guest.nim)"
-  include generated/plugin_api_guest
+  static: echo "Using cached plugin_api.wit (generated/plugin_api_guest_1.nim)"
+  include generated/plugin_api_guest_1
 
 proc emscripten_notify_memory_growth*(a: int32) {.exportc.} =
   echo "emscripten_notify_memory_growth"
@@ -20,7 +20,7 @@ proc emscripten_stack_init() {.importc.}
 
 proc NimMain() {.importc.}
 
-proc handleViewRender(view: View): void {.cdecl.}
+proc renderView(view: View): void {.cdecl.}
 
 # proc addCallback(a: proc(x: int): int) {.importc.}
 
@@ -47,7 +47,7 @@ proc initPlugin() =
   echo "[guest] initPlugin"
 
   let view = create()
-  view.setRenderCallback(cast[uint32](handleViewRender), 123)
+  view.setRenderCallback(cast[uint32](renderView), 123)
   view.setRenderInterval(500)
   views.add(view)
 
@@ -97,8 +97,8 @@ proc stackWitList*[T](arr: openArray[T]): WitList[T] =
 
 var renderCommandEncoder: BinaryEncoder
 
-proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void =
-  # echo &"[guest] handleViewRenderCallback {id}, {fun}, {data}"
+proc handleViewRender(id: int32; fun: uint32; data: uint32): void =
+  # echo &"[guest] handleViewRender {id}, {fun}, {data}"
   let fun = cast[proc(view: View) {.cdecl.}](fun)
   fun(views[0])
 
@@ -115,8 +115,8 @@ proc getSetting[T](name: string, def: T): T =
     return def
 
 var num = 1
-proc handleViewRender(view: View): void {.cdecl.} =
-  # echo &"[guest] handleViewRender"
+proc renderView(view: View): void {.cdecl.} =
+  # echo &"[guest] renderView"
 
   try:
     let version = apiVersion()
@@ -135,7 +135,7 @@ proc handleViewRender(view: View): void {.cdecl.} =
     buildCommands(renderCommandEncoder):
       for y in 0..<num:
         for x in 0..<num:
-          fillRect(rect(x.float * s, y.float * s, s, s), color(x.float / num.float, y.float / num.float, 0, 1))
+          fillRect(rect(x.float * s, y.float * s, s, s), color(x.float / num.float, 0, y.float / num.float, 1))
 
       drawText("version " & $version, rect(100, 100, 0, 0), color(0.5, 0.5, 1, 1), 0.UINodeFlags)
 
