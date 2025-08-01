@@ -3,7 +3,7 @@ name: Build and test the editor
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: ["main", "refactor_keybindings"]
+    branches: ["main", "plugins-v2"]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -43,7 +43,7 @@ jobs:
         continue-on-error: true
 
       - name: Install stable rust toolchain
-        uses: dtolnay/rust-toolchain@1.78
+        uses: dtolnay/rust-toolchain@1.81
 
       - run: rustup target add x86_64-unknown-linux-musl
 

@@ -12,8 +12,8 @@
 (blank_identifier) @variable.builtin
 
 ; Currently #match? and friends on nodes which exist a lot (like identifiers) are quite expensive, so disable them for now.
-((identifier) @type
-  (#match? @type "^([A-Z].*|openArray|typedesc)$"))
+; ((identifier) @type
+;   (#match? @type "^([A-Z].*|openArray|typedesc)$"))
 
 ; Declarations
 (exported_symbol "*" @type.qualifier)
@@ -90,6 +90,7 @@
   "case"
   "elif"
   "else"
+  "defer"
 ] @conditional
 
 (of_branch "of" @conditional)
@@ -122,7 +123,6 @@
   "bind"
   "block"
   "concept"
-  "defer"
   "discard"
   "distinct"
   "do"

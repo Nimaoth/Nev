@@ -1,6 +1,6 @@
 import std/[macros, macrocache, genasts, json, strutils, os, sugar]
 import misc/[custom_logger, custom_async, util]
-import scripting_base, document_editor, expose, vfs
+import scripting_base, expose, vfs
 import wasm
 import wasm3, wasm3/wasmconversions
 
@@ -58,6 +58,14 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
 
   var wasmModuleFutures = collect:
     for file2 in listing.files:
+      if not file2.endsWith(".wasm"):
+        continue
+      if file2.endsWith(".m.wasm"):
+        continue
+      if file2.endsWith(".me.wasm"):
+        continue
+      if file2.endsWith(".c.wasm"):
+        continue
       if not file2.endsWith(".wasm"):
         continue
 

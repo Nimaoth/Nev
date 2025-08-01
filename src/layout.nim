@@ -1,5 +1,4 @@
-import std/[tables, options, json, sugar, sequtils, deques, sets, os]
-import bumpy
+import std/[tables, options, json, sugar, deques, sets, os]
 import results
 import platform/platform
 import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex, array_set]
@@ -61,6 +60,7 @@ type
 var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 
 proc getView*(self: LayoutService, id: Id): Option[View]
+proc preRender*(self: LayoutService)
 
 proc addViewFactory*(self: LayoutService, name: string, create: CreateView, override: bool = false) =
   if not override and name in self.viewFactories:
@@ -238,6 +238,8 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   self.commands = self.services.getService(CommandService).get
   self.uiSettings = UiSettings.new(self.config.runtime)
 
+  discard self.platform.onPreRender.subscribe (_: Platform) => self.preRender()
+
   self.addViewFactory "editor", proc(config: JsonNode): View {.raises: [ValueError].} =
     type Config = object
       id: Id
@@ -345,7 +347,11 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   return ok()
 
 proc preRender*(self: LayoutService) =
-  discard
+  self.layout.forEachVisibleView proc(v: View): bool =
+    v.checkDirty()
+    if v.dirty:
+      self.platform.requestRender()
+      self.platform.logNextFrameTime = true
 
 method desc*(self: EditorView): string =
   if self.document == nil:

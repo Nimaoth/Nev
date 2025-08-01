@@ -1,4 +1,4 @@
-import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc, envvars]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, parsejsonex]
 import ui/node
@@ -20,7 +20,8 @@ import misc/async_process
 when enableAst:
   import ast/[model, project]
 
-import scripting/scripting_wasm
+import scripting/[scripting_wasm]
+import plugin_service
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
@@ -45,12 +46,6 @@ elif defined(wasm):
   "wasm"
 else:
   "other"
-
-type OpenEditor = object
-  filename: string
-  languageID: string
-  appFile: bool
-  customOptions: JsonNode
 
 type
   # todo: this isn't necessary anymore
@@ -114,6 +109,7 @@ type
     logBuffer = ""
 
     wasmScriptContext*: ScriptContextWasm
+    wasmPluginSystem*: WasmPluginSystem
     initializeCalled: bool
 
     statusBarOnTop*: bool
@@ -160,6 +156,7 @@ proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previe
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
+proc scriptRunAction*(action: string, arg: string): JsonNode
 proc defaultHandleCommand*(self: App, command: string): Option[string]
 proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
 proc runLateCommandsFromAppOptions(self: App)
@@ -230,7 +227,7 @@ proc runConfigCommands(self: App, key: string) =
       discard self.handleAction(action, arg, record=false)
 
 proc initScripting(self: App, options: AppOptions) {.async.} =
-  if not options.disableWasmPlugins:
+  if not options.disableOldWasmPlugins:
     try:
       log(lvlInfo, fmt"load wasm configs")
       self.wasmScriptContext = new ScriptContextWasm
@@ -252,6 +249,27 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 
   self.runConfigCommands("wasm-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
+
+  if not options.disableWasmPlugins:
+    try:
+      log(lvlInfo, fmt"load wasm components")
+      self.wasmPluginSystem = new WasmPluginSystem
+      self.plugins.scriptContexts.add self.wasmPluginSystem
+      self.wasmPluginSystem.services = self.services
+      self.wasmPluginSystem.moduleVfs = VFS()
+      self.wasmPluginSystem.vfs = self.vfs
+      self.vfs.mount("plugs://", self.wasmPluginSystem.moduleVfs)
+
+      withScriptContext self.plugins, self.wasmPluginSystem:
+        let t1 = startTimer()
+        await self.wasmPluginSystem.init("app://config", self.vfs)
+        log(lvlInfo, fmt"init wasm components ({t1.elapsed.ms}ms)")
+
+        let t2 = startTimer()
+        # discard self.wasmPluginSystem.postInitialize()
+        log(lvlInfo, fmt"post init wasm components ({t2.elapsed.ms}ms)")
+    except CatchableError:
+      log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
   log lvlInfo, &"Finished loading plugins"
 
@@ -1063,14 +1081,14 @@ proc shutdown*(self: App) =
     custom_treesitter.freeDynamicLibraries()
 
 proc handleLog(self: App, level: Level, args: openArray[string]) =
-  let str = substituteLog(defaultFmtStr, level, args) & "\n"
-  if self.logDocument.isNotNil:
-    let selection = self.logDocument.TextDocument.lastCursor.toSelection
-    discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
-    self.logBuffer = ""
+  # let str = substituteLog(defaultFmtStr, level, args) & "\n"
+  # if self.logDocument.isNotNil:
+  #   let selection = self.logDocument.TextDocument.lastCursor.toSelection
+  #   discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
+  #   self.logBuffer = ""
 
-  else:
-    self.logBuffer.add str
+  # else:
+  #   self.logBuffer.add str
 
   if level == lvlError:
     let str = substituteLog("", level, args)
@@ -1568,6 +1586,15 @@ proc chooseTheme*(self: App) {.expose("editor").} =
       self.platform.requestRender(true)
 
   self.layout.pushPopup popup
+
+proc crash*(self: App, message: string = "") {.expose("editor").} =
+  ## This command will cause the editor to crash by failing an assertion.
+  assert false, message
+
+proc crash2*(self: App) {.expose("editor").} =
+  ## This command will cause the editor to crash by accessing a nil reference.
+  var app: App = nil
+  echo app.handleAction("crash", "", true)
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isVfsPath:

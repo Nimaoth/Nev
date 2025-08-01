@@ -119,7 +119,7 @@
             "name": "conditional",
             "scope": "conditional",
             "settings": {
-                "foreground": "#8F939A"
+                "foreground": "#FF939A"
             }
         },
         {
@@ -322,7 +322,7 @@
             "name": "keyword.return",
             "scope": "keyword.return",
             "settings": {
-                "foreground": "#8F939A"
+                "foreground": "#FF939A"
             }
         },
         {

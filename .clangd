@@ -1,6 +1,0 @@
-CompileFlags:
-  Add:
-    - "-ID:/dev/Nim/Nim/lib"
-    # - "-DEXAMPLE_DEFINE"
-    # - "-DEXAMPLE_DEFINE="
-    # - "-DEXAMPLE_DEFINE=123"

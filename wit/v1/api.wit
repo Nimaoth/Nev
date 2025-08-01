@@ -1,0 +1,83 @@
+package nev:plugins;
+
+interface types {
+  record cursor {
+    line: s32,
+    column: s32,
+  }
+
+  record selection {
+    first: cursor,
+    last: cursor,
+  }
+
+  record vec2f {
+    x: f32,
+    y: f32,
+  }
+}
+
+interface text-editor {
+  use types.{cursor, selection};
+  get-selection: func() -> selection;
+  add-mode-changed-handler: func(fun: u32) -> s32;
+}
+
+interface render {
+  use types.{vec2f};
+
+  resource view {
+    constructor();
+    id: func() -> s32;
+    size: func() -> vec2f;
+    set-render-interval: func(ms: s32);
+    set-render-commands-raw: func(buffer: u32, len: u32);
+    set-render-commands: func(data: list<u8>);
+    mark-dirty: func();
+    set-render-callback: func(fun: u32, data: u32);
+    create: static func() -> view;
+    from-id: static func(id: s32) -> view;
+  }
+}
+
+interface core {
+  api-version: func() -> s32;
+  bind-keys: func(context: string, subcontext: string, keys: string, action: string, arg: string, description: string, source: tuple<string, s32, s32>);
+  define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string);
+  run-command: func(name: string, args: string);
+  get-setting-raw: func(name: string) -> string;
+  set-setting-raw: func(name: string, value: string);
+}
+
+interface text {
+  use types.{cursor};
+
+  resource rope {
+    constructor(content: string);
+    clone: func() -> rope;
+    text: func() -> string;
+    debug: func() -> string;
+    slice: func(a: s64, b: s64) -> rope;
+    slice-points: func(a: cursor, b: cursor) -> rope;
+    get-current-editor-rope: static func() -> rope;
+  }
+}
+
+interface guest {
+  use render.{view};
+  init-plugin: func();
+  handle-command: func(name: string, arg: string) -> string;
+  handle-mode-changed: func(fun: u32, old: string, new: string);
+  handle-view-render: func(id: s32, fun: u32, data: u32);
+}
+
+world plugin {
+  use types.{cursor, selection};
+
+  import text-editor;
+  import text;
+  import core;
+  import render;
+
+  export guest;
+}

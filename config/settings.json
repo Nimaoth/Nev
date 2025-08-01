@@ -171,7 +171,7 @@
         },
 
         "paths": {
-            "languages": ["markdown", "command-line"],
+            "languages": ["markdown", "command-line", "yaml", "json"],
             "priority": -1,
         },
 

@@ -70,6 +70,7 @@ For examples and default values see [here](../config/settings.json)
 | `text.indent-detection.enable` | bool | true | Enable auto detecting the indent style when opening files. |
 | `text.indent-detection.samples` | int | 50 | How many indent characters to process when detecting the indent style. Increase this if it fails for files which start with many unindented lines. |
 | `text.indent-detection.timeout` | int | 20 | Max number of milliseconds to spend trying to detect the indent style. |
+| `text.inlay-hints-enabled` | bool | true | Whether inlay hints are enabled. |
 | `text.line-comment` | string \| null | null | String which starts a line comment |
 | `text.mode-changed-handler-command` | string | "" | Command to execute when the mode of the text editor changes |
 | `text.modes` | string[] | ["editor.text"] | List of input modes text editors. |

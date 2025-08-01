@@ -4,8 +4,7 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex,
-  array_set]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex]
 import scripting/[expose, scripting_base]
 import platform/[platform]
 import language/[language_server_base]
@@ -208,6 +207,9 @@ declareSettings TextEditorSettings, "text":
   ## Command to execute when the mode of the text editor changes
   declare modeChangedHandlerCommand, string, ""
 
+  ## Whether inlay hints are enabled.
+  declare inlayHintsEnabled, bool, true
+
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
@@ -373,6 +375,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   customHeader*: string
 
   onSearchResultsUpdated*: Event[TextDocumentEditor]
+  onModeChanged*: Event[tuple[removed: seq[string], added: seq[string]]]
 
   uiSettings*: UiSettings
   debugSettings*: DebugSettings
@@ -1619,6 +1622,7 @@ proc setMode*(self: TextDocumentEditor, mode: string, exclusive: bool = true) {.
 
   self.settings.modes.set(modes)
 
+  self.onModeChanged.invoke (removedModes, @[mode])
   let handler = self.settings.modeChangedHandlerCommand.get()
   if handler != "":
     discard self.handleActionInternal(handler, [removedModes.toJson, [mode].toJson].toJson)
@@ -4116,6 +4120,8 @@ proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
 
 proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.isNil:
+    return
+  if not self.settings.inlayHintsEnabled.get():
     return
   if self.document.requiresLoad or self.document.isLoadingAsync:
     return
