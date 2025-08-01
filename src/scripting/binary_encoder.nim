@@ -64,6 +64,13 @@ proc writeString*(self: var BinaryEncoder, v: string) =
   self.writeLEB128(uint32, v.len.uint32)
   self.buffer.add v.toOpenArrayByte(0, v.high)
 
+proc write*[T](self: var BinaryEncoder, arr: openArray[T]) =
+  self.writeLEB128(uint32, arr.len.uint32)
+  if arr.len > 0:
+    let startIndex = self.buffer.len
+    self.buffer.setLen(startIndex + arr.len * sizeof(T))
+    copyMem(self.buffer[startIndex].addr, arr[0].addr, arr.len * sizeof(T))
+
 type
   BinaryDecoder* = object
     buffer*: ptr UncheckedArray[byte]
@@ -141,3 +148,11 @@ proc readString*(self: var BinaryDecoder, res: var string) =
   res.setLen(oldLen + len)
   copyMem(res[oldLen].addr, self.buffer[self.pos].addr, len)
   self.pos += len
+
+proc readArray*(self: var BinaryDecoder, T: typedesc): tuple[data: ptr UncheckedArray[T], len: int] =
+  let len = self.readLEB128(uint32).int
+  self.assertSize(len)
+  let data = cast[ptr UncheckedArray[char]](self.buffer[self.pos].addr)
+  self.pos += len
+  return (data, len)
+

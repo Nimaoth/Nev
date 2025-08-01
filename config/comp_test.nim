@@ -129,6 +129,8 @@ proc handleViewRender(view: View): void {.cdecl.} =
         for x in 0..<num:
           fillRect(rect(x.float * s, y.float * s, s, s), color(x.float / num.float, y.float / num.float, 0, 1))
 
+      drawText("hello", rect(100, 100, 0, 0), color(0.5, 0.5, 1, 1), 0.UINodeFlags)
+
     # view.setRenderCommandsRaw(cast[uint32](renderCommandEncoder.buffer[0].addr), renderCommandEncoder.buffer.len.uint32)
     view.setRenderCommands(@@(renderCommandEncoder.buffer.toOpenArray(0, renderCommandEncoder.buffer.high)))
 
