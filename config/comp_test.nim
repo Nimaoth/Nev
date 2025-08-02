@@ -11,7 +11,8 @@ when defined(witRebuild):
     cacheFile = "generated/plugin_api_guest.nim"
 else:
   static: echo "Using cached plugin_api.wit (generated/plugin_api_guest.nim)"
-  include generated/plugin_api_guest
+
+include generated/plugin_api_guest
 
 proc emscripten_notify_memory_growth*(a: int32) {.exportc.} =
   echo "emscripten_notify_memory_growth"
@@ -129,17 +130,22 @@ proc handleViewRender(view: View): void {.cdecl.} =
 
     # num = target
 
-    let size = view.size
+    proc vec2(v: Vec2f): Vec2 = vec2(v.x, v.y)
+
+    let size = vec2(view.size)
     # echo &"[guest] size: {size}"
 
-    const s = 20.0
+    let s = if size.x > 500:
+      vec2(20, 20)
+    else:
+      vec2(1, 1)
     renderCommandEncoder.buffer.setLen(0)
     buildCommands(renderCommandEncoder):
       for y in 0..<num:
         for x in 0..<num:
-          fillRect(rect(x.float * s, y.float * s, s, s), color(x.float / num.float, y.float / num.float, 0, 1))
+          fillRect(rect(vec2(x.float, y.float) * s, s), color(x.float / num.float, y.float / num.float, 0, 1))
 
-      drawText("version " & $version, rect(100, 100, 0, 0), color(0.5, 0.5, 1, 1), 0.UINodeFlags)
+      drawText("version " & $version, rect(size * 0.5, vec2()), color(0.5, 0.5, 1, 1), 0.UINodeFlags)
 
     # view.setRenderCommandsRaw(cast[uint32](renderCommandEncoder.buffer[0].addr), renderCommandEncoder.buffer.len.uint32)
     view.setRenderCommands(@@(renderCommandEncoder.buffer.toOpenArray(0, renderCommandEncoder.buffer.high)))
