@@ -9,7 +9,6 @@ var renderCommandEncoder: BinaryEncoder
 var num = 1
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
-  # echo &"[guest] handleViewRender"
   let view {.cursor.} = views[0]
 
   try:

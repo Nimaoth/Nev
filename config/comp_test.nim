@@ -1,64 +1,52 @@
 import std/[strformat, json, jsonutils]
-import wit_guest
-
+import wit_types, wit_runtime
 import scripting/binary_encoder
 import ui/render_command
+import ../plugin_api/api
 
-when defined(witRebuild):
-  static: echo "Rebuilding plugin_api.wit"
-  importWit "../wit/v0":
-    world = "plugin"
-    cacheFile = "generated/plugin_api_guest.nim"
-else:
-  static: echo "Using cached plugin_api.wit (generated/plugin_api_guest.nim)"
-
-include generated/plugin_api_guest
-
-proc emscripten_notify_memory_growth*(a: int32) {.exportc.} =
-  echo "emscripten_notify_memory_growth"
-
-proc emscripten_stack_init() {.importc.}
-
-proc NimMain() {.importc.}
-
-proc handleViewRender(view: View): void {.cdecl.}
-
-proc getSetting(name: string, T: typedesc): T =
-  try:
-    return getSettingRaw(name).parseJson().jsonTo(T)
-  except:
-    return T.default
-
-proc getSetting[T](name: string, def: T): T =
-  try:
-    return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
-  except:
-    return def
-
-# proc addCallback(a: proc(x: int): int) {.importc.}
-
-echo "global stuff"
 var views: seq[View] = @[]
+var renderCommandEncoder: BinaryEncoder
+var num = 1
 
-proc handleModeChanged(fun: uint32, old: WitString; new: WitString) =
-  echo &"[guest] handleModeChanged {old} -> {new}"
-  let fun = cast[proc(old: WitString, new: WitString) {.cdecl.}](fun)
-  fun(old, new)
+proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
+  let view {.cursor.} = views[0]
 
-proc handleModeChanged(fun: uint32) =
-  echo "[guest] handleModeChanged"
-  let fun = cast[proc(old: WitString, new: WitString) {.cdecl.}](fun)
-  fun(ws"uiae", ws"xvlc")
+  try:
+    let version = apiVersion()
+    let target = getSetting("test.num-squares", 50)
+    inc num
+    if num > target:
+      num = 1
 
-proc addModeChangedHandler(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
-  discard addModeChangedHandler(cast[uint32](fun))
+    # num = target
 
-proc initPlugin() =
-  emscripten_stack_init()
-  NimMain()
+    proc vec2(v: Vec2f): Vec2 = vec2(v.x, v.y)
 
-  echo "[guest] initPlugin"
-  debugEcho "[guest] initPlugin"
+    let size = vec2(view.size)
+    # echo &"[guest] size: {size}"
+
+    let s = if size.x > 500:
+      vec2(20, 20)
+    else:
+      vec2(1, 1)
+    renderCommandEncoder.buffer.setLen(0)
+    buildCommands(renderCommandEncoder):
+      for y in 0..<num:
+        for x in 0..<num:
+          fillRect(rect(vec2(x.float, y.float) * s, s), color(x.float / num.float, y.float / num.float, 0, 1))
+
+      drawText("comp_test version " & $version, rect(size * 0.5, vec2()), color(0.5, 0.5, 1, 1), 0.UINodeFlags)
+
+    # view.setRenderCommandsRaw(cast[uint32](renderCommandEncoder.buffer[0].addr), renderCommandEncoder.buffer.len.uint32)
+    view.setRenderCommands(@@(renderCommandEncoder.buffer.toOpenArray(0, renderCommandEncoder.buffer.high)))
+
+    let interval = getSetting("test.render-interval", 500)
+    view.setRenderInterval(interval)
+  except Exception as e:
+    echo &"[guest] Failed to render: {e.msg}\n{e.getStackTrace()}"
+
+proc init() =
+  echo "[guest] init comp_test"
 
   addModeChangedHandler proc(old: WitString, new: WitString) {.cdecl.} =
     echo &"[guest] mode changed handler {old} -> {new}"
@@ -88,81 +76,4 @@ proc initPlugin() =
   view.setRenderInterval(500)
   views.add(view)
 
-proc stackWitString*(arr: openArray[char]): WitString =
-  if arr.len == 0:
-    return WitString()
-  let p = cast[ptr UncheckedArray[char]](stackAlloc(arr.len, 1))
-  for i in 0..<arr.len:
-    p[i] = arr[i]
-  result = ws(p, arr.len)
-
-proc stackWitString*(str: string): WitString =
-  stackWitString(str.toOpenArray(0, str.high))
-
-proc stackWitList*[T](arr: openArray[T]): WitList[T] =
-  if arr.len == 0:
-    return WitList[T]()
-  let p = cast[ptr UncheckedArray[T]](stackAlloc(sizeof(T) * arr.len, sizeof(T)))
-  for i in 0..<arr.len:
-    p[i] = arr[i]
-  result = wl[T](p, arr.len)
-
-var renderCommandEncoder: BinaryEncoder
-
-proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void =
-  # echo &"[guest] handleViewRenderCallback {id}, {fun}, {data}"
-  let fun = cast[proc(view: View) {.cdecl.}](fun)
-  fun(views[0])
-
-var num = 1
-proc handleViewRender(view: View): void {.cdecl.} =
-  # echo &"[guest] handleViewRender"
-
-  try:
-    let version = apiVersion()
-    let target = getSetting("test.num-squares", 50)
-    inc num
-    if num > target:
-      num = 1
-
-    # num = target
-
-    proc vec2(v: Vec2f): Vec2 = vec2(v.x, v.y)
-
-    let size = vec2(view.size)
-    # echo &"[guest] size: {size}"
-
-    let s = if size.x > 500:
-      vec2(20, 20)
-    else:
-      vec2(1, 1)
-    renderCommandEncoder.buffer.setLen(0)
-    buildCommands(renderCommandEncoder):
-      for y in 0..<num:
-        for x in 0..<num:
-          fillRect(rect(vec2(x.float, y.float) * s, s), color(x.float / num.float, y.float / num.float, 0, 1))
-
-      drawText("version " & $version, rect(size * 0.5, vec2()), color(0.5, 0.5, 1, 1), 0.UINodeFlags)
-
-    # view.setRenderCommandsRaw(cast[uint32](renderCommandEncoder.buffer[0].addr), renderCommandEncoder.buffer.len.uint32)
-    view.setRenderCommands(@@(renderCommandEncoder.buffer.toOpenArray(0, renderCommandEncoder.buffer.high)))
-
-    let interval = getSetting("test.render-interval", 500)
-    view.setRenderInterval(interval)
-  except Exception as e:
-    echo &"[guest] Failed to render: {e.msg}\n{e.getStackTrace()}"
-
-proc handleCommand(name: WitString; arg: WitString): WitString =
-  echo "[guest] handleCommand ", name, ", ", arg
-
-  case $name:
-  of "uiaeuiae":
-    runCommand(ws"next-view", ws"")
-
-  # of "render":
-  #   submitRenderCommands(1, 0, 123)
-
-  else:
-    discard
-
-  return stackWitString ($name & "-" & $arg)
+init()
