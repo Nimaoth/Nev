@@ -46,36 +46,13 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
   except Exception as e:
     echo &"[guest] Failed to render: {e.msg}\n{e.getStackTrace()}"
 
-proc initPlugin2() =
-  echo "[guest] initPlugin"
-  debugEcho "[guest] initPlugin"
-
-  addModeChangedHandler proc(old: WitString, new: WitString) {.cdecl.} =
-    echo &"[guest] mode changed handler {old} -> {new}"
-
-  echo getSelection()
-
-  let r = newRope(ws"hello, what is going on today?")
-  echo r.slice(4, 14).debug()
-  echo r.slice(4, 14).text()
-
-  let e = editorCurrent()
-  if e.isSome:
-    echo &"[guest] found current editor"
-    let r2 = e.get.rope()
-    let s = getSelection()
-    echo r2.slice(s.first.column, s.last.column).debug()
-    echo r2.slice(s.first.column, s.last.column).text()
-  else:
-    echo &"[guest] didn't find current editor"
-
-  bindKeys(ws"editor.text", ws"", ws"<C-a>", ws"uiaeuiae", ws"1", ws"MOVE THE CURSOR", (ws"comp_test.nim", 0.int32, 0.int32))
+proc init() =
+  echo "[guest] init test_plugin"
 
   let view = viewCreate()
   view.setRenderWhenInactive(true)
   view.setPreventThrottling(true)
   view.setRenderCallback(cast[uint32](handleViewRender), 123)
-  view.setRenderInterval(500)
   views.add(view)
 
-initPlugin2()
+init()

@@ -200,6 +200,8 @@ proc textDebug(host: HostContext, store: ptr ContextT, self: var RopeResource): 
   &"Rope({self.rope.range}, {self.rope.summary}, {self.rope})"
 
 proc textSlice(host: HostContext, store: ptr ContextT, self: var RopeResource, a: int64, b: int64): RopeResource =
+  let a = min(a, b).clamp(0, self.rope.len)
+  let b = max(a, b).clamp(0, self.rope.len)
   RopeResource(rope: self.rope[a.int...b.int].suffix(Point()))
 
 proc textSlicePoints(host: HostContext, store: ptr ContextT, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =

@@ -18,20 +18,7 @@ proc emscripten_stack_init() {.importc.}
 
 proc NimMain() {.importc.}
 
-proc getSetting*(name: string, T: typedesc): T =
-  try:
-    return getSettingRaw(name).parseJson().jsonTo(T)
-  except:
-    return T.default
-
-proc getSetting*[T](name: string, def: T): T =
-  try:
-    return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
-  except:
-    return def
-
-proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
-  discard addModeChangedHandler(cast[uint32](fun))
+############################ exported functions ############################
 
 proc initPlugin() =
   emscripten_stack_init()
@@ -49,3 +36,19 @@ proc handleCommand(name: WitString; arg: WitString): WitString =
   echo "[guest] handleCommand ", name, ", ", arg
   return stackWitString ($name & "-" & $arg)
 
+############################ nice wrappers around the raw api ############################
+
+proc getSetting*(name: string, T: typedesc): T =
+  try:
+    return getSettingRaw(name).parseJson().jsonTo(T)
+  except:
+    return T.default
+
+proc getSetting*[T](name: string, def: T): T =
+  try:
+    return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
+  except:
+    return def
+
+proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
+  discard addModeChangedHandler(cast[uint32](fun))
