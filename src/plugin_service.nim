@@ -148,7 +148,7 @@ method reload*(self: WasmPluginSystem): Future[void] {.async.} =
   await self.loadModules("app://config/wasm")
 
 method handleScriptAction*(self: WasmPluginSystem, name: string, arg: JsonNode): JsonNode =
-  echo &"handleScriptAction {name}, {arg}"
+  # echo &"handleScriptAction {name}, {arg}"
   try:
     result = nil
     # let argStr = $arg

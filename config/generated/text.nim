@@ -13,14 +13,41 @@ import
   types
 
 type
+  Editor* = object
+    handle*: int32
   Rope* = object
     handle*: int32
+proc textEditorDrop(a: int32): void {.wasmimport("[resource-drop]editor",
+    "nev:plugins/text").}
+proc `=copy`*(a: var Editor; b: Editor) {.error.}
+proc `=destroy`*(a: Editor) =
+  if a.handle != 0:
+    textEditorDrop(a.handle - 1)
+
 proc textRopeDrop(a: int32): void {.wasmimport("[resource-drop]rope",
     "nev:plugins/text").}
 proc `=copy`*(a: var Rope; b: Rope) {.error.}
 proc `=destroy`*(a: Rope) =
   if a.handle != 0:
     textRopeDrop(a.handle - 1)
+
+proc textRopeImported(a0: int32): int32 {.
+    wasmimport("[method]editor.rope", "nev:plugins/text").}
+proc rope*(self: Editor): Rope {.nodestroy.} =
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = textRopeImported(arg0)
+  result.handle = res + 1
+
+proc textEditorCurrentImported(a0: int32): void {.
+    wasmimport("[static]editor.current", "nev:plugins/text").}
+proc editorCurrent*(): Option[Editor] {.nodestroy.} =
+  var retArea: array[8, uint8]
+  textEditorCurrentImported(cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] != 0:
+    var temp: Editor
+    temp.handle = cast[ptr int32](retArea[4].addr)[] + 1
+    result = temp.some
 
 proc textNewRopeImported(a0: int32; a1: int32): int32 {.
     wasmimport("[constructor]rope", "nev:plugins/text").}
@@ -95,10 +122,4 @@ proc slicePoints*(self: Rope; a: Cursor; b: Cursor): Rope {.nodestroy.} =
   arg3 = b.line
   arg4 = b.column
   let res = textSlicePointsImported(arg0, arg1, arg2, arg3, arg4)
-  result.handle = res + 1
-
-proc textGetCurrentEditorRopeImported(): int32 {.
-    wasmimport("[static]rope.get-current-editor-rope", "nev:plugins/text").}
-proc getCurrentEditorRope*(): Rope {.nodestroy.} =
-  let res = textGetCurrentEditorRopeImported()
   result.handle = res + 1

@@ -56,6 +56,11 @@ interface core {
 interface text {
   use types.{cursor};
 
+  resource editor {
+    rope: func() -> rope;
+    current: static func() -> option<editor>;
+  }
+
   resource rope {
     constructor(content: string);
     clone: func() -> rope;
@@ -63,7 +68,6 @@ interface text {
     debug: func() -> string;
     slice: func(a: s64, b: s64) -> rope;
     slice-points: func(a: cursor, b: cursor) -> rope;
-    get-current-editor-rope: static func() -> rope;
   }
 }
 

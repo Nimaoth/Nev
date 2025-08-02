@@ -124,16 +124,16 @@ proc setRenderCallback*(self: View; fun: uint32; data: uint32): void {.nodestroy
   arg2 = data
   renderSetRenderCallbackImported(arg0, arg1, arg2)
 
-proc renderCreateImported(): int32 {.wasmimport("[static]view.create",
-    "nev:plugins/render").}
-proc create*(): View {.nodestroy.} =
-  let res = renderCreateImported()
+proc renderViewCreateImported(): int32 {.
+    wasmimport("[static]view.create", "nev:plugins/render").}
+proc viewCreate*(): View {.nodestroy.} =
+  let res = renderViewCreateImported()
   result.handle = res + 1
 
-proc renderFromIdImported(a0: int32): int32 {.
+proc renderViewFromIdImported(a0: int32): int32 {.
     wasmimport("[static]view.from-id", "nev:plugins/render").}
-proc fromId*(id: int32): View {.nodestroy.} =
+proc viewFromId*(id: int32): View {.nodestroy.} =
   var arg0: int32
   arg0 = id
-  let res = renderFromIdImported(arg0)
+  let res = renderViewFromIdImported(arg0)
   result.handle = res + 1

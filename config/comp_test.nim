@@ -58,25 +58,10 @@ proc initPlugin() =
   NimMain()
 
   echo "[guest] initPlugin"
-
-  let view = create()
-  view.setRenderWhenInactive(true)
-  view.setPreventThrottling(true)
-  view.setRenderCallback(cast[uint32](handleViewRender), 123)
-  view.setRenderInterval(500)
-  views.add(view)
+  debugEcho "[guest] initPlugin"
 
   addModeChangedHandler proc(old: WitString, new: WitString) {.cdecl.} =
     echo &"[guest] mode changed handler {old} -> {new}"
-
-  # echo "[guest] addCallback"
-  # addCallback proc(x: int): int =
-  #   echo "[guest] inside callback 1"
-  #   return x + 1
-
-  # addCallback proc(x: int): int =
-  #   echo "[guest] inside callback 2"
-  #   return x + 2
 
   echo getSelection()
 
@@ -84,12 +69,24 @@ proc initPlugin() =
   echo r.slice(4, 14).debug()
   echo r.slice(4, 14).text()
 
-  let r2 = getCurrentEditorRope()
-  let s = getSelection()
-  echo r2.slice(s.first.column, s.last.column).debug()
-  echo r2.slice(s.first.column, s.last.column).text()
+  let e = editorCurrent()
+  if e.isSome:
+    echo &"[guest] found current editor"
+    let r2 = e.get.rope()
+    let s = getSelection()
+    echo r2.slice(s.first.column, s.last.column).debug()
+    echo r2.slice(s.first.column, s.last.column).text()
+  else:
+    echo &"[guest] didn't find current editor"
 
   bindKeys(ws"editor.text", ws"", ws"<C-a>", ws"uiaeuiae", ws"1", ws"MOVE THE CURSOR", (ws"comp_test.nim", 0.int32, 0.int32))
+
+  let view = viewCreate()
+  view.setRenderWhenInactive(true)
+  view.setPreventThrottling(true)
+  view.setRenderCallback(cast[uint32](handleViewRender), 123)
+  view.setRenderInterval(500)
+  views.add(view)
 
 proc stackWitString*(arr: openArray[char]): WitString =
   if arr.len == 0:

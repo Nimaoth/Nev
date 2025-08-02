@@ -9,9 +9,11 @@ import ui/render_command
 import scripting/binary_encoder, config_provider
 import scripting/scripting_base
 
-import wasmtime, wit_host_module, plugin_api_base
+import wasmtime, wit_host_module, plugin_api_base, wasi
 
 {.push gcsafe.}
+
+logCategory "plugin-api-v0"
 
 const apiVersion: int32 = 0
 
@@ -25,7 +27,6 @@ type
     timer*: Timer
 
 proc getMemoryFor(host: HostContext, caller: ptr CallerT): Option[ExternT] =
-  # echo &"[host] getMemoryFor"
   ExternT.none
   # var item: ExternT
   # item.kind = WASMTIME_EXTERN_SHAREDMEMORY
@@ -46,23 +47,18 @@ proc getMemory*(caller: ptr CallerT, store: ptr ContextT, host: HostContext): Wa
 func createRope(str: string): Rope =
   Rope.new(str)
 
+type TextEditorResource = object
+  editor: TextDocumentEditor
+
 type RopeResource = object
   rope: RopeSlice[Point]
 
 type ViewResource = object
   view: RenderView
 
-# template typeId*(_: typedesc[RopeResource]): int = 123
-# # template typeId*(_: typedesc[RopeResource]): int = 123
-
-proc `=destroy`*(self: RopeResource) =
-  if not self.rope.rope.tree.isNil:
-    let l = min(50, self.rope.len)
-    echo &"destroy rope {self.rope[0...l]}"
-
-proc `=destroy`*(self: ViewResource) =
-  if not self.view.isNil:
-    echo &"destroy view"
+# proc `=destroy`*(self: RopeResource) =
+#   if not self.rope.rope.tree.isNil:
+#     let l = min(50, self.rope.len)
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
@@ -71,10 +67,12 @@ when defined(witRebuild):
     cacheFile = "../generated/plugin_api_host.nim"
     mapName "rope", RopeResource
     mapName "view", ViewResource
+    mapName "editor", TextEditorResource
 
 else:
   static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
-  include generated/plugin_api_host
+
+include generated/plugin_api_host
 
 type
   WasmModule* = object
@@ -101,12 +99,30 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
 
   self.engine = engine
   self.linker = engine.newLinker()
-  self.linker.defineWasi().okOr(e):
-    echo "[host] Failed to create linker: ", e.msg
-    return
+
+  proc getMemory(caller: ptr CallerT, store: ptr ContextT): WasmMemory =
+    var mainMemory = caller.getExport("memory")
+    # if mainMemory.isNone:
+    #   mainMemory = host.getMemoryFor(caller)
+    if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+      return initWasmMemory(mainMemory.get.of_field.sharedmemory)
+    elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+      return initWasmMemory(store, mainMemory.get.of_field.memory.addr)
+    else:
+      assert false
+
+
+  when false:
+    self.linker.defineWasi().okOr(e):
+      log lvlError, "Failed to define wasi imports: " & e.msg
+      return
+  else:
+    self.linker.definePluginWasi(getMemory).okOr(e):
+      log lvlError, "Failed to define wasi imports: " & e.msg
+      return
 
   defineComponent(self.linker, self.host).okOr(err):
-    echo "[host] Failed to define component: ", err.msg
+    log lvlError, "Failed to define component: " & err.msg
     return
 
 method createModule*(self: PluginApi, module: ptr ModuleT) =
@@ -119,23 +135,23 @@ method createModule*(self: PluginApi, module: ptr ModuleT) =
   wasiConfig.inheritStderr()
   wasiConfig.inheritStdout()
   ctx.setWasi(wasiConfig).toResult(void).okOr(err):
-    echo "[host] Failed to setup wasi: ", err.msg
+    log lvlError, "Failed to setup wasi: " & err.msg
     return
 
   var trap: ptr WasmTrapT = nil
   wasmModule.getMut.instance = self.linker.instantiate(ctx, module, trap.addr).okOr(err):
-    echo &"[host] Failed to create module instance: {err.msg}"
+    log lvlError, "Failed to create module instance: " & err.msg
     return
 
   trap.okOr(err):
-    echo &"[host][trap] Failed to create module instance: {err.msg}"
+    log lvlError, "Failed to create module instance: " & err.msg
     return
 
   collectExports(wasmModule.getMut.funcs, wasmModule.get.instance, ctx)
   self.modules.add wasmModule
 
   initPlugin(wasmModule.get.funcs).okOr(err):
-    echo &"Failed to call init-plugin: {err}"
+    log lvlError, "Failed to call init-plugin: " & err.msg
     return
 
 ###################################### API implementations #####################################
@@ -148,20 +164,28 @@ proc textEditorGetSelection(host: HostContext; store: ptr ContextT): Selection =
   else:
     Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9))
 
-proc textEditorAddModeChangedHandler(host: HostContext, store: ptr ContextT, fun: uint32): int32 =
-  # echo &"[host] textEditorAddModeChangedHandler {fun}"
+proc textEditor_addModeChangedHandler(host: HostContext, store: ptr ContextT, fun: uint32): int32 =
   if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
     let editor = view.editor.TextDocumentEditor
     discard editor.onModeChanged.subscribe proc(args: tuple[removed: seq[string], added: seq[string]]) =
-      # echo &"[host] textEditorAddModeChangedHandler {args.removed} -> {args.added}"
-
       let module = cast[ptr WasmModule](store.getData())
-      # let str = module[].instance.call[:string](store, "handle_mode_changed", [cast[int32](fun).toWasmVal], 0)
-
       let res = module[].funcs.handleModeChanged(fun, $args.removed, $args.added)
       if res.isErr:
-        echo &"[host] failed to call handleModeChanged: {res}"
+        log lvlError, "Failed to call handleModeChanged: " & $res
   return 123
+
+proc textEditorCurrent(host: HostContext; store: ptr ContextT): Option[TextEditorResource] =
+  if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
+    let editor = view.editor.TextDocumentEditor
+    return TextEditorResource(editor: editor).some
+  return  TextEditorResource.none
+
+proc textRope(host: HostContext; store: ptr ContextT; self: var TextEditorResource): RopeResource =
+  if self.editor == nil:
+    return RopeResource(rope: createRope("no editor").slice().suffix(Point()))
+  elif self.editor.document == nil:
+    return RopeResource(rope: createRope("no document").slice().suffix(Point()))
+  return RopeResource(rope: self.editor.document.rope.clone().slice().suffix(Point()))
 
 proc textNewRope(host: HostContext; store: ptr ContextT, content: sink string): RopeResource =
   RopeResource(rope: createRope(content).slice().suffix(Point()))
@@ -181,13 +205,6 @@ proc textSlice(host: HostContext, store: ptr ContextT, self: var RopeResource, a
 proc textSlicePoints(host: HostContext, store: ptr ContextT, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
   RopeResource(rope: self.rope[range])
-
-proc textGetCurrentEditorRope(host: HostContext, store: ptr ContextT): RopeResource =
-  if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    let editor = view.editor.TextDocumentEditor
-    RopeResource(rope: editor.document.rope.clone().slice().suffix(Point()))
-  else:
-    RopeResource(rope: createRope("no editor").slice().suffix(Point()))
 
 proc coreGetTime(host: HostContext; store: ptr ContextT): float64 =
   return host.timer.elapsed.ms
@@ -214,19 +231,19 @@ proc coreSetSettingRaw(host: HostContext, store: ptr ContextT, name: sink string
   try:
     host.settings.set(name, parseJsonex(value))
   except CatchableError as e:
-    echo &"[host] coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
+    log lvlError, "coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
 
 proc renderNewView(host: HostContext; store: ptr ContextT): ViewResource =
   let view = newRenderView(host.services)
   host.layout.addView(view, "**")
   return ViewResource(view: view)
 
-proc renderCreate(host: HostContext; store: ptr ContextT): ViewResource =
+proc renderViewCreate(host: HostContext; store: ptr ContextT): ViewResource =
   let view = newRenderView(host.services)
   host.layout.addView(view, "**")
   return ViewResource(view: view)
 
-proc renderFromId(host: HostContext; store: ptr ContextT; id: int32): ViewResource =
+proc renderViewFromId(host: HostContext; store: ptr ContextT; id: int32): ViewResource =
   let view = newRenderView(host.services)
   host.layout.addView(view, "**")
   return ViewResource(view: view)
@@ -269,4 +286,4 @@ proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var V
   self.view.onRender = proc(view: RenderView) =
     let module = cast[ptr WasmModule](store.getData())
     module[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
-      echo &"[host] Failed to call handleViewRenderCallback: {err}"
+      log lvlError, "Failed to call handleViewRenderCallback: " & $err

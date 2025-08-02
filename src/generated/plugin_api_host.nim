@@ -22,6 +22,9 @@ type
 when not declared(ViewResource):
   {.error: "Missing resource type definition for " & "ViewResource" &
       ". Define the type before the importWit statement.".}
+when not declared(TextEditorResource):
+  {.error: "Missing resource type definition for " & "TextEditorResource" &
+      ". Define the type before the importWit statement.".}
 when not declared(RopeResource):
   {.error: "Missing resource type definition for " & "RopeResource" &
       ". Define the type before the importWit statement.".}
@@ -53,28 +56,28 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8438941171 = instance.getExport(context, "init_plugin")
-  if f_8438941171.isSome:
-    assert f_8438941171.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8438941171.get.of_field.func_field
+  let f_8438941080 = instance.getExport(context, "init_plugin")
+  if f_8438941080.isSome:
+    assert f_8438941080.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8438941080.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8438941187 = instance.getExport(context, "handle_command")
-  if f_8438941187.isSome:
-    assert f_8438941187.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8438941187.get.of_field.func_field
+  let f_8438941096 = instance.getExport(context, "handle_command")
+  if f_8438941096.isSome:
+    assert f_8438941096.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8438941096.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8438941237 = instance.getExport(context, "handle_mode_changed")
-  if f_8438941237.isSome:
-    assert f_8438941237.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8438941237.get.of_field.func_field
+  let f_8438941146 = instance.getExport(context, "handle_mode_changed")
+  if f_8438941146.isSome:
+    assert f_8438941146.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8438941146.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8438941238 = instance.getExport(context, "handle_view_render_callback")
-  if f_8438941238.isSome:
-    assert f_8438941238.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8438941238.get.of_field.func_field
+  let f_8438941147 = instance.getExport(context, "handle_view_render_callback")
+  if f_8438941147.isSome:
+    assert f_8438941147.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8438941147.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
@@ -224,6 +227,10 @@ proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
 proc textEditorGetSelection(host: HostContext; store: ptr ContextT): Selection
 proc textEditorAddModeChangedHandler(host: HostContext; store: ptr ContextT;
                                      fun: uint32): int32
+proc textRope(host: HostContext; store: ptr ContextT;
+              self: var TextEditorResource): RopeResource
+proc textEditorCurrent(host: HostContext; store: ptr ContextT): Option[
+    TextEditorResource]
 proc textNewRope(host: HostContext; store: ptr ContextT; content: sink string): RopeResource
 proc textClone(host: HostContext; store: ptr ContextT; self: var RopeResource): RopeResource
 proc textText(host: HostContext; store: ptr ContextT; self: var RopeResource): string
@@ -232,7 +239,6 @@ proc textSlice(host: HostContext; store: ptr ContextT; self: var RopeResource;
                a: int64; b: int64): RopeResource
 proc textSlicePoints(host: HostContext; store: ptr ContextT;
                      self: var RopeResource; a: Cursor; b: Cursor): RopeResource
-proc textGetCurrentEditorRope(host: HostContext; store: ptr ContextT): RopeResource
 proc coreApiVersion(host: HostContext; store: ptr ContextT): int32
 proc coreGetTime(host: HostContext; store: ptr ContextT): float64
 proc coreBindKeys(host: HostContext; store: ptr ContextT; context: sink string;
@@ -266,13 +272,20 @@ proc renderMarkDirty(host: HostContext; store: ptr ContextT;
                      self: var ViewResource): void
 proc renderSetRenderCallback(host: HostContext; store: ptr ContextT;
                              self: var ViewResource; fun: uint32; data: uint32): void
-proc renderCreate(host: HostContext; store: ptr ContextT): ViewResource
-proc renderFromId(host: HostContext; store: ptr ContextT; id: int32): ViewResource
+proc renderViewCreate(host: HostContext; store: ptr ContextT): ViewResource
+proc renderViewFromId(host: HostContext; store: ptr ContextT; id: int32): ViewResource
 proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     void] =
   block:
     let e = block:
       linker.defineFuncUnchecked("nev:plugins/render", "[resource-drop]view",
+                                 newFunctype([WasmValkind.I32], [])):
+        ?host.resources.resourceDrop(parameters[0].i32, callDestroy = true)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      linker.defineFuncUnchecked("nev:plugins/text", "[resource-drop]editor",
                                  newFunctype([WasmValkind.I32], [])):
         ?host.resources.resourceDrop(parameters[0].i32, callDestroy = true)
     if e.isErr:
@@ -318,6 +331,43 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         fun = convert(parameters[0].i32, uint32)
         let res = textEditorAddModeChangedHandler(host, store, fun)
         parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/text", "[method]editor.rope", ty):
+        var self: ptr TextEditorResource
+        self = ?host.resources.resourceHostData(parameters[0].i32,
+            TextEditorResource)
+        let res = textRope(host, store, self[])
+        parameters[0].i32 = ?host.resources.resourceNew(res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text", "[static]editor.current",
+                                 ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let res = textEditorCurrent(host, store)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?host.resources.resourceNew(
+              res.get)
     if e.isErr:
       return e
   block:
@@ -482,15 +532,6 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         b.line = convert(parameters[3].i32, int32)
         b.column = convert(parameters[4].i32, int32)
         let res = textSlicePoints(host, store, self[], a, b)
-        parameters[0].i32 = ?host.resources.resourceNew(res)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/text",
-                                 "[static]rope.get-current-editor-rope", ty):
-        let res = textGetCurrentEditorRope(host, store)
         parameters[0].i32 = ?host.resources.resourceNew(res)
     if e.isErr:
       return e
@@ -917,7 +958,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
       linker.defineFuncUnchecked("nev:plugins/render", "[static]view.create", ty):
-        let res = renderCreate(host, store)
+        let res = renderViewCreate(host, store)
         parameters[0].i32 = ?host.resources.resourceNew(res)
     if e.isErr:
       return e
@@ -929,7 +970,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
                                  ty):
         var id: int32
         id = convert(parameters[0].i32, int32)
-        let res = renderFromId(host, store, id)
+        let res = renderViewFromId(host, store, id)
         parameters[0].i32 = ?host.resources.resourceNew(res)
     if e.isErr:
       return e
