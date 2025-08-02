@@ -38,6 +38,7 @@ switch("path", "../src")
 switch("d", "release")
 switch("d", "wasm")
 switch("nimcache", "./nimcache")
+switch("d", "pluginApiVersion=0")
 
 switch("stackTrace", "on")
 switch("lineTrace", "on")

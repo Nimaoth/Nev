@@ -168,7 +168,8 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
 task buildWasmModule, "":
   let name = "comp_test"
   withDir "config":
-    exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/{name}.m.wasm\" {getCommandLineParams()} ./{name}.nim"
+    # exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/{name}.m.wasm\" {getCommandLineParams()} ./{name}.nim"
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/test_plugin.m.wasm\" {getCommandLineParams()} ./test_plugin.nim"
     # exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/test_plugin_v1.1.m.wasm\" {getCommandLineParams()} ./test_plugin_v1.nim"
 
     # exec &"wasm-tools component embed ../scripting/plugin_api.wit --world plugin ./wasm/{name}.m.wasm -o ./wasm/{name}.me.wasm"

@@ -29,6 +29,21 @@ when defined(nimscript):
     result.seconds = unix
     result.nanosecond = 0
 
+elif defined(wasm):
+  include system/timers
+  import std/times
+  export Ticks, Nanos
+
+  proc myGetTime*(): int32 = (getTime().toUnix div 1000000000).int32
+  proc myGetTicks*(): int64 =
+    var t: Timeval
+    posix_gettimeofday(t)
+    let sec = t.tv_sec
+    let usec = t.tv_usec
+    result = int64(sec) * 1000_000_000'i64 + int64(usec) * 1000'i64
+
+  proc mySubtractTicks*(a: int64, b: int64): int64 = a.Ticks - b.Ticks
+
 else:
   include system/timers
   import std/times

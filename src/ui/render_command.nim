@@ -1,11 +1,11 @@
 import std/[macros, genasts, tables, sets]
 import fusion/matching
 import chroma, vmath
-import misc/[macro_utils, util, id, custom_unicode, rect_utils, custom_logger]
+import misc/[macro_utils, util, custom_unicode, rect_utils, custom_logger]
 import input
 import scripting/binary_encoder
 
-export util, id, input, chroma, vmath, rect_utils
+export util, input, chroma, vmath, rect_utils
 
 defineBitFlagSized(uint64):
   type UINodeFlag* = enum

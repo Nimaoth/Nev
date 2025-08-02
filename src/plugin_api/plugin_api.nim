@@ -11,7 +11,7 @@ import scripting/scripting_base
 
 import wasmtime, wit_host_module, plugin_api_base, wasi
 
-{.push gcsafe.}
+{.push gcsafe, raises: [].}
 
 logCategory "plugin-api-v0"
 
@@ -274,10 +274,11 @@ proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT; self: va
 
   self.view.commands.clear()
   var decoder = BinaryDecoder.init(mem.getOpenArray[:byte](buffer, len))
-  for command in decoder.decodeRenderCommands():
-    # if command.kind == RenderCommandKind.TextRaw:
-    #   self.view.commands.commands.add(RenderCommand(kind: RenderCommandKind.Text, textOffset: 0, textLen, command.len))
-    self.view.commands.commands.add(command)
+  try:
+    for command in decoder.decodeRenderCommands():
+      self.view.commands.commands.add(command)
+  except ValueError as e:
+    discard
 
 proc renderMarkDirty(host: HostContext; store: ptr ContextT; self: var ViewResource): void =
   self.view.markDirty()

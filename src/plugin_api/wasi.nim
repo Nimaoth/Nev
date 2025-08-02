@@ -1,15 +1,7 @@
 import std/[macros, strutils, os, strformat]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, macro_utils]
-import nimsumtree/[rope, sumtree, arc]
-import service
-import layout
-import text/[text_editor, text_document]
-import render_view, view
-import ui/render_command
-import scripting/binary_encoder, config_provider
-import scripting/scripting_base
+import misc/[custom_logger, util, macro_utils]
 
-import wasmtime, wit_host_module, plugin_api_base
+import wasmtime
 
 {.push gcsafe, raises: [].}
 
@@ -414,16 +406,17 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
   discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "clock_time_get", newFunctype([WasmValkind.I32, WasmValkind.I64, WasmValkind.I32], [WasmValkind.I32])):
     log lvlWarn, "clock_time_get: not implemented"
     # todo
-    # let mem = getMemory(caller, store)
-    # let clockId = parameters[0].i32.WasiClockId
-    # if clockId != Realtime:
-    #   log lvlWarn, &"clock_time_get: clock {clockId} not implemented"
+    let mem = getMemory(caller, store)
+    let clockId = parameters[0].i32.WasiClockId
+    if clockId != Realtime:
+      log lvlWarn, &"clock_time_get: clock {clockId} not implemented"
 
-    # let precision = cast[WasiTimestamp](parameters[1].i64)
-    # let retPtr = parameters[2].i32.WasmPtr
-    # # if retPtr.int != 0:
-    # let time = 123456000000000
-    # mem.write[:WasiTimestamp](retPtr, time.uint64)
+    let precision = cast[WasiTimestamp](parameters[1].i64)
+    let retPtr = parameters[2].i32.WasmPtr
+    if retPtr.int != 0:
+      # let time = 123456000000000
+      let time = 0
+      mem.write[:WasiTimestamp](retPtr, time.uint64)
 
     parameters[0].i32 = WasiErrno.Access.int32
 
