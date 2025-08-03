@@ -118,6 +118,7 @@ Inlay hints are enabled by default, but can be disabled using the setting `text.
     // Disable inlay hints for Nim
     "lang.nim.text.inlay-hints-enabled": false,
 }
+```
 
 ## Path language server
 
