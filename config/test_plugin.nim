@@ -9,6 +9,19 @@ var views: seq[RenderView] = @[]
 var renderCommandEncoder: BinaryEncoder
 var num = 1
 
+converter toWitString(s: string): WitString = ws(s)
+
+defineCommand(ws"new-test-command",
+  active = false,
+  docs = ws"test command",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    echo &"[guest] new-test-command {data} '{args}'"
+    return ws"uiae"
+
 proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
   let view {.cursor.} = views[0]
 

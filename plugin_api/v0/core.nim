@@ -87,11 +87,13 @@ proc bindKeys*(context: WitString; subcontext: WitString; keys: WitString;
 
 proc coreDefineCommandImported(a0: int32; a1: int32; a2: bool; a3: int32;
                                a4: int32; a5: int32; a6: int32; a7: int32;
-                               a8: int32; a9: int32; a10: int32): void {.
+                               a8: int32; a9: int32; a10: int32; a11: uint32;
+                               a12: uint32): void {.
     wasmimport("define-command", "nev:plugins/core").}
 proc defineCommand*(name: WitString; active: bool; docs: WitString;
                     params: WitList[(WitString, WitString)];
-                    returntype: WitString; context: WitString): void {.nodestroy.} =
+                    returntype: WitString; context: WitString; fun: uint32;
+                    data: uint32): void {.nodestroy.} =
   var
     arg0: int32
     arg1: int32
@@ -104,6 +106,8 @@ proc defineCommand*(name: WitString; active: bool; docs: WitString;
     arg8: int32
     arg9: int32
     arg10: int32
+    arg11: uint32
+    arg12: uint32
   if name.len > 0:
     arg0 = cast[int32](name[0].addr)
   else:
@@ -130,12 +134,14 @@ proc defineCommand*(name: WitString; active: bool; docs: WitString;
   else:
     arg9 = 0.int32
   arg10 = cast[int32](context.len)
+  arg11 = fun
+  arg12 = data
   coreDefineCommandImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7,
-                            arg8, arg9, arg10)
+                            arg8, arg9, arg10, arg11, arg12)
 
 proc coreRunCommandImported(a0: int32; a1: int32; a2: int32; a3: int32): void {.
     wasmimport("run-command", "nev:plugins/core").}
-proc runCommand*(name: WitString; args: WitString): void {.nodestroy.} =
+proc runCommand*(name: WitString; arguments: WitString): void {.nodestroy.} =
   var
     arg0: int32
     arg1: int32
@@ -146,11 +152,11 @@ proc runCommand*(name: WitString; args: WitString): void {.nodestroy.} =
   else:
     arg0 = 0.int32
   arg1 = cast[int32](name.len)
-  if args.len > 0:
-    arg2 = cast[int32](args[0].addr)
+  if arguments.len > 0:
+    arg2 = cast[int32](arguments[0].addr)
   else:
     arg2 = 0.int32
-  arg3 = cast[int32](args.len)
+  arg3 = cast[int32](arguments.len)
   coreRunCommandImported(arg0, arg1, arg2, arg3)
 
 proc coreGetSettingRawImported(a0: int32; a1: int32; a2: int32): void {.

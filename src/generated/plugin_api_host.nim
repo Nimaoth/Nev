@@ -58,28 +58,28 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8438941037 = instance.getExport(context, "init_plugin")
-  if f_8438941037.isSome:
-    assert f_8438941037.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8438941037.get.of_field.func_field
+  let f_8438941039 = instance.getExport(context, "init_plugin")
+  if f_8438941039.isSome:
+    assert f_8438941039.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8438941039.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8438941053 = instance.getExport(context, "handle_command")
-  if f_8438941053.isSome:
-    assert f_8438941053.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8438941053.get.of_field.func_field
+  let f_8438941055 = instance.getExport(context, "handle_command")
+  if f_8438941055.isSome:
+    assert f_8438941055.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8438941055.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8438941103 = instance.getExport(context, "handle_mode_changed")
-  if f_8438941103.isSome:
-    assert f_8438941103.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8438941103.get.of_field.func_field
+  let f_8438941105 = instance.getExport(context, "handle_mode_changed")
+  if f_8438941105.isSome:
+    assert f_8438941105.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8438941105.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8438941104 = instance.getExport(context, "handle_view_render_callback")
-  if f_8438941104.isSome:
-    assert f_8438941104.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8438941104.get.of_field.func_field
+  let f_8438941106 = instance.getExport(context, "handle_view_render_callback")
+  if f_8438941106.isSome:
+    assert f_8438941106.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8438941106.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
@@ -101,8 +101,8 @@ proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   if res.isErr:
     return res.toResult(void)
   
-proc handleCommand*(funcs: ExportedFuncs; name: string; arg: string): WasmtimeResult[
-    string] =
+proc handleCommand*(funcs: ExportedFuncs; fun: uint32; data: uint32;
+                    arguments: string): WasmtimeResult[string] =
   var args: array[max(1, 4), ValT]
   var results: array[max(1, 1), ValT]
   var trap: ptr WasmTrapT = nil
@@ -113,35 +113,22 @@ proc handleCommand*(funcs: ExportedFuncs; name: string; arg: string): WasmtimeRe
     discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
                          funcs.mContext, savePoint.val)
   var dataPtrWasm0: WasmPtr
-  var dataPtrWasm1: WasmPtr
-  if name.len > 0:
+  args[0] = toWasmVal(fun)
+  args[1] = toWasmVal(data)
+  if arguments.len > 0:
     dataPtrWasm0 = block:
       let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
-                            funcs.mContext, (name.len * 1).int32, 4)
+                            funcs.mContext, (arguments.len * 1).int32, 4)
       if temp.isErr:
         return temp.toResult(string)
       temp.val
-    args[0] = toWasmVal(cast[int32](dataPtrWasm0))
+    args[2] = toWasmVal(cast[int32](dataPtrWasm0))
     block:
-      for i0 in 0 ..< name.len:
-        memory[dataPtrWasm0 + i0] = cast[uint8](name[i0])
-  else:
-    args[0] = toWasmVal(0.int32)
-  args[1] = toWasmVal(cast[int32](name.len))
-  if arg.len > 0:
-    dataPtrWasm1 = block:
-      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
-                            funcs.mContext, (arg.len * 1).int32, 4)
-      if temp.isErr:
-        return temp.toResult(string)
-      temp.val
-    args[2] = toWasmVal(cast[int32](dataPtrWasm1))
-    block:
-      for i0 in 0 ..< arg.len:
-        memory[dataPtrWasm1 + i0] = cast[uint8](arg[i0])
+      for i0 in 0 ..< arguments.len:
+        memory[dataPtrWasm0 + i0] = cast[uint8](arguments[i0])
   else:
     args[2] = toWasmVal(0.int32)
-  args[3] = toWasmVal(cast[int32](arg.len))
+  args[3] = toWasmVal(cast[int32](arguments.len))
   let res = funcs.handleCommand.addr.call(funcs.mContext,
       args.toOpenArray(0, 4 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
       string)
@@ -250,9 +237,10 @@ proc coreBindKeys(host: HostContext; store: ptr ContextT; context: sink string;
 proc coreDefineCommand(host: HostContext; store: ptr ContextT;
                        name: sink string; active: bool; docs: sink string;
                        params: sink seq[(string, string)];
-                       returntype: sink string; context: sink string): void
+                       returntype: sink string; context: sink string;
+                       fun: uint32; data: uint32): void
 proc coreRunCommand(host: HostContext; store: ptr ContextT; name: sink string;
-                    args: sink string): void
+                    arguments: sink string): void
 proc coreGetSettingRaw(host: HostContext; store: ptr ContextT; name: sink string): string
 proc coreSetSettingRaw(host: HostContext; store: ptr ContextT;
                        name: sink string; value: sink string): void
@@ -617,7 +605,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
-          WasmValkind.I32], [])
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/core", "define-command", ty):
         var mainMemory = caller.getExport("memory")
         if mainMemory.isNone:
@@ -637,6 +625,8 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var params: seq[(string, string)]
         var returntype: string
         var context: string
+        var fun: uint32
+        var data: uint32
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
           name = newString(parameters[1].i32)
@@ -674,8 +664,10 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           context = newString(parameters[10].i32)
           for i0 in 0 ..< context.len:
             context[i0] = p0[i0]
+        fun = convert(parameters[11].i32, uint32)
+        data = convert(parameters[12].i32, uint32)
         coreDefineCommand(host, store, name, active, docs, params, returntype,
-                          context)
+                          context, fun, data)
     if e.isErr:
       return e
   block:
@@ -697,7 +689,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         else:
           assert false
         var name: string
-        var args: string
+        var arguments: string
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
           name = newString(parameters[1].i32)
@@ -705,10 +697,10 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
             name[i0] = p0[i0]
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
-          args = newString(parameters[3].i32)
-          for i0 in 0 ..< args.len:
-            args[i0] = p0[i0]
-        coreRunCommand(host, store, name, args)
+          arguments = newString(parameters[3].i32)
+          for i0 in 0 ..< arguments.len:
+            arguments[i0] = p0[i0]
+        coreRunCommand(host, store, name, arguments)
     if e.isErr:
       return e
   block:

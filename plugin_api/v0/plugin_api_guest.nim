@@ -49,16 +49,18 @@ proc initPlugin(): void
 proc initPluginExported(): void {.wasmexport("init-plugin", "nev:plugins/guest").} =
   initPlugin()
 
-proc handleCommand(name: WitString; arg: WitString): WitString
+proc handleCommand(fun: uint32; data: uint32; arguments: WitString): WitString
 var handleCommandRetArea: array[16, uint8]
-proc handleCommandExported(a0: int32; a1: int32; a2: int32; a3: int32): int32 {.
+proc handleCommandExported(a0: uint32; a1: uint32; a2: int32; a3: int32): int32 {.
     wasmexport("handle-command", "nev:plugins/guest").} =
   var
-    name: WitString
-    arg: WitString
-  name = ws(cast[ptr char](a0), a1)
-  arg = ws(cast[ptr char](a2), a3)
-  let res = handleCommand(name, arg)
+    fun: uint32
+    data: uint32
+    arguments: WitString
+  fun = convert(a0, uint32)
+  data = convert(a1, uint32)
+  arguments = ws(cast[ptr char](a2), a3)
+  let res = handleCommand(fun, data, arguments)
   if res.len > 0:
     cast[ptr int32](handleCommandRetArea[0].addr)[] = cast[int32](res[0].addr)
   else:

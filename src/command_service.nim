@@ -13,6 +13,10 @@ logCategory "commands"
 type
   CommandHandler* = proc(command: Option[string]): Option[string] {.gcsafe.}
 
+  Command* = object
+    name*: string
+    execute*: proc(args: string): string {.gcsafe.}
+
   CommandService* = ref object of Service
     fallbackConfig: ConfigStore
 
@@ -31,6 +35,7 @@ type
 
     scopedCommandHandlers: Table[string, proc(command: string): Option[string] {.gcsafe, raises: [].}]
     prefixCommandHandlers: seq[tuple[prefix: string, execute: proc(command: string): Option[string] {.gcsafe, raises: [].}]]
+    commands*: Table[string, Command]
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
@@ -47,6 +52,17 @@ proc config*(self: CommandService): ConfigStore =
   if self.services.getService(ConfigService).getSome(configs):
     return configs.runtime
   return self.fallbackConfig
+
+proc addCommand*(self: CommandService, command: sink Command, override: bool = false) =
+  if command.name == "":
+    log lvlError, &"Trying to register command with no name"
+    return
+
+  if not override and self.commands.contains(command.name):
+    log lvlError, &"Trying to register command '{command.name}' which already exists"
+    return
+
+  self.commands[command.name] = command.ensureMove
 
 proc addPrefixCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) =
   self.scopedCommandHandlers[prefix] = handler

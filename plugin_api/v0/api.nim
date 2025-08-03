@@ -20,6 +20,8 @@ proc NimMain() {.importc.}
 
 ############################ exported functions ############################
 
+type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
+
 proc initPlugin() =
   emscripten_stack_init()
   NimMain()
@@ -32,9 +34,9 @@ proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void =
   let fun = cast[proc(id: int32, data: uint32) {.cdecl.}](fun)
   fun(id, data)
 
-proc handleCommand(name: WitString; arg: WitString): WitString =
-  echo "[guest] handleCommand ", name, ", ", arg
-  return stackWitString ($name & "-" & $arg)
+proc handleCommand(fun: uint32, data: uint32; arguments: WitString): WitString =
+  let fun = cast[CommandHandler](fun)
+  return fun(data, arguments)
 
 ############################ nice wrappers around the raw api ############################
 
@@ -49,6 +51,9 @@ proc getSetting*[T](name: string, def: T): T =
     return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
   except:
     return def
+
+proc defineCommand*(name: WitString; active: bool; docs: WitString; params: WitList[(WitString, WitString)]; returntype: WitString; context: WitString; data: uint32; handler: CommandHandler) =
+  defineCommand(name, active, docs, params, returntype, context, cast[uint32](handler), cast[uint32](data))
 
 proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
   discard addModeChangedHandler(cast[uint32](fun))

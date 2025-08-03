@@ -3414,6 +3414,10 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
     if alias != nil and alias.kind != JNull:
       return self.handleAlias(action, arg, alias)
 
+    if self.commands.commands.contains(action):
+      discard self.commands.commands[action].execute(arg)
+      return newJNull().some
+
     var args = newJArray()
     try:
       for a in newStringStream(arg).parseJsonFragments():

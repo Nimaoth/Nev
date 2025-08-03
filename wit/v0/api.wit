@@ -61,8 +61,8 @@ interface core {
   api-version: func() -> s32;
   get-time: func() -> f64;
   bind-keys: func(context: string, subcontext: string, keys: string, action: string, arg: string, description: string, source: tuple<string, s32, s32>);
-  define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string);
-  run-command: func(name: string, args: string);
+  define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);
+  run-command: func(name: string, arguments: string);
   get-setting-raw: func(name: string) -> string;
   set-setting-raw: func(name: string, value: string);
 }
@@ -88,7 +88,7 @@ interface text {
 interface guest {
   use render.{view};
   init-plugin: func();
-  handle-command: func(name: string, arg: string) -> string;
+  handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
 }

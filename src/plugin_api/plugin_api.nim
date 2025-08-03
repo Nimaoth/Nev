@@ -6,7 +6,7 @@ import layout
 import text/[text_editor, text_document]
 import render_view, view
 import ui/render_command
-import scripting/binary_encoder, config_provider
+import scripting/binary_encoder, config_provider, command_service
 import scripting/scripting_base
 
 import wasmtime, wit_host_module, plugin_api_base, wasi
@@ -21,6 +21,7 @@ type
   HostContext* = ref object
     resources*: WasmModuleResources
     services: Services
+    commands*: CommandService
     layout*: LayoutService
     plugins*: PluginService
     settings*: ConfigStore
@@ -96,6 +97,7 @@ type
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
+  self.host.commands = services.getService(CommandService).get
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
@@ -235,12 +237,22 @@ proc coreBindKeys(host: HostContext, store: ptr ContextT, context: sink string, 
   host.plugins.bindKeys(context, subContext, keys, action, arg, description, (source[0], source[1].int, source[2].int))
 
 proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string, active: bool, docs: sink string,
-                       params: sink seq[(string, string)], returnType: sink string, context: sink string): void =
-  host.plugins.addScriptAction(name, docs, params, returnType, active, context)
+                       params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
+  let command = Command(
+    name: name.ensureMove,
+    execute: (proc(args: string): string {.gcsafe.} =
+      let module = cast[ptr InstanceData](store.getData())
+      let res = module[].funcs.handleCommand(fun, data, args).okOr(err):
+        log lvlError, "Failed to call handleCommand: " & $err
+        return ""
 
-proc coreRunCommand(host: HostContext, store: ptr ContextT, name: sink string, args: sink string): void =
-  # todo
-  discard
+      return res
+    ),
+  )
+  host.commands.addCommand(command)
+
+proc coreRunCommand(host: HostContext, store: ptr ContextT, name: sink string, arguments: sink string): void =
+  discard host.commands.handleCommand(name & " " & arguments)
 
 proc coreGetSettingRaw(host: HostContext, store: ptr ContextT, name: sink string): string =
   return $host.settings.get(name, JsonNodeEx)
