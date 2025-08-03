@@ -49,6 +49,7 @@ local.nims
 todo.md
 tutorial.md
 rad
+plugins
 
 *.nev-session
 
