@@ -105,6 +105,20 @@ language servers is not configurable yet.
 }
 ```
 
+## Inlay hints
+
+Inlay hints are enabled by default, but can be disabled using the setting `text.inlay-hints-enabled`:
+
+```json
+// ~/.nev/settings.json
+{
+    // Disable inlay hints globally (can still be overriden per language)
+    "text.inlay-hints-enabled": false,
+
+    // Disable inlay hints for Nim
+    "lang.nim.text.inlay-hints-enabled": false,
+}
+
 ## Path language server
 
 Nev has a builtin language server which provides auto completion and goto definition for paths.
