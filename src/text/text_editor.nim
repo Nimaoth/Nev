@@ -208,6 +208,9 @@ declareSettings TextEditorSettings, "text":
   ## Command to execute when the mode of the text editor changes
   declare modeChangedHandlerCommand, string, ""
 
+  ## Whether inlay hints are enabled.
+  declare inlayHintsEnabled, bool, true
+
 type
   CodeActionKind {.pure.} = enum Command, CodeAction
   CodeActionOrCommand = object
@@ -4116,6 +4119,8 @@ proc getContextLines*(self: TextDocumentEditor, cursor: Cursor): seq[int] =
 
 proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.isNil:
+    return
+  if not self.settings.inlayHintsEnabled.get():
     return
   if self.document.requiresLoad or self.document.isLoadingAsync:
     return
