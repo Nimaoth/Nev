@@ -250,29 +250,20 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
   self.runConfigCommands("wasm-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
 
-  if not options.disableWasmPlugins:
-    try:
-      log(lvlInfo, fmt"load wasm components")
-      self.wasmPluginSystem = new WasmPluginSystem
-      self.plugins.scriptContexts.add self.wasmPluginSystem
-      self.wasmPluginSystem.services = self.services
-      self.wasmPluginSystem.moduleVfs = VFS()
-      self.wasmPluginSystem.vfs = self.vfs
-      self.vfs.mount("plugs://", self.wasmPluginSystem.moduleVfs)
-
-      withScriptContext self.plugins, self.wasmPluginSystem:
-        let t1 = startTimer()
-        await self.wasmPluginSystem.init("app://config", self.vfs)
-        log(lvlInfo, fmt"init wasm components ({t1.elapsed.ms}ms)")
-
-        let t2 = startTimer()
-        # discard self.wasmPluginSystem.postInitialize()
-        log(lvlInfo, fmt"post init wasm components ({t2.elapsed.ms}ms)")
-    except CatchableError:
-      log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+  try:
+    self.wasmPluginSystem = new WasmPluginSystem
+    self.plugins.scriptContexts.add self.wasmPluginSystem
+    self.wasmPluginSystem.services = self.services
+    self.wasmPluginSystem.moduleVfs = VFS()
+    self.wasmPluginSystem.vfs = self.vfs
+    self.vfs.mount("plugs://", self.wasmPluginSystem.moduleVfs)
+    await self.wasmPluginSystem.init("app://config", self.vfs)
+  except CatchableError:
+    log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
   self.plugins.pluginSystems.add(self.wasmPluginSystem)
-  self.plugins.loadPlugins()
+  if not options.disableWasmPlugins:
+    self.plugins.loadPlugins()
 
   log lvlInfo, &"Finished loading plugins"
 
