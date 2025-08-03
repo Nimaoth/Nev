@@ -30,9 +30,6 @@ proc typeNameToJson*(T: typedesc[IndentStyleKind]): string =
   return "\"tabs\" | \"spaces\""
 
 declareSettings SearchRegexSettings, "":
-  ## Override the ripgrep language name. By default the documents language id is used.
-  declare rgLanguage, Option[string], nil
-
   ## If true then the search results will only show the part of a line that matched the regex.
   ## If false then the entire line is shown.
   declare showOnlyMatchingPart, bool, true
@@ -60,6 +57,16 @@ declareSettings SearchRegexSettings, "":
 
   ## Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex.
   declare workspaceSymbolsByKind, Option[Table[string, RegexSetting]], nil
+
+declareSettings RipgrepSettings, "":
+  ## Pass the --type argument to ripgrep using either the language id or the value from `file-type`.
+  declare passType, bool, true
+
+  ## Override the ripgrep type name. By default the documents language id is used.
+  declare fileType, Option[string], nil
+
+  ## Extra arguments passed to ripgrep
+  declare extraArgs, seq[string], newJArray()
 
 declareSettings TrimTrailingWhitespaceSettings, "":
   ## If true trailing whitespace is deleted when saving files.
@@ -124,6 +131,9 @@ declareSettingsTemplate TreesitterSettings, "text.treesitter":
 declareSettings TextSettings, "text":
   ##
   use trimTrailingWhitespace, TrimTrailingWhitespaceSettings
+
+  ## Settings for using ripgrep
+  use ripgrep, RipgrepSettings
 
   ## Configure search regexes.
   use searchRegexes, SearchRegexSettings
@@ -1433,6 +1443,30 @@ func charCategory(c: char): int =
   if c.isAlphaNumeric or c == '_': return 0
   if c in Whitespace: return 1
   return 2
+
+proc getLanguageWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
+  if cursor.column == 0:
+    return cursor.toSelection
+
+  var c = self.rope.cursorT(cursor.toPoint)
+
+  result = cursor.toSelection
+
+  let identRunes {.cursor.} = self.settings.completionWordChars.get()
+  while c.position.column > 0:
+    c.seekPrevRune()
+    if c.currentRune in identRunes:
+      result.first.column = c.position.column.int
+    else:
+      break
+
+  c = self.rope.cursorT(cursor.toPoint)
+  while not c.atEnd and c.position.row.int == cursor.line:
+    if c.currentRune in identRunes:
+      c.seekNextRune()
+      result.last.column = c.position.column.int
+    else:
+      break
 
 proc findWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
   # todo: use RopeCursor

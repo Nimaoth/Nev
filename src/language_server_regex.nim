@@ -50,16 +50,20 @@ method init*(self: LanguageServerRegexService): Future[Result[void, ref Catchabl
 
 proc gotoRegexLocation(self: LanguageServerRegex, doc: TextDocument, location: Cursor, regexTemplate: Option[string]): Future[seq[Definition]] {.async.} =
 
-  let s = doc.findWordBoundary(location)
+  let s = doc.getLanguageWordBoundary(location)
   let text = doc.contentString(s)
   let searchString = if regexTemplate.getSome(regexTemplate):
     regexTemplate.replace("[[0]]", text)
   else:
     "\\b" & text & "\\b"
 
-  let rgLanguageId = doc.settings.searchRegexes.rgLanguage.get().get(doc.languageId)
   log lvlInfo, &"Find '{text}' using regex '{searchString}'"
-  let customArgs = @["--type", rgLanguageId, "--only-matching"]
+  var customArgs = @["--only-matching"]
+  customArgs.add doc.settings.ripgrep.extraArgs.get()
+  if doc.settings.ripgrep.passType.get():
+    let fileType = doc.settings.ripgrep.fileType.get().get(doc.languageId)
+    customArgs.add ["--type", fileType]
+
   let searchResults = await self.workspace.searchWorkspace(searchString, 100, customArgs)
 
   var locations: seq[Definition]
@@ -151,9 +155,12 @@ method getWorkspaceSymbols*(self: LanguageServerRegex, filename: string, query: 
     if searchStrings.len == 0:
       return
 
-    let rgLanguageId = doc.settings.searchRegexes.rgLanguage.get().get(doc.languageId)
     let maxResults = 50_000 # doc.settings.searchWorkspaceRegexMaxResults.get() # todo
-    var customArgs = @["--type", rgLanguageId]
+    var customArgs: seq[string] = @[]
+    customArgs.add doc.settings.ripgrep.extraArgs.get()
+    if doc.settings.ripgrep.passType.get():
+      let fileType = doc.settings.ripgrep.fileType.get().get(doc.languageId)
+      customArgs.add ["--type", fileType]
     if doc.settings.searchRegexes.showOnlyMatchingPart.get():
       customArgs.add("--only-matching")
     let futures = collect:

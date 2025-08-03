@@ -74,6 +74,9 @@ For examples and default values see [here](../config/settings.json)
 | `text.line-comment` | string \| null | null | String which starts a line comment |
 | `text.mode-changed-handler-command` | string | "" | Command to execute when the mode of the text editor changes |
 | `text.modes` | string[] | ["editor.text"] | List of input modes text editors. |
+| `text.ripgrep.extra-args` | string[] | [] | Extra arguments passed to ripgrep |
+| `text.ripgrep.file-type` | string \| null | null | Override the ripgrep type name. By default the documents language id is used. |
+| `text.ripgrep.pass-type` | bool | true | Pass the --type argument to ripgrep using either the language id or the value from `file-type`. |
 | `text.scroll-to-change-on-reload` | "first" \| "last" \| null | null | If not null then scroll to the changed region when a file is reloaded. |
 | `text.scroll-to-end-on-insert` | bool | false | If true then scroll to the end of the file when text is inserted at the end and the cursor is already at the end. |
 | `text.search-regexes.goto-declaration` | regex \| null | null | Regex to use when using the goto-declaration feature. |
@@ -81,7 +84,6 @@ For examples and default values see [here](../config/settings.json)
 | `text.search-regexes.goto-implementation` | regex \| null | null | Regex to use when using the goto-implementation feature. |
 | `text.search-regexes.goto-references` | regex \| null | null | Regex to use when using the goto-references feature. |
 | `text.search-regexes.goto-type-definition` | regex \| null | null | Regex to use when using the goto-type-definition feature. |
-| `text.search-regexes.rg-language` | string \| null | null | Override the ripgrep language name. By default the documents language id is used. |
 | `text.search-regexes.show-only-matching-part` | bool | true | If true then the search results will only show the part of a line that matched the regex. If false then the entire line is shown. |
 | `text.search-regexes.symbols` | regex \| null | null | Regex to use when using the symbols feature. |
 | `text.search-regexes.workspace-symbols` | regex \| null | null | Regex to use when using the workspace-symbols feature. |
