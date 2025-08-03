@@ -53,28 +53,28 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8623489663 = instance.getExport(context, "init_plugin")
-  if f_8623489663.isSome:
-    assert f_8623489663.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8623489663.get.of_field.func_field
+  let f_8640266879 = instance.getExport(context, "init_plugin")
+  if f_8640266879.isSome:
+    assert f_8640266879.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8640266879.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8623489664 = instance.getExport(context, "handle_command")
-  if f_8623489664.isSome:
-    assert f_8623489664.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8623489664.get.of_field.func_field
+  let f_8640266880 = instance.getExport(context, "handle_command")
+  if f_8640266880.isSome:
+    assert f_8640266880.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8640266880.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8623489665 = instance.getExport(context, "handle_mode_changed")
-  if f_8623489665.isSome:
-    assert f_8623489665.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8623489665.get.of_field.func_field
+  let f_8640266881 = instance.getExport(context, "handle_mode_changed")
+  if f_8640266881.isSome:
+    assert f_8640266881.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8640266881.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8623489666 = instance.getExport(context, "handle_view_render")
-  if f_8623489666.isSome:
-    assert f_8623489666.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRender = f_8623489666.get.of_field.func_field
+  let f_8640266882 = instance.getExport(context, "handle_view_render")
+  if f_8640266882.isSome:
+    assert f_8640266882.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRender = f_8640266882.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render", "\'"
 
@@ -268,14 +268,14 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     let e = block:
       linker.defineFuncUnchecked("nev:plugins/render", "[resource-drop]view",
                                  newFunctype([WasmValkind.I32], [])):
-        ?host.resources.resourceDrop(parameters[0].i32, callDestroy = true)
+        host.resources.resourceDrop(parameters[0].i32, callDestroy = true)
     if e.isErr:
       return e
   block:
     let e = block:
       linker.defineFuncUnchecked("nev:plugins/text", "[resource-drop]rope",
                                  newFunctype([WasmValkind.I32], [])):
-        ?host.resources.resourceDrop(parameters[0].i32, callDestroy = true)
+        host.resources.resourceDrop(parameters[0].i32, callDestroy = true)
     if e.isErr:
       return e
   block:
@@ -338,7 +338,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           for i0 in 0 ..< content.len:
             content[i0] = p0[i0]
         let res = textNewRope(host, store, content)
-        parameters[0].i32 = ?host.resources.resourceNew(res)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
   block:
@@ -347,9 +347,9 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           [WasmValkind.I32])
       linker.defineFuncUnchecked("nev:plugins/text", "[method]rope.clone", ty):
         var self: ptr RopeResource
-        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = textClone(host, store, self[])
-        parameters[0].i32 = ?host.resources.resourceNew(res)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
   block:
@@ -369,27 +369,14 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
-        let reallocImpl = caller.getExport("cabi_realloc").get.of_field.func_field
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var self: ptr RopeResource
-        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = textText(host, store, self[])
         let retArea = parameters[^1].i32
         if res.len > 0:
-          let dataPtrWasm0 = block:
-            var t: ptr WasmTrapT = nil
-            var args: array[4, ValT]
-            args[0].kind = WasmValkind.I32.ValkindT
-            args[0].of_field.i32 = 0
-            args[1].kind = WasmValkind.I32.ValkindT
-            args[1].of_field.i32 = 0
-            args[2].kind = WasmValkind.I32.ValkindT
-            args[2].of_field.i32 = 4
-            args[3].kind = WasmValkind.I32.ValkindT
-            args[3].of_field.i32 = (res.len * 1).int32
-            var results: array[1, ValT]
-            ?reallocImpl.addr.call(store, args, results, t.addr)
-            assert results[0].kind == WasmValkind.I32.ValkindT
-            results[0].of_field.i32
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
           cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
           block:
             for i0 in 0 ..< res.len:
@@ -416,27 +403,14 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
-        let reallocImpl = caller.getExport("cabi_realloc").get.of_field.func_field
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var self: ptr RopeResource
-        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = textDebug(host, store, self[])
         let retArea = parameters[^1].i32
         if res.len > 0:
-          let dataPtrWasm0 = block:
-            var t: ptr WasmTrapT = nil
-            var args: array[4, ValT]
-            args[0].kind = WasmValkind.I32.ValkindT
-            args[0].of_field.i32 = 0
-            args[1].kind = WasmValkind.I32.ValkindT
-            args[1].of_field.i32 = 0
-            args[2].kind = WasmValkind.I32.ValkindT
-            args[2].of_field.i32 = 4
-            args[3].kind = WasmValkind.I32.ValkindT
-            args[3].of_field.i32 = (res.len * 1).int32
-            var results: array[1, ValT]
-            ?reallocImpl.addr.call(store, args, results, t.addr)
-            assert results[0].kind == WasmValkind.I32.ValkindT
-            results[0].of_field.i32
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
           cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
           block:
             for i0 in 0 ..< res.len:
@@ -454,11 +428,11 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr RopeResource
         var a: int64
         var b: int64
-        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
         a = convert(parameters[1].i64, int64)
         b = convert(parameters[2].i64, int64)
         let res = textSlice(host, store, self[], a, b)
-        parameters[0].i32 = ?host.resources.resourceNew(res)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
   block:
@@ -470,13 +444,13 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr RopeResource
         var a: Cursor
         var b: Cursor
-        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
         a.line = convert(parameters[1].i32, int32)
         a.column = convert(parameters[2].i32, int32)
         b.line = convert(parameters[3].i32, int32)
         b.column = convert(parameters[4].i32, int32)
         let res = textSlicePoints(host, store, self[], a, b)
-        parameters[0].i32 = ?host.resources.resourceNew(res)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
   block:
@@ -485,7 +459,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/text",
                                  "[static]rope.get-current-editor-rope", ty):
         let res = textRopeGetCurrentEditorRope(host, store)
-        parameters[0].i32 = ?host.resources.resourceNew(res)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
   block:
@@ -680,7 +654,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
-        let reallocImpl = caller.getExport("cabi_realloc").get.of_field.func_field
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var name: string
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
@@ -690,21 +664,8 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         let res = coreGetSettingRaw(host, store, name)
         let retArea = parameters[^1].i32
         if res.len > 0:
-          let dataPtrWasm0 = block:
-            var t: ptr WasmTrapT = nil
-            var args: array[4, ValT]
-            args[0].kind = WasmValkind.I32.ValkindT
-            args[0].of_field.i32 = 0
-            args[1].kind = WasmValkind.I32.ValkindT
-            args[1].of_field.i32 = 0
-            args[2].kind = WasmValkind.I32.ValkindT
-            args[2].of_field.i32 = 4
-            args[3].kind = WasmValkind.I32.ValkindT
-            args[3].of_field.i32 = (res.len * 1).int32
-            var results: array[1, ValT]
-            ?reallocImpl.addr.call(store, args, results, t.addr)
-            assert results[0].kind == WasmValkind.I32.ValkindT
-            results[0].of_field.i32
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
           cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
           block:
             for i0 in 0 ..< res.len:
@@ -752,7 +713,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
       linker.defineFuncUnchecked("nev:plugins/render", "[constructor]view", ty):
         let res = renderNewView(host, store)
-        parameters[0].i32 = ?host.resources.resourceNew(res)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
   block:
@@ -761,7 +722,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           [WasmValkind.I32])
       linker.defineFuncUnchecked("nev:plugins/render", "[method]view.id", ty):
         var self: ptr ViewResource
-        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
         let res = renderId(host, store, self[])
         parameters[0].i32 = cast[int32](res)
     if e.isErr:
@@ -784,7 +745,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         else:
           assert false
         var self: ptr ViewResource
-        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
         let res = renderSize(host, store, self[])
         let retArea = parameters[^1].i32
         cast[ptr float32](memory[retArea + 0].addr)[] = res.x
@@ -799,7 +760,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
                                  "[method]view.set-render-interval", ty):
         var self: ptr ViewResource
         var ms: int32
-        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
         ms = convert(parameters[1].i32, int32)
         renderSetRenderInterval(host, store, self[], ms)
     if e.isErr:
@@ -813,7 +774,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr ViewResource
         var buffer: uint32
         var len: uint32
-        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
         buffer = convert(parameters[1].i32, uint32)
         len = convert(parameters[2].i32, uint32)
         renderSetRenderCommandsRaw(host, store, self[], buffer, len)
@@ -839,7 +800,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         var self: ptr ViewResource
         var data: seq[uint8]
-        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
         block:
           let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
           data = newSeq[typeof(data[0])](parameters[2].i32)
@@ -854,7 +815,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/render",
                                  "[method]view.mark-dirty", ty):
         var self: ptr ViewResource
-        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
         renderMarkDirty(host, store, self[])
     if e.isErr:
       return e
@@ -867,7 +828,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr ViewResource
         var fun: uint32
         var data: uint32
-        self = ?host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
         fun = convert(parameters[1].i32, uint32)
         data = convert(parameters[2].i32, uint32)
         renderSetRenderCallback(host, store, self[], fun, data)
@@ -878,7 +839,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
       linker.defineFuncUnchecked("nev:plugins/render", "[static]view.create", ty):
         let res = renderViewCreate(host, store)
-        parameters[0].i32 = ?host.resources.resourceNew(res)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
   block:
@@ -890,6 +851,6 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var id: int32
         id = convert(parameters[0].i32, int32)
         let res = renderViewFromId(host, store, id)
-        parameters[0].i32 = ?host.resources.resourceNew(res)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e

@@ -73,10 +73,13 @@ else:
 include generated/plugin_api_host_1
 
 type
-  WasmModule* = object
+  InstanceData* = object
     instance*: InstanceT
     store*: ptr StoreT
     funcs*: ExportedFuncs
+
+  WasmModuleInstanceImpl* = ref object of WasmModuleInstance
+    instance*: Arc[InstanceData]
 
 ###################################### PluginApi #####################################
 
@@ -85,7 +88,7 @@ type
     engine: ptr WasmEngineT
     linker: ptr LinkerT
     host: HostContext
-    modules: seq[Arc[WasmModule]]
+    instances: seq[WasmModuleInstanceImpl]
 
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
@@ -105,7 +108,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
     return
 
 method createModule*(self: PluginApi, module: ptr ModuleT): WasmModuleInstance =
-  var wasmModule = Arc[WasmModule].new()
+  var wasmModule = Arc[InstanceData].new()
   wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
   let ctx = wasmModule.get.store.context
 
@@ -127,13 +130,21 @@ method createModule*(self: PluginApi, module: ptr ModuleT): WasmModuleInstance =
     return
 
   collectExports(wasmModule.getMut.funcs, wasmModule.get.instance, ctx)
-  self.modules.add wasmModule
+  let instance = WasmModuleInstanceImpl(instance: wasmModule)
+  self.instances.add(instance)
 
   initPlugin(wasmModule.get.funcs).okOr(err):
     # echo &"Failed to call init-plugin: {err}"
     return
 
-  return wasmModule
+  return instance
+
+method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
+  let instance = instance.WasmModuleInstanceImpl
+  let instanceData = instance.instance
+  self.host.resources.dropResources(instanceData.get.store.context, callDestroy = true)
+  instanceData.get.store.delete()
+  self.instances.removeShift(instance)
 
 ###################################### API implementations #####################################
 
@@ -152,7 +163,7 @@ proc textEditorAddModeChangedHandler(host: HostContext, store: ptr ContextT, fun
     discard editor.onModeChanged.subscribe proc(args: tuple[removed: seq[string], added: seq[string]]) =
       # echo &"[host] textEditorAddModeChangedHandler {args.removed} -> {args.added}"
 
-      let module = cast[ptr WasmModule](store.getData())
+      let module = cast[ptr InstanceData](store.getData())
       # let str = module[].instance.call[:string](store, "handle_mode_changed", [cast[int32](fun).toWasmVal], 0)
 
       let res = module[].funcs.handleModeChanged(fun, $args.removed, $args.added)
@@ -239,7 +250,7 @@ proc renderSetRenderCommands(host: HostContext; store: ptr ContextT; self: var V
   self.view.commands.raw = data.ensureMove
 
 proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT; self: var ViewResource; buffer: uint32; len: uint32): void =
-  let module = cast[ptr WasmModule](store.getData())
+  let module = cast[ptr InstanceData](store.getData())
   let mem = module[].funcs.mem
   let buffer = buffer.WasmPtr
   let len = len.int
@@ -256,7 +267,7 @@ proc renderMarkDirty(host: HostContext; store: ptr ContextT; self: var ViewResou
 
 proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var ViewResource; fun: uint32; data: uint32): void =
   self.view.onRender = proc(view: RenderView) =
-    let module = cast[ptr WasmModule](store.getData())
+    let module = cast[ptr InstanceData](store.getData())
     module[].funcs.handleViewRender(view.id2, fun, data).okOr(err):
       # echo &"[host] Failed to call handleViewRender: {err}"
       discard
