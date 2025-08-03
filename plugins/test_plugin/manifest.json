@@ -1,0 +1,13 @@
+{
+	"name": "Test Plugin",
+	"version": "0.0.1",
+	"authors": ["Nimaoth"],
+	"repository": "https://github.com/Nimaoth/Nev/plugins/test_plugin",
+	"wasm": "test_plugin.m.wasm",
+	"autoLoad": false,
+	"permissions": {
+		"filesystem": {
+			"allow": ["local://"],
+		}
+	}
+}
