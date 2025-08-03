@@ -16,6 +16,7 @@ type
     platform: Platform
 
     commands*: RenderCommands
+    userId*: string
 
     size*: Vec2
     interval: int = -1
@@ -37,6 +38,12 @@ method desc*(self: RenderView): string =
 method kind*(self: RenderView): string = "render"
 
 method display*(self: RenderView): string = self.desc()
+
+proc renderViewFromUserId*(layout: LayoutService, id: string): Option[RenderView] =
+  for v in layout.allViews:
+    if v of RenderView and v.RenderView.userId == id:
+      return v.RenderView.some
+  return RenderView.none
 
 proc render*(self: RenderView) =
   if self.preventThrottling:

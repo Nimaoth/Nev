@@ -1,4 +1,4 @@
-import std/[macros, genasts, json, strutils, strformat]
+import std/[macros, genasts, json, strutils, strformat, os]
 import misc/[custom_logger, custom_async, util]
 import document_editor, vfs, service
 import nimsumtree/[rope, sumtree, arc]
@@ -28,6 +28,110 @@ type
     when enableOldPluginVersions:
       v1: PluginApiBase
 
+  WasmPluginInstance* = ref object of PluginInstanceBase
+    moduleInstance: WasmModuleInstance
+    api: PluginApiBase
+
+proc initPluginApi[T](self: WasmPluginSystem, api: var PluginApiBase) =
+  var newApi: T
+  new(newApi)
+  api = newApi
+  api.init(self.services, self.engine)
+
+proc initWasm(self: WasmPluginSystem) =
+  let config = newConfig()
+  self.engine = newEngine(config)
+
+  self.initPluginApi[:v0.PluginApi](self.v0)
+  when enableOldPluginVersions:
+    self.initPluginApi[:v1.PluginApi](self.v1)
+
+method init*(self: WasmPluginSystem, path: string, vfs: VFS): Future[void] {.async.} =
+  self.vfs = vfs
+  self.initWasm()
+
+method deinit*(self: WasmPluginSystem) = discard
+
+method tryLoadPlugin*(self: WasmPluginSystem, plugin: Plugin): Future[bool] {.async: (raises: [IOError]).} =
+  log lvlInfo, &"tryLoadPlugin {plugin.desc}"
+  if not plugin.manifest.wasm.endsWith(".m.wasm"):
+    log lvlInfo, &"Don't load plugin {plugin.desc}, no wasm file specified"
+    return false
+
+  var filenameWithoutExtension = plugin.manifest.wasm.splitPath.tail
+  filenameWithoutExtension.removeSuffix(".m.wasm")
+  let lastPeriod = filenameWithoutExtension.rfind(".")
+  let version = if lastPeriod != -1:
+    try:
+      filenameWithoutExtension[(lastPeriod + 1)..^1].parseInt
+    except:
+      0
+  else:
+    0
+
+  plugin.state = PluginState.Loading
+  let wasmBytes = self.vfs.read(plugin.manifest.wasm, {Binary}).await
+  let module = self.engine.newModule(wasmBytes).okOr(err):
+    log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+    plugin.state = PluginState.Failed
+    return
+
+  log lvlInfo, &"Load plugin '{plugin.manifest.wasm}' using version {version}"
+  var api: PluginApiBase = nil
+  if version == 0:
+    api = self.v0
+  else:
+    when enableOldPluginVersions:
+      case version
+      of 1: api = self.v1
+      else:
+        log lvlError, &"Unsupported version {version} for plugin '{plugin.manifest.wasm}'"
+        plugin.state = PluginState.Failed
+        return false
+    else:
+      log lvlError, &"Unsupported version {version} for plugin '{plugin.manifest.wasm}'"
+      plugin.state = PluginState.Failed
+      return false
+
+  let moduleInstance = api.createModule(module)
+  if moduleInstance == nil:
+    log lvlError, &"Failed to instantiate wasm module"
+    plugin.state = PluginState.Failed
+    return false
+
+  plugin.state = PluginState.Loaded
+  plugin.instance = WasmPluginInstance(moduleInstance: moduleInstance, api: api)
+  plugin.pluginSystem = self
+
+  return true
+
+method unloadPlugin*(self: WasmPluginSystem, plugin: Plugin): Future[void] {.async: (raises: []).} =
+  let instance = plugin.instance.WasmPluginInstance
+  instance.api.destroyInstance(instance.moduleInstance)
+  plugin.state = Unloaded
+  plugin.instance = nil
+  plugin.pluginSystem = nil
+
+
+# call function using function table
+    # let functionTableExport = wasmModule.get.instance.getExport(ctx, "__indirect_function_table")
+    # var functionTable = functionTableExport.get.of_field.table
+    # echo &"function table {ctx.size(functionTable.addr)}"
+
+    # for cb in self.context.callbacks:
+    #   echo &"[host] ============== call callback {cb}"
+    #   let fun = functionTable.get(ctx, cb)
+    #   if fun.isNone:
+    #     echo &"[host] Failed to find callback {cb}"
+    #     continue
+
+    #   var results: array[1, ValT]
+    #   fun.get.of_field.funcref.addr.call(ctx, [38.int32.toWasmVal], results, trap.addr).toResult(void).okOr(err):
+    #     echo &"[host] Failed to call callback {cb}: ", err.msg
+    #     continue
+
+    #   echo &"[host] callback {cb} -> {results[0].of_field.i32}"
+
 # proc call[T](instance: InstanceT, context: ptr ContextT, name: string, parameters: openArray[ValT], nresults: static[int]): T =
 
 #   echo &"[host] ------------------------------- call {name}, {parameters} -------------------------------------"
@@ -48,119 +152,3 @@ type
 
 #   when T isnot void:
 #     res[0].to(T)
-
-proc loadModules(self: WasmPluginSystem, path: string): Future[void] {.async.} =
-  let listing = await self.vfs.getDirectoryListing(path)
-
-  await sleepAsync(1.seconds)
-
-  for file2 in listing.files:
-    if not file2.endsWith(".m.wasm"):
-      continue
-
-    let file = path // file2
-
-    var filenameWithoutExtension = file2
-    filenameWithoutExtension.removeSuffix(".m.wasm")
-    let lastPeriod = filenameWithoutExtension.rfind(".")
-    let version = if lastPeriod != -1:
-      try:
-        filenameWithoutExtension[(lastPeriod + 1)..^1].parseInt
-      except:
-        0
-    else:
-      0
-
-    let wasmBytes = self.vfs.read(file, {Binary}).await
-    let module = self.engine.newModule(wasmBytes).okOr(err):
-      log lvlError, &"[host] Failed to create wasm module: {err.msg}"
-      continue
-
-    log lvlInfo, &"Load plugin '{file}' using version {version}"
-    if version == 0:
-      self.v0.createModule(module)
-    else:
-      when enableOldPluginVersions:
-        case version
-        of 1: self.v1.createModule(module)
-        else:
-          log lvlError, &"Unsupported version {version} for plugin '{file}'"
-      else:
-        log lvlError, &"Unsupported version {version} for plugin '{file}'"
-
-    # let functionTableExport = wasmModule.get.instance.getExport(ctx, "__indirect_function_table")
-    # var functionTable = functionTableExport.get.of_field.table
-    # echo &"function table {ctx.size(functionTable.addr)}"
-
-    # for cb in self.context.callbacks:
-    #   echo &"[host] ============== call callback {cb}"
-    #   let fun = functionTable.get(ctx, cb)
-    #   if fun.isNone:
-    #     echo &"[host] Failed to find callback {cb}"
-    #     continue
-
-    #   var results: array[1, ValT]
-    #   fun.get.of_field.funcref.addr.call(ctx, [38.int32.toWasmVal], results, trap.addr).toResult(void).okOr(err):
-    #     echo &"[host] Failed to call callback {cb}: ", err.msg
-    #     continue
-
-    #   echo &"[host] callback {cb} -> {results[0].of_field.i32}"
-
-proc initPluginApi[T](self: WasmPluginSystem, api: var PluginApiBase) =
-  # this doesn't work
-  # api = newWasmContext(self.services)
-  # but this does
-  var newApi: T
-  new(newApi)
-  api = newApi
-  # and this also doesn't work... WTF???
-  # api = WasmContext()
-  api.init(self.services, self.engine)
-
-proc initWasm(self: WasmPluginSystem) =
-  let config = newConfig()
-  self.engine = newEngine(config)
-
-  self.initPluginApi[:v0.PluginApi](self.v0)
-  when enableOldPluginVersions:
-    self.initPluginApi[:v1.PluginApi](self.v1)
-
-  # let e = block:
-  #   self.linker.defineFuncUnchecked("env", "addCallback", newFunctype([WasmValkind.I32], [])):
-  #     discard
-  #     let mem = v0.getMemory(caller, store, self.context)
-  #     let funcIdxPtr = parameters[0].i32.WasmPtr
-  #     let funcIdx = mem.read[:int32](funcIdxPtr)
-  #     echo &"[host] addCallback {funcIdxPtr.int} -> {funcIdx}"
-  #     self.context.callbacks.add(funcIdx)
-  # if e.isErr:
-  #   echo "[host] Failed to define component: ", e.err.msg
-  # v0.init(self.context, self.services)
-
-method init*(self: WasmPluginSystem, path: string, vfs: VFS): Future[void] {.async.} =
-  self.vfs = vfs
-  self.initWasm()
-  await self.loadModules("app://config/wasm")
-
-method deinit*(self: WasmPluginSystem) = discard
-
-method reload*(self: WasmPluginSystem): Future[void] {.async.} =
-  await self.loadModules("app://config/wasm")
-
-method handleScriptAction*(self: WasmPluginSystem, name: string, arg: JsonNode): JsonNode =
-  # echo &"handleScriptAction {name}, {arg}"
-  try:
-    result = nil
-    # let argStr = $arg
-    # for module in self.modules:
-    #   # self.stack.add m
-    #   # defer: discard self.stack.pop
-    #   try:
-    #     discard
-    #     # let str = module.instance.call[:string](module.store.context, "handle-command", [name.toWasmVal, argStr.toWasmVal], 1)
-    #     # return str.parseJson
-    #   except:
-    #     # log lvlError, &"Failed to parse json from callback {id}({arg}): '{str}' is not valid json.\n{getCurrentExceptionMsg()}"
-    #     continue
-  except:
-    log lvlError, &"Failed to run handleScriptAction: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"

@@ -53,12 +53,13 @@ type TextEditorResource = object
 type RopeResource = object
   rope: RopeSlice[Point]
 
-type ViewResource = object
+type RenderViewResource = object
+  setRender: bool = false
   view: RenderView
 
-# proc `=destroy`*(self: RopeResource) =
-#   if not self.rope.rope.tree.isNil:
-#     let l = min(50, self.rope.len)
+proc `=destroy`*(self: RenderViewResource) =
+  if self.setRender:
+    self.view.onRender = nil
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
@@ -66,7 +67,7 @@ when defined(witRebuild):
     world = "plugin"
     cacheFile = "../generated/plugin_api_host.nim"
     mapName "rope", RopeResource
-    mapName "view", ViewResource
+    mapName "render-view", RenderViewResource
     mapName "editor", TextEditorResource
 
 else:
@@ -75,10 +76,13 @@ else:
 include generated/plugin_api_host
 
 type
-  WasmModule* = object
+  InstanceData = object
     instance*: InstanceT
     store*: ptr StoreT
     funcs*: ExportedFuncs
+
+  WasmModuleInstanceImpl* = ref object of WasmModuleInstance
+    instance*: Arc[InstanceData]
 
 ###################################### PluginApi #####################################
 
@@ -87,7 +91,7 @@ type
     engine: ptr WasmEngineT
     linker: ptr LinkerT
     host: HostContext
-    modules: seq[Arc[WasmModule]]
+    instances: seq[WasmModuleInstanceImpl]
 
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
@@ -125,8 +129,8 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
     log lvlError, "Failed to define component: " & err.msg
     return
 
-method createModule*(self: PluginApi, module: ptr ModuleT) =
-  var wasmModule = Arc[WasmModule].new()
+method createModule*(self: PluginApi, module: ptr ModuleT): WasmModuleInstance =
+  var wasmModule = Arc[InstanceData].new()
   wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
   let ctx = wasmModule.get.store.context
 
@@ -148,11 +152,23 @@ method createModule*(self: PluginApi, module: ptr ModuleT) =
     return
 
   collectExports(wasmModule.getMut.funcs, wasmModule.get.instance, ctx)
-  self.modules.add wasmModule
+
+  let instance = WasmModuleInstanceImpl(instance: wasmModule)
+  self.instances.add(instance)
 
   initPlugin(wasmModule.get.funcs).okOr(err):
     log lvlError, "Failed to call init-plugin: " & err.msg
+    self.instances.removeShift(instance)
     return
+
+  return instance
+
+method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
+  let instance = instance.WasmModuleInstanceImpl
+  let instanceData = instance.instance
+  self.host.resources.dropResources(instanceData.get.store.context, callDestroy = true)
+  instanceData.get.store.delete()
+  self.instances.removeShift(instance)
 
 ###################################### API implementations #####################################
 
@@ -168,7 +184,7 @@ proc textEditor_addModeChangedHandler(host: HostContext, store: ptr ContextT, fu
   if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
     let editor = view.editor.TextDocumentEditor
     discard editor.onModeChanged.subscribe proc(args: tuple[removed: seq[string], added: seq[string]]) =
-      let module = cast[ptr WasmModule](store.getData())
+      let module = cast[ptr InstanceData](store.getData())
       let res = module[].funcs.handleModeChanged(fun, $args.removed, $args.added)
       if res.isErr:
         log lvlError, "Failed to call handleModeChanged: " & $res
@@ -235,41 +251,59 @@ proc coreSetSettingRaw(host: HostContext, store: ptr ContextT, name: sink string
   except CatchableError as e:
     log lvlError, "coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
 
-proc renderNewView(host: HostContext; store: ptr ContextT): ViewResource =
+proc renderNewRenderView(host: HostContext; store: ptr ContextT): RenderViewResource =
   let view = newRenderView(host.services)
-  host.layout.addView(view, "**")
-  return ViewResource(view: view)
+  host.layout.registerView(view)
+  return RenderViewResource(view: view)
 
-proc renderViewCreate(host: HostContext; store: ptr ContextT): ViewResource =
-  let view = newRenderView(host.services)
-  host.layout.addView(view, "**")
-  return ViewResource(view: view)
+proc layoutShow(host: HostContext; store: ptr ContextT; v: View, slot: sink string, focus: bool, addToHistory: bool) =
+  host.layout.showView(v.id, slot.ensureMove, focus, addToHistory)
 
-proc renderViewFromId(host: HostContext; store: ptr ContextT; id: int32): ViewResource =
-  let view = newRenderView(host.services)
-  host.layout.addView(view, "**")
-  return ViewResource(view: view)
+proc layoutClose(host: HostContext; store: ptr ContextT; v: View, keepHidden: bool, restoreHidden: bool) =
+  host.layout.closeView(v.id, keepHidden, restoreHidden)
 
-proc renderId(host: HostContext; store: ptr ContextT; self: var ViewResource): int32 =
+proc layoutFocus(host: HostContext; store: ptr ContextT, slot: sink string) =
+  host.layout.focusView(slot.ensureMove)
+
+proc renderRenderViewFromUserId(host: HostContext; store: ptr ContextT; id: sink string): Option[RenderViewResource] =
+  if renderViewFromUserId(host.layout, id).getSome(view):
+    return RenderViewResource(view: view).some
+  return RenderViewResource.none
+
+proc renderRenderViewFromView(host: HostContext; store: ptr ContextT; v: View): Option[RenderViewResource] =
+  if host.layout.getView(v.id).getSome(view) and view of RenderView:
+    return RenderViewResource(view: view.RenderView).some
+  return RenderViewResource.none
+
+proc renderView(host: HostContext; store: ptr ContextT; self: var RenderViewResource): View =
+  return View(id: self.view.id2)
+
+proc renderSetUserId(host: HostContext; store: ptr ContextT; self: var RenderViewResource, id: sink string) =
+  self.view.userId = id.ensureMove
+
+proc renderGetUserId(host: HostContext; store: ptr ContextT; self: var RenderViewResource): string =
+  return self.view.userId
+
+proc renderId(host: HostContext; store: ptr ContextT; self: var RenderViewResource): int32 =
   return self.view.id2
 
-proc renderSize(host: HostContext; store: ptr ContextT; self: var ViewResource): Vec2f =
+proc renderSize(host: HostContext; store: ptr ContextT; self: var RenderViewResource): Vec2f =
   return Vec2f(x: self.view.size.x, y: self.view.size.y)
 
-proc renderSetRenderWhenInactive(host: HostContext; store: ptr ContextT; self: var ViewResource; enabled: bool): void =
+proc renderSetRenderWhenInactive(host: HostContext; store: ptr ContextT; self: var RenderViewResource; enabled: bool): void =
   self.view.setRenderWhenInactive(enabled)
 
-proc renderSetPreventThrottling(host: HostContext; store: ptr ContextT; self: var ViewResource; enabled: bool): void =
+proc renderSetPreventThrottling(host: HostContext; store: ptr ContextT; self: var RenderViewResource; enabled: bool): void =
   self.view.preventThrottling = enabled
 
-proc renderSetRenderInterval(host: HostContext; store: ptr ContextT; self: var ViewResource; ms: int32): void =
+proc renderSetRenderInterval(host: HostContext; store: ptr ContextT; self: var RenderViewResource; ms: int32): void =
   self.view.setRenderInterval(ms.int)
 
-proc renderSetRenderCommands(host: HostContext; store: ptr ContextT; self: var ViewResource; data: sink seq[uint8]): void =
+proc renderSetRenderCommands(host: HostContext; store: ptr ContextT; self: var RenderViewResource; data: sink seq[uint8]): void =
   self.view.commands.raw = data.ensureMove
 
-proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT; self: var ViewResource; buffer: uint32; len: uint32): void =
-  let module = cast[ptr WasmModule](store.getData())
+proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT; self: var RenderViewResource; buffer: uint32; len: uint32): void =
+  let module = cast[ptr InstanceData](store.getData())
   let mem = module[].funcs.mem
   let buffer = buffer.WasmPtr
   let len = len.int
@@ -282,11 +316,12 @@ proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT; self: va
   except ValueError as e:
     discard
 
-proc renderMarkDirty(host: HostContext; store: ptr ContextT; self: var ViewResource): void =
+proc renderMarkDirty(host: HostContext; store: ptr ContextT; self: var RenderViewResource): void =
   self.view.markDirty()
 
-proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var ViewResource; fun: uint32; data: uint32): void =
+proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var RenderViewResource; fun: uint32; data: uint32): void =
+  self.setRender = true
   self.view.onRender = proc(view: RenderView) =
-    let module = cast[ptr WasmModule](store.getData())
+    let module = cast[ptr InstanceData](store.getData())
     module[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
       log lvlError, "Failed to call handleViewRenderCallback: " & $err

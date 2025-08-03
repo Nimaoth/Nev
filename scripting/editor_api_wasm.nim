@@ -428,6 +428,19 @@ proc chooseOpenDocument*() {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
+proc editor_showPlugins_void_App_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc showPlugins*(scaleX: float = 0.9; scaleY: float = 0.9;
+                  previewScale: float = 0.6) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_showPlugins_void_App_float_float_float_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_gotoNextLocation_void_App_wasm(arg: cstring): cstring {.importc.}
 proc gotoNextLocation*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()

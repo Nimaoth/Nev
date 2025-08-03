@@ -271,6 +271,9 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
     except CatchableError:
       log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
+  self.plugins.pluginSystems.add(self.wasmPluginSystem)
+  self.plugins.loadPlugins()
+
   log lvlInfo, &"Finished loading plugins"
 
 proc setupDefaultKeybindings(self: App) =
@@ -2131,6 +2134,95 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
         discard self.layout.tryCloseDocument(document, force=true)
         source.retrigger()
 
+    return true
+
+  self.layout.pushPopup popup
+
+proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6) {.expose("editor").} =
+  defer:
+    self.requestRender()
+
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+    var items = newSeq[FinderItem]()
+    for p in self.plugins.plugins:
+      var name = p.manifest.name
+      items.add FinderItem(
+        displayName: name,
+        filterText: name,
+        data: p.manifest.toJson.pretty,
+        details: @[$p.state],
+      )
+
+    return items
+
+  let source = newSyncDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  let previewer = newDataPreviewer(self.services, language="javascript".some)
+  var popup = newSelectorPopup(self.services, "plugins".some, finder.some, previewer.Previewer.toDisposableRef.some)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  proc loadPlugin(path: string) {.async.} =
+    let f = self.plugins.loadPlugin(path)
+    source.retrigger()
+    while not f.finished:
+      await sleepAsync(100.milliseconds)
+      source.retrigger()
+
+  proc unloadPlugin(path: string) {.async.} =
+    let f = self.plugins.unloadPlugin(path)
+    source.retrigger()
+    while not f.finished:
+      await sleepAsync(100.milliseconds)
+      source.retrigger()
+
+  proc reloadPlugin(path: string) {.async.} =
+    let f = self.plugins.reloadPlugin(path)
+    source.retrigger()
+    while not f.finished:
+      await sleepAsync(100.milliseconds)
+      source.retrigger()
+
+  popup.addCustomCommand "load", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let manifest = item.data.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return true
+    asyncSpawn loadPlugin(manifest.path)
+    return true
+
+  popup.addCustomCommand "unload", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let manifest = item.data.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return true
+    asyncSpawn unloadPlugin(manifest.path)
+    return true
+
+  popup.addCustomCommand "reload", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let manifest = item.data.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return true
+    asyncSpawn reloadPlugin(manifest.path)
     return true
 
   self.layout.pushPopup popup

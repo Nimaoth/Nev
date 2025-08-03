@@ -1,6 +1,6 @@
-import std/[macros, macrocache, json, strutils, tables, options, sequtils]
+import std/[macros, macrocache, json, strutils, tables, options, sequtils, os]
 import misc/[custom_logger, custom_async, util, myjsonutils]
-import expose, compilation_config, service, vfs, dispatch_tables, events
+import expose, compilation_config, service, vfs_service, vfs, dispatch_tables, events, config_provider
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -14,13 +14,36 @@ type
     name: string
     scriptContext: ScriptContext
 
+  PluginManifest* = object
+    name*: string
+    path*: string
+    authors*: seq[string]
+    repository*: string
+    autoLoad*: bool
+    wasm*: string
+
+  PluginState* = enum Unloaded, Loading, Loaded, Disabled, Failed
+
+  PluginInstanceBase* = ref object of RootObj
+
+  Plugin* = ref object
+    manifest*: PluginManifest
+    state*: PluginState
+    pluginSystem*: ScriptContext
+    instance*: PluginInstanceBase
+
   PluginService* = ref object of Service
     scriptContexts*: seq[ScriptContext]
     callbacks*: Table[string, int]
     currentScriptContext*: Option[ScriptContext] = ScriptContext.none
+    pluginSystems*: seq[ScriptContext]
 
     scriptActions*: Table[string, ScriptAction]
     events: EventHandlerService
+    vfs: VFS
+    settings*: ConfigStore
+
+    plugins*: seq[Plugin]
 
 method init*(self: ScriptContext, path: string, vfs: VFS): Future[void] {.base.} = discard
 method deinit*(self: ScriptContext) {.base.} = discard
@@ -31,14 +54,110 @@ method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base
 method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode {.base.} = discard
 method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base.} = discard
 method getCurrentContext*(self: ScriptContext): string {.base.} = ""
+method tryLoadPlugin*(self: ScriptContext, plugin: Plugin): Future[bool] {.base, async: (raises: [IOError]).} = false
+method unloadPlugin*(self: ScriptContext, plugin: Plugin): Future[void] {.base, async: (raises: []).} = discard
 
 func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
-addBuiltinService(PluginService, EventHandlerService)
+addBuiltinService(PluginService, EventHandlerService, VFSService, ConfigService)
+
+proc loadPluginManifests(self: PluginService) {.async.}
+
+proc desc*(self: Plugin): string = &"'{self.manifest.name}' ({self.manifest.path})"
 
 method init*(self: PluginService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   self.events = self.services.getService(EventHandlerService).get
+  self.vfs = self.services.getService(VFSService).get.vfs
+  self.settings = self.services.getService(ConfigService).get.runtime
+  asyncSpawn self.loadPluginManifests()
   return ok()
+
+proc loadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
+  if plugin.state == PluginState.Disabled or plugin.state == PluginState.Loaded:
+    return
+
+  log lvlNotice, &"Load plugin {plugin.desc}"
+  for ps in self.pluginSystems:
+    try:
+      if ps.tryLoadPlugin(plugin).await:
+        return
+    except IOError as e:
+      log lvlError, &"Plugin {plugin.desc} could not be loaded: {e.msg}"
+
+  log lvlError, &"Plugin {plugin.desc} could not be loaded."
+
+proc unloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
+  if plugin.state != PluginState.Loaded:
+    return
+
+  if plugin.pluginSystem != nil:
+    log lvlNotice, &"Unload plugin {plugin.desc}"
+    await plugin.pluginSystem.unloadPlugin(plugin)
+    plugin.pluginSystem = nil
+    plugin.instance = nil
+
+  plugin.state = PluginState.Unloaded
+
+proc reloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
+  if plugin.state == PluginState.Disabled:
+    return
+  await self.unloadPlugin(plugin)
+  await self.loadPlugin(plugin)
+
+proc unloadPlugin*(self: PluginService, path: string) {.async.} =
+  for p in self.plugins:
+    if p.manifest.path == path:
+      await self.unloadPlugin(p)
+      return
+
+proc loadPlugin*(self: PluginService, path: string) {.async.} =
+  for p in self.plugins:
+    if p.manifest.path == path:
+      await self.loadPlugin(p)
+      return
+
+proc reloadPlugin*(self: PluginService, path: string) {.async.} =
+  for p in self.plugins:
+    if p.manifest.path == path:
+      await self.reloadPlugin(p)
+      return
+
+proc loadPlugins*(self: PluginService) =
+  for p in self.plugins:
+    if not p.manifest.autoLoad:
+      continue
+    if p.state == PluginState.Unloaded:
+      asyncSpawn self.loadPlugin(p)
+
+proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
+  log lvlNotice, &"Register plugin {manifest}"
+  let plugin = Plugin(
+    manifest: manifest.ensureMove,
+  )
+  self.plugins.add(plugin)
+
+proc loadPluginManifests(self: PluginService) {.async.} =
+  let root = "app://plugins"
+  let listing = await self.vfs.getDirectoryListing(root)
+  for file in listing.files:
+    if file.endsWith(".m.wasm"):
+      let (_, name, ext) = file.splitFile
+      self.createPlugin(PluginManifest(
+        name: name,
+        path: root // file,
+        wasm: root // file,
+      ))
+
+  for folder in listing.folders:
+    try:
+      let manifestJson = self.vfs.read(root // folder // "manifest.json").await
+      var manifest = manifestJson.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+      manifest.path = root // folder // "manifest.json"
+      if manifest.wasm != "":
+        manifest.wasm = root // folder // manifest.wasm
+      self.createPlugin(manifest)
+    except IOError:
+      log lvlError, &"Failed to find manifest.json in '{folder}'"
 
 {.pop.} # raises
 

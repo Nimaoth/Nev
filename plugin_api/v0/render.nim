@@ -12,33 +12,76 @@ import
 import
   types
 
-type
-  View* = object
-    handle*: int32
-proc renderViewDrop(a: int32): void {.wasmimport("[resource-drop]view",
-    "nev:plugins/render").}
-proc `=copy`*(a: var View; b: View) {.error.}
-proc `=destroy`*(a: View) =
-  if a.handle != 0:
-    renderViewDrop(a.handle - 1)
+import
+  layout
 
-proc renderNewViewImported(): int32 {.wasmimport("[constructor]view",
-    "nev:plugins/render").}
-proc newView*(): View {.nodestroy.} =
-  let res = renderNewViewImported()
+type
+  RenderView* = object
+    handle*: int32
+proc renderRenderViewDrop(a: int32): void {.
+    wasmimport("[resource-drop]render-view", "nev:plugins/render").}
+proc `=copy`*(a: var RenderView; b: RenderView) {.error.}
+proc `=destroy`*(a: RenderView) =
+  if a.handle != 0:
+    renderRenderViewDrop(a.handle - 1)
+
+proc renderNewRenderViewImported(): int32 {.
+    wasmimport("[constructor]render-view", "nev:plugins/render").}
+proc newRenderView*(): RenderView {.nodestroy.} =
+  let res = renderNewRenderViewImported()
   result.handle = res + 1
 
+proc renderRenderViewFromUserIdImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[static]render-view.from-user-id", "nev:plugins/render").}
+proc renderViewFromUserId*(id: WitString): Option[RenderView] {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+    arg1: int32
+  if id.len > 0:
+    arg0 = cast[int32](id[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](id.len)
+  renderRenderViewFromUserIdImported(arg0, arg1,
+                                     cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] != 0:
+    var temp: RenderView
+    temp.handle = cast[ptr int32](retArea[4].addr)[] + 1
+    result = temp.some
+
+proc renderRenderViewFromViewImported(a0: int32; a1: int32): void {.
+    wasmimport("[static]render-view.from-view", "nev:plugins/render").}
+proc renderViewFromView*(v: View): Option[RenderView] {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+  arg0 = v.id
+  renderRenderViewFromViewImported(arg0, cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] != 0:
+    var temp: RenderView
+    temp.handle = cast[ptr int32](retArea[4].addr)[] + 1
+    result = temp.some
+
+proc renderViewImported(a0: int32): int32 {.
+    wasmimport("[method]render-view.view", "nev:plugins/render").}
+proc view*(self: RenderView): View {.nodestroy.} =
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = renderViewImported(arg0)
+  result.id = convert(res, int32)
+
 proc renderIdImported(a0: int32): int32 {.
-    wasmimport("[method]view.id", "nev:plugins/render").}
-proc id*(self: View): int32 {.nodestroy.} =
+    wasmimport("[method]render-view.id", "nev:plugins/render").}
+proc id*(self: RenderView): int32 {.nodestroy.} =
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = renderIdImported(arg0)
   result = convert(res, int32)
 
 proc renderSizeImported(a0: int32; a1: int32): void {.
-    wasmimport("[method]view.size", "nev:plugins/render").}
-proc size*(self: View): Vec2f {.nodestroy.} =
+    wasmimport("[method]render-view.size", "nev:plugins/render").}
+proc size*(self: RenderView): Vec2f {.nodestroy.} =
   var
     retArea: array[8, uint8]
     arg0: int32
@@ -48,8 +91,8 @@ proc size*(self: View): Vec2f {.nodestroy.} =
   result.y = convert(cast[ptr float32](retArea[4].addr)[], float32)
 
 proc renderSetRenderIntervalImported(a0: int32; a1: int32): void {.
-    wasmimport("[method]view.set-render-interval", "nev:plugins/render").}
-proc setRenderInterval*(self: View; ms: int32): void {.nodestroy.} =
+    wasmimport("[method]render-view.set-render-interval", "nev:plugins/render").}
+proc setRenderInterval*(self: RenderView; ms: int32): void {.nodestroy.} =
   var
     arg0: int32
     arg1: int32
@@ -57,9 +100,9 @@ proc setRenderInterval*(self: View; ms: int32): void {.nodestroy.} =
   arg1 = ms
   renderSetRenderIntervalImported(arg0, arg1)
 
-proc renderSetRenderCommandsRawImported(a0: int32; a1: uint32; a2: uint32): void {.
-    wasmimport("[method]view.set-render-commands-raw", "nev:plugins/render").}
-proc setRenderCommandsRaw*(self: View; buffer: uint32; len: uint32): void {.
+proc renderSetRenderCommandsRawImported(a0: int32; a1: uint32; a2: uint32): void {.wasmimport(
+    "[method]render-view.set-render-commands-raw", "nev:plugins/render").}
+proc setRenderCommandsRaw*(self: RenderView; buffer: uint32; len: uint32): void {.
     nodestroy.} =
   var
     arg0: int32
@@ -71,8 +114,9 @@ proc setRenderCommandsRaw*(self: View; buffer: uint32; len: uint32): void {.
   renderSetRenderCommandsRawImported(arg0, arg1, arg2)
 
 proc renderSetRenderCommandsImported(a0: int32; a1: int32; a2: int32): void {.
-    wasmimport("[method]view.set-render-commands", "nev:plugins/render").}
-proc setRenderCommands*(self: View; data: WitList[uint8]): void {.nodestroy.} =
+    wasmimport("[method]render-view.set-render-commands", "nev:plugins/render").}
+proc setRenderCommands*(self: RenderView; data: WitList[uint8]): void {.
+    nodestroy.} =
   var
     arg0: int32
     arg1: int32
@@ -85,9 +129,9 @@ proc setRenderCommands*(self: View; data: WitList[uint8]): void {.nodestroy.} =
   arg2 = cast[int32](data.len)
   renderSetRenderCommandsImported(arg0, arg1, arg2)
 
-proc renderSetRenderWhenInactiveImported(a0: int32; a1: bool): void {.
-    wasmimport("[method]view.set-render-when-inactive", "nev:plugins/render").}
-proc setRenderWhenInactive*(self: View; enabled: bool): void {.nodestroy.} =
+proc renderSetRenderWhenInactiveImported(a0: int32; a1: bool): void {.wasmimport(
+    "[method]render-view.set-render-when-inactive", "nev:plugins/render").}
+proc setRenderWhenInactive*(self: RenderView; enabled: bool): void {.nodestroy.} =
   var
     arg0: int32
     arg1: bool
@@ -95,9 +139,9 @@ proc setRenderWhenInactive*(self: View; enabled: bool): void {.nodestroy.} =
   arg1 = enabled
   renderSetRenderWhenInactiveImported(arg0, arg1)
 
-proc renderSetPreventThrottlingImported(a0: int32; a1: bool): void {.
-    wasmimport("[method]view.set-prevent-throttling", "nev:plugins/render").}
-proc setPreventThrottling*(self: View; enabled: bool): void {.nodestroy.} =
+proc renderSetPreventThrottlingImported(a0: int32; a1: bool): void {.wasmimport(
+    "[method]render-view.set-prevent-throttling", "nev:plugins/render").}
+proc setPreventThrottling*(self: RenderView; enabled: bool): void {.nodestroy.} =
   var
     arg0: int32
     arg1: bool
@@ -105,16 +149,43 @@ proc setPreventThrottling*(self: View; enabled: bool): void {.nodestroy.} =
   arg1 = enabled
   renderSetPreventThrottlingImported(arg0, arg1)
 
+proc renderSetUserIdImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[method]render-view.set-user-id", "nev:plugins/render").}
+proc setUserId*(self: RenderView; id: WitString): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  if id.len > 0:
+    arg1 = cast[int32](id[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](id.len)
+  renderSetUserIdImported(arg0, arg1, arg2)
+
+proc renderGetUserIdImported(a0: int32; a1: int32): void {.
+    wasmimport("[method]render-view.get-user-id", "nev:plugins/render").}
+proc getUserId*(self: RenderView): WitString {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  renderGetUserIdImported(arg0, cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc renderMarkDirtyImported(a0: int32): void {.
-    wasmimport("[method]view.mark-dirty", "nev:plugins/render").}
-proc markDirty*(self: View): void {.nodestroy.} =
+    wasmimport("[method]render-view.mark-dirty", "nev:plugins/render").}
+proc markDirty*(self: RenderView): void {.nodestroy.} =
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   renderMarkDirtyImported(arg0)
 
 proc renderSetRenderCallbackImported(a0: int32; a1: uint32; a2: uint32): void {.
-    wasmimport("[method]view.set-render-callback", "nev:plugins/render").}
-proc setRenderCallback*(self: View; fun: uint32; data: uint32): void {.nodestroy.} =
+    wasmimport("[method]render-view.set-render-callback", "nev:plugins/render").}
+proc setRenderCallback*(self: RenderView; fun: uint32; data: uint32): void {.
+    nodestroy.} =
   var
     arg0: int32
     arg1: uint32
@@ -123,17 +194,3 @@ proc setRenderCallback*(self: View; fun: uint32; data: uint32): void {.nodestroy
   arg1 = fun
   arg2 = data
   renderSetRenderCallbackImported(arg0, arg1, arg2)
-
-proc renderViewCreateImported(): int32 {.
-    wasmimport("[static]view.create", "nev:plugins/render").}
-proc viewCreate*(): View {.nodestroy.} =
-  let res = renderViewCreateImported()
-  result.handle = res + 1
-
-proc renderViewFromIdImported(a0: int32): int32 {.
-    wasmimport("[static]view.from-id", "nev:plugins/render").}
-proc viewFromId*(id: int32): View {.nodestroy.} =
-  var arg0: int32
-  arg0 = id
-  let res = renderViewFromIdImported(arg0)
-  result.handle = res + 1

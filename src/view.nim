@@ -8,7 +8,7 @@ import events, document_editor
 type
   View* = ref object of RootObj
     mId*: Id
-    mId2*: int32
+    mId2: int32
     active*: bool
     mDirty: bool
     onMarkedDirty*: Event[void]

@@ -1,10 +1,11 @@
 import std/[strformat, json, jsonutils]
+import misc/util
 import wit_types, wit_runtime
 import scripting/binary_encoder
 import ui/render_command
 import ../plugin_api/api
 
-var views: seq[View] = @[]
+var views: seq[RenderView] = @[]
 var renderCommandEncoder: BinaryEncoder
 var num = 1
 
@@ -48,10 +49,18 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
 proc init() =
   echo "[guest] init test_plugin"
 
-  let view = viewCreate()
-  view.setRenderWhenInactive(true)
-  view.setPreventThrottling(true)
-  view.setRenderCallback(cast[uint32](handleViewRender), 123)
-  views.add(view)
+  var renderView = renderViewFromUserId(ws"test_plugin_view")
+  if renderView.isNone:
+    echo "[guest] Create new RenderView"
+    renderView = newRenderView().some
+  else:
+    echo "[guest] Reusing existing RenderView"
+  renderView.get.setUserId(ws"test_plugin_view")
+  renderView.get.setRenderWhenInactive(true)
+  renderView.get.setPreventThrottling(true)
+  renderView.get.setRenderCallback(cast[uint32](handleViewRender), 123)
+  renderView.get.markDirty()
+  show(renderView.get.view, ws"#new-tab", true, true)
+  views.add(renderView.take)
 
 init()

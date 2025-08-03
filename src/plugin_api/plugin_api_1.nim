@@ -104,7 +104,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
     # echo "[host] Failed to define component: ", err.msg
     return
 
-method createModule*(self: PluginApi, module: ptr ModuleT) =
+method createModule*(self: PluginApi, module: ptr ModuleT): WasmModuleInstance =
   var wasmModule = Arc[WasmModule].new()
   wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
   let ctx = wasmModule.get.store.context
@@ -132,6 +132,8 @@ method createModule*(self: PluginApi, module: ptr ModuleT) =
   initPlugin(wasmModule.get.funcs).okOr(err):
     # echo &"Failed to call init-plugin: {err}"
     return
+
+  return wasmModule
 
 ###################################### API implementations #####################################
 

@@ -166,14 +166,10 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm lisp_plugin.nim"
 
 task buildWasmModule, "":
-  let name = "comp_test"
   withDir "config":
-    # exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/{name}.m.wasm\" {getCommandLineParams()} ./{name}.nim"
-    exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/test_plugin.m.wasm\" {getCommandLineParams()} ./test_plugin.nim"
-    # exec &"nim c -d:release --skipParentCfg --passL:\"-o wasm/test_plugin_v1.1.m.wasm\" {getCommandLineParams()} ./test_plugin_v1.nim"
-
-    # exec &"wasm-tools component embed ../scripting/plugin_api.wit --world plugin ./wasm/{name}.m.wasm -o ./wasm/{name}.me.wasm"
-    # exec &"wasm-tools component new ./wasm/{name}.me.wasm -o ./wasm/{name}.c.wasm --adapt ../scripting/wasi_snapshot_preview1.reactor.wasm"
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o ../plugins/test_plugin/test_plugin.m.wasm\" {getCommandLineParams()} ./test_plugin.nim"
+  let cmd = when defined(Windows): "powershell -Command " else: ""
+  echo gorgeEx(cmd & "cp ./plugins/test_plugin/test_plugin.m.wasm ./plugins/")
 
 task flamegraph, "Perf/flamegraph":
   exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"
