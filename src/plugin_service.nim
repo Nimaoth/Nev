@@ -1,7 +1,7 @@
 import std/[macros, macrocache, json, strutils, tables, options, sequtils, os]
 import misc/[custom_logger, custom_async, util, myjsonutils]
 import scripting/expose
-import compilation_config, service, vfs_service, vfs, dispatch_tables, events, config_provider
+import compilation_config, service, vfs_service, vfs, dispatch_tables, events, config_provider, command_service
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -23,15 +23,28 @@ type
 
   PluginManifest* = object
     name*: string
+    id*: string
     path*: string
     authors*: seq[string]
     repository*: string
     autoLoad*: bool
     wasm*: string
+    permissions*: JsonNode
 
   PluginState* = enum Unloaded, Loading, Loaded, Disabled, Failed
 
   PluginInstanceBase* = ref object of RootObj
+
+  FilesystemPermissions* = object
+    allowAll*: Option[bool]
+    disallowAll*: Option[bool]
+    allow*: seq[string]
+    disallow*: seq[string]
+
+  PluginPermissions* = object
+    filesystem*: FilesystemPermissions
+    commands*: CommandPermissions
+    time*: bool
 
   Plugin* = ref object
     manifest*: PluginManifest
@@ -39,6 +52,8 @@ type
     pluginSystem*: PluginSystem
     instance*: PluginInstanceBase
     dirty*: bool ## True if there are changes on disk for the plugin
+    settings*: ConfigStore
+    permissions*: PluginPermissions
 
   PluginDirectory* = ref object
     path*: string
@@ -58,11 +73,13 @@ type
     scriptActions*: Table[string, ScriptAction]
     events: EventHandlerService
     vfs: VFS
+    configService*: ConfigService
     settings*: ConfigStore
 
     pluginFolders*: seq[PluginDirectory]
     plugins*: seq[Plugin]
     pathToPlugin*: Table[string, Plugin]
+    idToPlugin*: Table[string, Plugin]
 
     pluginSettings*: PluginSettings
 
@@ -92,18 +109,28 @@ proc desc*(self: Plugin): string = &"'{self.manifest.name}' ({self.manifest.path
 method init*(self: PluginService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   self.events = self.services.getService(EventHandlerService).get
   self.vfs = self.services.getService(VFSService).get.vfs
-  self.settings = self.services.getService(ConfigService).get.runtime
+  self.configService = self.services.getService(ConfigService).get
+  self.settings = self.configService.runtime
   self.pluginSettings = PluginSettings.new(self.settings)
 
   asyncSpawn self.addPluginFolder("app://plugins")
   asyncSpawn self.addPluginFolder("home://.nev/plugins")
   return ok()
 
+proc updatePermissions(self: PluginService, plugin: Plugin) =
+  try:
+    plugin.settings.set("permissions", plugin.manifest.permissions)
+    let permissionsJson = plugin.settings.get("permissions", newJObject())
+    plugin.permissions = permissionsJson.jsonTo(PluginPermissions, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+  except CatchableError as e:
+    log lvlError, &"Failed to parse permissions for {plugin.desc}: {e.msg}"
+
 proc loadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
   if plugin.state == PluginState.Disabled or plugin.state == PluginState.Loaded:
     return
 
   log lvlNotice, &"Load plugin {plugin.desc}"
+  self.updatePermissions(plugin)
   for ps in self.pluginSystems:
     try:
       if ps.tryLoadPlugin(plugin).await:
@@ -159,19 +186,33 @@ proc loadPlugins*(self: PluginService) =
 
 proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
   log lvlNotice, &"Register plugin {manifest}"
+  if self.idToPlugin.contains(manifest.id):
+    log lvlError, &"Failed to register plugin manifest\n{manifest}\nPlugin with same id already exists:\n{self.idToPlugin[manifest.id].manifest}"
+    return
+
   let plugin = Plugin(
     manifest: manifest.ensureMove,
   )
+  if plugin.manifest.permissions == nil:
+    plugin.manifest.permissions = newJObject()
+
+  plugin.settings = self.configService.addStore("plugin-" & plugin.manifest.id, &"settings://plugin/{plugin.manifest.id}")
+  plugin.settings.prefix = "plugin." & plugin.manifest.id
+  self.updatePermissions(plugin)
   self.plugins.add(plugin)
   self.pathToPlugin[plugin.manifest.path] = plugin
+  self.idToPlugin[plugin.manifest.id] = plugin
 
 proc addManifestFromFile(self: PluginService, pluginFolder: PluginDirectory, file: string) {.async.} =
   if file.endsWith(".m.wasm"):
-    let (_, name, ext) = file.splitFile
+    var name = file.splitPath.tail
+    name.removeSuffix(".m.wasm")
     self.createPlugin(PluginManifest(
       name: name,
+      id: name,
       path: pluginFolder.path // file,
       wasm: pluginFolder.path // file,
+      permissions: newJObject(),
     ))
 
 proc addManifestFromFolder(self: PluginService, pluginFolder: PluginDirectory, folder: string) {.async.} =
@@ -179,8 +220,11 @@ proc addManifestFromFolder(self: PluginService, pluginFolder: PluginDirectory, f
     let manifestJson = self.vfs.read(pluginFolder.path // folder // "manifest.json").await
     var manifest = manifestJson.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true))
     manifest.path = pluginFolder.path // folder
+    manifest.id = folder
     if manifest.wasm != "":
       manifest.wasm = pluginFolder.path // folder // manifest.wasm
+    if manifest.permissions == nil:
+      manifest.permissions = newJObject()
     self.createPlugin(manifest)
   except IOError:
     log lvlError, &"Failed to find manifest.json in '{folder}'"

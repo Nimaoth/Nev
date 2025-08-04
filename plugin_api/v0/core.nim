@@ -9,6 +9,9 @@ import
   results, wit_types, wit_runtime, wit_guest
 
 {.pop.}
+type
+  CommandError* = enum
+    NotAllowed = "not-allowed", NotFound = "not-found"
 proc coreApiVersionImported(): int32 {.wasmimport("api-version",
     "nev:plugins/core").}
 proc apiVersion*(): int32 {.nodestroy.} =
@@ -139,10 +142,13 @@ proc defineCommand*(name: WitString; active: bool; docs: WitString;
   coreDefineCommandImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7,
                             arg8, arg9, arg10, arg11, arg12)
 
-proc coreRunCommandImported(a0: int32; a1: int32; a2: int32; a3: int32): void {.
+proc coreRunCommandImported(a0: int32; a1: int32; a2: int32; a3: int32;
+                            a4: int32): void {.
     wasmimport("run-command", "nev:plugins/core").}
-proc runCommand*(name: WitString; arguments: WitString): void {.nodestroy.} =
+proc runCommand*(name: WitString; arguments: WitString): Result[WitString,
+    CommandError] {.nodestroy.} =
   var
+    retArea: array[16, uint8]
     arg0: int32
     arg1: int32
     arg2: int32
@@ -157,7 +163,17 @@ proc runCommand*(name: WitString; arguments: WitString): void {.nodestroy.} =
   else:
     arg2 = 0.int32
   arg3 = cast[int32](arguments.len)
-  coreRunCommandImported(arg0, arg1, arg2, arg3)
+  coreRunCommandImported(arg0, arg1, arg2, arg3,
+                         cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] == 0:
+    var tempOk: WitString
+    tempOk = ws(cast[ptr char](cast[ptr int32](retArea[4].addr)[]),
+                cast[ptr int32](retArea[8].addr)[])
+    result = results.Result[WitString, CommandError].ok(tempOk)
+  else:
+    var tempErr: CommandError
+    tempErr = cast[CommandError](cast[ptr int32](retArea[4].addr)[])
+    result = results.Result[WitString, CommandError].err(tempErr)
 
 proc coreGetSettingRawImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("get-setting-raw", "nev:plugins/core").}

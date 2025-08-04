@@ -35,6 +35,7 @@ type
     mergedSettingsCache: tuple[parent: JsonNodeEx, revision: int, settings: JsonNodeEx]
     onConfigChanged*: Event[string]
     parentChangedHandle: Id
+    prefix*: string
 
   Setting*[T] = ref object
     store*: ConfigStore
@@ -678,8 +679,7 @@ proc set*[T](self: ConfigStore, key: string, value: T) =
   self.mergedSettingsCache.settings = nil
   self.onConfigChanged.invoke(key)
 
-var logGetValue* = false
-proc getImpl(self: ConfigStore, key: string, layers: var seq[ConfigStoreLayer], collectLayers: bool = false, recurse: bool = true): JsonNodeEx =
+proc getImpl(self: ConfigStore, key: string): JsonNodeEx =
   var res = self.settings
   var extend = res.extend
   for keyRaw in key.splitOpenArray('.'):
@@ -691,19 +691,10 @@ proc getImpl(self: ConfigStore, key: string, layers: var seq[ConfigStoreLayer], 
       extend = extend and res.extend
 
   if not extend:
-    if collectLayers:
-      layers.add (self.revision, Override, self)
     return res
 
-  if res == nil:
-    if collectLayers:
-      layers.add (self.revision, Unchanged, self)
-  else:
-    if collectLayers:
-      layers.add (self.revision, Extend, self)
-
-  if self.parent != nil and recurse:
-    let parentRes = self.parent.getImpl(key, layers, collectLayers, recurse)
+  if self.parent != nil:
+    let parentRes = self.parent.getImpl(key)
     if res != nil and parentRes == nil:
       return res
     elif res != nil and parentRes != nil:
@@ -718,11 +709,19 @@ proc getImpl(self: ConfigStore, key: string, layers: var seq[ConfigStoreLayer], 
 
 proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
   var layers: seq[ConfigStoreLayer] = @[]
-  return self.getImpl(key, layers)
+  result = self.getImpl(key)
+  if self.prefix != "":
+    let override = self.getImpl(self.prefix & "." & key)
+    if override != nil and result != nil:
+      result.extendJson(override)
 
 proc get*(self: ConfigStore, key: string): JsonNodeEx =
   var layers: seq[ConfigStoreLayer] = @[]
-  result = self.getImpl(key, layers)
+  result = self.getImpl(key)
+  if self.prefix != "":
+    let override = self.getImpl(self.prefix & "." & key)
+    if override != nil and result != nil:
+      result.extendJson(override)
 
 proc get*(self: ConfigStore, key: string, T: typedesc, defaultValue: T): T =
   let value = self.get(key)
@@ -855,6 +854,8 @@ proc getStoreForPath*(self: ConfigService, path: string): (ConfigStore, string) 
   for storeName in self.storesByName.keys:
     if path.startsWith(storeName & "/"):
       return (self.storesByName[storeName], path[storeName.len..^1].strip(chars = {'/'}).replace("/", "."))
+    if path == storeName:
+      return (self.storesByName[storeName], "")
 
   log lvlWarn, &"getStoreForPath '{path}' not found"
   return (nil, "")

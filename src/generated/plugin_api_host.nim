@@ -21,6 +21,8 @@ type
     y*: float32
   View* = object
     id*: int32
+  CommandError* = enum
+    NotAllowed = "not-allowed", NotFound = "not-found"
 when not declared(RenderViewResource):
   {.error: "Missing resource type definition for " & "RenderViewResource" &
       ". Define the type before the importWit statement.".}
@@ -240,7 +242,7 @@ proc coreDefineCommand(host: HostContext; store: ptr ContextT;
                        returntype: sink string; context: sink string;
                        fun: uint32; data: uint32): void
 proc coreRunCommand(host: HostContext; store: ptr ContextT; name: sink string;
-                    arguments: sink string): void
+                    arguments: sink string): Result[string, CommandError]
 proc coreGetSettingRaw(host: HostContext; store: ptr ContextT; name: sink string): string
 proc coreSetSettingRaw(host: HostContext; store: ptr ContextT;
                        name: sink string; value: sink string): void
@@ -672,9 +674,8 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
-          [])
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/core", "run-command", ty):
         var mainMemory = caller.getExport("memory")
         if mainMemory.isNone:
@@ -688,6 +689,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var name: string
         var arguments: string
         block:
@@ -700,7 +702,22 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           arguments = newString(parameters[3].i32)
           for i0 in 0 ..< arguments.len:
             arguments[i0] = p0[i0]
-        coreRunCommand(host, store, name, arguments)
+        let res = coreRunCommand(host, store, name, arguments)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isErr.int32
+        if res.isOk:
+          if res.value.len > 0:
+            let dataPtrWasm1 = int32(?stackAlloc(stackAllocFunc, store,
+                (res.value.len * 1).int32, 4))
+            cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](dataPtrWasm1)
+            block:
+              for i1 in 0 ..< res.value.len:
+                memory[dataPtrWasm1 + i1] = cast[uint8](res.value[i1])
+          else:
+            cast[ptr int32](memory[retArea + 4].addr)[] = 0.int32
+          cast[ptr int32](memory[retArea + 8].addr)[] = cast[int32](res.value.len)
+        else:
+          cast[ptr int32](memory[retArea + 4].addr)[] = cast[int8](res.error)
     if e.isErr:
       return e
   block:

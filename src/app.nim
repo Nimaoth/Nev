@@ -2136,10 +2136,14 @@ proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewSc
     var items = newSeq[FinderItem]()
     for p in self.plugins.plugins:
       var name = p.manifest.name
+      let data = %*{
+        "manifest": p.manifest.toJson,
+        "permissions": p.permissions.toJson,
+      }
       items.add FinderItem(
         displayName: name,
         filterText: name,
-        data: p.manifest.toJson.pretty,
+        data: data.pretty,
         details: @[$p.state],
       )
 
@@ -2183,7 +2187,7 @@ proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewSc
     let item = popup.getSelectedItem().getOr:
       return true
 
-    let manifest = item.data.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+    let manifest = item.data.parseJson()["manifest"].jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
       log lvlError, fmt"Failed to parse editor id from data '{item}'"
       return true
     asyncSpawn loadPlugin(manifest.path)
@@ -2196,7 +2200,7 @@ proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewSc
     let item = popup.getSelectedItem().getOr:
       return true
 
-    let manifest = item.data.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+    let manifest = item.data.parseJson()["manifest"].jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
       log lvlError, fmt"Failed to parse editor id from data '{item}'"
       return true
     asyncSpawn unloadPlugin(manifest.path)
@@ -2209,7 +2213,7 @@ proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewSc
     let item = popup.getSelectedItem().getOr:
       return true
 
-    let manifest = item.data.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+    let manifest = item.data.parseJson()["manifest"].jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
       log lvlError, fmt"Failed to parse editor id from data '{item}'"
       return true
     asyncSpawn reloadPlugin(manifest.path)

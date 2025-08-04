@@ -94,7 +94,7 @@ method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[bool] {.as
       plugin.state = PluginState.Failed
       return false
 
-  let moduleInstance = api.createModule(module)
+  let moduleInstance = api.createModule(module, plugin.permissions)
   if moduleInstance == nil:
     log lvlError, &"Failed to instantiate wasm module"
     plugin.state = PluginState.Failed

@@ -81,6 +81,7 @@ type
     instance*: InstanceT
     store*: ptr StoreT
     funcs*: ExportedFuncs
+    permissions*: PluginPermissions
 
   WasmModuleInstanceImpl* = ref object of WasmModuleInstance
     instance*: Arc[InstanceData]
@@ -131,9 +132,13 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
     log lvlError, "Failed to define component: " & err.msg
     return
 
-method createModule*(self: PluginApi, module: ptr ModuleT): WasmModuleInstance =
+method setPermissions*(instance: WasmModuleInstanceImpl, permissions: PluginPermissions) =
+  instance.instance.getMut.permissions = permissions
+
+method createModule*(self: PluginApi, module: ptr ModuleT, permissions: PluginPermissions): WasmModuleInstance =
   var wasmModule = Arc[InstanceData].new()
   wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
+  wasmModule.getMut.permissions = permissions
   let ctx = wasmModule.get.store.context
 
   let wasiConfig = newWasiConfig()
@@ -227,6 +232,9 @@ proc textSlicePoints(host: HostContext, store: ptr ContextT, self: var RopeResou
   RopeResource(rope: self.rope[range])
 
 proc coreGetTime(host: HostContext; store: ptr ContextT): float64 =
+  let instance = cast[ptr InstanceData](store.getData())
+  if not instance.permissions.time:
+    return 0
   return host.timer.elapsed.ms
 
 proc coreApiVersion(host: HostContext, store: ptr ContextT): int32 =
@@ -241,8 +249,8 @@ proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string
   let command = Command(
     name: name.ensureMove,
     execute: (proc(args: string): string {.gcsafe.} =
-      let module = cast[ptr InstanceData](store.getData())
-      let res = module[].funcs.handleCommand(fun, data, args).okOr(err):
+      let instance = cast[ptr InstanceData](store.getData())
+      let res = instance[].funcs.handleCommand(fun, data, args).okOr(err):
         log lvlError, "Failed to call handleCommand: " & $err
         return ""
 
@@ -251,14 +259,21 @@ proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string
   )
   host.commands.addCommand(command)
 
-proc coreRunCommand(host: HostContext, store: ptr ContextT, name: sink string, arguments: sink string): void =
-  discard host.commands.handleCommand(name & " " & arguments)
+proc coreRunCommand(host: HostContext, store: ptr ContextT, name: sink string, arguments: sink string): Result[string, CommandError] =
+  let instance = cast[ptr InstanceData](store.getData())
+  if not host.commands.checkPermissions(name, instance.permissions.commands):
+    result.err(CommandError.NotAllowed)
+    return
+  if host.commands.handleCommand(name & " " & arguments).getSome(res):
+    return results.ok(res)
+  result.err(CommandError.NotFound)
 
 proc coreGetSettingRaw(host: HostContext, store: ptr ContextT, name: sink string): string =
   return $host.settings.get(name, JsonNodeEx)
 
 proc coreSetSettingRaw(host: HostContext, store: ptr ContextT, name: sink string, value: sink string) =
   try:
+    # todo: permissions
     host.settings.set(name, parseJsonex(value))
   except CatchableError as e:
     log lvlError, "coreSetSettingRaw: Failed to set setting '{name}' to {value}: {e.msg}"
@@ -315,8 +330,8 @@ proc renderSetRenderCommands(host: HostContext; store: ptr ContextT; self: var R
   self.view.commands.raw = data.ensureMove
 
 proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT; self: var RenderViewResource; buffer: uint32; len: uint32): void =
-  let module = cast[ptr InstanceData](store.getData())
-  let mem = module[].funcs.mem
+  let instance = cast[ptr InstanceData](store.getData())
+  let mem = instance[].funcs.mem
   let buffer = buffer.WasmPtr
   let len = len.int
 
@@ -334,6 +349,6 @@ proc renderMarkDirty(host: HostContext; store: ptr ContextT; self: var RenderVie
 proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var RenderViewResource; fun: uint32; data: uint32): void =
   self.setRender = true
   self.view.onRender = proc(view: RenderView) =
-    let module = cast[ptr InstanceData](store.getData())
-    module[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
+    let instance = cast[ptr InstanceData](store.getData())
+    instance[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
       log lvlError, "Failed to call handleViewRenderCallback: " & $err

@@ -17,6 +17,12 @@ type
     name*: string
     execute*: proc(args: string): string {.gcsafe.}
 
+  CommandPermissions* = object
+    allowAll*: Option[bool]
+    disallowAll*: Option[bool]
+    allow*: seq[string]
+    disallow*: seq[string]
+
   CommandService* = ref object of Service
     fallbackConfig: ConfigStore
 
@@ -36,6 +42,9 @@ type
     scopedCommandHandlers: Table[string, proc(command: string): Option[string] {.gcsafe, raises: [].}]
     prefixCommandHandlers: seq[tuple[prefix: string, execute: proc(command: string): Option[string] {.gcsafe, raises: [].}]]
     commands*: Table[string, Command]
+
+proc all*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(true), disallowAll: some(true))
+proc none*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(false), disallowAll: some(none))
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
@@ -86,6 +95,13 @@ proc executeCommand*(self: CommandService, command: string): Option[string] =
     return handler(command)
 
   return string.none
+
+proc checkPermissions*(self: CommandService, command: string, permissions: CommandPermissions): bool =
+  if permissions.disallowAll.get(true) or command in permissions.disallow:
+    return false
+  if not permissions.allowAll.get(false) and command notin permissions.allow:
+    return false
+  return true
 
 proc handleCommand*(self: CommandService, command: string): Option[string] =
   try:

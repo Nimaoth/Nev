@@ -169,7 +169,7 @@ task buildWasmModule, "":
   withDir "config":
     exec &"nim c -d:release --skipParentCfg --passL:\"-o ../plugins/test_plugin/test_plugin.m.wasm\" {getCommandLineParams()} ./test_plugin.nim"
   let cmd = when defined(Windows): "powershell -Command " else: ""
-  echo gorgeEx(cmd & "cp ./plugins/test_plugin/test_plugin.m.wasm ./plugins/")
+  echo gorgeEx(cmd & "cp ./plugins/test_plugin/test_plugin.m.wasm ./plugins/test_plugin2.m.wasm")
 
 task flamegraph, "Perf/flamegraph":
   exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"

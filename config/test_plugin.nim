@@ -1,4 +1,5 @@
 import std/[strformat, json, jsonutils]
+import results
 import misc/util
 import wit_types, wit_runtime
 import scripting/binary_encoder
@@ -19,7 +20,13 @@ defineCommand(ws"new-test-command",
   context = ws"",
   data = 123):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    echo &"[guest] new-test-command {data} '{args}'"
+    try:
+      echo &"[guest] new-test-command {data} '{args}'"
+      let args = ($args).parseJson.jsonTo(string)
+      let res = runCommand(ws(args), ws"")
+      echo &"[guest] {res}"
+    except CatchableError as e:
+      echo &"[guest] err: {e.msg}"
     return ws"uiae"
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
@@ -62,6 +69,7 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
 proc init() =
   echo "[guest] init test_plugin"
 
+  let s = getTime()
   var renderView = renderViewFromUserId(ws"test_plugin_view")
   if renderView.isNone:
     echo "[guest] Create new RenderView"
@@ -75,5 +83,7 @@ proc init() =
   renderView.get.markDirty()
   show(renderView.get.view, ws"#new-tab", true, true)
   views.add(renderView.take)
+
+  echo &"[guest] init test_plugin took {getTime() - s} ms"
 
 init()

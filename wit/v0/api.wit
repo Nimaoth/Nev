@@ -58,11 +58,16 @@ interface render {
 }
 
 interface core {
+  enum command-error {
+    not-allowed,
+    not-found
+  }
+
   api-version: func() -> s32;
   get-time: func() -> f64;
   bind-keys: func(context: string, subcontext: string, keys: string, action: string, arg: string, description: string, source: tuple<string, s32, s32>);
   define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);
-  run-command: func(name: string, arguments: string);
+  run-command: func(name: string, arguments: string) -> result<string, command-error>;
   get-setting-raw: func(name: string) -> string;
   set-setting-raw: func(name: string, value: string);
 }

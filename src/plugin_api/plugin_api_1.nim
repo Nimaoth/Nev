@@ -106,7 +106,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
     # echo "[host] Failed to define component: ", err.msg
     return
 
-method createModule*(self: PluginApi, module: ptr ModuleT): WasmModuleInstance =
+method createModule*(self: PluginApi, module: ptr ModuleT, permissions: PluginPermissions): WasmModuleInstance =
   var wasmModule = Arc[InstanceData].new()
   wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
   let ctx = wasmModule.get.store.context
