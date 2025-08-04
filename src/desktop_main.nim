@@ -269,6 +269,7 @@ import selector_popup, collab, layout, config_provider, document_editor, session
 import language_server_paths
 import language_server_regex
 import plugin_api/[process]
+import scripting/expose
 
 generatePluginBindings()
 static:

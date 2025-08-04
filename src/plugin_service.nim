@@ -8,6 +8,12 @@ import compilation_config, service, vfs_service, vfs, dispatch_tables, events, c
 
 logCategory "plugins"
 
+declareSettings PluginSettings, "plugins":
+  # use openSession, OpenSessionSettings
+
+  ## Whether to watch the plugin directories for changes and load new plugins
+  declare watchPluginDirectories, bool, true
+
 type
   PluginSystem* = ref object of RootObj
 
@@ -32,6 +38,17 @@ type
     state*: PluginState
     pluginSystem*: PluginSystem
     instance*: PluginInstanceBase
+    dirty*: bool ## True if there are changes on disk for the plugin
+
+  PluginDirectory* = ref object
+    path*: string
+    watchHandle*: VFSWatchHandle
+
+  VFSEvent = tuple
+    pluginFolder: PluginDirectory
+    path: string
+    newPath: string
+    action: FileEventAction
 
   PluginService* = ref object of Service
     pluginSystems*: seq[PluginSystem]
@@ -43,7 +60,14 @@ type
     vfs: VFS
     settings*: ConfigStore
 
+    pluginFolders*: seq[PluginDirectory]
     plugins*: seq[Plugin]
+    pathToPlugin*: Table[string, Plugin]
+
+    pluginSettings*: PluginSettings
+
+    isHandlingVFSEvents: bool
+    vfsEvents: seq[VFSEvent]
 
 method init*(self: PluginSystem, path: string, vfs: VFS): Future[void] {.base.} = discard
 method deinit*(self: PluginSystem) {.base.} = discard
@@ -61,7 +85,7 @@ func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
 addBuiltinService(PluginService, EventHandlerService, VFSService, ConfigService)
 
-proc loadPluginManifests(self: PluginService) {.async.}
+proc addPluginFolder(self: PluginService, path: string) {.async.}
 
 proc desc*(self: Plugin): string = &"'{self.manifest.name}' ({self.manifest.path})"
 
@@ -69,7 +93,10 @@ method init*(self: PluginService): Future[Result[void, ref CatchableError]] {.as
   self.events = self.services.getService(EventHandlerService).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.settings = self.services.getService(ConfigService).get.runtime
-  asyncSpawn self.loadPluginManifests()
+  self.pluginSettings = PluginSettings.new(self.settings)
+
+  asyncSpawn self.addPluginFolder("app://plugins")
+  asyncSpawn self.addPluginFolder("home://.nev/plugins")
   return ok()
 
 proc loadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
@@ -80,6 +107,7 @@ proc loadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
   for ps in self.pluginSystems:
     try:
       if ps.tryLoadPlugin(plugin).await:
+        plugin.dirty = false
         return
     except IOError as e:
       log lvlError, &"Plugin {plugin.desc} could not be loaded: {e.msg}"
@@ -135,68 +163,100 @@ proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
     manifest: manifest.ensureMove,
   )
   self.plugins.add(plugin)
+  self.pathToPlugin[plugin.manifest.path] = plugin
 
-proc loadPluginManifests(self: PluginService) {.async.} =
-  let root = "app://plugins"
+proc addManifestFromFile(self: PluginService, pluginFolder: PluginDirectory, file: string) {.async.} =
+  if file.endsWith(".m.wasm"):
+    let (_, name, ext) = file.splitFile
+    self.createPlugin(PluginManifest(
+      name: name,
+      path: pluginFolder.path // file,
+      wasm: pluginFolder.path // file,
+    ))
+
+proc addManifestFromFolder(self: PluginService, pluginFolder: PluginDirectory, folder: string) {.async.} =
+  try:
+    let manifestJson = self.vfs.read(pluginFolder.path // folder // "manifest.json").await
+    var manifest = manifestJson.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+    manifest.path = pluginFolder.path // folder
+    if manifest.wasm != "":
+      manifest.wasm = pluginFolder.path // folder // manifest.wasm
+    self.createPlugin(manifest)
+  except IOError:
+    log lvlError, &"Failed to find manifest.json in '{folder}'"
+
+proc getPlugin(self: PluginService, path: string): Option[Plugin] =
+  if self.pathToPlugin.contains(path):
+    return self.pathToPlugin[path].some
+  return Plugin.none
+
+proc handleVFSEvents(self: PluginService) {.async.} =
+  boolLock(self.isHandlingVFSEvents)
+  var i = 0
+  while i < self.vfsEvents.len:
+    defer:
+      inc i
+
+    let e = self.vfsEvents[i]
+    case e.action
+    of FileEventAction.Modify:
+      let fullPath = e.pluginFolder.path // e.path
+      let isDir = self.vfs.getFileKind(fullPath).await
+      let (container, item) = e.path.splitPath
+      if isDir.getSome(isDir):
+        let pluginPathRelative = if container == "":
+          e.path
+        else:
+          container
+        let pluginPath = e.pluginFolder.path // pluginPathRelative
+
+        if self.getPlugin(pluginPath).getSome(existingPlugin):
+          log lvlInfo, "Changed existing plugin"
+          existingPlugin.dirty = true
+        else:
+          log lvlInfo, "New plugin ", pluginPath
+          if container != "" or isDir == FileKind.Directory:
+            await self.addManifestFromFolder(e.pluginFolder, pluginPathRelative)
+          else:
+            await self.addManifestFromFile(e.pluginFolder, pluginPathRelative)
+
+
+    else:
+      discard
+
+  self.vfsEvents.setLen(0)
+
+proc loadPluginManifests(self: PluginService, pluginFolder: PluginDirectory) {.async.} =
+  log lvlNotice, &"Load plugin manifests from '{pluginFolder.path}'"
+  let root = pluginFolder.path
   let listing = await self.vfs.getDirectoryListing(root)
-  for file in listing.files:
-    if file.endsWith(".m.wasm"):
-      let (_, name, ext) = file.splitFile
-      self.createPlugin(PluginManifest(
-        name: name,
-        path: root // file,
-        wasm: root // file,
-      ))
 
-  for folder in listing.folders:
-    try:
-      let manifestJson = self.vfs.read(root // folder // "manifest.json").await
-      var manifest = manifestJson.parseJson().jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true))
-      manifest.path = root // folder // "manifest.json"
-      if manifest.wasm != "":
-        manifest.wasm = root // folder // manifest.wasm
-      self.createPlugin(manifest)
-    except IOError:
-      log lvlError, &"Failed to find manifest.json in '{folder}'"
+  for path in listing.files:
+    await self.addManifestFromFile(pluginFolder, path)
+
+  for path in listing.folders:
+    await self.addManifestFromFolder(pluginFolder, path)
+
+  if self.pluginSettings.watchPluginDirectories.get():
+    log lvlInfo, &"Watch plugin pluginFolder: {pluginFolder.path}"
+    pluginFolder.watchHandle = self.vfs.watch(pluginFolder.path, proc(events: seq[PathEvent]) =
+      var vfsEvents = newSeq[VFSEvent]()
+      for event in events:
+        vfsEvents.add (pluginFolder, event.name.normalizeNativePath, event.newName.normalizeNativePath, event.action)
+      self.vfsEvents.add vfsEvents
+      asyncSpawn self.handleVFSEvents()
+    )
+
+proc addPluginFolder(self: PluginService, path: string) {.async.} =
+  for it in self.pluginFolders:
+    if it.path == path:
+      return
+
+  log lvlNotice, &"Add plugin folder '{path}'"
+  self.pluginFolders.add PluginDirectory(path: path)
+  await self.loadPluginManifests(self.pluginFolders.last)
 
 {.pop.} # raises
-
-proc generateScriptingApiPerModule*() {.compileTime.} =
-  var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"
-
-  for moduleName, list in exposedFunctions:
-    var script_api_content_wasm = """
-import std/[json, options]
-import scripting_api, misc/myjsonutils
-
-## This file is auto generated, don't modify.
-
-"""
-
-    for m, list in wasmImportedFunctions:
-      if moduleName != m:
-        continue
-      for f in list:
-        script_api_content_wasm.add f[2].repr
-        script_api_content_wasm.add "\n"
-        script_api_content_wasm.add f[1].repr
-        script_api_content_wasm.add "\n"
-
-    let file_name = moduleName.replace(".", "_")
-
-    echo fmt"Writing scripting/{file_name}_api_wasm.nim"
-    writeFile(fmt"scripting/{file_name}_api_wasm.nim", script_api_content_wasm)
-
-    imports_content.add fmt"import {file_name}_api_wasm" & "\n"
-    imports_content.add fmt"export {file_name}_api_wasm" & "\n"
-
-  when enableAst:
-    imports_content.add "\nconst enableAst* = true\n"
-  else:
-    imports_content.add "\nconst enableAst* = false\n"
-
-  echo fmt"Writing scripting/plugin_api.nim"
-  writeFile(fmt"scripting/plugin_api.nim", imports_content)
 
 template withPluginSystem*(self: PluginService, pluginSystem: untyped, body: untyped): untyped =
   if pluginSystem.isNotNil:
