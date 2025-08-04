@@ -107,6 +107,10 @@ For examples and default values see [here](../config/settings.json)
 | `ui.background.transparent` | bool | false | If true the background is transparent. |
 | `ui.cursor-trail-length` | int | 2 | How long the cursor trail is. Set to 0 to disable cursor trail. |
 | `ui.cursor-trail-speed` | float | 100.0 | How fast to interpolate the cursor trail position when moving the cursor. Higher means faster. |
+| `ui.font-family` | string | "app://fonts/DejaVuSansMono.ttf" | Full path to regular font file. |
+| `ui.font-family-bold` | string | "app://fonts/DejaVuSansMono-Bold.ttf" | Full path to bold font file. |
+| `ui.font-family-bold-italic` | string | "app://fonts/DejaVuSansMono-BoldOblique.ttf" | Full path to bold italic font file. |
+| `ui.font-family-italic` | string | "app://fonts/DejaVuSansMono-Oblique.ttf" | Full path to italic font file. |
 | `ui.hide-tab-bar-when-single` | bool | false | When true then tab layouts don't render a tab bar when they only have one tab. |
 | `ui.indent-guide` | bool | true | Enable indent guides to show the indentation of the current line. |
 | `ui.line-numbers` | "none" \| "absolute" \| "relative" | "absolute" | How line numbers should be displayed. |
