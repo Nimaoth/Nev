@@ -21,7 +21,7 @@ when enableAst:
   import ast/[model, project]
 
 import scripting/[scripting_wasm]
-import plugin_service
+import plugin_system_wasm
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
@@ -109,7 +109,7 @@ type
     logBuffer = ""
 
     wasmScriptContext*: ScriptContextWasm
-    wasmPluginSystem*: WasmPluginSystem
+    pluginSystemWasm*: PluginSystemWasm
     initializeCalled: bool
 
     statusBarOnTop*: bool
@@ -251,17 +251,17 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
   self.runConfigCommands("plugin-post-load-commands")
 
   try:
-    self.wasmPluginSystem = new WasmPluginSystem
-    self.plugins.scriptContexts.add self.wasmPluginSystem
-    self.wasmPluginSystem.services = self.services
-    self.wasmPluginSystem.moduleVfs = VFS()
-    self.wasmPluginSystem.vfs = self.vfs
-    self.vfs.mount("plugs://", self.wasmPluginSystem.moduleVfs)
-    await self.wasmPluginSystem.init("app://config", self.vfs)
+    self.pluginSystemWasm = new PluginSystemWasm
+    self.plugins.scriptContexts.add self.pluginSystemWasm
+    self.pluginSystemWasm.services = self.services
+    self.pluginSystemWasm.moduleVfs = VFS()
+    self.pluginSystemWasm.vfs = self.vfs
+    self.vfs.mount("plugs://", self.pluginSystemWasm.moduleVfs)
+    await self.pluginSystemWasm.init("app://config", self.vfs)
   except CatchableError:
     log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-  self.plugins.pluginSystems.add(self.wasmPluginSystem)
+  self.plugins.pluginSystems.add(self.pluginSystemWasm)
   if not options.disableWasmPlugins:
     self.plugins.loadPlugins()
 

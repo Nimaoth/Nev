@@ -18,7 +18,7 @@ logCategory "plugins-v2"
 {.push gcsafe, raises: [].}
 
 type
-  WasmPluginSystem* = ref object of ScriptContext
+  PluginSystemWasm* = ref object of ScriptContext
     engine: ptr WasmEngineT
     moduleVfs*: VFS
     vfs*: VFS
@@ -32,13 +32,13 @@ type
     moduleInstance: WasmModuleInstance
     api: PluginApiBase
 
-proc initPluginApi[T](self: WasmPluginSystem, api: var PluginApiBase) =
+proc initPluginApi[T](self: PluginSystemWasm, api: var PluginApiBase) =
   var newApi: T
   new(newApi)
   api = newApi
   api.init(self.services, self.engine)
 
-proc initWasm(self: WasmPluginSystem) =
+proc initWasm(self: PluginSystemWasm) =
   let config = newConfig()
   self.engine = newEngine(config)
 
@@ -46,13 +46,13 @@ proc initWasm(self: WasmPluginSystem) =
   when enableOldPluginVersions:
     self.initPluginApi[:v1.PluginApi](self.v1)
 
-method init*(self: WasmPluginSystem, path: string, vfs: VFS): Future[void] {.async.} =
+method init*(self: PluginSystemWasm, path: string, vfs: VFS): Future[void] {.async.} =
   self.vfs = vfs
   self.initWasm()
 
-method deinit*(self: WasmPluginSystem) = discard
+method deinit*(self: PluginSystemWasm) = discard
 
-method tryLoadPlugin*(self: WasmPluginSystem, plugin: Plugin): Future[bool] {.async: (raises: [IOError]).} =
+method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[bool] {.async: (raises: [IOError]).} =
   log lvlInfo, &"tryLoadPlugin {plugin.desc}"
   if not plugin.manifest.wasm.endsWith(".m.wasm"):
     log lvlInfo, &"Don't load plugin {plugin.desc}, no wasm file specified"
@@ -105,7 +105,7 @@ method tryLoadPlugin*(self: WasmPluginSystem, plugin: Plugin): Future[bool] {.as
 
   return true
 
-method unloadPlugin*(self: WasmPluginSystem, plugin: Plugin): Future[void] {.async: (raises: []).} =
+method unloadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[void] {.async: (raises: []).} =
   let instance = plugin.instance.WasmPluginInstance
   instance.api.destroyInstance(instance.moduleInstance)
   plugin.state = Unloaded
