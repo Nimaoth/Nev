@@ -231,12 +231,12 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
     try:
       log(lvlInfo, fmt"load wasm configs")
       self.wasmScriptContext = new ScriptContextWasm
-      self.plugins.scriptContexts.add self.wasmScriptContext
+      self.plugins.pluginSystems.add self.wasmScriptContext
       self.wasmScriptContext.moduleVfs = VFS()
       self.wasmScriptContext.vfs = self.vfs
       self.vfs.mount("plugs://", self.wasmScriptContext.moduleVfs)
 
-      withScriptContext self.plugins, self.wasmScriptContext:
+      withPluginSystem self.plugins, self.wasmScriptContext:
         let t1 = startTimer()
         await self.wasmScriptContext.init("app://config", self.vfs)
         log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
@@ -252,7 +252,7 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 
   try:
     self.pluginSystemWasm = new PluginSystemWasm
-    self.plugins.scriptContexts.add self.pluginSystemWasm
+    self.plugins.pluginSystems.add self.pluginSystemWasm
     self.pluginSystemWasm.services = self.services
     self.pluginSystemWasm.moduleVfs = VFS()
     self.pluginSystemWasm.vfs = self.vfs
@@ -261,7 +261,6 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
   except CatchableError:
     log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
-  self.plugins.pluginSystems.add(self.pluginSystemWasm)
   if not options.disableWasmPlugins:
     self.plugins.loadPlugins()
 
@@ -461,10 +460,10 @@ proc parseCommand(json: JsonNodeEx): tuple[command: string, args: string] {.rais
 
 proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
   try:
-    let oldScriptContext = self.plugins.currentScriptContext
-    self.plugins.currentScriptContext = ScriptContext.none
+    let oldScriptContext = self.plugins.currentPluginSystem
+    self.plugins.currentPluginSystem = PluginSystem.none
     defer:
-      self.plugins.currentScriptContext = oldScriptContext
+      self.plugins.currentPluginSystem = oldScriptContext
 
     for (context, commands) in json.fields.pairs:
       let loc = (line: commands.loc.line.int, column: commands.loc.column.int + 1)
@@ -2735,11 +2734,11 @@ proc reloadPluginAsync*(self: App) {.async.} =
       self.plugins.clearScriptActionsFor(self.wasmScriptContext)
 
       let t1 = startTimer()
-      withScriptContext self.plugins, self.wasmScriptContext:
+      withPluginSystem self.plugins, self.wasmScriptContext:
         await self.wasmScriptContext.reload()
       log(lvlInfo, fmt"Reload wasm plugins ({t1.elapsed.ms}ms)")
 
-      withScriptContext self.plugins, self.wasmScriptContext:
+      withPluginSystem self.plugins, self.wasmScriptContext:
         let t2 = startTimer()
         discard self.wasmScriptContext.postInitialize()
         log(lvlInfo, fmt"Post init wasm plugins ({t2.elapsed.ms}ms)")
@@ -3074,8 +3073,8 @@ proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
   log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
 
 proc registerPluginSourceCode*(self: App, path: string, content: string) {.expose("editor").} =
-  if self.plugins.currentScriptContext.getSome(scriptContext):
-    asyncSpawn self.vfs.write(scriptContext.getCurrentContext() & path, content)
+  if self.plugins.currentPluginSystem.getSome(pluginSystem):
+    asyncSpawn self.vfs.write(pluginSystem.getCurrentContext() & path, content)
 
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
@@ -3097,8 +3096,8 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
     self.events.getEventHandlerConfig(baseContext).addCommandDescription(keys, description)
 
   var source = source
-  if self.plugins.currentScriptContext.getSome(scriptContext):
-    source.filename = scriptContext.getCurrentContext() & source.filename
+  if self.plugins.currentPluginSystem.getSome(pluginSystem):
+    source.filename = pluginSystem.getCurrentContext() & source.filename
 
   self.events.getEventHandlerConfig(baseContext).addCommand(subContext, keys, command, source)
   self.events.invalidateCommandToKeysMap()
@@ -3453,8 +3452,8 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
             log lvlError, &"Failed to dispatch '{action} {args}' in {t.namespace}: {e.msg}"
 
     try:
-      for sc in self.plugins.scriptContexts:
-        withScriptContext self.plugins, sc:
+      for sc in self.plugins.pluginSystems:
+        withPluginSystem self.plugins, sc:
           let res = sc.handleScriptAction(action, args)
           if res.isNotNil:
             return res.some

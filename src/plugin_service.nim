@@ -9,11 +9,11 @@ import compilation_config, service, vfs_service, vfs, dispatch_tables, events, c
 logCategory "plugins"
 
 type
-  ScriptContext* = ref object of RootObj
+  PluginSystem* = ref object of RootObj
 
   ScriptAction = object
     name: string
-    scriptContext: ScriptContext
+    pluginSystem: PluginSystem
 
   PluginManifest* = object
     name*: string
@@ -30,14 +30,13 @@ type
   Plugin* = ref object
     manifest*: PluginManifest
     state*: PluginState
-    pluginSystem*: ScriptContext
+    pluginSystem*: PluginSystem
     instance*: PluginInstanceBase
 
   PluginService* = ref object of Service
-    scriptContexts*: seq[ScriptContext]
+    pluginSystems*: seq[PluginSystem]
     callbacks*: Table[string, int]
-    currentScriptContext*: Option[ScriptContext] = ScriptContext.none
-    pluginSystems*: seq[ScriptContext]
+    currentPluginSystem*: Option[PluginSystem] = PluginSystem.none
 
     scriptActions*: Table[string, ScriptAction]
     events: EventHandlerService
@@ -46,17 +45,17 @@ type
 
     plugins*: seq[Plugin]
 
-method init*(self: ScriptContext, path: string, vfs: VFS): Future[void] {.base.} = discard
-method deinit*(self: ScriptContext) {.base.} = discard
-method reload*(self: ScriptContext): Future[void] {.base.} = discard
+method init*(self: PluginSystem, path: string, vfs: VFS): Future[void] {.base.} = discard
+method deinit*(self: PluginSystem) {.base.} = discard
+method reload*(self: PluginSystem): Future[void] {.base.} = discard
 
-method postInitialize*(self: ScriptContext): bool {.base.} = discard
-method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base.} = discard
-method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode {.base.} = discard
-method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base.} = discard
-method getCurrentContext*(self: ScriptContext): string {.base.} = ""
-method tryLoadPlugin*(self: ScriptContext, plugin: Plugin): Future[bool] {.base, async: (raises: [IOError]).} = false
-method unloadPlugin*(self: ScriptContext, plugin: Plugin): Future[void] {.base, async: (raises: []).} = discard
+method postInitialize*(self: PluginSystem): bool {.base.} = discard
+method handleCallback*(self: PluginSystem, id: int, arg: JsonNode): bool {.base.} = discard
+method handleAnyCallback*(self: PluginSystem, id: int, arg: JsonNode): JsonNode {.base.} = discard
+method handleScriptAction*(self: PluginSystem, name: string, args: JsonNode): JsonNode {.base.} = discard
+method getCurrentContext*(self: PluginSystem): string {.base.} = ""
+method tryLoadPlugin*(self: PluginSystem, plugin: Plugin): Future[bool] {.base, async: (raises: [IOError]).} = false
+method unloadPlugin*(self: PluginSystem, plugin: Plugin): Future[void] {.base, async: (raises: []).} = discard
 
 func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
@@ -199,14 +198,14 @@ import scripting_api, misc/myjsonutils
   echo fmt"Writing scripting/plugin_api.nim"
   writeFile(fmt"scripting/plugin_api.nim", imports_content)
 
-template withScriptContext*(self: PluginService, scriptContext: untyped, body: untyped): untyped =
-  if scriptContext.isNotNil:
-    let oldScriptContext = self.currentScriptContext
+template withPluginSystem*(self: PluginService, pluginSystem: untyped, body: untyped): untyped =
+  if pluginSystem.isNotNil:
+    let oldScriptContext = self.currentPluginSystem
     {.push hint[ConvFromXtoItselfNotNeeded]:off.}
-    self.currentScriptContext = scriptContext.ScriptContext.some
+    self.currentPluginSystem = pluginSystem.PluginSystem.some
     {.pop.}
     defer:
-      self.currentScriptContext = oldScriptContext
+      self.currentPluginSystem = oldScriptContext
     body
 
 proc invokeCallback*(self: PluginService, context: string, args: JsonNode): bool =
@@ -215,8 +214,8 @@ proc invokeCallback*(self: PluginService, context: string, args: JsonNode): bool
       return false
     let id = self.callbacks[context]
 
-    for sc in self.scriptContexts:
-      withScriptContext self, sc:
+    for sc in self.pluginSystems:
+      withPluginSystem self, sc:
         if sc.handleCallback(id, args):
           return true
     return false
@@ -230,8 +229,8 @@ proc invokeAnyCallback*(self: PluginService, context: string, args: JsonNode): J
     try:
       let id = self.callbacks[context]
 
-      for sc in self.scriptContexts:
-        withScriptContext self, sc:
+      for sc in self.pluginSystems:
+        withPluginSystem self, sc:
           let res = sc.handleAnyCallback(id, args)
           if res.isNotNil:
             return res
@@ -243,8 +242,8 @@ proc invokeAnyCallback*(self: PluginService, context: string, args: JsonNode): J
 
   else:
     try:
-      for sc in self.scriptContexts:
-        withScriptContext self, sc:
+      for sc in self.pluginSystems:
+        withPluginSystem self, sc:
           let res = sc.handleScriptAction(context, args)
           if res.isNotNil:
             return res
@@ -254,10 +253,10 @@ proc invokeAnyCallback*(self: PluginService, context: string, args: JsonNode): J
       log(lvlError, getCurrentException().getStackTrace())
       return nil
 
-proc clearScriptActionsFor*(self: PluginService, scriptContext: ScriptContext) =
+proc clearScriptActionsFor*(self: PluginService, pluginSystem: PluginSystem) =
   var keysToRemove: seq[string]
   for (key, value) in self.scriptActions.pairs:
-    if value.scriptContext == scriptContext:
+    if value.pluginSystem == pluginSystem:
       keysToRemove.add key
 
   for key in keysToRemove:
@@ -284,8 +283,8 @@ proc bindKeys*(self: PluginService, context: string, subContext: string, keys: s
     self.events.commandDescriptions[context & subContext & keys] = description
 
   var source = source
-  if self.currentScriptContext.getSome(scriptContext):
-    source.filename = scriptContext.getCurrentContext() & source.filename
+  if self.currentPluginSystem.getSome(pluginSystem):
+    source.filename = pluginSystem.getCurrentContext() & source.filename
 
   self.events.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
   self.events.invalidateCommandToKeysMap()
@@ -296,8 +295,8 @@ proc callScriptAction*(self: PluginService, context: string, args: JsonNode): Js
     return nil
   let action = self.scriptActions[context]
   try:
-    withScriptContext self, action.scriptContext:
-      return action.scriptContext.handleScriptAction(context, args)
+    withPluginSystem self, action.pluginSystem:
+      return action.pluginSystem.handleScriptAction(context, args)
     log lvlError, fmt"No script context for action '{context}'"
     return nil
   except CatchableError:
@@ -314,11 +313,11 @@ proc addScriptAction*(self: PluginService, name: string, docs: string = "",
     log lvlError, fmt"Duplicate script action {name}"
     return
 
-  if self.currentScriptContext.isNone:
+  if self.currentPluginSystem.isNone:
     log lvlError, fmt"addScriptAction({name}) should only be called from a script"
     return
 
-  self.scriptActions[name] = ScriptAction(name: name, scriptContext: self.currentScriptContext.get)
+  self.scriptActions[name] = ScriptAction(name: name, pluginSystem: self.currentPluginSystem.get)
 
   proc dispatch(arg: JsonNode): JsonNode =
     return self.callScriptAction(name, arg)

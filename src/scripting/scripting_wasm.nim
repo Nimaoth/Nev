@@ -11,7 +11,7 @@ export wasm
 logCategory "scripting-wasm"
 
 type
-  ScriptContextWasm* = ref object of ScriptContext
+  ScriptContextWasm* = ref object of PluginSystem
     modules: seq[WasmModule]
 
     postInitializeCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction): bool {.gcsafe.}]]
@@ -128,6 +128,9 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
 
   await self.loadModules("app://config/wasm")
 
+method tryLoadPlugin*(self: ScriptContextWasm, plugin: Plugin): Future[bool] {.async: (raises: [IOError]).} =
+  return false
+
 method postInitialize*(self: ScriptContextWasm): bool =
   result = false
   try:
@@ -170,7 +173,6 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
         continue
   except:
     log lvlError, &"Failed to run handleAnyCallback '{path}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
 
 method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode =
   try:

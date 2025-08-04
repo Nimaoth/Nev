@@ -19,7 +19,7 @@ logCategory "plugins-v2"
 {.push gcsafe, raises: [].}
 
 type
-  PluginSystemWasm* = ref object of ScriptContext
+  PluginSystemWasm* = ref object of PluginSystem
     engine: ptr WasmEngineT
     moduleVfs*: VFS
     vfs*: VFS
