@@ -1,11 +1,11 @@
 import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex]
-import scripting/[expose, scripting_base]
+import scripting/[expose]
 import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view, session, document_editor, layout, platform_service
 import text/text_editor
 import platform/platform
 import finder/[previewer, finder, data_previewer]
-import workspaces/workspace
+import workspaces/workspace, plugin_service
 
 import chroma
 

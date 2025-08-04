@@ -2,7 +2,7 @@ import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json,
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
   array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, parsejsonex]
 import ui/node
-import scripting/[expose, scripting_base]
+import scripting/[expose]
 import platform/[platform]
 import workspaces/[workspace]
 import config_provider, app_interface
@@ -11,7 +11,7 @@ import input, events, document, document_editor, popup, dispatch_tables, theme, 
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
-import service, layout, session, command_service, toast
+import service, layout, session, command_service, toast, plugin_service
 
 import nimsumtree/[rope]
 

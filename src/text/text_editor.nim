@@ -5,7 +5,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
   custom_unicode, delayed_task, myjsonutils, regex, timer, response, rope_utils, rope_regex, jsonex]
-import scripting/[expose, scripting_base]
+import scripting/[expose]
 import platform/[platform]
 import language/[language_server_base]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent,
@@ -13,7 +13,7 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
 import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
-import diff
+import diff, plugin_service
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs

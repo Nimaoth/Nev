@@ -1,7 +1,7 @@
 import std/[strutils, options, json, tables]
 import misc/[custom_async, custom_logger, util, myjsonutils, event, id]
-import scripting/[expose, scripting_base]
-import dispatch_tables, service
+import scripting/[expose]
+import dispatch_tables, service, plugin_service
 
 {.push gcsafe.}
 {.push raises: [].}

@@ -7,7 +7,6 @@ import text/[text_editor, text_document]
 import render_view, view
 import ui/render_command
 import scripting/binary_encoder, config_provider
-import scripting/scripting_base
 
 import wasmtime, wit_host_module, plugin_api_base
 

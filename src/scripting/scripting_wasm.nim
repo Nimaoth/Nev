@@ -1,10 +1,10 @@
 import std/[macros, macrocache, genasts, json, strutils, os, sugar]
 import misc/[custom_logger, custom_async, util]
-import scripting_base, expose, vfs
+import expose, vfs, plugin_service
 import wasm
 import wasm3, wasm3/wasmconversions
 
-export scripting_base, wasm
+export wasm
 
 {.push gcsafe.}
 

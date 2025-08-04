@@ -1,11 +1,12 @@
 import std/[sugar, options, json, streams, tables]
 import bumpy, vmath
 import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
-import scripting/[expose, scripting_base]
+import scripting/[expose]
 import app_interface, text/text_editor, popup, events,
   selector_popup_builder, dispatch_tables, layout, service, config_provider, view, command_service
 from scripting_api as api import Selection, ToggleBool, toToggleBool, applyTo
 import finder/[finder, previewer]
+import plugin_service
 
 export popup, selector_popup_builder, service
 

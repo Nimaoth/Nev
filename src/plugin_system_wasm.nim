@@ -4,7 +4,8 @@ import document_editor, vfs, service
 import nimsumtree/[rope, sumtree, arc]
 import layout
 import text/[text_editor, text_document]
-import scripting/[binary_encoder, scripting_base], config_provider, compilation_config
+import scripting/[binary_encoder], config_provider, compilation_config
+import plugin_service
 
 import wasmtime
 import plugin_api/plugin_api_base
