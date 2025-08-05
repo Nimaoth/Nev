@@ -54,6 +54,9 @@ interface render {
     get-user-id: func() -> string;
     mark-dirty: func();
     set-render-callback: func(fun: u32, data: u32);
+    set-modes: func(modes: list<string>);
+    add-mode: func(mode: string);
+    remove-mode: func(mode: string);
   }
 }
 

@@ -358,3 +358,13 @@ proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var R
     let instance = cast[ptr InstanceData](store.getData())
     instance[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
       log lvlError, "Failed to call handleViewRenderCallback: " & $err
+
+proc renderSetModes(host: HostContext; store: ptr ContextT; self: var RenderViewResource; modes: sink seq[string]): void =
+  self.view.modes = modes
+
+proc renderAddMode(host: HostContext; store: ptr ContextT; self: var RenderViewResource; mode: sink string): void =
+  self.view.modes.add(mode)
+
+proc renderRemoveMode(host: HostContext; store: ptr ContextT; self: var RenderViewResource; mode: sink string): void =
+  self.view.modes.removeShift(mode)
+

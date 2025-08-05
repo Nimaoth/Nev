@@ -282,6 +282,12 @@ proc renderMarkDirty(host: HostContext; store: ptr ContextT;
 proc renderSetRenderCallback(host: HostContext; store: ptr ContextT;
                              self: var RenderViewResource; fun: uint32;
                              data: uint32): void
+proc renderSetModes(host: HostContext; store: ptr ContextT;
+                    self: var RenderViewResource; modes: sink seq[string]): void
+proc renderAddMode(host: HostContext; store: ptr ContextT;
+                   self: var RenderViewResource; mode: sink string): void
+proc renderRemoveMode(host: HostContext; store: ptr ContextT;
+                      self: var RenderViewResource; mode: sink string): void
 proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     void] =
   block:
@@ -1166,5 +1172,100 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         fun = convert(parameters[1].i32, uint32)
         data = convert(parameters[2].i32, uint32)
         renderSetRenderCallback(host, store, self[], fun, data)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.set-modes", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        var modes: seq[string]
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
+          modes = newSeq[typeof(modes[0])](parameters[2].i32)
+          for i0 in 0 ..< modes.len:
+            block:
+              let p1 = cast[ptr UncheckedArray[char]](memory[
+                  cast[ptr int32](p0[i0 * 8 + 0].addr)[]].addr)
+              modes[i0] = newString(cast[ptr int32](p0[i0 * 8 + 4].addr)[])
+              for i1 in 0 ..< modes[i0].len:
+                modes[i0][i1] = p1[i1]
+        renderSetModes(host, store, self[], modes)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.add-mode", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        var mode: string
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          mode = newString(parameters[2].i32)
+          for i0 in 0 ..< mode.len:
+            mode[i0] = p0[i0]
+        renderAddMode(host, store, self[], mode)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.remove-mode", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        var mode: string
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          mode = newString(parameters[2].i32)
+          for i0 in 0 ..< mode.len:
+            mode[i0] = p0[i0]
+        renderRemoveMode(host, store, self[], mode)
     if e.isErr:
       return e

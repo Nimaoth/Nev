@@ -1,9 +1,9 @@
-import std/[strformat]
+import std/[strformat, tables]
 import misc/[custom_logger, util, delayed_task, timer]
 import view, service
 import ui/render_command
 import platform/platform
-import platform_service, layout
+import platform_service, layout, config_provider, events, command_service
 
 {.push gcsafe, raises: [].}
 
@@ -12,6 +12,8 @@ logCategory "custom-view"
 type
   RenderView* = ref object of View
     services: Services
+    commandService: CommandService
+    events: EventHandlerService
     layout*: LayoutService
     platform: Platform
 
@@ -25,9 +27,19 @@ type
     renderWhenInactive*: bool = false
     preventThrottling*: bool = false
 
+    eventHandlers: Table[string, EventHandler]
+
+    modes*: seq[string]
+
+proc handleAction(self: RenderView, action: string, arg: string): Option[string]
+proc handleInput(self: RenderView, text: string)
+proc handleKey(self: RenderView, input: int64, modifiers: Modifiers)
+
 proc newRenderView*(services: Services): RenderView =
   result = RenderView(services: services)
   result.platform = services.getService(PlatformService).get.platform
+  result.commandService = services.getService(CommandService).get
+  result.events = services.getService(EventHandlerService).get
   result.layout = services.getService(LayoutService).get
 
 proc setRenderInterval*(self: RenderView, ms: int)
@@ -95,3 +107,41 @@ proc setRenderInterval*(self: RenderView, ms: int) =
     else:
       self.renderTask.interval = ms
       self.renderTask.reschedule()
+
+proc getEventHandler(self: RenderView, context: string): EventHandler =
+  if context notin self.eventHandlers:
+    var eventHandler: EventHandler
+    assignEventHandler(eventHandler, self.events.getEventHandlerConfig(context)):
+      onAction:
+          if self.handleAction(action, arg).isSome:
+            Handled
+          else:
+            Ignored
+
+      onInput:
+        self.handleInput(input)
+        Handled
+
+      onKey:
+        self.handleKey(input, mods)
+        Handled
+
+    self.eventHandlers[context] = eventHandler
+    return eventHandler
+
+  return self.eventHandlers[context]
+
+method getEventHandlers*(self: RenderView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  for mode in self.modes:
+    result.add self.getEventHandler(mode)
+
+proc handleAction(self: RenderView, action: string, arg: string): Option[string] =
+  let res = self.commandService.executeCommand(action & " " & arg)
+  if res.isSome:
+    return res
+
+proc handleInput(self: RenderView, text: string) =
+  discard
+
+proc handleKey(self: RenderView, input: int64, modifiers: Modifiers) =
+  discard

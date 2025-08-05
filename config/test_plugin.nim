@@ -11,46 +11,41 @@ var renderCommandEncoder: BinaryEncoder
 var num = 1
 
 converter toWitString(s: string): WitString = ws(s)
+var target = getSetting("test.num-squares", 50)
 
-defineCommand(ws"test-command-1",
-  active = false,
-  docs = ws"test command",
-  params = wl[(WitString, WitString)](nil, 0),
-  returnType = ws"",
-  context = ws"",
-  data = 123):
-  proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    try:
-      echo &"[guest] test-command-1 {data} '{args}'"
-    except CatchableError as e:
-      echo &"[guest] err: {e.msg}"
-    return ws""
+proc handleViewRender(id: int32, data: uint32) {.cdecl.}
 
-defineCommand(ws"test-command-2",
-  active = false,
-  docs = ws"test command",
-  params = wl[(WitString, WitString)](nil, 0),
-  returnType = ws"",
-  context = ws"",
-  data = 123):
-  proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    try:
-      echo &"[guest] test-command-2 {data} '{args}'"
-    except CatchableError as e:
-      echo &"[guest] err: {e.msg}"
-    return ws""
+proc openCustomView() =
+  var renderView = renderViewFromUserId(ws"test_plugin_view")
+  if renderView.isNone:
+    echo "[guest] Create new RenderView"
+    renderView = newRenderView().some
+  else:
+    echo "[guest] Reusing existing RenderView"
+  renderView.get.setUserId(ws"test_plugin_view")
+  renderView.get.setRenderWhenInactive(true)
+  renderView.get.setPreventThrottling(true)
+  renderView.get.setRenderCallback(cast[uint32](handleViewRender), views.len.uint32)
+  renderView.get.addMode(ws"test-plugin")
+  renderView.get.markDirty()
+  show(renderView.get.view, ws"#new-tab", true, true)
+  views.add(renderView.take)
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
-  let view {.cursor.} = views[0]
+  let index = data.int
+  if index notin 0..views.high:
+    echo "handleViewRender: index out of bounds {index} notin 0..<{views.len}"
+    return
+
+  let view {.cursor.} = views[index]
 
   try:
     let version = apiVersion()
-    let target = getSetting("test.num-squares", 50)
     inc num
     if num > target:
       num = 1
 
-    # num = target
+    num = target
 
     proc vec2(v: Vec2f): Vec2 = vec2(v.x, v.y)
 
@@ -82,19 +77,57 @@ proc init() =
 
   let s = getTime()
   var renderView = renderViewFromUserId(ws"test_plugin_view")
-  if renderView.isNone:
-    echo "[guest] Create new RenderView"
-    renderView = newRenderView().some
-  else:
+  if renderView.isSome:
     echo "[guest] Reusing existing RenderView"
-  renderView.get.setUserId(ws"test_plugin_view")
-  renderView.get.setRenderWhenInactive(true)
-  renderView.get.setPreventThrottling(true)
-  renderView.get.setRenderCallback(cast[uint32](handleViewRender), 123)
-  renderView.get.markDirty()
-  show(renderView.get.view, ws"#new-tab", true, true)
-  views.add(renderView.take)
+    renderView.get.setRenderWhenInactive(true)
+    renderView.get.setPreventThrottling(true)
+    renderView.get.setRenderCallback(cast[uint32](handleViewRender), views.len.uint32)
+    renderView.get.addMode(ws"test-plugin")
+    renderView.get.markDirty()
+    show(renderView.get.view, ws"#new-tab", true, true)
+    views.add(renderView.take)
 
   echo &"[guest] init test_plugin took {getTime() - s} ms"
 
 init()
+
+defineCommand(ws"test-command-1",
+  active = false,
+  docs = ws"test command",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      echo &"[guest] test-command-1 {data} '{args}'"
+      inc target
+    except CatchableError as e:
+      echo &"[guest] err: {e.msg}"
+    return ws""
+
+defineCommand(ws"test-command-2",
+  active = false,
+  docs = ws"test command",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      echo &"[guest] test-command-2 {data} '{args}'"
+      dec target
+    except CatchableError as e:
+      echo &"[guest] err: {e.msg}"
+    return ws""
+
+defineCommand(ws"open-custom-view",
+  active = false,
+  docs = ws"docs",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    openCustomView()
+    return ws""

@@ -194,3 +194,48 @@ proc setRenderCallback*(self: RenderView; fun: uint32; data: uint32): void {.
   arg1 = fun
   arg2 = data
   renderSetRenderCallbackImported(arg0, arg1, arg2)
+
+proc renderSetModesImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[method]render-view.set-modes", "nev:plugins/render").}
+proc setModes*(self: RenderView; modes: WitList[WitString]): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  if modes.len > 0:
+    arg1 = cast[int32](modes[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](modes.len)
+  renderSetModesImported(arg0, arg1, arg2)
+
+proc renderAddModeImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[method]render-view.add-mode", "nev:plugins/render").}
+proc addMode*(self: RenderView; mode: WitString): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  if mode.len > 0:
+    arg1 = cast[int32](mode[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](mode.len)
+  renderAddModeImported(arg0, arg1, arg2)
+
+proc renderRemoveModeImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[method]render-view.remove-mode", "nev:plugins/render").}
+proc removeMode*(self: RenderView; mode: WitString): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  if mode.len > 0:
+    arg1 = cast[int32](mode[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](mode.len)
+  renderRemoveModeImported(arg0, arg1, arg2)

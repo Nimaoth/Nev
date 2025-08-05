@@ -20,6 +20,11 @@
 			"parameters": [{"name": "a", "type": "string"}],
 			"returnType": "string",
 			"description": "",
+		},
+		"open-custom-view": {
+			"parameters": [],
+			"returnType": "",
+			"description": "",
 		}
 	},
 	"permissions": {
