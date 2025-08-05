@@ -30,6 +30,7 @@ For examples and default values see [here](../config/settings.json)
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
 | `lsp-merge.timeout` | int | 10000 | Timeout for LSP requests in milliseconds |
+| `plugins.command-load-behaviour` | PluginCommandLoadBehaviour | "async-or-wait" | Defines if and how to run commands which trigger a plugin to load. "dont-run": Don't run the command after the plugin is loaded. You have to manually run the command again. "async-run": Asynchronously load the plugin and run the command afterwards. If the command returns something              then the return value will not be available if the command is e.g. called from a plugin. "wait-and-run": Synchronously load the plugin and run the command afterwards. Return values work fine, but the editor                 will freeze while loading the plugin. "async-or-wait": Use "async-run" behaviour for commands with no return value and "wait-and-run" for commands with return values. |
 | `plugins.watch-plugin-directories` | bool | true | Whether to watch the plugin directories for changes and load new plugins |
 | `selector.base-mode` | string | "popup.selector" |  |
 | `terminal.base-mode` | string | "terminal" | Input mode which is always active while a terminal view is active. |

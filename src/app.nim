@@ -3276,7 +3276,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
         # events.eventHandlerConfigs: Table[string, EventHandlerConfig]
 
       result.add &"Callbacks: {self.plugins.callbacks.len}\n"
-      result.add &"Script Actions: {self.plugins.scriptActions.len}\n"
 
       result.add &"Input History: {self.inputHistory}\n"
       # result.add &"Editor History: {self.layout.editorHistory}\n"
@@ -3418,8 +3417,14 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
       return self.handleAlias(action, arg, alias)
 
     if self.commands.commands.contains(action):
-      discard self.commands.commands[action].execute(arg)
-      return newJNull().some
+      try:
+        let res = self.commands.commands[action].execute(arg)
+        if res == "":
+          return newJNull().some
+        return res.parseJson().some
+      except CatchableError as e:
+        log lvlError, &"Failed to execute command '{action} {arg}': {e.msg}"
+        return newJNull().some
 
     var args = newJArray()
     try:

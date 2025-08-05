@@ -82,6 +82,7 @@ type
     store*: ptr StoreT
     funcs*: ExportedFuncs
     permissions*: PluginPermissions
+    commands*: seq[CommandId]
 
   WasmModuleInstanceImpl* = ref object of WasmModuleInstance
     instance*: Arc[InstanceData]
@@ -173,6 +174,10 @@ method createModule*(self: PluginApi, module: ptr ModuleT, permissions: PluginPe
 method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
   let instance = instance.WasmModuleInstanceImpl
   let instanceData = instance.instance
+
+  for commandId in instanceData.get.commands:
+    self.host.commands.unregisterCommand(commandId)
+
   self.host.resources.dropResources(instanceData.get.store.context, callDestroy = true)
   instanceData.get.store.delete()
   self.instances.removeShift(instance)
@@ -246,6 +251,7 @@ proc coreBindKeys(host: HostContext, store: ptr ContextT, context: sink string, 
 
 proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string, active: bool, docs: sink string,
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
+  let instance = cast[ptr InstanceData](store.getData())
   let command = Command(
     name: name.ensureMove,
     execute: (proc(args: string): string {.gcsafe.} =
@@ -257,7 +263,7 @@ proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string
       return res
     ),
   )
-  host.commands.addCommand(command)
+  instance.commands.add(host.commands.registerCommand(command, override = true))
 
 proc coreRunCommand(host: HostContext, store: ptr ContextT, name: sink string, arguments: sink string): Result[string, CommandError] =
   let instance = cast[ptr InstanceData](store.getData())

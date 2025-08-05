@@ -12,7 +12,7 @@ var num = 1
 
 converter toWitString(s: string): WitString = ws(s)
 
-defineCommand(ws"new-test-command",
+defineCommand(ws"test-command-1",
   active = false,
   docs = ws"test command",
   params = wl[(WitString, WitString)](nil, 0),
@@ -21,13 +21,24 @@ defineCommand(ws"new-test-command",
   data = 123):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
     try:
-      echo &"[guest] new-test-command {data} '{args}'"
-      let args = ($args).parseJson.jsonTo(string)
-      let res = runCommand(ws(args), ws"")
-      echo &"[guest] {res}"
+      echo &"[guest] test-command-1 {data} '{args}'"
     except CatchableError as e:
       echo &"[guest] err: {e.msg}"
-    return ws"uiae"
+    return ws""
+
+defineCommand(ws"test-command-2",
+  active = false,
+  docs = ws"test command",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    try:
+      echo &"[guest] test-command-2 {data} '{args}'"
+    except CatchableError as e:
+      echo &"[guest] err: {e.msg}"
+    return ws""
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
   let view {.cursor.} = views[0]

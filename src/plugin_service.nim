@@ -1,4 +1,4 @@
-import std/[macros, macrocache, json, strutils, tables, options, sequtils, os]
+import std/[macros, macrocache, json, strutils, tables, options, sequtils, os, sugar, streams]
 import misc/[custom_logger, custom_async, util, myjsonutils]
 import scripting/expose
 import compilation_config, service, vfs_service, vfs, dispatch_tables, events, config_provider, command_service
@@ -8,11 +8,26 @@ import compilation_config, service, vfs_service, vfs, dispatch_tables, events, c
 
 logCategory "plugins"
 
+type PluginCommandLoadBehaviour* = enum
+  DontRun = "dont-run"
+  AsyncRun = "async-run"
+  WaitAndRun = "wait-and-run"
+  AsyncOrWait = "async-or-wait"
+
 declareSettings PluginSettings, "plugins":
   # use openSession, OpenSessionSettings
 
   ## Whether to watch the plugin directories for changes and load new plugins
   declare watchPluginDirectories, bool, true
+
+  ## Defines if and how to run commands which trigger a plugin to load.
+  ## "dont-run": Don't run the command after the plugin is loaded. You have to manually run the command again.
+  ## "async-run": Asynchronously load the plugin and run the command afterwards. If the command returns something
+  ##              then the return value will not be available if the command is e.g. called from a plugin.
+  ## "wait-and-run": Synchronously load the plugin and run the command afterwards. Return values work fine, but the editor
+  ##                 will freeze while loading the plugin.
+  ## "async-or-wait": Use "async-run" behaviour for commands with no return value and "wait-and-run" for commands with return values.
+  declare commandLoadBehaviour, PluginCommandLoadBehaviour, AsyncOrWait
 
 type
   PluginSystem* = ref object of RootObj
@@ -20,6 +35,11 @@ type
   ScriptAction = object
     name: string
     pluginSystem: PluginSystem
+
+  PluginCommandDescription* = object
+    parameters*: seq[tuple[name: string, `type`: string]]
+    returnType*: string
+    description*: string
 
   PluginManifest* = object
     name*: string
@@ -30,6 +50,8 @@ type
     autoLoad*: bool
     wasm*: string
     permissions*: JsonNode
+    load*: seq[JsonNode]
+    commands*: Table[string, PluginCommandDescription]
 
   PluginState* = enum Unloaded, Loading, Loaded, Disabled, Failed
 
@@ -54,6 +76,7 @@ type
     dirty*: bool ## True if there are changes on disk for the plugin
     settings*: ConfigStore
     permissions*: PluginPermissions
+    loadOnCommand*: bool = true
 
   PluginDirectory* = ref object
     path*: string
@@ -70,9 +93,10 @@ type
     callbacks*: Table[string, int]
     currentPluginSystem*: Option[PluginSystem] = PluginSystem.none
 
-    scriptActions*: Table[string, ScriptAction]
+    scriptActions: Table[string, ScriptAction]
     events: EventHandlerService
     vfs: VFS
+    commands*: CommandService
     configService*: ConfigService
     settings*: ConfigStore
 
@@ -103,12 +127,14 @@ func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 addBuiltinService(PluginService, EventHandlerService, VFSService, ConfigService)
 
 proc addPluginFolder(self: PluginService, path: string) {.async.}
+proc registerPluginCommands(self: PluginService, plugin: Plugin)
 
 proc desc*(self: Plugin): string = &"'{self.manifest.name}' ({self.manifest.path})"
 
 method init*(self: PluginService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   self.events = self.services.getService(EventHandlerService).get
   self.vfs = self.services.getService(VFSService).get.vfs
+  self.commands = self.services.getService(CommandService).get
   self.configService = self.services.getService(ConfigService).get
   self.settings = self.configService.runtime
   self.pluginSettings = PluginSettings.new(self.settings)
@@ -126,19 +152,23 @@ proc updatePermissions(self: PluginService, plugin: Plugin) =
     log lvlError, &"Failed to parse permissions for {plugin.desc}: {e.msg}"
 
 proc loadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
-  if plugin.state == PluginState.Disabled or plugin.state == PluginState.Loaded:
+  if plugin.state notin {PluginState.Unloaded, PluginState.Failed}:
     return
 
   log lvlNotice, &"Load plugin {plugin.desc}"
+  plugin.state = Loading
   self.updatePermissions(plugin)
   for ps in self.pluginSystems:
     try:
       if ps.tryLoadPlugin(plugin).await:
+        plugin.state = Loaded
         plugin.dirty = false
         return
     except IOError as e:
+      plugin.state = Failed
       log lvlError, &"Plugin {plugin.desc} could not be loaded: {e.msg}"
 
+  plugin.state = Failed
   log lvlError, &"Plugin {plugin.desc} could not be loaded."
 
 proc unloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
@@ -150,6 +180,9 @@ proc unloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
     await plugin.pluginSystem.unloadPlugin(plugin)
     plugin.pluginSystem = nil
     plugin.instance = nil
+
+    # Register these commands again so the plugin can get loaded again when running one of these commands
+    self.registerPluginCommands(plugin)
 
   plugin.state = PluginState.Unloaded
 
@@ -184,6 +217,50 @@ proc loadPlugins*(self: PluginService) =
     if p.state == PluginState.Unloaded:
       asyncSpawn self.loadPlugin(p)
 
+proc registerPluginCommands(self: PluginService, plugin: Plugin) =
+  for (name, desc) in plugin.manifest.commands.pairs:
+    capture name, desc:
+      let id = self.commands.registerCommand(command_service.Command(
+        name: name,
+        parameters: desc.parameters,
+        description: desc.description,
+        execute: (proc(args: string): string =
+          if plugin.state == PluginState.Unloaded and plugin.loadOnCommand:
+            log lvlNotice, &"Trigger loading plugin '{plugin.desc}' by command '{name}'"
+            var commandLoadBehaviour = self.pluginSettings.commandLoadBehaviour.get()
+            if commandLoadBehaviour == AsyncOrWait:
+              if desc.returnType == "":
+                commandLoadBehaviour = AsyncRun
+              else:
+                commandLoadBehaviour = WaitAndRun
+
+            let fut = self.loadPlugin(plugin)
+            case commandLoadBehaviour
+            of DontRun:
+              asyncSpawn fut
+
+            of AsyncRun:
+              log lvlWarn, &"Load plugin async, then run command..."
+              fut.thenIt:
+                if plugin.state == Loaded:
+                  discard self.commands.executeCommand(name & " " & args)
+
+            of WaitAndRun:
+              try:
+                log lvlWarn, &"Wait for plugin to load before running command..."
+                waitFor fut
+                if plugin.state == Loaded:
+                  return self.commands.executeCommand(name & " " & args).get("")
+                return ""
+              except CatchableError as e:
+                log lvlError, &"Failed to wait for plugin to load: {e.msg}"
+                return ""
+
+            of AsyncOrWait:
+              assert false
+        )
+      ), override = true)
+
 proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
   log lvlNotice, &"Register plugin {manifest}"
   if self.idToPlugin.contains(manifest.id):
@@ -202,6 +279,7 @@ proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
   self.plugins.add(plugin)
   self.pathToPlugin[plugin.manifest.path] = plugin
   self.idToPlugin[plugin.manifest.id] = plugin
+  self.registerPluginCommands(plugin)
 
 proc addManifestFromFile(self: PluginService, pluginFolder: PluginDirectory, file: string) {.async.} =
   if file.endsWith(".m.wasm"):
@@ -226,8 +304,12 @@ proc addManifestFromFolder(self: PluginService, pluginFolder: PluginDirectory, f
     if manifest.permissions == nil:
       manifest.permissions = newJObject()
     self.createPlugin(manifest)
-  except IOError:
-    log lvlError, &"Failed to find manifest.json in '{folder}'"
+  except IOError as e:
+    log lvlError, &"Failed to find manifest.json in '{folder}': {e.msg}"
+  except ValueError as e:
+    log lvlError, &"Failed to parse manifest.json in '{folder}': {e.msg}"
+  except CatchableError as e:
+    log lvlError, &"Failed to load manifest.json in '{folder}': {e.msg}"
 
 proc getPlugin(self: PluginService, path: string): Option[Plugin] =
   if self.pathToPlugin.contains(path):
@@ -412,6 +494,7 @@ proc addScriptAction*(self: PluginService, name: string, docs: string = "",
     params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "", active: bool = false,
     context: string = "script", override: bool = false)
     {.expose("plugins").} =
+  # todo: replace all usages of this with the new plugin system
 
   if not override and self.scriptActions.contains(name):
     log lvlError, fmt"Duplicate script action {name}"
@@ -429,8 +512,29 @@ proc addScriptAction*(self: PluginService, name: string, docs: string = "",
   let signature = "(" & params.mapIt(it[0] & ": " & it[1]).join(", ") & ")" & returnType
   {.gcsafe.}:
     if active:
+      # todo: use commands for this instead
       extendActiveDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
     else:
-      extendGlobalDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
+      let id = self.commands.registerCommand(command_service.Command(
+        name: name,
+        parameters: params.mapIt((it.name, it.typ)),
+        returnType: returnType,
+        description: docs,
+        execute: (proc(args: string): string =
+          try:
+            var argsJson = newJArray()
+            try:
+              for a in newStringStream(args).parseJsonFragments():
+                argsJson.add a
+            except CatchableError as e:
+              log(lvlError, fmt"Failed to parse arguments '{args}': {e.msg}")
+
+            let resJson = self.callScriptAction(name, argsJson)
+            return $resJson
+          except CatchableError as e:
+            log lvlError, &"Failed to execute command '{name}': {e.msg}"
+            return ""
+        )
+      ))
 
 addGlobalDispatchTable "plugins", genDispatchTable("plugins")
