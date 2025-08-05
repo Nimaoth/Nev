@@ -170,6 +170,7 @@ method init*(self: GuiPlatform, options: AppOptions) =
       inc self.eventCounter
       self.currentModifiers = {}
       self.currentMouseButtons = {}
+      self.lastEvent = (int64, Modifiers, Button).none
       self.onFocusChanged.invoke self.window.focused
       self.focused = self.window.focused
 
