@@ -219,6 +219,7 @@ proc loadPlugins*(self: PluginService) =
 
 proc registerPluginCommands(self: PluginService, plugin: Plugin) =
   for (name, desc) in plugin.manifest.commands.pairs:
+    let name = plugin.manifest.id & "." & name
     capture name, desc:
       let id = self.commands.registerCommand(command_service.Command(
         name: name,
@@ -226,7 +227,6 @@ proc registerPluginCommands(self: PluginService, plugin: Plugin) =
         description: desc.description,
         execute: (proc(args: string): string =
           if plugin.state == PluginState.Unloaded and plugin.loadOnCommand:
-            log lvlNotice, &"Trigger loading plugin '{plugin.desc}' by command '{name}'"
             var commandLoadBehaviour = self.pluginSettings.commandLoadBehaviour.get()
             if commandLoadBehaviour == AsyncOrWait:
               if desc.returnType == "":
@@ -240,14 +240,12 @@ proc registerPluginCommands(self: PluginService, plugin: Plugin) =
               asyncSpawn fut
 
             of AsyncRun:
-              log lvlWarn, &"Load plugin async, then run command..."
               fut.thenIt:
                 if plugin.state == Loaded:
                   discard self.commands.executeCommand(name & " " & args)
 
             of WaitAndRun:
               try:
-                log lvlWarn, &"Wait for plugin to load before running command..."
                 waitFor fut
                 if plugin.state == Loaded:
                   return self.commands.executeCommand(name & " " & args).get("")

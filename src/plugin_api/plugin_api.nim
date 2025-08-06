@@ -1,4 +1,4 @@
-import std/[macros, strutils, os, strformat]
+import std/[macros, strutils, os, strformat, sequtils]
 import misc/[custom_logger, custom_async, util, event, jsonex, timer]
 import nimsumtree/[rope, sumtree, arc]
 import service
@@ -78,11 +78,12 @@ include generated/plugin_api_host
 
 type
   InstanceData = object
-    instance*: InstanceT
-    store*: ptr StoreT
-    funcs*: ExportedFuncs
-    permissions*: PluginPermissions
-    commands*: seq[CommandId]
+    instance: InstanceT
+    store: ptr StoreT
+    funcs: ExportedFuncs
+    permissions: PluginPermissions
+    commands: seq[CommandId]
+    namespace: string
 
   WasmModuleInstanceImpl* = ref object of WasmModuleInstance
     instance*: Arc[InstanceData]
@@ -136,10 +137,11 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
 method setPermissions*(instance: WasmModuleInstanceImpl, permissions: PluginPermissions) =
   instance.instance.getMut.permissions = permissions
 
-method createModule*(self: PluginApi, module: ptr ModuleT, permissions: PluginPermissions): WasmModuleInstance =
+method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): WasmModuleInstance =
   var wasmModule = Arc[InstanceData].new()
   wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
-  wasmModule.getMut.permissions = permissions
+  wasmModule.getMut.permissions = plugin.permissions
+  wasmModule.getMut.namespace = plugin.manifest.id
   let ctx = wasmModule.get.store.context
 
   let wasiConfig = newWasiConfig()
@@ -253,7 +255,10 @@ proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
   let instance = cast[ptr InstanceData](store.getData())
   let command = Command(
-    name: name.ensureMove,
+    name: instance.namespace & "." & name.ensureMove,
+    parameters: params.mapIt((it[0], it[1])),
+    returnType: returnType.ensureMove,
+    description: docs.ensureMove,
     execute: (proc(args: string): string {.gcsafe.} =
       let instance = cast[ptr InstanceData](store.getData())
       let res = instance[].funcs.handleCommand(fun, data, args).okOr(err):

@@ -17,6 +17,7 @@ type
 
   Command* = object
     id: CommandId
+    namespace*: string
     name*: string
     description*: string
     parameters*: seq[tuple[name: string, `type`: string]]
