@@ -55,7 +55,7 @@ method deinit*(self: PluginSystemWasm) = discard
 
 method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[bool] {.async: (raises: [IOError]).} =
   log lvlInfo, &"tryLoadPlugin {plugin.desc}"
-  if not plugin.manifest.wasm.endsWith(".m.wasm"):
+  if not plugin.manifest.wasm.endsWith(".m.wasm") and not plugin.manifest.wasm.endsWith(".wat"):
     log lvlInfo, &"Don't load plugin {plugin.desc}, no wasm file specified"
     return false
 
@@ -74,11 +74,24 @@ method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[bool] {.as
       0
 
   plugin.state = PluginState.Loading
-  let wasmBytes = self.vfs.read(plugin.manifest.wasm, {Binary}).await
-  let module = self.engine.newModule(wasmBytes).okOr(err):
-    log lvlError, &"[host] Failed to create wasm module: {err.msg}"
-    plugin.state = PluginState.Failed
-    return
+  let module = if plugin.manifest.wasm.endsWith(".wasm"):
+    let wasmBytes = self.vfs.read(plugin.manifest.wasm, {Binary}).await
+    self.engine.newModule(wasmBytes).okOr(err):
+      log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+      plugin.state = PluginState.Failed
+      return
+  else:
+    let wat = self.vfs.read(plugin.manifest.wasm).await
+    var wasmBytes: WasmByteVecT
+    let err = wat2wasm(cast[ptr UncheckedArray[char]](wat[0].addr), wat.len.csize_t, wasmBytes.addr)
+    if err != nil:
+      log lvlError, &"[host] Failed to convert wat to wasm module: {err.msg}"
+      return
+
+    self.engine.newModule(cast[ptr UncheckedArray[uint8]](wasmBytes.data).toOpenArray(0, wasmBytes.size.int - 1)).okOr(err):
+      log lvlError, &"[host] Failed to create wasm module: {err.msg}"
+      plugin.state = PluginState.Failed
+      return
 
   log lvlInfo, &"Load plugin '{plugin.manifest.wasm}' using version {version}"
   var api: PluginApiBase = nil
