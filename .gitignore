@@ -49,7 +49,9 @@ local.nims
 todo.md
 tutorial.md
 rad
-plugins
+clear
+*.wasm
+*.map
 
 *.nev-session
 

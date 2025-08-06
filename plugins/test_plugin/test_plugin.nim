@@ -4,7 +4,7 @@ import misc/util
 import wit_types, wit_runtime
 import scripting/binary_encoder
 import ui/render_command
-import ../plugin_api/api
+import api
 
 var views: seq[RenderView] = @[]
 var renderCommandEncoder: BinaryEncoder
