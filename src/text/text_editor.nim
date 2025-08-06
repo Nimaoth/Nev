@@ -499,15 +499,15 @@ proc selection*(self: TextDocumentEditor): Selection =
   assert self.selectionsInternal.len > 0, "[selection] Empty selection"
   self.selectionsInternal[self.selectionsInternal.high]
 
-proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
+proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHistory: Option[bool] = bool.none) =
   let selections = self.clampAndMergeSelections(selections)
   assert selections.len > 0, "[selections=] Empty selections"
 
   if not self.dontRecordSelectionHistory:
-    if self.selectionHistory.len == 0 or
+    let addToHistory = addToHistory.get(self.selectionHistory.len == 0 or
         abs(selections[^1].last.line - self.selectionsInternal[^1].last.line) > 1 or
-        self.selectionsInternal.len != selections.len:
-
+        self.selectionsInternal.len != selections.len)
+    if addToHistory:
       self.selectionHistory.addLast self.selectionsInternal
       if self.selectionHistory.len > 100:
         discard self.selectionHistory.popFirst
@@ -1845,7 +1845,7 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
   log lvlInfo, $node
 
 proc selectParentCurrentTs*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
-  self.selections = self.getParentNodeSelections(self.selections, includeAfter)
+  self.`selections=`(self.getParentNodeSelections(self.selections, includeAfter), addToHistory = true.some)
 
 proc getNextNodeWithSameType*(self: TextDocumentEditor, selection: Selection, offset: int = 0,
     includeAfter: bool = true, wrap: bool = true, stepIn: bool = true, stepOut: bool = true): Option[Selection] {.expose("editor.text").} =
