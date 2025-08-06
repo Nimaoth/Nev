@@ -1152,5 +1152,8 @@ declareSettings DebugSettings, "debug":
   ## GUI only: Highlight text chunks
   declare drawTextChunks, bool, false
 
+  ## Write logs to an internal document which can be opened using the `logs` command.
+  declare logToInternalDocument, bool, false
+
 when isMainModule:
   defineSetAllDefaultSettings()

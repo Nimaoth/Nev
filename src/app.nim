@@ -146,6 +146,7 @@ type
 
     uiSettings*: UiSettings
     generalSettings*: GeneralSettings
+    debugSettings*: DebugSettings
 
 var gEditor* {.exportc.}: App = nil
 
@@ -831,8 +832,12 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.timer = startTimer()
   self.frameTimer = startTimer()
 
-  self.layout = services.getService(LayoutService).get
   self.config = services.getService(ConfigService).get
+  self.uiSettings = UiSettings.new(self.config.runtime)
+  self.generalSettings = GeneralSettings.new(self.config.runtime)
+  self.debugSettings = DebugSettings.new(self.config.runtime)
+
+  self.layout = services.getService(LayoutService).get
   self.editors = services.getService(DocumentEditorService).get
   self.session = services.getService(SessionService).get
   self.events = services.getService(EventHandlerService).get
@@ -868,9 +873,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.config.groups.add("extra-settings")
   let extraSettings = self.config.runtime.get("extra-settings", newSeq[string]())
   await self.loadSettings("extra-settings", extraSettings, @[], "extra-settings", loadConfigFileFrom)
-
-  self.uiSettings = UiSettings.new(self.config.runtime)
-  self.generalSettings = GeneralSettings.new(self.config.runtime)
 
   self.themes.setTheme(defaultTheme())
 
@@ -1074,14 +1076,15 @@ proc shutdown*(self: App) =
     custom_treesitter.freeDynamicLibraries()
 
 proc handleLog(self: App, level: Level, args: openArray[string]) =
-  # let str = substituteLog(defaultFmtStr, level, args) & "\n"
-  # if self.logDocument.isNotNil:
-  #   let selection = self.logDocument.TextDocument.lastCursor.toSelection
-  #   discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
-  #   self.logBuffer = ""
+  if self.config != nil and self.debugSettings.logToInternalDocument.get():
+    let str = substituteLog(defaultFmtStr, level, args) & "\n"
+    if self.logDocument.isNotNil:
+      let selection = self.logDocument.TextDocument.lastCursor.toSelection
+      discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
+      self.logBuffer = ""
 
-  # else:
-  #   self.logBuffer.add str
+    else:
+      self.logBuffer.add str
 
   if level == lvlError:
     let str = substituteLog("", level, args)

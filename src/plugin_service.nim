@@ -156,7 +156,7 @@ proc loadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
   if plugin.state notin {PluginState.Unloaded, PluginState.Failed}:
     return
 
-  log lvlNotice, &"Load plugin {plugin.desc}"
+  log lvlInfo, &"Load plugin {plugin.desc}"
   plugin.state = Loading
   self.updatePermissions(plugin)
   for ps in self.pluginSystems:
@@ -177,7 +177,7 @@ proc unloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
     return
 
   if plugin.pluginSystem != nil:
-    log lvlNotice, &"Unload plugin {plugin.desc}"
+    log lvlInfo, &"Unload plugin {plugin.desc}"
     await plugin.pluginSystem.unloadPlugin(plugin)
     plugin.pluginSystem = nil
     plugin.instance = nil
@@ -261,7 +261,7 @@ proc registerPluginCommands(self: PluginService, plugin: Plugin) =
       ), override = true)
 
 proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
-  log lvlNotice, &"Register plugin {manifest}"
+  log lvlInfo, &"Register plugin {manifest}"
   if self.idToPlugin.contains(manifest.id):
     log lvlError, &"Failed to register plugin manifest\n{manifest}\nPlugin with same id already exists:\n{self.idToPlugin[manifest.id].manifest}"
     return
@@ -352,7 +352,7 @@ proc handleVFSEvents(self: PluginService) {.async.} =
   self.vfsEvents.setLen(0)
 
 proc loadPluginManifests(self: PluginService, pluginFolder: PluginDirectory) {.async.} =
-  log lvlNotice, &"Load plugin manifests from '{pluginFolder.path}'"
+  log lvlInfo, &"Load plugin manifests from '{pluginFolder.path}'"
   let root = pluginFolder.path
   let listing = await self.vfs.getDirectoryListing(root)
 
@@ -377,7 +377,7 @@ proc addPluginFolder(self: PluginService, path: string) {.async.} =
     if it.path == path:
       return
 
-  log lvlNotice, &"Add plugin folder '{path}'"
+  log lvlInfo, &"Add plugin folder '{path}'"
   self.pluginFolders.add PluginDirectory(path: path)
   await self.loadPluginManifests(self.pluginFolders.last)
 
