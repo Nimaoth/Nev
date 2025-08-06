@@ -59,16 +59,19 @@ method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[bool] {.as
     log lvlInfo, &"Don't load plugin {plugin.desc}, no wasm file specified"
     return false
 
-  var filenameWithoutExtension = plugin.manifest.wasm.splitPath.tail
-  filenameWithoutExtension.removeSuffix(".m.wasm")
-  let lastPeriod = filenameWithoutExtension.rfind(".")
-  let version = if lastPeriod != -1:
-    try:
-      filenameWithoutExtension[(lastPeriod + 1)..^1].parseInt
-    except:
-      0
+  let version = if plugin.manifest.apiVersion >= 0:
+    plugin.manifest.apiVersion
   else:
-    0
+    var filenameWithoutExtension = plugin.manifest.wasm.splitPath.tail
+    filenameWithoutExtension.removeSuffix(".m.wasm")
+    let lastPeriod = filenameWithoutExtension.rfind(".")
+    if lastPeriod != -1:
+      try:
+        filenameWithoutExtension[(lastPeriod + 1)..^1].parseInt
+      except:
+        0
+    else:
+      0
 
   plugin.state = PluginState.Loading
   let wasmBytes = self.vfs.read(plugin.manifest.wasm, {Binary}).await

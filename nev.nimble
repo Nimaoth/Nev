@@ -168,6 +168,10 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
 task buildWasmModule, "":
   withDir "plugins/test_plugin":
     exec &"nim c -d:release --skipParentCfg --passL:\"-o test_plugin.m.wasm\" {getCommandLineParams()} test_plugin.nim"
+
+task buildWasmModule1, "":
+  withDir "plugins/test_plugin_1":
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o test_plugin_1.m.wasm\" {getCommandLineParams()} test_plugin_v1.nim"
   # let cmd = when defined(Windows): "powershell -Command " else: ""
   # echo gorgeEx(cmd & "cp ./plugins/test_plugin/test_plugin.m.wasm ./plugins/test_plugin2.m.wasm")
 

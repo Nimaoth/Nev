@@ -19,8 +19,15 @@ type
   Vec2f* = object
     x*: float32
     y*: float32
-when not declared(ViewResource):
-  {.error: "Missing resource type definition for " & "ViewResource" &
+  View* = object
+    id*: int32
+  CommandError* = enum
+    NotAllowed = "not-allowed", NotFound = "not-found"
+when not declared(RenderViewResource):
+  {.error: "Missing resource type definition for " & "RenderViewResource" &
+      ". Define the type before the importWit statement.".}
+when not declared(TextEditorResource):
+  {.error: "Missing resource type definition for " & "TextEditorResource" &
       ". Define the type before the importWit statement.".}
 when not declared(RopeResource):
   {.error: "Missing resource type definition for " & "RopeResource" &
@@ -37,7 +44,7 @@ type
     initPlugin*: FuncT
     handleCommand*: FuncT
     handleModeChanged*: FuncT
-    handleViewRender*: FuncT
+    handleViewRenderCallback*: FuncT
 proc mem(funcs: ExportedFuncs): WasmMemory =
   if funcs.mMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
     return initWasmMemory(funcs.mMemory.get.of_field.sharedmemory)
@@ -53,30 +60,31 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8640266879 = instance.getExport(context, "init_plugin")
-  if f_8640266879.isSome:
-    assert f_8640266879.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8640266879.get.of_field.func_field
+  let f_8657044218 = instance.getExport(context, "init_plugin")
+  if f_8657044218.isSome:
+    assert f_8657044218.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8657044218.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8640266880 = instance.getExport(context, "handle_command")
-  if f_8640266880.isSome:
-    assert f_8640266880.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8640266880.get.of_field.func_field
+  let f_8657044219 = instance.getExport(context, "handle_command")
+  if f_8657044219.isSome:
+    assert f_8657044219.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8657044219.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8640266881 = instance.getExport(context, "handle_mode_changed")
-  if f_8640266881.isSome:
-    assert f_8640266881.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8640266881.get.of_field.func_field
+  let f_8657044220 = instance.getExport(context, "handle_mode_changed")
+  if f_8657044220.isSome:
+    assert f_8657044220.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8657044220.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8640266882 = instance.getExport(context, "handle_view_render")
-  if f_8640266882.isSome:
-    assert f_8640266882.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRender = f_8640266882.get.of_field.func_field
+  let f_8657044221 = instance.getExport(context, "handle_view_render_callback")
+  if f_8657044221.isSome:
+    assert f_8657044221.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8657044221.get.of_field.func_field
   else:
-    echo "Failed to find exported function \'", "handle_view_render", "\'"
+    echo "Failed to find exported function \'", "handle_view_render_callback",
+         "\'"
 
 proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   var args: array[max(1, 0), ValT]
@@ -95,8 +103,8 @@ proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   if res.isErr:
     return res.toResult(void)
   
-proc handleCommand*(funcs: ExportedFuncs; name: string; arg: string): WasmtimeResult[
-    string] =
+proc handleCommand*(funcs: ExportedFuncs; fun: uint32; data: uint32;
+                    arguments: string): WasmtimeResult[string] =
   var args: array[max(1, 4), ValT]
   var results: array[max(1, 1), ValT]
   var trap: ptr WasmTrapT = nil
@@ -107,35 +115,22 @@ proc handleCommand*(funcs: ExportedFuncs; name: string; arg: string): WasmtimeRe
     discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
                          funcs.mContext, savePoint.val)
   var dataPtrWasm0: WasmPtr
-  var dataPtrWasm1: WasmPtr
-  if name.len > 0:
+  args[0] = toWasmVal(fun)
+  args[1] = toWasmVal(data)
+  if arguments.len > 0:
     dataPtrWasm0 = block:
       let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
-                            funcs.mContext, (name.len * 1).int32, 4)
+                            funcs.mContext, (arguments.len * 1).int32, 4)
       if temp.isErr:
         return temp.toResult(string)
       temp.val
-    args[0] = toWasmVal(cast[int32](dataPtrWasm0))
+    args[2] = toWasmVal(cast[int32](dataPtrWasm0))
     block:
-      for i0 in 0 ..< name.len:
-        memory[dataPtrWasm0 + i0] = cast[uint8](name[i0])
-  else:
-    args[0] = toWasmVal(0.int32)
-  args[1] = toWasmVal(cast[int32](name.len))
-  if arg.len > 0:
-    dataPtrWasm1 = block:
-      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
-                            funcs.mContext, (arg.len * 1).int32, 4)
-      if temp.isErr:
-        return temp.toResult(string)
-      temp.val
-    args[2] = toWasmVal(cast[int32](dataPtrWasm1))
-    block:
-      for i0 in 0 ..< arg.len:
-        memory[dataPtrWasm1 + i0] = cast[uint8](arg[i0])
+      for i0 in 0 ..< arguments.len:
+        memory[dataPtrWasm0 + i0] = cast[uint8](arguments[i0])
   else:
     args[2] = toWasmVal(0.int32)
-  args[3] = toWasmVal(cast[int32](arg.len))
+  args[3] = toWasmVal(cast[int32](arguments.len))
   let res = funcs.handleCommand.addr.call(funcs.mContext,
       args.toOpenArray(0, 4 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
       string)
@@ -200,8 +195,8 @@ proc handleModeChanged*(funcs: ExportedFuncs; fun: uint32; old: string;
   if res.isErr:
     return res.toResult(void)
   
-proc handleViewRender*(funcs: ExportedFuncs; id: int32; fun: uint32;
-                       data: uint32): WasmtimeResult[void] =
+proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
+                               data: uint32): WasmtimeResult[void] =
   var args: array[max(1, 3), ValT]
   var results: array[max(1, 0), ValT]
   var trap: ptr WasmTrapT = nil
@@ -214,7 +209,7 @@ proc handleViewRender*(funcs: ExportedFuncs; id: int32; fun: uint32;
   args[0] = toWasmVal(id)
   args[1] = toWasmVal(fun)
   args[2] = toWasmVal(data)
-  let res = funcs.handleViewRender.addr.call(funcs.mContext,
+  let res = funcs.handleViewRenderCallback.addr.call(funcs.mContext,
       args.toOpenArray(0, 3 - 1), results.toOpenArray(0, 0 - 1), trap.addr).toResult(
       void)
   if res.isErr:
@@ -223,6 +218,10 @@ proc handleViewRender*(funcs: ExportedFuncs; id: int32; fun: uint32;
 proc textEditorGetSelection(host: HostContext; store: ptr ContextT): Selection
 proc textEditorAddModeChangedHandler(host: HostContext; store: ptr ContextT;
                                      fun: uint32): int32
+proc textRope(host: HostContext; store: ptr ContextT;
+              self: var TextEditorResource): RopeResource
+proc textEditorCurrent(host: HostContext; store: ptr ContextT): Option[
+    TextEditorResource]
 proc textNewRope(host: HostContext; store: ptr ContextT; content: sink string): RopeResource
 proc textClone(host: HostContext; store: ptr ContextT; self: var RopeResource): RopeResource
 proc textText(host: HostContext; store: ptr ContextT; self: var RopeResource): string
@@ -231,8 +230,8 @@ proc textSlice(host: HostContext; store: ptr ContextT; self: var RopeResource;
                a: int64; b: int64): RopeResource
 proc textSlicePoints(host: HostContext; store: ptr ContextT;
                      self: var RopeResource; a: Cursor; b: Cursor): RopeResource
-proc textRopeGetCurrentEditorRope(host: HostContext; store: ptr ContextT): RopeResource
 proc coreApiVersion(host: HostContext; store: ptr ContextT): int32
+proc coreGetTime(host: HostContext; store: ptr ContextT): float64
 proc coreBindKeys(host: HostContext; store: ptr ContextT; context: sink string;
                   subcontext: sink string; keys: sink string;
                   action: sink string; arg: sink string;
@@ -240,33 +239,68 @@ proc coreBindKeys(host: HostContext; store: ptr ContextT; context: sink string;
 proc coreDefineCommand(host: HostContext; store: ptr ContextT;
                        name: sink string; active: bool; docs: sink string;
                        params: sink seq[(string, string)];
-                       returntype: sink string; context: sink string): void
+                       returntype: sink string; context: sink string;
+                       fun: uint32; data: uint32): void
 proc coreRunCommand(host: HostContext; store: ptr ContextT; name: sink string;
-                    args: sink string): void
+                    arguments: sink string): Result[string, CommandError]
 proc coreGetSettingRaw(host: HostContext; store: ptr ContextT; name: sink string): string
 proc coreSetSettingRaw(host: HostContext; store: ptr ContextT;
                        name: sink string; value: sink string): void
-proc renderNewView(host: HostContext; store: ptr ContextT): ViewResource
-proc renderId(host: HostContext; store: ptr ContextT; self: var ViewResource): int32
-proc renderSize(host: HostContext; store: ptr ContextT; self: var ViewResource): Vec2f
+proc layoutShow(host: HostContext; store: ptr ContextT; v: View;
+                slot: sink string; focus: bool; addToHistory: bool): void
+proc layoutClose(host: HostContext; store: ptr ContextT; v: View;
+                 keepHidden: bool; restoreHidden: bool): void
+proc layoutFocus(host: HostContext; store: ptr ContextT; slot: sink string): void
+proc renderNewRenderView(host: HostContext; store: ptr ContextT): RenderViewResource
+proc renderRenderViewFromUserId(host: HostContext; store: ptr ContextT;
+                                id: sink string): Option[RenderViewResource]
+proc renderRenderViewFromView(host: HostContext; store: ptr ContextT; v: View): Option[
+    RenderViewResource]
+proc renderView(host: HostContext; store: ptr ContextT;
+                self: var RenderViewResource): View
+proc renderId(host: HostContext; store: ptr ContextT;
+              self: var RenderViewResource): int32
+proc renderSize(host: HostContext; store: ptr ContextT;
+                self: var RenderViewResource): Vec2f
 proc renderSetRenderInterval(host: HostContext; store: ptr ContextT;
-                             self: var ViewResource; ms: int32): void
+                             self: var RenderViewResource; ms: int32): void
 proc renderSetRenderCommandsRaw(host: HostContext; store: ptr ContextT;
-                                self: var ViewResource; buffer: uint32;
+                                self: var RenderViewResource; buffer: uint32;
                                 len: uint32): void
 proc renderSetRenderCommands(host: HostContext; store: ptr ContextT;
-                             self: var ViewResource; data: sink seq[uint8]): void
+                             self: var RenderViewResource; data: sink seq[uint8]): void
+proc renderSetRenderWhenInactive(host: HostContext; store: ptr ContextT;
+                                 self: var RenderViewResource; enabled: bool): void
+proc renderSetPreventThrottling(host: HostContext; store: ptr ContextT;
+                                self: var RenderViewResource; enabled: bool): void
+proc renderSetUserId(host: HostContext; store: ptr ContextT;
+                     self: var RenderViewResource; id: sink string): void
+proc renderGetUserId(host: HostContext; store: ptr ContextT;
+                     self: var RenderViewResource): string
 proc renderMarkDirty(host: HostContext; store: ptr ContextT;
-                     self: var ViewResource): void
+                     self: var RenderViewResource): void
 proc renderSetRenderCallback(host: HostContext; store: ptr ContextT;
-                             self: var ViewResource; fun: uint32; data: uint32): void
-proc renderViewCreate(host: HostContext; store: ptr ContextT): ViewResource
-proc renderViewFromId(host: HostContext; store: ptr ContextT; id: int32): ViewResource
+                             self: var RenderViewResource; fun: uint32;
+                             data: uint32): void
+proc renderSetModes(host: HostContext; store: ptr ContextT;
+                    self: var RenderViewResource; modes: sink seq[string]): void
+proc renderAddMode(host: HostContext; store: ptr ContextT;
+                   self: var RenderViewResource; mode: sink string): void
+proc renderRemoveMode(host: HostContext; store: ptr ContextT;
+                      self: var RenderViewResource; mode: sink string): void
 proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     void] =
   block:
     let e = block:
-      linker.defineFuncUnchecked("nev:plugins/render", "[resource-drop]view",
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[resource-drop]render-view",
+                                 newFunctype([WasmValkind.I32], [])):
+        host.resources.resourceDrop(parameters[0].i32, callDestroy = true)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      linker.defineFuncUnchecked("nev:plugins/text", "[resource-drop]editor",
                                  newFunctype([WasmValkind.I32], [])):
         host.resources.resourceDrop(parameters[0].i32, callDestroy = true)
     if e.isErr:
@@ -312,6 +346,43 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         fun = convert(parameters[0].i32, uint32)
         let res = textEditorAddModeChangedHandler(host, store, fun)
         parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/text", "[method]editor.rope", ty):
+        var self: ptr TextEditorResource
+        self = host.resources.resourceHostData(parameters[0].i32,
+            TextEditorResource)
+        let res = textRope(host, store, self[])
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text", "[static]editor.current",
+                                 ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let res = textEditorCurrent(host, store)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?host.resources.resourceNew(
+              store, res.get)
     if e.isErr:
       return e
   block:
@@ -456,18 +527,17 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/text",
-                                 "[static]rope.get-current-editor-rope", ty):
-        let res = textRopeGetCurrentEditorRope(host, store)
-        parameters[0].i32 = ?host.resources.resourceNew(store, res)
+      linker.defineFuncUnchecked("nev:plugins/core", "api-version", ty):
+        let res = coreApiVersion(host, store)
+        parameters[0].i32 = cast[int32](res)
     if e.isErr:
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/core", "api-version", ty):
-        let res = coreApiVersion(host, store)
-        parameters[0].i32 = cast[int32](res)
+      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.F64])
+      linker.defineFuncUnchecked("nev:plugins/core", "get-time", ty):
+        let res = coreGetTime(host, store)
+        parameters[0].f64 = cast[float64](res)
     if e.isErr:
       return e
   block:
@@ -543,7 +613,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
-          WasmValkind.I32], [])
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/core", "define-command", ty):
         var mainMemory = caller.getExport("memory")
         if mainMemory.isNone:
@@ -563,6 +633,8 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var params: seq[(string, string)]
         var returntype: string
         var context: string
+        var fun: uint32
+        var data: uint32
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
           name = newString(parameters[1].i32)
@@ -600,15 +672,16 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           context = newString(parameters[10].i32)
           for i0 in 0 ..< context.len:
             context[i0] = p0[i0]
+        fun = convert(parameters[11].i32, uint32)
+        data = convert(parameters[12].i32, uint32)
         coreDefineCommand(host, store, name, active, docs, params, returntype,
-                          context)
+                          context, fun, data)
     if e.isErr:
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
-          [])
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/core", "run-command", ty):
         var mainMemory = caller.getExport("memory")
         if mainMemory.isNone:
@@ -622,8 +695,9 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var name: string
-        var args: string
+        var arguments: string
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
           name = newString(parameters[1].i32)
@@ -631,10 +705,25 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
             name[i0] = p0[i0]
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
-          args = newString(parameters[3].i32)
-          for i0 in 0 ..< args.len:
-            args[i0] = p0[i0]
-        coreRunCommand(host, store, name, args)
+          arguments = newString(parameters[3].i32)
+          for i0 in 0 ..< arguments.len:
+            arguments[i0] = p0[i0]
+        let res = coreRunCommand(host, store, name, arguments)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isErr.int32
+        if res.isOk:
+          if res.value.len > 0:
+            let dataPtrWasm1 = int32(?stackAlloc(stackAllocFunc, store,
+                (res.value.len * 1).int32, 4))
+            cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](dataPtrWasm1)
+            block:
+              for i1 in 0 ..< res.value.len:
+                memory[dataPtrWasm1 + i1] = cast[uint8](res.value[i1])
+          else:
+            cast[ptr int32](memory[retArea + 4].addr)[] = 0.int32
+          cast[ptr int32](memory[retArea + 8].addr)[] = cast[int32](res.value.len)
+        else:
+          cast[ptr int32](memory[retArea + 4].addr)[] = cast[int8](res.error)
     if e.isErr:
       return e
   block:
@@ -710,28 +799,9 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/render", "[constructor]view", ty):
-        let res = renderNewView(host, store)
-        parameters[0].i32 = ?host.resources.resourceNew(store, res)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
-          [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/render", "[method]view.id", ty):
-        var self: ptr ViewResource
-        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
-        let res = renderId(host, store, self[])
-        parameters[0].i32 = cast[int32](res)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I32, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/render", "[method]view.size", ty):
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/layout", "show", ty):
         var mainMemory = caller.getExport("memory")
         if mainMemory.isNone:
           mainMemory = host.getMemoryFor(caller)
@@ -744,8 +814,177 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
-        var self: ptr ViewResource
-        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        var v: View
+        var slot: string
+        var focus: bool
+        var addToHistory: bool
+        v.id = convert(parameters[0].i32, int32)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          slot = newString(parameters[2].i32)
+          for i0 in 0 ..< slot.len:
+            slot[i0] = p0[i0]
+        focus = parameters[3].i32.bool
+        addToHistory = parameters[4].i32.bool
+        layoutShow(host, store, v, slot, focus, addToHistory)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/layout", "close", ty):
+        var v: View
+        var keepHidden: bool
+        var restoreHidden: bool
+        v.id = convert(parameters[0].i32, int32)
+        keepHidden = parameters[1].i32.bool
+        restoreHidden = parameters[2].i32.bool
+        layoutClose(host, store, v, keepHidden, restoreHidden)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/layout", "focus", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var slot: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          slot = newString(parameters[1].i32)
+          for i0 in 0 ..< slot.len:
+            slot[i0] = p0[i0]
+        layoutFocus(host, store, slot)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[constructor]render-view", ty):
+        let res = renderNewRenderView(host, store)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[static]render-view.from-user-id", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var id: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          id = newString(parameters[1].i32)
+          for i0 in 0 ..< id.len:
+            id[i0] = p0[i0]
+        let res = renderRenderViewFromUserId(host, store, id)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?host.resources.resourceNew(
+              store, res.get)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[static]render-view.from-view", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var v: View
+        v.id = convert(parameters[0].i32, int32)
+        let res = renderRenderViewFromView(host, store, v)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?host.resources.resourceNew(
+              store, res.get)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.view", ty):
+        var self: ptr RenderViewResource
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        let res = renderView(host, store, self[])
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/render", "[method]render-view.id",
+                                 ty):
+        var self: ptr RenderViewResource
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        let res = renderId(host, store, self[])
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.size", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
         let res = renderSize(host, store, self[])
         let retArea = parameters[^1].i32
         cast[ptr float32](memory[retArea + 0].addr)[] = res.x
@@ -757,10 +996,11 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/render",
-                                 "[method]view.set-render-interval", ty):
-        var self: ptr ViewResource
+                                 "[method]render-view.set-render-interval", ty):
+        var self: ptr RenderViewResource
         var ms: int32
-        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
         ms = convert(parameters[1].i32, int32)
         renderSetRenderInterval(host, store, self[], ms)
     if e.isErr:
@@ -770,11 +1010,13 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/render",
-                                 "[method]view.set-render-commands-raw", ty):
-        var self: ptr ViewResource
+                                 "[method]render-view.set-render-commands-raw",
+                                 ty):
+        var self: ptr RenderViewResource
         var buffer: uint32
         var len: uint32
-        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
         buffer = convert(parameters[1].i32, uint32)
         len = convert(parameters[2].i32, uint32)
         renderSetRenderCommandsRaw(host, store, self[], buffer, len)
@@ -785,7 +1027,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/render",
-                                 "[method]view.set-render-commands", ty):
+                                 "[method]render-view.set-render-commands", ty):
         var mainMemory = caller.getExport("memory")
         if mainMemory.isNone:
           mainMemory = host.getMemoryFor(caller)
@@ -798,9 +1040,10 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
-        var self: ptr ViewResource
+        var self: ptr RenderViewResource
         var data: seq[uint8]
-        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
         block:
           let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
           data = newSeq[typeof(data[0])](parameters[2].i32)
@@ -811,11 +1054,107 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       return e
   block:
     let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render", "[method]render-view.set-render-when-inactive",
+                                 ty):
+        var self: ptr RenderViewResource
+        var enabled: bool
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        enabled = parameters[1].i32.bool
+        renderSetRenderWhenInactive(host, store, self[], enabled)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.set-prevent-throttling",
+                                 ty):
+        var self: ptr RenderViewResource
+        var enabled: bool
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        enabled = parameters[1].i32.bool
+        renderSetPreventThrottling(host, store, self[], enabled)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.set-user-id", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        var id: string
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          id = newString(parameters[2].i32)
+          for i0 in 0 ..< id.len:
+            id[i0] = p0[i0]
+        renderSetUserId(host, store, self[], id)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.get-user-id", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var self: ptr RenderViewResource
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        let res = renderGetUserId(host, store, self[])
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/render",
-                                 "[method]view.mark-dirty", ty):
-        var self: ptr ViewResource
-        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
+                                 "[method]render-view.mark-dirty", ty):
+        var self: ptr RenderViewResource
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
         renderMarkDirty(host, store, self[])
     if e.isErr:
       return e
@@ -824,11 +1163,12 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/render",
-                                 "[method]view.set-render-callback", ty):
-        var self: ptr ViewResource
+                                 "[method]render-view.set-render-callback", ty):
+        var self: ptr RenderViewResource
         var fun: uint32
         var data: uint32
-        self = host.resources.resourceHostData(parameters[0].i32, ViewResource)
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
         fun = convert(parameters[1].i32, uint32)
         data = convert(parameters[2].i32, uint32)
         renderSetRenderCallback(host, store, self[], fun, data)
@@ -836,21 +1176,96 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/render", "[static]view.create", ty):
-        let res = renderViewCreate(host, store)
-        parameters[0].i32 = ?host.resources.resourceNew(store, res)
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.set-modes", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        var modes: seq[string]
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
+          modes = newSeq[typeof(modes[0])](parameters[2].i32)
+          for i0 in 0 ..< modes.len:
+            block:
+              let p1 = cast[ptr UncheckedArray[char]](memory[
+                  cast[ptr int32](p0[i0 * 8 + 0].addr)[]].addr)
+              modes[i0] = newString(cast[ptr int32](p0[i0 * 8 + 4].addr)[])
+              for i1 in 0 ..< modes[i0].len:
+                modes[i0][i1] = p1[i1]
+        renderSetModes(host, store, self[], modes)
     if e.isErr:
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
-          [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/render", "[static]view.from-id",
-                                 ty):
-        var id: int32
-        id = convert(parameters[0].i32, int32)
-        let res = renderViewFromId(host, store, id)
-        parameters[0].i32 = ?host.resources.resourceNew(store, res)
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.add-mode", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        var mode: string
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          mode = newString(parameters[2].i32)
+          for i0 in 0 ..< mode.len:
+            mode[i0] = p0[i0]
+        renderAddMode(host, store, self[], mode)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.remove-mode", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        var mode: string
+        self = host.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          mode = newString(parameters[2].i32)
+          for i0 in 0 ..< mode.len:
+            mode[i0] = p0[i0]
+        renderRemoveMode(host, store, self[], mode)
     if e.isErr:
       return e

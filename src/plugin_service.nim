@@ -48,6 +48,7 @@ type
     authors*: seq[string]
     repository*: string
     autoLoad*: bool
+    apiVersion*: int = -1
     wasm*: string
     permissions*: JsonNode
     load*: seq[JsonNode]
