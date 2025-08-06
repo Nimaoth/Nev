@@ -107,6 +107,7 @@
         "<LEADER>gs": ["search-global-interactive"],
         "<LEADER>gk": ["browse-keybinds"],
         "<LEADER>gi": ["browse-settings"],
+        "<LEADER>gI": ["browse-settings", true],
         "<LEADER>gn": ["open-last-view"],
         "<LEADER>fl": ["load-file"],
         "<LEADER>fs": ["write-file"],

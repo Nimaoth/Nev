@@ -1551,6 +1551,13 @@ proc findSurroundEnd*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0
 
   return Cursor.none
 
+proc toggleFlag*(self: TextDocumentEditor, key: string) {.expose("editor.text").} =
+  try:
+    let value = self.config.get(key, false)
+    self.config.set(key, not value)
+  except CatchableError:
+    discard
+
 proc setConfig*(self: TextDocumentEditor, key: string, value: JsonNode) {.expose("editor.text").} =
   self.config.set(key, value)
 
