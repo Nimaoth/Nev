@@ -55,7 +55,7 @@ The `plugin-id` is the name of the folder which contains the plugin manifest.
 {
     "plugin.my_plugin.permissions": {
         "filesystem": {
-            "allow": ["local://ws0/src"],
+            "allow": ["ws0://src"],
         },
         "commands": {
             "allowAll": false,
