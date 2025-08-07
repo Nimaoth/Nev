@@ -2492,151 +2492,160 @@ proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose
   self.showDiff = true
   asyncSpawn self.updateDiffAsync(gotoFirstDiff)
 
-proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
-  if self.diffDocument.isNil or self.diffChanges.isNone:
-    return
+proc revertSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async: (raises: []).} =
+  try:
+    if self.diffDocument.isNil or self.diffChanges.isNone:
+      return
 
-  var selection = self.selection.normalized
-  if inclusiveEnd:
-    selection.last = self.doMoveCursorColumn(selection.last, 1)
+    var selection = self.selection.normalized
+    if inclusiveEnd:
+      selection.last = self.doMoveCursorColumn(selection.last, 1)
 
-  log lvlInfo, &"Revert ranges {selection}"
+    log lvlInfo, &"Revert ranges {selection}"
 
-  let ropeOld = self.diffDocument.rope.clone()
-  var ropeDiff: RopeDiff[Point]
+    let ropeOld = self.diffDocument.rope.clone()
+    var ropeDiff: RopeDiff[Point]
 
-  for mapping in self.diffChanges.get:
-    var rangeOld: Range[Point]
-    var rangeNew: Range[Point]
-    rangeOld.a.row = mapping.source.first.uint32
-    rangeOld.b.row = mapping.source.last.uint32
-    rangeNew.a.row = mapping.target.first.uint32
-    rangeNew.b.row = mapping.target.last.uint32
-
-    var text = Rope.new("")
-    for line in mapping.lines:
-      text.add line
-      text.add "\n"
-
-    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
-      ropeDiff.edits.add (rangeNew, rangeOld, ropeOld.slice(rangeOld))
-
-  let selections = ropeDiff.edits.mapIt(it.old.toSelection)
-  let texts = ropeDiff.edits.mapIt(it.text)
-  discard self.document.edit(selections, self.selections, texts)
-  await self.document.saveAsync()
-  self.updateDiff()
-
-proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
-  if self.diffDocument.isNil or self.diffChanges.isNone:
-    return
-
-  var selection = self.selection.normalized
-  if inclusiveEnd:
-    selection.last = self.doMoveCursorColumn(selection.last, 1)
-
-  log lvlInfo, &"Revert ranges {selection}"
-
-  let ropeOld = self.diffDocument.rope.clone()
-  var ropeDiff: RopeDiff[Point]
-
-  for mapping in self.diffChanges.get:
-    var rangeOld: Range[Point]
-    var rangeNew: Range[Point]
-    rangeOld.a.row = mapping.source.first.uint32
-    rangeOld.b.row = mapping.source.last.uint32
-    rangeNew.a.row = mapping.target.first.uint32
-    rangeNew.b.row = mapping.target.last.uint32
-
-    var text = Rope.new("")
-    for line in mapping.lines:
-      text.add line
-      text.add "\n"
-
-    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
-      # todo
-      discard
-
-    else:
-      ropeDiff.edits.add (rangeOld, rangeNew, text.slice(Point))
-
-  let new = ropeOld.slice(Point).apply(ropeDiff)
-  let filename = self.getFileName().extractFilename
-  let backupPath = &"ws0://temp/git/backup.{filename}"
-  let originalPath = self.document.filename
-  let originalPathLocalized = self.document.localizedPath
-  let backupPathLocalized = self.vfs.localize(backupPath)
-  if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
-    log lvlInfo, &"backup {originalPath} to {backupPath}"
-    await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
-    await self.vfs.write(originalPath, new)
-    discard await vcs.stageFile(originalPathLocalized)
-    log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
-    await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
-    discard await self.vfs.delete(backupPath)
-
-    self.updateDiff()
-
-proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async.} =
-  if self.diffDocument.isNil or self.diffChanges.isNone:
-    return
-
-  var selection = self.selection.normalized
-  if inclusiveEnd:
-    selection.last = self.doMoveCursorColumn(selection.last, 1)
-
-  log lvlInfo, &"Stage ranges {selection}"
-
-  var ropeDiff: RopeDiff[Point]
-
-  let stagedRope = self.diffDocument.rope.clone()
-
-  for mapping in self.diffChanges.get:
-    var rangeOld: Range[Point]
-    var rangeNew: Range[Point]
-    rangeOld.a.row = mapping.source.first.uint32
-    rangeOld.b.row = mapping.source.last.uint32
-    rangeNew.a.row = mapping.target.first.uint32
-    rangeNew.b.row = mapping.target.last.uint32
-
-    if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
-      var rangeNewClamped = rangeNew
-      rangeNewClamped.a = max(rangeNew.a, selection.first.toPoint)
-      rangeNewClamped.b = min(rangeNew.b, selection.last.toPoint)
+    for mapping in self.diffChanges.get:
+      var rangeOld: Range[Point]
+      var rangeNew: Range[Point]
+      rangeOld.a.row = mapping.source.first.uint32
+      rangeOld.b.row = mapping.source.last.uint32
+      rangeNew.a.row = mapping.target.first.uint32
+      rangeNew.b.row = mapping.target.last.uint32
 
       var text = Rope.new("")
       for line in mapping.lines:
         text.add line
         text.add "\n"
 
-      let rangeNewRel = (rangeNewClamped.a - rangeNew.a).toPoint...(rangeNewClamped.b - rangeNew.a).toPoint
-      if selection.isEmpty or (selection.first.toPoint <= rangeNew.a and selection.last.toPoint >= rangeNew.b):
-        ropeDiff.edits.add (rangeOld, rangeNew, text.slice(Point))
+      if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+        ropeDiff.edits.add (rangeNew, rangeOld, ropeOld.slice(rangeOld))
+
+    let selections = ropeDiff.edits.mapIt(it.old.toSelection)
+    let texts = ropeDiff.edits.mapIt(it.text)
+    discard self.document.edit(selections, self.selections, texts)
+    await self.document.saveAsync()
+    self.updateDiff()
+  except CatchableError as e:
+    log lvlError, &"Failed to revert the selected change: {e.msg}"
+
+proc unstageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async: (raises: []).} =
+  try:
+    if self.diffDocument.isNil or self.diffChanges.isNone:
+      return
+
+    var selection = self.selection.normalized
+    if inclusiveEnd:
+      selection.last = self.doMoveCursorColumn(selection.last, 1)
+
+    log lvlInfo, &"Revert ranges {selection}"
+
+    let ropeOld = self.diffDocument.rope.clone()
+    var ropeDiff: RopeDiff[Point]
+
+    for mapping in self.diffChanges.get:
+      var rangeOld: Range[Point]
+      var rangeNew: Range[Point]
+      rangeOld.a.row = mapping.source.first.uint32
+      rangeOld.b.row = mapping.source.last.uint32
+      rangeNew.a.row = mapping.target.first.uint32
+      rangeNew.b.row = mapping.target.last.uint32
+
+      var text = Rope.new("")
+      for line in mapping.lines:
+        text.add line
+        text.add "\n"
+
+      if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+        # todo
+        discard
 
       else:
-        let textOld = stagedRope.slice(rangeOld)
-        let diff = diff(textOld, text.slice(Point))
-        let rangeOldRel = diff.newToOld(rangeNewRel)
-        let rangeOldClamped = rangeOld.a + rangeOldRel
+        ropeDiff.edits.add (rangeOld, rangeNew, text.slice(Point))
 
-        ropeDiff.edits.add (rangeOldClamped, rangeNewClamped, text.slice(rangeNewRel))
+    let new = ropeOld.slice(Point).apply(ropeDiff)
+    let filename = self.getFileName().extractFilename
+    let backupPath = &"ws0://temp/git/backup.{filename}"
+    let originalPath = self.document.filename
+    let originalPathLocalized = self.document.localizedPath
+    let backupPathLocalized = self.vfs.localize(backupPath)
+    if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
+      log lvlInfo, &"backup {originalPath} to {backupPath}"
+      await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+      await self.vfs.write(originalPath, new)
+      discard await vcs.stageFile(originalPathLocalized)
+      log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
+      await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+      discard await self.vfs.delete(backupPath)
 
-  let new = self.diffDocument.rope.slice(Point).apply(ropeDiff)
-  let filename = self.getFileName().extractFilename
-  let backupPath = &"ws0://temp/git/backup.{filename}"
-  let originalPath = self.document.filename
-  let originalPathLocalized = self.document.localizedPath
-  let backupPathLocalized = self.vfs.localize(backupPath)
-  if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
-    log lvlInfo, &"backup {originalPath} to {backupPath}"
-    await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
-    await self.vfs.write(originalPath, new)
-    discard await vcs.stageFile(originalPathLocalized)
-    log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
-    await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
-    discard await self.vfs.delete(backupPath)
+      self.updateDiff()
+  except CatchableError as e:
+    log lvlError, &"Failed to unstage the selected change: {e.msg}"
 
-    self.updateDiff()
+proc stageSelectedAsync*(self: TextDocumentEditor, inclusiveEnd: bool = false) {.async: (raises: []).} =
+  try:
+    if self.diffDocument.isNil or self.diffChanges.isNone:
+      return
+
+    var selection = self.selection.normalized
+    if inclusiveEnd:
+      selection.last = self.doMoveCursorColumn(selection.last, 1)
+
+    log lvlInfo, &"Stage ranges {selection}"
+
+    var ropeDiff: RopeDiff[Point]
+
+    let stagedRope = self.diffDocument.rope.clone()
+
+    for mapping in self.diffChanges.get:
+      var rangeOld: Range[Point]
+      var rangeNew: Range[Point]
+      rangeOld.a.row = mapping.source.first.uint32
+      rangeOld.b.row = mapping.source.last.uint32
+      rangeNew.a.row = mapping.target.first.uint32
+      rangeNew.b.row = mapping.target.last.uint32
+
+      if rangeNew.a <= selection.last.toPoint and rangeNew.b >= selection.first.toPoint:
+        var rangeNewClamped = rangeNew
+        rangeNewClamped.a = max(rangeNew.a, selection.first.toPoint)
+        rangeNewClamped.b = min(rangeNew.b, selection.last.toPoint)
+
+        var text = Rope.new("")
+        for line in mapping.lines:
+          text.add line
+          text.add "\n"
+
+        let rangeNewRel = (rangeNewClamped.a - rangeNew.a).toPoint...(rangeNewClamped.b - rangeNew.a).toPoint
+        if selection.isEmpty or (selection.first.toPoint <= rangeNew.a and selection.last.toPoint >= rangeNew.b):
+          ropeDiff.edits.add (rangeOld, rangeNew, text.slice(Point))
+
+        else:
+          let textOld = stagedRope.slice(rangeOld)
+          let diff = diff(textOld, text.slice(Point))
+          let rangeOldRel = diff.newToOld(rangeNewRel)
+          let rangeOldClamped = rangeOld.a + rangeOldRel
+
+          ropeDiff.edits.add (rangeOldClamped, rangeNewClamped, text.slice(rangeNewRel))
+
+    let new = self.diffDocument.rope.slice(Point).apply(ropeDiff)
+    let filename = self.getFileName().extractFilename
+    let backupPath = &"ws0://temp/git/backup.{filename}"
+    let originalPath = self.document.filename
+    let originalPathLocalized = self.document.localizedPath
+    let backupPathLocalized = self.vfs.localize(backupPath)
+    if self.vcs.getVcsForFile(originalPathLocalized).getSome(vcs):
+      log lvlInfo, &"backup {originalPath} to {backupPath}"
+      await self.vfs.copyFile(originalPathLocalized, backupPathLocalized)
+      await self.vfs.write(originalPath, new)
+      discard await vcs.stageFile(originalPathLocalized)
+      log lvlInfo, &"restore backup {backupPath} -> {originalPath}"
+      await self.vfs.copyFile(backupPathLocalized, originalPathLocalized)
+      discard await self.vfs.delete(backupPath)
+
+      self.updateDiff()
+  except CatchableError as e:
+    log lvlError, &"Failed to stage the selected change: {e.msg}"
 
   # this tries to create a patch and apply it to the index directly, but git refuses the patch and the line indices
   # are maybe wrong
