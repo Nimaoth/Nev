@@ -247,10 +247,6 @@ proc coreGetTime(host: HostContext; store: ptr ContextT): float64 =
 proc coreApiVersion(host: HostContext, store: ptr ContextT): int32 =
   return apiVersion
 
-proc coreBindKeys(host: HostContext, store: ptr ContextT, context: sink string, subContext: sink string, keys: sink string,
-    action: sink string, arg: sink string, description: sink string, source: sink (string, int32, int32)): void =
-  host.plugins.bindKeys(context, subContext, keys, action, arg, description, (source[0], source[1].int, source[2].int))
-
 proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string, active: bool, docs: sink string,
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
   let instance = cast[ptr InstanceData](store.getData())

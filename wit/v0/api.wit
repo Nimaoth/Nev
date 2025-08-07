@@ -19,7 +19,6 @@ interface types {
 
 interface text-editor {
   use types.{cursor, selection};
-  // set-selection: func(s: selection);
   get-selection: func() -> selection;
   add-mode-changed-handler: func(fun: u32) -> s32;
 }
@@ -38,24 +37,48 @@ interface render {
   use types.{vec2f};
   use layout.{view};
 
+  /// Shared handle to a custom render view
   resource render-view {
     constructor();
+
+    /// Try to create a handle to an existing render view with the given user id.
     from-user-id: static func(id: string) -> option<render-view>;
+    /// Try to create a handle to an existing render view from a 'view'.
     from-view: static func(v: view) -> option<render-view>;
+    /// Returns the raw view handle.
     view: func() -> view;
+    /// Returns the unique id of the view. This id is not stable across sessions.
     id: func() -> s32;
+    /// Returns the size in pixels the view currently has. In the terminal one pixel is one character.
     size: func() -> vec2f;
+    /// Specify how often the view should render. -1 means don't render in a timer, 0 means render every frame,
+    /// a number bigger than 0 specifies the interval in milliseconds.
     set-render-interval: func(ms: s32);
+    /// Set the render commands used for the next render. 'buffer' is a pointer to a buffer of encoded render commands,
+    /// 'len' is the length of the buffer in bytes.
     set-render-commands-raw: func(buffer: u32, len: u32);
+    /// Set the render commands used for the next render. 'data' contains encoded render commands.
     set-render-commands: func(data: list<u8>);
+    /// Enable rendering while the view is inactive (but still visible).
     set-render-when-inactive: func(enabled: bool);
+    /// When enabled the view prevents the editor from throttling the frame rate after a few seconds. This requires
+    /// the view to also be rendered regularly, using e.g. 'set-render-interval' or but marking it dirty regularly.
     set-prevent-throttling: func(enabled: bool);
+    /// Sets the user id of this view.
     set-user-id: func(id: string);
+    /// Returns the user id of this view.
     get-user-id: func() -> string;
+    /// Trigger a render for this view.
     mark-dirty: func();
+    /// Sets the callback which wil be called before rendering. This can be used to set the render commands.
+    /// 'fun' is a pointer to a function with signature func(id: s32, data: u32). Data is an arbitrary number
+    /// which will be passed to the callback unchanged. It can be used as e.g. a pointer to some data.
     set-render-callback: func(fun: u32, data: u32);
+    /// Set the list of input modes. This controls which keybindings are available while the view is active.
     set-modes: func(modes: list<string>);
+    /// Add a mode to the input modes. This controls which keybindings are available while the view is active.
     add-mode: func(mode: string);
+    /// Remove a mode from the input modes. This controls which keybindings are available while the view is active.
     remove-mode: func(mode: string);
   }
 }
@@ -66,12 +89,23 @@ interface core {
     not-found
   }
 
+  /// Returns the plugin API version this plugin is using.
+  /// 0 means the latest version, 1 or bigger means a specific version.
   api-version: func() -> s32;
+
+  /// Returns the time since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
   get-time: func() -> f64;
-  bind-keys: func(context: string, subcontext: string, keys: string, action: string, arg: string, description: string, source: tuple<string, s32, s32>);
+
+  /// Defines a command.
   define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);
+
+  /// Run the given command. This requires 'command' permissions.
   run-command: func(name: string, arguments: string) -> result<string, command-error>;
+
+  /// Returns the value of the setting with the given path, encoded as JSON.
   get-setting-raw: func(name: string) -> string;
+
+  /// Set the value of the setting with the given path. The value must be encoded as JSON.
   set-setting-raw: func(name: string, value: string);
 }
 

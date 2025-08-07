@@ -21,6 +21,7 @@ type
     y*: float32
   View* = object
     id*: int32
+  ## Shared handle to a custom render view
   CommandError* = enum
     NotAllowed = "not-allowed", NotFound = "not-found"
 when not declared(RenderViewResource):
@@ -232,10 +233,6 @@ proc textSlicePoints(host: HostContext; store: ptr ContextT;
                      self: var RopeResource; a: Cursor; b: Cursor): RopeResource
 proc coreApiVersion(host: HostContext; store: ptr ContextT): int32
 proc coreGetTime(host: HostContext; store: ptr ContextT): float64
-proc coreBindKeys(host: HostContext; store: ptr ContextT; context: sink string;
-                  subcontext: sink string; keys: sink string;
-                  action: sink string; arg: sink string;
-                  description: sink string; source: sink (string, int32, int32)): void
 proc coreDefineCommand(host: HostContext; store: ptr ContextT;
                        name: sink string; active: bool; docs: sink string;
                        params: sink seq[(string, string)];
@@ -538,74 +535,6 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/core", "get-time", ty):
         let res = coreGetTime(host, store)
         parameters[0].f64 = cast[float64](res)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
-          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
-          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
-          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
-          WasmValkind.I32, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/core", "bind-keys", ty):
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = host.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
-        var context: string
-        var subcontext: string
-        var keys: string
-        var action: string
-        var arg: string
-        var description: string
-        var source: (string, int32, int32)
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
-          context = newString(parameters[1].i32)
-          for i0 in 0 ..< context.len:
-            context[i0] = p0[i0]
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
-          subcontext = newString(parameters[3].i32)
-          for i0 in 0 ..< subcontext.len:
-            subcontext[i0] = p0[i0]
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[4].i32].addr)
-          keys = newString(parameters[5].i32)
-          for i0 in 0 ..< keys.len:
-            keys[i0] = p0[i0]
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[6].i32].addr)
-          action = newString(parameters[7].i32)
-          for i0 in 0 ..< action.len:
-            action[i0] = p0[i0]
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[8].i32].addr)
-          arg = newString(parameters[9].i32)
-          for i0 in 0 ..< arg.len:
-            arg[i0] = p0[i0]
-        block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[10].i32].addr)
-          description = newString(parameters[11].i32)
-          for i0 in 0 ..< description.len:
-            description[i0] = p0[i0]
-        block:
-          let p1 = cast[ptr UncheckedArray[char]](memory[parameters[12].i32].addr)
-          source[0] = newString(parameters[13].i32)
-          for i1 in 0 ..< source[0].len:
-            source[0][i1] = p1[i1]
-        source[1] = convert(parameters[14].i32, int32)
-        source[2] = convert(parameters[15].i32, int32)
-        coreBindKeys(host, store, context, subcontext, keys, action, arg,
-                     description, source)
     if e.isErr:
       return e
   block:
