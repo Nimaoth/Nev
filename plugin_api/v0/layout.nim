@@ -10,12 +10,14 @@ import
 
 {.pop.}
 type
+  ## Shared handle for a view.
   View* = object
     id*: int32
 proc layoutShowImported(a0: int32; a1: int32; a2: int32; a3: bool; a4: bool): void {.
     wasmimport("show", "nev:plugins/layout").}
 proc show*(v: View; slot: WitString; focus: bool; addToHistory: bool): void {.
     nodestroy.} =
+  ## Show the given view in the given slot.  If focus is true it's also focused, otherwise focus remains as is if possible.
   var
     arg0: int32
     arg1: int32
@@ -35,6 +37,9 @@ proc show*(v: View; slot: WitString; focus: bool; addToHistory: bool): void {.
 proc layoutCloseImported(a0: int32; a1: bool; a2: bool): void {.
     wasmimport("close", "nev:plugins/layout").}
 proc close*(v: View; keepHidden: bool; restoreHidden: bool): void {.nodestroy.} =
+  ## Close the given view. If 'keep-hidden' is true then the view will only be removed from the layout tree but remains open
+  ## in the background. If 'restore-hidden' is true the the current view will be replaced by the last hidden view,
+  ## otherwise the current slot is removed from the layout.
   var
     arg0: int32
     arg1: bool
@@ -47,6 +52,7 @@ proc close*(v: View; keepHidden: bool; restoreHidden: bool): void {.nodestroy.} 
 proc layoutFocusImported(a0: int32; a1: int32): void {.
     wasmimport("focus", "nev:plugins/layout").}
 proc focus*(slot: WitString): void {.nodestroy.} =
+  ## Set focus to the view in the given slot.
   var
     arg0: int32
     arg1: int32

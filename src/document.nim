@@ -1,7 +1,12 @@
+import std/hashes
 import misc/[util, id]
 import vfs
 
-defineUniqueId(DocumentId)
+type DocumentId* = distinct uint64
+
+proc `==`*(a, b: DocumentId): bool {.borrow.}
+proc hash*(vr: DocumentId): Hash {.borrow.}
+proc `$`*(vr: DocumentId): string {.borrow.}
 
 type Document* = ref object of RootObj
   id*: DocumentId

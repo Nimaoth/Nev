@@ -1,6 +1,6 @@
 import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, parsejsonex]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, parsejsonex, generational_seq]
 import ui/node
 import scripting/[expose]
 import platform/[platform]
@@ -896,7 +896,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
   EditorSettings.new(self.logDocument.TextDocument.config).saveInSession.set(false)
-  self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 
   self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
@@ -911,7 +910,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.TextDocumentEditor.settings.cursorMargin.set(0.0)
   self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
   discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
-  self.editors.documents.add commandLineTextDocument
   self.editors.commandLineEditor = self.commands.commandLineEditor
   self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
     if command.isSome:
@@ -1294,7 +1292,6 @@ proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/getting_started.md"
   let docsPath = "app://docs/getting_started.md"
   let textDocument = newTextDocument(self.services, docsPath, introductionMd, load=true)
-  self.editors.documents.add textDocument
   textDocument.load()
   discard self.layout.createAndAddView(textDocument)
 
@@ -1364,8 +1361,7 @@ proc toggleConsoleLogger*(self: App) {.expose("editor").} =
     logger.toggleConsoleLogger()
 
 proc closeUnusedDocuments*(self: App) =
-  let documents = self.editors.documents
-  for document in documents:
+  for document in self.editors.documents:
     if document == self.logDocument:
       continue
 
@@ -3081,7 +3077,6 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
 
 proc handleDropFile*(self: App, path, content: string) =
   let document = newTextDocument(self.services, path, content)
-  self.editors.documents.add document
   discard self.layout.createAndAddView(document)
 
 proc scriptRunAction*(action: string, arg: string): JsonNode {.expose("editor").} =
@@ -3317,19 +3312,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
         result.add editor.getStatisticsString().indent(4)
         result.add "\n\n"
 
-      # todo
-        # languageServerCommandLine: LanguageServer
-        # commandLineTextEditor: DocumentEditor
-
-        # logDocument: Document
-        # documents*: seq[Document]
-        # editors*: Table[EditorId, DocumentEditor]
-        # popups*: seq[Popup]
-
-        # theme*: Theme
-        # wasmScriptContext*: ScriptContextWasm
-
-        # workspace*: Workspace
       result.add &"Platform:\n{self.platform.getStatisticsString().indent(4)}\n"
       result.add &"UI:\n{self.platform.builder.getStatisticsString().indent(4)}\n"
 

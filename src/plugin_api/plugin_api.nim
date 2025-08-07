@@ -7,7 +7,7 @@ import text/[text_editor, text_document]
 import render_view, view
 import ui/render_command
 import scripting/binary_encoder, config_provider, command_service
-import plugin_service
+import plugin_service, document_editor
 
 import wasmtime, wit_host_module, plugin_api_base, wasi
 
@@ -22,6 +22,7 @@ type
     resources*: WasmModuleResources
     services: Services
     commands*: CommandService
+    editors*: DocumentEditorService
     layout*: LayoutService
     plugins*: PluginService
     settings*: ConfigStore
@@ -48,9 +49,6 @@ proc getMemory*(caller: ptr CallerT, store: ptr ContextT, host: HostContext): Wa
 func createRope(str: string): Rope =
   Rope.new(str)
 
-type TextEditorResource = object
-  editor: TextDocumentEditor
-
 type RopeResource = object
   rope: RopeSlice[Point]
 
@@ -69,7 +67,6 @@ when defined(witRebuild):
     cacheFile = "../generated/plugin_api_host.nim"
     mapName "rope", RopeResource
     mapName "render-view", RenderViewResource
-    mapName "editor", TextEditorResource
 
 else:
   static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
@@ -101,6 +98,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
   self.host.commands = services.getService(CommandService).get
+  self.host.editors = services.getService(DocumentEditorService).get
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
@@ -186,10 +184,49 @@ method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
 
 ###################################### API implementations #####################################
 
-proc textEditorGetSelection(host: HostContext; store: ptr ContextT): Selection =
+proc editorActiveEditor(host: HostContext; store: ptr ContextT): Option[Editor] =
+  if host.layout.tryGetCurrentEditorView().getSome(view):
+    return Editor(id: view.editor.DocumentEditor.idNew.uint64).some
+  return Editor.none
+
+proc editorGetDocument(host: HostContext; store: ptr ContextT; editor: Editor): Option[Document] =
+  if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor):
+    let document = editor.getDocument()
+    if document != nil:
+      return Document(id: document.id.uint64).some
+  return Document.none
+
+proc textEditorActiveTextEditor(host: HostContext; store: ptr ContextT): Option[TextEditor] =
   if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    let editor = view.editor.TextDocumentEditor
-    let s = editor.selection
+    return TextEditor(id: view.editor.TextDocumentEditor.idNew.uint64).some
+  return TextEditor.none
+
+proc textEditorGetDocument(host: HostContext; store: ptr ContextT; editor: TextEditor): Option[TextDocument] =
+  if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor):
+    let document = editor.getDocument()
+    if document != nil and document of text_document.TextDocument:
+      return TextDocument(id: document.id.uint64).some
+  return TextDocument.none
+
+proc textEditorAsTextEditor(host: HostContext; store: ptr ContextT; editor: Editor): Option[TextEditor] =
+  if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return TextEditor(id: editor.TextDocumentEditor.idNew.uint64).some
+  return TextEditor.none
+
+proc textEditorAsTextDocument(host: HostContext; store: ptr ContextT; document: Document): Option[TextDocument] =
+  if host.editors.getDocument(document.id.DocumentId).getSome(document) and document of text_document.TextDocument:
+    return TextDocument(id: text_document.TextDocument(document).id.uint64).some
+  return TextDocument.none
+
+proc textEditorSetSelection(host: HostContext; store: ptr ContextT; editor: TextEditor; s: Selection): void =
+  if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    textEditor.selection = ((s.first.line.int, s.first.column.int), (s.last.line.int, s.last.column.int))
+
+proc textEditorGetSelection(host: HostContext; store: ptr ContextT; editor: TextEditor): Selection =
+  if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    let s = textEditor.selection
     Selection(first: Cursor(line: s.first.line.int32, column: s.first.column.int32), last: Cursor(line: s.last.line.int32, column: s.last.column.int32))
   else:
     Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9))
@@ -202,39 +239,36 @@ proc textEditor_addModeChangedHandler(host: HostContext, store: ptr ContextT, fu
       let res = module[].funcs.handleModeChanged(fun, $args.removed, $args.added)
       if res.isErr:
         log lvlError, "Failed to call handleModeChanged: " & $res
-  return 123
+  return 0
 
-proc textEditorCurrent(host: HostContext; store: ptr ContextT): Option[TextEditorResource] =
-  if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    let editor = view.editor.TextDocumentEditor
-    return TextEditorResource(editor: editor).some
-  return  TextEditorResource.none
+proc textEditorContent(host: HostContext; store: ptr ContextT; editor: TextEditor): RopeResource =
+  if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    if textEditor.document != nil:
+      return RopeResource(rope: textEditor.document.rope.clone().slice().suffix(Point()))
+  return RopeResource(rope: createRope("").slice().suffix(Point()))
 
-proc textRope(host: HostContext; store: ptr ContextT; self: var TextEditorResource): RopeResource =
-  if self.editor == nil:
-    return RopeResource(rope: createRope("no editor").slice().suffix(Point()))
-  elif self.editor.document == nil:
-    return RopeResource(rope: createRope("no document").slice().suffix(Point()))
-  return RopeResource(rope: self.editor.document.rope.clone().slice().suffix(Point()))
+proc textDocumentContent(host: HostContext; store: ptr ContextT; document: TextDocument): RopeResource =
+  if host.editors.getDocument(document.id.DocumentId).getSome(document) and document of text_document.TextDocument:
+    let textDocument = text_document.TextDocument(document)
+    return RopeResource(rope: textDocument.rope.clone().slice().suffix(Point()))
+  return RopeResource(rope: createRope("").slice().suffix(Point()))
 
-proc textNewRope(host: HostContext; store: ptr ContextT, content: sink string): RopeResource =
+proc typesNewRope(host: HostContext; store: ptr ContextT, content: sink string): RopeResource =
   RopeResource(rope: createRope(content).slice().suffix(Point()))
 
-proc textClone(host: HostContext, store: ptr ContextT, self: var RopeResource): RopeResource =
+proc typesClone(host: HostContext, store: ptr ContextT, self: var RopeResource): RopeResource =
   RopeResource(rope: self.rope.clone())
 
-proc textText(host: HostContext, store: ptr ContextT, self: var RopeResource): string =
+proc typesText(host: HostContext, store: ptr ContextT, self: var RopeResource): string =
   $self.rope
 
-proc textDebug(host: HostContext, store: ptr ContextT, self: var RopeResource): string =
-  &"Rope({self.rope.range}, {self.rope.summary}, {self.rope})"
-
-proc textSlice(host: HostContext, store: ptr ContextT, self: var RopeResource, a: int64, b: int64): RopeResource =
+proc typesSlice(host: HostContext, store: ptr ContextT, self: var RopeResource, a: int64, b: int64): RopeResource =
   let a = min(a, b).clamp(0, self.rope.len)
   let b = max(a, b).clamp(0, self.rope.len)
   RopeResource(rope: self.rope[a.int...b.int].suffix(Point()))
 
-proc textSlicePoints(host: HostContext, store: ptr ContextT, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
+proc typesSlicePoints(host: HostContext, store: ptr ContextT, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
   RopeResource(rope: self.rope[range])
 

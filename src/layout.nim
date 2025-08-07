@@ -754,6 +754,7 @@ proc closeView*(self: LayoutService, viewId: int32, keepHidden: bool = false, re
     self.closeView(view, keepHidden, restoreHidden)
 
 proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bool =
+  assert document != nil
   if document in self.pinnedDocuments:
     log lvlWarn, &"Can't close document '{document.filename}' because it's pinned"
     return false
@@ -772,8 +773,7 @@ proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bo
     else:
       editor.deinit()
 
-  self.editors.documents.del(document)
-  document.deinit()
+  self.editors.tryCloseDocument(document)
   return true
 
 proc hideActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose("layout").} =

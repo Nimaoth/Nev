@@ -13,17 +13,11 @@ import
   types
 
 type
-  Editor* = object
-    handle*: int32
+  ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
+  ## can be used to efficiently access any document content or share a string with another plugin.
+  ## Ropes are reference counted internally, and this resource also affects that reference count.
   Rope* = object
     handle*: int32
-proc textEditorDrop(a: int32): void {.wasmimport("[resource-drop]editor",
-    "nev:plugins/text").}
-proc `=copy`*(a: var Editor; b: Editor) {.error.}
-proc `=destroy`*(a: Editor) =
-  if a.handle != 0:
-    textEditorDrop(a.handle - 1)
-
 proc textRopeDrop(a: int32): void {.wasmimport("[resource-drop]rope",
     "nev:plugins/text").}
 proc `=copy`*(a: var Rope; b: Rope) {.error.}
@@ -31,23 +25,17 @@ proc `=destroy`*(a: Rope) =
   if a.handle != 0:
     textRopeDrop(a.handle - 1)
 
-proc textRopeImported(a0: int32): int32 {.
-    wasmimport("[method]editor.rope", "nev:plugins/text").}
-proc rope*(self: Editor): Rope {.nodestroy.} =
-  var arg0: int32
-  arg0 = cast[int32](self.handle - 1)
-  let res = textRopeImported(arg0)
+proc textContentImported(a0: uint64): int32 {.
+    wasmimport("content", "nev:plugins/text").}
+proc content*(document: TextDocument): Rope {.nodestroy.} =
+  ## Returns the rope containing the current content of the document.
+  ## This rope is not automatically kept up to date when the document changes, but
+  ## represents the content at the point in time this is called instead. Keeping ropes
+  ## around should not have significant memory overhead because ropes share data under the hood.
+  var arg0: uint64
+  arg0 = document.id
+  let res = textContentImported(arg0)
   result.handle = res + 1
-
-proc textEditorCurrentImported(a0: int32): void {.
-    wasmimport("[static]editor.current", "nev:plugins/text").}
-proc editorCurrent*(): Option[Editor] {.nodestroy.} =
-  var retArea: array[8, uint8]
-  textEditorCurrentImported(cast[int32](retArea[0].addr))
-  if cast[ptr int32](retArea[0].addr)[] != 0:
-    var temp: Editor
-    temp.handle = cast[ptr int32](retArea[4].addr)[] + 1
-    result = temp.some
 
 proc textNewRopeImported(a0: int32; a1: int32): int32 {.
     wasmimport("[constructor]rope", "nev:plugins/text").}
@@ -66,6 +54,7 @@ proc newRope*(content: WitString): Rope {.nodestroy.} =
 proc textCloneImported(a0: int32): int32 {.
     wasmimport("[method]rope.clone", "nev:plugins/text").}
 proc clone*(self: Rope): Rope {.nodestroy.} =
+  ## Returns another reference to the same rope.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = textCloneImported(arg0)
@@ -74,6 +63,7 @@ proc clone*(self: Rope): Rope {.nodestroy.} =
 proc textTextImported(a0: int32; a1: int32): void {.
     wasmimport("[method]rope.text", "nev:plugins/text").}
 proc text*(self: Rope): WitString {.nodestroy.} =
+  ## Returns the text of the rope as a string. This is expensive for large ropes.
   var
     retArea: array[8, uint8]
     arg0: int32
@@ -82,20 +72,11 @@ proc text*(self: Rope): WitString {.nodestroy.} =
   result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
 
-proc textDebugImported(a0: int32; a1: int32): void {.
-    wasmimport("[method]rope.debug", "nev:plugins/text").}
-proc debug*(self: Rope): WitString {.nodestroy.} =
-  var
-    retArea: array[8, uint8]
-    arg0: int32
-  arg0 = cast[int32](self.handle - 1)
-  textDebugImported(arg0, cast[int32](retArea[0].addr))
-  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
-              cast[ptr int32](retArea[4].addr)[])
-
 proc textSliceImported(a0: int32; a1: int64; a2: int64): int32 {.
     wasmimport("[method]rope.slice", "nev:plugins/text").}
 proc slice*(self: Rope; a: int64; b: int64): Rope {.nodestroy.} =
+  ## Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
+  ## This operation is cheap because it doesn't create a copy of the text.
   var
     arg0: int32
     arg1: int64
@@ -110,6 +91,8 @@ proc textSlicePointsImported(a0: int32; a1: int32; a2: int32; a3: int32;
                              a4: int32): int32 {.
     wasmimport("[method]rope.slice-points", "nev:plugins/text").}
 proc slicePoints*(self: Rope; a: Cursor; b: Cursor): Rope {.nodestroy.} =
+  ## Returns a slice of the rope from 'a' to 'b'. The column of 'b' is exclusive. Columns are in bytes.
+  ## This operation is cheap because it doesn't create a copy of the text.
   var
     arg0: int32
     arg1: int32

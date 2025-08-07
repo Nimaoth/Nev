@@ -188,6 +188,7 @@ type
     mLanguageId: string
     services: Services
     workspace: Workspace
+    editors: DocumentEditorService
 
     nextLineIdCounter: int32 = 0
 
@@ -785,7 +786,6 @@ proc newTextDocument*(
     allTextDocuments.add result
 
   var self = result
-  self.id = newId().DocumentId
   self.isInitialized = true
   self.currentTree = TSTree()
   self.appFile = app
@@ -793,6 +793,7 @@ proc newTextDocument*(
   self.services = services
   self.configService = services.getService(ConfigService).get
   self.vfs = services.getService(VFSService).get.vfs
+  self.editors = services.getService(DocumentEditorService).get
   self.createLanguageServer = createLanguageServer
   self.buffer = initBuffer(content = "", remoteId = getNextBufferId())
   self.filename = self.vfs.normalize(filename)
@@ -802,6 +803,8 @@ proc newTextDocument*(
   self.config = self.configService.addStore("document/" & self.filename, &"settings://document/{self.filename}")
   self.settings = TextSettings.new(self.config)
   self.languageServerList = newLanguageServerList(self.config)
+
+  self.editors.registerDocument(self)
 
   if language.getSome(language):
     self.languageId = language
@@ -817,6 +820,8 @@ method deinit*(self: TextDocument) =
   # logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
   if not self.isInitialized:
     return
+
+  self.editors.unregisterDocument(self)
 
   self.fileWatchHandle.unwatch()
 

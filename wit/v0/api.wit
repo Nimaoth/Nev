@@ -1,6 +1,8 @@
 package nev:plugins;
 
 interface types {
+  /// Represents a cursor in a text editor. Line and column are both zero based.
+  /// The column is in bytes.
   record cursor {
     line: s32,
     column: s32,
@@ -15,21 +17,91 @@ interface types {
     x: f32,
     y: f32,
   }
+
+  /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
+  /// can be used to efficiently access any document content or share a string with another plugin.
+  /// Ropes are reference counted internally, and this resource also affects that reference count.
+  resource rope {
+    constructor(content: string);
+    /// Returns another reference to the same rope.
+    clone: func() -> rope;
+    /// Returns the text of the rope as a string. This is expensive for large ropes.
+    text: func() -> string;
+    /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice: func(a: s64, b: s64) -> rope;
+    /// Returns a slice of the rope from 'a' to 'b'. The column of 'b' is exclusive. Columns are in bytes.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice-points: func(a: cursor, b: cursor) -> rope;
+  }
+
+  record editor {
+    id: u64
+  }
+
+  record text-editor {
+    id: u64
+  }
+
+  record document {
+    id: u64
+  }
+
+  record text-document {
+    id: u64
+  }
+}
+
+interface editor {
+  use types.{editor, document};
+  active-editor: func() -> option<editor>;
+  get-document: func(editor: editor) -> option<document>;
 }
 
 interface text-editor {
-  use types.{cursor, selection};
-  get-selection: func() -> selection;
+  use types.{editor, document, text-editor, text-document, cursor, selection, rope};
+  active-text-editor: func() -> option<text-editor>;
+  get-document: func(editor: text-editor) -> option<text-document>;
+  as-text-editor: func(editor: editor) -> option<text-editor>;
+  as-text-document: func(document: document) -> option<text-document>;
+
+  /// Sets the given selection as the only selection for the given editor.
+  set-selection: func(editor: text-editor, s: selection);
+  /// Returns the last selection of the given editor.
+  get-selection: func(editor: text-editor) -> selection;
+  /// Add a callback which will be called whenever any editor changes mode.
   add-mode-changed-handler: func(fun: u32) -> s32;
+
+  /// Returns the rope containing the current content of the text editors document.
+  /// This rope is not automatically kept up to date when the document changes, but
+  /// represents the content at the point in time this is called instead. Keeping ropes
+  /// around should not have significant memory overhead because ropes share data under the hood.
+  content: func(editor: text-editor) -> rope;
+}
+
+interface text-document {
+  use types.{text-document, cursor, selection, rope};
+
+  /// Returns the rope containing the current content of the document.
+  /// This rope is not automatically kept up to date when the document changes, but
+  /// represents the content at the point in time this is called instead. Keeping ropes
+  /// around should not have significant memory overhead because ropes share data under the hood.
+  content: func(document: text-document) -> rope;
 }
 
 interface layout {
+  /// Shared handle for a view.
   record view {
     id: s32
   }
 
+  /// Show the given view in the given slot.  If focus is true it's also focused, otherwise focus remains as is if possible.
   show: func(v: view, slot: string, focus: bool, add-to-history: bool);
+  /// Close the given view. If 'keep-hidden' is true then the view will only be removed from the layout tree but remains open
+  /// in the background. If 'restore-hidden' is true the the current view will be replaced by the last hidden view,
+  /// otherwise the current slot is removed from the layout.
   close: func(v: view, keep-hidden: bool, restore-hidden: bool);
+  /// Set focus to the view in the given slot.
   focus: func(slot: string);
 }
 
@@ -109,24 +181,6 @@ interface core {
   set-setting-raw: func(name: string, value: string);
 }
 
-interface text {
-  use types.{cursor};
-
-  resource editor {
-    rope: func() -> rope;
-    current: static func() -> option<editor>;
-  }
-
-  resource rope {
-    constructor(content: string);
-    clone: func() -> rope;
-    text: func() -> string;
-    debug: func() -> string;
-    slice: func(a: s64, b: s64) -> rope;
-    slice-points: func(a: cursor, b: cursor) -> rope;
-  }
-}
-
 interface guest {
   use render.{view};
   init-plugin: func();
@@ -138,8 +192,9 @@ interface guest {
 world plugin {
   use types.{cursor, selection};
 
+  import editor;
   import text-editor;
-  import text;
+  import text-document;
   import core;
   import render;
 

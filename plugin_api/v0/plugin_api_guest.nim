@@ -10,16 +10,22 @@ import
 
 {.pop.}
 import
+  editor
+
+export
+  editor
+
+import
   types
 
 export
   types
 
 import
-  text
+  text_document
 
 export
-  text
+  text_document
 
 import
   text_editor
