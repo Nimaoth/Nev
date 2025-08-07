@@ -765,10 +765,10 @@ proc applySettingsFromAppOptions(self: App) =
 
 proc applyFontSettings(self: App) =
   let fontRegular = self.uiSettings.fontFamily.get
-  let fontBold = self.uiSettings.fontFamilyBold.get  
+  let fontBold = self.uiSettings.fontFamilyBold.get
   let fontItalic = self.uiSettings.fontFamilyItalic.get
   let fontBoldItalic = self.uiSettings.fontFamilyBoldItalic.get
-  
+
   if fontRegular != self.fontRegular or
      fontBold != self.fontBold or
      fontItalic != self.fontItalic or
@@ -776,7 +776,7 @@ proc applyFontSettings(self: App) =
     log lvlInfo, &"Applying font settings: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}"
     self.fontRegular = fontRegular
     self.fontBold = fontBold
-    self.fontItalic = fontItalic  
+    self.fontItalic = fontItalic
     self.fontBoldItalic = fontBoldItalic
     self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
 
@@ -874,6 +874,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.uiSettings = UiSettings.new(self.config.runtime)
   self.generalSettings = GeneralSettings.new(self.config.runtime)
 
+  self.platform.setVsync(self.uiSettings.vsync.get)
+
   self.applyFontSettings()
 
   self.themes.setTheme(defaultTheme())
@@ -954,6 +956,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       self.reloadThemeFromConfig = true
     if key == "" or key == "ui" or key.startsWith("ui.font-family"):
       self.applyFontSettings()
+    if key == "" or key == "ui" or key == "ui.vsync":
+      self.platform.setVsync(self.uiSettings.vsync.get)
 
   if not options.dontRestoreConfig:
     if options.sessionOverride.getSome(session):
