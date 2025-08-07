@@ -317,6 +317,26 @@
                     "type": "string",
                     "description": "Path to theme to be used.",
                     "default": "app://themes/tokyo-night-color-theme.json"
+                },
+                "^fontFamily$": {
+                    "type": "string",
+                    "description": "Full path to regular font file.",
+                    "default": "app://fonts/DejaVuSansMono.ttf"
+                },
+                "^fontFamilyBold$": {
+                    "type": "string", 
+                    "description": "Full path to bold font file.",
+                    "default": "app://fonts/DejaVuSansMono-Bold.ttf"
+                },
+                "^fontFamilyItalic$": {
+                    "type": "string",
+                    "description": "Full path to italic font file.", 
+                    "default": "app://fonts/DejaVuSansMono-Oblique.ttf"
+                },
+                "^fontFamilyBoldItalic$": {
+                    "type": "string",
+                    "description": "Full path to bold italic font file.",
+                    "default": "app://fonts/DejaVuSansMono-BoldOblique.ttf"
                 }
             }
         },

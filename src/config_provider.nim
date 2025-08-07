@@ -1002,6 +1002,18 @@ declareSettings UiSettings, "ui":
   ## VFS path of the theme.
   declare theme, string, "app://themes/tokyo-night-color-theme.json"
 
+  ## Full path to regular font file.
+  declare fontFamily, string, "app://fonts/DejaVuSansMono.ttf"
+
+  ## Full path to bold font file.
+  declare fontFamilyBold, string, "app://fonts/DejaVuSansMono-Bold.ttf"
+
+  ## Full path to italic font file.
+  declare fontFamilyItalic, string, "app://fonts/DejaVuSansMono-Oblique.ttf"
+
+  ## Full path to bold italic font file.
+  declare fontFamilyBoldItalic, string, "app://fonts/DejaVuSansMono-BoldOblique.ttf"
+
   ## After how many milliseconds the which key window opens.
   declare whichKeyDelay, int, 250
 

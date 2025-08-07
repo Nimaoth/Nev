@@ -763,6 +763,23 @@ proc applySettingsFromAppOptions(self: App) =
     log lvlInfo, &"Set {setting}"
     self.config.runtime.set(path, value)
 
+proc applyFontSettings(self: App) =
+  let fontRegular = self.uiSettings.fontFamily.get
+  let fontBold = self.uiSettings.fontFamilyBold.get  
+  let fontItalic = self.uiSettings.fontFamilyItalic.get
+  let fontBoldItalic = self.uiSettings.fontFamilyBoldItalic.get
+  
+  if fontRegular != self.fontRegular or
+     fontBold != self.fontBold or
+     fontItalic != self.fontItalic or
+     fontBoldItalic != self.fontBoldItalic:
+    log lvlInfo, &"Applying font settings: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}"
+    self.fontRegular = fontRegular
+    self.fontBold = fontBold
+    self.fontItalic = fontItalic  
+    self.fontBoldItalic = fontBoldItalic
+    self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
+
 proc runEarlyCommandsFromAppOptions(self: App) =
   log lvlInfo, &"Run early commands provided through command line"
   for command in self.appOptions.earlyCommands:
@@ -837,10 +854,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.platform.fontSize = 16
   self.platform.lineDistance = 4
 
-  self.fontRegular = "app://fonts/DejaVuSansMono.ttf"
-  self.fontBold = "app://fonts/DejaVuSansMono-Bold.ttf"
-  self.fontItalic = "app://fonts/DejaVuSansMono-Oblique.ttf"
-  self.fontBoldItalic = "app://fonts/DejaVuSansMono-BoldOblique.ttf"
   self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
   self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
 
@@ -860,6 +873,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.uiSettings = UiSettings.new(self.config.runtime)
   self.generalSettings = GeneralSettings.new(self.config.runtime)
+
+  self.applyFontSettings()
 
   self.themes.setTheme(defaultTheme())
 
@@ -937,6 +952,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
     if key == "" or key == "ui" or key == "ui.theme":
       self.reloadThemeFromConfig = true
+    if key == "" or key == "ui" or key.startsWith("ui.font-family"):
+      self.applyFontSettings()
 
   if not options.dontRestoreConfig:
     if options.sessionOverride.getSome(session):
