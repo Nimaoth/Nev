@@ -358,7 +358,7 @@
     },
     "nimwasmtime": {
       "version": "0.2.1",
-      "vcsRevision": "77592934f4aa081f3354742878bf0f14f482c2b4",
+      "vcsRevision": "d9dbeb8253a6e48bdbbf2547123b74b4a4691e4d",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
       "dependencies": [
