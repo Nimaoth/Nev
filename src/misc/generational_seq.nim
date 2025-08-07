@@ -89,11 +89,11 @@ iterator pairs*[T; K](self: GenerationalSeq[T, K]): (int, lent T) =
   for item in self.items:
     let k = i
     inc i
-    yield (i, item.value)
+    yield (k, item.value)
 
 iterator pairs*[T; K](self: var GenerationalSeq[T, K]): (int, var T) =
   var i = 0
   for item in self.items.mitems:
     let k = i
     inc i
-    yield (i, item.value)
+    yield (k, item.value)
