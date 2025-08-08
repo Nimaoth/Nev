@@ -22,7 +22,8 @@
 			"parameters": [],
 			"returnType": "",
 			"description": "",
-		}
+		},
+		"test-command-5": {}
 	},
 	"permissions": {
 		"filesystem": {

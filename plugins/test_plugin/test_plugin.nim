@@ -131,3 +131,20 @@ defineCommand(ws"open-custom-view",
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
     openCustomView()
     return ws""
+
+defineCommand(ws"test-command-5",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    if activeTextEditor().getSome(editor):
+      let s = editor.getSelection
+      let d = editor.content
+      echo editor.id
+      echo "========== ", s
+      echo d.text
+      echo "=========="
+    return ws""
