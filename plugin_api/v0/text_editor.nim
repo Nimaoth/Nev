@@ -12,9 +12,13 @@ import
 import
   types
 
+import
+  core
+
 proc textEditorActiveTextEditorImported(a0: int32): void {.
     wasmimport("active-text-editor", "nev:plugins/text-editor").}
 proc activeTextEditor*(): Option[TextEditor] {.nodestroy.} =
+  ## Returns a handle for the currently active text editor.
   var retArea: array[16, uint8]
   textEditorActiveTextEditorImported(cast[int32](retArea[0].addr))
   if cast[ptr int64](retArea[0].addr)[] != 0:
@@ -25,6 +29,7 @@ proc activeTextEditor*(): Option[TextEditor] {.nodestroy.} =
 proc textEditorGetDocumentImported(a0: uint64; a1: int32): void {.
     wasmimport("get-document", "nev:plugins/text-editor").}
 proc getDocument*(editor: TextEditor): Option[TextDocument] {.nodestroy.} =
+  ## Returns the text document the given editor is currently editing.
   var
     retArea: array[16, uint8]
     arg0: uint64
@@ -38,6 +43,7 @@ proc getDocument*(editor: TextEditor): Option[TextDocument] {.nodestroy.} =
 proc textEditorAsTextEditorImported(a0: uint64; a1: int32): void {.
     wasmimport("as-text-editor", "nev:plugins/text-editor").}
 proc asTextEditor*(editor: Editor): Option[TextEditor] {.nodestroy.} =
+  ## Try to cast the given editor handle to a text editor handle.
   var
     retArea: array[16, uint8]
     arg0: uint64
@@ -51,6 +57,7 @@ proc asTextEditor*(editor: Editor): Option[TextEditor] {.nodestroy.} =
 proc textEditorAsTextDocumentImported(a0: uint64; a1: int32): void {.
     wasmimport("as-text-document", "nev:plugins/text-editor").}
 proc asTextDocument*(document: Document): Option[TextDocument] {.nodestroy.} =
+  ## Try to cast the given document handle to a text document handle.
   var
     retArea: array[16, uint8]
     arg0: uint64
@@ -60,6 +67,42 @@ proc asTextDocument*(document: Document): Option[TextDocument] {.nodestroy.} =
     var temp: TextDocument
     temp.id = convert(cast[ptr uint64](retArea[8].addr)[], uint64)
     result = temp.some
+
+proc textEditorCommandImported(a0: uint64; a1: int32; a2: int32; a3: int32;
+                               a4: int32; a5: int32): void {.
+    wasmimport("command", "nev:plugins/text-editor").}
+proc command*(editor: TextEditor; name: WitString; arguments: WitString): Result[
+    WitString, CommandError] {.nodestroy.} =
+  ## Run the given command on the given text editor. This requires 'command' permissions.
+  var
+    retArea: array[24, uint8]
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+  arg0 = editor.id
+  if name.len > 0:
+    arg1 = cast[int32](name[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](name.len)
+  if arguments.len > 0:
+    arg3 = cast[int32](arguments[0].addr)
+  else:
+    arg3 = 0.int32
+  arg4 = cast[int32](arguments.len)
+  textEditorCommandImported(arg0, arg1, arg2, arg3, arg4,
+                            cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] == 0:
+    var tempOk: WitString
+    tempOk = ws(cast[ptr char](cast[ptr int32](retArea[4].addr)[]),
+                cast[ptr int32](retArea[8].addr)[])
+    result = results.Result[WitString, CommandError].ok(tempOk)
+  else:
+    var tempErr: CommandError
+    tempErr = cast[CommandError](cast[ptr int32](retArea[4].addr)[])
+    result = results.Result[WitString, CommandError].err(tempErr)
 
 proc textEditorSetSelectionImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                                     a4: int32): void {.

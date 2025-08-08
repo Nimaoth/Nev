@@ -15,12 +15,16 @@ type
   Cursor* = object
     line*: int32
     column*: int32
+  ## The column of 'last' is exclusive.
   Selection* = object
     first*: Cursor
     last*: Cursor
   Vec2f* = object
     x*: float32
     y*: float32
+  Rect* = object
+    pos*: Vec2f
+    size*: Vec2f
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.

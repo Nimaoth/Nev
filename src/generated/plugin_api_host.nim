@@ -76,28 +76,28 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8489272619 = instance.getExport(context, "init_plugin")
-  if f_8489272619.isSome:
-    assert f_8489272619.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8489272619.get.of_field.func_field
+  let f_8489272621 = instance.getExport(context, "init_plugin")
+  if f_8489272621.isSome:
+    assert f_8489272621.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8489272621.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8489272635 = instance.getExport(context, "handle_command")
-  if f_8489272635.isSome:
-    assert f_8489272635.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8489272635.get.of_field.func_field
+  let f_8489272637 = instance.getExport(context, "handle_command")
+  if f_8489272637.isSome:
+    assert f_8489272637.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8489272637.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8489272685 = instance.getExport(context, "handle_mode_changed")
-  if f_8489272685.isSome:
-    assert f_8489272685.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8489272685.get.of_field.func_field
+  let f_8489272687 = instance.getExport(context, "handle_mode_changed")
+  if f_8489272687.isSome:
+    assert f_8489272687.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8489272687.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8489272686 = instance.getExport(context, "handle_view_render_callback")
-  if f_8489272686.isSome:
-    assert f_8489272686.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8489272686.get.of_field.func_field
+  let f_8489272688 = instance.getExport(context, "handle_view_render_callback")
+  if f_8489272688.isSome:
+    assert f_8489272688.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8489272688.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
@@ -241,24 +241,6 @@ proc typesSlicePoints(host: HostContext; store: ptr ContextT;
 proc editorActiveEditor(host: HostContext; store: ptr ContextT): Option[Editor]
 proc editorGetDocument(host: HostContext; store: ptr ContextT; editor: Editor): Option[
     Document]
-proc textEditorActiveTextEditor(host: HostContext; store: ptr ContextT): Option[
-    TextEditor]
-proc textEditorGetDocument(host: HostContext; store: ptr ContextT;
-                           editor: TextEditor): Option[TextDocument]
-proc textEditorAsTextEditor(host: HostContext; store: ptr ContextT;
-                            editor: Editor): Option[TextEditor]
-proc textEditorAsTextDocument(host: HostContext; store: ptr ContextT;
-                              document: Document): Option[TextDocument]
-proc textEditorSetSelection(host: HostContext; store: ptr ContextT;
-                            editor: TextEditor; s: Selection): void
-proc textEditorGetSelection(host: HostContext; store: ptr ContextT;
-                            editor: TextEditor): Selection
-proc textEditorAddModeChangedHandler(host: HostContext; store: ptr ContextT;
-                                     fun: uint32): int32
-proc textEditorContent(host: HostContext; store: ptr ContextT;
-                       editor: TextEditor): RopeResource
-proc textDocumentContent(host: HostContext; store: ptr ContextT;
-                         document: TextDocument): RopeResource
 proc coreApiVersion(host: HostContext; store: ptr ContextT): int32
 proc coreGetTime(host: HostContext; store: ptr ContextT): float64
 proc coreDefineCommand(host: HostContext; store: ptr ContextT;
@@ -271,6 +253,27 @@ proc coreRunCommand(host: HostContext; store: ptr ContextT; name: sink string;
 proc coreGetSettingRaw(host: HostContext; store: ptr ContextT; name: sink string): string
 proc coreSetSettingRaw(host: HostContext; store: ptr ContextT;
                        name: sink string; value: sink string): void
+proc textEditorActiveTextEditor(host: HostContext; store: ptr ContextT): Option[
+    TextEditor]
+proc textEditorGetDocument(host: HostContext; store: ptr ContextT;
+                           editor: TextEditor): Option[TextDocument]
+proc textEditorAsTextEditor(host: HostContext; store: ptr ContextT;
+                            editor: Editor): Option[TextEditor]
+proc textEditorAsTextDocument(host: HostContext; store: ptr ContextT;
+                              document: Document): Option[TextDocument]
+proc textEditorCommand(host: HostContext; store: ptr ContextT;
+                       editor: TextEditor; name: sink string;
+                       arguments: sink string): Result[string, CommandError]
+proc textEditorSetSelection(host: HostContext; store: ptr ContextT;
+                            editor: TextEditor; s: Selection): void
+proc textEditorGetSelection(host: HostContext; store: ptr ContextT;
+                            editor: TextEditor): Selection
+proc textEditorAddModeChangedHandler(host: HostContext; store: ptr ContextT;
+                                     fun: uint32): int32
+proc textEditorContent(host: HostContext; store: ptr ContextT;
+                       editor: TextEditor): RopeResource
+proc textDocumentContent(host: HostContext; store: ptr ContextT;
+                         document: TextDocument): RopeResource
 proc layoutShow(host: HostContext; store: ptr ContextT; v: View;
                 slot: sink string; focus: bool; addToHistory: bool): void
 proc layoutClose(host: HostContext; store: ptr ContextT; v: View;
@@ -486,185 +489,6 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "active-text-editor", ty):
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = host.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
-        let res = textEditorActiveTextEditor(host, store)
-        let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
-        if res.isSome:
-          cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor", "get-document", ty):
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = host.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
-        var editor: TextEditor
-        editor.id = convert(parameters[0].i64, uint64)
-        let res = textEditorGetDocument(host, store, editor)
-        let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
-        if res.isSome:
-          cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor", "as-text-editor", ty):
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = host.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
-        var editor: Editor
-        editor.id = convert(parameters[0].i64, uint64)
-        let res = textEditorAsTextEditor(host, store, editor)
-        let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
-        if res.isSome:
-          cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor", "as-text-document",
-                                 ty):
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = host.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
-        var document: Document
-        document.id = convert(parameters[0].i64, uint64)
-        let res = textEditorAsTextDocument(host, store, document)
-        let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
-        if res.isSome:
-          cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
-          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor", "set-selection", ty):
-        var editor: TextEditor
-        var s: Selection
-        editor.id = convert(parameters[0].i64, uint64)
-        s.first.line = convert(parameters[1].i32, int32)
-        s.first.column = convert(parameters[2].i32, int32)
-        s.last.line = convert(parameters[3].i32, int32)
-        s.last.column = convert(parameters[4].i32, int32)
-        textEditorSetSelection(host, store, editor, s)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor", "get-selection", ty):
-        var mainMemory = caller.getExport("memory")
-        if mainMemory.isNone:
-          mainMemory = host.getMemoryFor(caller)
-        var memory: ptr UncheckedArray[uint8] = nil
-        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](data(
-              mainMemory.get.of_field.sharedmemory))
-        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
-          memory = cast[ptr UncheckedArray[uint8]](store.data(
-              mainMemory.get.of_field.memory.addr))
-        else:
-          assert false
-        var editor: TextEditor
-        editor.id = convert(parameters[0].i64, uint64)
-        let res = textEditorGetSelection(host, store, editor)
-        let retArea = parameters[^1].i32
-        cast[ptr int32](memory[retArea + 0].addr)[] = res.first.line
-        cast[ptr int32](memory[retArea + 4].addr)[] = res.first.column
-        cast[ptr int32](memory[retArea + 8].addr)[] = res.last.line
-        cast[ptr int32](memory[retArea + 12].addr)[] = res.last.column
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
-          [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "add-mode-changed-handler", ty):
-        var fun: uint32
-        fun = convert(parameters[0].i32, uint32)
-        let res = textEditorAddModeChangedHandler(host, store, fun)
-        parameters[0].i32 = cast[int32](res)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
-          [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/text-editor", "content", ty):
-        var editor: TextEditor
-        editor.id = convert(parameters[0].i64, uint64)
-        let res = textEditorContent(host, store, editor)
-        parameters[0].i32 = ?host.resources.resourceNew(store, res)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
-          [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/text-document", "content", ty):
-        var document: TextDocument
-        document.id = convert(parameters[0].i64, uint64)
-        let res = textDocumentContent(host, store, document)
-        parameters[0].i32 = ?host.resources.resourceNew(store, res)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
       linker.defineFuncUnchecked("nev:plugins/core", "api-version", ty):
         let res = coreApiVersion(host, store)
@@ -866,6 +690,236 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           for i0 in 0 ..< value.len:
             value[i0] = p0[i0]
         coreSetSettingRaw(host, store, name, value)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "active-text-editor", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let res = textEditorActiveTextEditor(host, store)
+        let retArea = parameters[^1].i32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "get-document", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        let res = textEditorGetDocument(host, store, editor)
+        let retArea = parameters[^1].i32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "as-text-editor", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var editor: Editor
+        editor.id = convert(parameters[0].i64, uint64)
+        let res = textEditorAsTextEditor(host, store, editor)
+        let retArea = parameters[^1].i32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "as-text-document",
+                                 ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var document: Document
+        document.id = convert(parameters[0].i64, uint64)
+        let res = textEditorAsTextDocument(host, store, document)
+        let retArea = parameters[^1].i32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "command", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var editor: TextEditor
+        var name: string
+        var arguments: string
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          name = newString(parameters[2].i32)
+          for i0 in 0 ..< name.len:
+            name[i0] = p0[i0]
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[3].i32].addr)
+          arguments = newString(parameters[4].i32)
+          for i0 in 0 ..< arguments.len:
+            arguments[i0] = p0[i0]
+        let res = textEditorCommand(host, store, editor, name, arguments)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isErr.int32
+        if res.isOk:
+          if res.value.len > 0:
+            let dataPtrWasm1 = int32(?stackAlloc(stackAllocFunc, store,
+                (res.value.len * 1).int32, 4))
+            cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](dataPtrWasm1)
+            block:
+              for i1 in 0 ..< res.value.len:
+                memory[dataPtrWasm1 + i1] = cast[uint8](res.value[i1])
+          else:
+            cast[ptr int32](memory[retArea + 4].addr)[] = 0.int32
+          cast[ptr int32](memory[retArea + 8].addr)[] = cast[int32](res.value.len)
+        else:
+          cast[ptr int32](memory[retArea + 4].addr)[] = cast[int8](res.error)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "set-selection", ty):
+        var editor: TextEditor
+        var s: Selection
+        editor.id = convert(parameters[0].i64, uint64)
+        s.first.line = convert(parameters[1].i32, int32)
+        s.first.column = convert(parameters[2].i32, int32)
+        s.last.line = convert(parameters[3].i32, int32)
+        s.last.column = convert(parameters[4].i32, int32)
+        textEditorSetSelection(host, store, editor, s)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "get-selection", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        let res = textEditorGetSelection(host, store, editor)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.first.line
+        cast[ptr int32](memory[retArea + 4].addr)[] = res.first.column
+        cast[ptr int32](memory[retArea + 8].addr)[] = res.last.line
+        cast[ptr int32](memory[retArea + 12].addr)[] = res.last.column
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "add-mode-changed-handler", ty):
+        var fun: uint32
+        fun = convert(parameters[0].i32, uint32)
+        let res = textEditorAddModeChangedHandler(host, store, fun)
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "content", ty):
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        let res = textEditorContent(host, store, editor)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/text-document", "content", ty):
+        var document: TextDocument
+        document.id = convert(parameters[0].i64, uint64)
+        let res = textDocumentContent(host, store, document)
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
   block:

@@ -60,16 +60,27 @@ interface types {
 
 interface editor {
   use types.{editor, document};
+  /// Returns a handle for the currently active text editor.
   active-editor: func() -> option<editor>;
+  /// Returns the document the given editor is currently editing.
   get-document: func(editor: editor) -> option<document>;
 }
 
 interface text-editor {
   use types.{editor, document, text-editor, text-document, cursor, selection, rope};
+  use core.{command-error};
+
+  /// Returns a handle for the currently active text editor.
   active-text-editor: func() -> option<text-editor>;
+  /// Returns the text document the given editor is currently editing.
   get-document: func(editor: text-editor) -> option<text-document>;
+  /// Try to cast the given editor handle to a text editor handle.
   as-text-editor: func(editor: editor) -> option<text-editor>;
+  /// Try to cast the given document handle to a text document handle.
   as-text-document: func(document: document) -> option<text-document>;
+
+  /// Run the given command on the given text editor. This requires 'command' permissions.
+  command: func(editor: text-editor, name: string, arguments: string) -> result<string, command-error>;
 
   /// Sets the given selection as the only selection for the given editor.
   set-selection: func(editor: text-editor, s: selection);

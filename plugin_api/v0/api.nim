@@ -57,3 +57,6 @@ proc defineCommand*(name: WitString; active: bool; docs: WitString; params: WitL
 
 proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
   discard addModeChangedHandler(cast[uint32](fun))
+
+proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
+proc asDocument*(document: TextDocument): Document = Document(id: document.id)

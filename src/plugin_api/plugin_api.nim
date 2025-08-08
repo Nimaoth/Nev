@@ -1,5 +1,5 @@
-import std/[macros, strutils, os, strformat, sequtils]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer]
+import std/[macros, strutils, os, strformat, sequtils, json]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils]
 import nimsumtree/[rope, sumtree, arc]
 import service
 import layout
@@ -240,6 +240,16 @@ proc textEditor_addModeChangedHandler(host: HostContext, store: ptr ContextT, fu
       if res.isErr:
         log lvlError, "Failed to call handleModeChanged: " & $res
   return 0
+
+proc textEditorCommand(host: HostContext, store: ptr ContextT; editor: TextEditor, name: sink string, arguments: sink string): Result[string, CommandError] =
+  let instance = cast[ptr InstanceData](store.getData())
+  if not host.commands.checkPermissions(name, instance.permissions.commands):
+    result.err(CommandError.NotAllowed)
+    return
+  if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    if editor.handleAction(name, arguments, true).getSome(res):
+      return results.ok($res)
+  result.err(CommandError.NotFound)
 
 proc textEditorContent(host: HostContext; store: ptr ContextT; editor: TextEditor): RopeResource =
   if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:

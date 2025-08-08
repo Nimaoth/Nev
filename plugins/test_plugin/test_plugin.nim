@@ -145,6 +145,5 @@ defineCommand(ws"test-command-5",
       let d = editor.content
       echo editor.id
       echo "========== ", s
-      echo d.text
-      echo "=========="
+      echo editor.command(ws"vim-move-cursor-column", ws"5")
     return ws""
