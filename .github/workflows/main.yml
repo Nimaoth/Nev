@@ -218,7 +218,7 @@ jobs:
         continue-on-error: true
 
       - name: Install stable rust toolchain
-        uses: dtolnay/rust-toolchain@1.78
+        uses: dtolnay/rust-toolchain@1.81
 
       - uses: iffy/install-nim@v5
         with:
