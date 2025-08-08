@@ -38,6 +38,7 @@ proc newFilePreviewer*(vfs: VFS, services: Services,
   result.openNewDocuments = openNewDocuments
   result.reuseExistingDocuments = reuseExistingDocuments
   result.tempDocument = newTextDocument(services, createLanguageServer=false)
+  result.tempDocument.usage = "temp-preview"
   result.tempDocument.readOnly = true
 
   result.editors.pinnedDocuments.incl result.tempDocument

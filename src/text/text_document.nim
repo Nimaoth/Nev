@@ -817,7 +817,7 @@ proc newTextDocument*(
     discard self.addLanguageServer(languageServer.get)
 
 method deinit*(self: TextDocument) =
-  # logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
+  # debugf"[deinit] Destroying text document '{self.filename}'"
   if not self.isInitialized:
     return
 

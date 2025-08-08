@@ -139,6 +139,7 @@ proc diffStagedFileAsync(self: VCSService, workspace: Workspace, path: string): 
   log lvlInfo, fmt"Diff staged '({path})'"
 
   let stagedDocument = newTextDocument(self.services, path, load = false, createLanguageServer = false)
+  stagedDocument.usage = "staged"
   stagedDocument.staged = true
   stagedDocument.readOnly = true
   EditorSettings.new(stagedDocument.config).saveInSession.set(false)

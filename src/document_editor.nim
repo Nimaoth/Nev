@@ -180,9 +180,9 @@ proc getAllDocuments*(self: DocumentEditorService): seq[Document] =
   for it in self.editors.values:
     result.incl it.getDocument
 
-proc getDocument*(self: DocumentEditorService, path: string): Option[Document] =
+proc getDocument*(self: DocumentEditorService, path: string, usage = ""): Option[Document] =
   for document in self.documents:
-    if document.filename == path:
+    if document.filename != "" and document.filename == path and document.usage == usage:
       return document.some
 
   return Document.none
@@ -194,7 +194,7 @@ proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEd
   return self.allEditors.tryGet(id)
 
 proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] =
-  for id, editor in self.editors.pairs:
+  for editor in self.allEditors:
     if editor.getDocument() == document:
       result.add editor
 

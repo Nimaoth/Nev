@@ -901,7 +901,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.layout.pinnedDocuments.incl(self.logDocument)
 
   self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
-  let commandLineTextDocument = newTextDocument(self.services, language="command-line".some)
+  let commandLineTextDocument = newTextDocument(self.services, "ed://.command-line", language="command-line".some, load=false)
   self.commands.commandLineEditor = newTextEditor(commandLineTextDocument, self.services)
   self.commands.commandLineEditor.renderHeader = false
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
@@ -1366,6 +1366,9 @@ proc toggleConsoleLogger*(self: App) {.expose("editor").} =
 
 proc closeUnusedDocuments*(self: App) =
   for document in self.editors.documents:
+    if document.usage != "":
+      continue
+
     if document == self.logDocument:
       continue
 

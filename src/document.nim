@@ -18,6 +18,7 @@ type Document* = ref object of RootObj
   undoableRevision*: int
   lastSavedRevision*: int               ## Undobale revision at the time we saved the last time
   vfs*: VFS
+  usage*: string
 
 method `$`*(document: Document): string {.base, gcsafe, raises: [].} = return ""
 method save*(self: Document, filename: string = "", app: bool = false) {.base, gcsafe, raises: [].} = discard

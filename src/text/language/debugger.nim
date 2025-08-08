@@ -159,6 +159,7 @@ proc waitForApp(self: Debugger) {.async: (raises: []).} =
       discard
 
   let document = newTextDocument(self.services, createLanguageServer=false)
+  document.usage = "debugger-output"
   self.outputEditor = newTextEditor(document, self.services)
   self.outputEditor.usage = "debugger-output"
   self.outputEditor.renderHeader = false
@@ -1149,6 +1150,7 @@ proc newBreakpointPreviewer*(services: Services, language = string.none,
   new result
 
   result.tempDocument = newTextDocument(services, language=language, createLanguageServer=false)
+  result.tempDocument.usage = "debugger-temp"
   result.tempDocument.readOnly = true
   result.getPreviewTextImpl = getPreviewTextImpl
 

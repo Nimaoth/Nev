@@ -819,18 +819,20 @@ proc lineNumberWidth*(self: TextDocumentEditor): float =
   return self.lineNumberBounds.x.ceil
 
 proc preRender*(self: TextDocumentEditor, bounds: Rect) =
-  if self.document.isNil:
+  if self.document.isNil or not self.document.isInitialized:
     return
 
   if self.document.requiresLoad:
     self.document.load()
+
+  let diff = self.diffDocument != nil and self.diffDocument.isInitialized
 
   # todo: this should account for the line number width
   let wrapWidth = if self.settings.wrapLines.get():
     let wrapMargin = self.settings.wrapMargin.get()
     let lineNumberWidth = self.lineNumberWidth()
     var wrapWidth = max(floor((bounds.w - lineNumberWidth) / self.platform.charWidth).int - wrapMargin, 10)
-    if self.diffDocument.isNotNil:
+    if diff:
       wrapWidth = max(floor((bounds.w / 2 - lineNumberWidth) / self.platform.charWidth).int - wrapMargin, 10)
     wrapWidth
   else:
@@ -841,7 +843,7 @@ proc preRender*(self: TextDocumentEditor, bounds: Rect) =
   if self.displayMap.remoteId != self.document.buffer.remoteId:
     self.displayMap.setBuffer(self.document.buffer.snapshot.clone())
 
-  if self.diffDocument.isNotNil:
+  if diff:
     if self.diffDisplayMap.remoteId != self.diffDocument.buffer.remoteId:
       self.diffDisplayMap.setBuffer(self.diffDocument.buffer.snapshot.clone())
     if self.diffDocument.rope.len > 1:
@@ -2439,6 +2441,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
+      self.diffDocument.usage = "text-diff"
       self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
         self.markDirty()
 
@@ -2458,6 +2461,7 @@ proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.services, language=self.document.languageId.some, createLanguageServer = false)
+      self.diffDocument.usage = "text-diff"
       self.onRequestRerenderDiffHandle = self.diffDocument.onRequestRerender.subscribe () =>
         self.markDirty()
 
