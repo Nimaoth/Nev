@@ -8,7 +8,7 @@
         "editor.foreground": "#ebdbb2",
         "editor.background": "#282828",
         "panel.background": "#32302f",
-        "selection.background": "#bdae93",
+        "selection.background": "#45585880",
         "matching-text-highlight": "#665c5466",
         "editor.findMatchBackground": "#fabd2f66",
         "editorCursor.foreground": "#fbf1c7",
