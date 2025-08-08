@@ -128,6 +128,7 @@ For examples and default values see [here](../config/settings.json)
 | `ui.tab-header-width` | int | 30 | Width of tab layout headers in characters |
 | `ui.theme` | string | "app://themes/tokyo-night-color-theme.json" | VFS path of the theme. |
 | `ui.toast-duration` | int | 8000 | How long toasts are displayed for, in milliseconds. |
+| `ui.vsync` | bool | true | Enable vertical sync to prevent screen tearing. |
 | `ui.which-key-delay` | int | 250 | After how many milliseconds the which key window opens. |
 | `ui.which-key-height` | int | 6 | How many rows tall the window showing next possible inputs should be. |
 | `ui.which-key-no-progress` | bool | false | If true then the window showing next possible inputs will be displayed even when no keybinding is in progress (i.e. it will always be shown). |

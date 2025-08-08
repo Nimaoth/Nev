@@ -890,6 +890,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.uiSettings = UiSettings.new(self.config.runtime)
   self.generalSettings = GeneralSettings.new(self.config.runtime)
 
+  self.platform.setVsync(self.uiSettings.vsync.get)
+
   self.applyFontSettings()
 
   self.themes.setTheme(defaultTheme())
@@ -968,6 +970,8 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       self.reloadThemeFromConfig = true
     if key == "" or key == "ui" or key.startsWith("ui.font-family"):
       self.applyFontSettings()
+    if key == "" or key == "ui" or key == "ui.vsync":
+      self.platform.setVsync(self.uiSettings.vsync.get)
 
   if not options.dontRestoreConfig:
     if options.sessionOverride.getSome(session):
@@ -1421,9 +1425,6 @@ proc loadWorkspaceFile*(self: App, path: string) =
 
 proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor").} =
   asyncSpawn self.setTheme(fmt"app://themes/{name}.json", force)
-
-proc vsync*(self: App, enabled: bool) {.expose("editor").} =
-  self.platform.setVsync(enabled)
 
 proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
   try:
