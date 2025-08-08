@@ -1,6 +1,6 @@
 import vmath
 import ui/node
-import misc/[event]
+import misc/[event, timer]
 import input, vfs, app_options
 
 export input, event
@@ -26,7 +26,10 @@ type
     onCloseRequested*: Event[void]
     onDropFile*: Event[tuple[path: string, content: string]]
     onFocusChanged*: Event[bool]
+    onPreRender*: Event[Platform]
     layoutOptions*: WLayoutOptions
+    logNextFrameTime*: bool
+    lastEventTime*: Timer
 
     vfs*: VFS
 

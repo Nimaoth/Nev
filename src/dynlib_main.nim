@@ -60,7 +60,7 @@ import collab
 import wasm3, wasm3/[wasm3c, wasmconversions]
 import ui/node
 import clipboard
-import scripting/scripting_base
+import plugin_service
 
 generatePluginBindings()
 static:

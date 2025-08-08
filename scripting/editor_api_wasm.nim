@@ -330,6 +330,21 @@ proc chooseTheme*() {.gcsafe, raises: [].} =
   let res {.used.} = editor_chooseTheme_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_crash_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc crash*(message: string = "") {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add message.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_crash_void_App_string_wasm(argsJsonString.cstring)
+
+
+proc editor_crash2_void_App_wasm(arg: cstring): cstring {.importc.}
+proc crash2*() {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_crash2_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_createFile_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc createFile*(path: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
@@ -402,6 +417,19 @@ proc chooseOpenDocument*() {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_chooseOpenDocument_void_App_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_showPlugins_void_App_float_float_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc showPlugins*(scaleX: float = 0.9; scaleY: float = 0.9;
+                  previewScale: float = 0.6) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add scaleX.toJson()
+  argsJson.add scaleY.toJson()
+  argsJson.add previewScale.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_showPlugins_void_App_float_float_float_wasm(
       argsJsonString.cstring)
 
 

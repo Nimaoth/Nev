@@ -1,0 +1,35 @@
+{
+	"name": "Test Plugin",
+	"version": "0.0.1",
+	"authors": ["Nimaoth"],
+	"repository": "https://github.com/Nimaoth/Nev/plugins/test_plugin",
+	"wasm": "test_plugin.m.wasm",
+	// "wasm": "test_plugin.wat",
+	"autoLoad": false,
+	// "load": [
+	// 	{
+	// 		"event": "command"
+	// 	}
+	// ],
+	"commands": {
+		"test-command-1": {},
+		"test-command-2": {
+			"parameters": [{"name": "a", "type": "string"}],
+			"returnType": "string",
+			"description": "",
+		},
+		"open-custom-view": {
+			"parameters": [],
+			"returnType": "",
+			"description": "",
+		},
+		"test-command-5": {}
+	},
+	"permissions": {
+		"filesystem": {
+			"disallowAll": false,
+			"allow": ["local://"],
+		},
+		"time": true,
+	}
+}

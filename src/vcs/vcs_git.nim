@@ -1,6 +1,6 @@
 import std/[strutils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
-import scripting_api
+import scripting_api, config_provider
 import text/diff
 import vfs
 import vcs
@@ -12,11 +12,12 @@ logCategory "vsc-git"
 
 type
   VersionControlSystemGit* = ref object of VersionControlSystem
-    discard
+    settings: ConfigStore
 
-proc newVersionControlSystemGit*(root: string): VersionControlSystemGit =
+proc newVersionControlSystemGit*(root: string, settings: ConfigStore): VersionControlSystemGit =
   new result
   result.root = root
+  result.settings = settings
 
 proc parseFileStatusGit(status: char): VCSFileStatus =
   result = case status
@@ -102,7 +103,11 @@ method getWorkingFileContent*(self: VersionControlSystemGit, path: string): Futu
 method getFileChanges*(self: VersionControlSystemGit, path: string, staged: bool = false):
     Future[Option[seq[LineMapping]]] {.async.} =
 
-  var args = @["diff", "-U0"]
+  var args = @["diff", "-U0", "--ignore-cr-at-eol"]
+
+  let extraArgs = self.settings.get("vcs.git.diff-args", newSeq[string]())
+  args.add extraArgs
+
   if staged:
     args.add "--staged"
   args.add path

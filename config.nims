@@ -16,6 +16,7 @@ switch("tlsEmulation", "off")
 switch("panics", "on")
 switch("d", "release")
 # switch("d", "lto")
+# switch("d", "lto_incremental")
 # switch("opt", "size")
 
 switch("stacktrace", "off")
@@ -102,8 +103,6 @@ when defined(musl):
   switch("d", "enableSystemClipboard=false")
   switch("d", "nimWasmtimeBuildMusl=true")
 
-when defined(enableSysFatalStackTrace):
-  patchFile("stdlib", "fatal", "patches/fatal")
 patchFile("stdlib", "osproc", "patches/osproc")
 patchFile("stdlib", "excpt", "patches/excpt")
 patchFile("stdlib", "jsonutils", "src/misc/myjsonutils")
@@ -138,6 +137,10 @@ else:
 # switch("d", "enableSystemClipboard=false")
 # switch("lineDir", "off")
 # switch("profiler", "on")
+
+# Put custom build configs which shouldn't be commited in local.nims
+when withDir(thisDir(), fileExists("local.nims")):
+  include "local.nims"
 
 # begin Nimble config (version 2)
 --noNimblePath

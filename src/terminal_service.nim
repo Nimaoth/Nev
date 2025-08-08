@@ -609,11 +609,11 @@ proc handleProcessOutput(state: var ThreadState, buffer: var string) {.raises: [
     elif n == 0:
       state.processTerminated = true
 
-proc log(state: ThreadState, str: string) =
+proc log*(state: ThreadState, str: string) =
   if state.enableLog:
     state.outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
 
-proc log(state: ptr ThreadState, str: string) =
+proc log*(state: ptr ThreadState, str: string) =
   if state.enableLog:
     state[].outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
 

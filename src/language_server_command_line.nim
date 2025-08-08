@@ -1,9 +1,9 @@
-import std/[options, tables]
+import std/[options, tables, sequtils, strutils]
 import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, rope_utils, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
-import dispatch_tables, document_editor, service, layout, events, config_provider
+import dispatch_tables, document_editor, service, layout, events, config_provider, command_service
 import text/text_document
 
 logCategory "language-server-command-line"
@@ -11,6 +11,7 @@ logCategory "language-server-command-line"
 type
   LanguageServerCommandLine* = ref object of LanguageServer
     services: Services
+    commands: CommandService
     documents: DocumentEditorService
     events: EventHandlerService
     files: Table[string, string]
@@ -24,6 +25,7 @@ proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine
   var server = new LanguageServerCommandLine
   server.name = "command-line"
   server.services = services
+  server.commands = services.getService(CommandService).get
   server.events = services.getService(EventHandlerService).get
   server.documents = services.getService(DocumentEditorService).get
   server.capabilities.completionProvider = lsp_types.CompletionOptions().some
@@ -31,7 +33,7 @@ proc newLanguageServerCommandLine(services: Services): LanguageServerCommandLine
 
 func serviceName*(_: typedesc[LanguageServerCommandLineService]): string = "LanguageServerCommandLineService"
 
-addBuiltinService(LanguageServerCommandLineService, DocumentEditorService, EventHandlerService)
+addBuiltinService(LanguageServerCommandLineService, DocumentEditorService, EventHandlerService, CommandService)
 
 method init*(self: LanguageServerCommandLineService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   self.languageServer = newLanguageServerCommandLine(self.services)
@@ -104,25 +106,23 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
 
   else:
     {.gcsafe.}:
-      for table in globalDispatchTables.mitems:
-        for value in table.functions.values:
-          var docs = ""
-          if self.events.commandInfos.getInfos(value.name).getSome(infos):
-            for i, info in infos:
-              if i > 0:
-                docs.add "\n"
-              docs.add &"[{info.context}] {info.keys} -> {info.command}"
-            docs.add "\n\n"
+      for (name, command) in self.commands.commands.pairs:
+        var docs = ""
+        if self.events.commandInfos.getInfos(name).getSome(infos):
+          for i, info in infos:
+            if i > 0:
+              docs.add "\n"
+            docs.add &"[{info.context}] {info.keys} -> {info.command}"
+          docs.add "\n\n"
 
-          docs.add value.docs
+        docs.add command.description
 
-          completions.add CompletionItem(
-            label: value.name,
-            # scope: table.scope,
-            kind: CompletionKind.Function,
-            detail: value.signature.some,
-            documentation: CompletionItemDocumentationVariant.init(docs).some,
-          )
+        completions.add CompletionItem(
+          label: name,
+          kind: CompletionKind.Function,
+          detail: command.signature.some,
+          documentation: CompletionItemDocumentationVariant.init(docs).some,
+        )
 
   for h in self.commandHistory:
     completions.add CompletionItem(

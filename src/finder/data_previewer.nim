@@ -19,6 +19,7 @@ proc newDataPreviewer*(services: Services, language = string.none,
   new result
 
   result.tempDocument = newTextDocument(services, language=language, createLanguageServer=false)
+  result.tempDocument.usage = "data-previewer-temp"
   result.getPreviewTextImpl = getPreviewTextImpl
 
 method deinit*(self: DataPreviewer) =

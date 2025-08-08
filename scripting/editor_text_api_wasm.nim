@@ -402,6 +402,17 @@ proc findSurroundEnd*(editor: TextDocumentEditor; cursor: Cursor; count: int;
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_toggleFlag_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleFlag*(self: TextDocumentEditor; key: string) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  argsJson.add key.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_toggleFlag_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_setConfig_void_TextDocumentEditor_string_JsonNode_wasm(
     arg: cstring): cstring {.importc.}
 proc setConfig*(self: TextDocumentEditor; key: string; value: JsonNode) {.

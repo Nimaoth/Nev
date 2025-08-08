@@ -6,6 +6,7 @@ For examples and default values see [here](../config/settings.json)
 | ----------- | --- | --- | ------ |
 | `debug.draw-text-chunks` | bool | false | GUI only: Highlight text chunks |
 | `debug.log-text-render-time` | bool | false | Log how long it takes to generate the render commands for a text editor. |
+| `debug.log-to-internal-document` | bool | false | Write logs to an internal document which can be opened using the `logs` command. |
 | `editor.base-modes` | string[] | ["editor"] | List of input modes which are always active (at the lowest priority). |
 | `editor.clear-input-history-delay` | int | 3000 | After how many milliseconds of no input the input history is cleared. |
 | `editor.close-unused-documents-timer` | int | 10 | How often the editor will check for unused documents and close them, in seconds. |
@@ -30,6 +31,8 @@ For examples and default values see [here](../config/settings.json)
 | `editor.watch-user-config` | bool | true | Watch the config files in the user directory and automatically reload them when they change. |
 | `editor.watch-workspace-config` | bool | true | Watch the config files in the workspace directory and automatically reload them when they change. |
 | `lsp-merge.timeout` | int | 10000 | Timeout for LSP requests in milliseconds |
+| `plugins.command-load-behaviour` | PluginCommandLoadBehaviour | "async-or-wait" | Defines if and how to run commands which trigger a plugin to load. "dont-run": Don't run the command after the plugin is loaded. You have to manually run the command again. "async-run": Asynchronously load the plugin and run the command afterwards. If the command returns something              then the return value will not be available if the command is e.g. called from a plugin. "wait-and-run": Synchronously load the plugin and run the command afterwards. Return values work fine, but the editor                 will freeze while loading the plugin. "async-or-wait": Use "async-run" behaviour for commands with no return value and "wait-and-run" for commands with return values. |
+| `plugins.watch-plugin-directories` | bool | true | Whether to watch the plugin directories for changes and load new plugins |
 | `selector.base-mode` | string | "popup.selector" |  |
 | `terminal.base-mode` | string | "terminal" | Input mode which is always active while a terminal view is active. |
 | `terminal.default-mode` | string | "" | Input mode to activate when creating a new terminal, if no mode is specified otherwise. |
@@ -74,6 +77,9 @@ For examples and default values see [here](../config/settings.json)
 | `text.line-comment` | string \| null | null | String which starts a line comment |
 | `text.mode-changed-handler-command` | string | "" | Command to execute when the mode of the text editor changes |
 | `text.modes` | string[] | ["editor.text"] | List of input modes text editors. |
+| `text.ripgrep.extra-args` | string[] | [] | Extra arguments passed to ripgrep |
+| `text.ripgrep.file-type` | string \| null | null | Override the ripgrep type name. By default the documents language id is used. |
+| `text.ripgrep.pass-type` | bool | true | Pass the --type argument to ripgrep using either the language id or the value from `file-type`. |
 | `text.scroll-to-change-on-reload` | "first" \| "last" \| null | null | If not null then scroll to the changed region when a file is reloaded. |
 | `text.scroll-to-end-on-insert` | bool | false | If true then scroll to the end of the file when text is inserted at the end and the cursor is already at the end. |
 | `text.search-regexes.goto-declaration` | regex \| null | null | Regex to use when using the goto-declaration feature. |
@@ -81,7 +87,6 @@ For examples and default values see [here](../config/settings.json)
 | `text.search-regexes.goto-implementation` | regex \| null | null | Regex to use when using the goto-implementation feature. |
 | `text.search-regexes.goto-references` | regex \| null | null | Regex to use when using the goto-references feature. |
 | `text.search-regexes.goto-type-definition` | regex \| null | null | Regex to use when using the goto-type-definition feature. |
-| `text.search-regexes.rg-language` | string \| null | null | Override the ripgrep language name. By default the documents language id is used. |
 | `text.search-regexes.show-only-matching-part` | bool | true | If true then the search results will only show the part of a line that matched the regex. If false then the entire line is shown. |
 | `text.search-regexes.symbols` | regex \| null | null | Regex to use when using the symbols feature. |
 | `text.search-regexes.workspace-symbols` | regex \| null | null | Regex to use when using the workspace-symbols feature. |

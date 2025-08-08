@@ -55,10 +55,10 @@ method checkoutFile*(self: VersionControlSystem, path: string): Future[string] {
 
 import vcs_git, vcs_perforce
 
-proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
+proc detectVersionControlSystemIn(self: VCSService, path: string): Option[VersionControlSystem] =
   if dirExists(path // ".git"):
     log lvlInfo, fmt"Found git repository in {path}"
-    let vcs = newVersionControlSystemGit(path)
+    let vcs = newVersionControlSystemGit(path, self.config.runtime)
     return vcs.VersionControlSystem.some
 
   if fileExists(path // ".p4ignore"):
@@ -68,7 +68,7 @@ proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
 
 proc handleWorkspaceFolderAdded(self: VCSService, path: string) {.async: (raises: []).} =
   try:
-    if detectVersionControlSystemIn(path).getSome(vcs):
+    if self.detectVersionControlSystemIn(path).getSome(vcs):
       self.versionControlSystems.add vcs
   except CatchableError as e:
     log lvlError, &"Failed to detect version control systems: {e.msg}\n{e.getStackTrace()}"

@@ -1,0 +1,219 @@
+package nev:plugins;
+
+interface types {
+  /// Represents a cursor in a text editor. Line and column are both zero based.
+  /// The column is in bytes.
+  record cursor {
+    line: s32,
+    column: s32,
+  }
+
+  /// The column of 'last' is exclusive.
+  record selection {
+    first: cursor,
+    last: cursor,
+  }
+
+  record vec2f {
+    x: f32,
+    y: f32,
+  }
+
+  record rect {
+    pos: vec2f,
+    size: vec2f,
+  }
+
+  /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
+  /// can be used to efficiently access any document content or share a string with another plugin.
+  /// Ropes are reference counted internally, and this resource also affects that reference count.
+  resource rope {
+    constructor(content: string);
+    /// Returns another reference to the same rope.
+    clone: func() -> rope;
+    /// Returns the text of the rope as a string. This is expensive for large ropes.
+    text: func() -> string;
+    /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice: func(a: s64, b: s64) -> rope;
+    /// Returns a slice of the rope from 'a' to 'b'. The column of 'b' is exclusive. Columns are in bytes.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice-points: func(a: cursor, b: cursor) -> rope;
+  }
+
+  record editor {
+    id: u64
+  }
+
+  record text-editor {
+    id: u64
+  }
+
+  record document {
+    id: u64
+  }
+
+  record text-document {
+    id: u64
+  }
+}
+
+interface editor {
+  use types.{editor, document};
+  /// Returns a handle for the currently active text editor.
+  active-editor: func() -> option<editor>;
+  /// Returns the document the given editor is currently editing.
+  get-document: func(editor: editor) -> option<document>;
+}
+
+interface text-editor {
+  use types.{editor, document, text-editor, text-document, cursor, selection, rope};
+  use core.{command-error};
+
+  /// Returns a handle for the currently active text editor.
+  active-text-editor: func() -> option<text-editor>;
+  /// Returns the text document the given editor is currently editing.
+  get-document: func(editor: text-editor) -> option<text-document>;
+  /// Try to cast the given editor handle to a text editor handle.
+  as-text-editor: func(editor: editor) -> option<text-editor>;
+  /// Try to cast the given document handle to a text document handle.
+  as-text-document: func(document: document) -> option<text-document>;
+
+  /// Run the given command on the given text editor. This requires 'command' permissions.
+  command: func(editor: text-editor, name: string, arguments: string) -> result<string, command-error>;
+
+  /// Sets the given selection as the only selection for the given editor.
+  set-selection: func(editor: text-editor, s: selection);
+  /// Returns the last selection of the given editor.
+  get-selection: func(editor: text-editor) -> selection;
+  /// Add a callback which will be called whenever any editor changes mode.
+  add-mode-changed-handler: func(fun: u32) -> s32;
+
+  /// Returns the rope containing the current content of the text editors document.
+  /// This rope is not automatically kept up to date when the document changes, but
+  /// represents the content at the point in time this is called instead. Keeping ropes
+  /// around should not have significant memory overhead because ropes share data under the hood.
+  content: func(editor: text-editor) -> rope;
+}
+
+interface text-document {
+  use types.{text-document, cursor, selection, rope};
+
+  /// Returns the rope containing the current content of the document.
+  /// This rope is not automatically kept up to date when the document changes, but
+  /// represents the content at the point in time this is called instead. Keeping ropes
+  /// around should not have significant memory overhead because ropes share data under the hood.
+  content: func(document: text-document) -> rope;
+}
+
+interface layout {
+  /// Shared handle for a view.
+  record view {
+    id: s32
+  }
+
+  /// Show the given view in the given slot.  If focus is true it's also focused, otherwise focus remains as is if possible.
+  show: func(v: view, slot: string, focus: bool, add-to-history: bool);
+  /// Close the given view. If 'keep-hidden' is true then the view will only be removed from the layout tree but remains open
+  /// in the background. If 'restore-hidden' is true the the current view will be replaced by the last hidden view,
+  /// otherwise the current slot is removed from the layout.
+  close: func(v: view, keep-hidden: bool, restore-hidden: bool);
+  /// Set focus to the view in the given slot.
+  focus: func(slot: string);
+}
+
+interface render {
+  use types.{vec2f};
+  use layout.{view};
+
+  /// Shared handle to a custom render view
+  resource render-view {
+    constructor();
+
+    /// Try to create a handle to an existing render view with the given user id.
+    from-user-id: static func(id: string) -> option<render-view>;
+    /// Try to create a handle to an existing render view from a 'view'.
+    from-view: static func(v: view) -> option<render-view>;
+    /// Returns the raw view handle.
+    view: func() -> view;
+    /// Returns the unique id of the view. This id is not stable across sessions.
+    id: func() -> s32;
+    /// Returns the size in pixels the view currently has. In the terminal one pixel is one character.
+    size: func() -> vec2f;
+    /// Specify how often the view should render. -1 means don't render in a timer, 0 means render every frame,
+    /// a number bigger than 0 specifies the interval in milliseconds.
+    set-render-interval: func(ms: s32);
+    /// Set the render commands used for the next render. 'buffer' is a pointer to a buffer of encoded render commands,
+    /// 'len' is the length of the buffer in bytes.
+    set-render-commands-raw: func(buffer: u32, len: u32);
+    /// Set the render commands used for the next render. 'data' contains encoded render commands.
+    set-render-commands: func(data: list<u8>);
+    /// Enable rendering while the view is inactive (but still visible).
+    set-render-when-inactive: func(enabled: bool);
+    /// When enabled the view prevents the editor from throttling the frame rate after a few seconds. This requires
+    /// the view to also be rendered regularly, using e.g. 'set-render-interval' or but marking it dirty regularly.
+    set-prevent-throttling: func(enabled: bool);
+    /// Sets the user id of this view.
+    set-user-id: func(id: string);
+    /// Returns the user id of this view.
+    get-user-id: func() -> string;
+    /// Trigger a render for this view.
+    mark-dirty: func();
+    /// Sets the callback which wil be called before rendering. This can be used to set the render commands.
+    /// 'fun' is a pointer to a function with signature func(id: s32, data: u32). Data is an arbitrary number
+    /// which will be passed to the callback unchanged. It can be used as e.g. a pointer to some data.
+    set-render-callback: func(fun: u32, data: u32);
+    /// Set the list of input modes. This controls which keybindings are available while the view is active.
+    set-modes: func(modes: list<string>);
+    /// Add a mode to the input modes. This controls which keybindings are available while the view is active.
+    add-mode: func(mode: string);
+    /// Remove a mode from the input modes. This controls which keybindings are available while the view is active.
+    remove-mode: func(mode: string);
+  }
+}
+
+interface core {
+  enum command-error {
+    not-allowed,
+    not-found
+  }
+
+  /// Returns the plugin API version this plugin is using.
+  /// 0 means the latest version, 1 or bigger means a specific version.
+  api-version: func() -> s32;
+
+  /// Returns the time since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
+  get-time: func() -> f64;
+
+  /// Defines a command.
+  define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);
+
+  /// Run the given command. This requires 'command' permissions.
+  run-command: func(name: string, arguments: string) -> result<string, command-error>;
+
+  /// Returns the value of the setting with the given path, encoded as JSON.
+  get-setting-raw: func(name: string) -> string;
+
+  /// Set the value of the setting with the given path. The value must be encoded as JSON.
+  set-setting-raw: func(name: string, value: string);
+}
+
+interface guest {
+  use render.{view};
+  init-plugin: func();
+  handle-command: func(fun: u32, data: u32, arguments: string) -> string;
+  handle-mode-changed: func(fun: u32, old: string, new: string);
+  handle-view-render-callback: func(id: s32, fun: u32, data: u32);
+}
+
+world plugin {
+  use types.{cursor, selection};
+
+  import editor;
+  import text-editor;
+  import text-document;
+  import core;
+  import render;
+
+  export guest;
+}

@@ -6,6 +6,7 @@ const enableTerminal* {.booldefine.}: bool = false
 const enableTableIdCacheChecking* {.booldefine.}: bool = false
 const enableSystemClipboard* {.booldefine.}: bool = true
 const enableAst* {.booldefine.}: bool = false
+const enableOldPluginVersions* {.booldefine.}: bool = false
 const copyWasmtimeDll* {.booldefine.}: bool = true
 const appName* {.strdefine.}: string = "nev"
 

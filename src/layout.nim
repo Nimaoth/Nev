@@ -1,5 +1,4 @@
-import std/[tables, options, json, sugar, sequtils, deques, sets, os]
-import bumpy
+import std/[tables, options, json, sugar, deques, sets, os]
 import results
 import platform/platform
 import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex, array_set]
@@ -61,6 +60,7 @@ type
 var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 
 proc getView*(self: LayoutService, id: Id): Option[View]
+proc preRender*(self: LayoutService)
 
 proc addViewFactory*(self: LayoutService, name: string, create: CreateView, override: bool = false) =
   if not override and name in self.viewFactories:
@@ -238,6 +238,8 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   self.commands = self.services.getService(CommandService).get
   self.uiSettings = UiSettings.new(self.config.runtime)
 
+  discard self.platform.onPreRender.subscribe (_: Platform) => self.preRender()
+
   self.addViewFactory "editor", proc(config: JsonNode): View {.raises: [ValueError].} =
     type Config = object
       id: Id
@@ -345,7 +347,11 @@ method init*(self: LayoutService): Future[Result[void, ref CatchableError]] {.as
   return ok()
 
 proc preRender*(self: LayoutService) =
-  discard
+  self.layout.forEachVisibleView proc(v: View): bool =
+    v.checkDirty()
+    if v.dirty:
+      self.platform.requestRender()
+      self.platform.logNextFrameTime = true
 
 method desc*(self: EditorView): string =
   if self.document == nil:
@@ -442,6 +448,14 @@ proc getView*(self: LayoutService, id: Id): Option[View] =
 
   return View.none
 
+proc getView*(self: LayoutService, id: int32): Option[View] =
+  ## Returns the index of the view for the given editor.
+  for i, view in self.allViews:
+    if view.id2 == id:
+      return view.some
+
+  return View.none
+
 proc getViewForEditor*(self: LayoutService, editor: DocumentEditor): Option[EditorView] =
   ## Returns the index of the view for the given editor.
   for i, view in self.allViews:
@@ -459,6 +473,9 @@ proc recordFocusHistoryEntry(self: LayoutService, view: View) =
   # todo: make max size configurable
   while self.focusHistory.len > 1000:
     self.focusHistory.popFirst()
+
+proc registerView*(self: LayoutService, view: View) =
+  self.allViews.incl view
 
 proc addView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) =
   # debugf"addView {view.desc()} slot = '{slot}', focus = {focus}, addToHistory = {addToHistory}"
@@ -595,7 +612,6 @@ proc getNumHiddenViews*(self: LayoutService): int {.expose("layout").} =
 
 proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool = true, addToHistory: bool = true) =
   ## Make the given view visible
-  # debugf"showView {view.desc()}, slot = '{slot}', focus = {focus}, addToHistory = {addToHistory}"
 
   let prevActiveView = self.layout.activeLeafView()
   if focus:
@@ -619,6 +635,10 @@ proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool =
   self.platform.requestRender()
 
 proc showView*(self: LayoutService, viewId: Id, slot: string = "", focus: bool = true, addToHistory: bool = true) =
+  if self.getView(viewId).getSome(view):
+    self.showView(view, slot, focus, addToHistory)
+
+proc showView*(self: LayoutService, viewId: int32, slot: string = "", focus: bool = true, addToHistory: bool = true) =
   if self.getView(viewId).getSome(view):
     self.showView(view, slot, focus, addToHistory)
 
@@ -729,7 +749,12 @@ proc closeView*(self: LayoutService, view: View, keepHidden: bool = false, resto
   except LayoutError as e:
     log lvlError, "Failed to close view: " & e.msg
 
+proc closeView*(self: LayoutService, viewId: int32, keepHidden: bool = false, restoreHidden: bool = true) =
+  if self.getView(viewId).getSome(view):
+    self.closeView(view, keepHidden, restoreHidden)
+
 proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bool =
+  assert document != nil
   if document in self.pinnedDocuments:
     log lvlWarn, &"Can't close document '{document.filename}' because it's pinned"
     return false
@@ -748,8 +773,7 @@ proc tryCloseDocument*(self: LayoutService, document: Document, force: bool): bo
     else:
       editor.deinit()
 
-  self.editors.documents.del(document)
-  document.deinit()
+  self.editors.tryCloseDocument(document)
   return true
 
 proc hideActiveView*(self: LayoutService, closeOpenPopup: bool = true) {.expose("layout").} =

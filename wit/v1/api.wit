@@ -1,0 +1,113 @@
+package nev:plugins;
+
+interface types {
+  record cursor {
+    line: s32,
+    column: s32,
+  }
+
+  record selection {
+    first: cursor,
+    last: cursor,
+  }
+
+  record vec2f {
+    x: f32,
+    y: f32,
+  }
+}
+
+interface text-editor {
+  use types.{cursor, selection};
+  // set-selection: func(s: selection);
+  get-selection: func() -> selection;
+  add-mode-changed-handler: func(fun: u32) -> s32;
+}
+
+interface layout {
+  record view {
+    id: s32
+  }
+
+  show: func(v: view, slot: string, focus: bool, add-to-history: bool);
+  close: func(v: view, keep-hidden: bool, restore-hidden: bool);
+  focus: func(slot: string);
+}
+
+interface render {
+  use types.{vec2f};
+  use layout.{view};
+
+  resource render-view {
+    constructor();
+    from-user-id: static func(id: string) -> option<render-view>;
+    from-view: static func(v: view) -> option<render-view>;
+    view: func() -> view;
+    id: func() -> s32;
+    size: func() -> vec2f;
+    set-render-interval: func(ms: s32);
+    set-render-commands-raw: func(buffer: u32, len: u32);
+    set-render-commands: func(data: list<u8>);
+    set-render-when-inactive: func(enabled: bool);
+    set-prevent-throttling: func(enabled: bool);
+    set-user-id: func(id: string);
+    get-user-id: func() -> string;
+    mark-dirty: func();
+    set-render-callback: func(fun: u32, data: u32);
+    set-modes: func(modes: list<string>);
+    add-mode: func(mode: string);
+    remove-mode: func(mode: string);
+  }
+}
+
+interface core {
+  enum command-error {
+    not-allowed,
+    not-found
+  }
+
+  api-version: func() -> s32;
+  get-time: func() -> f64;
+  bind-keys: func(context: string, subcontext: string, keys: string, action: string, arg: string, description: string, source: tuple<string, s32, s32>);
+  define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);
+  run-command: func(name: string, arguments: string) -> result<string, command-error>;
+  get-setting-raw: func(name: string) -> string;
+  set-setting-raw: func(name: string, value: string);
+}
+
+interface text {
+  use types.{cursor};
+
+  resource editor {
+    rope: func() -> rope;
+    current: static func() -> option<editor>;
+  }
+
+  resource rope {
+    constructor(content: string);
+    clone: func() -> rope;
+    text: func() -> string;
+    debug: func() -> string;
+    slice: func(a: s64, b: s64) -> rope;
+    slice-points: func(a: cursor, b: cursor) -> rope;
+  }
+}
+
+interface guest {
+  use render.{view};
+  init-plugin: func();
+  handle-command: func(fun: u32, data: u32, arguments: string) -> string;
+  handle-mode-changed: func(fun: u32, old: string, new: string);
+  handle-view-render-callback: func(id: s32, fun: u32, data: u32);
+}
+
+world plugin {
+  use types.{cursor, selection};
+
+  import text-editor;
+  import text;
+  import core;
+  import render;
+
+  export guest;
+}

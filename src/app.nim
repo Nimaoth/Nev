@@ -1,8 +1,8 @@
-import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, deques, osproc, envvars]
+import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, parsejsonex]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, parsejsonex, generational_seq]
 import ui/node
-import scripting/[expose, scripting_base]
+import scripting/[expose]
 import platform/[platform]
 import workspaces/[workspace]
 import config_provider, app_interface
@@ -11,7 +11,7 @@ import input, events, document, document_editor, popup, dispatch_tables, theme, 
 import text/[custom_treesitter]
 import finder/[finder, previewer, data_previewer]
 import compilation_config, vfs, vfs_service
-import service, layout, session, command_service, toast
+import service, layout, session, command_service, toast, plugin_service
 
 import nimsumtree/[rope]
 
@@ -20,7 +20,8 @@ import misc/async_process
 when enableAst:
   import ast/[model, project]
 
-import scripting/scripting_wasm
+import scripting/[scripting_wasm]
+import plugin_system_wasm
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
@@ -45,12 +46,6 @@ elif defined(wasm):
   "wasm"
 else:
   "other"
-
-type OpenEditor = object
-  filename: string
-  languageID: string
-  appFile: bool
-  customOptions: JsonNode
 
 type
   # todo: this isn't necessary anymore
@@ -114,6 +109,7 @@ type
     logBuffer = ""
 
     wasmScriptContext*: ScriptContextWasm
+    pluginSystemWasm*: PluginSystemWasm
     initializeCalled: bool
 
     statusBarOnTop*: bool
@@ -150,6 +146,7 @@ type
 
     uiSettings*: UiSettings
     generalSettings*: GeneralSettings
+    debugSettings*: DebugSettings
 
 var gEditor* {.exportc.}: App = nil
 
@@ -160,6 +157,7 @@ proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previe
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
+proc scriptRunAction*(action: string, arg: string): JsonNode
 proc defaultHandleCommand*(self: App, command: string): Option[string]
 proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
 proc runLateCommandsFromAppOptions(self: App)
@@ -230,16 +228,16 @@ proc runConfigCommands(self: App, key: string) =
       discard self.handleAction(action, arg, record=false)
 
 proc initScripting(self: App, options: AppOptions) {.async.} =
-  if not options.disableWasmPlugins:
+  if not options.disableOldWasmPlugins:
     try:
       log(lvlInfo, fmt"load wasm configs")
       self.wasmScriptContext = new ScriptContextWasm
-      self.plugins.scriptContexts.add self.wasmScriptContext
+      self.plugins.pluginSystems.add self.wasmScriptContext
       self.wasmScriptContext.moduleVfs = VFS()
       self.wasmScriptContext.vfs = self.vfs
       self.vfs.mount("plugs://", self.wasmScriptContext.moduleVfs)
 
-      withScriptContext self.plugins, self.wasmScriptContext:
+      withPluginSystem self.plugins, self.wasmScriptContext:
         let t1 = startTimer()
         await self.wasmScriptContext.init("app://config", self.vfs)
         log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
@@ -252,6 +250,20 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
 
   self.runConfigCommands("wasm-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
+
+  try:
+    self.pluginSystemWasm = new PluginSystemWasm
+    self.plugins.pluginSystems.add self.pluginSystemWasm
+    self.pluginSystemWasm.services = self.services
+    self.pluginSystemWasm.moduleVfs = VFS()
+    self.pluginSystemWasm.vfs = self.vfs
+    self.vfs.mount("plugs://", self.pluginSystemWasm.moduleVfs)
+    await self.pluginSystemWasm.init("app://config", self.vfs)
+  except CatchableError:
+    log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
+  if not options.disableWasmPlugins:
+    self.plugins.loadPlugins()
 
   log lvlInfo, &"Finished loading plugins"
 
@@ -449,10 +461,10 @@ proc parseCommand(json: JsonNodeEx): tuple[command: string, args: string] {.rais
 
 proc loadKeybindingsFromJson*(self: App, json: JsonNodeEx, filename: string) =
   try:
-    let oldScriptContext = self.plugins.currentScriptContext
-    self.plugins.currentScriptContext = ScriptContext.none
+    let oldScriptContext = self.plugins.currentPluginSystem
+    self.plugins.currentPluginSystem = PluginSystem.none
     defer:
-      self.plugins.currentScriptContext = oldScriptContext
+      self.plugins.currentPluginSystem = oldScriptContext
 
     for (context, commands) in json.fields.pairs:
       let loc = (line: commands.loc.line.int, column: commands.loc.column.int + 1)
@@ -837,8 +849,12 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.timer = startTimer()
   self.frameTimer = startTimer()
 
-  self.layout = services.getService(LayoutService).get
   self.config = services.getService(ConfigService).get
+  self.uiSettings = UiSettings.new(self.config.runtime)
+  self.generalSettings = GeneralSettings.new(self.config.runtime)
+  self.debugSettings = DebugSettings.new(self.config.runtime)
+
+  self.layout = services.getService(LayoutService).get
   self.editors = services.getService(DocumentEditorService).get
   self.session = services.getService(SessionService).get
   self.events = services.getService(EventHandlerService).get
@@ -882,11 +898,10 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
 
   self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
   EditorSettings.new(self.logDocument.TextDocument.config).saveInSession.set(false)
-  self.editors.documents.add self.logDocument
   self.layout.pinnedDocuments.incl(self.logDocument)
 
   self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
-  let commandLineTextDocument = newTextDocument(self.services, language="command-line".some)
+  let commandLineTextDocument = newTextDocument(self.services, "ed://.command-line", language="command-line".some, load=false)
   self.commands.commandLineEditor = newTextEditor(commandLineTextDocument, self.services)
   self.commands.commandLineEditor.renderHeader = false
   self.commands.commandLineEditor.TextDocumentEditor.usage = "command-line"
@@ -897,7 +912,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.commands.commandLineEditor.TextDocumentEditor.settings.cursorMargin.set(0.0)
   self.commands.commandLineEditor.TextDocumentEditor.defaultScrollBehaviour = ScrollBehaviour.ScrollToMargin
   discard self.commands.commandLineEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
-  self.editors.documents.add commandLineTextDocument
   self.editors.commandLineEditor = self.commands.commandLineEditor
   self.commands.defaultCommandHandler = proc(command: Option[string]): Option[string] =
     if command.isSome:
@@ -1084,14 +1098,15 @@ proc shutdown*(self: App) =
     custom_treesitter.freeDynamicLibraries()
 
 proc handleLog(self: App, level: Level, args: openArray[string]) =
-  let str = substituteLog(defaultFmtStr, level, args) & "\n"
-  if self.logDocument.isNotNil:
-    let selection = self.logDocument.TextDocument.lastCursor.toSelection
-    discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
-    self.logBuffer = ""
+  if self.config != nil and self.debugSettings.logToInternalDocument.get():
+    let str = substituteLog(defaultFmtStr, level, args) & "\n"
+    if self.logDocument.isNotNil:
+      let selection = self.logDocument.TextDocument.lastCursor.toSelection
+      discard self.logDocument.TextDocument.edit([selection], [selection], [self.logBuffer & str])
+      self.logBuffer = ""
 
-  else:
-    self.logBuffer.add str
+    else:
+      self.logBuffer.add str
 
   if level == lvlError:
     let str = substituteLog("", level, args)
@@ -1281,7 +1296,6 @@ proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/getting_started.md"
   let docsPath = "app://docs/getting_started.md"
   let textDocument = newTextDocument(self.services, docsPath, introductionMd, load=true)
-  self.editors.documents.add textDocument
   textDocument.load()
   discard self.layout.createAndAddView(textDocument)
 
@@ -1351,8 +1365,10 @@ proc toggleConsoleLogger*(self: App) {.expose("editor").} =
     logger.toggleConsoleLogger()
 
 proc closeUnusedDocuments*(self: App) =
-  let documents = self.editors.documents
-  for document in documents:
+  for document in self.editors.documents:
+    if document.usage != "":
+      continue
+
     if document == self.logDocument:
       continue
 
@@ -1586,6 +1602,15 @@ proc chooseTheme*(self: App) {.expose("editor").} =
       self.platform.requestRender(true)
 
   self.layout.pushPopup popup
+
+proc crash*(self: App, message: string = "") {.expose("editor").} =
+  ## This command will cause the editor to crash by failing an assertion.
+  assert false, message
+
+proc crash2*(self: App) {.expose("editor").} =
+  ## This command will cause the editor to crash by accessing a nil reference.
+  var app: App = nil
+  echo app.handleAction("crash", "", true)
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isVfsPath:
@@ -2126,6 +2151,99 @@ proc chooseOpenDocument*(self: App) {.expose("editor").} =
 
   self.layout.pushPopup popup
 
+proc showPlugins*(self: App, scaleX: float = 0.9, scaleY: float = 0.9, previewScale: float = 0.6) {.expose("editor").} =
+  defer:
+    self.requestRender()
+
+  proc getItems(): seq[FinderItem] {.gcsafe, raises: [].} =
+    var items = newSeq[FinderItem]()
+    for p in self.plugins.plugins:
+      var name = p.manifest.name
+      let data = %*{
+        "manifest": p.manifest.toJson,
+        "permissions": p.permissions.toJson,
+      }
+      items.add FinderItem(
+        displayName: name,
+        filterText: name,
+        data: data.pretty,
+        details: @[$p.state],
+      )
+
+    return items
+
+  let source = newSyncDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  let previewer = newDataPreviewer(self.services, language="javascript".some)
+  var popup = newSelectorPopup(self.services, "plugins".some, finder.some, previewer.Previewer.toDisposableRef.some)
+  popup.scale.x = scaleX
+  popup.scale.y = scaleY
+  popup.previewScale = previewScale
+
+  proc loadPlugin(path: string) {.async.} =
+    let f = self.plugins.loadPlugin(path)
+    source.retrigger()
+    while not f.finished:
+      await sleepAsync(100.milliseconds)
+      source.retrigger()
+
+  proc unloadPlugin(path: string) {.async.} =
+    let f = self.plugins.unloadPlugin(path)
+    source.retrigger()
+    while not f.finished:
+      await sleepAsync(100.milliseconds)
+      source.retrigger()
+
+  proc reloadPlugin(path: string) {.async.} =
+    let f = self.plugins.reloadPlugin(path)
+    source.retrigger()
+    while not f.finished:
+      await sleepAsync(100.milliseconds)
+      source.retrigger()
+
+  popup.addCustomCommand "load", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let manifest = item.data.parseJson()["manifest"].jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return true
+    asyncSpawn loadPlugin(manifest.path)
+    return true
+
+  popup.addCustomCommand "unload", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let manifest = item.data.parseJson()["manifest"].jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return true
+    asyncSpawn unloadPlugin(manifest.path)
+    return true
+
+  popup.addCustomCommand "reload", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
+      return true
+
+    let manifest = item.data.parseJson()["manifest"].jsonTo(PluginManifest, Joptions(allowExtraKeys: true, allowMissingKeys: true)).catch:
+      log lvlError, fmt"Failed to parse editor id from data '{item}'"
+      return true
+    asyncSpawn reloadPlugin(manifest.path)
+    return true
+
+  self.layout.pushPopup popup
+
 proc gotoNextLocation*(self: App) {.expose("editor").} =
   if self.finderItems.len == 0:
     return
@@ -2643,11 +2761,11 @@ proc reloadPluginAsync*(self: App) {.async.} =
       self.plugins.clearScriptActionsFor(self.wasmScriptContext)
 
       let t1 = startTimer()
-      withScriptContext self.plugins, self.wasmScriptContext:
+      withPluginSystem self.plugins, self.wasmScriptContext:
         await self.wasmScriptContext.reload()
       log(lvlInfo, fmt"Reload wasm plugins ({t1.elapsed.ms}ms)")
 
-      withScriptContext self.plugins, self.wasmScriptContext:
+      withPluginSystem self.plugins, self.wasmScriptContext:
         let t2 = startTimer()
         discard self.wasmScriptContext.postInitialize()
         log(lvlInfo, fmt"Post init wasm plugins ({t2.elapsed.ms}ms)")
@@ -2963,7 +3081,6 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
 
 proc handleDropFile*(self: App, path, content: string) =
   let document = newTextDocument(self.services, path, content)
-  self.editors.documents.add document
   discard self.layout.createAndAddView(document)
 
 proc scriptRunAction*(action: string, arg: string): JsonNode {.expose("editor").} =
@@ -2982,8 +3099,8 @@ proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
   log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
 
 proc registerPluginSourceCode*(self: App, path: string, content: string) {.expose("editor").} =
-  if self.plugins.currentScriptContext.getSome(scriptContext):
-    asyncSpawn self.vfs.write(scriptContext.getCurrentContext() & path, content)
+  if self.plugins.currentPluginSystem.getSome(pluginSystem):
+    asyncSpawn self.vfs.write(pluginSystem.getCurrentContext() & path, content)
 
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
@@ -3005,8 +3122,8 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
     self.events.getEventHandlerConfig(baseContext).addCommandDescription(keys, description)
 
   var source = source
-  if self.plugins.currentScriptContext.getSome(scriptContext):
-    source.filename = scriptContext.getCurrentContext() & source.filename
+  if self.plugins.currentPluginSystem.getSome(pluginSystem):
+    source.filename = pluginSystem.getCurrentContext() & source.filename
 
   self.events.getEventHandlerConfig(baseContext).addCommand(subContext, keys, command, source)
   self.events.invalidateCommandToKeysMap()
@@ -3181,7 +3298,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
         # events.eventHandlerConfigs: Table[string, EventHandlerConfig]
 
       result.add &"Callbacks: {self.plugins.callbacks.len}\n"
-      result.add &"Script Actions: {self.plugins.scriptActions.len}\n"
 
       result.add &"Input History: {self.inputHistory}\n"
       # result.add &"Editor History: {self.layout.editorHistory}\n"
@@ -3200,19 +3316,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
         result.add editor.getStatisticsString().indent(4)
         result.add "\n\n"
 
-      # todo
-        # languageServerCommandLine: LanguageServer
-        # commandLineTextEditor: DocumentEditor
-
-        # logDocument: Document
-        # documents*: seq[Document]
-        # editors*: Table[EditorId, DocumentEditor]
-        # popups*: seq[Popup]
-
-        # theme*: Theme
-        # wasmScriptContext*: ScriptContextWasm
-
-        # workspace*: Workspace
       result.add &"Platform:\n{self.platform.getStatisticsString().indent(4)}\n"
       result.add &"UI:\n{self.platform.builder.getStatisticsString().indent(4)}\n"
 
@@ -3322,6 +3425,16 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
     if alias != nil and alias.kind != JNull:
       return self.handleAlias(action, arg, alias)
 
+    if self.commands.commands.contains(action):
+      try:
+        let res = self.commands.commands[action].execute(arg)
+        if res == "":
+          return newJNull().some
+        return res.parseJson().some
+      except CatchableError as e:
+        log lvlError, &"Failed to execute command '{action} {arg}': {e.msg}"
+        return newJNull().some
+
     var args = newJArray()
     try:
       for a in newStringStream(arg).parseJsonFragments():
@@ -3357,8 +3470,8 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
             log lvlError, &"Failed to dispatch '{action} {args}' in {t.namespace}: {e.msg}"
 
     try:
-      for sc in self.plugins.scriptContexts:
-        withScriptContext self.plugins, sc:
+      for sc in self.plugins.pluginSystems:
+        withPluginSystem self.plugins, sc:
           let res = sc.handleScriptAction(action, args)
           if res.isNotNil:
             return res.some

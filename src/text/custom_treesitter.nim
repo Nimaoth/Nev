@@ -617,27 +617,6 @@ proc createTsParser*(): TSParser =
 
   return TSParser(impl: parser)
 
-proc createTsParser*(language: TSLanguage): Option[TSParser] =
-  let wasmStore: ptr TSWasmStore = if language.impl.tsLanguageIsWasm():
-    assert wasmEngine != nil
-    var err: TSWasmError
-    let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine), err.addr)
-    if err.kind != TSWasmErrorKindNone:
-      log lvlError, &"Failed to create wasm store: {err}"
-      return TSParser.none
-
-    wasmStore
-
-  else:
-    nil
-
-  let parser = ts.tsParserNew()
-  if wasmStore != nil:
-    log lvlInfo, &"Use wasm store"
-    parser.tsParserSetWasmStore(wasmStore)
-  assert ts.tsParserSetLanguage(parser, language.impl)
-  return TSParser(impl: parser).some
-
 var parsers: seq[TSParser]
 
 template withParser*(p: untyped, body: untyped): untyped =

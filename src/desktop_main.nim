@@ -135,6 +135,9 @@ block: ## Parse command line options
       of "no-wasm", "w":
         opts.disableWasmPlugins = true
 
+      of "no-wasm-old", "W":
+        opts.disableOldWasmPlugins = true
+
       of "no-config", "c":
         opts.dontRestoreConfig = true
 
@@ -142,6 +145,7 @@ block: ## Parse command line options
         opts.dontRestoreConfig = true
         opts.disableNimScriptPlugins = true
         opts.disableWasmPlugins = true
+        opts.disableOldWasmPlugins = true
 
       of "skip-user":
         opts.skipUserSettings = true
@@ -165,6 +169,10 @@ block: ## Parse command line options
         opts.monitor = val.parseInt.some.catch:
           echo "Expected integer for monitor: --monitor:1"
           quit(1)
+
+      of "int3":
+        when defined(sysFatalInt3):
+          enableSysFatalInt3 = true
 
       of "ts-mem-tracking":
         enableTreesitterMemoryTracking()
@@ -254,13 +262,14 @@ when enableAst:
 import text/text_editor
 import text/language/lsp_client
 import text/language/debugger
-import scripting/scripting_base
+import plugin_service
 import vcs/vcs_api
 import wasm3, wasm3/[wasm3c, wasmconversions]
 import selector_popup, collab, layout, config_provider, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, command_service_api, toast, terminal_service
 import language_server_paths
 import language_server_regex
 import plugin_api/[process]
+import scripting/expose
 
 generatePluginBindings()
 static:
@@ -299,7 +308,7 @@ proc run(app: App, plat: Platform, backend: Backend) =
   var frameIndex = 0
   var frameTime = 0.0
 
-  var lastEvent = startTimer()
+  plat.lastEventTime = startTimer()
   var renderedLastFrame = false
 
   let maxPollPerFrameMs = 2.5
@@ -325,7 +334,7 @@ proc run(app: App, plat: Platform, backend: Backend) =
     let eventTime = eventTimer.elapsed.ms
 
     if eventCounter > 0:
-      lastEvent = startTimer()
+      plat.lastEventTime = startTimer()
 
     var updateTime, renderTime: float
     block:
@@ -335,6 +344,7 @@ proc run(app: App, plat: Platform, backend: Backend) =
       let updateTimer = startTimer()
 
       plat.builder.frameTime = delta
+      plat.onPreRender.invoke(plat)
 
       when enableGui:
         let size = if plat of GuiPlatform and plat.GuiPlatform.showDrawnNodes: plat.size * vec2(0.5, 1) else: plat.size
@@ -400,12 +410,12 @@ proc run(app: App, plat: Platform, backend: Backend) =
 
     let frameSoFar = totalTimer.elapsed.ms
     let terminalSleepThreshold = app.config.runtime.get("platform.terminal-sleep-threshold", 0)
-    if lastEvent.elapsed.ms > app.config.runtime.get("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
+    if plat.lastEventTime.elapsed.ms > app.config.runtime.get("platform.reduced-fps-2.delay", 60000.0) and frameSoFar < 10:
       let time = app.config.runtime.get("platform.reduced-fps-2.ms", 30)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
       lowPowerMode = true
-    elif lastEvent.elapsed.ms > app.config.runtime.get("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
+    elif plat.lastEventTime.elapsed.ms > app.config.runtime.get("platform.reduced-fps-1.delay", 5000.0) and frameSoFar < 10:
       let time = app.config.runtime.get("platform.reduced-fps-2.ms", 15)
       sleep(time - frameSoFar.int)
       outlierTime += time.float
@@ -419,9 +429,10 @@ proc run(app: App, plat: Platform, backend: Backend) =
 
     let totalTime = totalTimer.elapsed.ms
     if not app.disableLogFrameTime and
-        (eventCounter > 0 or totalTime > outlierTime or app.logNextFrameTime):
+        (eventCounter > 0 or totalTime > outlierTime or app.logNextFrameTime or plat.logNextFrameTime):
       log(lvlDebug, fmt"Total: {totalTime:>5.2f} ms, Poll: {pollTime:>5.2f} ms, Event: {eventTime:>5.2f} ms, Frame: {frameTime:>5.2f} ms (u: {updateTime:>5.2f} ms, r: {renderTime:>5.2f} ms)")
     app.logNextFrameTime = false
+    plat.logNextFrameTime = false
 
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 

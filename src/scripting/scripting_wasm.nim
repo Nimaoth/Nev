@@ -1,17 +1,17 @@
 import std/[macros, macrocache, genasts, json, strutils, os, sugar]
 import misc/[custom_logger, custom_async, util]
-import scripting_base, document_editor, expose, vfs
+import expose, vfs, plugin_service
 import wasm
 import wasm3, wasm3/wasmconversions
 
-export scripting_base, wasm
+export wasm
 
 {.push gcsafe.}
 
 logCategory "scripting-wasm"
 
 type
-  ScriptContextWasm* = ref object of ScriptContext
+  ScriptContextWasm* = ref object of PluginSystem
     modules: seq[WasmModule]
 
     postInitializeCallbacks: seq[tuple[module: WasmModule, pfun: PFunction, callback: proc(module: WasmModule, pfun: PFunction): bool {.gcsafe.}]]
@@ -58,6 +58,14 @@ proc loadModules(self: ScriptContextWasm, path: string): Future[void] {.async.} 
 
   var wasmModuleFutures = collect:
     for file2 in listing.files:
+      if not file2.endsWith(".wasm"):
+        continue
+      if file2.endsWith(".m.wasm"):
+        continue
+      if file2.endsWith(".me.wasm"):
+        continue
+      if file2.endsWith(".c.wasm"):
+        continue
       if not file2.endsWith(".wasm"):
         continue
 
@@ -120,6 +128,9 @@ method reload*(self: ScriptContextWasm): Future[void] {.async.} =
 
   await self.loadModules("app://config/wasm")
 
+method tryLoadPlugin*(self: ScriptContextWasm, plugin: Plugin): Future[bool] {.async: (raises: [IOError]).} =
+  return false
+
 method postInitialize*(self: ScriptContextWasm): bool =
   result = false
   try:
@@ -162,7 +173,6 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
         continue
   except:
     log lvlError, &"Failed to run handleAnyCallback '{path}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
 
 method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode =
   try:

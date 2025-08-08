@@ -588,8 +588,7 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   if node.renderCommands.commands.len > 50:
     node.renderCommands = RenderCommands.default
   else:
-    node.renderCommands.commands.setLen(0)
-    node.renderCommands.strings.setLen(0)
+    node.renderCommands.clear()
 
 proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
   if last.isNil:
@@ -1024,6 +1023,8 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   when defined(uiNodeDebugData):
     node.aDebugData.metaData = newJObject()
     node.aDebugData.css.setLen 0
+
+  node.renderCommands.clear()
 
   node.mHandlePressed = nil
   node.mHandleReleased = nil

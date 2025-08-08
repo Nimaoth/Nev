@@ -65,7 +65,7 @@ template take*[T](opt: sink Option[T], otherwise: sink T): T =
 
 template take*[T](opt: sink Option[T]): T =
   if opt.isSome:
-    opt.get.move
+    opt.get.ensureMove
   else:
     raise newException(UnpackDefect, "Can't obtain a value from a `none`")
 
