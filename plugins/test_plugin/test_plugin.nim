@@ -102,6 +102,7 @@ defineCommand(ws"test-command-1",
     try:
       echo &"[guest] test-command-1 {data} '{args}'"
       inc target
+      views[0].markDirty()
     except CatchableError as e:
       echo &"[guest] err: {e.msg}"
     return ws""
@@ -117,6 +118,7 @@ defineCommand(ws"test-command-2",
     try:
       echo &"[guest] test-command-2 {data} '{args}'"
       dec target
+      views[0].markDirty()
     except CatchableError as e:
       echo &"[guest] err: {e.msg}"
     return ws""
