@@ -14,7 +14,6 @@ when enableSystemClipboard:
   var clipboard = clipboardNew(nil)
 
   proc setSystemClipboardText*(str: string) =
-    clipboard.clipboardClear(LCB_CLIPBOARD)
     discard clipboard.clipboardSetText(str.cstring)
 
   proc getClipboardThread(): Option[string] {.gcsafe.} =
