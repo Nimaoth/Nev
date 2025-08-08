@@ -8,6 +8,7 @@ interface types {
     column: s32,
   }
 
+  /// The column of 'last' is exclusive.
   record selection {
     first: cursor,
     last: cursor,
@@ -16,6 +17,11 @@ interface types {
   record vec2f {
     x: f32,
     y: f32,
+  }
+
+  record rect {
+    pos: vec2f,
+    size: vec2f,
   }
 
   /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
