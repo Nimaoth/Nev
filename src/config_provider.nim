@@ -1060,6 +1060,9 @@ declareSettings UiSettings, "ui":
   ## How long the cursor trail is. Set to 0 to disable cursor trail.
   declare cursorTrailLength, int, 2
 
+  ## Enable vertical sync to prevent screen tearing.
+  declare vsync, bool, true
+
   ## How line numbers should be displayed.
   declare lineNumbers, LineNumbers, LineNumbers.Absolute
 
