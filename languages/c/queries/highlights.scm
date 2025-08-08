@@ -1,7 +1,7 @@
 (identifier) @variable
 
-((identifier) @constant
- (#match? @constant "^[A-Z][A-Z\\d_]*$"))
+; ((identifier) @constant
+;  (#match? @constant "^[A-Z][A-Z\\d_]*$"))
 
 "break" @keyword
 "case" @keyword

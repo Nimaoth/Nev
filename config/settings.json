@@ -171,7 +171,7 @@
         },
 
         "paths": {
-            "languages": ["markdown", "command-line"],
+            "languages": ["markdown", "command-line", "yaml", "json"],
             "priority": -1,
         },
 
@@ -763,18 +763,19 @@
                 "treesitter.repository": "liamwh/tree-sitter-wit",
                 "tab-width": 2,
                 "indent": "spaces",
-                "indent-after": [
-                    ":",
-                    "=",
-                    "(",
-                    "{",
-                    "["
-                ],
+                "indent-after": [":", "=", "(", "{", "["],
                 "line-comment": "//",
-                "block-comment": [
-                    "/*",
-                    "*/"
-                ]
+                "block-comment": ["/*", "*/"],
+                "completion-word-chars": [["a", "z"], ["A", "Z"], ["0", "9"], "-"],
+                "ripgrep.extra-args": ["--type-add", "wit:*.wit"],
+                "+search-regexes": {
+                    "goto-definition": "((package|world|interface|record|resource|flags|enum|variant) [[0]]\\b)|(\\b[[0]]\\b: (static|func))",
+                    "symbols": "((package|world|interface|record|resource|flags|enum|variant) ([a-zA-Z0-9-]+)\\b)|(\\b([a-zA-Z0-9-]+)\\b: (static|func))",
+                    "workspace-symbols-by-kind": {
+                        "Class": "((package|world|interface|record|resource|flags|enum|variant) ([a-zA-Z0-9-]+)\\b)",
+                        "Function": "(\\b([a-zA-Z0-9-]+)\\b: (static|func))",
+                    }
+                }
             }
         },
     },

@@ -1,7 +1,6 @@
-import std/[tables, options, json, sugar, sequtils, strutils, sets]
-import bumpy
+import std/[tables, options, json, sugar, strutils, sets, sequtils]
 import misc/[custom_async, custom_logger, rect_utils, myjsonutils, util, jsonex, id]
-import document, document_editor, view
+import document, view
 
 logCategory "layouts"
 

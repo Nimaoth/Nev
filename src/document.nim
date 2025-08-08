@@ -1,7 +1,12 @@
+import std/hashes
 import misc/[util, id]
 import vfs
 
-defineUniqueId(DocumentId)
+type DocumentId* = distinct uint64
+
+proc `==`*(a, b: DocumentId): bool {.borrow.}
+proc hash*(vr: DocumentId): Hash {.borrow.}
+proc `$`*(vr: DocumentId): string {.borrow.}
 
 type Document* = ref object of RootObj
   id*: DocumentId
@@ -13,6 +18,7 @@ type Document* = ref object of RootObj
   undoableRevision*: int
   lastSavedRevision*: int               ## Undobale revision at the time we saved the last time
   vfs*: VFS
+  usage*: string
 
 method `$`*(document: Document): string {.base, gcsafe, raises: [].} = return ""
 method save*(self: Document, filename: string = "", app: bool = false) {.base, gcsafe, raises: [].} = discard

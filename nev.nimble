@@ -38,7 +38,7 @@ requires "https://github.com/Nimaoth/wasm3 >= 0.1.17"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
-requires "https://github.com/Nimaoth/nimwasmtime >= 0.2.1"
+requires "https://github.com/Nimaoth/nimwasmtime#d9dbeb8"
 requires "https://github.com/Nimaoth/nimsumtree >= 0.5.6"
 requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 
@@ -118,13 +118,16 @@ task buildDebugVcc, "Build the debug version":
   selfExec fmt"c -o:nevd{exe} -d:debug -u:release --linetrace:on --stacktrace:on --debuginfo:on -d:treesitterBuiltins= -d:futureLogging --debugger:native --nimcache:C:/nc -d:enableSystemClipboard=false --cc:vcc --lineDir:off -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopClang, "Build the desktop version":
-  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime --lineDir:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:off --linetrace:off --nimcache:nimcache/release_clang {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false -d:exposeScriptingApi -d:appBuildWasmtime --lineDir:on --passC:-g --passC:-std=gnu11 --nimcache:nimcache/release_clang {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebugClang, "Build the desktop version (debug)":
-  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib -d:enableSystemClipboard=true -d:exposeScriptingApi -d:enableSysFatalStackTrace --debuginfo:on -g --lineDir:on --panics:on --passC:-g --passC:-std=gnu11 --stacktrace:off --linetrace:off --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib --passL:-luser32.lib -d:enableSystemClipboard=true -d:exposeScriptingApi --passC:-std=gnu11 --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
+
+task buildDesktopDebugClangLinux, "Build the desktop version (debug)":
+  selfExec fmt"c -o:nev{exe} --cc:clang --passC:-Wno-incompatible-function-pointer-types -d:enableSystemClipboard=true -d:exposeScriptingApi --debuginfo:on -g --lineDir:on --passC:-g --passC:-std=gnu11 --nimcache:nimcache/debug_clang {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --panics:off --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
+  selfExec fmt"c -o:nevd{exe} -d:exposeScriptingApi -d:appBuildWasmtime --debuginfo:on -g -D:debug --lineDir:on --passC:-g --passC:-std=gnu11 --stacktrace:on --linetrace:on --nimcache:nimcache/debug {getCommandLineParams()} ./src/desktop_main.nim"
   # selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/desktop_main.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
@@ -154,7 +157,7 @@ task buildLspWsWindows, "Build the websocket proxy for language servers":
 
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":
-    selfExec fmt"c -d:release -o:wasm/{projectName()}.wasm {getCommandLineParams()}"
+    selfExec fmt"c -d:release --skipParentCfg -o:wasm/{projectName()}.wasm {getCommandLineParams()}"
 
 task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm keybindings_plugin.nim"
@@ -162,5 +165,21 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
   exec fmt"nimble buildNimConfigWasm vscode_config_plugin.nim"
   exec fmt"nimble buildNimConfigWasm lisp_plugin.nim"
 
+task buildWasmModule, "":
+  withDir "plugins/test_plugin":
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o test_plugin.m.wasm\" {getCommandLineParams()} test_plugin.nim"
+
+task buildWasmModule1, "":
+  withDir "plugins/test_plugin_1":
+    exec &"nim c -d:release --skipParentCfg --passL:\"-o test_plugin_1.m.wasm\" {getCommandLineParams()} test_plugin_v1.nim"
+  # let cmd = when defined(Windows): "powershell -Command " else: ""
+  # echo gorgeEx(cmd & "cp ./plugins/test_plugin/test_plugin.m.wasm ./plugins/test_plugin2.m.wasm")
+
 task flamegraph, "Perf/flamegraph":
   exec "PERF=/usr/lib/linux-tools/5.4.0-186-generic/perf ~/.cargo/bin/flamegraph -o flamegraph.svg -- nevtd -s:linux.nev-session"
+
+task buildStacktracer, "Build stacktracer (Rust library for getting stack traces)":
+  withDir "stacktracer":
+    exec "cargo build --release"
+  when defined(windows):
+    exec "cp ./stacktracer/target/release/stacktracer.dll ."

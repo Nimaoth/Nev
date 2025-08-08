@@ -1,6 +1,6 @@
-import std/[json, tables, options, sets]
+import std/[json, tables, options, sets, hashes]
 import vmath, bumpy
-import misc/[event, custom_logger, id, custom_async, util, array_set]
+import misc/[event, custom_logger, id, custom_async, util, array_set, generational_seq]
 import platform/[platform]
 import scripting/expose
 import document, events, input, service, platform_service, dispatch_tables, config_provider
@@ -17,8 +17,10 @@ declareSettings EditorSettings, "editor":
   declare saveInSession, bool, true
 
 type
+  EditorIdNew* = distinct uint64
   DocumentEditor* = ref object of RootObj
     id*: EditorId
+    idNew*: EditorIdNew
     userId*: Id
     renderHeader*: bool
     fillAvailableSpace*: bool
@@ -38,14 +40,20 @@ type
     editors*: Table[EditorId, DocumentEditor]
     pinnedEditors*: HashSet[EditorId]
     pinnedDocuments*: seq[Document]
-    documents*: seq[Document]
     onEditorRegistered*: Event[DocumentEditor]
     onEditorDeregistered*: Event[DocumentEditor]
+
+    documents*: GenerationalSeq[Document, DocumentId]
+    allEditors*: GenerationalSeq[DocumentEditor, EditorIdNew]
 
     documentFactories: seq[DocumentFactory]
     editorFactories: seq[DocumentEditorFactory]
 
     commandLineEditor*: DocumentEditor
+
+proc `==`*(a, b: EditorIdNew): bool {.borrow.}
+proc hash*(vr: EditorIdNew): Hash {.borrow.}
+proc `$`*(vr: EditorIdNew): string {.borrow.}
 
 func serviceName*(_: typedesc[DocumentEditorService]): string = "DocumentEditorService"
 
@@ -151,11 +159,20 @@ proc addDocumentFactory*(self: DocumentEditorService, factory: DocumentFactory) 
 proc addDocumentEditorFactory*(self: DocumentEditorService, factory: DocumentEditorFactory) =
   self.editorFactories.add(factory)
 
+proc registerDocument*(self: DocumentEditorService, document: Document) =
+  document.id = self.documents.add(document)
+
+proc unregisterDocument*(self: DocumentEditorService, document: Document) =
+  self.documents.del(document.id)
+
 proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
+  editor.idNew = self.allEditors.add(editor)
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
 
 proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
+  self.allEditors.del(editor.idNew)
+
   self.editors.del(editor.id)
   self.onEditorDeregistered.invoke editor
 
@@ -163,15 +180,21 @@ proc getAllDocuments*(self: DocumentEditorService): seq[Document] =
   for it in self.editors.values:
     result.incl it.getDocument
 
-proc getDocument*(self: DocumentEditorService, path: string, appFile = false): Option[Document] =
+proc getDocument*(self: DocumentEditorService, path: string, usage = ""): Option[Document] =
   for document in self.documents:
-    if document.appFile == appFile and document.filename == path:
+    if document.filename != "" and document.filename == path and document.usage == usage:
       return document.some
 
   return Document.none
 
+proc getDocument*(self: DocumentEditorService, id: DocumentId): Option[Document] =
+  return self.documents.tryGet(id)
+
+proc getEditor*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
+  return self.allEditors.tryGet(id)
+
 proc getEditorsForDocument*(self: DocumentEditorService, document: Document): seq[DocumentEditor] =
-  for id, editor in self.editors.pairs:
+  for editor in self.allEditors:
     if editor.getDocument() == document:
       result.add editor
 
@@ -181,7 +204,7 @@ proc getEditorForId*(self: DocumentEditorService, id: EditorId): Option[Document
 
   return DocumentEditor.none
 
-proc openDocument*(self: DocumentEditorService, path: string, appFile = false, load = true): Option[Document] =
+proc openDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
   try:
     log lvlInfo, &"Open new document '{path}'"
 
@@ -193,22 +216,19 @@ proc openDocument*(self: DocumentEditorService, path: string, appFile = false, l
 
     if document == nil:
       log lvlError, &"Failed to create document for '{path}'"
-
-    # log lvlInfo, &"Opened new document '{path}'"
-    self.documents.add document
+      return Document.none
     return document.some
 
   except CatchableError:
     log(lvlError, fmt"[openDocument] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
     return Document.none
 
-proc getOrOpenDocument*(self: DocumentEditorService, path: string, appFile = false, load = true): Option[Document] =
-  result = self.getDocument(path, appFile)
+proc getOrOpenDocument*(self: DocumentEditorService, path: string, load = true): Option[Document] =
+  result = self.getDocument(path)
   if result.isSome:
     return
 
-  return self.openDocument(path, appFile, load)
+  return self.openDocument(path, load)
 
 proc getPlatform*(self: DocumentEditorService): Platform =
   if self.platform == nil:
@@ -246,9 +266,7 @@ proc tryCloseDocument*(self: DocumentEditorService, document: Document) =
       break
 
   if not hasAnotherEditor:
-    # log lvlInfo, fmt"Document has no other editors, closing it."
     document.deinit()
-    self.documents.del(document)
 
 proc closeEditor*(self: DocumentEditorService, editor: DocumentEditor) =
   let document = editor.getDocument()

@@ -107,9 +107,11 @@
         "<LEADER>gs": ["search-global-interactive"],
         "<LEADER>gk": ["browse-keybinds"],
         "<LEADER>gi": ["browse-settings"],
+        "<LEADER>gI": ["browse-settings", true],
         "<LEADER>gn": ["open-last-view"],
         "<LEADER>fl": ["load-file"],
         "<LEADER>fs": ["write-file"],
+        "<LEADER>gP": ["show-plugins"],
 
         "<LEADER>ac": ["continue-execution"],
         "<LEADER>ar": ["step-over"],
@@ -173,6 +175,12 @@
 
     "popup.selector.open": {
         "<C-x>": ["close-selected"],
+    },
+
+    "popup.selector.plugins": {
+        "<C-y>": ["load"],
+        "<C-x>": ["unload"],
+        "<C-r>": ["reload"],
     },
 
     "editor.text.normal": {

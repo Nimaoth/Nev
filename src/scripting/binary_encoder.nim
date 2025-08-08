@@ -17,18 +17,18 @@ macro writeImpl(self: var BinaryEncoder, index: untyped, bytes: static[int], v: 
     result.add(b)
   # echo result.repr
 
-proc write*(self: var BinaryEncoder, T: typedesc[SomeUnsignedInt], v: T) =
+proc write*[T: SomeUnsignedInt](self: var BinaryEncoder, v: T) =
   let startIndex = self.buffer.len
   self.buffer.setLen(startIndex + sizeof(T))
   writeImpl(self, startIndex, sizeof(T), v)
 
-proc write*(self: var BinaryEncoder, T: typedesc[float32], v: T) =
+proc write*(self: var BinaryEncoder, v: float32) =
   # todo: make this work in js
-  self.write(uint32, cast[uint32](v))
+  self.write(cast[uint32](v))
 
-proc write*(self: var BinaryEncoder, T: typedesc[float64], v: T) =
+proc write*(self: var BinaryEncoder, v: float64) =
   # todo: make this work in js
-  self.write(uint64, cast[uint64](v))
+  self.write(cast[uint64](v))
 
 proc writeLEB128*(self: var BinaryEncoder, T: typedesc[SomeUnsignedInt], v: T) =
   var v = v
@@ -37,7 +37,7 @@ proc writeLEB128*(self: var BinaryEncoder, T: typedesc[SomeUnsignedInt], v: T) =
     v = v shr 7
     if v != 0:
       b = b or 0b1000_0000
-    self.write(byte, b.byte)
+    self.write(b.byte)
     if v == 0:
       break
 
@@ -58,8 +58,101 @@ proc writeLEB128*(self: var BinaryEncoder, T: typedesc[SomeSignedInt], v: T) =
     else:
       b = b or 0b1000_0000
 
-    self.write(byte, b.byte)
+    self.write(b.byte)
 
 proc writeString*(self: var BinaryEncoder, v: string) =
   self.writeLEB128(uint32, v.len.uint32)
   self.buffer.add v.toOpenArrayByte(0, v.high)
+
+proc write*[T](self: var BinaryEncoder, arr: openArray[T]) =
+  self.writeLEB128(uint32, arr.len.uint32)
+  if arr.len > 0:
+    let startIndex = self.buffer.len
+    self.buffer.setLen(startIndex + arr.len * sizeof(T))
+    copyMem(self.buffer[startIndex].addr, arr[0].addr, arr.len * sizeof(T))
+
+type
+  BinaryDecoder* = object
+    buffer*: ptr UncheckedArray[byte]
+    len*: int
+    pos*: int
+
+proc init*(_: typedesc[BinaryDecoder], arr: openArray[byte]): BinaryDecoder =
+  if arr.len == 0:
+    BinaryDecoder(buffer: nil, len: 0, pos: 0)
+  else:
+    BinaryDecoder(buffer: cast[ptr UncheckedArray[byte]](arr[0].addr), len: arr.len, pos: 0)
+
+proc assertSize(self: var BinaryDecoder, size: int) =
+  if self.pos + size > self.len:
+    raise newException(ValueError, "Failed to decode data, out of bounds")
+
+proc read*(self: var BinaryDecoder, T: typedesc[SomeUnsignedInt]): T =
+  self.assertSize(sizeof(T))
+  # todo: endianness and alignment
+  result = cast[ptr T](self.buffer[self.pos].addr)[]
+  self.pos += sizeof(T)
+
+proc read*(self: var BinaryDecoder, T: typedesc[float32]): float32 =
+  self.assertSize(sizeof(T))
+  # todo: endianness and alignment
+  result = cast[ptr float32](self.buffer[self.pos].addr)[]
+  self.pos += sizeof(float32)
+
+proc read*(self: var BinaryDecoder, T: typedesc[float64]): float64 =
+  self.assertSize(sizeof(T))
+  # todo: endianness and alignment
+  result = cast[ptr float64](self.buffer[self.pos].addr)[]
+  self.pos += sizeof(float64)
+
+proc readLEB128*(self: var BinaryDecoder, T: typedesc[SomeUnsignedInt]): T =
+  result = 0
+  var shift = 0
+  while true:
+    self.assertSize(1)
+    let byte = self.buffer[self.pos]
+    self.pos += 1
+    result = result or (T(byte and 0x7F) shl shift)
+    if (byte and 0x80) == 0:
+      break
+    shift += 7
+
+proc readLEB128*(self: var BinaryDecoder, T: typedesc[SomeSignedInt]): T =
+  result = 0
+  var shift = 0
+  var byte: byte = 0
+  let size = sizeof(T) * 8
+  while true:
+    self.assertSize(1)
+    byte = self.buffer[self.pos]
+    self.pos += 1
+    result = result or (T(byte and 0x7F) shl shift)
+    shift += 7
+    if (byte and 0x80) == 0:
+      break
+
+  if (shift < size) and ((byte and 0x40) != 0):
+    result = result or (T(-1) shl shift)
+
+proc readString*(self: var BinaryDecoder): string =
+  let len = self.readLEB128(uint32).int
+  self.assertSize(len)
+  result = newString(len)
+  copyMem(result[0].addr, self.buffer[self.pos].addr, len)
+  self.pos += len
+
+proc readString*(self: var BinaryDecoder, res: var string) =
+  let len = self.readLEB128(uint32).int
+  self.assertSize(len)
+  let oldLen = res.len
+  res.setLen(oldLen + len)
+  copyMem(res[oldLen].addr, self.buffer[self.pos].addr, len)
+  self.pos += len
+
+proc readArray*(self: var BinaryDecoder, T: typedesc): tuple[data: ptr UncheckedArray[T], len: int] =
+  let len = self.readLEB128(uint32).int
+  self.assertSize(len)
+  let data = cast[ptr UncheckedArray[char]](self.buffer[self.pos].addr)
+  self.pos += len
+  return (data, len)
+

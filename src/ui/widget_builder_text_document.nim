@@ -1131,7 +1131,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   else:
     sizeFlags.incl FillY
 
-  let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
+  let renderDiff = self.diffDocument.isNotNil and self.diffDocument.isInitialized and self.diffChanges.isSome
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
     onClickAny btn:
@@ -1143,7 +1143,11 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
       builder.panel(&{LayoutVertical} + sizeFlags):
         header = builder.createHeader(self.renderHeader, self.mode, self.document, headerColor, textColor):
           onRight:
-            proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
+            proc cursorString(cursor: Cursor): string =
+              if self.document != nil and self.document.isInitialized:
+                $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
+              else:
+                ""
             let readOnlyText = if self.document.readOnly: "-readonly- " else: ""
             let stagedText = if self.document.staged: "-staged- " else: ""
             let diffText = if renderDiff: "-diff- " else: ""
@@ -1190,8 +1194,9 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
 
           var t = startTimer()
 
-          self.createTextLines(builder, app, textNode, selectionsNode, lineNumbersNode,
-            backgroundColor, textColor, sizeToContentX, sizeToContentY)
+          if self.document != nil and self.document.isInitialized:
+            self.createTextLines(builder, app, textNode, selectionsNode, lineNumbersNode,
+              backgroundColor, textColor, sizeToContentX, sizeToContentY)
 
           let e = t.elapsed.ms
           if logNewRenderer:
