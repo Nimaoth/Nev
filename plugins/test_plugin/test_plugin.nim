@@ -1,10 +1,7 @@
 import std/[strformat, json, jsonutils]
 import results
-import misc/util
-import wit_types, wit_runtime
-import scripting/binary_encoder
-import ui/render_command
-import api
+import util, render_command, binary_encoder
+import wit_types, wit_runtime, api
 
 var views: seq[RenderView] = @[]
 var renderCommandEncoder: BinaryEncoder

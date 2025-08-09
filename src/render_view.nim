@@ -1,7 +1,6 @@
 import std/[strformat, tables, sets]
-import misc/[custom_logger, util, delayed_task, timer]
+import misc/[custom_logger, util, delayed_task, timer, render_command]
 import view, service
-import ui/render_command
 import platform/platform
 import platform_service, layout, config_provider, events, command_service
 

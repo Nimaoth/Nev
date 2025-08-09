@@ -1,6 +1,5 @@
 import std/[macrocache, json, options, tables, strutils, strformat, sequtils]
-import misc/[util, custom_logger]
-import binary_encoder
+import misc/[util, custom_logger, binary_encoder]
 
 {.push gcsafe.}
 {.push raises: [].}

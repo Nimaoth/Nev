@@ -1,12 +1,12 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, pathnorm]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder]
 import nimsumtree/[rope, sumtree, arc]
 import service
 import layout
 import text/[text_editor, text_document]
 import render_view, view
-import ui/render_command, platform/platform, platform_service
-import scripting/binary_encoder, config_provider, command_service
+import platform/platform, platform_service
+import config_provider, command_service
 import plugin_service, document_editor, vfs, vfs_service
 import wasmtime, wit_host_module, plugin_api_base, wasi
 from scripting_api import nil

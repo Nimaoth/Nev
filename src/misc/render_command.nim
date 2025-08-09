@@ -1,8 +1,7 @@
 import std/[macros, genasts, tables, sets]
 import fusion/matching
 import chroma, vmath
-import misc/[macro_utils, util, custom_unicode, rect_utils]
-import scripting/binary_encoder
+import macro_utils, util, custom_unicode, rect_utils, binary_encoder
 
 export util, chroma, vmath, rect_utils
 

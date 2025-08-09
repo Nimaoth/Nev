@@ -1,10 +1,10 @@
 import std/[macros, genasts, json, strutils, strformat, os]
-import misc/[custom_logger, custom_async, util]
+import misc/[custom_logger, custom_async, util, binary_encoder]
 import document_editor, vfs, service
 import nimsumtree/[rope, sumtree, arc]
 import layout
 import text/[text_editor, text_document]
-import scripting/[binary_encoder], config_provider, compilation_config
+import config_provider, compilation_config
 import plugin_service
 
 import wasmtime

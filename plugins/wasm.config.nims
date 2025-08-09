@@ -29,7 +29,7 @@ patchFile("stdlib", "tables", "../../patches/tables") # Patch tables.nim to remo
 patchFile("stdlib", "jsonutils", "../../src/misc/myjsonutils")
 
 switch("path", "$nim")
-switch("path", "../../src")
+switch("path", "../../src/misc")
 switch("path", "../../plugin_api")
 switch("d", "release")
 switch("d", "wasm")

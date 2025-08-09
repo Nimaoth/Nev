@@ -1,8 +1,8 @@
 import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, tables, sets]
 import fusion/matching
 import chroma, vmath
-import misc/[util, id, custom_unicode, array_set, rect_utils, custom_logger]
-import input, render_command
+import misc/[util, id, custom_unicode, array_set, rect_utils, custom_logger, render_command]
+import input
 
 export util, id, input, chroma, vmath, rect_utils
 export render_command
