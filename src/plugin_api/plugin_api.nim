@@ -1,4 +1,4 @@
-import std/[macros, strutils, os, strformat, sequtils, json]
+import std/[macros, strutils, os, strformat, sequtils, json, sets]
 import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils]
 import nimsumtree/[rope, sumtree, arc]
 import service
@@ -367,6 +367,9 @@ proc renderId(host: HostContext; store: ptr ContextT; self: var RenderViewResour
 
 proc renderSize(host: HostContext; store: ptr ContextT; self: var RenderViewResource): Vec2f =
   return Vec2f(x: self.view.size.x, y: self.view.size.y)
+
+proc renderKeyDown(host: HostContext; store: ptr ContextT; self: var RenderViewResource, key: int64): bool =
+  return key in self.view.keyStates
 
 proc renderSetRenderWhenInactive(host: HostContext; store: ptr ContextT; self: var RenderViewResource; enabled: bool): void =
   self.view.setRenderWhenInactive(enabled)

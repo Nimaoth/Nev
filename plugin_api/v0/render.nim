@@ -96,6 +96,18 @@ proc size*(self: RenderView): Vec2f {.nodestroy.} =
   result.x = convert(cast[ptr float32](retArea[0].addr)[], float32)
   result.y = convert(cast[ptr float32](retArea[4].addr)[], float32)
 
+proc renderKeyDownImported(a0: int32; a1: int64): bool {.
+    wasmimport("[method]render-view.key-down", "nev:plugins/render").}
+proc keyDown*(self: RenderView; key: int64): bool {.nodestroy.} =
+  ## Returns the size in pixels the view currently has. In the terminal one pixel is one character.
+  var
+    arg0: int32
+    arg1: int64
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = key
+  let res = renderKeyDownImported(arg0, arg1)
+  result = res.bool
+
 proc renderSetRenderIntervalImported(a0: int32; a1: int32): void {.
     wasmimport("[method]render-view.set-render-interval", "nev:plugins/render").}
 proc setRenderInterval*(self: RenderView; ms: int32): void {.nodestroy.} =

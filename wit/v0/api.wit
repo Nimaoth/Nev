@@ -140,6 +140,8 @@ interface render {
     id: func() -> s32;
     /// Returns the size in pixels the view currently has. In the terminal one pixel is one character.
     size: func() -> vec2f;
+    /// Returns whether the given key is currently pressed.
+    key-down: func(key: s64) -> bool;
     /// Specify how often the view should render. -1 means don't render in a timer, 0 means render every frame,
     /// a number bigger than 0 specifies the interval in milliseconds.
     set-render-interval: func(ms: s32);
