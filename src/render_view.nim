@@ -1,7 +1,6 @@
-import std/[strformat, tables]
-import misc/[custom_logger, util, delayed_task, timer]
+import std/[strformat, tables, sets]
+import misc/[custom_logger, util, delayed_task, timer, render_command]
 import view, service
-import ui/render_command
 import platform/platform
 import platform_service, layout, config_provider, events, command_service
 
@@ -31,9 +30,24 @@ type
 
     modes*: seq[string]
 
+    keyStates*: HashSet[int64]
+
 proc handleAction(self: RenderView, action: string, arg: string): Option[string]
 proc handleInput(self: RenderView, text: string)
-proc handleKey(self: RenderView, input: int64, modifiers: Modifiers)
+
+proc handleKeyPress*(self: RenderView, input: int64, modifiers: Modifiers) =
+  self.keyStates.incl(input)
+
+proc handleKeyRelease*(self: RenderView, input: int64, modifiers: Modifiers) =
+  self.keyStates.excl(input)
+
+proc handleRune*(self: RenderView, input: int64, modifiers: Modifiers) =
+  self.keyStates.incl(input)
+
+proc bindPlatformEvents(self: RenderView) =
+  discard self.platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
+  discard self.platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
+  discard self.platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
 
 proc newRenderView*(services: Services): RenderView =
   result = RenderView(services: services)
@@ -41,6 +55,7 @@ proc newRenderView*(services: Services): RenderView =
   result.commandService = services.getService(CommandService).get
   result.events = services.getService(EventHandlerService).get
   result.layout = services.getService(LayoutService).get
+  result.bindPlatformEvents()
 
 proc setRenderInterval*(self: RenderView, ms: int)
 
@@ -120,10 +135,6 @@ proc getEventHandler(self: RenderView, context: string): EventHandler =
 
       onInput:
         self.handleInput(input)
-        Handled
-
-      onKey:
-        self.handleKey(input, mods)
         Handled
 
     self.eventHandlers[context] = eventHandler

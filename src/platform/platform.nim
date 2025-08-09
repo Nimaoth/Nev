@@ -1,7 +1,7 @@
 import vmath
 import ui/node
 import misc/[event, timer]
-import input, vfs, app_options
+import input, vfs, app_options, scripting_api
 
 export input, event
 
@@ -32,6 +32,7 @@ type
     lastEventTime*: Timer
 
     vfs*: VFS
+    backend*: Backend
 
 method requestRender*(self: Platform, redrawEverything = false) {.base, gcsafe, raises: [].} = discard
 method render*(self: Platform, rerender: bool) {.base, gcsafe, raises: [].} = discard

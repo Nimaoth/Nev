@@ -23,7 +23,8 @@
 			"returnType": "",
 			"description": "",
 		},
-		"test-command-5": {}
+		"test-command-5": {},
+		"test-load-file": {},
 	},
 	"permissions": {
 		"filesystem": {

@@ -1,0 +1,116 @@
+{
+  "version": 2,
+  "packages": {
+    "vmath": {
+      "version": "2.0.0",
+      "vcsRevision": "661bdaac7546e16d087f066adfeb6ea7590106b4",
+      "url": "https://github.com/Nimaoth/vmath",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "db421090319e1a0ef028535eedfdadae6f3d7294"
+      }
+    },
+    "bumpy": {
+      "version": "1.1.2",
+      "vcsRevision": "d7eaf00c24820ad0317c9926737402e62431e931",
+      "url": "https://github.com/treeform/bumpy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "vmath"
+      ],
+      "checksums": {
+        "sha1": "acc789c4e31b3ee969a13dd0c238d808f39b19c7"
+      }
+    },
+    "c2nim": {
+      "version": "0.9.19",
+      "vcsRevision": "5753fa7658ed50432ea6c2df84f0a45e36bcb2ea",
+      "url": "https://github.com/nim-lang/c2nim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "1954eb89cc353cf2a4e54804d38d5a1e72f3c98e"
+      }
+    },
+    "chroma": {
+      "version": "0.2.7",
+      "vcsRevision": "b2e71179174e040884ebf6a16cbac711c84620b9",
+      "url": "https://github.com/treeform/chroma",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "f873f4b97e87a82e27e0b85bf9130fe3e320a2b8"
+      }
+    },
+    "fusion": {
+      "version": "1.2",
+      "vcsRevision": "0b0a0273b8df860cd54e3fcca7bb4c617244ac77",
+      "url": "https://github.com/nim-lang/fusion",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "408bde8679bce63dfb6f424e107eb37c5eb31510"
+      }
+    },
+    "unicodedb": {
+      "version": "0.12.0",
+      "vcsRevision": "b055310c08db8f879057b4fec15c8301ee93bb2a",
+      "url": "https://github.com/nitely/nim-unicodedb",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "4452416471e2fe8726eb6070ed6ea7368171cc09"
+      }
+    },
+    "regex": {
+      "version": "0.25.0",
+      "vcsRevision": "cb8b7bfdcdc2272aadf92153c668acd3c901bd6b",
+      "url": "https://github.com/nitely/nim-regex",
+      "downloadMethod": "git",
+      "dependencies": [
+        "unicodedb"
+      ],
+      "checksums": {
+        "sha1": "cb2e24397c051e55ad5b72b3c0d4f270a90084df"
+      }
+    },
+    "nimgen": {
+      "version": "0.5.4",
+      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
+      "url": "https://github.com/Nimaoth/nimgen",
+      "downloadMethod": "git",
+      "dependencies": [
+        "c2nim",
+        "regex",
+        "unicodedb"
+      ],
+      "checksums": {
+        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
+      }
+    },
+    "nimwasmtime": {
+      "version": "0.2.1",
+      "vcsRevision": "49fba9a506c5821874c3957f0449b62a103fb9a6",
+      "url": "https://github.com/Nimaoth/nimwasmtime",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimgen"
+      ],
+      "checksums": {
+        "sha1": "879852aa6fb0eac4f1bc6b1b7dd9a6d368fef182"
+      }
+    },
+    "results": {
+      "version": "0.5.0",
+      "vcsRevision": "57b2392ad69849e3e2d02b74a8a0feee2c3d9570",
+      "url": "https://github.com/arnetheduck/nim-results",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "901e2ed088160fdcb8fdf3b315ce62baedc3f7ba"
+      }
+    }
+  },
+  "tasks": {}
+}

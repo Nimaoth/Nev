@@ -1,12 +1,11 @@
 import std/[macros, strutils, os, strformat, sequtils]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, render_command, binary_encoder]
 import nimsumtree/[rope, sumtree, arc]
 import service
 import layout
 import text/[text_editor, text_document]
 import render_view, view
-import ui/render_command
-import scripting/binary_encoder, config_provider, command_service
+import config_provider, command_service
 import plugin_service
 
 import wasmtime, wit_host_module, plugin_api_base, wasi

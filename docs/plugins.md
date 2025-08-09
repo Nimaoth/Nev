@@ -70,11 +70,20 @@ The `plugin-id` is the name of the folder which contains the plugin manifest.
 // Override permissions for home://.nev/plugins/my_plugin/manifest.json
 {
     "plugin.my_plugin.permissions": {
-        "filesystem": {
-            "allow": ["ws0://src"],
+        "filesystemRead": {
+             // Different ways of specifying the permissions, in order of highest priority to lowest priority.
+            "disallowAll": false,      // If this is true it disallows any access, overriding any other settings for this category. Default: false,
+            "disallow": ["ws0://src"], // Explicitly list disallowed paths. These are prefixes. Paths are normalized before checking the permissions to prevent accessing paths in parent directories using '..'
+            "allowAll": false,         // Allow accessing all paths (except paths in 'disallow')
+            "allow": ["ws0://src"],    // Explicitly list allowed paths (only used if 'allowAll' is false)
+        },
+        "filesystemWrite": {
+            // If nothing is specified then the plugin has no permissions for this category
         },
         "commands": {
             "allowAll": false,
         },
-    }
+    },
+    "plugin.some_shady_plugin.permissions": {}, // Empty, give this plugin no permissions
 }
+```

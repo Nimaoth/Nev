@@ -160,11 +160,11 @@ proc executeCommand*(self: CommandService, command: string): Option[string] =
   return string.none
 
 proc checkPermissions*(self: CommandService, command: string, permissions: CommandPermissions): bool =
-  if permissions.disallowAll.get(true) or command in permissions.disallow:
+  if permissions.disallowAll.get(false) or command in permissions.disallow:
     return false
-  if not permissions.allowAll.get(false) and command notin permissions.allow:
-    return false
-  return true
+  if permissions.allowAll.get(false) or command in permissions.allow:
+    return true
+  return false
 
 proc handleCommand*(self: CommandService, command: string): Option[string] =
   try:

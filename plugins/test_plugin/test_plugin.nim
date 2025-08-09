@@ -1,10 +1,7 @@
 import std/[strformat, json, jsonutils]
 import results
-import misc/util
-import wit_types, wit_runtime
-import scripting/binary_encoder
-import ui/render_command
-import api
+import util, render_command, binary_encoder
+import wit_types, wit_runtime, api
 
 var views: seq[RenderView] = @[]
 var renderCommandEncoder: BinaryEncoder
@@ -148,4 +145,47 @@ defineCommand(ws"test-command-5",
       echo editor.id
       echo "========== ", s
       echo editor.command(ws"vim-move-cursor-column", ws"5")
+    return ws""
+
+defineCommand(ws"test-load-file",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    echo "============ read app://README.md"
+    var res = readSync("app://README.md", {})
+    if res.isOk:
+      echo &"read {res.value.len} bytes"
+    else:
+      echo res
+
+    echo "============ read app://src/../README.md"
+    res = readSync("app://src/../README.md", {})
+    if res.isOk:
+      echo &"read {res.value.len} bytes"
+    else:
+      echo res
+
+    echo "============ read app://src/nev.nim"
+    res = readSync("app://src/nev.nim", {})
+    if res.isOk:
+      echo &"read {res.value.len} bytes"
+    else:
+      echo res
+
+    echo "============ read app://src/nev.nim"
+    let res2 = readRopeSync("app://src/nev.nim", {})
+    if res2.isOk:
+      echo &"read {res2.value.bytes} bytes, {res2.value.runes} runes, {res2.value.lines} lines"
+      echo res2.value.text
+    else:
+      echo res2
+
+    echo "============ write app://temp/uiae.txt"
+    echo writeSync("app://temp/uiae.txt", "hello from\ntest_plugin")
+
+    echo vfs.localize("app://temp/uiae.txt")
     return ws""
