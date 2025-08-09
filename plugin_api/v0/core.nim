@@ -12,6 +12,8 @@ import
 type
   CommandError* = enum
     NotAllowed = "not-allowed", NotFound = "not-found"
+  Platform* = enum
+    Gui = "gui", Tui = "tui"
 proc coreApiVersionImported(): int32 {.wasmimport("api-version",
     "nev:plugins/core").}
 proc apiVersion*(): int32 {.nodestroy.} =
@@ -25,6 +27,13 @@ proc getTime*(): float64 {.nodestroy.} =
   ## Returns the time since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
   let res = coreGetTimeImported()
   result = convert(res, float64)
+
+proc coreGetPlatformImported(): int8 {.wasmimport("get-platform",
+    "nev:plugins/core").}
+proc getPlatform*(): Platform {.nodestroy.} =
+  ## Returns what kind platform the app is running on. E.g. 'terminal' or 'gui'
+  let res = coreGetPlatformImported()
+  result = cast[Platform](res)
 
 proc coreDefineCommandImported(a0: int32; a1: int32; a2: bool; a3: int32;
                                a4: int32; a5: int32; a6: int32; a7: int32;

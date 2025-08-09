@@ -178,4 +178,17 @@ defineCommand(ws"test-load-file",
       echo &"read {res.value.len} bytes"
     else:
       echo res
+
+    echo "============ read app://src/nev.nim"
+    let res2 = readRopeSync("app://src/nev.nim", {})
+    if res2.isOk:
+      echo &"read {res2.value.bytes} bytes, {res2.value.runes} runes, {res2.value.lines} lines"
+      echo res2.value.text
+    else:
+      echo res2
+
+    echo "============ write app://temp/uiae.txt"
+    echo writeSync("app://temp/uiae.txt", "hello from\ntest_plugin")
+
+    echo vfs.localize("app://temp/uiae.txt")
     return ws""

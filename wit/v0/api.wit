@@ -31,6 +31,12 @@ interface types {
     constructor(content: string);
     /// Returns another reference to the same rope.
     clone: func() -> rope;
+    /// Returns the number of bytes in the rope. This operation is cheap.
+    bytes: func() -> s64;
+    /// Returns the number of UTF-8 code points. This operation is cheap.
+    runes: func() -> s64;
+    /// Returns the number of lines. This operation is cheap.
+    lines: func() -> s64;
     /// Returns the text of the rope as a string. This is expensive for large ropes.
     text: func() -> string;
     /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
@@ -73,8 +79,22 @@ interface vfs {
 
   /// Read the given file synchronously. Requires 'filesystemRead' permissions.
   /// By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
-  /// Paths are virtual paths in virtual files system.
+  /// Paths are virtual paths for the virtual file system.
   read-sync: func(path: string, read-flags: read-flags) -> result<string, vfs-error>;
+  /// Read the given file synchronously. Requires 'filesystemRead' permissions.
+  /// By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
+  /// Paths are virtual paths for the virtual file system.
+  read-rope-sync: func(path: string, read-flags: read-flags) -> result<rope, vfs-error>;
+  /// Write the given file synchronously. Requires 'filesystemWrite' permissions.
+  /// Paths are virtual paths for the virtual file system.
+  write-sync: func(path: string, content: string) -> result<bool, vfs-error>;
+  /// Write the given file synchronously. Requires 'filesystemWrite' permissions.
+  /// Paths are virtual paths for the virtual file system.
+  write-rope-sync: func(path: string, rope: rope) -> result<bool, vfs-error>;
+  /// Turns a virtual file system path to a path in the local file system, which can be passed to e.g. external processes.
+  /// E.g. 'local://C:/Users' becomes 'C:/Users'
+  /// E.g. 'home://.nev' becomes 'C:/Users/username/.nev'
+  localize: func(path: string) -> string;
 
 }
 
@@ -200,12 +220,20 @@ interface core {
     not-found
   }
 
+  enum platform {
+    gui,
+    tui,
+  }
+
   /// Returns the plugin API version this plugin is using.
   /// 0 means the latest version, 1 or bigger means a specific version.
   api-version: func() -> s32;
 
   /// Returns the time since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
   get-time: func() -> f64;
+
+  /// Returns what kind platform the app is running on. E.g. 'terminal' or 'gui'
+  get-platform: func() -> platform;
 
   /// Defines a command.
   define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);

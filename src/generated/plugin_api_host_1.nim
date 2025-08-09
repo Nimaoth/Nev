@@ -723,7 +723,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
             cast[ptr int32](memory[retArea + 4].addr)[] = 0.int32
           cast[ptr int32](memory[retArea + 8].addr)[] = cast[int32](res.value.len)
         else:
-          cast[ptr int32](memory[retArea + 4].addr)[] = cast[int8](res.error)
+          cast[ptr int8](memory[retArea + 4].addr)[] = cast[int8](res.error)
     if e.isErr:
       return e
   block:

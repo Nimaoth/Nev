@@ -42,6 +42,8 @@ type
   ## Shared handle to a custom render view
   CommandError* = enum
     NotAllowed = "not-allowed", NotFound = "not-found"
+  Platform* = enum
+    Gui = "gui", Tui = "tui"
   VfsError* = enum
     NotAllowed = "not-allowed", NotFound = "not-found"
   ReadFlag* = enum
@@ -81,28 +83,28 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8489272628 = instance.getExport(context, "init_plugin")
-  if f_8489272628.isSome:
-    assert f_8489272628.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8489272628.get.of_field.func_field
+  let f_8489272633 = instance.getExport(context, "init_plugin")
+  if f_8489272633.isSome:
+    assert f_8489272633.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8489272633.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8489272644 = instance.getExport(context, "handle_command")
-  if f_8489272644.isSome:
-    assert f_8489272644.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8489272644.get.of_field.func_field
+  let f_8489272649 = instance.getExport(context, "handle_command")
+  if f_8489272649.isSome:
+    assert f_8489272649.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8489272649.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8489272694 = instance.getExport(context, "handle_mode_changed")
-  if f_8489272694.isSome:
-    assert f_8489272694.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8489272694.get.of_field.func_field
+  let f_8489272699 = instance.getExport(context, "handle_mode_changed")
+  if f_8489272699.isSome:
+    assert f_8489272699.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8489272699.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8489272695 = instance.getExport(context, "handle_view_render_callback")
-  if f_8489272695.isSome:
-    assert f_8489272695.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8489272695.get.of_field.func_field
+  let f_8489272700 = instance.getExport(context, "handle_view_render_callback")
+  if f_8489272700.isSome:
+    assert f_8489272700.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8489272700.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
@@ -238,6 +240,9 @@ proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
   
 proc typesNewRope(host: HostContext; store: ptr ContextT; content: sink string): RopeResource
 proc typesClone(host: HostContext; store: ptr ContextT; self: var RopeResource): RopeResource
+proc typesBytes(host: HostContext; store: ptr ContextT; self: var RopeResource): int64
+proc typesRunes(host: HostContext; store: ptr ContextT; self: var RopeResource): int64
+proc typesLines(host: HostContext; store: ptr ContextT; self: var RopeResource): int64
 proc typesText(host: HostContext; store: ptr ContextT; self: var RopeResource): string
 proc typesSlice(host: HostContext; store: ptr ContextT; self: var RopeResource;
                 a: int64; b: int64): RopeResource
@@ -248,6 +253,7 @@ proc editorGetDocument(host: HostContext; store: ptr ContextT; editor: Editor): 
     Document]
 proc coreApiVersion(host: HostContext; store: ptr ContextT): int32
 proc coreGetTime(host: HostContext; store: ptr ContextT): float64
+proc coreGetPlatform(host: HostContext; store: ptr ContextT): Platform
 proc coreDefineCommand(host: HostContext; store: ptr ContextT;
                        name: sink string; active: bool; docs: sink string;
                        params: sink seq[(string, string)];
@@ -325,6 +331,13 @@ proc renderRemoveMode(host: HostContext; store: ptr ContextT;
                       self: var RenderViewResource; mode: sink string): void
 proc vfsReadSync(host: HostContext; store: ptr ContextT; path: sink string;
                  readFlags: ReadFlags): Result[string, VfsError]
+proc vfsReadRopeSync(host: HostContext; store: ptr ContextT; path: sink string;
+                     readFlags: ReadFlags): Result[RopeResource, VfsError]
+proc vfsWriteSync(host: HostContext; store: ptr ContextT; path: sink string;
+                  content: sink string): Result[bool, VfsError]
+proc vfsWriteRopeSync(host: HostContext; store: ptr ContextT; path: sink string;
+                      rope: sink RopeResource): Result[bool, VfsError]
+proc vfsLocalize(host: HostContext; store: ptr ContextT; path: sink string): string
 proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     void] =
   block:
@@ -378,6 +391,39 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = typesClone(host, store, self[])
         parameters[0].i32 = ?host.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.bytes", ty):
+        var self: ptr RopeResource
+        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        let res = typesBytes(host, store, self[])
+        parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.runes", ty):
+        var self: ptr RopeResource
+        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        let res = typesRunes(host, store, self[])
+        parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.lines", ty):
+        var self: ptr RopeResource
+        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        let res = typesLines(host, store, self[])
+        parameters[0].i64 = cast[int64](res)
     if e.isErr:
       return e
   block:
@@ -514,6 +560,14 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       return e
   block:
     let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/core", "get-platform", ty):
+        let res = coreGetPlatform(host, store)
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
@@ -627,7 +681,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
             cast[ptr int32](memory[retArea + 4].addr)[] = 0.int32
           cast[ptr int32](memory[retArea + 8].addr)[] = cast[int32](res.value.len)
         else:
-          cast[ptr int32](memory[retArea + 4].addr)[] = cast[int8](res.error)
+          cast[ptr int8](memory[retArea + 4].addr)[] = cast[int8](res.error)
     if e.isErr:
       return e
   block:
@@ -852,7 +906,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
             cast[ptr int32](memory[retArea + 4].addr)[] = 0.int32
           cast[ptr int32](memory[retArea + 8].addr)[] = cast[int32](res.value.len)
         else:
-          cast[ptr int32](memory[retArea + 4].addr)[] = cast[int8](res.error)
+          cast[ptr int8](memory[retArea + 4].addr)[] = cast[int8](res.error)
     if e.isErr:
       return e
   block:
@@ -1460,6 +1514,157 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
             cast[ptr int32](memory[retArea + 4].addr)[] = 0.int32
           cast[ptr int32](memory[retArea + 8].addr)[] = cast[int32](res.value.len)
         else:
-          cast[ptr int32](memory[retArea + 4].addr)[] = cast[int8](res.error)
+          cast[ptr int8](memory[retArea + 4].addr)[] = cast[int8](res.error)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/vfs", "read-rope-sync", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var path: string
+        var readFlags: ReadFlags
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        readFlags = cast[ReadFlags](parameters[2].i32)
+        let res = vfsReadRopeSync(host, store, path, readFlags)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isErr.int32
+        if res.isOk:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?host.resources.resourceNew(
+              store, res.value)
+        else:
+          cast[ptr int8](memory[retArea + 4].addr)[] = cast[int8](res.error)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/vfs", "write-sync", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var path: string
+        var content: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
+          content = newString(parameters[3].i32)
+          for i0 in 0 ..< content.len:
+            content[i0] = p0[i0]
+        let res = vfsWriteSync(host, store, path, content)
+        let retArea = parameters[^1].i32
+        cast[ptr int8](memory[retArea + 0].addr)[] = res.isErr.int8
+        if res.isOk:
+          cast[ptr bool](memory[retArea + 1].addr)[] = res.value
+        else:
+          cast[ptr int8](memory[retArea + 1].addr)[] = cast[int8](res.error)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/vfs", "write-rope-sync", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var path: string
+        var rope: RopeResource
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        block:
+          let resPtr = host.resources.resourceHostData(parameters[2].i32,
+              RopeResource)
+          copyMem(rope.addr, resPtr, sizeof(typeof(rope)))
+          host.resources.resourceDrop(parameters[2].i32, callDestroy = false)
+        let res = vfsWriteRopeSync(host, store, path, rope)
+        let retArea = parameters[^1].i32
+        cast[ptr int8](memory[retArea + 0].addr)[] = res.isErr.int8
+        if res.isOk:
+          cast[ptr bool](memory[retArea + 1].addr)[] = res.value
+        else:
+          cast[ptr int8](memory[retArea + 1].addr)[] = cast[int8](res.error)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/vfs", "localize", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var path: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        let res = vfsLocalize(host, store, path)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e

@@ -68,6 +68,33 @@ proc clone*(self: Rope): Rope {.nodestroy.} =
   let res = typesCloneImported(arg0)
   result.handle = res + 1
 
+proc typesBytesImported(a0: int32): int64 {.
+    wasmimport("[method]rope.bytes", "nev:plugins/types").}
+proc bytes*(self: Rope): int64 {.nodestroy.} =
+  ## Returns the number of bytes in the rope. This operation is cheap.
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = typesBytesImported(arg0)
+  result = convert(res, int64)
+
+proc typesRunesImported(a0: int32): int64 {.
+    wasmimport("[method]rope.runes", "nev:plugins/types").}
+proc runes*(self: Rope): int64 {.nodestroy.} =
+  ## Returns the number of UTF-8 code points. This operation is cheap.
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = typesRunesImported(arg0)
+  result = convert(res, int64)
+
+proc typesLinesImported(a0: int32): int64 {.
+    wasmimport("[method]rope.lines", "nev:plugins/types").}
+proc lines*(self: Rope): int64 {.nodestroy.} =
+  ## Returns the number of lines. This operation is cheap.
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = typesLinesImported(arg0)
+  result = convert(res, int64)
+
 proc typesTextImported(a0: int32; a1: int32): void {.
     wasmimport("[method]rope.text", "nev:plugins/types").}
 proc text*(self: Rope): WitString {.nodestroy.} =

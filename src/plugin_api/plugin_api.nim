@@ -5,11 +5,11 @@ import service
 import layout
 import text/[text_editor, text_document]
 import render_view, view
-import ui/render_command
+import ui/render_command, platform/platform, platform_service
 import scripting/binary_encoder, config_provider, command_service
 import plugin_service, document_editor, vfs, vfs_service
-
 import wasmtime, wit_host_module, plugin_api_base, wasi
+from scripting_api import nil
 
 {.push gcsafe, raises: [].}
 
@@ -21,6 +21,7 @@ type
   HostContext* = ref object
     resources*: WasmModuleResources
     services: Services
+    platform: Platform
     commands*: CommandService
     editors*: DocumentEditorService
     layout*: LayoutService
@@ -99,6 +100,7 @@ type
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
+  self.host.platform = services.getService(PlatformService).get.platform
   self.host.commands = services.getService(CommandService).get
   self.host.editors = services.getService(DocumentEditorService).get
   self.host.layout = services.getService(LayoutService).get
@@ -269,22 +271,31 @@ proc textDocumentContent(host: HostContext; store: ptr ContextT; document: TextD
   return RopeResource(rope: createRope("").slice().suffix(Point()))
 
 proc typesNewRope(host: HostContext; store: ptr ContextT, content: sink string): RopeResource =
-  RopeResource(rope: createRope(content).slice().suffix(Point()))
+  return RopeResource(rope: createRope(content).slice().suffix(Point()))
 
 proc typesClone(host: HostContext, store: ptr ContextT, self: var RopeResource): RopeResource =
-  RopeResource(rope: self.rope.clone())
+  return RopeResource(rope: self.rope.clone())
 
 proc typesText(host: HostContext, store: ptr ContextT, self: var RopeResource): string =
-  $self.rope
+  return $self.rope
+
+proc typesBytes(host: HostContext, store: ptr ContextT, self: var RopeResource): int64 =
+  return self.rope.bytes.int64
+
+proc typesRunes(host: HostContext, store: ptr ContextT, self: var RopeResource): int64 =
+  return self.rope.runeLen.int64
+
+proc typesLines(host: HostContext, store: ptr ContextT, self: var RopeResource): int64 =
+  return self.rope.lines.int64
 
 proc typesSlice(host: HostContext, store: ptr ContextT, self: var RopeResource, a: int64, b: int64): RopeResource =
   let a = min(a, b).clamp(0, self.rope.len)
   let b = max(a, b).clamp(0, self.rope.len)
-  RopeResource(rope: self.rope[a.int...b.int].suffix(Point()))
+  return RopeResource(rope: self.rope[a.int...b.int].suffix(Point()))
 
 proc typesSlicePoints(host: HostContext, store: ptr ContextT, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
-  RopeResource(rope: self.rope[range])
+  return RopeResource(rope: self.rope[range])
 
 proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
   if permissions.disallowAll.get(false):
@@ -299,24 +310,76 @@ proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): boo
       return true
   return false
 
+proc toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
+  result = {}
+  if ReadFlag.Binary in flags:
+    result.incl vfs.ReadFlag.Binary
+
 proc vfsReadSync(host: HostContext, store: ptr ContextT, path: sink string, readFlags: ReadFlags): Result[string, VfsError] =
   try:
-    # todo: readFlags
     let instance = cast[ptr InstanceData](store.getData())
     let normalizedPath = host.vfs.normalize(path)
     if not instance.permissions.filesystemRead.isAllowed(normalizedPath, host.vfs):
       result.err(VfsError.NotAllowed)
       return
-    return results.ok(host.vfs.read(normalizedPath).waitFor())
+    return results.ok(host.vfs.read(normalizedPath, readFlags.toInternal).waitFor())
   except IOError as e:
     log lvlWarn, &"Failed to read file for plugin: {e.msg}"
     result.err(VfsError.NotFound)
+
+proc vfsReadRopeSync(host: HostContext, store: ptr ContextT, path: sink string, readFlags: ReadFlags): Result[RopeResource, VfsError] =
+  try:
+    let instance = cast[ptr InstanceData](store.getData())
+    let normalizedPath = host.vfs.normalize(path)
+    if not instance.permissions.filesystemRead.isAllowed(normalizedPath, host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    var rope: Rope = Rope.new()
+    waitFor host.vfs.readRope(normalizedPath, rope.addr)
+    return results.ok(RopeResource(rope: rope.slice().suffix(Point())))
+  except IOError as e:
+    log lvlWarn, &"Failed to read file for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
+
+proc vfsWriteSync(host: HostContext, store: ptr ContextT, path: sink string, content: sink string): Result[bool, VfsError] =
+  try:
+    let instance = cast[ptr InstanceData](store.getData())
+    let normalizedPath = host.vfs.normalize(path)
+    if not instance.permissions.filesystemWrite.isAllowed(normalizedPath, host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    host.vfs.write(normalizedPath, content).waitFor()
+    return results.ok(true)
+  except IOError as e:
+    log lvlWarn, &"Failed to write file '{path}' for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
+
+proc vfsWriteRopeSync(host: HostContext, store: ptr ContextT, path: sink string, rope: sink RopeResource): Result[bool, VfsError] =
+  try:
+    let instance = cast[ptr InstanceData](store.getData())
+    let normalizedPath = host.vfs.normalize(path)
+    if not instance.permissions.filesystemWrite.isAllowed(normalizedPath, host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    host.vfs.write(normalizedPath, rope.rope.slice(int)).waitFor()
+    return results.ok(true)
+  except IOError as e:
+    log lvlWarn, &"Failed to write file '{path}' for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
+
+proc vfsLocalize(host: HostContext, store: ptr ContextT, path: sink string): string =
+  return host.vfs.localize(path)
 
 proc coreGetTime(host: HostContext; store: ptr ContextT): float64 =
   let instance = cast[ptr InstanceData](store.getData())
   if not instance.permissions.time:
     return 0
   return host.timer.elapsed.ms
+
+proc coreGetPlatform(host: HostContext, store: ptr ContextT): Platform =
+  case host.platform.backend
+  of scripting_api.Backend.Gui: return Platform.Gui
+  of scripting_api.Backend.Terminal: return Platform.Tui
 
 proc coreApiVersion(host: HostContext, store: ptr ContextT): int32 =
   return apiVersion
