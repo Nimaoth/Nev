@@ -1,4 +1,4 @@
-import std/[strformat, json, jsonutils]
+import std/[strformat, json, jsonutils, strutils]
 import results
 import util, render_command, binary_encoder
 import wit_types, wit_runtime, api
@@ -188,4 +188,53 @@ defineCommand(ws"test-load-file",
     echo writeSync("app://temp/uiae.txt", "hello from\ntest_plugin")
 
     echo vfs.localize("app://temp/uiae.txt")
+    return ws""
+
+type Proc = ref object
+  process: Process
+  stdout: ReadChannel
+  stdin: WriteChannel
+
+var gProcess: Proc = nil
+
+defineCommand(ws"test-start-process",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    var p = processStart(ws"powershell", wl[WitString]())
+    var read = p.read()
+    var write = p.write()
+
+    var process = Proc(process: p.ensureMove, stdout: read.ensureMove, stdin: write.ensureMove)
+    gProcess = process
+
+    var buffer = ""
+    process.stdout.listen proc =
+      let s = $process.stdout.readAllString()
+      echo "----------"
+      echo s
+      echo "----------"
+      buffer.add s
+      if process.stdout.atEnd and buffer.len > 0:
+        echo buffer
+        buffer.setLen(0)
+        echo "done"
+
+    return ws""
+
+defineCommand(ws"test-send-input",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    echo &"============ '{args}'"
+    gProcess.stdin.writeString(args)
+    gProcess.stdin.writeString(ws("\n"))
     return ws""

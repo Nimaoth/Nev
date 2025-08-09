@@ -374,27 +374,21 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
         copyMem(file[][prevLen].addr, data, vec.len.int)
         bytesWritten += vec.len.uint32
 
-    var nl = -1
-    var start = 0
-    while true:
-      start = nl + 1
-      nl = file[].find('\n', start)
-      if nl == -1:
-        break
-
-      case fd
-      of 1:
-        log lvlNotice, file[][start..<nl]
-      of 2:
-        log lvlError, file[][start..<nl]
-      else:
-        discard
-
-    if start < file[].len:
-      if start > 0:
-        file[] = file[][start..^1]
+    case fd
+    of 1:
+      if file[].endsWith("\n"):
+        file[].setLen(file[].len - 1)
+      if file[].len > 0:
+        log lvlNotice, file[]
+    of 2:
+      if file[].endsWith("\n"):
+        file[].setLen(file[].len - 1)
+      if file[].len > 0:
+        log lvlError, file[]
     else:
-      file[].setLen(0)
+      discard
+
+    file[].setLen(0)
 
     mem.write[:uint32](pNumWritten, bytesWritten)
     parameters[0].i32 = WasiErrno.Success.int32

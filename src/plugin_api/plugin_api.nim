@@ -1,5 +1,5 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, pathnorm]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process]
 import nimsumtree/[rope, sumtree, arc]
 import service
 import layout
@@ -7,13 +7,56 @@ import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service
-import plugin_service, document_editor, vfs, vfs_service
+import plugin_service, document_editor, vfs, vfs_service, channel
 import wasmtime, wit_host_module, plugin_api_base, wasi
 from scripting_api import nil
 
 {.push gcsafe, raises: [].}
 
 logCategory "plugin-api-v0"
+
+type
+  ProcessOutputChannel* = ref object of BaseChannel
+    process: AsyncProcess
+    isPolling: bool
+
+  ProcessInputChannel* = ref object of BaseChannel
+    process: AsyncProcess
+
+method isOpen*(self: ProcessOutputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
+method close*(self: ProcessOutputChannel) = discard
+method peek*(self: ProcessOutputChannel): int = self.process.peek.catch(0)
+method write*(self: ProcessOutputChannel, data: openArray[uint8]) {.raises: [IOError].} = discard
+method readAll*(self: ProcessOutputChannel, res: var seq[uint8]) {.raises: [IOError].} = self.process.recvAvailable(res)
+method readAll*(self: ProcessOutputChannel, res: var string) {.raises: [IOError].} = self.process.recvAvailable(res)
+method read*(self: ProcessOutputChannel, len: int, res: var seq[uint8]) {.raises: [IOError].} = discard
+method read*(self: ProcessOutputChannel, len: int, res: var string) {.raises: [IOError].} = discard
+
+proc listenPoll*(self: ProcessOutputChannel) {.async: (raises: []).} =
+  if self.isPolling:
+    return
+  self.isPolling = true
+  defer:
+    self.isPolling = false
+  await self.pollEvents(10)
+
+method listen*(self: ProcessOutputChannel, cb: proc() {.gcsafe, raises: [].}) {.gcsafe, raises: [].} =
+  let id = self.event.subscribe(cb)
+  if not self.isPolling:
+    asyncSpawn self.listenPoll()
+
+method isOpen*(self: ProcessInputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
+method close*(self: ProcessInputChannel) = discard
+method peek*(self: ProcessInputChannel): int = 0
+method write*(self: ProcessInputChannel, data: openArray[uint8]) {.raises: [IOError].} =
+  var str = newString(data.len)
+  if data.len > 0:
+    copyMem(str[0].addr, data[0].addr, data.len)
+  self.process.sendSync(str.ensureMove)
+method readAll*(self: ProcessInputChannel, res: var seq[uint8]) {.raises: [IOError].} = discard
+method readAll*(self: ProcessInputChannel, res: var string) {.raises: [IOError].} = discard
+method read*(self: ProcessInputChannel, len: int, res: var seq[uint8]) {.raises: [IOError].} = discard
+method read*(self: ProcessInputChannel, len: int, res: var string) {.raises: [IOError].} = discard
 
 const apiVersion: int32 = 0
 
@@ -59,6 +102,18 @@ type RenderViewResource = object
   setRender: bool = false
   view: RenderView
 
+type ReadChannelResource = object
+  channel: BaseChannel
+
+type WriteChannelResource = object
+  channel: BaseChannel
+
+type ProcessResource = object
+  process: AsyncProcess
+  stdin: BaseChannel
+  stdout: BaseChannel
+  stderr: BaseChannel
+
 proc `=destroy`*(self: RenderViewResource) =
   if self.setRender:
     self.view.onRender = nil
@@ -70,6 +125,9 @@ when defined(witRebuild):
     cacheFile = "../generated/plugin_api_host.nim"
     mapName "rope", RopeResource
     mapName "render-view", RenderViewResource
+    mapName "read-channel", ReadChannelResource
+    mapName "write-channel", WriteChannelResource
+    mapName "process", ProcessResource
 
 else:
   static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
@@ -509,3 +567,90 @@ proc renderAddMode(host: HostContext; store: ptr ContextT; self: var RenderViewR
 proc renderRemoveMode(host: HostContext; store: ptr ContextT; self: var RenderViewResource; mode: sink string): void =
   self.view.modes.removeShift(mode)
 
+
+###################### Channel
+
+proc channelCanRead(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): bool =
+  return self.channel.isOpen
+
+proc channelAtEnd(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): bool =
+  return not self.channel.isOpen and self.channel.peek.int32 == 0
+
+proc channelPeek(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): int32 =
+  return self.channel.peek.int32
+
+proc channelReadString(host: HostContext; store: ptr ContextT; self: var ReadChannelResource; num: int32): string =
+  try:
+    self.channel.read(num.int, result)
+  except:
+    discard
+
+proc channelReadBytes(host: HostContext; store: ptr ContextT; self: var ReadChannelResource; num: int32): seq[uint8] =
+  try:
+    self.channel.read(num.int, result)
+  except:
+    discard
+
+proc channelReadAllString(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): string =
+  try:
+    self.channel.readAll(result)
+  except:
+    discard
+
+proc channelReadAllBytes(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): seq[uint8] =
+  try:
+    self.channel.readAll(result)
+  except:
+    discard
+
+proc channelListen(host: HostContext; store: ptr ContextT; self: var ReadChannelResource, fun: uint32, data: uint32) =
+  var channel = self.channel
+  self.channel.listen proc() {.gcsafe, raises: [].} =
+    let module = cast[ptr InstanceData](store.getData())
+    let res = module[].funcs.handleChannelUpdate(fun, data)
+    if res.isErr:
+      log lvlError, "Failed to call handleChannelUpdate: " & $res
+
+proc channelCanWrite(host: HostContext; store: ptr ContextT; self: var WriteChannelResource): bool =
+  try:
+    return self.channel.isOpen
+  except:
+    discard
+
+proc channelWriteString(host: HostContext; store: ptr ContextT; self: var WriteChannelResource; data: sink string): void =
+  try:
+    self.channel.write(data)
+  except:
+    discard
+
+proc channelWriteBytes(host: HostContext; store: ptr ContextT; self: var WriteChannelResource; data: sink seq[uint8]): void =
+  try:
+    self.channel.write(data)
+  except:
+    discard
+
+######################### Process
+
+proc processProcessStart(host: HostContext; store: ptr ContextT; name: sink string; args: sink seq[string]): ProcessResource =
+  try:
+    var process = startAsyncProcess(name, args, killOnExit = true, autoStart = false)
+    discard process.start()
+    return ProcessResource(process: process)
+  except:
+    discard
+
+proc processRead(host: HostContext; store: ptr ContextT; self: var ProcessResource): ReadChannelResource =
+  try:
+    if self.stdout == nil:
+      self.stdout = ProcessOutputChannel(process: self.process)
+    return ReadChannelResource(channel: self.stdout)
+  except:
+    discard
+
+proc processWrite(host: HostContext; store: ptr ContextT; self: var ProcessResource): WriteChannelResource =
+  try:
+    if self.stdin == nil:
+      self.stdin = ProcessInputChannel(process: self.process)
+    return WriteChannelResource(channel: self.stdin)
+  except:
+    discard

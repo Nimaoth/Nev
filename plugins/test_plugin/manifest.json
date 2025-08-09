@@ -25,6 +25,7 @@
 		},
 		"test-command-5": {},
 		"test-load-file": {},
+		"test-start-process": {},
 	},
 	"permissions": {
 		"filesystem": {

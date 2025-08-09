@@ -21,6 +21,7 @@ proc NimMain() {.importc.}
 ############################ exported functions ############################
 
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
+type ChannelUpdateHandler = proc(data: uint32) {.cdecl.}
 
 proc initPlugin() =
   emscripten_stack_init()
@@ -38,7 +39,13 @@ proc handleCommand(fun: uint32, data: uint32; arguments: WitString): WitString =
   let fun = cast[CommandHandler](fun)
   return fun(data, arguments)
 
+proc handleChannelUpdate(fun: uint32, data: uint32) =
+  let fun = cast[ChannelUpdateHandler](fun)
+  fun(data)
+
 ############################ nice wrappers around the raw api ############################
+
+proc wl*[T](): WitList[T] = WitList[T].default()
 
 proc getSetting*(name: string, T: typedesc): T =
   try:
@@ -60,3 +67,18 @@ proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.})
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)
+
+proc listen*(self: ReadChannel, data: uint32, fun: proc(data: uint32) {.cdecl.}) =
+  self.listen(cast[uint32](fun), data)
+
+proc listen*(self: ReadChannel, fun: proc() {.gcsafe, raises: [].}) =
+  type Data = object
+    fun: proc() {.gcsafe, raises: [].}
+  proc cb(data: uint32) {.cdecl.} =
+    let data = cast[ptr Data](data)
+    data.fun()
+
+  # todo: this needs to get freed at some point
+  var data = cast[ptr Data](allocShared0(sizeof(Data)))
+  data[].fun = fun
+  self.listen(cast[uint32](data), cb)

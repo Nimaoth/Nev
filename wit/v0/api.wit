@@ -64,6 +64,44 @@ interface types {
   }
 }
 
+interface channel {
+  resource read-channel {
+    /// Returns whether the channel is still open and usable.
+    can-read: func() -> bool;
+    /// Returns whether the channel at the end, meaning no further data will be returned from any read function.
+    at-end: func() -> bool;
+    /// Returns how much data is in the buffer available for reading
+    peek: func() -> s32;
+    /// Read
+    read-string: func(num: s32) -> string;
+    /// Read
+    read-bytes: func(num: s32) -> list<u8>;
+    /// Read everything currently available in the channel.
+    read-all-string: func() -> string;
+    /// Read everything currently available in the channel.
+    read-all-bytes: func() -> list<u8>;
+    listen: func(fun: u32, data: u32);
+  }
+
+  resource write-channel {
+    /// Returns whether the channel is still open and usable.
+    can-write: func() -> bool;
+    /// Write
+    write-string: func(data: string);
+    /// Write
+    write-bytes: func(data: list<u8>);
+  }
+}
+
+interface process {
+  use channel.{read-channel, write-channel};
+  resource process {
+    start: static func(name: string, args: list<string>) -> process;
+    read: func() -> read-channel;
+    write: func() -> write-channel;
+  }
+}
+
 interface vfs {
   use types.{rope};
   use core.{command-error};
@@ -254,6 +292,7 @@ interface guest {
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
+  handle-channel-update: func(fun: u32, data: u32);
 }
 
 world plugin {
@@ -265,6 +304,8 @@ world plugin {
   import core;
   import render;
   import vfs;
+  import channel;
+  import process;
 
   export guest;
 }

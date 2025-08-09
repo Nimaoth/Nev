@@ -92,6 +92,9 @@ proc destroy*(process: AsyncProcess) =
   spawn destroyProcess2(process.addr)
   # todo: should probably wait for the other thread to increment the process RC
 
+proc peek*[T](achan: AsyncChannel[T]): int =
+  return achan.chan[].peek
+
 proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async.} =
   bind milliseconds
 
@@ -232,6 +235,10 @@ proc send*[T](achan: AsyncChannel[T], data: sink T) {.async.} =
   while not achan.closed and not achan.chan[].trySend(data.move):
     await sleepAsync 10.milliseconds
 
+proc sendSync*[T](achan: AsyncChannel[T], data: sink T) =
+  if not achan.closed:
+    achan.chan[].send(data.move)
+
 proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
   bind milliseconds
 
@@ -244,12 +251,49 @@ proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
 
   return T.none
 
+proc recvAvailable*[char](achan: AsyncChannel[char], res: var seq[uint8]) =
+  while not achan.closed:
+    let (ok, data) = achan.chan[].tryRecv()
+    if not ok:
+      return
+
+    res.add(data.uint8)
+
+proc recvAvailable*[char](achan: AsyncChannel[char], res: var string) =
+  while not achan.closed:
+    let (ok, data) = achan.chan[].tryRecv()
+    if not ok:
+      return
+
+    res.add(data)
+
 proc recv*(process: AsyncProcess, amount: int): Future[string] =
   if process.input.isNil or process.input.chan.isNil:
     result = newFuture[string]("recv")
     result.fail(newException(IOError, "(recv) Input stream closed while reading"))
     return result
   return process.input.recv(amount)
+
+proc peek*(process: AsyncProcess): int =
+  if process.input.isNil or process.input.chan.isNil:
+    raise newException(IOError, "(peek) Input stream closed")
+  return process.input.peek()
+
+proc recvAvailable*(process: AsyncProcess, res: var seq[uint8]) {.raises: [IOError].} =
+  if process.input.isNil or process.input.chan.isNil:
+    raise newException(IOError, "(recvLine) Input stream closed while reading")
+  try:
+    process.input.recvAvailable(res)
+  except ValueError as e:
+    raise newException(IOError, "(recvAvailable) Error while reading", e)
+
+proc recvAvailable*(process: AsyncProcess, res: var string) {.raises: [IOError].} =
+  if process.input.isNil or process.input.chan.isNil:
+    raise newException(IOError, "(recvLine) Input stream closed while reading")
+  try:
+    process.input.recvAvailable(res)
+  except ValueError as e:
+    raise newException(IOError, "(recvAvailable) Error while reading", e)
 
 proc recvLine*(process: AsyncProcess): Future[string] =
   if process.input.isNil or process.input.chan.isNil:
@@ -269,6 +313,11 @@ proc recvErrorLine*(process: AsyncProcess): Future[string] =
     result.fail(newException(IOError, "(recvLine) Error stream closed while reading"))
     return result
   return process.error.recvLine()
+
+proc sendSync*(process: AsyncProcess, data: sink string) =
+  if process.output.isNil or process.output.chan.isNil:
+    return
+  process.output.sendSync(data.some)
 
 proc send*(process: AsyncProcess, data: string): Future[void] =
   if process.output.isNil or process.output.chan.isNil:

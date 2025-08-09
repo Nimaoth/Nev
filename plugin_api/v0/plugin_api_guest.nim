@@ -40,6 +40,12 @@ export
   text_editor
 
 import
+  channel
+
+export
+  channel
+
+import
   layout
 
 export
@@ -56,6 +62,12 @@ import
 
 export
   core
+
+import
+  process
+
+export
+  process
 
 proc initPlugin(): void
 proc initPluginExported(): void {.wasmexport("init-plugin", "nev:plugins/guest").} =
@@ -104,3 +116,13 @@ proc handleViewRenderCallbackExported(a0: int32; a1: uint32; a2: uint32): void {
   fun = convert(a1, uint32)
   data = convert(a2, uint32)
   handleViewRenderCallback(id, fun, data)
+
+proc handleChannelUpdate(fun: uint32; data: uint32): void
+proc handleChannelUpdateExported(a0: uint32; a1: uint32): void {.
+    wasmexport("handle-channel-update", "nev:plugins/guest").} =
+  var
+    fun: uint32
+    data: uint32
+  fun = convert(a0, uint32)
+  data = convert(a1, uint32)
+  handleChannelUpdate(fun, data)
