@@ -167,6 +167,7 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
 
 task buildWasmModule, "":
   withDir "plugins/test_plugin":
+    exec &"nimble setup"
     exec &"nim c -d:release --skipParentCfg --passL:\"-o test_plugin.m.wasm\" {getCommandLineParams()} test_plugin.nim"
 
 task buildWasmModule1, "":

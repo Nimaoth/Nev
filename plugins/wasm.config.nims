@@ -25,15 +25,10 @@ else:
 when withDir(thisDir(), fileExists("../local.nims")):
   include "local.nims"
 
---noNimblePath
-when withDir(thisDir(), fileExists("../../nimble.paths")):
-  include "../nimble.paths"
-
 patchFile("stdlib", "tables", "../../patches/tables") # Patch tables.nim to remove exceptions
 patchFile("stdlib", "jsonutils", "../../src/misc/myjsonutils")
 
 switch("path", "$nim")
-switch("path", "../../scripting")
 switch("path", "../../src")
 switch("path", "../../plugin_api")
 switch("d", "release")
