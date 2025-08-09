@@ -42,6 +42,11 @@ type
   ## Shared handle to a custom render view
   CommandError* = enum
     NotAllowed = "not-allowed", NotFound = "not-found"
+  VfsError* = enum
+    NotAllowed = "not-allowed", NotFound = "not-found"
+  ReadFlag* = enum
+    Binary = "binary"
+  ReadFlags* = set[ReadFlag]
 when not declared(RopeResource):
   {.error: "Missing resource type definition for " & "RopeResource" &
       ". Define the type before the importWit statement.".}
@@ -76,28 +81,28 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8204059947 = instance.getExport(context, "init_plugin")
-  if f_8204059947.isSome:
-    assert f_8204059947.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8204059947.get.of_field.func_field
+  let f_8489272628 = instance.getExport(context, "init_plugin")
+  if f_8489272628.isSome:
+    assert f_8489272628.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8489272628.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8204059963 = instance.getExport(context, "handle_command")
-  if f_8204059963.isSome:
-    assert f_8204059963.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8204059963.get.of_field.func_field
+  let f_8489272644 = instance.getExport(context, "handle_command")
+  if f_8489272644.isSome:
+    assert f_8489272644.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8489272644.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8204060013 = instance.getExport(context, "handle_mode_changed")
-  if f_8204060013.isSome:
-    assert f_8204060013.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8204060013.get.of_field.func_field
+  let f_8489272694 = instance.getExport(context, "handle_mode_changed")
+  if f_8489272694.isSome:
+    assert f_8489272694.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8489272694.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8204060014 = instance.getExport(context, "handle_view_render_callback")
-  if f_8204060014.isSome:
-    assert f_8204060014.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8204060014.get.of_field.func_field
+  let f_8489272695 = instance.getExport(context, "handle_view_render_callback")
+  if f_8489272695.isSome:
+    assert f_8489272695.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8489272695.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
@@ -318,6 +323,8 @@ proc renderAddMode(host: HostContext; store: ptr ContextT;
                    self: var RenderViewResource; mode: sink string): void
 proc renderRemoveMode(host: HostContext; store: ptr ContextT;
                       self: var RenderViewResource; mode: sink string): void
+proc vfsReadSync(host: HostContext; store: ptr ContextT; path: sink string;
+                 readFlags: ReadFlags): Result[string, VfsError]
 proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     void] =
   block:
@@ -1409,5 +1416,50 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           for i0 in 0 ..< mode.len:
             mode[i0] = p0[i0]
         renderRemoveMode(host, store, self[], mode)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/vfs", "read-sync", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var path: string
+        var readFlags: ReadFlags
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        readFlags = cast[ReadFlags](parameters[2].i32)
+        let res = vfsReadSync(host, store, path, readFlags)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isErr.int32
+        if res.isOk:
+          if res.value.len > 0:
+            let dataPtrWasm1 = int32(?stackAlloc(stackAllocFunc, store,
+                (res.value.len * 1).int32, 4))
+            cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](dataPtrWasm1)
+            block:
+              for i1 in 0 ..< res.value.len:
+                memory[dataPtrWasm1 + i1] = cast[uint8](res.value[i1])
+          else:
+            cast[ptr int32](memory[retArea + 4].addr)[] = 0.int32
+          cast[ptr int32](memory[retArea + 8].addr)[] = cast[int32](res.value.len)
+        else:
+          cast[ptr int32](memory[retArea + 4].addr)[] = cast[int8](res.error)
     if e.isErr:
       return e

@@ -1,4 +1,4 @@
-import std/[macros, strutils, os, strformat, sequtils, json, sets]
+import std/[macros, strutils, os, strformat, sequtils, json, sets, pathnorm]
 import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils]
 import nimsumtree/[rope, sumtree, arc]
 import service
@@ -7,7 +7,7 @@ import text/[text_editor, text_document]
 import render_view, view
 import ui/render_command
 import scripting/binary_encoder, config_provider, command_service
-import plugin_service, document_editor
+import plugin_service, document_editor, vfs, vfs_service
 
 import wasmtime, wit_host_module, plugin_api_base, wasi
 
@@ -26,6 +26,8 @@ type
     layout*: LayoutService
     plugins*: PluginService
     settings*: ConfigStore
+    vfsService*: VFSService
+    vfs*: VFS
     timer*: Timer
 
 proc getMemoryFor(host: HostContext, caller: ptr CallerT): Option[ExternT] =
@@ -102,6 +104,8 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
+  self.host.vfsService = services.getService(VFSService).get
+  self.host.vfs = self.host.vfsService.vfs
   self.host.timer = startTimer()
 
   self.engine = engine
@@ -281,6 +285,32 @@ proc typesSlice(host: HostContext, store: ptr ContextT, self: var RopeResource, 
 proc typesSlicePoints(host: HostContext, store: ptr ContextT, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
   RopeResource(rope: self.rope[range])
+
+proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
+  if permissions.disallowAll.get(false):
+    return false
+  for prefix in permissions.disallow:
+    if path.startsWith(vfs.normalize(prefix)):
+      return false
+  if permissions.allowAll.get(false):
+    return true
+  for prefix in permissions.allow:
+    if path.startsWith(vfs.normalize(prefix)):
+      return true
+  return false
+
+proc vfsReadSync(host: HostContext, store: ptr ContextT, path: sink string, readFlags: ReadFlags): Result[string, VfsError] =
+  try:
+    # todo: readFlags
+    let instance = cast[ptr InstanceData](store.getData())
+    let normalizedPath = host.vfs.normalize(path)
+    if not instance.permissions.filesystemRead.isAllowed(normalizedPath, host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    return results.ok(host.vfs.read(normalizedPath).waitFor())
+  except IOError as e:
+    log lvlWarn, &"Failed to read file for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
 
 proc coreGetTime(host: HostContext; store: ptr ContextT): float64 =
   let instance = cast[ptr InstanceData](store.getData())

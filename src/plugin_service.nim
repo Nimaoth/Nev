@@ -1,5 +1,5 @@
 import std/[macros, macrocache, json, strutils, tables, options, sequtils, os, sugar, streams]
-import misc/[custom_logger, custom_async, util, myjsonutils]
+import misc/[custom_logger, custom_async, util, myjsonutils, event]
 import scripting/expose
 import compilation_config, service, vfs_service, vfs, dispatch_tables, events, config_provider, command_service
 
@@ -65,7 +65,8 @@ type
     disallow*: seq[string]
 
   PluginPermissions* = object
-    filesystem*: FilesystemPermissions
+    filesystemRead*: FilesystemPermissions
+    filesystemWrite*: FilesystemPermissions
     commands*: CommandPermissions
     time*: bool
 
@@ -123,6 +124,8 @@ method getCurrentContext*(self: PluginSystem): string {.base.} = ""
 method tryLoadPlugin*(self: PluginSystem, plugin: Plugin): Future[bool] {.base, async: (raises: [IOError]).} = false
 method unloadPlugin*(self: PluginSystem, plugin: Plugin): Future[void] {.base, async: (raises: []).} = discard
 
+method setPermissions*(self: PluginInstanceBase, permissions: PluginPermissions) {.base.} = discard
+
 func serviceName*(_: typedesc[PluginService]): string = "PluginService"
 
 addBuiltinService(PluginService, EventHandlerService, VFSService, ConfigService)
@@ -149,6 +152,8 @@ proc updatePermissions(self: PluginService, plugin: Plugin) =
     plugin.settings.set("permissions", plugin.manifest.permissions)
     let permissionsJson = plugin.settings.get("permissions", newJObject())
     plugin.permissions = permissionsJson.jsonTo(PluginPermissions, Joptions(allowExtraKeys: true, allowMissingKeys: true))
+    if plugin.instance != nil:
+      plugin.instance.setPermissions(plugin.permissions)
   except CatchableError as e:
     log lvlError, &"Failed to parse permissions for {plugin.desc}: {e.msg}"
 
@@ -279,6 +284,11 @@ proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
   self.pathToPlugin[plugin.manifest.path] = plugin
   self.idToPlugin[plugin.manifest.id] = plugin
   self.registerPluginCommands(plugin)
+
+  # todo: maybe this should be just subscribed once when the service starts and then loop over all loaded plugins
+  discard self.settings.onConfigChanged.subscribe proc(key: string) =
+    if key == "" or key == "permissions" or key.startsWith("permissions"):
+      self.updatePermissions(plugin)
 
 proc addManifestFromFile(self: PluginService, pluginFolder: PluginDirectory, file: string) {.async.} =
   if file.endsWith(".m.wasm"):

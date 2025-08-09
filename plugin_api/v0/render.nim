@@ -99,7 +99,7 @@ proc size*(self: RenderView): Vec2f {.nodestroy.} =
 proc renderKeyDownImported(a0: int32; a1: int64): bool {.
     wasmimport("[method]render-view.key-down", "nev:plugins/render").}
 proc keyDown*(self: RenderView; key: int64): bool {.nodestroy.} =
-  ## Returns the size in pixels the view currently has. In the terminal one pixel is one character.
+  ## Returns whether the given key is currently pressed.
   var
     arg0: int32
     arg1: int64

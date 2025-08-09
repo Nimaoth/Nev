@@ -33,6 +33,9 @@ type
     moduleInstance: WasmModuleInstance
     api: PluginApiBase
 
+method setPermissions*(self: WasmPluginInstance, permissions: PluginPermissions) =
+  self.moduleInstance.setPermissions(permissions)
+
 proc initPluginApi[T](self: PluginSystemWasm, api: var PluginApiBase) =
   var newApi: T
   new(newApi)

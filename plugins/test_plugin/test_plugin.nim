@@ -149,3 +149,33 @@ defineCommand(ws"test-command-5",
       echo "========== ", s
       echo editor.command(ws"vim-move-cursor-column", ws"5")
     return ws""
+
+defineCommand(ws"test-load-file",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    echo "============ read app://README.md"
+    var res = readSync("app://README.md", {})
+    if res.isOk:
+      echo &"read {res.value.len} bytes"
+    else:
+      echo res
+
+    echo "============ read app://src/../README.md"
+    res = readSync("app://src/../README.md", {})
+    if res.isOk:
+      echo &"read {res.value.len} bytes"
+    else:
+      echo res
+
+    echo "============ read app://src/nev.nim"
+    res = readSync("app://src/nev.nim", {})
+    if res.isOk:
+      echo &"read {res.value.len} bytes"
+    else:
+      echo res
+    return ws""

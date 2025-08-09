@@ -16,6 +16,12 @@ export
   editor
 
 import
+  vfs
+
+export
+  vfs
+
+import
   types
 
 export

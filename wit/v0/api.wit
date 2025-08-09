@@ -58,6 +58,26 @@ interface types {
   }
 }
 
+interface vfs {
+  use types.{rope};
+  use core.{command-error};
+
+  enum vfs-error {
+    not-allowed,
+    not-found,
+  }
+
+  flags read-flags {
+    binary,
+  }
+
+  /// Read the given file synchronously. Requires 'filesystemRead' permissions.
+  /// By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
+  /// Paths are virtual paths in virtual files system.
+  read-sync: func(path: string, read-flags: read-flags) -> result<string, vfs-error>;
+
+}
+
 interface editor {
   use types.{editor, document};
   /// Returns a handle for the currently active text editor.
@@ -216,6 +236,7 @@ world plugin {
   import text-document;
   import core;
   import render;
+  import vfs;
 
   export guest;
 }
