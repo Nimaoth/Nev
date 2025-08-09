@@ -10,6 +10,7 @@ This describes how Nev works under the hood, and is mainly useful for contributo
   - Starts `services`
   - Creates the `App`
   - Initializes `App`
+  - Runs the main loop to handle OS events, poll the async runtime and render using the `Platform`
 
 - App is the central hub which connects everything. There is a bunch of stuff in there which should be moved out over time (e.g. most commands defined in app.nim)
 
