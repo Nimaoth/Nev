@@ -26,6 +26,8 @@
 		"test-command-5": {},
 		"test-load-file": {},
 		"test-start-process": {},
+		"test-shell": {},
+		"test-in-memory-channel": {},
 	},
 	"permissions": {
 		"filesystem": {

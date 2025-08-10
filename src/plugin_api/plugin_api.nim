@@ -15,49 +15,6 @@ from scripting_api import nil
 
 logCategory "plugin-api-v0"
 
-type
-  ProcessOutputChannel* = ref object of BaseChannel
-    process: AsyncProcess
-    isPolling: bool
-
-  ProcessInputChannel* = ref object of BaseChannel
-    process: AsyncProcess
-
-method isOpen*(self: ProcessOutputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
-method close*(self: ProcessOutputChannel) = discard
-method peek*(self: ProcessOutputChannel): int = self.process.peek.catch(0)
-method write*(self: ProcessOutputChannel, data: openArray[uint8]) {.raises: [IOError].} = discard
-method readAll*(self: ProcessOutputChannel, res: var seq[uint8]) {.raises: [IOError].} = self.process.recvAvailable(res)
-method readAll*(self: ProcessOutputChannel, res: var string) {.raises: [IOError].} = self.process.recvAvailable(res)
-method read*(self: ProcessOutputChannel, len: int, res: var seq[uint8]) {.raises: [IOError].} = discard
-method read*(self: ProcessOutputChannel, len: int, res: var string) {.raises: [IOError].} = discard
-
-proc listenPoll*(self: ProcessOutputChannel) {.async: (raises: []).} =
-  if self.isPolling:
-    return
-  self.isPolling = true
-  defer:
-    self.isPolling = false
-  await self.pollEvents(10)
-
-method listen*(self: ProcessOutputChannel, cb: proc() {.gcsafe, raises: [].}) {.gcsafe, raises: [].} =
-  let id = self.event.subscribe(cb)
-  if not self.isPolling:
-    asyncSpawn self.listenPoll()
-
-method isOpen*(self: ProcessInputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
-method close*(self: ProcessInputChannel) = discard
-method peek*(self: ProcessInputChannel): int = 0
-method write*(self: ProcessInputChannel, data: openArray[uint8]) {.raises: [IOError].} =
-  var str = newString(data.len)
-  if data.len > 0:
-    copyMem(str[0].addr, data[0].addr, data.len)
-  self.process.sendSync(str.ensureMove)
-method readAll*(self: ProcessInputChannel, res: var seq[uint8]) {.raises: [IOError].} = discard
-method readAll*(self: ProcessInputChannel, res: var string) {.raises: [IOError].} = discard
-method read*(self: ProcessInputChannel, len: int, res: var seq[uint8]) {.raises: [IOError].} = discard
-method read*(self: ProcessInputChannel, len: int, res: var string) {.raises: [IOError].} = discard
-
 const apiVersion: int32 = 0
 
 type
@@ -103,16 +60,16 @@ type RenderViewResource = object
   view: RenderView
 
 type ReadChannelResource = object
-  channel: BaseChannel
+  channel: Arc[BaseChannel]
 
 type WriteChannelResource = object
-  channel: BaseChannel
+  channel: Arc[BaseChannel]
 
 type ProcessResource = object
   process: AsyncProcess
-  stdin: BaseChannel
-  stdout: BaseChannel
-  stderr: BaseChannel
+  stdin: Arc[BaseChannel]
+  stdout: Arc[BaseChannel]
+  stderr: Arc[BaseChannel]
 
 proc `=destroy`*(self: RenderViewResource) =
   if self.setRender:
@@ -246,6 +203,19 @@ method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
   instanceData.get.store.delete()
   self.instances.removeShift(instance)
 
+###################################### Conversion functions #####################################
+
+proc toInternal(c: Cursor): scripting_api.Cursor = (c.line.int, c.column.int)
+proc toInternal(c: Selection): scripting_api.Selection = (c.first.toInternal, c.last.toInternal)
+
+proc toWasm(c: scripting_api.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+proc toWasm(c: scripting_api.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+
+proc toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
+  result = {}
+  if ReadFlag.Binary in flags:
+    result.incl vfs.ReadFlag.Binary
+
 ###################################### API implementations #####################################
 
 proc editorActiveEditor(host: HostContext; store: ptr ContextT): Option[Editor] =
@@ -294,6 +264,13 @@ proc textEditorGetSelection(host: HostContext; store: ptr ContextT; editor: Text
     Selection(first: Cursor(line: s.first.line.int32, column: s.first.column.int32), last: Cursor(line: s.last.line.int32, column: s.last.column.int32))
   else:
     Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9))
+
+proc textEditorEdit(host: HostContext; store: ptr ContextT; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string]): seq[Selection] =
+  if host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let selections = selections.mapIt(it.toInternal)
+    let res = editor.TextDocumentEditor.edit(selections, contents)
+    return res.mapIt(it.toWasm)
+  return selections
 
 proc textEditor_addModeChangedHandler(host: HostContext, store: ptr ContextT, fun: uint32): int32 =
   if host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
@@ -367,11 +344,6 @@ proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): boo
     if path.startsWith(vfs.normalize(prefix)):
       return true
   return false
-
-proc toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
-  result = {}
-  if ReadFlag.Binary in flags:
-    result.incl vfs.ReadFlag.Binary
 
 proc vfsReadSync(host: HostContext, store: ptr ContextT, path: sink string, readFlags: ReadFlags): Result[string, VfsError] =
   try:
@@ -574,42 +546,62 @@ proc channelCanRead(host: HostContext; store: ptr ContextT; self: var ReadChanne
   return self.channel.isOpen
 
 proc channelAtEnd(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): bool =
-  return not self.channel.isOpen and self.channel.peek.int32 == 0
+  return self.channel.atEnd
 
 proc channelPeek(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): int32 =
   return self.channel.peek.int32
 
 proc channelReadString(host: HostContext; store: ptr ContextT; self: var ReadChannelResource; num: int32): string =
   try:
-    self.channel.read(num.int, result)
-  except:
+    if num > 0:
+      result.setLen(num)
+      let read = self.channel.read(result.toOpenArrayByte(0, result.high))
+      result.setLen(read)
+  except IOError:
     discard
 
 proc channelReadBytes(host: HostContext; store: ptr ContextT; self: var ReadChannelResource; num: int32): seq[uint8] =
   try:
-    self.channel.read(num.int, result)
-  except:
+    if num > 0:
+      result.setLen(num)
+      let read = self.channel.read(result.toOpenArray(0, result.high))
+      result.setLen(read)
+  except IOError:
     discard
 
 proc channelReadAllString(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): string =
   try:
-    self.channel.readAll(result)
-  except:
+    result.setLen(self.channel.peek)
+    if result.len > 0:
+      let read = self.channel.read(result.toOpenArrayByte(0, result.high))
+      result.setLen(read)
+  except IOError:
     discard
 
 proc channelReadAllBytes(host: HostContext; store: ptr ContextT; self: var ReadChannelResource): seq[uint8] =
   try:
-    self.channel.readAll(result)
-  except:
+    result.setLen(self.channel.peek)
+    if result.len > 0:
+      let read = self.channel.read(result.toOpenArray(0, result.high))
+      result.setLen(read)
+  except IOError:
     discard
 
 proc channelListen(host: HostContext; store: ptr ContextT; self: var ReadChannelResource, fun: uint32, data: uint32) =
-  var channel = self.channel
-  self.channel.listen proc() {.gcsafe, raises: [].} =
+  let id2 = self.channel.listen proc(): channel.ChannelListenResponse {.gcsafe, raises: [].} =
     let module = cast[ptr InstanceData](store.getData())
     let res = module[].funcs.handleChannelUpdate(fun, data)
     if res.isErr:
       log lvlError, "Failed to call handleChannelUpdate: " & $res
+      return channel.Stop
+    case res.val
+    of Continue:
+      return channel.Continue
+    of Stop:
+      return channel.Stop
+
+proc channelClose(host: HostContext; store: ptr ContextT; self: var WriteChannelResource): void =
+  self.channel.close()
 
 proc channelCanWrite(host: HostContext; store: ptr ContextT; self: var WriteChannelResource): bool =
   try:
@@ -619,7 +611,8 @@ proc channelCanWrite(host: HostContext; store: ptr ContextT; self: var WriteChan
 
 proc channelWriteString(host: HostContext; store: ptr ContextT; self: var WriteChannelResource; data: sink string): void =
   try:
-    self.channel.write(data)
+    if data.len > 0:
+      self.channel.write(data.toOpenArrayByte(0, data.high))
   except:
     discard
 
@@ -628,6 +621,10 @@ proc channelWriteBytes(host: HostContext; store: ptr ContextT; self: var WriteCh
     self.channel.write(data)
   except:
     discard
+
+proc channelNewInMemoryChannel(host: HostContext; store: ptr ContextT): (ReadChannelResource, WriteChannelResource) =
+  var c = newInMemoryChannel()
+  return (ReadChannelResource(channel: c), WriteChannelResource(channel: c))
 
 ######################### Process
 
@@ -639,18 +636,22 @@ proc processProcessStart(host: HostContext; store: ptr ContextT; name: sink stri
   except:
     discard
 
-proc processRead(host: HostContext; store: ptr ContextT; self: var ProcessResource): ReadChannelResource =
+proc processStdout(host: HostContext; store: ptr ContextT; self: var ProcessResource): ReadChannelResource =
   try:
     if self.stdout == nil:
-      self.stdout = ProcessOutputChannel(process: self.process)
+      self.stdout = newProcessOutputChannel(self.process)
     return ReadChannelResource(channel: self.stdout)
   except:
     discard
 
-proc processWrite(host: HostContext; store: ptr ContextT; self: var ProcessResource): WriteChannelResource =
+proc processStderr(host: HostContext; store: ptr ContextT; self: var ProcessResource): ReadChannelResource =
+  # todo
+  discard
+
+proc processStdin(host: HostContext; store: ptr ContextT; self: var ProcessResource): WriteChannelResource =
   try:
     if self.stdin == nil:
-      self.stdin = ProcessInputChannel(process: self.process)
+      self.stdin = newProcessInputChannel(self.process)
     return WriteChannelResource(channel: self.stdin)
   except:
     discard

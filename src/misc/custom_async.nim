@@ -13,7 +13,10 @@ type NoExceptionDestroy* = object
 func `=destroy`*(x: NoExceptionDestroy) {.raises: [].} = discard
 
 import chronos except asyncDiscard
+import chronos/threadsync
+
 export chronos except asyncDiscard
+export threadsync
 
 proc runAsyncVoid[A](f: proc(options: A) {.gcsafe, raises: [].}, options: A): NoExceptionDestroy {.raises: [].} =
   f(options)

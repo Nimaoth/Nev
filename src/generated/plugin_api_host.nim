@@ -36,6 +36,8 @@ type
     id*: uint64
   TextDocument* = object
     id*: uint64
+  ChannelListenResponse* = enum
+    Continue = "continue", Stop = "stop"
   ## Shared handle for a view.
   View* = object
     id*: int32
@@ -93,35 +95,35 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8489273088 = instance.getExport(context, "init_plugin")
-  if f_8489273088.isSome:
-    assert f_8489273088.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8489273088.get.of_field.func_field
+  let f_8539604504 = instance.getExport(context, "init_plugin")
+  if f_8539604504.isSome:
+    assert f_8539604504.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8539604504.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8489273104 = instance.getExport(context, "handle_command")
-  if f_8489273104.isSome:
-    assert f_8489273104.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8489273104.get.of_field.func_field
+  let f_8539604520 = instance.getExport(context, "handle_command")
+  if f_8539604520.isSome:
+    assert f_8539604520.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8539604520.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8489273154 = instance.getExport(context, "handle_mode_changed")
-  if f_8489273154.isSome:
-    assert f_8489273154.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8489273154.get.of_field.func_field
+  let f_8539604570 = instance.getExport(context, "handle_mode_changed")
+  if f_8539604570.isSome:
+    assert f_8539604570.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8539604570.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8489273155 = instance.getExport(context, "handle_view_render_callback")
-  if f_8489273155.isSome:
-    assert f_8489273155.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8489273155.get.of_field.func_field
+  let f_8539604571 = instance.getExport(context, "handle_view_render_callback")
+  if f_8539604571.isSome:
+    assert f_8539604571.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8539604571.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_8489273156 = instance.getExport(context, "handle_channel_update")
-  if f_8489273156.isSome:
-    assert f_8489273156.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_8489273156.get.of_field.func_field
+  let f_8539604595 = instance.getExport(context, "handle_channel_update")
+  if f_8539604595.isSome:
+    assert f_8539604595.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_8539604595.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
 
@@ -255,9 +257,9 @@ proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
     return res.toResult(void)
   
 proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32): WasmtimeResult[
-    void] =
+    ChannelListenResponse] =
   var args: array[max(1, 2), ValT]
-  var results: array[max(1, 0), ValT]
+  var results: array[max(1, 1), ValT]
   var trap: ptr WasmTrapT = nil
   var memory = funcs.mem
   let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
@@ -268,11 +270,14 @@ proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32): Wasm
   args[0] = toWasmVal(fun)
   args[1] = toWasmVal(data)
   let res = funcs.handleChannelUpdate.addr.call(funcs.mContext,
-      args.toOpenArray(0, 2 - 1), results.toOpenArray(0, 0 - 1), trap.addr).toResult(
-      void)
+      args.toOpenArray(0, 2 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
+      ChannelListenResponse)
   if res.isErr:
-    return res.toResult(void)
-  
+    return res.toResult(ChannelListenResponse)
+  var retVal: ChannelListenResponse
+  retVal = cast[ChannelListenResponse](results[0].to(int8))
+  return wasmtime.ok(retVal)
+
 proc typesNewRope(host: HostContext; store: ptr ContextT; content: sink string): RopeResource
 proc typesClone(host: HostContext; store: ptr ContextT; self: var RopeResource): RopeResource
 proc typesBytes(host: HostContext; store: ptr ContextT; self: var RopeResource): int64
@@ -316,6 +321,9 @@ proc textEditorGetSelection(host: HostContext; store: ptr ContextT;
                             editor: TextEditor): Selection
 proc textEditorAddModeChangedHandler(host: HostContext; store: ptr ContextT;
                                      fun: uint32): int32
+proc textEditorEdit(host: HostContext; store: ptr ContextT; editor: TextEditor;
+                    selections: sink seq[Selection]; contents: sink seq[string]): seq[
+    Selection]
 proc textEditorContent(host: HostContext; store: ptr ContextT;
                        editor: TextEditor): RopeResource
 proc textDocumentContent(host: HostContext; store: ptr ContextT;
@@ -389,17 +397,23 @@ proc channelReadAllBytes(host: HostContext; store: ptr ContextT;
                          self: var ReadChannelResource): seq[uint8]
 proc channelListen(host: HostContext; store: ptr ContextT;
                    self: var ReadChannelResource; fun: uint32; data: uint32): void
+proc channelClose(host: HostContext; store: ptr ContextT;
+                  self: var WriteChannelResource): void
 proc channelCanWrite(host: HostContext; store: ptr ContextT;
                      self: var WriteChannelResource): bool
 proc channelWriteString(host: HostContext; store: ptr ContextT;
                         self: var WriteChannelResource; data: sink string): void
 proc channelWriteBytes(host: HostContext; store: ptr ContextT;
                        self: var WriteChannelResource; data: sink seq[uint8]): void
+proc channelNewInMemoryChannel(host: HostContext; store: ptr ContextT): (
+    ReadChannelResource, WriteChannelResource)
 proc processProcessStart(host: HostContext; store: ptr ContextT;
                          name: sink string; args: sink seq[string]): ProcessResource
-proc processRead(host: HostContext; store: ptr ContextT;
-                 self: var ProcessResource): ReadChannelResource
-proc processWrite(host: HostContext; store: ptr ContextT;
+proc processStderr(host: HostContext; store: ptr ContextT;
+                   self: var ProcessResource): ReadChannelResource
+proc processStdout(host: HostContext; store: ptr ContextT;
+                   self: var ProcessResource): ReadChannelResource
+proc processStdin(host: HostContext; store: ptr ContextT;
                   self: var ProcessResource): WriteChannelResource
 proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     void] =
@@ -1048,6 +1062,72 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         fun = convert(parameters[0].i32, uint32)
         let res = textEditorAddModeChangedHandler(host, store, fun)
         parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "edit", ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var editor: TextEditor
+        var selections: seq[Selection]
+        var contents: seq[string]
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
+          selections = newSeq[typeof(selections[0])](parameters[2].i32)
+          for i0 in 0 ..< selections.len:
+            selections[i0].first.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 0].addr)[], int32)
+            selections[i0].first.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 4].addr)[], int32)
+            selections[i0].last.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 8].addr)[], int32)
+            selections[i0].last.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 12].addr)[], int32)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[3].i32].addr)
+          contents = newSeq[typeof(contents[0])](parameters[4].i32)
+          for i0 in 0 ..< contents.len:
+            block:
+              let p1 = cast[ptr UncheckedArray[char]](memory[
+                  cast[ptr int32](p0[i0 * 8 + 0].addr)[]].addr)
+              contents[i0] = newString(cast[ptr int32](p0[i0 * 8 + 4].addr)[])
+              for i1 in 0 ..< contents[i0].len:
+                contents[i0][i1] = p1[i1]
+        let res = textEditorEdit(host, store, editor, selections, contents)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 16).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 0].addr)[] = res[
+                  i0].first.line
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 4].addr)[] = res[
+                  i0].first.column
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 8].addr)[] = res[
+                  i0].last.line
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 12].addr)[] = res[
+                  i0].last.column
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
   block:
@@ -1960,6 +2040,17 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       return e
   block:
     let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/channel",
+                                 "[method]write-channel.close", ty):
+        var self: ptr WriteChannelResource
+        self = host.resources.resourceHostData(parameters[0].i32,
+            WriteChannelResource)
+        channelClose(host, store, self[])
+    if e.isErr:
+      return e
+  block:
+    let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
           [WasmValkind.I32])
       linker.defineFuncUnchecked("nev:plugins/channel",
@@ -2033,6 +2124,31 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       return e
   block:
     let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/channel", "new-in-memory-channel",
+                                 ty):
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = host.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let res = channelNewInMemoryChannel(host, store)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = ?host.resources.resourceNew(
+            store, res[0])
+        cast[ptr int32](memory[retArea + 4].addr)[] = ?host.resources.resourceNew(
+            store, res[1])
+    if e.isErr:
+      return e
+  block:
+    let e = block:
       var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
           [WasmValkind.I32])
@@ -2075,12 +2191,12 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
           [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/process", "[method]process.read",
-                                 ty):
+      linker.defineFuncUnchecked("nev:plugins/process",
+                                 "[method]process.stderr", ty):
         var self: ptr ProcessResource
         self = host.resources.resourceHostData(parameters[0].i32,
             ProcessResource)
-        let res = processRead(host, store, self[])
+        let res = processStderr(host, store, self[])
         parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e
@@ -2088,12 +2204,25 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
           [WasmValkind.I32])
-      linker.defineFuncUnchecked("nev:plugins/process", "[method]process.write",
+      linker.defineFuncUnchecked("nev:plugins/process",
+                                 "[method]process.stdout", ty):
+        var self: ptr ProcessResource
+        self = host.resources.resourceHostData(parameters[0].i32,
+            ProcessResource)
+        let res = processStdout(host, store, self[])
+        parameters[0].i32 = ?host.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/process", "[method]process.stdin",
                                  ty):
         var self: ptr ProcessResource
         self = host.resources.resourceHostData(parameters[0].i32,
             ProcessResource)
-        let res = processWrite(host, store, self[])
+        let res = processStdin(host, store, self[])
         parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
       return e

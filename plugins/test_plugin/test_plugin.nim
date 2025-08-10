@@ -190,13 +190,6 @@ defineCommand(ws"test-load-file",
     echo vfs.localize("app://temp/uiae.txt")
     return ws""
 
-type Proc = ref object
-  process: Process
-  stdout: ReadChannel
-  stdin: WriteChannel
-
-var gProcess: Proc = nil
-
 defineCommand(ws"test-start-process",
   active = false,
   docs = ws"",
@@ -205,26 +198,66 @@ defineCommand(ws"test-start-process",
   context = ws"",
   data = 0):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    var p = processStart(ws"powershell", wl[WitString]())
-    var read = p.read()
-    var write = p.write()
+    if activeTextEditor().getSome(editor):
+      let s = editor.getSelection
+      let d = editor.content
 
-    var process = Proc(process: p.ensureMove, stdout: read.ensureMove, stdin: write.ensureMove)
-    gProcess = process
+      var p = processStart(ws"powershell", @@[ws"-Command", ws"ls", ws"plugins"])
+      let stdout = p.stdout()
 
-    var buffer = ""
-    process.stdout.listen proc =
-      let s = $process.stdout.readAllString()
-      echo "----------"
-      echo s
-      echo "----------"
-      buffer.add s
-      if process.stdout.atEnd and buffer.len > 0:
-        echo buffer
-        buffer.setLen(0)
-        echo "done"
+      var buffer = ""
+      stdout.listen proc: ChannelListenResponse =
+        let s = $stdout.readAllString()
+        buffer.add s
+        if stdout.atEnd:
+          # echo "============="
+          # echo buffer
+          # echo "============="
+
+          if buffer.endsWith("\0"):
+            buffer.setLen(buffer.len - 1)
+          let selections = editor.edit(@@[editor.getSelection], @@[ws(buffer.replace("\r", ""))])
+          if selections.len > 0:
+            editor.setSelection(selections[0].last.toSelection)
+          return Stop
+        return Continue
+
+
+    else:
+      echo "Not in a text editor"
 
     return ws""
+
+type Shell = ref object
+  process: Process
+  stdout: ReadChannel
+  stdin: WriteChannel
+
+var shellProcess: Shell = nil
+
+defineCommand(ws"test-shell",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    var p = processStart(ws"powershell", wl[WitString]())
+    var process = Shell(stdout: p.stdout(), stdin: p.stdin(), process: p.ensureMove)
+    shellProcess = process
+
+    process.stdout.listen proc: ChannelListenResponse =
+      let s = $process.stdout.readAllString()
+      echo "\n" & s
+      if process.stdout.atEnd:
+        echo "============= done"
+        return Stop
+      return Continue
+
+    return ws""
+
+var memChannel: ref WriteChannel = nil
 
 defineCommand(ws"test-send-input",
   active = false,
@@ -234,7 +267,40 @@ defineCommand(ws"test-send-input",
   context = ws"",
   data = 0):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    echo &"============ '{args}'"
-    gProcess.stdin.writeString(args)
-    gProcess.stdin.writeString(ws("\n"))
+    echo &"============ send to shell '{args}'"
+    if shellProcess != nil:
+      shellProcess.stdin.writeString(args)
+      shellProcess.stdin.writeString(ws("\n"))
+    if memChannel != nil:
+      memChannel[].writeString(stackWitString($args & "\n"))
+      if $args == "exit":
+        memChannel[].close()
+    return ws""
+
+defineCommand(ws"test-in-memory-channel",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    var (reader, writer) = newInMemoryChannel()
+
+    reader.listen proc: ChannelListenResponse =
+      let s = $reader.readAllString()
+      echo "on listen '", s, "'"
+      if reader.atEnd:
+        echo "============= done"
+        return Stop
+      return Continue
+
+    memChannel = WriteChannel.new
+    memChannel[] = writer.ensureMove
+
+    for i in 0..10:
+      echo &"{i}: send"
+      memChannel[].writeString(stackWitString("hello " & $i & "\n"))
+      echo &"{i}: send done"
+
     return ws""

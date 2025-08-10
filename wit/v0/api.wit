@@ -45,6 +45,9 @@ interface types {
     /// Returns a slice of the rope from 'a' to 'b'. The column of 'b' is exclusive. Columns are in bytes.
     /// This operation is cheap because it doesn't create a copy of the text.
     slice-points: func(a: cursor, b: cursor) -> rope;
+    // /// Returns a slice of the rope from line 'a' to 'b'. 'b' is inclusive.
+    // /// This operation is cheap because it doesn't create a copy of the text.
+    // slice-lines: func(a: s64, b: s64) -> rope;
   }
 
   record editor {
@@ -65,6 +68,11 @@ interface types {
 }
 
 interface channel {
+  enum channel-listen-response {
+    continue,
+    stop,
+  }
+
   resource read-channel {
     /// Returns whether the channel is still open and usable.
     can-read: func() -> bool;
@@ -84,6 +92,8 @@ interface channel {
   }
 
   resource write-channel {
+    /// Close the write end.
+    close: func();
     /// Returns whether the channel is still open and usable.
     can-write: func() -> bool;
     /// Write
@@ -91,14 +101,17 @@ interface channel {
     /// Write
     write-bytes: func(data: list<u8>);
   }
+
+  new-in-memory-channel: func() -> tuple<read-channel, write-channel>;
 }
 
 interface process {
   use channel.{read-channel, write-channel};
   resource process {
     start: static func(name: string, args: list<string>) -> process;
-    read: func() -> read-channel;
-    write: func() -> write-channel;
+    stderr: func() -> read-channel;
+    stdout: func() -> read-channel;
+    stdin: func() -> write-channel;
   }
 }
 
@@ -166,6 +179,8 @@ interface text-editor {
   get-selection: func(editor: text-editor) -> selection;
   /// Add a callback which will be called whenever any editor changes mode.
   add-mode-changed-handler: func(fun: u32) -> s32;
+
+  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>) -> list<selection>;
 
   /// Returns the rope containing the current content of the text editors document.
   /// This rope is not automatically kept up to date when the document changes, but
@@ -288,11 +303,12 @@ interface core {
 
 interface guest {
   use render.{view};
+  use channel.{channel-listen-response};
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
-  handle-channel-update: func(fun: u32, data: u32);
+  handle-channel-update: func(fun: u32, data: u32) -> channel-listen-response;
 }
 
 world plugin {

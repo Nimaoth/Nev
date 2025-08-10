@@ -10,6 +10,8 @@ import
 
 {.pop.}
 type
+  ChannelListenResponse* = enum
+    Continue = "continue", Stop = "stop"
   ReadChannel* = object
     handle*: int32
   WriteChannel* = object
@@ -119,6 +121,14 @@ proc listen*(self: ReadChannel; fun: uint32; data: uint32): void {.nodestroy.} =
   arg2 = data
   channelListenImported(arg0, arg1, arg2)
 
+proc channelCloseImported(a0: int32): void {.
+    wasmimport("[method]write-channel.close", "nev:plugins/channel").}
+proc close*(self: WriteChannel): void {.nodestroy.} =
+  ## Close the write end.
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  channelCloseImported(arg0)
+
 proc channelCanWriteImported(a0: int32): bool {.
     wasmimport("[method]write-channel.can-write", "nev:plugins/channel").}
 proc canWrite*(self: WriteChannel): bool {.nodestroy.} =
@@ -159,3 +169,11 @@ proc writeBytes*(self: WriteChannel; data: WitList[uint8]): void {.nodestroy.} =
     arg1 = 0.int32
   arg2 = cast[int32](data.len)
   channelWriteBytesImported(arg0, arg1, arg2)
+
+proc channelNewInMemoryChannelImported(a0: int32): void {.
+    wasmimport("new-in-memory-channel", "nev:plugins/channel").}
+proc newInMemoryChannel*(): (ReadChannel, WriteChannel) {.nodestroy.} =
+  var retArea: array[8, uint8]
+  channelNewInMemoryChannelImported(cast[int32](retArea[0].addr))
+  result[0].handle = cast[ptr int32](retArea[0].addr)[] + 1
+  result[1].handle = cast[ptr int32](retArea[4].addr)[] + 1

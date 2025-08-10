@@ -117,12 +117,12 @@ proc handleViewRenderCallbackExported(a0: int32; a1: uint32; a2: uint32): void {
   data = convert(a2, uint32)
   handleViewRenderCallback(id, fun, data)
 
-proc handleChannelUpdate(fun: uint32; data: uint32): void
-proc handleChannelUpdateExported(a0: uint32; a1: uint32): void {.
+proc handleChannelUpdate(fun: uint32; data: uint32): ChannelListenResponse
+proc handleChannelUpdateExported(a0: uint32; a1: uint32): int8 {.
     wasmexport("handle-channel-update", "nev:plugins/guest").} =
   var
     fun: uint32
     data: uint32
   fun = convert(a0, uint32)
   data = convert(a1, uint32)
-  handleChannelUpdate(fun, data)
+  cast[int8](handleChannelUpdate(fun, data))

@@ -44,18 +44,26 @@ proc processStart*(name: WitString; args: WitList[WitString]): Process {.
   let res = processProcessStartImported(arg0, arg1, arg2, arg3)
   result.handle = res + 1
 
-proc processReadImported(a0: int32): int32 {.
-    wasmimport("[method]process.read", "nev:plugins/process").}
-proc read*(self: Process): ReadChannel {.nodestroy.} =
+proc processStderrImported(a0: int32): int32 {.
+    wasmimport("[method]process.stderr", "nev:plugins/process").}
+proc stderr*(self: Process): ReadChannel {.nodestroy.} =
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
-  let res = processReadImported(arg0)
+  let res = processStderrImported(arg0)
   result.handle = res + 1
 
-proc processWriteImported(a0: int32): int32 {.
-    wasmimport("[method]process.write", "nev:plugins/process").}
-proc write*(self: Process): WriteChannel {.nodestroy.} =
+proc processStdoutImported(a0: int32): int32 {.
+    wasmimport("[method]process.stdout", "nev:plugins/process").}
+proc stdout*(self: Process): ReadChannel {.nodestroy.} =
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
-  let res = processWriteImported(arg0)
+  let res = processStdoutImported(arg0)
+  result.handle = res + 1
+
+proc processStdinImported(a0: int32): int32 {.
+    wasmimport("[method]process.stdin", "nev:plugins/process").}
+proc stdin*(self: Process): WriteChannel {.nodestroy.} =
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = processStdinImported(arg0)
   result.handle = res + 1
