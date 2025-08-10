@@ -22,7 +22,7 @@ proc NimMain() {.importc.}
 ############################ exported functions ############################
 
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
-type ChannelUpdateHandler = proc(data: uint32): ChannelListenResponse {.cdecl, gcsafe, raises: [].}
+type ChannelUpdateHandler = proc(data: uint32): ChannelListenResponse {.cdecl, raises: [].}
 
 proc initPlugin() =
   emscripten_stack_init()
@@ -74,9 +74,9 @@ proc asDocument*(document: TextDocument): Document = Document(id: document.id)
 proc listen*(self: ReadChannel, data: uint32, fun: ChannelUpdateHandler) =
   self.listen(cast[uint32](fun), data)
 
-proc listen*(self: ReadChannel, fun: proc(): ChannelListenResponse {.gcsafe, raises: [].}) =
+proc listen*(self: ReadChannel, fun: proc(): ChannelListenResponse {.raises: [].}) =
   type Data = object
-    fun: proc(): ChannelListenResponse {.gcsafe, raises: [].}
+    fun: proc(): ChannelListenResponse {.raises: [].}
   proc cb(data: uint32): ChannelListenResponse {.cdecl.} =
     let data = cast[ptr Data](data)
     data.fun()

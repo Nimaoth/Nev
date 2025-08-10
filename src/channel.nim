@@ -20,6 +20,7 @@ type
     readImpl*: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].}
     listenImpl*: proc(self: ptr BaseChannel, cb: proc(): ChannelListenResponse {.gcsafe, raises: [].}): ListenId {.gcsafe, raises: [].}
 
+  # todo: make this thread save
   InMemoryChannel* = object of BaseChannel
     isOpen: bool
     isWaiting: bool
@@ -46,9 +47,6 @@ proc read*(self: Arc[BaseChannel], res: var openArray[uint8]): int {.raises: [IO
   self.get.readImpl(self.getMutUnsafe.addr, res)
 proc listen*(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} =
   self.get.listenImpl(self.getMutUnsafe.addr, cb)
-proc stopListening*(self: Arc[BaseChannel]) {.gcsafe, raises: [].} =
-  # self.get.listenImpl(self.getMutUnsafe.addr, cb)
-  discard
 
 proc atEnd*(self {.byref.}: BaseChannel): bool {.gcsafe, raises: [].} =
   not self.isOpenImpl(self.addr) and self.peekImpl(self.addr) == 0
@@ -66,13 +64,15 @@ proc fireEvent*(self: var BaseChannel) {.gcsafe, raises: [].} =
       # it doesn't move elements in memory, it just clears the current element
       self.listeners.del(key)
 
+proc destroyChannelImpl*[T: BaseChannel](self: var T) {.gcsafe, raises: [].} =
+  {.cast(noSideEffect).}:
+    `=destroy`(self)
+    `=wasMoved`(self)
+
 proc destroyInMemoryChannel(self: ptr BaseChannel) {.gcsafe, raises: [].} =
-  # debugEcho "destroy in memory channel ", cast[int](self)
   let self = cast[ptr InMemoryChannel](self)
   self.destroyImpl = nil
-  {.cast(noSideEffect).}:
-    `=destroy`(self[])
-    `=wasMoved`(self[])
+  self[].destroyChannelImpl()
 
 proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
   self.isOpen = false
@@ -135,10 +135,3 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
     listenImpl: proc(self: ptr BaseChannel, cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listen(cast[ptr InMemoryChannel](self), cb),
   )
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()
-
-# block:
-#   echo "create channel"
-#   let c = newInMemoryChannel()
-#   c.close()
-#   c.close()
-#   echo "created channel"

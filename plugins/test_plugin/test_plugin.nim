@@ -257,7 +257,7 @@ defineCommand(ws"test-shell",
 
     return ws""
 
-var memChannel: ref WriteChannel = nil
+var memChannel: ref tuple[open: bool, write: WriteChannel, read: ReadChannel] = nil
 
 defineCommand(ws"test-send-input",
   active = false,
@@ -271,10 +271,15 @@ defineCommand(ws"test-send-input",
     if shellProcess != nil:
       shellProcess.stdin.writeString(args)
       shellProcess.stdin.writeString(ws("\n"))
-    if memChannel != nil:
-      memChannel[].writeString(stackWitString($args & "\n"))
+    if memChannel != nil and memChannel.open:
+      memChannel[].write.writeString(stackWitString($args & "\n"))
       if $args == "exit":
-        memChannel[].close()
+        memChannel[].write.close()
+        `=destroy`(memChannel[])
+        `=wasMoved`(memChannel[])
+        memChannel[].open = false
+        memChannel = nil
+        GC_fullCollect()
     return ws""
 
 defineCommand(ws"test-in-memory-channel",
@@ -287,21 +292,23 @@ defineCommand(ws"test-in-memory-channel",
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
     var (reader, writer) = newInMemoryChannel()
 
-    reader.listen proc: ChannelListenResponse =
-      let s = $reader.readAllString()
+    memChannel.new
+    memChannel[] = (true, writer.ensureMove, reader.ensureMove)
+
+    memChannel[].read.listen proc: ChannelListenResponse =
+      if not memChannel.open:
+        return
+      let s = $memChannel[].read.readAllString()
       echo "on listen '", s, "'"
-      if reader.atEnd:
+      if memChannel[].read.atEnd:
         echo "============= done"
         return Stop
       return Continue
 
-    memChannel = WriteChannel.new
-    memChannel[] = writer.ensureMove
-
     for i in 0..10:
       stackRegionInline()
       echo &"{i}: send"
-      memChannel[].writeString(stackWitString("hello " & $i & "\n"))
+      memChannel[].write.writeString(stackWitString("hello " & $i & "\n"))
       echo &"{i}: send done"
 
     return ws""

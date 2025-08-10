@@ -72,7 +72,7 @@ type ProcessResource = object
   stderr: Arc[BaseChannel]
 
 proc `=destroy`*(self: RenderViewResource) =
-  if self.setRender:
+  if self.setRender and self.view != nil:
     self.view.onRender = nil
 
 when defined(witRebuild):
@@ -309,7 +309,7 @@ proc textEditor_addModeChangedHandler(host: HostContext, store: ptr ContextT, fu
       let module = cast[ptr InstanceData](store.getData())
       let res = module[].funcs.handleModeChanged(fun, $args.removed, $args.added)
       if res.isErr:
-        log lvlError, "Failed to call handleModeChanged: " & $res
+        log lvlError, "Failed to call handleModeChanged: " & res.err.msg
   return 0
 
 proc textEditorCommand(host: HostContext, store: ptr ContextT; editor: TextEditor, name: sink string, arguments: sink string): Result[string, CommandError] =
@@ -558,7 +558,7 @@ proc renderSetRenderCallback(host: HostContext; store: ptr ContextT; self: var R
   self.view.onRender = proc(view: RenderView) =
     let instance = cast[ptr InstanceData](store.getData())
     instance[].funcs.handleViewRenderCallback(view.id2, fun, data).okOr(err):
-      log lvlError, "Failed to call handleViewRenderCallback: " & $err
+      log lvlError, "Failed to call handleViewRenderCallback: " & err.msg
 
 proc renderSetModes(host: HostContext; store: ptr ContextT; self: var RenderViewResource; modes: sink seq[string]): void =
   self.view.modes = modes
@@ -622,7 +622,7 @@ proc channelListen(host: HostContext; store: ptr ContextT; self: var ReadChannel
     let module = cast[ptr InstanceData](store.getData())
     let res = module[].funcs.handleChannelUpdate(fun, data)
     if res.isErr:
-      log lvlError, "Failed to call handleChannelUpdate: " & $res
+      log lvlError, "Failed to call handleChannelUpdate: " & res.err.msg
       return channel.Stop
     case res.val
     of Continue:

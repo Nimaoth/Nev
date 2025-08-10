@@ -638,9 +638,7 @@ proc destroyProcessOutputChannel(self: ptr BaseChannel) {.gcsafe, raises: [].} =
   debugEcho "destroy process output channel ", cast[int](self)
   let self = cast[ptr ProcessOutputChannel](self)
   self.destroyImpl = nil
-  {.cast(noSideEffect).}:
-    `=destroy`(self[])
-    `=wasMoved`(self[])
+  self[].destroyChannelImpl()
 
 proc isOpen*(self: ptr ProcessOutputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
 proc close*(self: ptr ProcessOutputChannel) = discard
@@ -689,9 +687,7 @@ proc destroyProcessInputChannel(self: ptr BaseChannel) {.gcsafe, raises: [].} =
   debugEcho "destroy process input channel ", cast[int](self)
   let self = cast[ptr ProcessInputChannel](self)
   self.destroyImpl = nil
-  {.cast(noSideEffect).}:
-    `=destroy`(self[])
-    `=wasMoved`(self[])
+  self[].destroyChannelImpl()
 
 proc isOpen*(self: ptr ProcessInputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
 proc close*(self: ptr ProcessInputChannel) = discard

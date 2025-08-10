@@ -95,35 +95,35 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8539604504 = instance.getExport(context, "init_plugin")
-  if f_8539604504.isSome:
-    assert f_8539604504.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8539604504.get.of_field.func_field
+  let f_8522827288 = instance.getExport(context, "init_plugin")
+  if f_8522827288.isSome:
+    assert f_8522827288.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8522827288.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8539604520 = instance.getExport(context, "handle_command")
-  if f_8539604520.isSome:
-    assert f_8539604520.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8539604520.get.of_field.func_field
+  let f_8522827304 = instance.getExport(context, "handle_command")
+  if f_8522827304.isSome:
+    assert f_8522827304.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8522827304.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8539604570 = instance.getExport(context, "handle_mode_changed")
-  if f_8539604570.isSome:
-    assert f_8539604570.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8539604570.get.of_field.func_field
+  let f_8522827354 = instance.getExport(context, "handle_mode_changed")
+  if f_8522827354.isSome:
+    assert f_8522827354.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8522827354.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8539604571 = instance.getExport(context, "handle_view_render_callback")
-  if f_8539604571.isSome:
-    assert f_8539604571.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8539604571.get.of_field.func_field
+  let f_8522827355 = instance.getExport(context, "handle_view_render_callback")
+  if f_8522827355.isSome:
+    assert f_8522827355.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8522827355.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_8539604595 = instance.getExport(context, "handle_channel_update")
-  if f_8539604595.isSome:
-    assert f_8539604595.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_8539604595.get.of_field.func_field
+  let f_8522827379 = instance.getExport(context, "handle_channel_update")
+  if f_8522827379.isSome:
+    assert f_8522827379.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_8522827379.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
 
@@ -499,7 +499,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           [WasmValkind.I32])
       linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.clone", ty):
         var self: ptr RopeResource
-        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = typesClone(host, store, self[])
         parameters[0].i32 = ?host.resources.resourceNew(store, res)
     if e.isErr:
@@ -510,7 +510,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           [WasmValkind.I64])
       linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.bytes", ty):
         var self: ptr RopeResource
-        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = typesBytes(host, store, self[])
         parameters[0].i64 = cast[int64](res)
     if e.isErr:
@@ -521,7 +521,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           [WasmValkind.I64])
       linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.runes", ty):
         var self: ptr RopeResource
-        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = typesRunes(host, store, self[])
         parameters[0].i64 = cast[int64](res)
     if e.isErr:
@@ -532,7 +532,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           [WasmValkind.I64])
       linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.lines", ty):
         var self: ptr RopeResource
-        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = typesLines(host, store, self[])
         parameters[0].i64 = cast[int64](res)
     if e.isErr:
@@ -556,7 +556,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var self: ptr RopeResource
-        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
         let res = typesText(host, store, self[])
         let retArea = parameters[^1].i32
         if res.len > 0:
@@ -579,7 +579,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr RopeResource
         var a: int64
         var b: int64
-        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
         a = convert(parameters[1].i64, int64)
         b = convert(parameters[2].i64, int64)
         let res = typesSlice(host, store, self[], a, b)
@@ -595,7 +595,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr RopeResource
         var a: Cursor
         var b: Cursor
-        self = host.resources.resourceHostData(parameters[0].i32, RopeResource)
+        self = ?host.resources.resourceHostData(parameters[0].i32, RopeResource)
         a.line = convert(parameters[1].i32, int32)
         a.column = convert(parameters[2].i32, int32)
         b.line = convert(parameters[2].i32, int32)
@@ -1310,7 +1310,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/render",
                                  "[method]render-view.view", ty):
         var self: ptr RenderViewResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         let res = renderView(host, store, self[])
         parameters[0].i32 = cast[int32](res)
@@ -1323,7 +1323,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/render", "[method]render-view.id",
                                  ty):
         var self: ptr RenderViewResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         let res = renderId(host, store, self[])
         parameters[0].i32 = cast[int32](res)
@@ -1348,7 +1348,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         else:
           assert false
         var self: ptr RenderViewResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         let res = renderSize(host, store, self[])
         let retArea = parameters[^1].i32
@@ -1364,7 +1364,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
                                  "[method]render-view.key-down", ty):
         var self: ptr RenderViewResource
         var key: int64
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         key = convert(parameters[1].i64, int64)
         let res = renderKeyDown(host, store, self[], key)
@@ -1379,7 +1379,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
                                  "[method]render-view.set-render-interval", ty):
         var self: ptr RenderViewResource
         var ms: int32
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         ms = convert(parameters[1].i32, int32)
         renderSetRenderInterval(host, store, self[], ms)
@@ -1395,7 +1395,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr RenderViewResource
         var buffer: uint32
         var len: uint32
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         buffer = convert(parameters[1].i32, uint32)
         len = convert(parameters[2].i32, uint32)
@@ -1422,7 +1422,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         var self: ptr RenderViewResource
         var data: seq[uint8]
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         block:
           let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
@@ -1440,7 +1440,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
                                  ty):
         var self: ptr RenderViewResource
         var enabled: bool
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         enabled = parameters[1].i32.bool
         renderSetRenderWhenInactive(host, store, self[], enabled)
@@ -1455,7 +1455,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
                                  ty):
         var self: ptr RenderViewResource
         var enabled: bool
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         enabled = parameters[1].i32.bool
         renderSetPreventThrottling(host, store, self[], enabled)
@@ -1481,7 +1481,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         var self: ptr RenderViewResource
         var id: string
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
@@ -1511,7 +1511,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var self: ptr RenderViewResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         let res = renderGetUserId(host, store, self[])
         let retArea = parameters[^1].i32
@@ -1533,7 +1533,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/render",
                                  "[method]render-view.mark-dirty", ty):
         var self: ptr RenderViewResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         renderMarkDirty(host, store, self[])
     if e.isErr:
@@ -1547,7 +1547,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr RenderViewResource
         var fun: uint32
         var data: uint32
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         fun = convert(parameters[1].i32, uint32)
         data = convert(parameters[2].i32, uint32)
@@ -1574,7 +1574,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         var self: ptr RenderViewResource
         var modes: seq[string]
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         block:
           let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
@@ -1609,7 +1609,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         var self: ptr RenderViewResource
         var mode: string
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
@@ -1639,7 +1639,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         var self: ptr RenderViewResource
         var mode: string
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             RenderViewResource)
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
@@ -1794,10 +1794,10 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           for i0 in 0 ..< path.len:
             path[i0] = p0[i0]
         block:
-          let resPtr = host.resources.resourceHostData(parameters[2].i32,
+          let resPtr = ?host.resources.resourceHostData(parameters[2].i32,
               RopeResource)
           copyMem(rope.addr, resPtr, sizeof(typeof(rope)))
-          host.resources.resourceDrop(parameters[2].i32, callDestroy = false)
+          ?host.resources.resourceDrop(parameters[2].i32, callDestroy = false)
         let res = vfsWriteRopeSync(host, store, path, rope)
         let retArea = parameters[^1].i32
         cast[ptr int8](memory[retArea + 0].addr)[] = res.isErr.int8
@@ -1852,7 +1852,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/channel",
                                  "[method]read-channel.can-read", ty):
         var self: ptr ReadChannelResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         let res = channelCanRead(host, store, self[])
         parameters[0].i32 = cast[int32](res)
@@ -1865,7 +1865,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/channel",
                                  "[method]read-channel.at-end", ty):
         var self: ptr ReadChannelResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         let res = channelAtEnd(host, store, self[])
         parameters[0].i32 = cast[int32](res)
@@ -1878,7 +1878,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/channel",
                                  "[method]read-channel.peek", ty):
         var self: ptr ReadChannelResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         let res = channelPeek(host, store, self[])
         parameters[0].i32 = cast[int32](res)
@@ -1905,7 +1905,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var self: ptr ReadChannelResource
         var num: int32
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         num = convert(parameters[1].i32, int32)
         let res = channelReadString(host, store, self[], num)
@@ -1943,7 +1943,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var self: ptr ReadChannelResource
         var num: int32
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         num = convert(parameters[1].i32, int32)
         let res = channelReadBytes(host, store, self[], num)
@@ -1980,7 +1980,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var self: ptr ReadChannelResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         let res = channelReadAllString(host, store, self[])
         let retArea = parameters[^1].i32
@@ -2016,7 +2016,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
         var self: ptr ReadChannelResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         let res = channelReadAllBytes(host, store, self[])
         let retArea = parameters[^1].i32
@@ -2041,7 +2041,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         var self: ptr ReadChannelResource
         var fun: uint32
         var data: uint32
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         fun = convert(parameters[1].i32, uint32)
         data = convert(parameters[2].i32, uint32)
@@ -2054,7 +2054,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/channel",
                                  "[method]write-channel.close", ty):
         var self: ptr WriteChannelResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             WriteChannelResource)
         channelClose(host, store, self[])
     if e.isErr:
@@ -2066,7 +2066,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/channel",
                                  "[method]write-channel.can-write", ty):
         var self: ptr WriteChannelResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             WriteChannelResource)
         let res = channelCanWrite(host, store, self[])
         parameters[0].i32 = cast[int32](res)
@@ -2092,7 +2092,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         var self: ptr WriteChannelResource
         var data: string
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             WriteChannelResource)
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
@@ -2122,7 +2122,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
           assert false
         var self: ptr WriteChannelResource
         var data: seq[uint8]
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             WriteChannelResource)
         block:
           let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
@@ -2204,7 +2204,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/process",
                                  "[method]process.stderr", ty):
         var self: ptr ProcessResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ProcessResource)
         let res = processStderr(host, store, self[])
         parameters[0].i32 = ?host.resources.resourceNew(store, res)
@@ -2217,7 +2217,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/process",
                                  "[method]process.stdout", ty):
         var self: ptr ProcessResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ProcessResource)
         let res = processStdout(host, store, self[])
         parameters[0].i32 = ?host.resources.resourceNew(store, res)
@@ -2230,7 +2230,7 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
       linker.defineFuncUnchecked("nev:plugins/process", "[method]process.stdin",
                                  ty):
         var self: ptr ProcessResource
-        self = host.resources.resourceHostData(parameters[0].i32,
+        self = ?host.resources.resourceHostData(parameters[0].i32,
             ProcessResource)
         let res = processStdin(host, store, self[])
         parameters[0].i32 = ?host.resources.resourceNew(store, res)
