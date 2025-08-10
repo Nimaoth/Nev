@@ -55,6 +55,7 @@ type
     commands*: Table[string, PluginCommandDescription]
 
   PluginState* = enum Unloaded, Loading, Loaded, Disabled, Failed
+  WasiPermissions* = enum None = "none", Reduced = "reduced", Full = "full"
 
   PluginInstanceBase* = ref object of RootObj
 
@@ -68,6 +69,8 @@ type
     filesystemRead*: FilesystemPermissions
     filesystemWrite*: FilesystemPermissions
     commands*: CommandPermissions
+    wasi*: Option[WasiPermissions]
+    wasiPreopenDirs*: seq[tuple[host, guest: string, read, write: bool]]
     time*: bool
 
   Plugin* = ref object

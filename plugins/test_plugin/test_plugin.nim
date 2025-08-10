@@ -1,7 +1,7 @@
 import std/[strformat, json, jsonutils, strutils]
 import results
 import util, render_command, binary_encoder
-import wit_types, wit_runtime, api
+import api
 
 var views: seq[RenderView] = @[]
 var renderCommandEncoder: BinaryEncoder
@@ -299,8 +299,10 @@ defineCommand(ws"test-in-memory-channel",
     memChannel[] = writer.ensureMove
 
     for i in 0..10:
+      stackRegionInline()
       echo &"{i}: send"
       memChannel[].writeString(stackWitString("hello " & $i & "\n"))
       echo &"{i}: send done"
 
     return ws""
+

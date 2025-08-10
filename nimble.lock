@@ -358,14 +358,14 @@
     },
     "nimwasmtime": {
       "version": "0.2.1",
-      "vcsRevision": "49fba9a506c5821874c3957f0449b62a103fb9a6",
+      "vcsRevision": "235bdb2ac247da784f422e130fe2840314590f6d",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
       "dependencies": [
         "nimgen"
       ],
       "checksums": {
-        "sha1": "879852aa6fb0eac4f1bc6b1b7dd9a6d368fef182"
+        "sha1": "984b35edc5540d679eefa9073997d6c1da852411"
       }
     },
     "npeg": {

@@ -141,6 +141,8 @@ proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
                                        args.toOpenArray(0, 0 - 1),
                                        results.toOpenArray(0, 0 - 1), trap.addr).toResult(
       void)
+  if trap != nil:
+    return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
   
@@ -175,6 +177,8 @@ proc handleCommand*(funcs: ExportedFuncs; fun: uint32; data: uint32;
   let res = funcs.handleCommand.addr.call(funcs.mContext,
       args.toOpenArray(0, 4 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
       string)
+  if trap != nil:
+    return trap.toResult(string)
   if res.isErr:
     return res.toResult(string)
   var retVal: string
@@ -233,6 +237,8 @@ proc handleModeChanged*(funcs: ExportedFuncs; fun: uint32; old: string;
   let res = funcs.handleModeChanged.addr.call(funcs.mContext,
       args.toOpenArray(0, 5 - 1), results.toOpenArray(0, 0 - 1), trap.addr).toResult(
       void)
+  if trap != nil:
+    return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
   
@@ -253,6 +259,8 @@ proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
   let res = funcs.handleViewRenderCallback.addr.call(funcs.mContext,
       args.toOpenArray(0, 3 - 1), results.toOpenArray(0, 0 - 1), trap.addr).toResult(
       void)
+  if trap != nil:
+    return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
   
@@ -272,6 +280,8 @@ proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32): Wasm
   let res = funcs.handleChannelUpdate.addr.call(funcs.mContext,
       args.toOpenArray(0, 2 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
       ChannelListenResponse)
+  if trap != nil:
+    return trap.toResult(ChannelListenResponse)
   if res.isErr:
     return res.toResult(ChannelListenResponse)
   var retVal: ChannelListenResponse

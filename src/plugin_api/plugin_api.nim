@@ -108,7 +108,9 @@ type
 type
   PluginApi* = ref object of PluginApiBase
     engine: ptr WasmEngineT
-    linker: ptr LinkerT
+    linkerWasiNone: ptr LinkerT
+    linkerWasiReduced: ptr LinkerT
+    linkerWasiFull: ptr LinkerT
     host: HostContext
     instances: seq[WasmModuleInstanceImpl]
 
@@ -126,7 +128,9 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.timer = startTimer()
 
   self.engine = engine
-  self.linker = engine.newLinker()
+  self.linkerWasiNone = engine.newLinker()
+  self.linkerWasiReduced = engine.newLinker()
+  self.linkerWasiFull = engine.newLinker()
 
   proc getMemory(caller: ptr CallerT, store: ptr ContextT): WasmMemory =
     var mainMemory = caller.getExport("memory")
@@ -139,17 +143,25 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
     else:
       assert false
 
+  # Link wasi
+  self.linkerWasiReduced.definePluginWasi(getMemory).okOr(e):
+    log lvlError, "Failed to define wasi imports: " & e.msg
+    return
 
-  when false:
-    self.linker.defineWasi().okOr(e):
-      log lvlError, "Failed to define wasi imports: " & e.msg
-      return
-  else:
-    self.linker.definePluginWasi(getMemory).okOr(e):
-      log lvlError, "Failed to define wasi imports: " & e.msg
-      return
+  self.linkerWasiFull.defineWasi().okOr(e):
+    log lvlError, "Failed to define wasi imports: " & e.msg
+    return
 
-  defineComponent(self.linker, self.host).okOr(err):
+  # Link plugin API
+  defineComponent(self.linkerWasiNone, self.host).okOr(err):
+    log lvlError, "Failed to define component: " & err.msg
+    return
+
+  defineComponent(self.linkerWasiReduced, self.host).okOr(err):
+    log lvlError, "Failed to define component: " & err.msg
+    return
+
+  defineComponent(self.linkerWasiFull, self.host).okOr(err):
     log lvlError, "Failed to define component: " & err.msg
     return
 
@@ -167,12 +179,30 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
   wasiConfig.inheritStdin()
   wasiConfig.inheritStderr()
   wasiConfig.inheritStdout()
+
+  if not plugin.permissions.filesystemRead.disallowAll.get(false):
+    for dir in plugin.permissions.wasiPreopenDirs:
+      var dirPermissions: csize_t = 0
+      var filePermissions: csize_t = 0
+      if dir.read:
+        dirPermissions = dirPermissions or WasiDirPermsRead.csize_t
+        filePermissions = filePermissions or WasiFilePermsRead.csize_t
+      if dir.write:
+        dirPermissions = dirPermissions or WasiDirPermsWrite.csize_t
+        filePermissions = filePermissions or WasiFilePermsWrite.csize_t
+      let ok = wasiConfig.preopenDir(dir.host.cstring, dir.guest.cstring, dirPermissions, filePermissions)
+
   ctx.setWasi(wasiConfig).toResult(void).okOr(err):
     log lvlError, "Failed to setup wasi: " & err.msg
     return
 
+  let linker = case plugin.permissions.wasi.get(Reduced)
+  of None: self.linkerWasiNone
+  of Reduced: self.linkerWasiReduced
+  of Full: self.linkerWasiFull
+
   var trap: ptr WasmTrapT = nil
-  wasmModule.getMut.instance = self.linker.instantiate(ctx, module, trap.addr).okOr(err):
+  wasmModule.getMut.instance = linker.instantiate(ctx, module, trap.addr).okOr(err):
     log lvlError, "Failed to create module instance: " & err.msg
     return
 
@@ -425,7 +455,7 @@ proc coreDefineCommand(host: HostContext, store: ptr ContextT, name: sink string
     execute: (proc(args: string): string {.gcsafe.} =
       let instance = cast[ptr InstanceData](store.getData())
       let res = instance[].funcs.handleCommand(fun, data, args).okOr(err):
-        log lvlError, "Failed to call handleCommand: " & $err
+        log lvlError, "Failed to call handleCommand: " & err.msg
         return ""
 
       return res
@@ -638,7 +668,7 @@ proc processProcessStart(host: HostContext; store: ptr ContextT; name: sink stri
 
 proc processStdout(host: HostContext; store: ptr ContextT; self: var ProcessResource): ReadChannelResource =
   try:
-    if self.stdout == nil:
+    if self.stdout.isNil:
       self.stdout = newProcessOutputChannel(self.process)
     return ReadChannelResource(channel: self.stdout)
   except:
@@ -650,7 +680,7 @@ proc processStderr(host: HostContext; store: ptr ContextT; self: var ProcessReso
 
 proc processStdin(host: HostContext; store: ptr ContextT; self: var ProcessResource): WriteChannelResource =
   try:
-    if self.stdin == nil:
+    if self.stdin.isNil:
       self.stdin = newProcessInputChannel(self.process)
     return WriteChannelResource(channel: self.stdin)
   except:

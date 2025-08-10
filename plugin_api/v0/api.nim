@@ -1,5 +1,6 @@
 import std/[strformat, json, jsonutils]
-import wit_guest
+import wit_guest, wit_types, wit_runtime
+export wit_types, wit_runtime
 
 when defined(witRebuild):
   static: echo "Rebuilding plugin_api.wit"
