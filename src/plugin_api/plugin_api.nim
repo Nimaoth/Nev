@@ -61,6 +61,7 @@ type RenderViewResource = object
 
 type ReadChannelResource = object
   channel: Arc[BaseChannel]
+  listenId: ListenId
 
 type WriteChannelResource = object
   channel: Arc[BaseChannel]
@@ -74,6 +75,15 @@ type ProcessResource = object
 proc `=destroy`*(self: RenderViewResource) =
   if self.setRender and self.view != nil:
     self.view.onRender = nil
+
+proc `=destroy`*(self: ReadChannelResource) =
+  if self.channel.isNotNil:
+    self.channel.stopListening(self.listenId)
+    `=destroy`(self.channel)
+
+proc `=destroy`*(self: WriteChannelResource) =
+  if self.channel.isNotNil:
+    `=destroy`(self.channel)
 
 when defined(witRebuild):
   static: hint("Rebuilding plugin_api.wit")
@@ -618,9 +628,10 @@ proc channelReadAllBytes(host: HostContext; store: ptr ContextT; self: var ReadC
     discard
 
 proc channelListen(host: HostContext; store: ptr ContextT; self: var ReadChannelResource, fun: uint32, data: uint32) =
-  let id2 = self.channel.listen proc(): channel.ChannelListenResponse {.gcsafe, raises: [].} =
+  self.channel.stopListening(self.listenId)
+  self.listenId = self.channel.listen proc(closed: bool): channel.ChannelListenResponse {.gcsafe, raises: [].} =
     let module = cast[ptr InstanceData](store.getData())
-    let res = module[].funcs.handleChannelUpdate(fun, data)
+    let res = module[].funcs.handleChannelUpdate(fun, data, closed)
     if res.isErr:
       log lvlError, "Failed to call handleChannelUpdate: " & res.err.msg
       return channel.Stop
@@ -634,10 +645,7 @@ proc channelClose(host: HostContext; store: ptr ContextT; self: var WriteChannel
   self.channel.close()
 
 proc channelCanWrite(host: HostContext; store: ptr ContextT; self: var WriteChannelResource): bool =
-  try:
-    return self.channel.isOpen
-  except:
-    discard
+  return self.channel.isOpen
 
 proc channelWriteString(host: HostContext; store: ptr ContextT; self: var WriteChannelResource; data: sink string): void =
   try:

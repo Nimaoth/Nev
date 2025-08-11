@@ -30,12 +30,16 @@ type
   ## Ropes are reference counted internally, and this resource also affects that reference count.
   Rope* = object
     handle*: int32
+  ## Non-owning handle to an editor.
   Editor* = object
     id*: uint64
+  ## Non-owning handle to a text editor.
   TextEditor* = object
     id*: uint64
+  ## Non-owning handle to a document.
   Document* = object
     id*: uint64
+  ## Non-owning handle to a text document.
   TextDocument* = object
     id*: uint64
 proc typesRopeDrop(a: int32): void {.wasmimport("[resource-drop]rope",

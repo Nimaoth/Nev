@@ -634,19 +634,14 @@ type
   ProcessInputChannel* = object of BaseChannel
     process*: AsyncProcess
 
-proc destroyProcessOutputChannel(self: ptr BaseChannel) {.gcsafe, raises: [].} =
-  debugEcho "destroy process output channel ", cast[int](self)
-  let self = cast[ptr ProcessOutputChannel](self)
-  self.destroyImpl = nil
-  self[].destroyChannelImpl()
-
 proc isOpen*(self: ptr ProcessOutputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
 proc close*(self: ptr ProcessOutputChannel) = discard
 proc peek*(self: ptr ProcessOutputChannel): int = self.process.peek.catch(0)
 proc write*(self: ptr ProcessOutputChannel, data: openArray[uint8]) {.raises: [IOError].} = discard
 proc read*(self: ptr ProcessOutputChannel, res: var openArray[uint8]): int {.raises: [IOError].} = self.process.recvAvailable(res)
 
-proc listenPoll*(self: ptr ProcessOutputChannel) {.async: (raises: []).} =
+proc listenPoll*(self: Arc[ProcessOutputChannel]) {.async: (raises: []).} =
+  let self = self.getMutUnsafe.addr
   if self.isPolling:
     return
   self.isPolling = true
@@ -655,39 +650,36 @@ proc listenPoll*(self: ptr ProcessOutputChannel) {.async: (raises: []).} =
 
   while self.isOpen or self.peek > 0:
     if self.peek > 0:
-      self[].fireEvent()
+      self[].fireEvent(false)
+
+    if not self.isOpen:
+      break
 
     try:
       await sleepAsync(10.milliseconds)
     except CatchableError:
       discard
 
-  self[].fireEvent()
+  self[].fireEvent(true)
 
-proc listen*(self: ptr ProcessOutputChannel, cb: ChannelListener): ListenId {.gcsafe, raises: [].} =
-  result = self.listeners.add(cb)
-  if not self.isPolling:
+proc listen*(self: Arc[ProcessOutputChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} =
+  result = self.getMutUnsafe.listeners.add(cb)
+  if not self.get.isPolling:
     asyncSpawn self.listenPoll()
 
 proc newProcessOutputChannel*(process: AsyncProcess): Arc[BaseChannel] =
   var res = Arc[ProcessOutputChannel].new()
   res.getMut() = ProcessOutputChannel(
     process: process,
-    destroyImpl: destroyProcessOutputChannel,
+    destroyImpl: destroyChannelImpl(ProcessOutputChannel),
     closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr ProcessOutputChannel](self))),
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr ProcessOutputChannel](self)),
     peekImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = peek(cast[ptr ProcessOutputChannel](self)),
     writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr ProcessOutputChannel](self), data),
     readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = read(cast[ptr ProcessOutputChannel](self), res),
-    listenImpl: proc(self: ptr BaseChannel, cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listen(cast[ptr ProcessOutputChannel](self), cb),
+    listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listen(self.cloneAs(ProcessOutputChannel), cb),
   )
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()
-
-proc destroyProcessInputChannel(self: ptr BaseChannel) {.gcsafe, raises: [].} =
-  debugEcho "destroy process input channel ", cast[int](self)
-  let self = cast[ptr ProcessInputChannel](self)
-  self.destroyImpl = nil
-  self[].destroyChannelImpl()
 
 proc isOpen*(self: ptr ProcessInputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
 proc close*(self: ptr ProcessInputChannel) = discard
@@ -703,12 +695,12 @@ proc newProcessInputChannel*(process: AsyncProcess): Arc[BaseChannel] =
   var res = Arc[ProcessInputChannel].new()
   res.getMut() = ProcessInputChannel(
     process: process,
-    destroyImpl: destroyProcessInputChannel,
+    destroyImpl: destroyChannelImpl(ProcessInputChannel),
     closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr ProcessInputChannel](self))),
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr ProcessInputChannel](self)),
     peekImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = peek(cast[ptr ProcessInputChannel](self)),
     writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr ProcessInputChannel](self), data),
     readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = read(cast[ptr ProcessInputChannel](self), res),
-    listenImpl: proc(self: ptr BaseChannel, cb: ChannelListener): ListenId {.gcsafe, raises: [].} = 0.ListenId,
+    listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = 0.ListenId,
   )
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()

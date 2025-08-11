@@ -1,4 +1,4 @@
-import std/[strformat, hashes]
+import std/[strformat, hashes, macros, genasts]
 import misc/[event, custom_async, id, generational_seq]
 import nimsumtree/arc
 
@@ -7,7 +7,7 @@ import nimsumtree/arc
 type
   ListenId* = distinct uint64
   ChannelListenResponse* = enum Continue, Stop
-  ChannelListener* = proc(): ChannelListenResponse {.gcsafe, raises: [].}
+  ChannelListener* = proc(closed: bool): ChannelListenResponse {.gcsafe, raises: [].}
 
   BaseChannel* = object of RootObj
     listeners*: GenerationalSeq[ChannelListener, ListenId]
@@ -18,7 +18,7 @@ type
     peekImpl*: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].}
     writeImpl*: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].}
     readImpl*: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].}
-    listenImpl*: proc(self: ptr BaseChannel, cb: proc(): ChannelListenResponse {.gcsafe, raises: [].}): ListenId {.gcsafe, raises: [].}
+    listenImpl*: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].}
 
   # todo: make this thread save
   InMemoryChannel* = object of BaseChannel
@@ -46,7 +46,9 @@ proc write*(self: Arc[BaseChannel], data: openArray[uint8]) {.raises: [IOError].
 proc read*(self: Arc[BaseChannel], res: var openArray[uint8]): int {.raises: [IOError].} =
   self.get.readImpl(self.getMutUnsafe.addr, res)
 proc listen*(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} =
-  self.get.listenImpl(self.getMutUnsafe.addr, cb)
+  self.get.listenImpl(self, cb)
+proc stopListening*(self: Arc[BaseChannel], id: ListenId) {.gcsafe, raises: [].} =
+  self.getMutUnsafe.listeners.del(id)
 
 proc atEnd*(self {.byref.}: BaseChannel): bool {.gcsafe, raises: [].} =
   not self.isOpenImpl(self.addr) and self.peekImpl(self.addr) == 0
@@ -54,9 +56,9 @@ proc atEnd*(self {.byref.}: BaseChannel): bool {.gcsafe, raises: [].} =
 proc atEnd*(self: Arc[BaseChannel]): bool {.gcsafe, raises: [].} =
   not self.isOpen and self.peek == 0
 
-proc fireEvent*(self: var BaseChannel) {.gcsafe, raises: [].} =
+proc fireEvent*(self: var BaseChannel, closed: bool) {.gcsafe, raises: [].} =
   for key, cb in self.listeners.pairs:
-    case cb()
+    case cb(closed)
     of Continue:
       discard
     of Stop:
@@ -69,13 +71,20 @@ proc destroyChannelImpl*[T: BaseChannel](self: var T) {.gcsafe, raises: [].} =
     `=destroy`(self)
     `=wasMoved`(self)
 
-proc destroyInMemoryChannel(self: ptr BaseChannel) {.gcsafe, raises: [].} =
-  let self = cast[ptr InMemoryChannel](self)
-  self.destroyImpl = nil
-  self[].destroyChannelImpl()
+template destroyChannelImpl*(t: untyped): untyped =
+  proc(self: ptr BaseChannel) {.gcsafe, raises: [].} =
+    self.destroyImpl = nil
+    let self = cast[ptr t](self)
+    {.gcsafe, cast(noSideEffect).}:
+      try:
+        `=destroy`(self[])
+        `=wasMoved`(self[])
+      except Exception:
+        discard
 
 proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
   self.isOpen = false
+  discard self.signal.fireSync()
 
 proc isOpen(self: ptr InMemoryChannel): bool = self.isOpen
 proc peek(self: ptr InMemoryChannel): int = self.data.len
@@ -94,7 +103,8 @@ proc read(self: ptr InMemoryChannel, res: var openArray[uint8]): int =
     return toRead
   return 0
 
-proc listen(self: ptr InMemoryChannel) {.async: (raises: []).} =
+proc listen(self: Arc[InMemoryChannel]) {.async: (raises: []).} =
+  let self = self.getMutUnsafe.addr
   if self.isWaiting:
     return
   self.isWaiting = true
@@ -103,22 +113,28 @@ proc listen(self: ptr InMemoryChannel) {.async: (raises: []).} =
 
   while self.isOpen or self.peek > 0:
     if self.peek > 0:
-      self[].fireEvent()
+      self[].fireEvent(false)
 
     if self.listeners.len == 0:
       return
+
+    if not self.isOpen:
+      break
 
     try:
       await self.signal.wait()
     except AsyncError, CatchableError:
       discard
 
-  self[].fireEvent()
+  self[].fireEvent(true)
 
-proc listen(self: ptr InMemoryChannel, cb: ChannelListener): ListenId =
-  result = self.listeners.add(cb)
-  if not self.isWaiting:
+proc listenInMemoryChannel(self: Arc[InMemoryChannel], cb: ChannelListener): ListenId =
+  result = self.getMutUnsafe.listeners.add(cb)
+  if not self.get.isWaiting:
     asyncSpawn self.listen()
+
+proc cloneAs*[B](self: Arc[B], T: typedesc[B]): Arc[T] =
+  return cast[ptr Arc[T]](self.addr)[].clone()
 
 proc newInMemoryChannel*(): Arc[BaseChannel] =
   let signal = ThreadSignalPtr.new()
@@ -126,12 +142,12 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
   res.getMut() = InMemoryChannel(
     isOpen: true,
     signal: signal.value,
-    destroyImpl: destroyInMemoryChannel,
+    destroyImpl: destroyChannelImpl(InMemoryChannel),
     closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr InMemoryChannel](self))),
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr InMemoryChannel](self)),
     peekImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = peek(cast[ptr InMemoryChannel](self)),
     writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr InMemoryChannel](self), data),
     readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = read(cast[ptr InMemoryChannel](self), res),
-    listenImpl: proc(self: ptr BaseChannel, cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listen(cast[ptr InMemoryChannel](self), cb),
+    listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listenInMemoryChannel(self.cloneAs(InMemoryChannel), cb),
   )
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()

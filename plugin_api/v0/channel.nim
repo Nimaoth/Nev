@@ -12,8 +12,10 @@ import
 type
   ChannelListenResponse* = enum
     Continue = "continue", Stop = "stop"
+  ## Represents the read end of a channel. All APIs are non-blocking.
   ReadChannel* = object
     handle*: int32
+  ## Represents the write end of a channel. All APIs are non-blocking.
   WriteChannel* = object
     handle*: int32
 proc channelReadChannelDrop(a: int32): void {.
@@ -112,6 +114,7 @@ proc readAllBytes*(self: ReadChannel): WitList[uint8] {.nodestroy.} =
 proc channelListenImported(a0: int32; a1: uint32; a2: uint32): void {.
     wasmimport("[method]read-channel.listen", "nev:plugins/channel").}
 proc listen*(self: ReadChannel; fun: uint32; data: uint32): void {.nodestroy.} =
+  ## Listen for data being ready to read. When data is ready 'fun' is called with 'data'.
   var
     arg0: int32
     arg1: uint32
@@ -141,7 +144,7 @@ proc canWrite*(self: WriteChannel): bool {.nodestroy.} =
 proc channelWriteStringImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("[method]write-channel.write-string", "nev:plugins/channel").}
 proc writeString*(self: WriteChannel; data: WitString): void {.nodestroy.} =
-  ## Write
+  ## Write a string to the channel
   var
     arg0: int32
     arg1: int32
@@ -157,7 +160,7 @@ proc writeString*(self: WriteChannel; data: WitString): void {.nodestroy.} =
 proc channelWriteBytesImported(a0: int32; a1: int32; a2: int32): void {.
     wasmimport("[method]write-channel.write-bytes", "nev:plugins/channel").}
 proc writeBytes*(self: WriteChannel; data: WitList[uint8]): void {.nodestroy.} =
-  ## Write
+  ## Write a buffer to the channel
   var
     arg0: int32
     arg1: int32
@@ -173,6 +176,7 @@ proc writeBytes*(self: WriteChannel; data: WitList[uint8]): void {.nodestroy.} =
 proc channelNewInMemoryChannelImported(a0: int32): void {.
     wasmimport("new-in-memory-channel", "nev:plugins/channel").}
 proc newInMemoryChannel*(): (ReadChannel, WriteChannel) {.nodestroy.} =
+  ## Creates a new channel which buffers data in memory and returns the read and write end.
   var retArea: array[8, uint8]
   channelNewInMemoryChannelImported(cast[int32](retArea[0].addr))
   result[0].handle = cast[ptr int32](retArea[0].addr)[] + 1

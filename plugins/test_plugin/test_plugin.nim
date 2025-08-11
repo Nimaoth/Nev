@@ -210,10 +210,6 @@ defineCommand(ws"test-start-process",
         let s = $stdout.readAllString()
         buffer.add s
         if stdout.atEnd:
-          # echo "============="
-          # echo buffer
-          # echo "============="
-
           if buffer.endsWith("\0"):
             buffer.setLen(buffer.len - 1)
           let selections = editor.edit(@@[editor.getSelection], @@[ws(buffer.replace("\r", ""))])
@@ -247,7 +243,7 @@ defineCommand(ws"test-shell",
     var process = Shell(stdout: p.stdout(), stdin: p.stdin(), process: p.ensureMove)
     shellProcess = process
 
-    process.stdout.listen proc: ChannelListenResponse =
+    process.stdout.listen proc(): ChannelListenResponse =
       let s = $process.stdout.readAllString()
       echo "\n" & s
       if process.stdout.atEnd:
@@ -271,13 +267,18 @@ defineCommand(ws"test-send-input",
     if shellProcess != nil:
       shellProcess.stdin.writeString(args)
       shellProcess.stdin.writeString(ws("\n"))
+      if $args == "exit":
+        shellProcess[].stdin.close()
+        `=destroy`(shellProcess[])
+        `=wasMoved`(shellProcess[])
+        shellProcess = nil
+        GC_fullCollect()
     if memChannel != nil and memChannel.open:
       memChannel[].write.writeString(stackWitString($args & "\n"))
       if $args == "exit":
         memChannel[].write.close()
         `=destroy`(memChannel[])
         `=wasMoved`(memChannel[])
-        memChannel[].open = false
         memChannel = nil
         GC_fullCollect()
     return ws""

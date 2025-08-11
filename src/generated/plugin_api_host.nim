@@ -28,16 +28,23 @@ type
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.
+  ## Non-owning handle to an editor.
   Editor* = object
     id*: uint64
+  ## Non-owning handle to a text editor.
   TextEditor* = object
     id*: uint64
+  ## Non-owning handle to a document.
   Document* = object
     id*: uint64
+  ## Non-owning handle to a text document.
   TextDocument* = object
     id*: uint64
   ChannelListenResponse* = enum
     Continue = "continue", Stop = "stop"
+  ## Represents the read end of a channel. All APIs are non-blocking.
+  ## Represents the write end of a channel. All APIs are non-blocking.
+  ## Resource which represents a running process started by a plugin.
   ## Shared handle for a view.
   View* = object
     id*: int32
@@ -95,35 +102,35 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8522827292 = instance.getExport(context, "init_plugin")
-  if f_8522827292.isSome:
-    assert f_8522827292.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8522827292.get.of_field.func_field
+  let f_8522827367 = instance.getExport(context, "init_plugin")
+  if f_8522827367.isSome:
+    assert f_8522827367.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8522827367.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8522827308 = instance.getExport(context, "handle_command")
-  if f_8522827308.isSome:
-    assert f_8522827308.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8522827308.get.of_field.func_field
+  let f_8522827383 = instance.getExport(context, "handle_command")
+  if f_8522827383.isSome:
+    assert f_8522827383.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8522827383.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8522827358 = instance.getExport(context, "handle_mode_changed")
-  if f_8522827358.isSome:
-    assert f_8522827358.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8522827358.get.of_field.func_field
+  let f_8522827433 = instance.getExport(context, "handle_mode_changed")
+  if f_8522827433.isSome:
+    assert f_8522827433.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8522827433.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8522827359 = instance.getExport(context, "handle_view_render_callback")
-  if f_8522827359.isSome:
-    assert f_8522827359.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8522827359.get.of_field.func_field
+  let f_8522827434 = instance.getExport(context, "handle_view_render_callback")
+  if f_8522827434.isSome:
+    assert f_8522827434.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8522827434.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_8522827383 = instance.getExport(context, "handle_channel_update")
-  if f_8522827383.isSome:
-    assert f_8522827383.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_8522827383.get.of_field.func_field
+  let f_8522827458 = instance.getExport(context, "handle_channel_update")
+  if f_8522827458.isSome:
+    assert f_8522827458.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_8522827458.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
 
@@ -264,9 +271,9 @@ proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
   if res.isErr:
     return res.toResult(void)
   
-proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32): WasmtimeResult[
-    ChannelListenResponse] =
-  var args: array[max(1, 2), ValT]
+proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32;
+                          closed: bool): WasmtimeResult[ChannelListenResponse] =
+  var args: array[max(1, 3), ValT]
   var results: array[max(1, 1), ValT]
   var trap: ptr WasmTrapT = nil
   var memory = funcs.mem
@@ -277,8 +284,9 @@ proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32): Wasm
                          funcs.mContext, savePoint.val)
   args[0] = toWasmVal(fun)
   args[1] = toWasmVal(data)
+  args[2] = toWasmVal(closed)
   let res = funcs.handleChannelUpdate.addr.call(funcs.mContext,
-      args.toOpenArray(0, 2 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
+      args.toOpenArray(0, 3 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
       ChannelListenResponse)
   if trap != nil:
     return trap.toResult(ChannelListenResponse)

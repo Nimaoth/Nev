@@ -87,3 +87,21 @@ The `plugin-id` is the name of the folder which contains the plugin manifest.
     "plugin.some_shady_plugin.permissions": {}, // Empty, give this plugin no permissions
 }
 ```
+
+## WASI
+
+Nev supports selecting which WASI implementation to use for each plugin. The supported versions are:
+- `reduced`: Default. Link some WASI functions into the plugin. Currently only 'fd_write' is supported for logging. The plugin will fail to load if it has any unsupported WASI dependencies.
+- `none`: Don't link any WASI functions into the plugin. The plugin will fail to load if it has any WASI dependencies.
+- `full`: Use the `wasmtime` WASI implementation.
+
+By default Nev will use `reduced`. `full` currently logs to stdout so is not recommend when running Nev in the terminal version.
+
+```json
+// settings.json
+{
+    "plugin.my_plugin.permissions": {
+        "wasi": "none", // or "reduced" (default) or "full"
+    }
+}
+```

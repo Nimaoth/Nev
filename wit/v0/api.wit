@@ -50,18 +50,22 @@ interface types {
     // slice-lines: func(a: s64, b: s64) -> rope;
   }
 
+  /// Non-owning handle to an editor.
   record editor {
     id: u64
   }
 
+  /// Non-owning handle to a text editor.
   record text-editor {
     id: u64
   }
 
+  /// Non-owning handle to a document.
   record document {
     id: u64
   }
 
+  /// Non-owning handle to a text document.
   record text-document {
     id: u64
   }
@@ -73,6 +77,7 @@ interface channel {
     stop,
   }
 
+  /// Represents the read end of a channel. All APIs are non-blocking.
   resource read-channel {
     /// Returns whether the channel is still open and usable.
     can-read: func() -> bool;
@@ -88,29 +93,38 @@ interface channel {
     read-all-string: func() -> string;
     /// Read everything currently available in the channel.
     read-all-bytes: func() -> list<u8>;
+    /// Listen for data being ready to read. When data is ready 'fun' is called with 'data'.
     listen: func(fun: u32, data: u32);
   }
 
+  /// Represents the write end of a channel. All APIs are non-blocking.
   resource write-channel {
     /// Close the write end.
     close: func();
     /// Returns whether the channel is still open and usable.
     can-write: func() -> bool;
-    /// Write
+    /// Write a string to the channel
     write-string: func(data: string);
-    /// Write
+    /// Write a buffer to the channel
     write-bytes: func(data: list<u8>);
   }
 
+  /// Creates a new channel which buffers data in memory and returns the read and write end.
   new-in-memory-channel: func() -> tuple<read-channel, write-channel>;
 }
 
 interface process {
   use channel.{read-channel, write-channel};
+
+  /// Resource which represents a running process started by a plugin.
   resource process {
+    /// Start a process with the given name and pass 'args' as command line arguments
     start: static func(name: string, args: list<string>) -> process;
+    /// Return a channel for reading from stderr.
     stderr: func() -> read-channel;
+    /// Return a channel for reading from stdout.
     stdout: func() -> read-channel;
+    /// Return a channel for writing to stdin.
     stdin: func() -> write-channel;
   }
 }
@@ -308,7 +322,7 @@ interface guest {
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
-  handle-channel-update: func(fun: u32, data: u32) -> channel-listen-response;
+  handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
 }
 
 world plugin {

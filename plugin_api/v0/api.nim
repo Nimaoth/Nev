@@ -22,7 +22,7 @@ proc NimMain() {.importc.}
 ############################ exported functions ############################
 
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
-type ChannelUpdateHandler = proc(data: uint32): ChannelListenResponse {.cdecl, raises: [].}
+type ChannelUpdateHandler = proc(data: uint32, closed: bool): ChannelListenResponse {.cdecl, raises: [].}
 
 proc initPlugin() =
   emscripten_stack_init()
@@ -40,9 +40,9 @@ proc handleCommand(fun: uint32, data: uint32; arguments: WitString): WitString =
   let fun = cast[CommandHandler](fun)
   return fun(data, arguments)
 
-proc handleChannelUpdate(fun: uint32, data: uint32): ChannelListenResponse =
+proc handleChannelUpdate(fun: uint32, data: uint32, closed: bool): ChannelListenResponse =
   let fun = cast[ChannelUpdateHandler](fun)
-  fun(data)
+  fun(data, closed)
 
 ############################ nice wrappers around the raw api ############################
 
@@ -77,9 +77,13 @@ proc listen*(self: ReadChannel, data: uint32, fun: ChannelUpdateHandler) =
 proc listen*(self: ReadChannel, fun: proc(): ChannelListenResponse {.raises: [].}) =
   type Data = object
     fun: proc(): ChannelListenResponse {.raises: [].}
-  proc cb(data: uint32): ChannelListenResponse {.cdecl.} =
+  proc cb(data: uint32, closed: bool): ChannelListenResponse {.cdecl.} =
     let data = cast[ptr Data](data)
-    data.fun()
+    result = data.fun()
+    if closed or result == Stop:
+      `=destroy`(data[])
+      `=wasMoved`(data[])
+      freeShared(data)
 
   # todo: this needs to get freed at some point
   var data = cast[ptr Data](allocShared0(sizeof(Data)))

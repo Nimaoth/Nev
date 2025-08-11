@@ -13,6 +13,7 @@ import
   channel
 
 type
+  ## Resource which represents a running process started by a plugin.
   Process* = object
     handle*: int32
 proc processProcessDrop(a: int32): void {.
@@ -26,6 +27,7 @@ proc processProcessStartImported(a0: int32; a1: int32; a2: int32; a3: int32): in
     wasmimport("[static]process.start", "nev:plugins/process").}
 proc processStart*(name: WitString; args: WitList[WitString]): Process {.
     nodestroy.} =
+  ## Start a process with the given name and pass 'args' as command line arguments
   var
     arg0: int32
     arg1: int32
@@ -47,6 +49,7 @@ proc processStart*(name: WitString; args: WitList[WitString]): Process {.
 proc processStderrImported(a0: int32): int32 {.
     wasmimport("[method]process.stderr", "nev:plugins/process").}
 proc stderr*(self: Process): ReadChannel {.nodestroy.} =
+  ## Return a channel for reading from stderr.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = processStderrImported(arg0)
@@ -55,6 +58,7 @@ proc stderr*(self: Process): ReadChannel {.nodestroy.} =
 proc processStdoutImported(a0: int32): int32 {.
     wasmimport("[method]process.stdout", "nev:plugins/process").}
 proc stdout*(self: Process): ReadChannel {.nodestroy.} =
+  ## Return a channel for reading from stdout.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = processStdoutImported(arg0)
@@ -63,6 +67,7 @@ proc stdout*(self: Process): ReadChannel {.nodestroy.} =
 proc processStdinImported(a0: int32): int32 {.
     wasmimport("[method]process.stdin", "nev:plugins/process").}
 proc stdin*(self: Process): WriteChannel {.nodestroy.} =
+  ## Return a channel for writing to stdin.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = processStdinImported(arg0)
