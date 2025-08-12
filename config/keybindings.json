@@ -235,6 +235,10 @@
         "<C-o>": "toggle-all-breakpoints-enabled",
     },
 
+    "popup.selector.recent-sessions": {
+        "<S-ENTER>": "open-session-new-window",
+    },
+
     "debugger": {
         "<C-k>": "prev-debugger-view",
         "<C-h>": "next-debugger-view",

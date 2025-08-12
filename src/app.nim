@@ -1548,7 +1548,13 @@ proc openRecentSession*(self: App, preview: bool = true, scaleX: float = 0.9, sc
   popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    asyncSpawn self.loadSessionAsync(item.data, false)
+    asyncSpawn self.loadSessionAsync(item.data, true)
+    return true
+
+  popup.addCustomCommand "open-session-new-window", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      asyncSpawn self.loadSessionAsync(item.data, false)
+      self.layout.popPopup(popup)
     return true
 
   self.layout.pushPopup popup
