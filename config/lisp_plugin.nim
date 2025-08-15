@@ -1086,7 +1086,7 @@ proc evalSelection*(editor: TextDocumentEditor) {.exposeActive("editor.text", "e
     let expr = parse(text)
     let result = eval(expr, globalEnv)
     infof"-> {result}"
-  except CatchableError as e:
+  except Exception as e:
     infof"Error: {e.msg}"
 
 proc leval*(code: JsonNode) {.expose("leval").} =
@@ -1098,7 +1098,7 @@ proc leval*(code: JsonNode) {.expose("leval").} =
       let expr = parse(code.getStr)
       let result = eval(expr, globalEnv)
       infof"-> {result}"
-    except CatchableError as e:
+    except Exception as e:
       infof"Error: {e.msg}"
   else:
     infof"invalid code: {code}"
@@ -1110,7 +1110,7 @@ proc evalFile*(path: string) {.expose("eval-file").} =
     let expr = parse(text)
     let result = eval(expr, globalEnv)
     # infof"-> {result}"
-  except CatchableError as e:
+  except Exception as e:
     infof"Error: {e.msg}"
 
 proc postInitialize*(): bool {.wasmexport.} =
