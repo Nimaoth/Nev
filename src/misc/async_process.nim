@@ -372,6 +372,7 @@ proc readInput(chan: Arc[Channel[Option[ProcessObj]]], serverDiedNotifications: 
         # echo &"readInput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
+    # todo: figure out when to close the stream
     # stream.close()
 
 proc writeOutput(chan: Arc[Channel[Option[ProcessObj]]], data: Arc[Channel[Option[string]]]): NoExceptionDestroy =
@@ -411,6 +412,7 @@ proc writeOutput(chan: Arc[Channel[Option[ProcessObj]]], data: Arc[Channel[Optio
         # echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
+    # todo: figure out when to close the stream
     # stream.close()
 
 proc start*(process: AsyncProcess): bool =

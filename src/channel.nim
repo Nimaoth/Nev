@@ -70,7 +70,7 @@ proc fireEvent*(self: var BaseChannel, closed: bool) {.gcsafe, raises: [].} =
 template destroyChannelImpl*(t: untyped): untyped =
   proc(self: ptr BaseChannel) {.gcsafe, raises: [].} =
     when defined(debugChannelDestroy):
-      echo "destroyChannelImpl ", T
+      echo "destroyChannelImpl ", t
     self.destroyImpl = nil
     let self = cast[ptr t](self)
     {.gcsafe, cast(noSideEffect).}:

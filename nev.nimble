@@ -100,6 +100,14 @@ task setup2, "Setup":
   else:
     cpFile "nimble.paths", "nimble-linux.paths"
 
+  let content = """
+when defined(linux):
+  include "nimble-linux.paths"
+else:
+  include "nimble-win.paths"
+"""
+  writeFile("nimble.paths", content)
+
 task buildDesktop, "Build the desktop version":
   selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
   # selfExec fmt"c --passL:advapi32.lib -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime {getCommandLineParams()} ./src/desktop_main.nim"

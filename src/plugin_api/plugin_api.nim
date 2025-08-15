@@ -80,7 +80,6 @@ proc `=destroy`*(self: ReadChannelResource) =
   if self.channel.isNotNil:
     when defined(debugChannelDestroy):
       echo "=destroy ReadChannelResource ", self.channel.count
-    # self.channel.stopListening(self.listenId)
     `=destroy`(self.channel)
 
 proc `=destroy`*(self: WriteChannelResource) =
