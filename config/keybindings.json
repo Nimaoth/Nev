@@ -212,6 +212,8 @@
         "<C-u>": ["refresh"],
         "<C-g>n": "create-new-session",
         "<C-g>o": "open-session",
+        "<C-g><S-n>": ["create-new-session", {"newWindow": true}],
+        "<C-g><S-o>": ["open-session", {"newWindow": true}],
     },
 
     "popup.selector.settings": {
@@ -233,6 +235,10 @@
         "<C-x>": "delete-breakpoint",
         "<C-e>": "toggle-breakpoint-enabled",
         "<C-o>": "toggle-all-breakpoints-enabled",
+    },
+
+    "popup.selector.sessions": {
+        "<S-ENTER>": ["open-session", true],
     },
 
     "popup.selector.recent-sessions": {

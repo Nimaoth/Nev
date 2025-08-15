@@ -1482,7 +1482,7 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
   except:
     log lvlError, &"Failed to load session '{session}': {getCurrentExceptionMsg()}"
 
-proc openSession*(self: App, root: string = "home://", preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
+proc openSession*(self: App, newWindow: bool = false, root: string = "home://", preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
   proc getItems(): Future[ItemList] {.gcsafe, async: (raises: []).} =
     let sessions = await self.vfs.findFiles(root, r".nev-session$", options = FindFilesOptions(maxDepth: 2))
     var items = newSeq[FinderItem]()
@@ -1510,7 +1510,7 @@ proc openSession*(self: App, root: string = "home://", preview: bool = true, sca
   popup.previewScale = previewScale
 
   popup.handleItemConfirmed = proc(item: FinderItem): bool =
-    asyncSpawn self.loadSessionAsync(item.data, false)
+    asyncSpawn self.loadSessionAsync(item.data, not newWindow)
     return true
 
   self.layout.pushPopup popup
@@ -2733,21 +2733,27 @@ proc exploreFiles*(self: App, root: string = "", showVFS: bool = false, normaliz
     return true
 
   popup.addCustomCommand "create-new-session", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let openInNewWindow = args{0}{"newWindow"}.getBool()
     if popup.getSelectedItem().getSome(item):
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
-      asyncSpawn self.loadSessionAsync(fileInfo.path, false)
+      asyncSpawn self.loadSessionAsync(fileInfo.path, not openInNewWindow)
+      if openInNewWindow:
+        self.layout.popPopup(popup)
     return true
 
   popup.addCustomCommand "open-session", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let openInNewWindow = args{0}{"newWindow"}.getBool()
     if popup.getSelectedItem().getSome(item):
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true
 
-      asyncSpawn self.loadSessionAsync(fileInfo.path, false)
+      asyncSpawn self.loadSessionAsync(fileInfo.path, not openInNewWindow)
+      if openInNewWindow:
+        self.layout.popPopup(popup)
     return true
 
   self.layout.pushPopup popup
