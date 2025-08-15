@@ -86,7 +86,7 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
     proc functionName*(argName: JsonNode): JsonNode {.nimcall, used, raises: [JsonCallError].} =
       try:
         call
-      except Exception as e:
+      except CatchableError as e:
         raise newException(JsonCallError, "Failed to call json wrapped function " & functionNameStr & ": " & e.msg, e)
 
 proc serializeArgumentsToJson*(def: NimNode, targetUiae: NimNode): (NimNode, NimNode) =

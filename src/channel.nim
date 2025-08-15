@@ -74,11 +74,13 @@ template destroyChannelImpl*(t: untyped): untyped =
     self.destroyImpl = nil
     let self = cast[ptr t](self)
     {.gcsafe, cast(noSideEffect).}:
+      {.push warning[BareExcept]:off.}
       try:
         `=destroy`(self[])
         `=wasMoved`(self[])
       except Exception:
         discard
+      {.pop.}
 
 proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
   self.isOpen = false

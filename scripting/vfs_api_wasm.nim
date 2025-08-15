@@ -27,7 +27,7 @@ proc normalizePath*(path: string): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -41,7 +41,7 @@ proc localizePath*(path: string): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -66,7 +66,7 @@ proc readFileSync*(path: string): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -96,7 +96,7 @@ proc genTempPath*(prefix: string; suffix: string; dir: string = "temp://";
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 

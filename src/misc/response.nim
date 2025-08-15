@@ -51,7 +51,7 @@ proc to*(a: Response[JsonNode], T: typedesc): Response[T] =
             kind: ResponseKind.Success,
             result: a.result.jsonTo(T, Joptions(allowMissingKeys: true, allowExtraKeys: true)),
           )
-      except:
+      except CatchableError:
         let error = ResponseError(code: -2, message: "Failed to convert result to " & $T, data: a.result)
         return Response[T](id: a.id, kind: ResponseKind.Error, error: error)
 

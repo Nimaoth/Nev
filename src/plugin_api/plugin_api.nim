@@ -671,13 +671,13 @@ proc channelWriteString(host: HostContext; store: ptr ContextT; self: var WriteC
   try:
     if data.len > 0:
       self.channel.write(data.toOpenArrayByte(0, data.high))
-  except:
+  except CatchableError:
     discard
 
 proc channelWriteBytes(host: HostContext; store: ptr ContextT; self: var WriteChannelResource; data: sink seq[uint8]): void =
   try:
     self.channel.write(data)
-  except:
+  except CatchableError:
     discard
 
 proc channelNewInMemoryChannel(host: HostContext; store: ptr ContextT): (ReadChannelResource, WriteChannelResource) =
@@ -691,25 +691,19 @@ proc processProcessStart(host: HostContext; store: ptr ContextT; name: sink stri
     var process = startAsyncProcess(name, args, killOnExit = true, autoStart = false)
     discard process.start()
     return ProcessResource(process: process)
-  except:
+  except CatchableError:
     discard
 
 proc processStdout(host: HostContext; store: ptr ContextT; self: var ProcessResource): ReadChannelResource =
-  try:
-    if self.stdout.isNil:
-      self.stdout = newProcessOutputChannel(self.process)
-    return ReadChannelResource(channel: self.stdout)
-  except:
-    discard
+  if self.stdout.isNil:
+    self.stdout = newProcessOutputChannel(self.process)
+  return ReadChannelResource(channel: self.stdout)
 
 proc processStderr(host: HostContext; store: ptr ContextT; self: var ProcessResource): ReadChannelResource =
   # todo
   discard
 
 proc processStdin(host: HostContext; store: ptr ContextT; self: var ProcessResource): WriteChannelResource =
-  try:
-    if self.stdin.isNil:
-      self.stdin = newProcessInputChannel(self.process)
-    return WriteChannelResource(channel: self.stdin)
-  except:
-    discard
+  if self.stdin.isNil:
+    self.stdin = newProcessInputChannel(self.process)
+  return WriteChannelResource(channel: self.stdin)

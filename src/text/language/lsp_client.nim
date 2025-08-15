@@ -32,12 +32,14 @@ proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.us
         except IOError, OSError:
           discard
 
+      {.push warning[BareExcept]:off.}
       try:
         if fileLogger != nil:
           logging.log(fileLogger, level, args)
         # setLastModificationTime(logFileName, getTime())
       except Exception:
         discard
+      {.pop.}
 
 macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
   return logImpl(level, args, true)

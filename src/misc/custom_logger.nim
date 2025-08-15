@@ -64,6 +64,7 @@ func formatTime(t: float64): string =
   return &"{t:6.3f} ms"
 
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
+  {.push warning[BareExcept]:off.}
   let time = self.timer.elapsed.ms
   let msgIndented = self.indentString & logging.substituteLog("", level, args)
   let fmtStr = &"[{formatTime(time)}] " & self.fmtStr
@@ -112,6 +113,8 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
       except IOError:
         discard
 
+  {.pop.}
+
 var logger* = newCustomLogger()
 
 proc flush*(logger: logging.Logger) =
@@ -131,11 +134,13 @@ template logCategory*(category: static string, noDebug = false): untyped =
       args.insert(0, newLit("[" & category & "] "))
 
     return genAst(level, args):
+      {.push warning[BareExcept]:off.}
       try:
         {.gcsafe.}:
           logging.log(level, args)
       except Exception:
         discard
+      {.pop.}
 
   macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
     return logImpl(level, args, true)
@@ -148,22 +153,27 @@ template logCategory*(category: static string, noDebug = false): untyped =
     body
     block:
       let descriptionString = description
+      {.push warning[BareExcept]:off.}
       try:
         {.gcsafe.}:
           logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
       except Exception:
         discard
+      {.pop.}
 
   template logScope(level: logging.Level, text: string): untyped {.used.} =
     let txt = text
     {.gcsafe.}:
+      {.push warning[BareExcept]:off.}
       try:
         logging.log(level, "[" & category & "] " & txt)
       except Exception:
         discard
       inc logger.indentLevel
+      {.pop.}
     let timer = startTimer()
     defer:
+      {.push warning[BareExcept]:off.}
       {.gcsafe.}:
         let elapsedMs = timer.elapsed.ms
         let split = elapsedMs.splitDecimal
@@ -175,6 +185,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
           logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMs & ", " & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
         except Exception:
           discard
+      {.pop.}
 
   when noDebug:
     macro debug(x: varargs[typed, `$`]): untyped {.used.} =

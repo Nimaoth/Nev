@@ -35,7 +35,7 @@ proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.gcsafe, raises: [].} 
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
