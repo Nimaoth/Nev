@@ -9,11 +9,11 @@ logCategory "wasi"
 
 type GetMemoryImpl* = proc(caller: ptr CallerT, store: ptr ContextT): WasmMemory {.gcsafe, raises: [].}
 
-type Iovec = object
-  data: WasmPtr
-  len: uint32
-
 type
+  WasiIovec = object
+    data: WasmPtr
+    len: uint32
+
   WasiClockId {.size: sizeof(uint32).} = enum
     ## The clock measuring real time. Time value zero corresponds with
     ## 1970-01-01T00:00:00Z.
@@ -343,13 +343,24 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
     else:
       parameters[0].i32 = WasiErrno.Access.int32
 
+  discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "fd_read", newFunctype([WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
+    log lvlWarn, "fd_fdstat_get: not implemented"
+    parameters[0].i32 = WasiErrno.Access.int32
+
+    # let mem = getMemory(caller, store)
+
+    # let fd = parameters[0].i32
+    # let iovecsPtr = parameters[1].i32.WasmPtr
+    # let numIovecs = parameters[2].i32
+    # let pNumRead = parameters[3].i32.WasmPtr
+    # echo &"fd_read {fd}, {iovecsPtr.int}, {numIovecs}, {pNumRead.int}"
+
+    # mem.write[:uint32](pNumRead, 0)
+    # parameters[0].i32 = WasiErrno.Success.int32
+
   var stdout = ""
   var stderr = ""
   discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "fd_write", newFunctype([WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
-    type Iovec = object
-      data: WasmPtr
-      len: uint32
-
     let mem = getMemory(caller, store)
 
     let fd = parameters[0].i32
@@ -366,7 +377,7 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
       return
 
     var bytesWritten: uint32 = 0
-    for vec in mem.getOpenArray[:Iovec](iovecsPtr, numIovecs):
+    for vec in mem.getOpenArray[:WasiIovec](iovecsPtr, numIovecs):
       if vec.len > 0:
         let data = mem.getRawPtr(vec.data)
         let prevLen = file[].len
@@ -374,27 +385,21 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
         copyMem(file[][prevLen].addr, data, vec.len.int)
         bytesWritten += vec.len.uint32
 
-    var nl = -1
-    var start = 0
-    while true:
-      start = nl + 1
-      nl = file[].find('\n', start)
-      if nl == -1:
-        break
-
-      case fd
-      of 1:
-        log lvlNotice, file[][start..<nl]
-      of 2:
-        log lvlError, file[][start..<nl]
-      else:
-        discard
-
-    if start < file[].len:
-      if start > 0:
-        file[] = file[][start..^1]
+    case fd
+    of 1:
+      if file[].endsWith("\n"):
+        file[].setLen(file[].len - 1)
+      if file[].len > 0:
+        log lvlNotice, file[]
+    of 2:
+      if file[].endsWith("\n"):
+        file[].setLen(file[].len - 1)
+      if file[].len > 0:
+        log lvlError, file[]
     else:
-      file[].setLen(0)
+      discard
+
+    file[].setLen(0)
 
     mem.write[:uint32](pNumWritten, bytesWritten)
     parameters[0].i32 = WasiErrno.Success.int32

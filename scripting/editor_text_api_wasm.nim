@@ -38,7 +38,7 @@ proc getFileName*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -52,7 +52,7 @@ proc lineCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -67,7 +67,7 @@ proc lineLength*(self: TextDocumentEditor; line: int): int {.gcsafe, raises: [].
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -81,7 +81,7 @@ proc numDisplayLines*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -95,7 +95,7 @@ proc numWrapLines*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -109,7 +109,7 @@ proc screenLineCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -147,7 +147,7 @@ proc doMoveCursorLine*(self: TextDocumentEditor; cursor: Cursor; offset: int;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -162,7 +162,7 @@ proc getDefaultScrollBehaviour*(self: TextDocumentEditor): ScrollBehaviour {.
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -198,7 +198,7 @@ proc doMoveCursorVisualLine*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -218,7 +218,7 @@ proc doMoveCursorHome*(self: TextDocumentEditor; cursor: Cursor; offset: int;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -238,7 +238,7 @@ proc doMoveCursorEnd*(self: TextDocumentEditor; cursor: Cursor; offset: int;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -258,7 +258,7 @@ proc doMoveCursorPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -278,7 +278,7 @@ proc doMoveCursorNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -298,7 +298,7 @@ proc doMoveCursorLineCenter*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -318,7 +318,7 @@ proc doMoveCursorCenter*(self: TextDocumentEditor; cursor: Cursor; offset: int;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -338,7 +338,7 @@ proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -356,7 +356,7 @@ proc includeSelectionEnd*(self: TextDocumentEditor; res: Selection;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -377,7 +377,7 @@ proc findSurroundStart*(editor: TextDocumentEditor; cursor: Cursor; count: int;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -398,7 +398,7 @@ proc findSurroundEnd*(editor: TextDocumentEditor; cursor: Cursor; count: int;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -438,7 +438,7 @@ proc getConfig*(self: TextDocumentEditor; key: string): JsonNode {.gcsafe,
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -486,7 +486,7 @@ proc mode*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -502,7 +502,7 @@ proc getContextWithMode*(self: TextDocumentEditor; context: string): string {.
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -538,7 +538,7 @@ proc getRevision*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -552,7 +552,7 @@ proc getUsage*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -568,7 +568,7 @@ proc getChar*(self: TextDocumentEditor; cursor: Cursor): char {.gcsafe,
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -585,7 +585,7 @@ proc getText*(self: TextDocumentEditor; selection: Selection;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -600,7 +600,7 @@ proc getLine*(self: TextDocumentEditor; line: int): string {.gcsafe, raises: [].
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -620,7 +620,7 @@ proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -640,7 +640,7 @@ proc insertMulti*(self: TextDocumentEditor; selections: seq[Selection];
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -660,7 +660,7 @@ proc delete*(self: TextDocumentEditor; selections: seq[Selection];
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -681,7 +681,7 @@ proc edit*(self: TextDocumentEditor; selections: seq[Selection];
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -775,7 +775,7 @@ proc getParentNodeSelection*(self: TextDocumentEditor; selection: Selection;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -794,7 +794,7 @@ proc getNextNamedSiblingNodeSelection*(self: TextDocumentEditor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -813,7 +813,7 @@ proc getNextSiblingNodeSelection*(self: TextDocumentEditor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -831,7 +831,7 @@ proc getParentNodeSelections*(self: TextDocumentEditor; selections: Selections;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -911,7 +911,7 @@ proc getNextNodeWithSameType*(self: TextDocumentEditor; selection: Selection;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -927,7 +927,7 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor; cursor: Cursor): bool {.
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1126,7 +1126,7 @@ proc getPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1146,7 +1146,7 @@ proc getNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1162,7 +1162,7 @@ proc createAnchors*(self: TextDocumentEditor; selections: Selections): seq[
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1178,7 +1178,7 @@ proc resolveAnchors*(self: TextDocumentEditor; anchors: seq[(Anchor, Anchor)]): 
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1200,7 +1200,7 @@ proc getPrevDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1222,7 +1222,7 @@ proc getNextDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1248,7 +1248,7 @@ proc getPrevChange*(self: TextDocumentEditor; cursor: Cursor): Selection {.
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1264,7 +1264,7 @@ proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection {.
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1698,7 +1698,7 @@ proc getContentBounds*(self: TextDocumentEditor): Vec2 {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1757,7 +1757,7 @@ proc getCommandCount*(self: TextDocumentEditor): int {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1809,7 +1809,7 @@ proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): Optio
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1825,7 +1825,7 @@ proc findWordBoundary*(self: TextDocumentEditor; cursor: Cursor): Selection {.
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1842,7 +1842,7 @@ proc getSelectionInPair*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1861,7 +1861,7 @@ proc getSelectionInPairNested*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1880,7 +1880,7 @@ proc extendSelectionWithMove*(self: TextDocumentEditor; selection: Selection;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1897,7 +1897,7 @@ proc vimMotionWord*(self: TextDocumentEditor; cursor: Cursor; count: int = 0): S
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1914,7 +1914,7 @@ proc vimMotionWordBig*(self: TextDocumentEditor; cursor: Cursor; count: int = 0)
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -1933,7 +1933,7 @@ proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2071,7 +2071,7 @@ proc getSearchQuery*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2091,7 +2091,7 @@ proc setSearchQuery*(self: TextDocumentEditor; query: string;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2127,7 +2127,7 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2316,7 +2316,7 @@ proc hasTabStops*(self: TextDocumentEditor): bool {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2372,7 +2372,7 @@ proc isShowingCompletions*(self: TextDocumentEditor): bool {.gcsafe, raises: [].
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2512,7 +2512,7 @@ proc isRunningSavedCommands*(self: TextDocumentEditor): bool {.gcsafe,
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2558,7 +2558,7 @@ proc getSelection*(self: TextDocumentEditor): Selection {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2572,7 +2572,7 @@ proc getSelections*(self: TextDocumentEditor): Selections {.gcsafe, raises: [].}
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2697,7 +2697,7 @@ proc getCurrentEventHandlers*(self: TextDocumentEditor): seq[string] {.gcsafe,
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -2726,7 +2726,7 @@ proc cycleCase*(self: TextDocumentEditor; selection: Selection;
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 

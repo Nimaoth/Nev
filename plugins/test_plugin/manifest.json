@@ -23,7 +23,12 @@
 			"returnType": "",
 			"description": "",
 		},
-		"test-command-5": {}
+		"test-command-5": {},
+		"test-load-file": {},
+		"test-start-process": {},
+		"test-shell": {},
+		"test-shell-2": {},
+		"test-in-memory-channel": {},
 	},
 	"permissions": {
 		"filesystem": {

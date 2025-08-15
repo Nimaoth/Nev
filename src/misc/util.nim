@@ -106,7 +106,7 @@ template with*(exp, val, body: untyped): untyped =
 template catch*(exp: untyped, then: untyped): untyped =
   try:
     exp
-  except Exception:
+  except CatchableError:
     then
 
 template catch*(exp: untyped, error: untyped, then: untyped): untyped =

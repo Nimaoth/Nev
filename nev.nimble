@@ -38,7 +38,7 @@ requires "https://github.com/Nimaoth/wasm3 >= 0.1.17"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
-requires "https://github.com/Nimaoth/nimwasmtime#f1ebb41"
+requires "https://github.com/Nimaoth/nimwasmtime#aa747cb"
 requires "https://github.com/Nimaoth/nimsumtree >= 0.5.6"
 requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 
@@ -99,6 +99,14 @@ task setup2, "Setup":
     cpFile "nimble.paths", "nimble-win.paths"
   else:
     cpFile "nimble.paths", "nimble-linux.paths"
+
+  let content = """
+when defined(linux):
+  include "nimble-linux.paths"
+else:
+  include "nimble-win.paths"
+"""
+  writeFile("nimble.paths", content)
 
 task buildDesktop, "Build the desktop version":
   selfExec fmt"c -o:nev{exe} -d:exposeScriptingApi -d:appBuildWasmtime --passC:-std=gnu11 {getCommandLineParams()} ./src/desktop_main.nim"
@@ -167,6 +175,7 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
 
 task buildWasmModule, "":
   withDir "plugins/test_plugin":
+    exec &"nimble setup"
     exec &"nim c -d:release --skipParentCfg --passL:\"-o test_plugin.m.wasm\" {getCommandLineParams()} test_plugin.nim"
 
 task buildWasmModule1, "":

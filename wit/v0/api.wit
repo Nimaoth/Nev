@@ -31,6 +31,12 @@ interface types {
     constructor(content: string);
     /// Returns another reference to the same rope.
     clone: func() -> rope;
+    /// Returns the number of bytes in the rope. This operation is cheap.
+    bytes: func() -> s64;
+    /// Returns the number of UTF-8 code points. This operation is cheap.
+    runes: func() -> s64;
+    /// Returns the number of lines. This operation is cheap.
+    lines: func() -> s64;
     /// Returns the text of the rope as a string. This is expensive for large ropes.
     text: func() -> string;
     /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
@@ -39,23 +45,129 @@ interface types {
     /// Returns a slice of the rope from 'a' to 'b'. The column of 'b' is exclusive. Columns are in bytes.
     /// This operation is cheap because it doesn't create a copy of the text.
     slice-points: func(a: cursor, b: cursor) -> rope;
+    // /// Returns a slice of the rope from line 'a' to 'b'. 'b' is inclusive.
+    // /// This operation is cheap because it doesn't create a copy of the text.
+    // slice-lines: func(a: s64, b: s64) -> rope;
   }
 
+  /// Non-owning handle to an editor.
   record editor {
     id: u64
   }
 
+  /// Non-owning handle to a text editor.
   record text-editor {
     id: u64
   }
 
+  /// Non-owning handle to a document.
   record document {
     id: u64
   }
 
+  /// Non-owning handle to a text document.
   record text-document {
     id: u64
   }
+
+  record task {
+    id: u64
+  }
+}
+
+interface channel {
+  enum channel-listen-response {
+    continue,
+    stop,
+  }
+
+  /// Represents the read end of a channel. All APIs are non-blocking.
+  resource read-channel {
+    /// Returns whether the channel is still open and usable.
+    can-read: func() -> bool;
+    /// Returns whether the channel at the end, meaning no further data will be returned from any read function.
+    at-end: func() -> bool;
+    /// Returns how much data is in the buffer available for reading
+    peek: func() -> s32;
+    /// Read
+    read-string: func(num: s32) -> string;
+    /// Read
+    read-bytes: func(num: s32) -> list<u8>;
+    /// Read everything currently available in the channel.
+    read-all-string: func() -> string;
+    /// Read everything currently available in the channel.
+    read-all-bytes: func() -> list<u8>;
+    /// Listen for data being ready to read. When data is ready 'fun' is called with 'data'.
+    listen: func(fun: u32, data: u32);
+    /// If 'num' bytes are available in the channel return true, otherwise return false and call 'task' later once the
+    /// requested amount of data is available.
+    wait-read: func(task: u64, num: s32) -> bool;
+  }
+
+  /// Represents the write end of a channel. All APIs are non-blocking.
+  resource write-channel {
+    /// Close the write end.
+    close: func();
+    /// Returns whether the channel is still open and usable.
+    can-write: func() -> bool;
+    /// Write a string to the channel
+    write-string: func(data: string);
+    /// Write a buffer to the channel
+    write-bytes: func(data: list<u8>);
+  }
+
+  /// Creates a new channel which buffers data in memory and returns the read and write end.
+  new-in-memory-channel: func() -> tuple<read-channel, write-channel>;
+}
+
+interface process {
+  use channel.{read-channel, write-channel};
+
+  /// Resource which represents a running process started by a plugin.
+  resource process {
+    /// Start a process with the given name and pass 'args' as command line arguments
+    start: static func(name: string, args: list<string>) -> process;
+    /// Return a channel for reading from stderr.
+    stderr: func() -> read-channel;
+    /// Return a channel for reading from stdout.
+    stdout: func() -> read-channel;
+    /// Return a channel for writing to stdin.
+    stdin: func() -> write-channel;
+  }
+}
+
+interface vfs {
+  use types.{rope};
+  use core.{command-error};
+
+  enum vfs-error {
+    not-allowed,
+    not-found,
+  }
+
+  flags read-flags {
+    binary,
+  }
+
+  /// Read the given file synchronously. Requires 'filesystemRead' permissions.
+  /// By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
+  /// Paths are virtual paths for the virtual file system.
+  read-sync: func(path: string, read-flags: read-flags) -> result<string, vfs-error>;
+  /// Read the given file synchronously. Requires 'filesystemRead' permissions.
+  /// By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
+  /// Paths are virtual paths for the virtual file system.
+  read-rope-sync: func(path: string, read-flags: read-flags) -> result<rope, vfs-error>;
+  /// Write the given file synchronously. Requires 'filesystemWrite' permissions.
+  /// Paths are virtual paths for the virtual file system.
+  write-sync: func(path: string, content: string) -> result<bool, vfs-error>;
+  /// Write the given file synchronously. Requires 'filesystemWrite' permissions.
+  /// Paths are virtual paths for the virtual file system.
+  write-rope-sync: func(path: string, rope: rope) -> result<bool, vfs-error>;
+  /// Turns a virtual file system path to a path in the local file system, which can be passed to e.g. external processes.
+  /// E.g. 'local://C:/Users' becomes 'C:/Users'
+  /// E.g. 'home://.nev' becomes 'C:/Users/username/.nev'
+  localize: func(path: string) -> string;
+
 }
 
 interface editor {
@@ -88,6 +200,8 @@ interface text-editor {
   get-selection: func(editor: text-editor) -> selection;
   /// Add a callback which will be called whenever any editor changes mode.
   add-mode-changed-handler: func(fun: u32) -> s32;
+
+  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>) -> list<selection>;
 
   /// Returns the rope containing the current content of the text editors document.
   /// This rope is not automatically kept up to date when the document changes, but
@@ -140,6 +254,8 @@ interface render {
     id: func() -> s32;
     /// Returns the size in pixels the view currently has. In the terminal one pixel is one character.
     size: func() -> vec2f;
+    /// Returns whether the given key is currently pressed.
+    key-down: func(key: s64) -> bool;
     /// Specify how often the view should render. -1 means don't render in a timer, 0 means render every frame,
     /// a number bigger than 0 specifies the interval in milliseconds.
     set-render-interval: func(ms: s32);
@@ -178,12 +294,20 @@ interface core {
     not-found
   }
 
+  enum platform {
+    gui,
+    tui,
+  }
+
   /// Returns the plugin API version this plugin is using.
   /// 0 means the latest version, 1 or bigger means a specific version.
   api-version: func() -> s32;
 
   /// Returns the time since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
   get-time: func() -> f64;
+
+  /// Returns what kind platform the app is running on. E.g. 'terminal' or 'gui'
+  get-platform: func() -> platform;
 
   /// Defines a command.
   define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);
@@ -200,10 +324,13 @@ interface core {
 
 interface guest {
   use render.{view};
+  use channel.{channel-listen-response};
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
+  handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
+  notify-task-complete: func(task: u64, canceled: bool);
 }
 
 world plugin {
@@ -214,6 +341,9 @@ world plugin {
   import text-document;
   import core;
   import render;
+  import vfs;
+  import channel;
+  import process;
 
   export guest;
 }

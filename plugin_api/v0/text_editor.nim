@@ -145,6 +145,34 @@ proc addModeChangedHandler*(fun: uint32): int32 {.nodestroy.} =
   let res = textEditorAddModeChangedHandlerImported(arg0)
   result = convert(res, int32)
 
+proc textEditorEditImported(a0: uint64; a1: int32; a2: int32; a3: int32;
+                            a4: int32; a5: int32): void {.
+    wasmimport("edit", "nev:plugins/text-editor").}
+proc edit*(editor: TextEditor; selections: WitList[Selection];
+           contents: WitList[WitString]): WitList[Selection] {.nodestroy.} =
+  var
+    retArea: array[24, uint8]
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+  arg0 = editor.id
+  if selections.len > 0:
+    arg1 = cast[int32](selections[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](selections.len)
+  if contents.len > 0:
+    arg3 = cast[int32](contents[0].addr)
+  else:
+    arg3 = 0.int32
+  arg4 = cast[int32](contents.len)
+  textEditorEditImported(arg0, arg1, arg2, arg3, arg4,
+                         cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc textEditorContentImported(a0: uint64): int32 {.
     wasmimport("content", "nev:plugins/text-editor").}
 proc content*(editor: TextEditor): Rope {.nodestroy.} =

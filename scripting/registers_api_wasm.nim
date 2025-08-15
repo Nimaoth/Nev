@@ -25,7 +25,7 @@ proc getRegisterText*(register: string): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -78,7 +78,7 @@ proc isReplayingCommands*(): bool {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -91,7 +91,7 @@ proc isReplayingKeys*(): bool {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -105,6 +105,6 @@ proc isRecordingCommands*(registry: string): bool {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 

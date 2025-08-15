@@ -64,6 +64,7 @@ func formatTime(t: float64): string =
   return &"{t:6.3f} ms"
 
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
+  {.push warning[BareExcept]:off.}
   let time = self.timer.elapsed.ms
   let msgIndented = self.indentString & logging.substituteLog("", level, args)
   let fmtStr = &"[{formatTime(time)}] " & self.fmtStr
@@ -73,14 +74,14 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
     try:
       {.gcsafe.}:
         logging.log(l, level, msg)
-    except:
+    except Exception:
       continue
 
   if self.fileLogger.getSome(l):
     try:
       {.gcsafe.}:
         logging.log(l, level, msg)
-    except:
+    except Exception:
       discard
 
   if self.consoleLogger.getSome(l):
@@ -102,7 +103,7 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
     try:
       {.gcsafe.}:
         logging.log(l, level, msg)
-    except:
+    except Exception:
       discard
 
     if isTerminal:
@@ -111,6 +112,8 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
           stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
       except IOError:
         discard
+
+  {.pop.}
 
 var logger* = newCustomLogger()
 
@@ -131,11 +134,13 @@ template logCategory*(category: static string, noDebug = false): untyped =
       args.insert(0, newLit("[" & category & "] "))
 
     return genAst(level, args):
+      {.push warning[BareExcept]:off.}
       try:
         {.gcsafe.}:
           logging.log(level, args)
-      except:
+      except Exception:
         discard
+      {.pop.}
 
   macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
     return logImpl(level, args, true)
@@ -148,22 +153,27 @@ template logCategory*(category: static string, noDebug = false): untyped =
     body
     block:
       let descriptionString = description
+      {.push warning[BareExcept]:off.}
       try:
         {.gcsafe.}:
           logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
-      except:
+      except Exception:
         discard
+      {.pop.}
 
   template logScope(level: logging.Level, text: string): untyped {.used.} =
     let txt = text
     {.gcsafe.}:
+      {.push warning[BareExcept]:off.}
       try:
         logging.log(level, "[" & category & "] " & txt)
-      except:
+      except Exception:
         discard
       inc logger.indentLevel
+      {.pop.}
     let timer = startTimer()
     defer:
+      {.push warning[BareExcept]:off.}
       {.gcsafe.}:
         let elapsedMs = timer.elapsed.ms
         let split = elapsedMs.splitDecimal
@@ -173,8 +183,9 @@ template logCategory*(category: static string, noDebug = false): untyped =
         assert logger.indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
         try:
           logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMs & ", " & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
-        except:
+        except Exception:
           discard
+      {.pop.}
 
   when noDebug:
     macro debug(x: varargs[typed, `$`]): untyped {.used.} =

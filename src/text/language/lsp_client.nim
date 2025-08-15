@@ -32,12 +32,14 @@ proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.us
         except IOError, OSError:
           discard
 
+      {.push warning[BareExcept]:off.}
       try:
         if fileLogger != nil:
           logging.log(fileLogger, level, args)
         # setLastModificationTime(logFileName, getTime())
-      except:
+      except Exception:
         discard
+      {.pop.}
 
 macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
   return logImpl(level, args, true)
@@ -234,9 +236,9 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
 # proc waitInitialized*(client: LSPCLient): Future[bool] = client.initializedFuture.future
 
 method close(connection: LSPConnection) {.base, gcsafe.} = discard
-method recvLine(connection: LSPConnection): Future[string] {.base, gcsafe.} = discard
-method recv(connection: LSPConnection, length: int): Future[string] {.base, gcsafe.} = discard
-method send(connection: LSPConnection, data: string): Future[void] {.base, gcsafe.} = discard
+method recvLine(connection: LSPConnection): Future[string] {.base, gcsafe, raises: [IOError].} = discard
+method recv(connection: LSPConnection, length: int): Future[string] {.base, gcsafe, raises: [IOError].} = discard
+method send(connection: LSPConnection, data: string): Future[void] {.base, gcsafe, raises: [IOError].} = discard
 
 type LSPConnectionAsyncProcess = ref object of LSPConnection
   process: AsyncProcess
@@ -327,7 +329,7 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
       debug "[recv] ", data[0..min(data.high, 500)]
     return parseJson(data)
 
-  except:
+  except CatchableError:
     return newJNull()
 
 proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int]) {.gcsafe, async.} =
@@ -357,7 +359,7 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
 
   try:
     await client.connection.send(msg)
-  except:
+  except CatchableError:
     discard
 
 proc sendNotification(client: LSPClient, meth: string, params: JsonNode) {.gcsafe, async.} =
@@ -381,7 +383,7 @@ proc sendResult(client: LSPClient, id: int, res: JsonNode) {.async, gcsafe.} =
 
   try:
     await client.connection.send(msg)
-  except:
+  except CatchableError:
     discard
 
 
@@ -460,7 +462,7 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
           client.canceledRequests.excl id
         else:
           log lvlError, &"[handleResponses] received response with id {id} but got no active request for that id: {response}"
-      except:
+      except CatchableError:
         log lvlError, &"[handleResponses] Failed to dispatch response: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
     case response.kind
@@ -510,7 +512,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
       defer: requests.del(id)
       try:
         requests[id].future.complete(canceled[typ]())
-      except:
+      except CatchableError:
         log lvlError, &"[cancelAllOf] Failed to cancel '{meth}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
     case meth
@@ -636,7 +638,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
 
   try:
     client.serverCapabilities = res.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
-  except:
+  except CatchableError:
     await client.initializedChannel.send(ServerCapabilities.none)
     return errorResponse[JsonNode](0, &"Failed to parse server capabilities: {getCurrentExceptionMsg()}\n{res.result.pretty}")
 
@@ -652,7 +654,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
     let header = createHeader(req.len)
     try:
       await client.connection.send(header & req)
-    except:
+    except CatchableError:
       log lvlError, &"Failed to send pending request"
 
   return res
@@ -678,7 +680,7 @@ proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args
   #   let port = json["port"].num.int
   #   let processId = json["processId"].num.int
   #   return (port, processId).some
-  # except CatchableError:
+  # except E CatchableError:
   #   # log lvlError, &"Failed to connect to languages server {url}:{port}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
   #   return (int, int).none
 
@@ -1126,7 +1128,7 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
         else:
           log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
 
-    except:
+    except CatchableError:
       log lvlError, &"[run] error: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       discard
 
