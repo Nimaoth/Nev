@@ -57,7 +57,7 @@ type
                         ## work in progress!
     poDontInheritHandles ## Windows: Don't inherit handles in the child process
 
-  ProcessObj = object of RootObj
+  ProcessObj* = object of RootObj
     when defined(windows):
       fProcessHandle: Handle
       fThreadHandle: Handle
@@ -66,7 +66,7 @@ type
     else:
       inHandle, outHandle, errHandle: FileHandle
       id: Pid
-    inStream, outStream, errStream: owned(Stream)
+    inStream*, outStream*, errStream*: owned(Stream)
     exitStatus: cint
     exitFlag: bool
     options: set[ProcessOption]

@@ -292,7 +292,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     let returnNode = genAst(res=callJsonStringWrapperFunctionWasmRes):
       try:
         result = parseJson($res).jsonTo(typeof(result))
-      except:
+      except CatchableError:
         raiseAssert(getCurrentExceptionMsg())
     callJsonStringWrapperFunctionWasm.add returnNode
 
@@ -342,12 +342,14 @@ macro expose*(moduleName: static string, def: untyped): untyped =
             else:
               `jsonStringWrapperFunctionReturnValue` = $res
             return `jsonStringWrapperFunctionReturnValue`.cstring
-        except:
+        except CatchableError:
           let name = `pureFunctionNameStr`
+          {.push warning[BareExcept]:off.}
           try:
             logging.log lvlError, "Failed to run function " & name & &": Invalid arguments: {getCurrentExceptionMsg()}\n{getStackTrace()}"
-          except:
+          except Exception:
             discard
+          {.pop.}
           return "null"
 
       static:

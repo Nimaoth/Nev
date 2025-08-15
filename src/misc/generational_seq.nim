@@ -3,6 +3,7 @@ import std/[sequtils, options]
 type GenerationalSeq*[T; K] = object
   ## Even generation means empty slot, odd means it's filled
   data: seq[tuple[generation: uint32, value: T]]
+  len: int
 
 proc `$`*[T; K](self: GenerationalSeq[T, K]): string =
   result = "^["
@@ -31,6 +32,14 @@ proc del*[T; K](self: var GenerationalSeq[T, K], key: K) =
       inc data[].generation
       assert (data[].generation and 0x1) == 0
       data[].value = T.default
+      dec self.len
+
+proc set*[T; K](self: var GenerationalSeq[T, K], key: K, val: sink T) =
+  let (generation, index) = key.split()
+  if index.int in 0..self.data.high:
+    let data = self.data[index].addr
+    if (data[].generation and 0x1) == 1:
+      data[].value = val.ensureMove
 
 proc add*[T; K](self: var GenerationalSeq[T, K], val: sink T): K =
   let index = self.freeIndex()
@@ -38,6 +47,7 @@ proc add*[T; K](self: var GenerationalSeq[T, K], val: sink T): K =
   inc data[].generation
   assert (data[].generation and 0x1) == 1
   data[].value = val.ensureMove
+  inc self.len
   return K((data[].generation.uint64 shl 32) or index.uint64)
 
 proc contains*[T; K](self: GenerationalSeq[T, K], key: K): bool =
@@ -84,16 +94,24 @@ iterator items*[T; K](self: var GenerationalSeq[T, K]): var T =
     if (item.generation and 0x1) == 1:
       yield item.value
 
-iterator pairs*[T; K](self: GenerationalSeq[T, K]): (int, lent T) =
-  var i = 0
-  for item in self.items:
-    let k = i
-    inc i
-    yield (k, item.value)
+iterator keys*[T; K](self: GenerationalSeq[T, K]): K =
+  for i in 0..self.data.high:
+    let generation = self.data[i].generation
+    if (generation and 0x1) == 1:
+      yield K((generation.uint64 shl 32) or i.uint64)
 
-iterator pairs*[T; K](self: var GenerationalSeq[T, K]): (int, var T) =
-  var i = 0
-  for item in self.items.mitems:
-    let k = i
-    inc i
-    yield (k, item.value)
+iterator pairs*[T; K](self: GenerationalSeq[T, K]): (K, lent T) =
+  var i = -1
+  for item in self.data:
+    if (item.generation and 0x1) == 1:
+      inc i
+      yield (K((item.generation.uint64 shl 32) or i.uint64), item.value)
+
+iterator pairs*[T; K](self: var GenerationalSeq[T, K]): (K, var T) =
+  var i = -1
+  for item in self.data.mitems:
+    if (item.generation and 0x1) == 1:
+      inc i
+      yield (K((item.generation.uint64 shl 32) or i.uint64), item.value)
+
+func len*[T; K](self: GenerationalSeq[T, K]): int = self.len

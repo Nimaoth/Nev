@@ -286,37 +286,43 @@ proc dumpState() {.expose("harpoon-dump-state").} =
         infof"    [{k}]: {item}"
 
 proc listAdd(list: Option[string] = string.none, name: Option[string] = string.none) {.expose("harpoon-list-add").} =
-  infof"[harpoon] listAdd: {list}, {name}"
+  try:
+    infof"[harpoon] listAdd: {list}, {name}"
 
-  var list = gHarpoon.getList(list).addr
+    var list = gHarpoon.getList(list).addr
 
-  var item: HarpoonItem
-  if list[].config.createListItem.isSome:
-    list[].config.createListItem.get.invoke(item, list[].config, name)
-  else:
-    item = defaultCreateListItem(list[].config, name)
+    var item: HarpoonItem
+    if list[].config.createListItem.isSome:
+      list[].config.createListItem.get.invoke(item, list[].config, name)
+    else:
+      item = defaultCreateListItem(list[].config, name)
 
-  list[].items.add item
+    list[].items.add item
 
-  sync()
+    sync()
+  except Exception:
+    discard
 
 proc listSet(index: int, list: Option[string] = string.none, name: Option[string] = string.none) {.expose("harpoon-list-set").} =
-  infof"[harpoon] listSet: {index}, {list}, {name}"
+  try:
+    infof"[harpoon] listSet: {index}, {list}, {name}"
 
-  var list = gHarpoon.getList(list).addr
+    var list = gHarpoon.getList(list).addr
 
-  var item: HarpoonItem
-  if list[].config.createListItem.isSome:
-    list[].config.createListItem.get.invoke(item, list[].config, name)
-  else:
-    item = defaultCreateListItem(list[].config, name)
+    var item: HarpoonItem
+    if list[].config.createListItem.isSome:
+      list[].config.createListItem.get.invoke(item, list[].config, name)
+    else:
+      item = defaultCreateListItem(list[].config, name)
 
-  while list[].items.len <= index:
-    list[].items.add HarpoonItem()
+    while list[].items.len <= index:
+      list[].items.add HarpoonItem()
 
-  list[].items[index] = item
+    list[].items[index] = item
 
-  sync()
+    sync()
+  except Exception:
+    discard
 
 proc listSelect(index: int, list: Option[string] = string.none, options: JsonNode = newJNull()) {.expose("harpoon-list-select").} =
   infof"[harpoon] listSelect: {index}, {list}, {options}"

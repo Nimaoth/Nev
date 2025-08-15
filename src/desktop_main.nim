@@ -284,6 +284,7 @@ of Terminal:
   when enableTerminal:
     log(lvlInfo, "Creating terminal renderer")
     plat = new TerminalPlatform
+    plat.backend = Terminal
   else:
     echo "[error] Terminal backend not available in this build"
     quit(1)
@@ -292,6 +293,7 @@ of Gui:
   when enableGui:
     log(lvlInfo, "Creating GUI renderer")
     plat = new GuiPlatform
+    plat.backend = Gui
   else:
     echo "[error] GUI backend not available in this build"
     quit(1)

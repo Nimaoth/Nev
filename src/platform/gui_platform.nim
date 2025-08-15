@@ -254,7 +254,7 @@ method init*(self: GuiPlatform, options: AppOptions) =
       of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers - {Alt}
       # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
       else:
-        if not self.builder.handleKeyPressed(button.toInput, self.currentModifiers):
+        if not self.builder.handleKeyReleased(button.toInput, self.currentModifiers):
           self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
   except:
     log lvlError, &"Failed to create gui platform: {getCurrentExceptionMsg()}"

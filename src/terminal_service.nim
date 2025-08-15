@@ -887,6 +887,9 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     let inputWriteEvent = CreateEvent(nil, FALSE, FALSE, nil)
     let outputReadEvent = CreateEvent(sa.addr, FALSE, FALSE, nil)
 
+    if inputWriteEvent == INVALID_HANDLE_VALUE or outputReadEvent == INVALID_HANDLE_VALUE:
+      raiseOSError(osLastError(), "Failed to create events")
+
     let handles = OsHandles(
       hpcon: hPC,
       inputWriteHandle: inputWriteHandle,

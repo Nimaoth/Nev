@@ -35,7 +35,7 @@ proc callScriptAction*(context: string; args: JsonNode): JsonNode {.gcsafe,
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 

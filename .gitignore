@@ -52,6 +52,7 @@ rad
 clear
 *.wasm
 *.map
+plugins/pong
 
 *.nev-session
 

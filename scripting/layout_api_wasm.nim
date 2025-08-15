@@ -54,7 +54,7 @@ proc getNumVisibleViews*(): int {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -67,7 +67,7 @@ proc getNumHiddenViews*(): int {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -94,7 +94,7 @@ proc getOrOpenEditor*(path: string): Option[EditorId] {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 

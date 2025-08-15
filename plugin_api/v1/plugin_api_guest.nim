@@ -10,40 +10,22 @@ import
 
 {.pop.}
 import
-  editor
-
-export
-  editor
-
-import
-  vfs
-
-export
-  vfs
-
-import
   types
 
 export
   types
 
 import
-  text_document
+  text
 
 export
-  text_document
+  text
 
 import
   text_editor
 
 export
   text_editor
-
-import
-  channel
-
-export
-  channel
 
 import
   layout
@@ -62,12 +44,6 @@ import
 
 export
   core
-
-import
-  process
-
-export
-  process
 
 proc initPlugin(): void
 proc initPluginExported(): void {.wasmexport("init-plugin", "nev:plugins/guest").} =
@@ -116,25 +92,3 @@ proc handleViewRenderCallbackExported(a0: int32; a1: uint32; a2: uint32): void {
   fun = convert(a1, uint32)
   data = convert(a2, uint32)
   handleViewRenderCallback(id, fun, data)
-
-proc handleChannelUpdate(fun: uint32; data: uint32; closed: bool): ChannelListenResponse
-proc handleChannelUpdateExported(a0: uint32; a1: uint32; a2: bool): int8 {.
-    wasmexport("handle-channel-update", "nev:plugins/guest").} =
-  var
-    fun: uint32
-    data: uint32
-    closed: bool
-  fun = convert(a0, uint32)
-  data = convert(a1, uint32)
-  closed = a2.bool
-  cast[int8](handleChannelUpdate(fun, data, closed))
-
-proc notifyTaskComplete(task: uint64; canceled: bool): void
-proc notifyTaskCompleteExported(a0: uint64; a1: bool): void {.
-    wasmexport("notify-task-complete", "nev:plugins/guest").} =
-  var
-    task: uint64
-    canceled: bool
-  task = convert(a0, uint64)
-  canceled = a1.bool
-  notifyTaskComplete(task, canceled)

@@ -16,7 +16,7 @@ proc getOptionJson*(path: string; default: JsonNode = newJNull()): JsonNode {.
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -84,7 +84,7 @@ proc getBackend*(): Backend {.gcsafe, raises: [].} =
   let res {.used.} = editor_getBackend_Backend_App_wasm(argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -95,7 +95,7 @@ proc getHostOs*(): string {.gcsafe, raises: [].} =
   let res {.used.} = editor_getHostOs_string_App_wasm(argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -206,7 +206,7 @@ proc platformTotalLineHeight*(): float32 {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -218,7 +218,7 @@ proc platformLineHeight*(): float32 {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -231,7 +231,7 @@ proc platformLineDistance*(): float32 {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -574,7 +574,7 @@ proc mode*(): string {.gcsafe, raises: [].} =
   let res {.used.} = editor_mode_string_App_wasm(argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -588,7 +588,7 @@ proc getContextWithMode*(context: string): string {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -604,7 +604,7 @@ proc scriptRunAction*(action: string; arg: string): JsonNode {.gcsafe,
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -664,7 +664,7 @@ proc getActivePopup*(): EditorId {.gcsafe, raises: [].} =
   let res {.used.} = editor_getActivePopup_EditorId_wasm(argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -675,7 +675,7 @@ proc getActiveEditor*(): EditorId {.gcsafe, raises: [].} =
   let res {.used.} = editor_getActiveEditor_EditorId_wasm(argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -696,7 +696,7 @@ proc scriptIsSelectorPopup*(editorId: EditorId): bool {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -710,7 +710,7 @@ proc scriptIsTextEditor*(editorId: EditorId): bool {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
@@ -724,7 +724,7 @@ proc scriptIsModelEditor*(editorId: EditorId): bool {.gcsafe, raises: [].} =
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
-  except:
+  except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
 
