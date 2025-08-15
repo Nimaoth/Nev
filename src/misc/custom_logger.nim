@@ -73,14 +73,14 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
     try:
       {.gcsafe.}:
         logging.log(l, level, msg)
-    except:
+    except Exception:
       continue
 
   if self.fileLogger.getSome(l):
     try:
       {.gcsafe.}:
         logging.log(l, level, msg)
-    except:
+    except Exception:
       discard
 
   if self.consoleLogger.getSome(l):
@@ -102,7 +102,7 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
     try:
       {.gcsafe.}:
         logging.log(l, level, msg)
-    except:
+    except Exception:
       discard
 
     if isTerminal:
@@ -134,7 +134,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
       try:
         {.gcsafe.}:
           logging.log(level, args)
-      except:
+      except Exception:
         discard
 
   macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
@@ -151,7 +151,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
       try:
         {.gcsafe.}:
           logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
-      except:
+      except Exception:
         discard
 
   template logScope(level: logging.Level, text: string): untyped {.used.} =
@@ -159,7 +159,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
     {.gcsafe.}:
       try:
         logging.log(level, "[" & category & "] " & txt)
-      except:
+      except Exception:
         discard
       inc logger.indentLevel
     let timer = startTimer()
@@ -173,7 +173,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
         assert logger.indentLevel >= 0, "Indent level going < 0 for " & $level & " [" & category & "] " & txt
         try:
           logging.log(level, "[" & category & "] " & txt & " finished. (" & $elapsedMs & ", " & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
-        except:
+        except Exception:
           discard
 
   when noDebug:

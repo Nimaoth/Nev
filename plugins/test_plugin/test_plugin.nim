@@ -226,7 +226,7 @@ defineCommand(ws"test-start-process",
 
 type Shell = ref object
   process: Process
-  stdout: ReadChannel
+  stdout: BufferedReadChannel
   stdin: WriteChannel
 
 var shellProcess: Shell = nil
@@ -240,11 +240,11 @@ defineCommand(ws"test-shell",
   data = 0):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
     var p = processStart(ws"powershell", wl[WitString]())
-    var process = Shell(stdout: p.stdout(), stdin: p.stdin(), process: p.ensureMove)
+    var process = Shell(stdout: p.stdout().buffered, stdin: p.stdin(), process: p.ensureMove)
     shellProcess = process
 
-    process.stdout.listen proc(): ChannelListenResponse =
-      let s = $process.stdout.readAllString()
+    process.stdout.chan.listen proc(): ChannelListenResponse =
+      let s = $process.stdout.chan.readAllString()
       echo "\n" & s
       if process.stdout.atEnd:
         echo "============= done"
@@ -253,7 +253,36 @@ defineCommand(ws"test-shell",
 
     return ws""
 
-var memChannel: ref tuple[open: bool, write: WriteChannel, read: ReadChannel] = nil
+proc readShellOutput(process: Shell) {.async.} =
+  var res = await process.stdout.readAllString()
+
+  # read line by line
+  # while not process.stdout.atEnd:
+  #   let s = await process.stdout.readLine()
+  #   res.add s
+  #   res.add "\n"
+
+  echo "============="
+  echo res.find("\r")
+  echo "============="
+  echo res.replace("\r", "")
+
+defineCommand(ws"test-shell-2",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    var p = processStart(ws"powershell", wl[WitString]())
+    var process = Shell(stdout: p.stdout().buffered, stdin: p.stdin(), process: p.ensureMove)
+    shellProcess = process
+
+    discard readShellOutput(process)
+    return ws""
+
+var memChannel: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel] = nil
 
 defineCommand(ws"test-send-input",
   active = false,
@@ -269,19 +298,19 @@ defineCommand(ws"test-send-input",
       shellProcess.stdin.writeString(ws("\n"))
       if $args == "exit":
         shellProcess[].stdin.close()
-        `=destroy`(shellProcess[])
-        `=wasMoved`(shellProcess[])
         shellProcess = nil
-        GC_fullCollect()
     if memChannel != nil and memChannel.open:
       memChannel[].write.writeString(stackWitString($args & "\n"))
       if $args == "exit":
         memChannel[].write.close()
-        `=destroy`(memChannel[])
-        `=wasMoved`(memChannel[])
         memChannel = nil
-        GC_fullCollect()
     return ws""
+
+proc readMemoryChannel(chan: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel]) {.async.} =
+  while not chan.read.atEnd:
+    let s = await chan.read.readLine()
+    echo "\n'" & s & "'"
+  echo "============= done"
 
 defineCommand(ws"test-in-memory-channel",
   active = false,
@@ -294,22 +323,23 @@ defineCommand(ws"test-in-memory-channel",
     var (reader, writer) = newInMemoryChannel()
 
     memChannel.new
-    memChannel[] = (true, writer.ensureMove, reader.ensureMove)
+    memChannel[] = (true, writer.ensureMove, reader.buffered)
 
-    memChannel[].read.listen proc: ChannelListenResponse =
-      if not memChannel.open:
-        return
-      let s = $memChannel[].read.readAllString()
-      echo "on listen '", s, "'"
-      if memChannel[].read.atEnd:
-        echo "============= done"
-        return Stop
-      return Continue
+    discard memChannel.readMemoryChannel()
+    # memChannel[].read.listen proc: ChannelListenResponse =
+    #   if not memChannel.open:
+    #     return
+    #   let s = $memChannel[].read.readAllString()
+    #   echo "on listen '", s, "'"
+    #   if memChannel[].read.atEnd:
+    #     echo "============= done"
+    #     return Stop
+    #   return Continue
 
     for i in 0..10:
       stackRegionInline()
       echo &"{i}: send"
-      memChannel[].write.writeString(stackWitString("hello " & $i & "\n"))
+      memChannel[].write.writeString(stackWitString("hello " & $i & "\nworld\n"))
       echo &"{i}: send done"
 
     return ws""

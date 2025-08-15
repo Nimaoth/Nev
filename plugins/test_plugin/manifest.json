@@ -27,6 +27,7 @@
 		"test-load-file": {},
 		"test-start-process": {},
 		"test-shell": {},
+		"test-shell-2": {},
 		"test-in-memory-channel": {},
 	},
 	"permissions": {

@@ -7,7 +7,7 @@ import nimsumtree/arc
 type
   ListenId* = distinct uint64
   ChannelListenResponse* = enum Continue, Stop
-  ChannelListener* = proc(closed: bool): ChannelListenResponse {.gcsafe, raises: [].}
+  ChannelListener* = proc(channel: var BaseChannel, closed: bool): ChannelListenResponse {.gcsafe, raises: [].}
 
   BaseChannel* = object of RootObj
     listeners*: GenerationalSeq[ChannelListener, ListenId]
@@ -35,18 +35,18 @@ proc `=destroy`*(a {.byref.}: BaseChannel) {.raises: [], noSideEffect, inline, n
     if a.destroyImpl != nil:
       a.destroyImpl(a.addr)
 
-proc close*(self: Arc[BaseChannel]) {.gcsafe, raises: [].} =
-  self.get.closeImpl(self.getMutUnsafe.addr)
-proc isOpen*(self: Arc[BaseChannel]): bool {.raises: [].} =
-  self.get.isOpenImpl(self.getMutUnsafe.addr)
-proc peek*(self: Arc[BaseChannel]): int {.raises: [].} =
-  self.get.peekImpl(self.getMutUnsafe.addr)
-proc write*(self: Arc[BaseChannel], data: openArray[uint8]) {.raises: [IOError].} =
-  self.get.writeImpl(self.getMutUnsafe.addr, data)
-proc read*(self: Arc[BaseChannel], res: var openArray[uint8]): int {.raises: [IOError].} =
-  self.get.readImpl(self.getMutUnsafe.addr, res)
-proc listen*(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} =
-  self.get.listenImpl(self, cb)
+proc close*(self: var BaseChannel) {.gcsafe, raises: [].} = self.closeImpl(self.addr)
+proc isOpen*(self: var BaseChannel): bool {.raises: [].} = self.isOpenImpl(self.addr)
+proc peek*(self: var BaseChannel): int {.raises: [].} = self.peekImpl(self.addr)
+proc write*(self: var BaseChannel, data: openArray[uint8]) {.raises: [IOError].} = self.writeImpl(self.addr, data)
+proc read*(self: var BaseChannel, res: var openArray[uint8]): int {.raises: [IOError].} = self.readImpl(self.addr, res)
+
+proc close*(self: Arc[BaseChannel]) {.gcsafe, raises: [].} = self.getMutUnsafe.close()
+proc isOpen*(self: Arc[BaseChannel]): bool {.raises: [].} = self.getMutUnsafe.isOpen()
+proc peek*(self: Arc[BaseChannel]): int {.raises: [].} = self.getMutUnsafe.peek()
+proc write*(self: Arc[BaseChannel], data: openArray[uint8]) {.raises: [IOError].} = self.getMutUnsafe.write(data)
+proc read*(self: Arc[BaseChannel], res: var openArray[uint8]): int {.raises: [IOError].} = self.getMutUnsafe.read(res)
+proc listen*(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = self.get.listenImpl(self, cb)
 proc stopListening*(self: Arc[BaseChannel], id: ListenId) {.gcsafe, raises: [].} =
   self.getMutUnsafe.listeners.del(id)
 
@@ -57,8 +57,9 @@ proc atEnd*(self: Arc[BaseChannel]): bool {.gcsafe, raises: [].} =
   not self.isOpen and self.peek == 0
 
 proc fireEvent*(self: var BaseChannel, closed: bool) {.gcsafe, raises: [].} =
-  for key, cb in self.listeners.pairs:
-    case cb(closed)
+  for key in self.listeners.keys:
+    let cb = self.listeners[key]
+    case cb(self, closed)
     of Continue:
       discard
     of Stop:
@@ -66,13 +67,10 @@ proc fireEvent*(self: var BaseChannel, closed: bool) {.gcsafe, raises: [].} =
       # it doesn't move elements in memory, it just clears the current element
       self.listeners.del(key)
 
-proc destroyChannelImpl*[T: BaseChannel](self: var T) {.gcsafe, raises: [].} =
-  {.cast(noSideEffect).}:
-    `=destroy`(self)
-    `=wasMoved`(self)
-
 template destroyChannelImpl*(t: untyped): untyped =
   proc(self: ptr BaseChannel) {.gcsafe, raises: [].} =
+    when defined(debugChannelDestroy):
+      echo "destroyChannelImpl ", T
     self.destroyImpl = nil
     let self = cast[ptr t](self)
     {.gcsafe, cast(noSideEffect).}:

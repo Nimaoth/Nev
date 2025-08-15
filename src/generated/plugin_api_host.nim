@@ -40,6 +40,8 @@ type
   ## Non-owning handle to a text document.
   TextDocument* = object
     id*: uint64
+  Task* = object
+    id*: uint64
   ChannelListenResponse* = enum
     Continue = "continue", Stop = "stop"
   ## Represents the read end of a channel. All APIs are non-blocking.
@@ -87,6 +89,7 @@ type
     handleModeChanged*: FuncT
     handleViewRenderCallback*: FuncT
     handleChannelUpdate*: FuncT
+    notifyTaskComplete*: FuncT
 proc mem(funcs: ExportedFuncs): WasmMemory =
   if funcs.mMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
     return initWasmMemory(funcs.mMemory.get.of_field.sharedmemory)
@@ -133,6 +136,12 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
     funcs.handleChannelUpdate = f_8522827458.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
+  let f_8522827459 = instance.getExport(context, "notify_task_complete")
+  if f_8522827459.isSome:
+    assert f_8522827459.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_8522827459.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "notify_task_complete", "\'"
 
 proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   var args: array[max(1, 0), ValT]
@@ -296,6 +305,27 @@ proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32;
   retVal = cast[ChannelListenResponse](results[0].to(int8))
   return wasmtime.ok(retVal)
 
+proc notifyTaskComplete*(funcs: ExportedFuncs; task: uint64; canceled: bool): WasmtimeResult[
+    void] =
+  var args: array[max(1, 2), ValT]
+  var results: array[max(1, 0), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  args[0] = toWasmVal(task)
+  args[1] = toWasmVal(canceled)
+  let res = funcs.notifyTaskComplete.addr.call(funcs.mContext,
+      args.toOpenArray(0, 2 - 1), results.toOpenArray(0, 0 - 1), trap.addr).toResult(
+      void)
+  if trap != nil:
+    return trap.toResult(void)
+  if res.isErr:
+    return res.toResult(void)
+  
 proc typesNewRope(host: HostContext; store: ptr ContextT; content: sink string): RopeResource
 proc typesClone(host: HostContext; store: ptr ContextT; self: var RopeResource): RopeResource
 proc typesBytes(host: HostContext; store: ptr ContextT; self: var RopeResource): int64
@@ -415,6 +445,8 @@ proc channelReadAllBytes(host: HostContext; store: ptr ContextT;
                          self: var ReadChannelResource): seq[uint8]
 proc channelListen(host: HostContext; store: ptr ContextT;
                    self: var ReadChannelResource; fun: uint32; data: uint32): void
+proc channelWaitRead(host: HostContext; store: ptr ContextT;
+                     self: var ReadChannelResource; task: uint64; num: int32): bool
 proc channelClose(host: HostContext; store: ptr ContextT;
                   self: var WriteChannelResource): void
 proc channelCanWrite(host: HostContext; store: ptr ContextT;
@@ -2054,6 +2086,23 @@ proc defineComponent*(linker: ptr LinkerT; host: HostContext): WasmtimeResult[
         fun = convert(parameters[1].i32, uint32)
         data = convert(parameters[2].i32, uint32)
         channelListen(host, store, self[], fun, data)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64, WasmValkind.I32], [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/channel",
+                                 "[method]read-channel.wait-read", ty):
+        var self: ptr ReadChannelResource
+        var task: uint64
+        var num: int32
+        self = ?host.resources.resourceHostData(parameters[0].i32,
+            ReadChannelResource)
+        task = convert(parameters[1].i64, uint64)
+        num = convert(parameters[2].i32, int32)
+        let res = channelWaitRead(host, store, self[], task, num)
+        parameters[0].i32 = cast[int32](res)
     if e.isErr:
       return e
   block:

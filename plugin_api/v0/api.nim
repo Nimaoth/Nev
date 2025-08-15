@@ -1,6 +1,8 @@
-import std/[strformat, json, jsonutils]
-import wit_guest, wit_types, wit_runtime
+import std/[strformat, json, jsonutils, strutils, sequtils]
+import wit_guest, wit_types, wit_runtime, generational_seq, event
 export wit_types, wit_runtime
+import async
+export async
 
 when defined(witRebuild):
   static: echo "Rebuilding plugin_api.wit"
@@ -43,6 +45,23 @@ proc handleCommand(fun: uint32, data: uint32; arguments: WitString): WitString =
 proc handleChannelUpdate(fun: uint32, data: uint32, closed: bool): ChannelListenResponse =
   let fun = cast[ChannelUpdateHandler](fun)
   fun(data, closed)
+
+type TaskId = distinct uint64
+type TaskWrapper = object
+  done: proc() {.raises: [].}
+
+var tasks: GenerationalSeq[TaskWrapper, TaskId]
+
+proc notifyTaskComplete(task: uint64, canceled: bool) =
+  let id = task.TaskId
+  let task = tasks.tryGet(id)
+  if task.isSome:
+    task.get.done()
+    tasks.del(id)
+
+proc notifyTasksComplete(tasks: WitList[tuple[task: uint64, canceled: bool]]) =
+  for (task, canceled) in tasks:
+    notifyTaskComplete(task, canceled)
 
 ############################ nice wrappers around the raw api ############################
 
@@ -89,3 +108,78 @@ proc listen*(self: ReadChannel, fun: proc(): ChannelListenResponse {.raises: [].
   var data = cast[ptr Data](allocShared0(sizeof(Data)))
   data[].fun = fun
   self.listen(cast[uint32](data), cb)
+
+proc ready*(self: ReadChannel, num: int32 = 1): Future[void] =
+  var fut = newFuture[void]("ready")
+  let id = tasks.add(TaskWrapper())
+  if self.waitRead(id.uint64, num.int32):
+    tasks.del(id)
+    fut.complete()
+  else:
+    proc done() {.raises: [].} =
+      fut.complete()
+    tasks.set(id, TaskWrapper(done: done))
+  return fut
+
+proc read*(self: ReadChannel, num: int32): Future[string] =
+  var fut = newFuture[string]("read")
+  let id = tasks.add(TaskWrapper())
+  if self.waitRead(id.uint64, num):
+    tasks.del(id)
+    fut.complete($self.readString(num))
+  else:
+    proc done() {.raises: [].} =
+      fut.complete($self.readString(num))
+    tasks.set(id, TaskWrapper(done: done))
+  return fut
+
+type BufferedReadChannel* = ref object
+  chan*: ReadChannel
+  buffer: string
+
+proc buffered*(self: sink ReadChannel): BufferedReadChannel = BufferedReadChannel(chan: self.ensureMove)
+
+proc atEnd*(self: BufferedReadChannel): bool = self.buffer.len == 0 and self.chan.atEnd
+
+proc readLine*(self: BufferedReadChannel): Future[string] {.async.} =
+  while true:
+    let nl = self.buffer.find("\n")
+    if nl != -1:
+      result = self.buffer[0..<nl]
+      self.buffer = self.buffer[(nl + 1)..^1] # todo: make this more efficient
+      return
+
+    if self.chan.atEnd:
+      result = self.buffer
+      self.buffer.setLen(0)
+      return
+
+    await self.chan.ready()
+    let str = self.chan.readAllString()
+    if str.len > 0:
+      let prevLen = self.buffer.len
+      self.buffer.setLen(prevLen + str.len)
+      copyMem(self.buffer[prevLen].addr, str.data[0].addr, str.len)
+
+proc readAvailableString*(self: BufferedReadChannel): string =
+  result = self.buffer
+  self.buffer.setLen(0)
+  result.add $self.chan.readAllString()
+
+proc readAllString*(self: BufferedReadChannel): Future[string] {.async.} =
+  result = self.buffer
+  self.buffer.setLen(0)
+  while self.chan.canRead:
+    echo "wait channel end"
+    await self.chan.ready(int32.high)
+  echo "channel end"
+  result.add $self.chan.readAllString()
+
+proc readString*(self: BufferedReadChannel, len: int): Future[string] {.async.} =
+  if self.buffer.len < len:
+    await self.chan.ready(len - self.buffer.len)
+    self.buffer.add $self.chan.readAllString()
+
+  let len = min(self.buffer.len, len)
+  result = self.buffer[0..<len]
+  self.buffer = self.buffer[len..^1]

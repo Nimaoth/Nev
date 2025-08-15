@@ -34,6 +34,13 @@ proc del*[T; K](self: var GenerationalSeq[T, K], key: K) =
       data[].value = T.default
       dec self.len
 
+proc set*[T; K](self: var GenerationalSeq[T, K], key: K, val: sink T) =
+  let (generation, index) = key.split()
+  if index.int in 0..self.data.high:
+    let data = self.data[index].addr
+    if (data[].generation and 0x1) == 1:
+      data[].value = val.ensureMove
+
 proc add*[T; K](self: var GenerationalSeq[T, K], val: sink T): K =
   let index = self.freeIndex()
   let data = self.data[index].addr
@@ -86,6 +93,12 @@ iterator items*[T; K](self: var GenerationalSeq[T, K]): var T =
   for item in self.data.mitems:
     if (item.generation and 0x1) == 1:
       yield item.value
+
+iterator keys*[T; K](self: GenerationalSeq[T, K]): K =
+  for i in 0..self.data.high:
+    let generation = self.data[i].generation
+    if (generation and 0x1) == 1:
+      yield K((generation.uint64 shl 32) or i.uint64)
 
 iterator pairs*[T; K](self: GenerationalSeq[T, K]): (K, lent T) =
   var i = -1

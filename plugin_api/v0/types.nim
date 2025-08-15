@@ -42,6 +42,8 @@ type
   ## Non-owning handle to a text document.
   TextDocument* = object
     id*: uint64
+  Task* = object
+    id*: uint64
 proc typesRopeDrop(a: int32): void {.wasmimport("[resource-drop]rope",
     "nev:plugins/types").}
 proc `=copy`*(a: var Rope; b: Rope) {.error.}

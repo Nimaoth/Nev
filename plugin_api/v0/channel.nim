@@ -124,6 +124,21 @@ proc listen*(self: ReadChannel; fun: uint32; data: uint32): void {.nodestroy.} =
   arg2 = data
   channelListenImported(arg0, arg1, arg2)
 
+proc channelWaitReadImported(a0: int32; a1: uint64; a2: int32): bool {.
+    wasmimport("[method]read-channel.wait-read", "nev:plugins/channel").}
+proc waitRead*(self: ReadChannel; task: uint64; num: int32): bool {.nodestroy.} =
+  ## If 'num' bytes are available in the channel return true, otherwise return false and call 'task' later once the
+  ## requested amount of data is available.
+  var
+    arg0: int32
+    arg1: uint64
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = task
+  arg2 = num
+  let res = channelWaitReadImported(arg0, arg1, arg2)
+  result = res.bool
+
 proc channelCloseImported(a0: int32): void {.
     wasmimport("[method]write-channel.close", "nev:plugins/channel").}
 proc close*(self: WriteChannel): void {.nodestroy.} =

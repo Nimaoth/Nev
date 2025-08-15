@@ -69,6 +69,10 @@ interface types {
   record text-document {
     id: u64
   }
+
+  record task {
+    id: u64
+  }
 }
 
 interface channel {
@@ -95,6 +99,9 @@ interface channel {
     read-all-bytes: func() -> list<u8>;
     /// Listen for data being ready to read. When data is ready 'fun' is called with 'data'.
     listen: func(fun: u32, data: u32);
+    /// If 'num' bytes are available in the channel return true, otherwise return false and call 'task' later once the
+    /// requested amount of data is available.
+    wait-read: func(task: u64, num: s32) -> bool;
   }
 
   /// Represents the write end of a channel. All APIs are non-blocking.
@@ -323,6 +330,7 @@ interface guest {
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
   handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
+  notify-task-complete: func(task: u64, canceled: bool);
 }
 
 world plugin {

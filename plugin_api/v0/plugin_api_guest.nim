@@ -128,3 +128,13 @@ proc handleChannelUpdateExported(a0: uint32; a1: uint32; a2: bool): int8 {.
   data = convert(a1, uint32)
   closed = a2.bool
   cast[int8](handleChannelUpdate(fun, data, closed))
+
+proc notifyTaskComplete(task: uint64; canceled: bool): void
+proc notifyTaskCompleteExported(a0: uint64; a1: bool): void {.
+    wasmexport("notify-task-complete", "nev:plugins/guest").} =
+  var
+    task: uint64
+    canceled: bool
+  task = convert(a0, uint64)
+  canceled = a1.bool
+  notifyTaskComplete(task, canceled)

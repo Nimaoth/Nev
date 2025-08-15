@@ -19,7 +19,7 @@ when defined(windows):
   discard SetInformationJobObject(jobObject, JobObjectExtendedLimitInformation, limitInformation.addr, length.DWORD)
 
 type AsyncChannel*[T] = ref object
-  chan: ptr Channel[T]
+  chan: Arc[Channel[T]]
   closed: bool
   buffer: T
 
@@ -33,10 +33,10 @@ type AsyncProcess* = ref object
   input: AsyncChannel[char]
   output: AsyncChannel[Option[string]]
   error: AsyncChannel[char]
-  inputStreamChannel: ptr Channel[Stream]
-  outputStreamChannel: ptr Channel[Stream]
-  errorStreamChannel: ptr Channel[Stream]
-  serverDiedNotifications: ptr Channel[bool]
+  inputStreamChannel: Arc[Channel[Option[ProcessObj]]]
+  outputStreamChannel: Arc[Channel[Option[ProcessObj]]]
+  errorStreamChannel: Arc[Channel[Option[ProcessObj]]]
+  serverDiedNotifications: Arc[Channel[bool]]
   readerFlowVar: FlowVarBase
   errorReaderFlowVar: FlowVarBase
   writerFlowVar: FlowVarBase
@@ -48,13 +48,11 @@ proc isAlive*(process: AsyncProcess): bool =
 
 proc newAsyncChannel*[T](): AsyncChannel[T] =
   new result
-  result.chan = cast[ptr Channel[T]](allocShared0(sizeof(Channel[T])))
-  result.chan[].open()
+  result.chan = Arc[Channel[T]].new()
+  result.chan.getMutUnsafe.open()
 
 proc destroy*[T](channel: AsyncChannel[T]) =
-  channel.chan[].close()
-  channel.chan.deallocShared
-  channel.chan = nil
+  channel.chan.getMutUnsafe.close()
 
 proc destroyProcess2(process: ptr AsyncProcess) =
   # todo: probably needs a lock for the process RC
@@ -67,17 +65,13 @@ proc destroyProcess2(process: ptr AsyncProcess) =
   if not process.errorReaderFlowVar.isNil:
     blockUntil process.errorReaderFlowVar[]
 
-  process.inputStreamChannel[].close()
-  process.errorStreamChannel[].close()
-  process.outputStreamChannel[].close()
-  process.serverDiedNotifications[].close()
+  process.inputStreamChannel.getMutUnsafe.close()
+  process.errorStreamChannel.getMutUnsafe.close()
+  process.outputStreamChannel.getMutUnsafe.close()
+  process.serverDiedNotifications.getMutUnsafe.close()
   process.input.destroy()
   process.error.destroy()
   process.output.destroy()
-  process.inputStreamChannel.deallocShared
-  process.errorStreamChannel.deallocShared
-  process.outputStreamChannel.deallocShared
-  process.serverDiedNotifications.deallocShared
 
 proc destroy*(process: AsyncProcess) =
   log lvlInfo, fmt"Destroying process {process.name}"
@@ -86,15 +80,15 @@ proc destroy*(process: AsyncProcess) =
   if not process.process.isNil:
     process.process.kill()
 
-  process.inputStreamChannel[].send nil
-  process.outputStreamChannel[].send nil
-  process.errorStreamChannel[].send nil
+  process.inputStreamChannel.getMutUnsafe.send ProcessObj.none
+  process.outputStreamChannel.getMutUnsafe.send ProcessObj.none
+  process.errorStreamChannel.getMutUnsafe.send ProcessObj.none
 
   spawn destroyProcess2(process.addr)
   # todo: should probably wait for the other thread to increment the process RC
 
 proc peek*[T](achan: AsyncChannel[T]): int =
-  return achan.chan[].peek
+  return achan.chan.getMutUnsafe.peek
 
 proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async.} =
   bind milliseconds
@@ -104,7 +98,7 @@ proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async
     var timer = startTimer()
 
     while buffer.len < amount:
-      let (ok, c) = achan.chan[].tryRecv
+      let (ok, c) = achan.chan.getMutUnsafe.tryRecv
       if not ok:
         await sleepAsync 10.milliseconds
         timer = startTimer()
@@ -132,7 +126,7 @@ proc recv*[T: string](achan: AsyncChannel[T], amount: int): Future[string] {.asy
     var timer = startTimer()
 
     while achan.buffer.len < amount:
-      let (ok, str) = achan.chan[].tryRecv
+      let (ok, str) = achan.chan.getMutUnsafe.tryRecv
       if not ok:
         await sleepAsync 10.milliseconds
         timer = startTimer()
@@ -168,8 +162,8 @@ proc recvLine*[T: char](achan: AsyncChannel[T]): Future[string] {.async.} =
 
   var cr = false
   while not achan.chan.isNil:
-    while not achan.chan.isNil and achan.chan[].peek > 0:
-      let c = achan.chan[].recv
+    while not achan.chan.isNil and achan.chan.getMutUnsafe.peek > 0:
+      let c = achan.chan.getMutUnsafe.recv
       if c == '\0':
         # End of input
         return buffer
@@ -199,7 +193,7 @@ proc tryRecvLine*[T: char](achan: AsyncChannel[T]): Future[Option[string]] {.asy
   var cr = false
   while not achan.chan.isNil:
     while not achan.chan.isNil:
-      let (hasData, c) = achan.chan[].tryRecv
+      let (hasData, c) = achan.chan.getMutUnsafe.tryRecv
       if not hasData:
         continue
 
@@ -228,23 +222,23 @@ proc tryRecvLine*[T: char](achan: AsyncChannel[T]): Future[Option[string]] {.asy
 
 proc send*[T](achan: AsyncChannel[Option[T]], data: T) {.async.} =
   bind milliseconds
-  while not achan.closed and not achan.chan[].trySend(data.some):
+  while not achan.closed and not achan.chan.getMutUnsafe.trySend(data.some):
     await sleepAsync 10.milliseconds
 
 proc send*[T](achan: AsyncChannel[T], data: sink T) {.async.} =
   bind milliseconds
-  while not achan.closed and not achan.chan[].trySend(data.move):
+  while not achan.closed and not achan.chan.getMutUnsafe.trySend(data.move):
     await sleepAsync 10.milliseconds
 
 proc sendSync*[T](achan: AsyncChannel[T], data: sink T) =
   if not achan.closed:
-    achan.chan[].send(data.move)
+    achan.chan.getMutUnsafe.send(data.move)
 
 proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
   bind milliseconds
 
   while not achan.closed:
-    let (ok, data) = achan.chan[].tryRecv()
+    let (ok, data) = achan.chan.getMutUnsafe.tryRecv()
     if ok:
       return data.some
 
@@ -254,7 +248,7 @@ proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
 
 proc recvAvailable*[char](achan: AsyncChannel[char], res: var seq[uint8]) =
   while not achan.closed:
-    let (ok, data) = achan.chan[].tryRecv()
+    let (ok, data) = achan.chan.getMutUnsafe.tryRecv()
     if not ok:
       return
 
@@ -262,7 +256,7 @@ proc recvAvailable*[char](achan: AsyncChannel[char], res: var seq[uint8]) =
 
 proc recvAvailable*[char](achan: AsyncChannel[char], res: var string) =
   while not achan.closed:
-    let (ok, data) = achan.chan[].tryRecv()
+    let (ok, data) = achan.chan.getMutUnsafe.tryRecv()
     if not ok:
       return
 
@@ -271,7 +265,7 @@ proc recvAvailable*[char](achan: AsyncChannel[char], res: var string) =
 proc recvAvailable*[char](achan: AsyncChannel[char], res: var openArray[uint8]): int =
   result = 0
   while not achan.closed and result < res.len:
-    let (ok, data) = achan.chan[].tryRecv()
+    let (ok, data) = achan.chan.getMutUnsafe.tryRecv()
     if not ok:
       return
 
@@ -344,43 +338,58 @@ proc send*(process: AsyncProcess, data: string): Future[void] =
     return
   return process.output.send(data)
 
-proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[bool], data: ptr Channel[char], data2: ptr Channel[Option[string]]): NoExceptionDestroy =
+proc readInput(chan: Arc[Channel[Option[ProcessObj]]], serverDiedNotifications: Arc[Channel[bool]], data: Arc[Channel[char]], data2: Arc[Channel[Option[string]]], output: bool): NoExceptionDestroy =
   while true:
-    let stream = chan[].recv
-
-    if stream.isNil:
+    var process = Process.new
+    if chan.getMutUnsafe.recv.getSome(chan):
+      process[] = chan
+    else:
       # Send none to writeOutput to make it abandon the current stream
       # and recheck, causing it to also get a nil stream and stop
-      data2[].send string.none
+      data2.getMutUnsafe.send string.none
       break
+
+    var stream: Stream
+    if output:
+      stream = process.outputStream()
+      process.outStream = nil
+    else:
+      stream = process.errorStream()
+      process.errStream = nil
 
     while true:
       try:
         let c = stream.readChar()
 
-        data[].send c
+        data.getMutUnsafe.send c
 
         if c == '\0':
           # echo "server died"
-          data2[].send string.none
-          serverDiedNotifications[].send true
+          data2.getMutUnsafe.send string.none
+          serverDiedNotifications.getMutUnsafe.send true
           break
-      except:
+      except CatchableError:
         # echo &"readInput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
-proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): NoExceptionDestroy =
+    # stream.close()
+
+proc writeOutput(chan: Arc[Channel[Option[ProcessObj]]], data: Arc[Channel[Option[string]]]): NoExceptionDestroy =
   var buffer: seq[string]
   while true:
-    let stream = chan[].recv
-
-    if stream.isNil:
+    var process = Process.new
+    if chan.getMutUnsafe.recv.getSome(chan):
+      process[] = chan
+    else:
       break
+
+    let stream = process.inputStream()
+    process.inStream = nil
 
     while true:
       try:
 
-        let d = data[].recv
+        let d = data.getMutUnsafe.recv
         if d.isNone:
           # echo "data none"
           buffer.setLen 0
@@ -397,10 +406,12 @@ proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): 
         # todo: Only flush when \n was written? Don't flush on
         stream.flush()
 
-      except:
+      except CatchableError:
         # echo "ioerror"
         # echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
+
+    # stream.close()
 
 proc start*(process: AsyncProcess): bool =
   log(lvlInfo, fmt"start process {process.name} {process.args}")
@@ -417,14 +428,14 @@ proc start*(process: AsyncProcess): bool =
     if process.killOnExit:
       discard AssignProcessToJobObject(jobObject, process.process.osProcessHandle())
 
-  process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))
-  process.inputStreamChannel[].send process.process.outputStream()
+  process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan, true))
+  process.inputStreamChannel.getMutUnsafe.send process.process[].some
 
-  process.errorReaderFlowVar = spawn(readInput(process.errorStreamChannel, process.serverDiedNotifications, process.error.chan, process.output.chan))
-  process.errorStreamChannel[].send process.process.errorStream()
+  process.errorReaderFlowVar = spawn(readInput(process.errorStreamChannel, process.serverDiedNotifications, process.error.chan, process.output.chan, false))
+  process.errorStreamChannel.getMutUnsafe.send process.process[].some
 
   process.writerFlowVar = spawn(writeOutput(process.outputStreamChannel, process.output.chan))
-  process.outputStreamChannel[].send process.process.inputStream()
+  process.outputStreamChannel.getMutUnsafe.send process.process[].some()
 
   return true
 
@@ -432,13 +443,13 @@ proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
   var startCounter = 0
 
   while true:
-    while process.serverDiedNotifications[].peek == 0:
+    while process.serverDiedNotifications.getMutUnsafe.peek == 0:
       # echo "process active"
       await sleepAsync(10.milliseconds)
 
     # echo "process dead"
-    while process.serverDiedNotifications[].peek > 0:
-      discard process.serverDiedNotifications[].recv
+    while process.serverDiedNotifications.getMutUnsafe.peek > 0:
+      discard process.serverDiedNotifications.getMutUnsafe.recv
 
     if startCounter > 0 and process.dontRestart:
       # log(lvlInfo, "Don't restart")
@@ -467,21 +478,21 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
   process.killOnExit = killOnExit
   process.eval = eval
 
-  process.inputStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
-  process.inputStreamChannel[].open()
+  process.inputStreamChannel = Arc[Channel[Option[ProcessObj]]].new()
+  process.inputStreamChannel.getMutUnsafe.open()
 
-  process.errorStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
-  process.errorStreamChannel[].open()
+  process.outputStreamChannel = Arc[Channel[Option[ProcessObj]]].new()
+  process.outputStreamChannel.getMutUnsafe.open()
 
-  process.outputStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
-  process.outputStreamChannel[].open()
+  process.errorStreamChannel = Arc[Channel[Option[ProcessObj]]].new()
+  process.errorStreamChannel.getMutUnsafe.open()
 
-  process.serverDiedNotifications = cast[ptr Channel[bool]](allocShared0(sizeof(Channel[bool])))
-  process.serverDiedNotifications[].open()
+  process.serverDiedNotifications = Arc[Channel[bool]].new()
+  process.serverDiedNotifications.getMutUnsafe.open()
 
   if autoStart:
     asyncSpawn process.restartServer()
-    process.serverDiedNotifications[].send true
+    process.serverDiedNotifications.getMutUnsafe.send true
 
   return process
 
@@ -567,7 +578,7 @@ proc readProcessOutputThread(args: RunProcessThreadArgs): (seq[string], seq[stri
 
     try:
       process.kill()
-    except:
+    except CatchableError:
       discard
 
   except CatchableError:
@@ -623,7 +634,7 @@ proc runProcessAsyncCallback*(name: string, args: seq[string] = @[], workingDir:
       await sleepAsync 10.milliseconds
     log lvlInfo, &"Command {name}, {args} finished."
 
-  except:
+  except CatchableError:
     log lvlError, &"Failed to start process {name}, {args}"
 
 type
@@ -651,6 +662,9 @@ proc listenPoll*(self: Arc[ProcessOutputChannel]) {.async: (raises: []).} =
   while self.isOpen or self.peek > 0:
     if self.peek > 0:
       self[].fireEvent(false)
+
+    if self.listeners.len == 0:
+      return
 
     if not self.isOpen:
       break

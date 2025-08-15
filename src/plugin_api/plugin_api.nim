@@ -78,11 +78,15 @@ proc `=destroy`*(self: RenderViewResource) =
 
 proc `=destroy`*(self: ReadChannelResource) =
   if self.channel.isNotNil:
-    self.channel.stopListening(self.listenId)
+    when defined(debugChannelDestroy):
+      echo "=destroy ReadChannelResource ", self.channel.count
+    # self.channel.stopListening(self.listenId)
     `=destroy`(self.channel)
 
 proc `=destroy`*(self: WriteChannelResource) =
   if self.channel.isNotNil:
+    when defined(debugChannelDestroy):
+      echo "=destroy WriteChannelResource ", self.channel.count
     `=destroy`(self.channel)
 
 when defined(witRebuild):
@@ -629,7 +633,7 @@ proc channelReadAllBytes(host: HostContext; store: ptr ContextT; self: var ReadC
 
 proc channelListen(host: HostContext; store: ptr ContextT; self: var ReadChannelResource, fun: uint32, data: uint32) =
   self.channel.stopListening(self.listenId)
-  self.listenId = self.channel.listen proc(closed: bool): channel.ChannelListenResponse {.gcsafe, raises: [].} =
+  self.listenId = self.channel.listen proc(chan: var BaseChannel, closed: bool): channel.ChannelListenResponse {.gcsafe, raises: [].} =
     let module = cast[ptr InstanceData](store.getData())
     let res = module[].funcs.handleChannelUpdate(fun, data, closed)
     if res.isErr:
@@ -640,6 +644,22 @@ proc channelListen(host: HostContext; store: ptr ContextT; self: var ReadChannel
       return channel.Continue
     of Stop:
       return channel.Stop
+
+proc channelWaitRead(host: HostContext; store: ptr ContextT; self: var ReadChannelResource; task: uint64; num: int32): bool =
+  if self.channel.peek >= num.int or not self.channel.isOpen():
+    return true
+
+  self.listenId = self.channel.listen proc(chan: var BaseChannel, closed: bool): channel.ChannelListenResponse {.gcsafe, raises: [].} =
+    let available = chan.peek
+    if available >= num.int or not chan.isOpen():
+      let module = cast[ptr InstanceData](store.getData())
+      let res = module[].funcs.notifyTaskComplete(task, canceled = available < num.int)
+      if res.isErr:
+        log lvlError, "Failed to call notifyTaskComplete: " & res.err.msg
+        return channel.Stop
+      return channel.Stop
+    return channel.Continue
+  return false
 
 proc channelClose(host: HostContext; store: ptr ContextT; self: var WriteChannelResource): void =
   self.channel.close()
