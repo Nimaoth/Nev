@@ -53,10 +53,20 @@ proc atEnd*(self: ReadChannel): bool {.nodestroy.} =
 proc channelPeekImported(a0: int32): int32 {.
     wasmimport("[method]read-channel.peek", "nev:plugins/channel").}
 proc peek*(self: ReadChannel): int32 {.nodestroy.} =
-  ## Returns how much data is in the buffer available for reading
+  ## Returns the minimum number of bytes available for reading. More data might be available after calling a read function or 'flush-read'.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = channelPeekImported(arg0)
+  result = convert(res, int32)
+
+proc channelFlushReadImported(a0: int32): int32 {.
+    wasmimport("[method]read-channel.flush-read", "nev:plugins/channel").}
+proc flushRead*(self: ReadChannel): int32 {.nodestroy.} =
+  ## Read data into the internal buffer of the channel. This is required for 'peek' to work. Other read functions as well
+  ## as 'listen' and 'wait-read' already do this internally so you usually don't need to call 'flush-read'.
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = channelFlushReadImported(arg0)
   result = convert(res, int32)
 
 proc channelReadStringImported(a0: int32; a1: int32; a2: int32): void {.

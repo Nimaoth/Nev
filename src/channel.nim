@@ -17,6 +17,7 @@ type
     isOpenImpl*: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].}
     peekImpl*: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].}
     writeImpl*: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].}
+    flushReadImpl*: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].}
     readImpl*: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].}
     listenImpl*: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].}
 
@@ -42,12 +43,14 @@ proc isOpen*(self: var BaseChannel): bool {.raises: [].} = self.isOpenImpl(self.
 proc peek*(self: var BaseChannel): int {.raises: [].} = self.peekImpl(self.addr)
 proc write*(self: var BaseChannel, data: openArray[uint8]) {.raises: [IOError].} = self.writeImpl(self.addr, data)
 proc read*(self: var BaseChannel, res: var openArray[uint8]): int {.raises: [IOError].} = self.readImpl(self.addr, res)
+proc flushRead*(self: var BaseChannel): int {.raises: [IOError].} = self.flushReadImpl(self.addr)
 
 proc close*(self: Arc[BaseChannel]) {.gcsafe, raises: [].} = self.getMutUnsafe.close()
 proc isOpen*(self: Arc[BaseChannel]): bool {.raises: [].} = self.getMutUnsafe.isOpen()
 proc peek*(self: Arc[BaseChannel]): int {.raises: [].} = self.getMutUnsafe.peek()
 proc write*(self: Arc[BaseChannel], data: openArray[uint8]) {.raises: [IOError].} = self.getMutUnsafe.write(data)
 proc read*(self: Arc[BaseChannel], res: var openArray[uint8]): int {.raises: [IOError].} = self.getMutUnsafe.read(res)
+proc flushRead*(self: Arc[BaseChannel]): int {.raises: [IOError].} = self.getMutUnsafe.flushRead()
 proc listen*(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = self.get.listenImpl(self, cb)
 proc stopListening*(self: Arc[BaseChannel], id: ListenId) {.gcsafe, raises: [].} =
   self.getMutUnsafe.listeners.del(id)
@@ -88,28 +91,27 @@ proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
   self.isOpen = false
   discard self.signal.fireSync()
 
-proc flushRead(self: ptr InMemoryChannel) =
-  try:
-    while true:
-      var (ok, data) = self.channel[].tryRecv()
-      if not ok:
-        return
-      self.data.add data.ensureMove
-  except ValueError as e:
-    echo "Failed to read memory channel: ", e.msg
-
 proc isOpen(self: ptr InMemoryChannel): bool = self.isOpen
-proc peek(self: ptr InMemoryChannel): int =
-  # self.flushRead()
-  self.data.len
+proc peek(self: ptr InMemoryChannel): int = self.data.len
 
 proc write(self: ptr InMemoryChannel, data: openArray[uint8]) =
   if data.len > 0:
     self.channel[].send(@data)
     discard self.signal.fireSync()
 
+proc flushRead(self: ptr InMemoryChannel): int =
+  try:
+    while true:
+      var (ok, data) = self.channel[].tryRecv()
+      if not ok:
+        break
+      self.data.add data.ensureMove
+  except ValueError as e:
+    echo "Failed to read memory channel: ", e.msg
+  return self.data.len
+
 proc read(self: ptr InMemoryChannel, res: var openArray[uint8]): int =
-  self.flushRead()
+  discard self.flushRead()
   if self.data.len > 0 and res.len > 0:
     let toRead = min(self.data.len, res.len)
     copyMem(res[0].addr, self.data[0].addr, toRead)
@@ -137,7 +139,7 @@ proc listen(self: Arc[InMemoryChannel]) {.async: (raises: []).} =
 
     try:
       await self.signal.wait()
-      self.flushRead()
+      discard self.flushRead()
     except AsyncError, CatchableError:
       discard
 
@@ -168,6 +170,7 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
     peekImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = peek(cast[ptr InMemoryChannel](self)),
     writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr InMemoryChannel](self), data),
     readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = read(cast[ptr InMemoryChannel](self), res),
+    flushReadImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].} = flushRead(cast[ptr InMemoryChannel](self)),
     listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listenInMemoryChannel(self.cloneAs(InMemoryChannel), cb),
   )
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()

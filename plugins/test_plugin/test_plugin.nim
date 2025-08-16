@@ -239,14 +239,13 @@ proc readShellOutput(process: Shell) {.async.} =
   var res = await process.stdout.readAllString()
 
   # read line by line
+  # var res = ""
   # while not process.stdout.atEnd:
   #   let s = await process.stdout.readLine()
+  #   echo s
   #   res.add s
   #   res.add "\n"
 
-  echo "============="
-  echo res.find("\r")
-  echo "============="
   echo res.replace("\r", "")
 
 defineCommand(ws"test-shell-2",

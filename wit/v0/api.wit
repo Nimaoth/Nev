@@ -88,8 +88,11 @@ interface channel {
     can-read: func() -> bool;
     /// Returns whether the channel at the end, meaning no further data will be returned from any read function.
     at-end: func() -> bool;
-    /// Returns how much data is in the buffer available for reading
+    /// Returns the minimum number of bytes available for reading. More data might be available after calling a read function or 'flush-read'.
     peek: func() -> s32;
+    /// Read data into the internal buffer of the channel. This is required for 'peek' to work. Other read functions as well
+    /// as 'listen' and 'wait-read' already do this internally so you usually don't need to call 'flush-read'.
+    flush-read: func() -> s32;
     /// Read
     read-string: func(num: s32) -> string;
     /// Read

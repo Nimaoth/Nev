@@ -426,6 +426,7 @@ proc vfsLocalize(instance: ptr InstanceData; path: sink string): string
 proc channelCanRead(instance: ptr InstanceData; self: var ReadChannelResource): bool
 proc channelAtEnd(instance: ptr InstanceData; self: var ReadChannelResource): bool
 proc channelPeek(instance: ptr InstanceData; self: var ReadChannelResource): int32
+proc channelFlushRead(instance: ptr InstanceData; self: var ReadChannelResource): int32
 proc channelReadString(instance: ptr InstanceData;
                        self: var ReadChannelResource; num: int32): string
 proc channelReadBytes(instance: ptr InstanceData; self: var ReadChannelResource;
@@ -2063,6 +2064,20 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         self = ?instance.resources.resourceHostData(parameters[0].i32,
             ReadChannelResource)
         let res = channelPeek(instance, self[])
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/channel",
+                                 "[method]read-channel.flush-read", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr ReadChannelResource
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            ReadChannelResource)
+        let res = channelFlushRead(instance, self[])
         parameters[0].i32 = cast[int32](res)
     if e.isErr:
       return e

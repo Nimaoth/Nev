@@ -750,6 +750,12 @@ proc channelAtEnd(instance: ptr InstanceData; self: var ReadChannelResource): bo
 proc channelPeek(instance: ptr InstanceData; self: var ReadChannelResource): int32 =
   return self.channel.peek.int32
 
+proc channelFlushRead(instance: ptr InstanceData; self: var ReadChannelResource): int32 =
+  try:
+    return self.channel.flushRead().int32
+  except IOError:
+    return self.channel.peek.int32
+
 proc channelReadString(instance: ptr InstanceData; self: var ReadChannelResource; num: int32): string =
   try:
     if num > 0:
