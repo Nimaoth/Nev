@@ -12,7 +12,7 @@ var target = 50
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.}
 
-proc openCustomView() =
+proc openCustomView(show: bool) =
   var renderView = renderViewFromUserId(ws"test_plugin_view")
   if renderView.isNone:
     echo "[guest] Create new RenderView"
@@ -25,7 +25,8 @@ proc openCustomView() =
   renderView.get.setRenderCallback(cast[uint32](handleViewRender), views.len.uint32)
   renderView.get.addMode(ws"test-plugin")
   renderView.get.markDirty()
-  show(renderView.get.view, ws"#new-tab", true, true)
+  if show:
+    show(renderView.get.view, ws"#new-tab", true, true)
   views.add(renderView.take)
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
@@ -69,28 +70,6 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
   except Exception as e:
     echo &"[guest] Failed to render: {e.msg}\n{e.getStackTrace()}"
 
-proc init() =
-  echo "[guest] init test_plugin"
-
-  if not isMainThread():
-    return
-
-  let s = getTime()
-  var renderView = renderViewFromUserId(ws"test_plugin_view")
-  if renderView.isSome:
-    echo "[guest] Reusing existing RenderView"
-    renderView.get.setRenderWhenInactive(true)
-    renderView.get.setPreventThrottling(true)
-    renderView.get.setRenderCallback(cast[uint32](handleViewRender), views.len.uint32)
-    renderView.get.addMode(ws"test-plugin")
-    renderView.get.markDirty()
-    show(renderView.get.view, ws"#new-tab", true, true)
-    views.add(renderView.take)
-
-  echo &"[guest] init test_plugin took {getTime() - s} ms"
-
-init()
-
 defineCommand(ws"test-command-1",
   active = false,
   docs = ws"Decrease the size of the square",
@@ -131,7 +110,7 @@ defineCommand(ws"open-custom-view",
   context = ws"",
   data = 0):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    openCustomView()
+    openCustomView(show = true)
     return ws""
 
 defineCommand(ws"test-command-5",
@@ -394,8 +373,22 @@ proc threadFun(reader: BufferedReadChannel, writer: sink WriteChannel) {.async.}
   echo "[threadFun] done"
   finishBackground()
 
-if not isMainThread():
-  var reader = readChannelOpen("reader")
-  var writer = writeChannelOpen("writer")
-  if reader.isSome and writer.isSome:
-    discard threadFun(reader.take.buffered, writer.take)
+proc init() =
+  echo "[guest] init test_plugin"
+  let s = getTime()
+
+  if isMainThread():
+    var renderView = renderViewFromUserId(ws"test_plugin_view")
+    if renderView.isSome:
+      openCustomView(show = false)
+
+  else:
+    var reader = readChannelOpen("reader")
+    var writer = writeChannelOpen("writer")
+    if reader.isSome and writer.isSome:
+      discard threadFun(reader.take.buffered, writer.take)
+
+
+  echo &"[guest] init test_plugin took {getTime() - s} ms"
+
+init()
