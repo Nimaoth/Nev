@@ -34,10 +34,22 @@ export
   text_document
 
 import
+  settings
+
+export
+  settings
+
+import
   text_editor
 
 export
   text_editor
+
+import
+  commands
+
+export
+  commands
 
 import
   channel

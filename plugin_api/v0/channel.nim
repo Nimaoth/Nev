@@ -53,10 +53,20 @@ proc atEnd*(self: ReadChannel): bool {.nodestroy.} =
 proc channelPeekImported(a0: int32): int32 {.
     wasmimport("[method]read-channel.peek", "nev:plugins/channel").}
 proc peek*(self: ReadChannel): int32 {.nodestroy.} =
-  ## Returns how much data is in the buffer available for reading
+  ## Returns the minimum number of bytes available for reading. More data might be available after calling a read function or 'flush-read'.
   var arg0: int32
   arg0 = cast[int32](self.handle - 1)
   let res = channelPeekImported(arg0)
+  result = convert(res, int32)
+
+proc channelFlushReadImported(a0: int32): int32 {.
+    wasmimport("[method]read-channel.flush-read", "nev:plugins/channel").}
+proc flushRead*(self: ReadChannel): int32 {.nodestroy.} =
+  ## Read data into the internal buffer of the channel. This is required for 'peek' to work. Other read functions as well
+  ## as 'listen' and 'wait-read' already do this internally so you usually don't need to call 'flush-read'.
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = channelFlushReadImported(arg0)
   result = convert(res, int32)
 
 proc channelReadStringImported(a0: int32; a1: int32; a2: int32): void {.
@@ -139,6 +149,47 @@ proc waitRead*(self: ReadChannel; task: uint64; num: int32): bool {.nodestroy.} 
   let res = channelWaitReadImported(arg0, arg1, arg2)
   result = res.bool
 
+proc channelReadChannelOpenImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[static]read-channel.open", "nev:plugins/channel").}
+proc readChannelOpen*(path: WitString): Option[ReadChannel] {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+    arg1: int32
+  if path.len > 0:
+    arg0 = cast[int32](path[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](path.len)
+  channelReadChannelOpenImported(arg0, arg1, cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] != 0:
+    var temp: ReadChannel
+    temp.handle = cast[ptr int32](retArea[4].addr)[] + 1
+    result = temp.some
+
+proc channelReadChannelMountImported(a0: int32; a1: int32; a2: int32; a3: bool;
+                                     a4: int32): void {.
+    wasmimport("[static]read-channel.mount", "nev:plugins/channel").}
+proc readChannelMount*(channel: sink ReadChannel; path: WitString; unique: bool): WitString {.
+    nodestroy.} =
+  var
+    retArea: array[16, uint8]
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: bool
+  arg0 = cast[int32](channel.handle - 1)
+  if path.len > 0:
+    arg1 = cast[int32](path[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](path.len)
+  arg3 = unique
+  channelReadChannelMountImported(arg0, arg1, arg2, arg3,
+                                  cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc channelCloseImported(a0: int32): void {.
     wasmimport("[method]write-channel.close", "nev:plugins/channel").}
 proc close*(self: WriteChannel): void {.nodestroy.} =
@@ -187,6 +238,47 @@ proc writeBytes*(self: WriteChannel; data: WitList[uint8]): void {.nodestroy.} =
     arg1 = 0.int32
   arg2 = cast[int32](data.len)
   channelWriteBytesImported(arg0, arg1, arg2)
+
+proc channelWriteChannelOpenImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[static]write-channel.open", "nev:plugins/channel").}
+proc writeChannelOpen*(path: WitString): Option[WriteChannel] {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+    arg1: int32
+  if path.len > 0:
+    arg0 = cast[int32](path[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](path.len)
+  channelWriteChannelOpenImported(arg0, arg1, cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] != 0:
+    var temp: WriteChannel
+    temp.handle = cast[ptr int32](retArea[4].addr)[] + 1
+    result = temp.some
+
+proc channelWriteChannelMountImported(a0: int32; a1: int32; a2: int32; a3: bool;
+                                      a4: int32): void {.
+    wasmimport("[static]write-channel.mount", "nev:plugins/channel").}
+proc writeChannelMount*(channel: sink WriteChannel; path: WitString;
+                        unique: bool): WitString {.nodestroy.} =
+  var
+    retArea: array[16, uint8]
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: bool
+  arg0 = cast[int32](channel.handle - 1)
+  if path.len > 0:
+    arg1 = cast[int32](path[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](path.len)
+  arg3 = unique
+  channelWriteChannelMountImported(arg0, arg1, arg2, arg3,
+                                   cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
 
 proc channelNewInMemoryChannelImported(a0: int32): void {.
     wasmimport("new-in-memory-channel", "nev:plugins/channel").}

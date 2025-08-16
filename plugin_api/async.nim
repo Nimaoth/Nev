@@ -1131,7 +1131,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
 
     prc.body = outerProcBody
 
-  when defined(debugDumpAsync) or true:
+  when defined(debugDumpAsync):
     echo repr prc
 
   prc

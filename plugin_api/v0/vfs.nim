@@ -13,7 +13,7 @@ import
   types
 
 import
-  core
+  commands
 
 type
   VfsError* = enum

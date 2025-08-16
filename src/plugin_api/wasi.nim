@@ -9,6 +9,9 @@ logCategory "wasi"
 
 type GetMemoryImpl* = proc(caller: ptr CallerT, store: ptr ContextT): WasmMemory {.gcsafe, raises: [].}
 
+var stdout {.threadvar.}: string
+var stderr {.threadvar.}: string
+
 type
   WasiIovec = object
     data: WasmPtr
@@ -330,7 +333,9 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
 
   discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "fd_fdstat_get", newFunctype([WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
     log lvlWarn, "fd_fdstat_get: not implemented"
-    let mem = getMemory(caller, store)
+    var mainMemory = caller.getExport("memory")
+    let mem = initWasmMemory(store, mainMemory.get.of_field.memory.addr)
+    # let mem = getMemory(caller, store)
     let fd = parameters[0].i32
     let retPtr = parameters[1].i32.WasmPtr
     let wasiFdStat = mem.getTypedPtr[:WasiFdStat](retPtr)
@@ -358,10 +363,10 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
     # mem.write[:uint32](pNumRead, 0)
     # parameters[0].i32 = WasiErrno.Success.int32
 
-  var stdout = ""
-  var stderr = ""
   discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "fd_write", newFunctype([WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
-    let mem = getMemory(caller, store)
+    # let mem = getMemory(caller, store)
+    var mainMemory = caller.getExport("memory")
+    let mem = initWasmMemory(store, mainMemory.get.of_field.memory.addr)
 
     let fd = parameters[0].i32
     let iovecsPtr = parameters[1].i32.WasmPtr
@@ -411,7 +416,9 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
   discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "clock_time_get", newFunctype([WasmValkind.I32, WasmValkind.I64, WasmValkind.I32], [WasmValkind.I32])):
     log lvlWarn, "clock_time_get: not implemented"
     # todo
-    let mem = getMemory(caller, store)
+    # let mem = getMemory(caller, store)
+    var mainMemory = caller.getExport("memory")
+    let mem = initWasmMemory(store, mainMemory.get.of_field.memory.addr)
     let clockId = parameters[0].i32.WasiClockId
     if clockId != Realtime:
       log lvlWarn, &"clock_time_get: clock {clockId} not implemented"

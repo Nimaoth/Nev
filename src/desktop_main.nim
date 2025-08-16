@@ -487,7 +487,10 @@ when defined(windows) and copyWasmtimeDll:
   import wasmtime
 
   static:
-    const dllIn = wasmDir / "target/release/wasmtime.dll"
+    when nimWasmtimeBuildDebug:
+      const dllIn = wasmDir / "target/debug/wasmtime.dll"
+    else:
+      const dllIn = wasmDir / "target/release/wasmtime.dll"
     const dllOut = querySetting(SingleValueSetting.outDir) / "wasmtime.dll"
     echo "[desktop_main.nim] run tools/copy_wasmtime_dll.nims"
     echo staticExec &"nim \"-d:inDir={dllIn}\" \"-d:outDir={dllOut}\" --hints:off --skipUserCfg --skipProjCfg --skipParentCfg ../tools/copy_wasmtime_dll.nims"
