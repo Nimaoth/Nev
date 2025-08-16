@@ -1063,7 +1063,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     processCallbacks(loop)
 
     # All callbacks done, skip `processCallbacks` at start.
-    loop.callbacks.addFirst(SentinelCallback)
+    if not chronosDontSkipCallbacksAtStart or loop.callbacks.len == 0:
+      loop.callbacks.addFirst(SentinelCallback)
 
 else:
   proc initAPI() = discard

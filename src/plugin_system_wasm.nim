@@ -5,7 +5,7 @@ import nimsumtree/[rope, sumtree, arc]
 import layout
 import text/[text_editor, text_document]
 import config_provider, compilation_config
-import plugin_service
+import plugin_service, wasm_engine
 
 import wasmtime
 import plugin_api/plugin_api_base
@@ -43,13 +43,14 @@ proc initPluginApi[T](self: PluginSystemWasm, api: var PluginApiBase) =
   api.init(self.services, self.engine)
 
 proc initWasm(self: PluginSystemWasm) =
-  let config = newConfig()
+  self.engine = getGlobalWasmEngine()
+
   if self.services.getService(ConfigService).get.runtime.get("plugins.debug", false):
     log lvlError, &"Enable debug info for wasm plugins"
+    let config = newConfig()
     config.debugInfoSet(true)
     config.craneliftOptLevelSet(OptLevelNone.OptLevelT)
-
-  self.engine = newEngine(config)
+    self.engine = newEngine(config)
 
   self.initPluginApi[:v0.PluginApi](self.v0)
   when enableOldPluginVersions:

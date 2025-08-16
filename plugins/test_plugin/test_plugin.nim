@@ -12,6 +12,11 @@ var target = 50
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.}
 
+proc fib(n: int64): int64 =
+  if n <= 1:
+    return 1
+  return fib(n - 1) + fib(n - 2)
+
 proc openCustomView(show: bool) =
   var renderView = renderViewFromUserId(ws"test_plugin_view")
   if renderView.isNone:
@@ -264,7 +269,7 @@ defineCommand(ws"test-shell-2",
     return ws""
 
 var memChannel: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel] = nil
-var threadChannel: ref tuple[write: WriteChannel, read: BufferedReadChannel] = nil
+var task: BackgroundTask = nil
 
 defineCommand(ws"test-send-input",
   active = false,
@@ -286,11 +291,11 @@ defineCommand(ws"test-send-input",
       if $args == "exit":
         memChannel[].write.close()
         memChannel = nil
-    if threadChannel != nil:
-      threadChannel[].write.writeString(stackWitString($args & "\n"))
+    if task != nil:
+      task.writer.writeString(stackWitString($args & "\n"))
       if $args == "exit":
-        threadChannel[].write.close()
-        threadChannel = nil
+        task.writer.close()
+        task = nil
     return ws""
 
 proc readMemoryChannel(chan: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel]) {.async.} =
@@ -321,10 +326,10 @@ defineCommand(ws"test-in-memory-channel",
 
     return ws""
 
-proc readThreadChannel(chan: ref tuple[write: WriteChannel, read: BufferedReadChannel]) {.async.} =
-  while not chan.read.atEnd:
-    let s = await chan.read.readLine()
-    echo "\nfib: '" & s & "'"
+proc readThreadChannel(task: BackgroundTask) {.async.} =
+  while not task.reader.atEnd:
+    let s = await task.reader.readLine()
+    echo "[readThreadChannel] from thread: '" & s & "'"
   echo "[readThreadChannel] done"
 
 defineCommand(ws"test-background-thread",
@@ -335,59 +340,60 @@ defineCommand(ws"test-background-thread",
   context = ws"",
   data = 0):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    var (reader1, writer1) = newInMemoryChannel()
-    var (reader2, writer2) = newInMemoryChannel()
+    task = runInBackground Thread:
+      proc(task: BackgroundTask) {.nimcall, async.} =
+        while not task.reader.atEnd:
+          let line = await task.reader.readLine()
+          try:
+            let num = line.parseInt
+            echo "[thread] Calculate fib ", num
+            let res = fib(num)
+            task.writer.writeString(stackWitString($res & "\n"))
 
-    threadChannel.new
-    threadChannel[] = (writer1.ensureMove, reader2.buffered)
+          except CatchableError as e:
+            echo e.msg
 
-    discard threadChannel.readThreadChannel()
+        task.writer.close()
+        finishBackground()
 
-    let readerPath = reader1.readChannelMount("reader", false)
-    let writerPath = writer2.writeChannelMount("writer", false)
+    discard task.readThreadChannel()
+    return ws""
 
-    spawnBackground(stackWitString($readerPath & "\n" & $writerPath))
+defineCommand(ws"test-thread-pool",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    for i in 0..9:
+      let task = runInBackground ThreadPool:
+        proc(task: BackgroundTask) {.nimcall, async.} =
+          try:
+            let message = await task.reader.readLine()
+            let num = message.parseInt
+            echo "[thread] calc fib ", num
+            let res = fib(num)
+            task.writer.writeString(ws(&"fib({num}) = {res}\n"))
+          except CatchableError as e:
+            echo "[thread] ", e.msg
+          task.writer.close()
+          finishBackground()
+
+      task.writer.writeString(ws(&"{40 + (i mod 3)}\n"))
+      task.writer.close()
+      discard task.readThreadChannel()
 
     return ws""
 
-proc fib(n: int64): int64 =
-  if n <= 1:
-    return 1
-  return fib(n - 1) + fib(n - 2)
-
-proc threadFun(reader: BufferedReadChannel, writer: sink WriteChannel) {.async.} =
-  echo "[threadFun] start"
-  while not reader.atEnd:
-    let line = await reader.readLine()
-    try:
-      let num = line.parseInt
-      echo "Calculate fib ", num
-      let res = fib(num)
-      writer.writeString(stackWitString($res & "\n"))
-
-    except CatchableError as e:
-      echo e.msg
-
-  writer.close()
-  echo "[threadFun] done"
-  finishBackground()
-
 proc init() =
-  echo "[guest] init test_plugin"
-  let s = getTime()
-
   if isMainThread():
     var renderView = renderViewFromUserId(ws"test_plugin_view")
     if renderView.isSome:
       openCustomView(show = false)
-
   else:
-    var reader = readChannelOpen("reader")
-    var writer = writeChannelOpen("writer")
-    if reader.isSome and writer.isSome:
-      discard threadFun(reader.take.buffered, writer.take)
+    discard defaultThreadHandler()
 
-
-  echo &"[guest] init test_plugin took {getTime() - s} ms"
 
 init()

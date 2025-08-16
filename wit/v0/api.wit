@@ -306,6 +306,11 @@ interface core {
     tui,
   }
 
+  enum background-executor {
+    thread,
+    thread-pool,
+  }
+
   /// Returns the plugin API version this plugin is using.
   /// 0 means the latest version, 1 or bigger means a specific version.
   api-version: func() -> s32;
@@ -324,7 +329,7 @@ interface core {
 
   /// Creates another instance of the plugin running in a background thread. 'args' is available in the new instance
   /// using the 'get-arguments' function
-  spawn-background: func(args: string);
+  spawn-background: func(args: string, executor: background-executor);
 
   /// Destroy the current plugin instance.
   finish-background: func();

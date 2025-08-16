@@ -53,6 +53,8 @@ type
   ## Shared handle to a custom render view
   Platform* = enum
     Gui = "gui", Tui = "tui"
+  BackgroundExecutor* = enum
+    Thread = "thread", ThreadPool = "thread-pool"
   CommandError* = enum
     NotAllowed = "not-allowed", NotFound = "not-found"
   VfsError* = enum
@@ -105,41 +107,41 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8539604604 = instance.getExport(context, "init_plugin")
-  if f_8539604604.isSome:
-    assert f_8539604604.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8539604604.get.of_field.func_field
+  let f_8556381821 = instance.getExport(context, "init_plugin")
+  if f_8556381821.isSome:
+    assert f_8556381821.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8556381821.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8539604620 = instance.getExport(context, "handle_command")
-  if f_8539604620.isSome:
-    assert f_8539604620.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8539604620.get.of_field.func_field
+  let f_8556381837 = instance.getExport(context, "handle_command")
+  if f_8556381837.isSome:
+    assert f_8556381837.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8556381837.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8539604670 = instance.getExport(context, "handle_mode_changed")
-  if f_8539604670.isSome:
-    assert f_8539604670.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8539604670.get.of_field.func_field
+  let f_8556381887 = instance.getExport(context, "handle_mode_changed")
+  if f_8556381887.isSome:
+    assert f_8556381887.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8556381887.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8539604671 = instance.getExport(context, "handle_view_render_callback")
-  if f_8539604671.isSome:
-    assert f_8539604671.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8539604671.get.of_field.func_field
+  let f_8556381888 = instance.getExport(context, "handle_view_render_callback")
+  if f_8556381888.isSome:
+    assert f_8556381888.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8556381888.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_8539604695 = instance.getExport(context, "handle_channel_update")
-  if f_8539604695.isSome:
-    assert f_8539604695.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_8539604695.get.of_field.func_field
+  let f_8556381912 = instance.getExport(context, "handle_channel_update")
+  if f_8556381912.isSome:
+    assert f_8556381912.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_8556381912.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_8539604696 = instance.getExport(context, "notify_task_complete")
-  if f_8539604696.isSome:
-    assert f_8539604696.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_8539604696.get.of_field.func_field
+  let f_8556381913 = instance.getExport(context, "notify_task_complete")
+  if f_8556381913.isSome:
+    assert f_8556381913.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_8556381913.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
 
@@ -331,7 +333,8 @@ proc coreGetTime(instance: ptr InstanceData): float64
 proc coreGetPlatform(instance: ptr InstanceData): Platform
 proc coreIsMainThread(instance: ptr InstanceData): bool
 proc coreGetArguments(instance: ptr InstanceData): string
-proc coreSpawnBackground(instance: ptr InstanceData; args: sink string): void
+proc coreSpawnBackground(instance: ptr InstanceData; args: sink string;
+                         executor: BackgroundExecutor): void
 proc coreFinishBackground(instance: ptr InstanceData): void
 proc commandsDefineCommand(instance: ptr InstanceData; name: sink string;
                            active: bool; docs: sink string;
@@ -578,7 +581,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I32, WasmValkind.I32], [])
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/core", "spawn-background", ty):
         var instance = cast[ptr InstanceData](store.getData())
         var mainMemory = caller.getExport("memory")
@@ -594,12 +597,14 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         else:
           assert false
         var args: string
+        var executor: BackgroundExecutor
         block:
           let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
           args = newString(parameters[1].i32)
           for i0 in 0 ..< args.len:
             args[i0] = p0[i0]
-        coreSpawnBackground(instance, args)
+        executor = cast[BackgroundExecutor](parameters[2].i32)
+        coreSpawnBackground(instance, args, executor)
     if e.isErr:
       return e
   block:

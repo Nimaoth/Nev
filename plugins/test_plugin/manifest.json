@@ -30,6 +30,7 @@
 		"test-shell-2": {},
 		"test-in-memory-channel": {},
 		"test-background-thread": {},
+		"test-thread-pool": {},
 	},
 	"permissions": {
 		"filesystem": {

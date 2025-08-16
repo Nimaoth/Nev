@@ -8,7 +8,7 @@ import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service
 import plugin_service, document_editor, vfs, vfs_service, channel
-import wasmtime, wit_host_module, plugin_api_base, wasi
+import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 from scripting_api import nil
 
 {.push gcsafe, raises: [].}
@@ -330,6 +330,20 @@ method cloneInstance*(instance: ptr InstanceData): Arc[InstanceDataImpl] =
   collectExports(instanceData.getMut.funcs, instanceData.get.instance, ctx)
   return instanceData
 
+proc runInstanceThread(instance: sink Arc[InstanceDataImpl]) =
+  instance.getMutUnsafe.isMainThread = false
+  instance.get.funcs.initPlugin().okOr(err):
+    return
+
+  while not instance.get.destroyRequested:
+    poll(2000)
+
+  instance.getMutUnsafe.resources.dropResources(instance.get.store.context, callDestroy = true)
+  instance.get.store.delete()
+
+# todo: make the size configurable
+var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
+
 ###################################### Conversion functions #####################################
 
 proc toInternal(c: Cursor): scripting_api.Cursor = (c.line.int, c.column.int)
@@ -582,34 +596,32 @@ proc coreGetArguments(instance: ptr InstanceData): string =
 
 type ThreadState = object
   instance: Arc[InstanceDataImpl]
-  thread: Arc[Thread[ThreadState]]
+  thread: Arc[typedthreads.Thread[ThreadState]]
 
 proc threadFunc(s: ThreadState) {.thread, nimcall.} =
   chronosDontSkipCallbacksAtStart = true
-  s.instance.getMutUnsafe.isMainThread = false
-  s.instance.get.funcs.initPlugin().okOr(err):
-    return
+  runInstanceThread(s.instance)
 
-  while not s.instance.get.destroyRequested:
-    poll(2000)
-
-  # todo: destroy instance
-
-proc coreSpawnBackground(instance: ptr InstanceData, args: sink string) =
+proc coreSpawnBackground(instance: ptr InstanceData, args: sink string, executor: BackgroundExecutor) =
   let newInstance = cloneInstance(instance)
   newInstance.getMutUnsafe.host = nil
   newInstance.getMutUnsafe.args = args.ensureMove
 
-  var thread = Arc[Thread[ThreadState]].new()
+  case executor
+  of BackgroundExecutor.Thread:
+    var thread = Arc[typedthreads.Thread[ThreadState]].new()
+    try:
+      var state = ThreadState(
+        thread: thread,
+        instance: newInstance,
+      )
+      thread.getMutUnsafe.createThread(threadFunc, state)
+    except ResourceExhaustedError as e:
+      log lvlError, &"Failed to spawn plugin in background: {e.msg}"
 
-  try:
-    var state = ThreadState(
-      thread: thread,
-      instance: newInstance,
-    )
-    thread.getMutUnsafe.createThread(threadFunc, state)
-  except ResourceExhaustedError as e:
-    log lvlError, &"Failed to spawn plugin in background: {e.msg}"
+  of BackgroundExecutor.ThreadPool:
+    {.gcsafe.}: # threadPool is thread safe
+      threadPool.addTask(newInstance)
 
 proc coreFinishBackground(instance: ptr InstanceData) =
   instance.destroyRequested = true
@@ -848,6 +860,9 @@ proc channelReadChannelOpen(instance: ptr InstanceData; path: sink string): Opti
   return ReadChannelResource.none
 
 proc channelReadChannelMount(instance: ptr InstanceData; channel: sink ReadChannelResource; path: sink string; unique: bool): string =
+  var path = path
+  if unique:
+    path.add "-" & $newId()
   let channels = instance.channels.getMutUnsafe.addr
   withLock(channels.lock):
     channels.readChannels[path] = channel
@@ -862,6 +877,9 @@ proc channelWriteChannelOpen(instance: ptr InstanceData; path: sink string): Opt
   return WriteChannelResource.none
 
 proc channelWriteChannelMount(instance: ptr InstanceData; channel: sink WriteChannelResource; path: sink string; unique: bool): string =
+  var path = path
+  if unique:
+    path.add "-" & $newId()
   let channels = instance.channels.getMutUnsafe.addr
   withLock(channels.lock):
     channels.writeChannels[path] = channel

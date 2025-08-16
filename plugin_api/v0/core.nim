@@ -12,6 +12,8 @@ import
 type
   Platform* = enum
     Gui = "gui", Tui = "tui"
+  BackgroundExecutor* = enum
+    Thread = "thread", ThreadPool = "thread-pool"
 proc coreApiVersionImported(): int32 {.wasmimport("api-version",
     "nev:plugins/core").}
 proc apiVersion*(): int32 {.nodestroy.} =
@@ -49,20 +51,23 @@ proc getArguments*(): WitString {.nodestroy.} =
   result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
 
-proc coreSpawnBackgroundImported(a0: int32; a1: int32): void {.
+proc coreSpawnBackgroundImported(a0: int32; a1: int32; a2: int8): void {.
     wasmimport("spawn-background", "nev:plugins/core").}
-proc spawnBackground*(args: WitString): void {.nodestroy.} =
+proc spawnBackground*(args: WitString; executor: BackgroundExecutor): void {.
+    nodestroy.} =
   ## Creates another instance of the plugin running in a background thread. 'args' is available in the new instance
   ## using the 'get-arguments' function
   var
     arg0: int32
     arg1: int32
+    arg2: int8
   if args.len > 0:
     arg0 = cast[int32](args[0].addr)
   else:
     arg0 = 0.int32
   arg1 = cast[int32](args.len)
-  coreSpawnBackgroundImported(arg0, arg1)
+  arg2 = cast[int8](executor)
+  coreSpawnBackgroundImported(arg0, arg1, arg2)
 
 proc coreFinishBackgroundImported(): void {.
     wasmimport("finish-background", "nev:plugins/core").}

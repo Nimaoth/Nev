@@ -1,5 +1,5 @@
 import std/[strformat, json, jsonutils, strutils, sequtils]
-import wit_guest, wit_types, wit_runtime, generational_seq, event
+import wit_guest, wit_types, wit_runtime, generational_seq, event, util
 export wit_types, wit_runtime
 import async
 export async
@@ -157,6 +157,7 @@ proc readLine*(self: BufferedReadChannel): Future[string] {.async.} =
       self.buffer = self.buffer[(nl + 1)..^1] # todo: make this more efficient
       return
 
+    discard self.chan.flushRead()
     if self.chan.atEnd:
       result = self.buffer
       self.buffer.setLen(0)
@@ -189,3 +190,37 @@ proc readString*(self: BufferedReadChannel, len: int): Future[string] {.async.} 
   let len = min(self.buffer.len, len)
   result = self.buffer[0..<len]
   self.buffer = self.buffer[len..^1]
+
+type BackgroundTask* = ref object
+  writer*: WriteChannel
+  reader*: BufferedReadChannel
+
+proc defaultThreadHandler*(): bool =
+  let args = $getArguments()
+  var nl = args.find("\n")
+  if nl == -1:
+    nl = args.len
+  try:
+    let funAddr = args[0..<nl].parseInt
+    let fn = cast[proc(task: BackgroundTask): Future[void] {.nimcall.}](funAddr)
+    let paths = args[min(args.len, nl + 1)..^1].split("\n")
+    var reader = readChannelOpen(ws(paths[0]))
+    var writer = writeChannelOpen(ws(paths[1]))
+    if reader.isSome and writer.isSome:
+      var task = BackgroundTask(writer: writer.take, reader: reader.take.buffered)
+      discard fn(task)
+  except CatchableError:
+    return false
+
+proc runInBackground*(executor: BackgroundExecutor, p: proc(task: BackgroundTask): Future[void] {.nimcall.}): BackgroundTask =
+  var (reader1, writer1) = newInMemoryChannel()
+  var (reader2, writer2) = newInMemoryChannel()
+
+  result = BackgroundTask(writer: writer1.ensureMove, reader: reader2.buffered)
+
+  let readerPath = reader1.readChannelMount(ws"reader", true)
+  let writerPath = writer2.writeChannelMount(ws"writer", true)
+
+  let args = &"{cast[int](p)}\n{readerPath}\n{writerPath}"
+  spawnBackground(stackWitString(args), executor)
+
