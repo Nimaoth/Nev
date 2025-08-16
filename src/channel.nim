@@ -1,4 +1,4 @@
-import std/[strformat, hashes, macros, genasts]
+import std/[strformat, hashes, macros, genasts, atomics]
 import misc/[event, custom_async, id, generational_seq]
 import nimsumtree/arc
 
@@ -25,6 +25,8 @@ type
     isOpen: bool
     isWaiting: bool
     data: seq[uint8] # todo: use something more efficient which doesn't require moving memory
+    writeChannelPeekable: Atomic[int]
+    channel: ptr Channel[seq[uint8]]
 
 proc `==`*(a, b: ListenId): bool {.borrow.}
 proc hash*(vr: ListenId): Hash {.borrow.}
@@ -86,16 +88,28 @@ proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
   self.isOpen = false
   discard self.signal.fireSync()
 
+proc flushRead(self: ptr InMemoryChannel) =
+  try:
+    while true:
+      var (ok, data) = self.channel[].tryRecv()
+      if not ok:
+        return
+      self.data.add data.ensureMove
+  except ValueError as e:
+    echo "Failed to read memory channel: ", e.msg
+
 proc isOpen(self: ptr InMemoryChannel): bool = self.isOpen
-proc peek(self: ptr InMemoryChannel): int = self.data.len
+proc peek(self: ptr InMemoryChannel): int =
+  # self.flushRead()
+  self.data.len
+
 proc write(self: ptr InMemoryChannel, data: openArray[uint8]) =
   if data.len > 0:
-    let prevLen = self.data.len
-    self.data.setLen(prevLen + data.len)
-    copyMem(self.data[prevLen].addr, data[0].addr, data.len)
+    self.channel[].send(@data)
     discard self.signal.fireSync()
 
 proc read(self: ptr InMemoryChannel, res: var openArray[uint8]): int =
+  self.flushRead()
   if self.data.len > 0 and res.len > 0:
     let toRead = min(self.data.len, res.len)
     copyMem(res[0].addr, self.data[0].addr, toRead)
@@ -111,8 +125,8 @@ proc listen(self: Arc[InMemoryChannel]) {.async: (raises: []).} =
   defer:
     self.isWaiting = false
 
-  while self.isOpen or self.peek > 0:
-    if self.peek > 0:
+  while self.isOpen or self.peek() != 0:
+    if self.peek() > 0:
       self[].fireEvent(false)
 
     if self.listeners.len == 0:
@@ -123,6 +137,7 @@ proc listen(self: Arc[InMemoryChannel]) {.async: (raises: []).} =
 
     try:
       await self.signal.wait()
+      self.flushRead()
     except AsyncError, CatchableError:
       discard
 
@@ -138,10 +153,15 @@ proc cloneAs*[B](self: Arc[B], T: typedesc[B]): Arc[T] =
 
 proc newInMemoryChannel*(): Arc[BaseChannel] =
   let signal = ThreadSignalPtr.new()
+
+  var channel = create(Channel[seq[uint8]])
+  channel[].open()
+
   var res = Arc[InMemoryChannel].new()
   res.getMut() = InMemoryChannel(
     isOpen: true,
     signal: signal.value,
+    channel: channel,
     destroyImpl: destroyChannelImpl(InMemoryChannel),
     closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr InMemoryChannel](self))),
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr InMemoryChannel](self)),

@@ -8,7 +8,7 @@ var renderCommandEncoder: BinaryEncoder
 var num = 1
 
 converter toWitString(s: string): WitString = ws(s)
-var target = getSetting("test.num-squares", 50)
+var target = 50
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.}
 
@@ -71,6 +71,9 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
 
 proc init() =
   echo "[guest] init test_plugin"
+
+  if not isMainThread():
+    return
 
   let s = getTime()
   var renderView = renderViewFromUserId(ws"test_plugin_view")
@@ -283,6 +286,7 @@ defineCommand(ws"test-shell-2",
     return ws""
 
 var memChannel: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel] = nil
+var threadChannel: ref tuple[write: WriteChannel, read: BufferedReadChannel] = nil
 
 defineCommand(ws"test-send-input",
   active = false,
@@ -304,6 +308,11 @@ defineCommand(ws"test-send-input",
       if $args == "exit":
         memChannel[].write.close()
         memChannel = nil
+    if threadChannel != nil:
+      threadChannel[].write.writeString(stackWitString($args & "\n"))
+      if $args == "exit":
+        threadChannel[].write.close()
+        threadChannel = nil
     return ws""
 
 proc readMemoryChannel(chan: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel]) {.async.} =
@@ -323,24 +332,70 @@ defineCommand(ws"test-in-memory-channel",
     var (reader, writer) = newInMemoryChannel()
 
     memChannel.new
-    memChannel[] = (true, writer.ensureMove, reader.buffered)
+    memChannel[] = (false, writer.ensureMove, reader.buffered)
 
     discard memChannel.readMemoryChannel()
-    # memChannel[].read.listen proc: ChannelListenResponse =
-    #   if not memChannel.open:
-    #     return
-    #   let s = $memChannel[].read.readAllString()
-    #   echo "on listen '", s, "'"
-    #   if memChannel[].read.atEnd:
-    #     echo "============= done"
-    #     return Stop
-    #   return Continue
 
     for i in 0..10:
       stackRegionInline()
       echo &"{i}: send"
       memChannel[].write.writeString(stackWitString("hello " & $i & "\nworld\n"))
-      echo &"{i}: send done"
 
     return ws""
 
+proc readThreadChannel(chan: ref tuple[write: WriteChannel, read: BufferedReadChannel]) {.async.} =
+  while not chan.read.atEnd:
+    let s = await chan.read.readLine()
+    echo "\nfib: '" & s & "'"
+  echo "[readThreadChannel] done"
+
+defineCommand(ws"test-background-thread",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    var (reader1, writer1) = newInMemoryChannel()
+    var (reader2, writer2) = newInMemoryChannel()
+
+    threadChannel.new
+    threadChannel[] = (writer1.ensureMove, reader2.buffered)
+
+    discard threadChannel.readThreadChannel()
+
+    let readerPath = reader1.readChannelMount("reader", false)
+    let writerPath = writer2.writeChannelMount("writer", false)
+
+    spawnBackground(stackWitString($readerPath & "\n" & $writerPath))
+
+    return ws""
+
+proc fib(n: int64): int64 =
+  if n <= 1:
+    return 1
+  return fib(n - 1) + fib(n - 2)
+
+proc threadFun(reader: BufferedReadChannel, writer: sink WriteChannel) {.async.} =
+  echo "[threadFun] start"
+  while not reader.atEnd:
+    let line = await reader.readLine()
+    try:
+      let num = line.parseInt
+      echo "Calculate fib ", num
+      let res = fib(num)
+      writer.writeString(stackWitString($res & "\n"))
+
+    except CatchableError as e:
+      echo e.msg
+
+  writer.close()
+  echo "[threadFun] done"
+  finishBackground()
+
+if not isMainThread():
+  var reader = readChannelOpen("reader")
+  var writer = writeChannelOpen("writer")
+  if reader.isSome and writer.isSome:
+    discard threadFun(reader.take.buffered, writer.take)

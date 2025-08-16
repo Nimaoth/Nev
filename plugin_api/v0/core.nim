@@ -10,8 +10,6 @@ import
 
 {.pop.}
 type
-  CommandError* = enum
-    NotAllowed = "not-allowed", NotFound = "not-found"
   Platform* = enum
     Gui = "gui", Tui = "tui"
 proc coreApiVersionImported(): int32 {.wasmimport("api-version",
@@ -35,129 +33,39 @@ proc getPlatform*(): Platform {.nodestroy.} =
   let res = coreGetPlatformImported()
   result = cast[Platform](res)
 
-proc coreDefineCommandImported(a0: int32; a1: int32; a2: bool; a3: int32;
-                               a4: int32; a5: int32; a6: int32; a7: int32;
-                               a8: int32; a9: int32; a10: int32; a11: uint32;
-                               a12: uint32): void {.
-    wasmimport("define-command", "nev:plugins/core").}
-proc defineCommand*(name: WitString; active: bool; docs: WitString;
-                    params: WitList[(WitString, WitString)];
-                    returntype: WitString; context: WitString; fun: uint32;
-                    data: uint32): void {.nodestroy.} =
-  ## Defines a command.
-  var
-    arg0: int32
-    arg1: int32
-    arg2: bool
-    arg3: int32
-    arg4: int32
-    arg5: int32
-    arg6: int32
-    arg7: int32
-    arg8: int32
-    arg9: int32
-    arg10: int32
-    arg11: uint32
-    arg12: uint32
-  if name.len > 0:
-    arg0 = cast[int32](name[0].addr)
-  else:
-    arg0 = 0.int32
-  arg1 = cast[int32](name.len)
-  arg2 = active
-  if docs.len > 0:
-    arg3 = cast[int32](docs[0].addr)
-  else:
-    arg3 = 0.int32
-  arg4 = cast[int32](docs.len)
-  if params.len > 0:
-    arg5 = cast[int32](params[0].addr)
-  else:
-    arg5 = 0.int32
-  arg6 = cast[int32](params.len)
-  if returntype.len > 0:
-    arg7 = cast[int32](returntype[0].addr)
-  else:
-    arg7 = 0.int32
-  arg8 = cast[int32](returntype.len)
-  if context.len > 0:
-    arg9 = cast[int32](context[0].addr)
-  else:
-    arg9 = 0.int32
-  arg10 = cast[int32](context.len)
-  arg11 = fun
-  arg12 = data
-  coreDefineCommandImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7,
-                            arg8, arg9, arg10, arg11, arg12)
+proc coreIsMainThreadImported(): bool {.wasmimport("is-main-thread",
+    "nev:plugins/core").}
+proc isMainThread*(): bool {.nodestroy.} =
+  ## Returns true if this plugin is running on the main thread. Some APIs are not available when not on the main thread.
+  let res = coreIsMainThreadImported()
+  result = res.bool
 
-proc coreRunCommandImported(a0: int32; a1: int32; a2: int32; a3: int32;
-                            a4: int32): void {.
-    wasmimport("run-command", "nev:plugins/core").}
-proc runCommand*(name: WitString; arguments: WitString): Result[WitString,
-    CommandError] {.nodestroy.} =
-  ## Run the given command. This requires 'command' permissions.
-  var
-    retArea: array[16, uint8]
-    arg0: int32
-    arg1: int32
-    arg2: int32
-    arg3: int32
-  if name.len > 0:
-    arg0 = cast[int32](name[0].addr)
-  else:
-    arg0 = 0.int32
-  arg1 = cast[int32](name.len)
-  if arguments.len > 0:
-    arg2 = cast[int32](arguments[0].addr)
-  else:
-    arg2 = 0.int32
-  arg3 = cast[int32](arguments.len)
-  coreRunCommandImported(arg0, arg1, arg2, arg3,
-                         cast[int32](retArea[0].addr))
-  if cast[ptr int32](retArea[0].addr)[] == 0:
-    var tempOk: WitString
-    tempOk = ws(cast[ptr char](cast[ptr int32](retArea[4].addr)[]),
-                cast[ptr int32](retArea[8].addr)[])
-    result = results.Result[WitString, CommandError].ok(tempOk)
-  else:
-    var tempErr: CommandError
-    tempErr = cast[CommandError](cast[ptr int32](retArea[4].addr)[])
-    result = results.Result[WitString, CommandError].err(tempErr)
-
-proc coreGetSettingRawImported(a0: int32; a1: int32; a2: int32): void {.
-    wasmimport("get-setting-raw", "nev:plugins/core").}
-proc getSettingRaw*(name: WitString): WitString {.nodestroy.} =
-  ## Returns the value of the setting with the given path, encoded as JSON.
-  var
-    retArea: array[8, uint8]
-    arg0: int32
-    arg1: int32
-  if name.len > 0:
-    arg0 = cast[int32](name[0].addr)
-  else:
-    arg0 = 0.int32
-  arg1 = cast[int32](name.len)
-  coreGetSettingRawImported(arg0, arg1, cast[int32](retArea[0].addr))
+proc coreGetArgumentsImported(a0: int32): void {.
+    wasmimport("get-arguments", "nev:plugins/core").}
+proc getArguments*(): WitString {.nodestroy.} =
+  ## Returns the arguments this plugin instance was created with.
+  var retArea: array[8, uint8]
+  coreGetArgumentsImported(cast[int32](retArea[0].addr))
   result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
 
-proc coreSetSettingRawImported(a0: int32; a1: int32; a2: int32; a3: int32): void {.
-    wasmimport("set-setting-raw", "nev:plugins/core").}
-proc setSettingRaw*(name: WitString; value: WitString): void {.nodestroy.} =
-  ## Set the value of the setting with the given path. The value must be encoded as JSON.
+proc coreSpawnBackgroundImported(a0: int32; a1: int32): void {.
+    wasmimport("spawn-background", "nev:plugins/core").}
+proc spawnBackground*(args: WitString): void {.nodestroy.} =
+  ## Creates another instance of the plugin running in a background thread. 'args' is available in the new instance
+  ## using the 'get-arguments' function
   var
     arg0: int32
     arg1: int32
-    arg2: int32
-    arg3: int32
-  if name.len > 0:
-    arg0 = cast[int32](name[0].addr)
+  if args.len > 0:
+    arg0 = cast[int32](args[0].addr)
   else:
     arg0 = 0.int32
-  arg1 = cast[int32](name.len)
-  if value.len > 0:
-    arg2 = cast[int32](value[0].addr)
-  else:
-    arg2 = 0.int32
-  arg3 = cast[int32](value.len)
-  coreSetSettingRawImported(arg0, arg1, arg2, arg3)
+  arg1 = cast[int32](args.len)
+  coreSpawnBackgroundImported(arg0, arg1)
+
+proc coreFinishBackgroundImported(): void {.
+    wasmimport("finish-background", "nev:plugins/core").}
+proc finishBackground*(): void {.nodestroy.} =
+  ## Destroy the current plugin instance.
+  coreFinishBackgroundImported()

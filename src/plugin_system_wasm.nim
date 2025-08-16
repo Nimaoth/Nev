@@ -44,6 +44,11 @@ proc initPluginApi[T](self: PluginSystemWasm, api: var PluginApiBase) =
 
 proc initWasm(self: PluginSystemWasm) =
   let config = newConfig()
+  if self.services.getService(ConfigService).get.runtime.get("plugins.debug", false):
+    log lvlError, &"Enable debug info for wasm plugins"
+    config.debugInfoSet(true)
+    config.craneliftOptLevelSet(OptLevelNone.OptLevelT)
+
   self.engine = newEngine(config)
 
   self.initPluginApi[:v0.PluginApi](self.v0)

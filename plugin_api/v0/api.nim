@@ -4,15 +4,22 @@ export wit_types, wit_runtime
 import async
 export async
 
+const pluginWorld {.strdefine.} = "plugin"
+
 when defined(witRebuild):
   static: echo "Rebuilding plugin_api.wit"
   importWit "../../wit/v0":
-    world = "plugin"
-    cacheFile = "plugin_api_guest.nim"
+    world = pluginWorld
+    cacheFile = pluginWorld.replace("-", "_") & "_api_guest.nim"
 else:
   static: echo "Using cached plugin_api.wit (plugin_api_guest.nim)"
 
-include plugin_api_guest
+macro includePluginApi() =
+  let path = ident(pluginWorld.replace("-", "_") & "_api_guest")
+  return quote do:
+    include `path`
+
+includePluginApi()
 
 proc emscripten_notify_memory_growth*(a: int32) {.exportc.} =
   echo "emscripten_notify_memory_growth"
@@ -67,25 +74,26 @@ proc notifyTasksComplete(tasks: WitList[tuple[task: uint64, canceled: bool]]) =
 
 proc wl*[T](): WitList[T] = WitList[T].default()
 
-proc getSetting*(name: string, T: typedesc): T =
-  try:
-    return getSettingRaw(name).parseJson().jsonTo(T)
-  except:
-    return T.default
+when pluginWorld == "plugin":
+  proc getSetting*(name: string, T: typedesc): T =
+    try:
+      return getSettingRaw(name).parseJson().jsonTo(T)
+    except:
+      return T.default
 
-proc getSetting*[T](name: string, def: T): T =
-  try:
-    return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
-  except:
-    return def
+  proc getSetting*[T](name: string, def: T): T =
+    try:
+      return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
+    except:
+      return def
 
-proc toSelection*(c: Cursor): Selection = Selection(first: c, last: c)
+  proc toSelection*(c: Cursor): Selection = Selection(first: c, last: c)
 
-proc defineCommand*(name: WitString; active: bool; docs: WitString; params: WitList[(WitString, WitString)]; returntype: WitString; context: WitString; data: uint32; handler: CommandHandler) =
-  defineCommand(name, active, docs, params, returntype, context, cast[uint32](handler), cast[uint32](data))
+  proc defineCommand*(name: WitString; active: bool; docs: WitString; params: WitList[(WitString, WitString)]; returntype: WitString; context: WitString; data: uint32; handler: CommandHandler) =
+    defineCommand(name, active, docs, params, returntype, context, cast[uint32](handler), cast[uint32](data))
 
-proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
-  discard addModeChangedHandler(cast[uint32](fun))
+  proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
+    discard addModeChangedHandler(cast[uint32](fun))
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)
@@ -170,9 +178,7 @@ proc readAllString*(self: BufferedReadChannel): Future[string] {.async.} =
   result = self.buffer
   self.buffer.setLen(0)
   while self.chan.canRead:
-    echo "wait channel end"
     await self.chan.ready(int32.high)
-  echo "channel end"
   result.add $self.chan.readAllString()
 
 proc readString*(self: BufferedReadChannel, len: int): Future[string] {.async.} =
