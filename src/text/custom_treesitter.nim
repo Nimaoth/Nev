@@ -1,6 +1,6 @@
 import std/[options, json, tables]
 import misc/[custom_logger, custom_async, util, custom_unicode, jsonex]
-import vfs
+import vfs, wasm_engine
 
 from scripting_api import Cursor, Selection, byteIndexToCursor
 
@@ -410,7 +410,7 @@ proc predicatesForPattern*(self: TSQuery, patternIndex: int): seq[TSPredicateRes
 import std/[os, strutils]
 var treesitterDllCache = initTable[string, LibHandle]()
 
-var wasmEngine = newEngine(newConfig())
+var engine = getGlobalWasmEngine()
 var wasmStore: ptr TSWasmStore = nil
 
 import std/macros
@@ -418,7 +418,7 @@ import std/macros
 proc getLanguageWasmStore(): ptr TSWasmStore =
   if wasmStore == nil:
     var err: TSWasmError
-    wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine), err.addr)
+    wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](engine), err.addr)
     if err.kind != TSWasmErrorKindNone:
       log lvlError, &"Failed to create wasm store: {err}"
       return nil
@@ -596,9 +596,9 @@ proc getTreesitterLanguage*(vfs: VFS, languageId: string, pathOverride: Option[s
     return language
 
 proc createTsParser*(): TSParser =
-  let wasmStore: ptr TSWasmStore = if wasmEngine != nil:
+  let wasmStore: ptr TSWasmStore = if engine != nil:
     var err: TSWasmError
-    let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](wasmEngine), err.addr)
+    let wasmStore = tsWasmStoreNew(cast[ptr TSWasmEngine](engine), err.addr)
     if err.kind != TSWasmErrorKindNone:
       log lvlError, &"Failed to create wasm store: {err}"
     wasmStore

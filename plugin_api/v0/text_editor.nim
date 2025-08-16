@@ -13,7 +13,7 @@ import
   types
 
 import
-  core
+  commands
 
 proc textEditorActiveTextEditorImported(a0: int32): void {.
     wasmimport("active-text-editor", "nev:plugins/text-editor").}

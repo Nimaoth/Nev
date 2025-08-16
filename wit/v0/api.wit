@@ -75,6 +75,7 @@ interface types {
   }
 }
 
+/// Thread safe
 interface channel {
   enum channel-listen-response {
     continue,
@@ -87,8 +88,11 @@ interface channel {
     can-read: func() -> bool;
     /// Returns whether the channel at the end, meaning no further data will be returned from any read function.
     at-end: func() -> bool;
-    /// Returns how much data is in the buffer available for reading
+    /// Returns the minimum number of bytes available for reading. More data might be available after calling a read function or 'flush-read'.
     peek: func() -> s32;
+    /// Read data into the internal buffer of the channel. This is required for 'peek' to work. Other read functions as well
+    /// as 'listen' and 'wait-read' already do this internally so you usually don't need to call 'flush-read'.
+    flush-read: func() -> s32;
     /// Read
     read-string: func(num: s32) -> string;
     /// Read
@@ -102,6 +106,9 @@ interface channel {
     /// If 'num' bytes are available in the channel return true, otherwise return false and call 'task' later once the
     /// requested amount of data is available.
     wait-read: func(task: u64, num: s32) -> bool;
+
+    open: static func(path: string) -> option<read-channel>;
+    mount: static func(channel: read-channel, path: string, unique: bool) -> string;
   }
 
   /// Represents the write end of a channel. All APIs are non-blocking.
@@ -114,12 +121,16 @@ interface channel {
     write-string: func(data: string);
     /// Write a buffer to the channel
     write-bytes: func(data: list<u8>);
+
+    open: static func(path: string) -> option<write-channel>;
+    mount: static func(channel: write-channel, path: string, unique: bool) -> string;
   }
 
   /// Creates a new channel which buffers data in memory and returns the read and write end.
   new-in-memory-channel: func() -> tuple<read-channel, write-channel>;
 }
 
+/// Thread safe
 interface process {
   use channel.{read-channel, write-channel};
 
@@ -138,7 +149,7 @@ interface process {
 
 interface vfs {
   use types.{rope};
-  use core.{command-error};
+  use commands.{command-error};
 
   enum vfs-error {
     not-allowed,
@@ -180,7 +191,7 @@ interface editor {
 
 interface text-editor {
   use types.{editor, document, text-editor, text-document, cursor, selection, rope};
-  use core.{command-error};
+  use commands.{command-error};
 
   /// Returns a handle for the currently active text editor.
   active-text-editor: func() -> option<text-editor>;
@@ -288,15 +299,16 @@ interface render {
   }
 }
 
+/// Thread safe
 interface core {
-  enum command-error {
-    not-allowed,
-    not-found
-  }
-
   enum platform {
     gui,
     tui,
+  }
+
+  enum background-executor {
+    thread,
+    thread-pool,
   }
 
   /// Returns the plugin API version this plugin is using.
@@ -309,12 +321,34 @@ interface core {
   /// Returns what kind platform the app is running on. E.g. 'terminal' or 'gui'
   get-platform: func() -> platform;
 
+  /// Returns true if this plugin is running on the main thread. Some APIs are not available when not on the main thread.
+  is-main-thread: func() -> bool;
+
+  /// Returns the arguments this plugin instance was created with.
+  get-arguments: func() -> string;
+
+  /// Creates another instance of the plugin running in a background thread. 'args' is available in the new instance
+  /// using the 'get-arguments' function
+  spawn-background: func(args: string, executor: background-executor);
+
+  /// Destroy the current plugin instance.
+  finish-background: func();
+}
+
+interface commands {
+  enum command-error {
+    not-allowed,
+    not-found
+  }
+
   /// Defines a command.
   define-command: func(name: string, active: bool, docs: string, params: list<tuple<string, string>>, returntype: string, context: string, fun: u32, data: u32);
 
   /// Run the given command. This requires 'command' permissions.
   run-command: func(name: string, arguments: string) -> result<string, command-error>;
+}
 
+interface settings {
   /// Returns the value of the setting with the given path, encoded as JSON.
   get-setting-raw: func(name: string) -> string;
 
@@ -333,13 +367,26 @@ interface guest {
   notify-task-complete: func(task: u64, canceled: bool);
 }
 
+/// APIs which can safely be used on a background thread
+world plugin-thread-safe {
+  use types.{cursor, selection};
+
+  import core;
+  import channel;
+  import process;
+
+  export guest;
+}
+
 world plugin {
   use types.{cursor, selection};
 
+  import core;
+  import commands;
+  import settings;
   import editor;
   import text-editor;
   import text-document;
-  import core;
   import render;
   import vfs;
   import channel;

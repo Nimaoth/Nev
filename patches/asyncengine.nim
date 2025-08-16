@@ -128,8 +128,10 @@ template processTicks(loop: untyped) =
   while len(loop.ticks) > 0:
     loop.callbacks.addLast(loop.ticks.popFirst())
 
+var chronosDontSkipCallbacksAtStart* {.threadvar.}: bool
+
 template processCallbacks(loop: untyped) =
-  while true:
+  while loop.callbacks.len > 0:
     let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
     if isSentinel(callable):
       break
@@ -653,7 +655,8 @@ elif defined(windows):
     processCallbacks(loop)
 
     # All callbacks done, skip `processCallbacks` at start.
-    loop.callbacks.addFirst(SentinelCallback)
+    if not chronosDontSkipCallbacksAtStart or loop.callbacks.len == 0:
+      loop.callbacks.addFirst(SentinelCallback)
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
@@ -1060,7 +1063,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     processCallbacks(loop)
 
     # All callbacks done, skip `processCallbacks` at start.
-    loop.callbacks.addFirst(SentinelCallback)
+    if not chronosDontSkipCallbacksAtStart or loop.callbacks.len == 0:
+      loop.callbacks.addFirst(SentinelCallback)
 
 else:
   proc initAPI() = discard

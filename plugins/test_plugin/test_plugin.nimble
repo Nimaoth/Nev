@@ -5,5 +5,5 @@ requires "chroma >= 0.2.7"
 requires "fusion >= 1.2"
 requires "regex >= 0.25.0"
 requires "results >= 0.5.0"
-requires "https://github.com/Nimaoth/nimwasmtime#3527b50"
+requires "https://github.com/Nimaoth/nimwasmtime#22cfeef"
 

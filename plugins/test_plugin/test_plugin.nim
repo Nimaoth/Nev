@@ -8,11 +8,16 @@ var renderCommandEncoder: BinaryEncoder
 var num = 1
 
 converter toWitString(s: string): WitString = ws(s)
-var target = getSetting("test.num-squares", 50)
+var target = 50
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.}
 
-proc openCustomView() =
+proc fib(n: int64): int64 =
+  if n <= 1:
+    return 1
+  return fib(n - 1) + fib(n - 2)
+
+proc openCustomView(show: bool) =
   var renderView = renderViewFromUserId(ws"test_plugin_view")
   if renderView.isNone:
     echo "[guest] Create new RenderView"
@@ -25,7 +30,8 @@ proc openCustomView() =
   renderView.get.setRenderCallback(cast[uint32](handleViewRender), views.len.uint32)
   renderView.get.addMode(ws"test-plugin")
   renderView.get.markDirty()
-  show(renderView.get.view, ws"#new-tab", true, true)
+  if show:
+    show(renderView.get.view, ws"#new-tab", true, true)
   views.add(renderView.take)
 
 proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
@@ -69,25 +75,6 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
   except Exception as e:
     echo &"[guest] Failed to render: {e.msg}\n{e.getStackTrace()}"
 
-proc init() =
-  echo "[guest] init test_plugin"
-
-  let s = getTime()
-  var renderView = renderViewFromUserId(ws"test_plugin_view")
-  if renderView.isSome:
-    echo "[guest] Reusing existing RenderView"
-    renderView.get.setRenderWhenInactive(true)
-    renderView.get.setPreventThrottling(true)
-    renderView.get.setRenderCallback(cast[uint32](handleViewRender), views.len.uint32)
-    renderView.get.addMode(ws"test-plugin")
-    renderView.get.markDirty()
-    show(renderView.get.view, ws"#new-tab", true, true)
-    views.add(renderView.take)
-
-  echo &"[guest] init test_plugin took {getTime() - s} ms"
-
-init()
-
 defineCommand(ws"test-command-1",
   active = false,
   docs = ws"Decrease the size of the square",
@@ -128,7 +115,7 @@ defineCommand(ws"open-custom-view",
   context = ws"",
   data = 0):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    openCustomView()
+    openCustomView(show = true)
     return ws""
 
 defineCommand(ws"test-command-5",
@@ -257,14 +244,13 @@ proc readShellOutput(process: Shell) {.async.} =
   var res = await process.stdout.readAllString()
 
   # read line by line
+  # var res = ""
   # while not process.stdout.atEnd:
   #   let s = await process.stdout.readLine()
+  #   echo s
   #   res.add s
   #   res.add "\n"
 
-  echo "============="
-  echo res.find("\r")
-  echo "============="
   echo res.replace("\r", "")
 
 defineCommand(ws"test-shell-2",
@@ -283,6 +269,7 @@ defineCommand(ws"test-shell-2",
     return ws""
 
 var memChannel: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel] = nil
+var task: BackgroundTask = nil
 
 defineCommand(ws"test-send-input",
   active = false,
@@ -304,6 +291,11 @@ defineCommand(ws"test-send-input",
       if $args == "exit":
         memChannel[].write.close()
         memChannel = nil
+    if task != nil:
+      task.writer.writeString(stackWitString($args & "\n"))
+      if $args == "exit":
+        task.writer.close()
+        task = nil
     return ws""
 
 proc readMemoryChannel(chan: ref tuple[open: bool, write: WriteChannel, read: BufferedReadChannel]) {.async.} =
@@ -323,24 +315,85 @@ defineCommand(ws"test-in-memory-channel",
     var (reader, writer) = newInMemoryChannel()
 
     memChannel.new
-    memChannel[] = (true, writer.ensureMove, reader.buffered)
+    memChannel[] = (false, writer.ensureMove, reader.buffered)
 
     discard memChannel.readMemoryChannel()
-    # memChannel[].read.listen proc: ChannelListenResponse =
-    #   if not memChannel.open:
-    #     return
-    #   let s = $memChannel[].read.readAllString()
-    #   echo "on listen '", s, "'"
-    #   if memChannel[].read.atEnd:
-    #     echo "============= done"
-    #     return Stop
-    #   return Continue
 
     for i in 0..10:
       stackRegionInline()
       echo &"{i}: send"
       memChannel[].write.writeString(stackWitString("hello " & $i & "\nworld\n"))
-      echo &"{i}: send done"
 
     return ws""
 
+proc readThreadChannel(task: BackgroundTask) {.async.} =
+  while not task.reader.atEnd:
+    let s = await task.reader.readLine()
+    echo "[readThreadChannel] from thread: '" & s & "'"
+  echo "[readThreadChannel] done"
+
+defineCommand(ws"test-background-thread",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    task = runInBackground Thread:
+      proc(task: BackgroundTask) {.nimcall, async.} =
+        while not task.reader.atEnd:
+          let line = await task.reader.readLine()
+          try:
+            let num = line.parseInt
+            echo "[thread] Calculate fib ", num
+            let res = fib(num)
+            task.writer.writeString(stackWitString($res & "\n"))
+
+          except CatchableError as e:
+            echo e.msg
+
+        task.writer.close()
+        finishBackground()
+
+    discard task.readThreadChannel()
+    return ws""
+
+defineCommand(ws"test-thread-pool",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 0):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    for i in 0..9:
+      let task = runInBackground ThreadPool:
+        proc(task: BackgroundTask) {.nimcall, async.} =
+          try:
+            let message = await task.reader.readLine()
+            let num = message.parseInt
+            echo "[thread] calc fib ", num
+            let res = fib(num)
+            task.writer.writeString(ws(&"fib({num}) = {res}\n"))
+          except CatchableError as e:
+            echo "[thread] ", e.msg
+          task.writer.close()
+          finishBackground()
+
+      task.writer.writeString(ws(&"{40 + (i mod 3)}\n"))
+      task.writer.close()
+      discard task.readThreadChannel()
+
+    return ws""
+
+proc init() =
+  if isMainThread():
+    var renderView = renderViewFromUserId(ws"test_plugin_view")
+    if renderView.isSome:
+      openCustomView(show = false)
+  else:
+    discard defaultThreadHandler()
+
+
+init()
