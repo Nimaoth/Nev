@@ -744,15 +744,30 @@ proc registersIsReplayingCommands(instance: ptr InstanceData): bool =
     return false
   return instance.host.registers.isReplayingCommands()
 
+proc registersIsRecordingCommands(instance: ptr InstanceData; register: sink string): bool =
+  if instance.host == nil:
+    return false
+  return instance.host.registers.isRecordingCommands(register)
+
 proc registersSetRegisterText(instance: ptr InstanceData; text: sink string; register: sink string): void =
   if instance.host == nil:
     return
   instance.host.registers.setRegisterText(text, register)
 
+proc registersGetRegisterText(instance: ptr InstanceData; register: sink string): string =
+  if instance.host == nil:
+    return
+  return instance.host.registers.getRegisterText(register)
+
 proc registersStartRecordingCommands(instance: ptr InstanceData; register: sink string): void =
   if instance.host == nil:
     return
   instance.host.registers.startRecordingCommands(register)
+
+proc registersStopRecordingCommands(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.stopRecordingCommands(register)
 
 proc commandsDefineCommand(instance: ptr InstanceData, name: sink string, active: bool, docs: sink string,
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =

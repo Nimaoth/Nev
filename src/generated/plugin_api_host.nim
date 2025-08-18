@@ -496,10 +496,15 @@ proc processStderr(instance: ptr InstanceData; self: var ProcessResource): ReadC
 proc processStdout(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource
 proc processStdin(instance: ptr InstanceData; self: var ProcessResource): WriteChannelResource
 proc registersIsReplayingCommands(instance: ptr InstanceData): bool
+proc registersIsRecordingCommands(instance: ptr InstanceData;
+                                  register: sink string): bool
 proc registersSetRegisterText(instance: ptr InstanceData; text: sink string;
                               register: sink string): void
+proc registersGetRegisterText(instance: ptr InstanceData; register: sink string): string
 proc registersStartRecordingCommands(instance: ptr InstanceData;
                                      register: sink string): void
+proc registersStopRecordingCommands(instance: ptr InstanceData;
+                                    register: sink string): void
 proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
@@ -3170,6 +3175,35 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/registers",
+                                 "is-recording-commands", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var register: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          register = newString(parameters[1].i32)
+          for i0 in 0 ..< register.len:
+            register[i0] = p0[i0]
+        let res = registersIsRecordingCommands(instance, register)
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
           [])
       linker.defineFuncUnchecked("nev:plugins/registers", "set-register-text",
@@ -3205,6 +3239,46 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/registers", "get-register-text",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var register: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          register = newString(parameters[1].i32)
+          for i0 in 0 ..< register.len:
+            register[i0] = p0[i0]
+        let res = registersGetRegisterText(instance, register)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/registers",
                                  "start-recording-commands", ty):
@@ -3228,5 +3302,33 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           for i0 in 0 ..< register.len:
             register[i0] = p0[i0]
         registersStartRecordingCommands(instance, register)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/registers",
+                                 "stop-recording-commands", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var register: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          register = newString(parameters[1].i32)
+          for i0 in 0 ..< register.len:
+            register[i0] = p0[i0]
+        registersStopRecordingCommands(instance, register)
     if e.isErr:
       return e

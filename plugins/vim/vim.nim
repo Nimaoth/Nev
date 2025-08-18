@@ -437,10 +437,10 @@ proc copySelection(editor: TextEditor, register: string = ""): seq[Selection] =
 #     editor.moveCursorColumn(-1)
 #   editor.updateTargetColumn()
 
-# proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
-#   var lineLen = editor.lineLength(cursor.line)
-#   if not editor.vimState.cursorIncludeEol and lineLen > 0: lineLen.dec
-#   result = (cursor.line, min(cursor.column, lineLen))
+proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
+  var lineLen = editor.lineLength(cursor.line)
+  if not editor.vimState.cursorIncludeEol and lineLen > 0: lineLen.dec
+  result = (cursor.line, min(cursor.column, lineLen))
 
 # proc vimMotionLine*(editor: TextEditor, cursor: Cursor, count: int): Selection =
 #   var lineLen = editor.lineLength(cursor.line)
@@ -1462,14 +1462,13 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
 
   # infof"vim: handle mode change {oldMode} -> {newMode}"
   if newMode == "vim-new.normal":
-    discard
-    # if not isReplayingCommands() and isRecordingCommands(".-temp"):
-    #   stopRecordingCommands(".-temp")
+    if not isReplayingCommands() and isRecordingCommands(ws".-temp"):
+      stopRecordingCommands(ws".-temp")
 
-    #   if editor.getRevision > editor.vimState.revisionBeforeImplicitInsertMacro:
-    #     infof"Record implicit macro because document was modified"
-    #     let text = getRegisterText(".-temp")
-    #     setRegisterText(text, ".")
+      if editor.getRevision > editor.vimState.revisionBeforeImplicitInsertMacro:
+        debugf"Record implicit macro because document was modified"
+        let text = getRegisterText(ws".-temp")
+        setRegisterText(text, ws".")
   else:
     if oldMode == "vim-new.normal" and newMode in recordModes:
       editor.startRecordingCurrentCommandInPeriodMacro()
@@ -1480,10 +1479,10 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
   editor.vimState.cursorIncludeEol = newMode == "vim-new.insert"
   editor.vimState.currentUndoCheckpoint = if newMode == "vim-new.insert": "word" else: "insert"
 
-  # case newMode
-  # of "vim-new.normal":
+  case newMode
+  of "vim-new.normal":
   #   editor.setConfig "text.inclusive-selection", false
-  #   editor.setSelections editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
+    editor.setSelections editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
   #   editor.saveCurrentCommandHistory()
   #   editor.hideCompletions()
 

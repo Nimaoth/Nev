@@ -159,7 +159,8 @@ when pluginWorld == "plugin":
     let bn = b.normalized
     return Selection(first: min(an.first, bn.first), last: max(an.last, bn.last))
 
-  converter toCursor*(c: tuple[line, column: int]): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+  converter toCursor*(c: (int, int)): Cursor = Cursor(line: c[0].int32, column: c[1].int32)
+  converter toCursor*(c: (int32, int32)): Cursor = Cursor(line: c[0], column: c[1])
   converter toSelection*(c: tuple[line, column: int]): Selection = Selection(first: c.toCursor, last: c.toCursor)
   converter toSelection*(c: tuple[first, last: Cursor]): Selection = Selection(first: c.first, last: c.last)
   proc toSelection*(c: Cursor): Selection = Selection(first: c, last: c)

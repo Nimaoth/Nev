@@ -635,12 +635,8 @@ proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool =
       var p = self.layout.parentLayout(child)
       while p != nil:
         if not p.isVisible(child):
-          debugf"{p.desc}, {child.desc} not visible"
           let activated = self.layout.tryActivateView proc(v: View): bool =
             return v == child
-          debugf"activated: {activated}"
-        else:
-          debugf"{p.desc}, {child.desc} visible"
         child = p
         p = self.layout.parentLayout(child)
 

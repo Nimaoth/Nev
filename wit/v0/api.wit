@@ -253,9 +253,15 @@ interface registers {
   /// todo
   is-replaying-commands: func() -> bool;
   /// todo
+  is-recording-commands: func(register: string) -> bool;
+  /// todo
   set-register-text: func(text: string, register: string);
   /// todo
+  get-register-text: func(register: string) -> string;
+  /// todo
   start-recording-commands: func(register: string);
+  /// todo
+  stop-recording-commands: func(register: string);
 }
 
 interface text-document {
