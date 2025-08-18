@@ -11,7 +11,7 @@ else:
   export vmath
 
 type
-  EditorId* = int
+  EditorId* = uint64
   EditorType* = enum Text, Ast, Model, Other
 
   TextDocumentEditor* = object

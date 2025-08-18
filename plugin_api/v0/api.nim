@@ -1,4 +1,4 @@
-import std/[strformat, json, jsonutils, strutils, sequtils]
+import std/[strformat, json, jsonutils, strutils, sequtils, sugar]
 import wit_guest, wit_types, wit_runtime, generational_seq, event, util
 export wit_types, wit_runtime
 import async
@@ -87,6 +87,81 @@ when pluginWorld == "plugin":
     except:
       return def
 
+  func `$`*(cursor: Cursor): string =
+    return $cursor.line & ":" & $cursor.column
+
+  func `$`*(selection: Selection): string =
+    return $selection.first & "-" & $selection.last
+
+  func `<`*(a: Cursor, b: Cursor): bool =
+    ## Returns true if the cursor `a` comes before `b`
+    if a.line < b.line:
+      return true
+    elif a.line == b.line and a.column < b.column:
+      return true
+    else:
+      return false
+
+  func `<=`*(a: Cursor, b: Cursor): bool =
+    return a == b or a < b
+
+  func `>`*(a: Cursor, b: Cursor): bool =
+    if a.line > b.line:
+      return true
+    elif a.line == b.line and a.column > b.column:
+      return true
+    else:
+      return false
+
+  func `>=`*(a: Cursor, b: Cursor): bool =
+    return a == b or a >= b
+
+  func min*(a: Cursor, b: Cursor): Cursor =
+    if a < b:
+      return a
+    return b
+
+  func max*(a: Cursor, b: Cursor): Cursor =
+    if a >= b:
+      return a
+    return b
+
+  func isBackwards*(selection: Selection): bool =
+    ## Returns true if the first cursor of the selection is after the second cursor
+    return selection.first > selection.last
+
+  func normalized*(selection: Selection): Selection =
+    ## Returns the normalized selection, i.e. where first < last.
+    ## Switches first and last if backwards.
+    if selection.isBackwards:
+      return Selection(first: selection.last, last: selection.first)
+    else:
+      return selection
+
+  func `in`*(a: Cursor, b: Selection): bool =
+    ## Returns true if the cursor is contained within the selection
+    let b = b.normalized
+    return a >= b.first and a <= b.last
+
+  func reverse*(selection: Selection): Selection = Selection(first: selection.last, last: selection.first)
+
+  func isEmpty*(selection: Selection): bool = selection.first == selection.last
+  func allEmpty*(selections: openArray[Selection]): bool = selections.allIt(it.isEmpty)
+
+  func contains*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor <= selection.last)
+  func contains*(selection: Selection, other: Selection): bool = (other.first >= selection.first and other.last <= selection.last)
+
+  func contains*(self: openArray[Selection], cursor: Cursor): bool = self.`any` (s) => s.contains(cursor)
+  func contains*(self: openArray[Selection], other: Selection): bool = self.`any` (s) => s.contains(other)
+
+  func `or`*(a: Selection, b: Selection): Selection =
+    let an = a.normalized
+    let bn = b.normalized
+    return Selection(first: min(an.first, bn.first), last: max(an.last, bn.last))
+
+  converter toCursor*(c: tuple[line, column: int]): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+  converter toSelection*(c: tuple[line, column: int]): Selection = Selection(first: c.toCursor, last: c.toCursor)
+  converter toSelection*(c: tuple[first, last: Cursor]): Selection = Selection(first: c.first, last: c.last)
   proc toSelection*(c: Cursor): Selection = Selection(first: c, last: c)
 
   proc defineCommand*(name: WitString; active: bool; docs: WitString; params: WitList[(WitString, WitString)]; returntype: WitString; context: WitString; data: uint32; handler: CommandHandler) =
@@ -94,6 +169,21 @@ when pluginWorld == "plugin":
 
   proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
     discard addModeChangedHandler(cast[uint32](fun))
+
+  proc selections*(editor: TextEditor): WitList[Selection] =
+    return editor.getSelections()
+
+  proc setSelections*(editor: TextEditor, s: openArray[Selection]) =
+    editor.setSelections(@@s)
+
+  proc lineCount*(editor: TextEditor): int =
+    editor.content.lines.int
+
+  proc setMode*(editor: TextEditor, mode: string) =
+    editor.setMode(ws(mode), exclusive = true)
+
+  proc applyMove*(editor: TextEditor, cursor: Cursor, move: string, count: int = 1, wrap: bool = true, includeEol: bool = true): Selection =
+    return editor.applyMove(cursor.toSelection, move.ws, count, wrap, includeEol)[0]
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)

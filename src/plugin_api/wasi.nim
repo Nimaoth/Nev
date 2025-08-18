@@ -1,5 +1,7 @@
 import std/[macros, strutils, os, strformat]
 import misc/[custom_logger, util, macro_utils]
+import nimsumtree/arc
+import channel
 
 import wasmtime
 
@@ -11,6 +13,13 @@ type GetMemoryImpl* = proc(caller: ptr CallerT, store: ptr ContextT): WasmMemory
 
 var stdout {.threadvar.}: string
 var stderr {.threadvar.}: string
+
+type
+  InstanceDataWasi* = object of RootObj
+    stdin*: Arc[BaseChannel]
+    stdout*: Arc[BaseChannel]
+    stderr*: Arc[BaseChannel]
+
 
 type
   WasiIovec = object
@@ -365,6 +374,8 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
 
   discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "fd_write", newFunctype([WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
     # let mem = getMemory(caller, store)
+    var instance = cast[ptr InstanceDataWasi](store.getData())
+
     var mainMemory = caller.getExport("memory")
     let mem = initWasmMemory(store, mainMemory.get.of_field.memory.addr)
 
@@ -392,11 +403,24 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
 
     case fd
     of 1:
+      if file[].len > 0:
+        try:
+          instance.stdout.write(file[])
+        except IOError:
+          discard
+
       if file[].endsWith("\n"):
         file[].setLen(file[].len - 1)
       if file[].len > 0:
         log lvlNotice, file[]
+
     of 2:
+      if file[].len > 0:
+        try:
+          instance.stderr.write(file[])
+        except IOError:
+          discard
+
       if file[].endsWith("\n"):
         file[].setLen(file[].len - 1)
       if file[].len > 0:
@@ -432,3 +456,26 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
 
     parameters[0].i32 = WasiErrno.Access.int32
 
+  discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "environ_sizes_get", newFunctype([WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
+    echo "environ_sizes_get"
+
+  discard linker.defineFuncUnchecked("wasi_snapshot_preview1", "environ_get", newFunctype([WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
+    echo "environ_get"
+
+  discard linker.defineFuncUnchecked("env", "__syscall_chmod", newFunctype([WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
+    echo "__syscall_chmod"
+
+  discard linker.defineFuncUnchecked("env", "__syscall_fadvise64", newFunctype([WasmValkind.I32, WasmValkind.I64, WasmValkind.I64, WasmValkind.I32], [WasmValkind.I32])):
+    echo "__syscall_fadvise64"
+
+  discard linker.defineFuncUnchecked("env", "__syscall_readlinkat", newFunctype([WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
+    echo "__syscall_readlinkat"
+
+  discard linker.defineFuncUnchecked("env", "__syscall_renameat", newFunctype([WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
+    echo "__syscall_renameat"
+
+  discard linker.defineFuncUnchecked("env", "__syscall_symlinkat", newFunctype([WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
+    echo "__syscall_symlinkat"
+
+  discard linker.defineFuncUnchecked("env", "__syscall_unlinkat", newFunctype([WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])):
+    echo "__syscall_unlinkat"

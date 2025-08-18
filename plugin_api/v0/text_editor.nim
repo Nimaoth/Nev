@@ -104,6 +104,215 @@ proc command*(editor: TextEditor; name: WitString; arguments: WitString): Result
     tempErr = cast[CommandError](cast[ptr int32](retArea[4].addr)[])
     result = results.Result[WitString, CommandError].err(tempErr)
 
+proc textEditorRecordCurrentCommandImported(a0: uint64; a1: int32; a2: int32): void {.
+    wasmimport("record-current-command", "nev:plugins/text-editor").}
+proc recordCurrentCommand*(editor: TextEditor; registers: WitList[WitString]): void {.
+    nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+  arg0 = editor.id
+  if registers.len > 0:
+    arg1 = cast[int32](registers[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](registers.len)
+  textEditorRecordCurrentCommandImported(arg0, arg1, arg2)
+
+proc textEditorGetUsageImported(a0: uint64; a1: int32): void {.
+    wasmimport("get-usage", "nev:plugins/text-editor").}
+proc getUsage*(editor: TextEditor): WitString {.nodestroy.} =
+  ## todo
+  var
+    retArea: array[8, uint8]
+    arg0: uint64
+  arg0 = editor.id
+  textEditorGetUsageImported(arg0, cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
+proc textEditorGetRevisionImported(a0: uint64): int32 {.
+    wasmimport("get-revision", "nev:plugins/text-editor").}
+proc getRevision*(editor: TextEditor): int32 {.nodestroy.} =
+  ## todo
+  var arg0: uint64
+  arg0 = editor.id
+  let res = textEditorGetRevisionImported(arg0)
+  result = convert(res, int32)
+
+proc textEditorSetModeImported(a0: uint64; a1: int32; a2: int32; a3: bool): void {.
+    wasmimport("set-mode", "nev:plugins/text-editor").}
+proc setMode*(editor: TextEditor; mode: WitString; exclusive: bool): void {.
+    nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: bool
+  arg0 = editor.id
+  if mode.len > 0:
+    arg1 = cast[int32](mode[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](mode.len)
+  arg3 = exclusive
+  textEditorSetModeImported(arg0, arg1, arg2, arg3)
+
+proc textEditorModeImported(a0: uint64; a1: int32): void {.
+    wasmimport("mode", "nev:plugins/text-editor").}
+proc mode*(editor: TextEditor): WitString {.nodestroy.} =
+  ## todo
+  var
+    retArea: array[8, uint8]
+    arg0: uint64
+  arg0 = editor.id
+  textEditorModeImported(arg0, cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
+proc textEditorClearTabStopsImported(a0: uint64): void {.
+    wasmimport("clear-tab-stops", "nev:plugins/text-editor").}
+proc clearTabStops*(editor: TextEditor): void {.nodestroy.} =
+  var arg0: uint64
+  arg0 = editor.id
+  textEditorClearTabStopsImported(arg0)
+
+proc textEditorSelectNextTabStopImported(a0: uint64): void {.
+    wasmimport("select-next-tab-stop", "nev:plugins/text-editor").}
+proc selectNextTabStop*(editor: TextEditor): void {.nodestroy.} =
+  var arg0: uint64
+  arg0 = editor.id
+  textEditorSelectNextTabStopImported(arg0)
+
+proc textEditorSelectPrevTabStopImported(a0: uint64): void {.
+    wasmimport("select-prev-tab-stop", "nev:plugins/text-editor").}
+proc selectPrevTabStop*(editor: TextEditor): void {.nodestroy.} =
+  var arg0: uint64
+  arg0 = editor.id
+  textEditorSelectPrevTabStopImported(arg0)
+
+proc textEditorUndoImported(a0: uint64; a1: int32; a2: int32): void {.
+    wasmimport("undo", "nev:plugins/text-editor").}
+proc undo*(editor: TextEditor; checkpoint: WitString): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+  arg0 = editor.id
+  if checkpoint.len > 0:
+    arg1 = cast[int32](checkpoint[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](checkpoint.len)
+  textEditorUndoImported(arg0, arg1, arg2)
+
+proc textEditorRedoImported(a0: uint64; a1: int32; a2: int32): void {.
+    wasmimport("redo", "nev:plugins/text-editor").}
+proc redo*(editor: TextEditor; checkpoint: WitString): void {.nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+  arg0 = editor.id
+  if checkpoint.len > 0:
+    arg1 = cast[int32](checkpoint[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](checkpoint.len)
+  textEditorRedoImported(arg0, arg1, arg2)
+
+proc textEditorAddNextCheckpointImported(a0: uint64; a1: int32; a2: int32): void {.
+    wasmimport("add-next-checkpoint", "nev:plugins/text-editor").}
+proc addNextCheckpoint*(editor: TextEditor; checkpoint: WitString): void {.
+    nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+  arg0 = editor.id
+  if checkpoint.len > 0:
+    arg1 = cast[int32](checkpoint[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](checkpoint.len)
+  textEditorAddNextCheckpointImported(arg0, arg1, arg2)
+
+proc textEditorCopyImported(a0: uint64; a1: int32; a2: int32; a3: bool): void {.
+    wasmimport("copy", "nev:plugins/text-editor").}
+proc copy*(editor: TextEditor; register: WitString; inclusiveEnd: bool): void {.
+    nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: bool
+  arg0 = editor.id
+  if register.len > 0:
+    arg1 = cast[int32](register[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](register.len)
+  arg3 = inclusiveEnd
+  textEditorCopyImported(arg0, arg1, arg2, arg3)
+
+proc textEditorPasteImported(a0: uint64; a1: int32; a2: int32; a3: bool): void {.
+    wasmimport("paste", "nev:plugins/text-editor").}
+proc paste*(editor: TextEditor; register: WitString; inclusiveEnd: bool): void {.
+    nodestroy.} =
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: bool
+  arg0 = editor.id
+  if register.len > 0:
+    arg1 = cast[int32](register[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](register.len)
+  arg3 = inclusiveEnd
+  textEditorPasteImported(arg0, arg1, arg2, arg3)
+
+proc textEditorApplyMoveImported(a0: uint64; a1: int32; a2: int32; a3: int32;
+                                 a4: int32; a5: int32; a6: int32; a7: int32;
+                                 a8: bool; a9: bool; a10: int32): void {.
+    wasmimport("apply-move", "nev:plugins/text-editor").}
+proc applyMove*(editor: TextEditor; selection: Selection; move: WitString;
+                count: int32; wrap: bool; includeEol: bool): WitList[Selection] {.
+    nodestroy.} =
+  var
+    retArea: array[48, uint8]
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+    arg5: int32
+    arg6: int32
+    arg7: int32
+    arg8: bool
+    arg9: bool
+  arg0 = editor.id
+  arg1 = selection.first.line
+  arg2 = selection.first.column
+  arg3 = selection.last.line
+  arg4 = selection.last.column
+  if move.len > 0:
+    arg5 = cast[int32](move[0].addr)
+  else:
+    arg5 = 0.int32
+  arg6 = cast[int32](move.len)
+  arg7 = count
+  arg8 = wrap
+  arg9 = includeEol
+  textEditorApplyMoveImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7,
+                              arg8, arg9, cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc textEditorSetSelectionImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                                     a4: int32): void {.
     wasmimport("set-selection", "nev:plugins/text-editor").}
@@ -122,6 +331,22 @@ proc setSelection*(editor: TextEditor; s: Selection): void {.nodestroy.} =
   arg4 = s.last.column
   textEditorSetSelectionImported(arg0, arg1, arg2, arg3, arg4)
 
+proc textEditorSetSelectionsImported(a0: uint64; a1: int32; a2: int32): void {.
+    wasmimport("set-selections", "nev:plugins/text-editor").}
+proc setSelections*(editor: TextEditor; s: WitList[Selection]): void {.nodestroy.} =
+  ## Sets the selections for the given editor.
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+  arg0 = editor.id
+  if s.len > 0:
+    arg1 = cast[int32](s[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](s.len)
+  textEditorSetSelectionsImported(arg0, arg1, arg2)
+
 proc textEditorGetSelectionImported(a0: uint64; a1: int32): void {.
     wasmimport("get-selection", "nev:plugins/text-editor").}
 proc getSelection*(editor: TextEditor): Selection {.nodestroy.} =
@@ -135,6 +360,30 @@ proc getSelection*(editor: TextEditor): Selection {.nodestroy.} =
   result.first.column = convert(cast[ptr int32](retArea[4].addr)[], int32)
   result.last.line = convert(cast[ptr int32](retArea[8].addr)[], int32)
   result.last.column = convert(cast[ptr int32](retArea[12].addr)[], int32)
+
+proc textEditorGetSelectionsImported(a0: uint64; a1: int32): void {.
+    wasmimport("get-selections", "nev:plugins/text-editor").}
+proc getSelections*(editor: TextEditor): WitList[Selection] {.nodestroy.} =
+  ## Returns the selections of the given editor.
+  var
+    retArea: array[8, uint8]
+    arg0: uint64
+  arg0 = editor.id
+  textEditorGetSelectionsImported(arg0, cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
+proc textEditorLineLengthImported(a0: uint64; a1: int32): int32 {.
+    wasmimport("line-length", "nev:plugins/text-editor").}
+proc lineLength*(editor: TextEditor; line: int32): int32 {.nodestroy.} =
+  ## Return the length of the given line (0 based)
+  var
+    arg0: uint64
+    arg1: int32
+  arg0 = editor.id
+  arg1 = line
+  let res = textEditorLineLengthImported(arg0, arg1)
+  result = convert(res, int32)
 
 proc textEditorAddModeChangedHandlerImported(a0: uint32): int32 {.
     wasmimport("add-mode-changed-handler", "nev:plugins/text-editor").}

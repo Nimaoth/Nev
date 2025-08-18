@@ -28,6 +28,12 @@ export
   types
 
 import
+  registers
+
+export
+  registers
+
+import
   text_document
 
 export

@@ -182,6 +182,10 @@ proc buildPlugin(name: string) =
 task buildWasmModule, "":
   buildPlugin("test_plugin")
   # buildPlugin("pong")
+  # buildPlugin("vim")
+
+task buildVimPlugin, "":
+  buildPlugin("vim")
 
 task buildWasmModule1, "":
   withDir "plugins/test_plugin_1":

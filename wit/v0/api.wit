@@ -205,10 +205,38 @@ interface text-editor {
   /// Run the given command on the given text editor. This requires 'command' permissions.
   command: func(editor: text-editor, name: string, arguments: string) -> result<string, command-error>;
 
+  /// todo
+  record-current-command: func(editor: text-editor, registers: list<string>);
+
+  /// todo
+  get-usage: func(editor: text-editor) -> string;
+  /// todo
+  get-revision: func(editor: text-editor) -> s32;
+  /// todo
+  set-mode: func(editor: text-editor, mode: string, exclusive: bool);
+  /// todo
+  mode: func(editor: text-editor) -> string;
+  clear-tab-stops: func(editor: text-editor);
+  select-next-tab-stop: func(editor: text-editor);
+  select-prev-tab-stop: func(editor: text-editor);
+  undo: func(editor: text-editor, checkpoint: string);
+  redo: func(editor: text-editor, checkpoint: string);
+  add-next-checkpoint: func(editor: text-editor, checkpoint: string);
+  copy: func(editor: text-editor, register: string, inclusive-end: bool);
+  paste: func(editor: text-editor, register: string, inclusive-end: bool);
+
+  apply-move: func(editor: text-editor, selection: selection, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+
   /// Sets the given selection as the only selection for the given editor.
   set-selection: func(editor: text-editor, s: selection);
+  /// Sets the selections for the given editor.
+  set-selections: func(editor: text-editor, s: list<selection>);
   /// Returns the last selection of the given editor.
   get-selection: func(editor: text-editor) -> selection;
+  /// Returns the selections of the given editor.
+  get-selections: func(editor: text-editor) -> list<selection>;
+  /// Return the length of the given line (0 based)
+  line-length: func(editor: text-editor, line: s32) -> s32;
   /// Add a callback which will be called whenever any editor changes mode.
   add-mode-changed-handler: func(fun: u32) -> s32;
 
@@ -219,6 +247,15 @@ interface text-editor {
   /// represents the content at the point in time this is called instead. Keeping ropes
   /// around should not have significant memory overhead because ropes share data under the hood.
   content: func(editor: text-editor) -> rope;
+}
+
+interface registers {
+  /// todo
+  is-replaying-commands: func() -> bool;
+  /// todo
+  set-register-text: func(text: string, register: string);
+  /// todo
+  start-recording-commands: func(register: string);
 }
 
 interface text-document {
@@ -391,6 +428,7 @@ world plugin {
   import vfs;
   import channel;
   import process;
+  import registers;
 
   export guest;
 }

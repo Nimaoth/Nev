@@ -629,8 +629,24 @@ proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool =
     for v in self.layout.visibleLeafViews():
       if v == view:
         return
-    discard self.layout.removeView(view)
-    self.addView(view, slot=slot, focus=false, addToHistory=addToHistory)
+
+    if self.layout.contains(view):
+      var child = view
+      var p = self.layout.parentLayout(child)
+      while p != nil:
+        if not p.isVisible(child):
+          debugf"{p.desc}, {child.desc} not visible"
+          let activated = self.layout.tryActivateView proc(v: View): bool =
+            return v == child
+          debugf"activated: {activated}"
+        else:
+          debugf"{p.desc}, {child.desc} visible"
+        child = p
+        p = self.layout.parentLayout(child)
+
+    else:
+      discard self.layout.removeView(view)
+      self.addView(view, slot=slot, focus=false, addToHistory=addToHistory)
 
   self.platform.requestRender()
 
@@ -644,7 +660,7 @@ proc showView*(self: LayoutService, viewId: int32, slot: string = "", focus: boo
 
 proc showEditor*(self: LayoutService, editorId: EditorId, slot: string = "", focus: bool = true) {.expose("layout").} =
   ## Make the given editor visible
-  let editor = self.editors.getEditorForId(editorId).getOr:
+  let editor = self.editors.getEditorForId(editorId.EditorIdNew).getOr:
     log lvlError, &"No editor with id {editorId} exists"
     return
 
@@ -672,7 +688,7 @@ proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.exp
     return EditorId.none
 
   if self.editors.createEditorForDocument(document).getSome(editor):
-    return editor.id.some
+    return editor.id.EditorId.some
 
   return EditorId.none
 
@@ -689,7 +705,7 @@ proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, 
 proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true, slot: string = ""): Option[DocumentEditor] =
   # debugf"tryOpenExisting '{editor}'"
   for i, view in self.allViews:
-    if view of EditorView and view.EditorView.editor.id == editor:
+    if view of EditorView and view.EditorView.editor.id == editor.EditorIdNew:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.showView(view, slot = slot)
       return view.EditorView.editor.some
@@ -937,15 +953,15 @@ proc openNextView*(self: LayoutService) {.expose("layout").} =
     break
 
 proc openLastView*(self: LayoutService) {.expose("layout").} =
-  let hiddenViews = self.getHiddenViews()
-  if hiddenViews.len == 0:
-    return
-
-  let view = hiddenViews.last
-  let slot = self.layout.activeLeafSlot()
-  log lvlInfo, &"openLastView viewId={view.id}, view={view.desc} in '{slot}'"
-  self.showView(view, slot)
-  self.platform.requestRender()
+  var res = self.allViews
+  for i in countdown(self.allViews.high, 0):
+    let view = self.allViews[i]
+    if not self.layout.contains(view):
+      let slot = self.layout.activeLeafSlot()
+      log lvlInfo, &"openLastView viewId={view.id}, view={view.desc} in '{slot}'"
+      self.showView(view, slot)
+      self.platform.requestRender()
+      break
 
 proc setLayout*(self: LayoutService, layout: string) {.expose("layout").} =
   if layout in self.layouts:

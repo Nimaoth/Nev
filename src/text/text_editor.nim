@@ -1181,7 +1181,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   {.gcsafe.}:
     if gServices.getService(DocumentEditorService).getSome(editors):
-      if editors.getEditorForId(wrapper.id).getSome(editor):
+      if editors.getEditorForId(wrapper.id.EditorIdNew).getSome(editor):
         if editor of TextDocumentEditor:
           return editor.TextDocumentEditor.some
   return TextDocumentEditor.none
@@ -3122,6 +3122,9 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     let line = self.document.numLines - 1
     result.last = (line, self.document.lineLength(line))
 
+  of "column":
+    result = self.doMoveCursorColumn(cursor, count).toSelection
+
   of "prev-find-result":
     result = self.getPrevFindResult(cursor, count)
 
@@ -3173,7 +3176,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
       result = cursor.toSelection
 
       let cursorJson = self.plugins.invokeAnyCallback("editor.text.custom-move", %*{
-        "editor": self.id,
+        "editor": self.id.EditorId,
         "move": move,
         "cursor": cursor.toJson,
         "count": count,
@@ -3410,7 +3413,7 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
       self.updateTargetColumn(Last)
       self.centerCursor()
       self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
-      self.layout.showEditor(self.id)
+      self.layout.showEditor(self.id.EditorId)
 
   else:
     let editor = self.layout.openFile(filename)
@@ -4706,7 +4709,17 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   # debugf"[textedit] handleAction {action}, '{args}'"
 
   var args = args.copy
-  args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
+  args.elems.insert api.TextDocumentEditor(id: self.id.EditorId).toJson, 0
+
+  if self.commands.activeCommands.contains(action):
+    try:
+      let res = self.commands.activeCommands[action].execute(args.elems.mapIt($it).join(" "))
+      if res == "":
+        return newJNull().some
+      return res.parseJson().some
+    except CatchableError as e:
+      log lvlError, &"Failed to execute command '{action} {args}': {e.msg}"
+      return newJNull().some
 
   block:
     let res = self.plugins.invokeAnyCallback(action, args)
