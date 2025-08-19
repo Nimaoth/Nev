@@ -490,6 +490,20 @@ proc mode*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_modes_seq_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc modes*(self: TextDocumentEditor): seq[string] {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_modes_seq_string_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except CatchableError:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_getContextWithMode_string_TextDocumentEditor_string_wasm(
     arg: cstring): cstring {.importc.}
 proc getContextWithMode*(self: TextDocumentEditor; context: string): string {.

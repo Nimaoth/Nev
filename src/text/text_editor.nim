@@ -1648,6 +1648,10 @@ proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
     return modes.last
   return ""
 
+proc modes*(self: TextDocumentEditor): seq[string] {.expose("editor.text").} =
+  ## Returns the current modes of the text editor
+  return self.settings.modes.get()
+
 proc getContextWithMode(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
   ## Appends the current mode to context
   return context & "." & $self.mode

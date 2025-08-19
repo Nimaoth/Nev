@@ -537,6 +537,30 @@ proc textEditorMode(instance: ptr InstanceData; editor: TextEditor): string =
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     return editor.TextDocumentEditor.mode()
 
+proc textEditorModes(instance: ptr InstanceData; editor: TextEditor): seq[string] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.modes()
+
+proc textEditorClearCurrentCommandHistory(instance: ptr InstanceData; editor: TextEditor, retainLast: bool) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.clearCurrentCommandHistory(retainLast)
+
+proc textEditorSaveCurrentCommandHistory(instance: ptr InstanceData; editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.saveCurrentCommandHistory()
+
+proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.hideCompletions()
+
 proc textEditorCommand(instance: ptr InstanceData; editor: TextEditor, name: sink string, arguments: sink string): Result[string, CommandError] =
   if instance.host == nil:
     return
@@ -582,6 +606,22 @@ proc textDocumentContent(instance: ptr InstanceData; document: TextDocument): Ro
     let textDocument = text_document.TextDocument(document)
     return RopeResource(rope: textDocument.rope.clone().slice().suffix(Point()))
   return RopeResource(rope: createRope("").slice().suffix(Point()))
+
+proc textEditorGetSettingRaw(instance: ptr InstanceData, editor: TextEditor, name: sink string): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return $editor.TextDocumentEditor.config.get(name, newJexNull())
+
+proc textEditorSetSettingRaw(instance: ptr InstanceData, editor: TextEditor, name: sink string, value: sink string) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    try:
+      # todo: permissions
+      editor.TextDocumentEditor.config.set(name, parseJsonex(value))
+    except CatchableError as e:
+      log lvlError, "set-setting-raw: Failed to set setting '{name}' to {value}: {e.msg}"
 
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))

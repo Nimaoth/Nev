@@ -207,6 +207,13 @@ interface text-editor {
 
   /// todo
   record-current-command: func(editor: text-editor, registers: list<string>);
+  /// todo
+  clear-current-command-history: func(editor: text-editor, retain-last: bool);
+  /// todo
+  save-current-command-history: func(editor: text-editor);
+
+  /// todo
+  hide-completions: func(editor: text-editor);
 
   /// todo
   get-usage: func(editor: text-editor) -> string;
@@ -216,15 +223,26 @@ interface text-editor {
   set-mode: func(editor: text-editor, mode: string, exclusive: bool);
   /// todo
   mode: func(editor: text-editor) -> string;
+  /// todo
+  modes: func(editor: text-editor) -> list<string>;
+  /// todo
   clear-tab-stops: func(editor: text-editor);
+  /// todo
   select-next-tab-stop: func(editor: text-editor);
+  /// todo
   select-prev-tab-stop: func(editor: text-editor);
+  /// todo
   undo: func(editor: text-editor, checkpoint: string);
+  /// todo
   redo: func(editor: text-editor, checkpoint: string);
+  /// todo
   add-next-checkpoint: func(editor: text-editor, checkpoint: string);
+  /// todo
   copy: func(editor: text-editor, register: string, inclusive-end: bool);
+  /// todo
   paste: func(editor: text-editor, register: string, inclusive-end: bool);
 
+  /// todo
   apply-move: func(editor: text-editor, selection: selection, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
 
   /// Sets the given selection as the only selection for the given editor.
@@ -240,6 +258,13 @@ interface text-editor {
   /// Add a callback which will be called whenever any editor changes mode.
   add-mode-changed-handler: func(fun: u32) -> s32;
 
+  /// Returns the value of the setting with the given path, encoded as JSON.
+  get-setting-raw: func(editor: text-editor, name: string) -> string;
+
+  /// Set the value of the setting with the given path. The value must be encoded as JSON.
+  set-setting-raw: func(editor: text-editor, name: string, value: string);
+
+  /// todo
   edit: func(editor: text-editor, selections: list<selection>, contents: list<string>) -> list<selection>;
 
   /// Returns the rope containing the current content of the text editors document.

@@ -933,7 +933,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 
 proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
   ## Exit to normal mode and clear things
-  log lvlInfo, "[vim] normalMode"
+  log lvlInfo, "normalMode"
   if $editor.mode == "vim-new.normal":
     editor.setSelection editor.getSelection.last.toSelection
     editor.clearTabStops()
@@ -1043,7 +1043,7 @@ proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
 #   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
 
 proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorContext).} =
-  debugf"insertMode '{move}'"
+  # debugf"insertMode '{move}'"
   case move
   of "right":
     editor.setSelections editor.selections.mapIt(editor.applyMove(it.last, "column", 1))
@@ -1432,7 +1432,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 #   editor.setMode "vim-new.insert"
 
 proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq[string]) {.exposeActive(editorContext).} =
-  # log lvlInfo, &"[vim] modeChangedHandler {editor}, {oldModes} -> {newModes}"
+  # log lvlInfo, &"modeChangedHandler {editor}, {oldModes} -> {newModes}"
 
   let oldMode = if oldModes.len > 0:
     oldModes[0]
@@ -1444,8 +1444,8 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
 
   let newMode = newModes[0]
 
-#   if not editor.getCurrentEventHandlers().contains("vim"):
-#     return
+  if not editor.modes().toOpenArray.contains(ws"vim-new"):
+    return
 
   if newMode == "":
     editor.setMode "vim-new.normal"
@@ -1460,20 +1460,20 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
     "vim-new.insert",
   ].toHashSet
 
-  # infof"vim: handle mode change {oldMode} -> {newMode}"
+  # debugf"vim: handle mode change {oldMode} -> {newMode}"
   if newMode == "vim-new.normal":
     if not isReplayingCommands() and isRecordingCommands(ws".-temp"):
       stopRecordingCommands(ws".-temp")
 
       if editor.getRevision > editor.vimState.revisionBeforeImplicitInsertMacro:
-        debugf"Record implicit macro because document was modified"
+        # debugf"Record implicit macro because document was modified"
         let text = getRegisterText(ws".-temp")
         setRegisterText(text, ws".")
   else:
     if oldMode == "vim-new.normal" and newMode in recordModes:
       editor.startRecordingCurrentCommandInPeriodMacro()
 
-    # editor.clearCurrentCommandHistory(retainLast=true)
+    editor.clearCurrentCommandHistory(retainLast=true)
 
   editor.vimState.selectLines = newMode == "vim-new.visual-line"
   editor.vimState.cursorIncludeEol = newMode == "vim-new.insert"
@@ -1481,22 +1481,22 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
 
   case newMode
   of "vim-new.normal":
-  #   editor.setConfig "text.inclusive-selection", false
+    editor.setSetting "text.inclusive-selection", false
     editor.setSelections editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
-  #   editor.saveCurrentCommandHistory()
-  #   editor.hideCompletions()
+    editor.saveCurrentCommandHistory()
+    editor.hideCompletions()
 
-#   of "vim-new.insert":
-#     editor.setConfig "text.inclusive-selection", false
+  of "vim-new.insert":
+    editor.setSetting "text.inclusive-selection", false
 
-#   of "vim-new.visual":
-#     editor.setConfig "text.inclusive-selection", true
+  of "vim-new.visual":
+    editor.setSetting "text.inclusive-selection", true
 
-#   of "vim-new.visual-line":
-#     editor.setConfig "text.inclusive-selection", false
+  of "vim-new.visual-line":
+    editor.setSetting "text.inclusive-selection", false
 
-#   else:
-#     editor.setConfig "text.inclusive-selection", false
+  else:
+    editor.setSetting "text.inclusive-selection", false
 
 # proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 #   let afterRestoreSessionHandle = addCallback proc(args: JsonNode): JsonNode =

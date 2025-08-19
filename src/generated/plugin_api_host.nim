@@ -372,11 +372,17 @@ proc textEditorCommand(instance: ptr InstanceData; editor: TextEditor;
 proc textEditorRecordCurrentCommand(instance: ptr InstanceData;
                                     editor: TextEditor;
                                     registers: sink seq[string]): void
+proc textEditorClearCurrentCommandHistory(instance: ptr InstanceData;
+    editor: TextEditor; retainLast: bool): void
+proc textEditorSaveCurrentCommandHistory(instance: ptr InstanceData;
+    editor: TextEditor): void
+proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorGetUsage(instance: ptr InstanceData; editor: TextEditor): string
 proc textEditorGetRevision(instance: ptr InstanceData; editor: TextEditor): int32
 proc textEditorSetMode(instance: ptr InstanceData; editor: TextEditor;
                        mode: sink string; exclusive: bool): void
 proc textEditorMode(instance: ptr InstanceData; editor: TextEditor): string
+proc textEditorModes(instance: ptr InstanceData; editor: TextEditor): seq[string]
 proc textEditorClearTabStops(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorSelectNextTabStop(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorSelectPrevTabStop(instance: ptr InstanceData; editor: TextEditor): void
@@ -403,6 +409,10 @@ proc textEditorGetSelections(instance: ptr InstanceData; editor: TextEditor): se
 proc textEditorLineLength(instance: ptr InstanceData; editor: TextEditor;
                           line: int32): int32
 proc textEditorAddModeChangedHandler(instance: ptr InstanceData; fun: uint32): int32
+proc textEditorGetSettingRaw(instance: ptr InstanceData; editor: TextEditor;
+                             name: sink string): string
+proc textEditorSetSettingRaw(instance: ptr InstanceData; editor: TextEditor;
+                             name: sink string; value: sink string): void
 proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor;
                     selections: sink seq[Selection]; contents: sink seq[string]): seq[
     Selection]
@@ -1250,6 +1260,42 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "clear-current-command-history", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var retainLast: bool
+        editor.id = convert(parameters[0].i64, uint64)
+        retainLast = parameters[1].i32.bool
+        textEditorClearCurrentCommandHistory(instance, editor, retainLast)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "save-current-command-history", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        textEditorSaveCurrentCommandHistory(instance, editor)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "hide-completions",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        textEditorHideCompletions(instance, editor)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "get-usage", ty):
         var instance = cast[ptr InstanceData](store.getData())
         var mainMemory = caller.getExport("memory")
@@ -1355,6 +1401,51 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           block:
             for i0 in 0 ..< res.len:
               memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "modes", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        let res = textEditorModes(instance, editor)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 8).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              if res[i0].len > 0:
+                let dataPtrWasm1 = int32(?stackAlloc(stackAllocFunc, store,
+                    (res[i0].len * 1).int32, 4))
+                cast[ptr int32](memory[dataPtrWasm0 + i0 * 8 + 0].addr)[] = cast[int32](dataPtrWasm1)
+                block:
+                  for i1 in 0 ..< res[i0].len:
+                    memory[dataPtrWasm1 + i1] = cast[uint8](res[i0][i1])
+              else:
+                cast[ptr int32](memory[dataPtrWasm0 + i0 * 8 + 0].addr)[] = 0.int32
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 8 + 4].addr)[] = cast[int32](res[
+                  i0].len)
         else:
           cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
         cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
@@ -1754,6 +1845,85 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         fun = convert(parameters[0].i32, uint32)
         let res = textEditorAddModeChangedHandler(instance, fun)
         parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "get-setting-raw",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var editor: TextEditor
+        var name: string
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          name = newString(parameters[2].i32)
+          for i0 in 0 ..< name.len:
+            name[i0] = p0[i0]
+        let res = textEditorGetSettingRaw(instance, editor, name)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "set-setting-raw",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var editor: TextEditor
+        var name: string
+        var value: string
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          name = newString(parameters[2].i32)
+          for i0 in 0 ..< name.len:
+            name[i0] = p0[i0]
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[3].i32].addr)
+          value = newString(parameters[4].i32)
+          for i0 in 0 ..< value.len:
+            value[i0] = p0[i0]
+        textEditorSetSettingRaw(instance, editor, name, value)
     if e.isErr:
       return e
   block:

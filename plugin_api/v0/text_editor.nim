@@ -121,6 +121,34 @@ proc recordCurrentCommand*(editor: TextEditor; registers: WitList[WitString]): v
   arg2 = cast[int32](registers.len)
   textEditorRecordCurrentCommandImported(arg0, arg1, arg2)
 
+proc textEditorClearCurrentCommandHistoryImported(a0: uint64; a1: bool): void {.
+    wasmimport("clear-current-command-history", "nev:plugins/text-editor").}
+proc clearCurrentCommandHistory*(editor: TextEditor; retainLast: bool): void {.
+    nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: bool
+  arg0 = editor.id
+  arg1 = retainLast
+  textEditorClearCurrentCommandHistoryImported(arg0, arg1)
+
+proc textEditorSaveCurrentCommandHistoryImported(a0: uint64): void {.
+    wasmimport("save-current-command-history", "nev:plugins/text-editor").}
+proc saveCurrentCommandHistory*(editor: TextEditor): void {.nodestroy.} =
+  ## todo
+  var arg0: uint64
+  arg0 = editor.id
+  textEditorSaveCurrentCommandHistoryImported(arg0)
+
+proc textEditorHideCompletionsImported(a0: uint64): void {.
+    wasmimport("hide-completions", "nev:plugins/text-editor").}
+proc hideCompletions*(editor: TextEditor): void {.nodestroy.} =
+  ## todo
+  var arg0: uint64
+  arg0 = editor.id
+  textEditorHideCompletionsImported(arg0)
+
 proc textEditorGetUsageImported(a0: uint64; a1: int32): void {.
     wasmimport("get-usage", "nev:plugins/text-editor").}
 proc getUsage*(editor: TextEditor): WitString {.nodestroy.} =
@@ -173,9 +201,22 @@ proc mode*(editor: TextEditor): WitString {.nodestroy.} =
   result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
 
+proc textEditorModesImported(a0: uint64; a1: int32): void {.
+    wasmimport("modes", "nev:plugins/text-editor").}
+proc modes*(editor: TextEditor): WitList[WitString] {.nodestroy.} =
+  ## todo
+  var
+    retArea: array[8, uint8]
+    arg0: uint64
+  arg0 = editor.id
+  textEditorModesImported(arg0, cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc textEditorClearTabStopsImported(a0: uint64): void {.
     wasmimport("clear-tab-stops", "nev:plugins/text-editor").}
 proc clearTabStops*(editor: TextEditor): void {.nodestroy.} =
+  ## todo
   var arg0: uint64
   arg0 = editor.id
   textEditorClearTabStopsImported(arg0)
@@ -183,6 +224,7 @@ proc clearTabStops*(editor: TextEditor): void {.nodestroy.} =
 proc textEditorSelectNextTabStopImported(a0: uint64): void {.
     wasmimport("select-next-tab-stop", "nev:plugins/text-editor").}
 proc selectNextTabStop*(editor: TextEditor): void {.nodestroy.} =
+  ## todo
   var arg0: uint64
   arg0 = editor.id
   textEditorSelectNextTabStopImported(arg0)
@@ -190,6 +232,7 @@ proc selectNextTabStop*(editor: TextEditor): void {.nodestroy.} =
 proc textEditorSelectPrevTabStopImported(a0: uint64): void {.
     wasmimport("select-prev-tab-stop", "nev:plugins/text-editor").}
 proc selectPrevTabStop*(editor: TextEditor): void {.nodestroy.} =
+  ## todo
   var arg0: uint64
   arg0 = editor.id
   textEditorSelectPrevTabStopImported(arg0)
@@ -197,6 +240,7 @@ proc selectPrevTabStop*(editor: TextEditor): void {.nodestroy.} =
 proc textEditorUndoImported(a0: uint64; a1: int32; a2: int32): void {.
     wasmimport("undo", "nev:plugins/text-editor").}
 proc undo*(editor: TextEditor; checkpoint: WitString): void {.nodestroy.} =
+  ## todo
   var
     arg0: uint64
     arg1: int32
@@ -212,6 +256,7 @@ proc undo*(editor: TextEditor; checkpoint: WitString): void {.nodestroy.} =
 proc textEditorRedoImported(a0: uint64; a1: int32; a2: int32): void {.
     wasmimport("redo", "nev:plugins/text-editor").}
 proc redo*(editor: TextEditor; checkpoint: WitString): void {.nodestroy.} =
+  ## todo
   var
     arg0: uint64
     arg1: int32
@@ -228,6 +273,7 @@ proc textEditorAddNextCheckpointImported(a0: uint64; a1: int32; a2: int32): void
     wasmimport("add-next-checkpoint", "nev:plugins/text-editor").}
 proc addNextCheckpoint*(editor: TextEditor; checkpoint: WitString): void {.
     nodestroy.} =
+  ## todo
   var
     arg0: uint64
     arg1: int32
@@ -244,6 +290,7 @@ proc textEditorCopyImported(a0: uint64; a1: int32; a2: int32; a3: bool): void {.
     wasmimport("copy", "nev:plugins/text-editor").}
 proc copy*(editor: TextEditor; register: WitString; inclusiveEnd: bool): void {.
     nodestroy.} =
+  ## todo
   var
     arg0: uint64
     arg1: int32
@@ -262,6 +309,7 @@ proc textEditorPasteImported(a0: uint64; a1: int32; a2: int32; a3: bool): void {
     wasmimport("paste", "nev:plugins/text-editor").}
 proc paste*(editor: TextEditor; register: WitString; inclusiveEnd: bool): void {.
     nodestroy.} =
+  ## todo
   var
     arg0: uint64
     arg1: int32
@@ -283,6 +331,7 @@ proc textEditorApplyMoveImported(a0: uint64; a1: int32; a2: int32; a3: int32;
 proc applyMove*(editor: TextEditor; selection: Selection; move: WitString;
                 count: int32; wrap: bool; includeEol: bool): WitList[Selection] {.
     nodestroy.} =
+  ## todo
   var
     retArea: array[48, uint8]
     arg0: uint64
@@ -394,11 +443,57 @@ proc addModeChangedHandler*(fun: uint32): int32 {.nodestroy.} =
   let res = textEditorAddModeChangedHandlerImported(arg0)
   result = convert(res, int32)
 
+proc textEditorGetSettingRawImported(a0: uint64; a1: int32; a2: int32; a3: int32): void {.
+    wasmimport("get-setting-raw", "nev:plugins/text-editor").}
+proc getSettingRaw*(editor: TextEditor; name: WitString): WitString {.nodestroy.} =
+  ## Returns the value of the setting with the given path, encoded as JSON.
+  var
+    retArea: array[16, uint8]
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+  arg0 = editor.id
+  if name.len > 0:
+    arg1 = cast[int32](name[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](name.len)
+  textEditorGetSettingRawImported(arg0, arg1, arg2,
+                                  cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
+proc textEditorSetSettingRawImported(a0: uint64; a1: int32; a2: int32;
+                                     a3: int32; a4: int32): void {.
+    wasmimport("set-setting-raw", "nev:plugins/text-editor").}
+proc setSettingRaw*(editor: TextEditor; name: WitString; value: WitString): void {.
+    nodestroy.} =
+  ## Set the value of the setting with the given path. The value must be encoded as JSON.
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+  arg0 = editor.id
+  if name.len > 0:
+    arg1 = cast[int32](name[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](name.len)
+  if value.len > 0:
+    arg3 = cast[int32](value[0].addr)
+  else:
+    arg3 = 0.int32
+  arg4 = cast[int32](value.len)
+  textEditorSetSettingRawImported(arg0, arg1, arg2, arg3, arg4)
+
 proc textEditorEditImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                             a4: int32; a5: int32): void {.
     wasmimport("edit", "nev:plugins/text-editor").}
 proc edit*(editor: TextEditor; selections: WitList[Selection];
            contents: WitList[WitString]): WitList[Selection] {.nodestroy.} =
+  ## todo
   var
     retArea: array[24, uint8]
     arg0: uint64

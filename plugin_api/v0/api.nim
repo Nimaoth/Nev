@@ -28,6 +28,13 @@ proc emscripten_stack_init() {.importc.}
 
 proc NimMain() {.importc.}
 
+######### todo: move these to wit_types
+
+proc `==`*(a, b: WitString): bool =
+  if a.len != b.len:
+    return false
+  return a.toOpenArray() == b.toOpenArray()
+
 ############################ exported functions ############################
 
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
@@ -86,6 +93,30 @@ when pluginWorld == "plugin":
       return ($getSettingRaw(ws(name))).parseJson().jsonTo(T)
     except:
       return def
+
+  proc getSetting*(editor: TextEditor, name: string, T: typedesc): T =
+    try:
+      return getSettingRaw(editor, name).parseJson().jsonTo(T)
+    except:
+      return T.default
+
+  proc getSetting*[T](editor: TextEditor, name: string, def: T): T =
+    try:
+      return ($getSettingRaw(editor, ws(name))).parseJson().jsonTo(T)
+    except:
+      return def
+
+  proc setSetting*[T](name: string, value: T) =
+    try:
+      setSettingRaw(name.ws, stackWitString($value.toJson))
+    except:
+      discard
+
+  proc setSetting*[T](editor: TextEditor, name: string, value: T) =
+    try:
+      editor.setSettingRaw(name.ws, stackWitString($value.toJson))
+    except:
+      discard
 
   func `$`*(cursor: Cursor): string =
     return $cursor.line & ":" & $cursor.column
