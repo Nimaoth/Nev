@@ -15,6 +15,15 @@ import
 import
   commands
 
+type
+  ScrollBehaviour* = enum
+    CenterAlways = "center-always", CenterOffscreen = "center-offscreen",
+    CenterMargin = "center-margin", ScrollToMargin = "scroll-to-margin",
+    TopOfScreen = "top-of-screen"
+  ScrollSnapBehaviour* = enum
+    Never = "never", Always = "always",
+    MinDistanceOffscreen = "min-distance-offscreen",
+    MinDistanceCenter = "min-distance-center"
 proc textEditorActiveTextEditorImported(a0: int32): void {.
     wasmimport("active-text-editor", "nev:plugins/text-editor").}
 proc activeTextEditor*(): Option[TextEditor] {.nodestroy.} =
@@ -148,6 +157,41 @@ proc hideCompletions*(editor: TextEditor): void {.nodestroy.} =
   var arg0: uint64
   arg0 = editor.id
   textEditorHideCompletionsImported(arg0)
+
+proc textEditorScrollToCursorImported(a0: uint64; a1: int8; a2: int8): void {.
+    wasmimport("scroll-to-cursor", "nev:plugins/text-editor").}
+proc scrollToCursor*(editor: TextEditor; behaviour: Option[ScrollBehaviour]): void {.
+    nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int8
+    arg2: int8
+  arg0 = editor.id
+  arg1 = behaviour.isSome.int8
+  if behaviour.isSome:
+    arg2 = cast[int8](behaviour.get)
+  textEditorScrollToCursorImported(arg0, arg1, arg2)
+
+proc textEditorSetNextSnapBehaviourImported(a0: uint64; a1: int8): void {.
+    wasmimport("set-next-snap-behaviour", "nev:plugins/text-editor").}
+proc setNextSnapBehaviour*(editor: TextEditor; behaviour: ScrollSnapBehaviour): void {.
+    nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int8
+  arg0 = editor.id
+  arg1 = cast[int8](behaviour)
+  textEditorSetNextSnapBehaviourImported(arg0, arg1)
+
+proc textEditorUpdateTargetColumnImported(a0: uint64): void {.
+    wasmimport("update-target-column", "nev:plugins/text-editor").}
+proc updateTargetColumn*(editor: TextEditor): void {.nodestroy.} =
+  ## todo
+  var arg0: uint64
+  arg0 = editor.id
+  textEditorUpdateTargetColumnImported(arg0)
 
 proc textEditorGetUsageImported(a0: uint64; a1: int32): void {.
     wasmimport("get-usage", "nev:plugins/text-editor").}
@@ -362,6 +406,42 @@ proc applyMove*(editor: TextEditor; selection: Selection; move: WitString;
   result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
 
+proc textEditorMultiMoveImported(a0: uint64; a1: int32; a2: int32; a3: int32;
+                                 a4: int32; a5: int32; a6: bool; a7: bool;
+                                 a8: int32): void {.
+    wasmimport("multi-move", "nev:plugins/text-editor").}
+proc multiMove*(editor: TextEditor; selections: WitList[Selection];
+                move: WitString; count: int32; wrap: bool; includeEol: bool): WitList[
+    Selection] {.nodestroy.} =
+  var
+    retArea: array[40, uint8]
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+    arg5: int32
+    arg6: bool
+    arg7: bool
+  arg0 = editor.id
+  if selections.len > 0:
+    arg1 = cast[int32](selections[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](selections.len)
+  if move.len > 0:
+    arg3 = cast[int32](move[0].addr)
+  else:
+    arg3 = 0.int32
+  arg4 = cast[int32](move.len)
+  arg5 = count
+  arg6 = wrap
+  arg7 = includeEol
+  textEditorMultiMoveImported(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7,
+                              cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc textEditorSetSelectionImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                                     a4: int32): void {.
     wasmimport("set-selection", "nev:plugins/text-editor").}
@@ -489,18 +569,20 @@ proc setSettingRaw*(editor: TextEditor; name: WitString; value: WitString): void
   textEditorSetSettingRawImported(arg0, arg1, arg2, arg3, arg4)
 
 proc textEditorEditImported(a0: uint64; a1: int32; a2: int32; a3: int32;
-                            a4: int32; a5: int32): void {.
+                            a4: int32; a5: bool; a6: int32): void {.
     wasmimport("edit", "nev:plugins/text-editor").}
 proc edit*(editor: TextEditor; selections: WitList[Selection];
-           contents: WitList[WitString]): WitList[Selection] {.nodestroy.} =
+           contents: WitList[WitString]; inclusive: bool): WitList[Selection] {.
+    nodestroy.} =
   ## todo
   var
-    retArea: array[24, uint8]
+    retArea: array[32, uint8]
     arg0: uint64
     arg1: int32
     arg2: int32
     arg3: int32
     arg4: int32
+    arg5: bool
   arg0 = editor.id
   if selections.len > 0:
     arg1 = cast[int32](selections[0].addr)
@@ -512,10 +594,28 @@ proc edit*(editor: TextEditor; selections: WitList[Selection];
   else:
     arg3 = 0.int32
   arg4 = cast[int32](contents.len)
-  textEditorEditImported(arg0, arg1, arg2, arg3, arg4,
+  arg5 = inclusive
+  textEditorEditImported(arg0, arg1, arg2, arg3, arg4, arg5,
                          cast[int32](retArea[0].addr))
   result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
+
+proc textEditorDefineMoveImported(a0: int32; a1: int32; a2: uint32; a3: uint32): void {.
+    wasmimport("define-move", "nev:plugins/text-editor").}
+proc defineMove*(move: WitString; fun: uint32; data: uint32): void {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: uint32
+    arg3: uint32
+  if move.len > 0:
+    arg0 = cast[int32](move[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](move.len)
+  arg2 = fun
+  arg3 = data
+  textEditorDefineMoveImported(arg0, arg1, arg2, arg3)
 
 proc textEditorContentImported(a0: uint64): int32 {.
     wasmimport("content", "nev:plugins/text-editor").}

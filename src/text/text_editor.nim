@@ -13,7 +13,7 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
 import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
-import diff, plugin_service
+import diff, plugin_service, move_database
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
@@ -231,6 +231,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   plugins: PluginService
   registers: Registers
   workspace: Workspace
+  moveDatabase: MoveDatabase
   vfsService: VFSService
   vfs*: VFS
   commands*: CommandService
@@ -441,7 +442,7 @@ proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventRe
 proc showCompletionWindow(self: TextDocumentEditor)
 proc updateCompletionsFromEngine(self: TextDocumentEditor)
 proc hideCompletions*(self: TextDocumentEditor)
-proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
+proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0, includeEol: bool = true): Selection
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
 proc updateInlayHints*(self: TextDocumentEditor)
@@ -1697,8 +1698,7 @@ proc delete*(self: TextDocumentEditor, selections: seq[Selection], notify: bool 
 proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string],
     notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.
     expose("editor.text").} =
-  return self.document.edit(selections, self.selections, texts, notify, record,
-    inclusiveEnd=inclusiveEnd)
+  return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
 proc deleteLines(self: TextDocumentEditor, slice: Slice[int], oldSelections: Selections) {.
     expose("editor.text").} =
@@ -3003,8 +3003,41 @@ proc vimMotionWordBig*(self: TextDocumentEditor, cursor: Cursor, count: int = 0)
     let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
     return ((cursor.line, startColumn), (cursor.line, endColumn))
 
+proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string,
+    count: int = 0, includeEol: bool = true): seq[Selection] =
+
+  let cursorSelector = self.config.get(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
+
+  case move
+  of "visual-line-up", "visual-line-down":
+    var minLine = int.high
+    var maxLine = int.low
+    for s in self.selections:
+      minLine = min(minLine, s.last.line)
+      maxLine = max(maxLine, s.last.line)
+
+    let direction = if move == "visual-line-down": 1 else: -1
+
+    proc doMoveCursor(self: TextDocumentEditor, cursor: Cursor, offset: int, includeAfter: bool): Cursor =
+      let targetColumn = if maxLine - minLine + 1 < self.selections.len:
+        self.displayMap.toDisplayPoint(cursor.toPoint).column.int
+      else:
+        self.targetColumn
+      self.doMoveCursorVisualLine(cursor, offset, false, includeAfter, targetColumn.some)
+    return selections.mapIt(doMoveCursor(self, it.last, direction * max(count, 1), includeEol).toSelection(it, cursorSelector))
+
+  of "line-up", "line-down":
+    let direction = if move == "line-down": 1 else: -1
+    return selections.mapIt(self.doMoveCursorLine(it.last, direction * max(count, 1), false, includeEol).toSelection(it, cursorSelector))
+
+  of "column":
+    result = selections.mapIt(self.doMoveCursorColumn(it.last, count, includeAfter = includeEol).toSelection(it, cursorSelector))
+
+  else:
+    return self.moveDatabase.applyMove(self.document.rope, move, selections, count, includeEol)
+
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
-    count: int = 0): Selection {.expose("editor.text").} =
+    count: int = 0, includeEol: bool = true): Selection {.expose("editor.text").} =
   case move
   of "word":
     result = self.findWordBoundary(cursor)
@@ -3084,9 +3117,13 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result = (first, (cursor.line, self.document.lineLength(cursor.line)))
 
   of "line":
-    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
+    let lineLen = self.document.lineLength(cursor.line)
+    result = ((cursor.line, 0), (cursor.line, lineLen))
+    if not includeEol and result.last.column == lineLen:
+      result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
   of "visual-line":
+    let lineLen = self.document.lineLength(cursor.line)
     let wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
     let displayLineStart = wrapPoint(wrapPoint.row)
     let displayLineEnd = wrapPoint(wrapPoint.row + 1)
@@ -3095,6 +3132,12 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     if result[1].column == 0:
       result[1].line -= 1
       result[1].column = self.document.lineLength(result[1].line)
+
+    if not includeEol:
+      if result.last.column == lineLen:
+        result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
+      elif result.last.column < self.document.lineLength(cursor.line): # This is the case if we're not in the last visual sub line
+        result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
   of "line-next":
     result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
@@ -3127,7 +3170,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result.last = (line, self.document.lineLength(line))
 
   of "column":
-    result = self.doMoveCursorColumn(cursor, count).toSelection
+    result = self.doMoveCursorColumn(cursor, count, includeAfter = includeEol).toSelection
 
   of "prev-find-result":
     result = self.getPrevFindResult(cursor, count)
@@ -5127,6 +5170,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.plugins = self.services.getService(PluginService).get
   self.registers = self.services.getService(Registers).get
   self.workspace = self.services.getService(Workspace).get
+  self.moveDatabase = self.services.getService(MoveDatabase).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.commands = self.services.getService(CommandService).get
   self.displayMap = DisplayMap.new()

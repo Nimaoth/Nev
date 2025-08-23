@@ -39,6 +39,7 @@ proc `==`*(a, b: WitString): bool =
 
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
 type ChannelUpdateHandler = proc(data: uint32, closed: bool): ChannelListenResponse {.cdecl, raises: [].}
+type MoveHandler = proc(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl, raises: [].}
 
 proc initPlugin() =
   emscripten_stack_init()
@@ -76,6 +77,10 @@ proc notifyTaskComplete(task: uint64, canceled: bool) =
 proc notifyTasksComplete(tasks: WitList[tuple[task: uint64, canceled: bool]]) =
   for (task, canceled) in tasks:
     notifyTaskComplete(task, canceled)
+
+proc handleMove(fun: uint32; data: uint32; text: sink Rope; selections: WitList[Selection]; count: int32; eol: bool): WitList[Selection] =
+  let fun = cast[MoveHandler](fun)
+  return stackWitList(fun(data, text.ensureMove, selections.toOpenArray(), count.int, eol))
 
 ############################ nice wrappers around the raw api ############################
 
@@ -216,6 +221,12 @@ when pluginWorld == "plugin":
 
   proc applyMove*(editor: TextEditor, cursor: Cursor, move: string, count: int = 1, wrap: bool = true, includeEol: bool = true): Selection =
     return editor.applyMove(cursor.toSelection, move.ws, count, wrap, includeEol)[0]
+
+  proc scrollToCursor*(editor: TextEditor) =
+    editor.scrollToCursor(ScrollBehaviour.none)
+
+  proc addCustomTextMove*(name: string, move: MoveHandler) =
+    defineMove(name.ws, 0, cast[uint32](move))
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)

@@ -355,6 +355,20 @@ var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
 
 proc toInternal(c: Cursor): scripting_api.Cursor = (c.line.int, c.column.int)
 proc toInternal(c: Selection): scripting_api.Selection = (c.first.toInternal, c.last.toInternal)
+proc toInternal(c: ScrollBehaviour): scripting_api.ScrollBehaviour =
+  case c
+  of CenterAlways: scripting_api.CenterAlways
+  of CenterOffscreen: scripting_api.CenterOffscreen
+  of CenterMargin: scripting_api.CenterMargin
+  of ScrollToMargin: scripting_api.ScrollToMargin
+  of TopOfScreen: scripting_api.TopOfScreen
+
+proc toInternal(c: ScrollSnapBehaviour): scripting_api.ScrollSnapBehaviour =
+  case c
+  of Never: scripting_api.Never
+  of Always: scripting_api.Always
+  of MinDistanceOffscreen: scripting_api.MinDistanceOffscreen
+  of MinDistanceCenter: scripting_api.MinDistanceCenter
 
 proc toWasm(c: scripting_api.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
 proc toWasm(c: scripting_api.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
@@ -471,7 +485,14 @@ proc textEditorApplyMove(instance: ptr InstanceData; editor: TextEditor; selecti
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
-    return @[textEditor.getSelectionForMove(selection.last.toInternal, move, count).toWasm]
+    return @[textEditor.getSelectionForMove(selection.last.toInternal, move, count, includeEol).toWasm]
+
+proc textEditorMultiMove(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    return textEditor.getSelectionsForMove(selections.mapIt(it.toInternal), move, count, includeEol).mapIt(it.toWasm)
 
 proc textEditorSetSelection(instance: ptr InstanceData; editor: TextEditor; s: Selection): void =
   if instance.host == nil:
@@ -505,14 +526,25 @@ proc textEditorGetSelections(instance: ptr InstanceData; editor: TextEditor): se
     let s = textEditor.selection
     return editor.TextDocumentEditor.selections.mapIt(it.toWasm)
 
-proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string]): seq[Selection] =
+proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string], inclusive: bool): seq[Selection] =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let selections = selections.mapIt(it.toInternal)
-    let res = editor.TextDocumentEditor.edit(selections, contents)
+    let res = editor.TextDocumentEditor.edit(selections, contents, inclusiveEnd = inclusive)
     return res.mapIt(it.toWasm)
   return selections
+
+proc textEditorDefineMove(instance: ptr InstanceData; move: sink string; fun: uint32; data: uint32): void =
+  if instance.host == nil:
+    return
+
+  proc moveImpl(rope: Rope, move: string, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.gcsafe, raises: [].} =
+    let res = instance.funcs.handleMove(fun, $args.removed, $args.added)
+    if res.isErr:
+      log lvlError, "Failed to call handleModeChanged: " & res.err.msg
+
+  instance.host.moves.registerMove(move, moveImpl)
 
 proc textEditor_addModeChangedHandler(instance: ptr InstanceData, fun: uint32): int32 =
   if instance.host == nil:
@@ -560,6 +592,24 @@ proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor) =
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.hideCompletions()
+
+proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor; behaviour: Option[ScrollBehaviour]): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.scrollToCursor(scripting_api.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal))
+
+proc textEditorSetNextSnapBehaviour(instance: ptr InstanceData; editor: TextEditor; behaviour: ScrollSnapBehaviour): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setNextSnapBehaviour(behaviour.toInternal)
+
+proc textEditorUpdateTargetColumn(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.updateTargetColumn()
 
 proc textEditorCommand(instance: ptr InstanceData; editor: TextEditor, name: sink string, arguments: sink string): Result[string, CommandError] =
   if instance.host == nil:

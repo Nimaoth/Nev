@@ -156,3 +156,31 @@ proc notifyTaskCompleteExported(a0: uint64; a1: bool): void {.
   task = convert(a0, uint64)
   canceled = a1.bool
   notifyTaskComplete(task, canceled)
+
+proc handleMove(fun: uint32; data: uint32; text: sink Rope;
+                selections: WitList[Selection]; count: int32; eol: bool): WitList[
+    Selection]
+var handleMoveRetArea: array[28, uint8]
+proc handleMoveExported(a0: uint32; a1: uint32; a2: int32; a3: int32; a4: int32;
+                        a5: int32; a6: bool): int32 {.
+    wasmexport("handle-move", "nev:plugins/guest").} =
+  var
+    fun: uint32
+    data: uint32
+    text: Rope
+    selections: WitList[Selection]
+    count: int32
+    eol: bool
+  fun = convert(a0, uint32)
+  data = convert(a1, uint32)
+  text.handle = a2 + 1
+  selections = wl(cast[ptr typeof(selections[0])](a3), a4)
+  count = convert(a5, int32)
+  eol = a6.bool
+  let res = handleMove(fun, data, text, selections, count, eol)
+  if res.len > 0:
+    cast[ptr int32](handleMoveRetArea[0].addr)[] = cast[int32](res[0].addr)
+  else:
+    cast[ptr int32](handleMoveRetArea[0].addr)[] = 0.int32
+  cast[ptr int32](handleMoveRetArea[4].addr)[] = cast[int32](res.len)
+  cast[int32](handleMoveRetArea[0].addr)

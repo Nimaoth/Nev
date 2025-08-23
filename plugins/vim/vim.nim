@@ -194,6 +194,10 @@ proc vimState(editor: TextEditor): var EditorVimState =
     editorStates[editor.id] = EditorVimState()
   return editorStates[editor.id]
 
+proc getContextWithMode(self: TextEditor, context: string): string =
+  ## Appends the current mode to context
+  return context & "." & $self.mode
+
 proc shouldRecortImplicitPeriodMacro(editor: TextEditor): bool =
   case $editor.getUsage()
   of "command-line", "search-bar":
@@ -238,7 +242,6 @@ proc handleSelectWord(editor: TextEditor, cursor: Cursor) {.exposeActive(editorC
   editor.setSelection(cursor.toSelection)
 
 proc selectLine(editor: TextEditor) {.exposeActive(editorContext).} =
-  debugf"selectLine"
   editor.setSelections stackWitList(editor.selections.mapIt (if it.isBackwards:
       Selection(first: Cursor(line: it.first.line, column: editor.lineLength(it.first.line)), last: Cursor(line: it.last.line, column: 0))
     else:
@@ -246,8 +249,6 @@ proc selectLine(editor: TextEditor) {.exposeActive(editorContext).} =
       ))
 
 proc selectLast(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
-  # stdout.write(ansiForegroundColorCode(color))
-  debugf"selectLast '{move}', count"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     discard editor.command(ws(action), ws(arg))
@@ -255,13 +256,11 @@ proc selectLast(editor: TextEditor, move: string, count: int = 1) {.exposeActive
   editor.vimState.deleteInclusiveEnd = true
 
 proc select(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
-  debugf"select '{move}', count"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     discard editor.command(ws(action), ws(arg))
 
 proc undo(editor: TextEditor, enterNormalModeBefore: bool) {.exposeActive(editorContext).} =
-  debugf"undo {enterNormalModeBefore}"
   if enterNormalModeBefore:
     editor.setMode "vim-new.normal"
 
@@ -273,7 +272,6 @@ proc undo(editor: TextEditor, enterNormalModeBefore: bool) {.exposeActive(editor
       editor.setMode "vim-new.normal"
 
 proc redo(editor: TextEditor, enterNormalModeBefore: bool) {.exposeActive(editorContext).} =
-  debugf"redo {enterNormalModeBefore}"
   if enterNormalModeBefore:
     editor.setMode "vim-new.normal"
 
@@ -310,48 +308,41 @@ proc copySelection(editor: TextEditor, register: string = ""): seq[Selection] =
 
   return selections.mapIt(it.normalized.first.toSelection)
 
-# proc vimUpdateSelections(editor: TextEditor, selections: Selections) =
-#   if editor.vimState.selectLines:
-#     editor.setSelections selections.mapIt editor.doMoveCursorLine(it.normalized.first, 1).toSelection
+proc deleteSelection(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[seq[Selection]] = seq[Selection].none) {.exposeActive(editorContext).} =
+  let newSelections = editor.copySelection(getVimDefaultRegister())
+  let selectionsToDelete = editor.selections
+  if oldSelections.isSome:
+    editor.setSelections oldSelections.get
+  editor.addNextCheckpoint(ws"insert")
+  let inclusiveEnd = (not editor.vimState.selectLines) and (editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
+  editor.setSelections editor.edit(selectionsToDelete, @@[ws""], inclusive = inclusiveEnd)
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+  editor.vimState.deleteInclusiveEnd = true
+  editor.setMode "vim-new.normal"
 
-#   else:
-#     editor.setSelections selections
-#   editor.updateTargetColumn()
-#   editor.scrollToCursor Last
+proc changeSelection*(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[seq[Selection]] = seq[Selection].none) {.exposeActive(editorContext).} =
+  let newSelections = editor.copySelection(getVimDefaultRegister())
+  let selectionsToDelete = editor.selections
+  if oldSelections.isSome:
+    editor.setSelections oldSelections.get
+  editor.addNextCheckpoint(ws"insert")
+  let inclusive = editor.vimState.deleteInclusiveEnd or forceInclusiveEnd
+  editor.setSelections editor.edit(selectionsToDelete, @@[ws""], inclusive = inclusive)
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+  editor.vimState.deleteInclusiveEnd = true
+  editor.setMode "vim-new.insert"
 
-# proc vimDeleteSelection(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.exposeActive(editorContext, "vim-delete-selection").} =
-#   let newSelections = editor.copySelection(getVimDefaultRegister())
-#   let selectionsToDelete = editor.selections
-#   if oldSelections.isSome:
-#     editor.setSelections oldSelections.get
-#   editor.addNextCheckpoint("insert")
-#   let inclusiveEnd = (not editor.vimState.selectLines) and (editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
-#   editor.vimUpdateSelections editor.delete(
-#     selectionsToDelete, inclusiveEnd=inclusiveEnd)
-#   editor.vimState.deleteInclusiveEnd = true
-#   editor.setMode "vim-new.normal"
+proc yankSelection*(editor: TextEditor) {.exposeActive(editorContext).} =
+  let selections = editor.copySelection(getVimDefaultRegister())
+  editor.setSelections selections
+  editor.setMode "vim-new.normal"
 
-# proc vimChangeSelection*(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.exposeActive(editorContext, "vim-change-selection").} =
-#   let newSelections = editor.copySelection(getVimDefaultRegister())
-#   let selectionsToDelete = editor.selections
-#   if oldSelections.isSome:
-#     editor.setSelections oldSelections.get
-#   editor.addNextCheckpoint("insert")
-#   # todo: figure out if we should check for selectLines here as well
-#   editor.vimUpdateSelections editor.delete(
-#     selectionsToDelete, inclusiveEnd=editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
-#   editor.vimState.deleteInclusiveEnd = true
-#   editor.setMode "vim-new.insert"
-
-# proc vimYankSelection*(editor: TextEditor) {.exposeActive(editorContext, "vim-yank-selection").} =
-#   let selections = editor.copySelection(getVimDefaultRegister())
-#   editor.setSelections selections
-#   editor.setMode "vim-new.normal"
-
-# proc vimYankSelectionClipboard*(editor: TextEditor) {.exposeActive(editorContext, "vim-yank-selection-clipboard").} =
-#   let selections = editor.copySelection()
-#   editor.setSelections selections
-#   editor.setMode "vim-new.normal"
+proc yankSelectionClipboard*(editor: TextEditor) {.exposeActive(editorContext).} =
+  let selections = editor.copySelection()
+  editor.setSelections selections
+  editor.setMode "vim-new.normal"
 
 # proc vimReplace(editor: TextEditor, input: string) {.exposeActive(editorContext, "vim-replace").} =
 #   let texts = editor.selections.mapIt(block:
@@ -471,10 +462,11 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #   if result.last.line + 1 < editor.lineCount:
 #     result = result or editor.vimMotionParagraphInner((result.last.line + 1, 0), 1)
 
-# proc vimMotionWordOuter*(editor: TextEditor, cursor: Cursor, count: int): Selection =
-#   result = vimMotionWord(editor, cursor, count)
-#   if result.last.column < editor.lineLength(result.last.line) and editor.getChar(result.last) in Whitespace:
-#     result.last = editor.vimMotionWord(result.last, 1).last
+proc vimMotionWordOuter(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl, raises: [].} =
+# proc vimMotionWordOuter*(rope: sink Rope, cursor: Cursor, count: int): Selection =
+  result = vimMotionWord(editor, cursor, count)
+  if result.last.column < editor.lineLength(result.last.line) and editor.getChar(result.last) in Whitespace:
+    result.last = editor.vimMotionWord(result.last, 1).last
 
 # proc vimMotionWordBigOuter*(editor: TextEditor, cursor: Cursor, count: int): Selection =
 #   result = vimMotionWordBig(editor, cursor, count)
@@ -551,7 +543,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #       selection.first.toSelection(it, which)
 #   )
 
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc vimMotionSurroundBracesInner*(editor: TextEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '{', '}', true)
@@ -570,7 +562,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 # # todo
 # addCustomTextMove "vim-line", vimMotionLine
 # addCustomTextMove "vim-visual-line", vimMotionVisualLine
-# addCustomTextMove "vim-word-outer", vimMotionWordOuter
+addCustomTextMove "vim-word-outer", vimMotionWordOuter
 # addCustomTextMove "vim-WORD-outer", vimMotionWordBigOuter
 # addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
 # addCustomTextMove "vim-paragraph-outer", vimMotionParagraphOuter
@@ -641,7 +633,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #         resultSelection
 #     )
 
-#   editor.scrollToCursor(Last)
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc vimSelectSurrounding(editor: TextEditor, textObject: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext, "vim-select-surrounding").} =
@@ -656,7 +648,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #         resultSelection
 #     )
 
-#   editor.scrollToCursor(Last)
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc moveSelectionNext(editor: TextEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.exposeActive(editorContext, "move-selection-next").} =
@@ -686,7 +678,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #       res.toSelection(it, which)
 #     )
 
-#   editor.scrollToCursor(Last)
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc applyMove(editor: TextEditor, selections: seq[Selection], move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, which: Option[SelectionCursor] = SelectionCursor.none): seq[Selection] =
@@ -724,7 +716,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 # proc moveSelectionEnd(editor: TextEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.exposeActive(editorContext, "move-selection-end").} =
 
 #   editor.setSelections editor.applyMove(editor.selections, move, backwards, allowEmpty, count)
-#   editor.scrollToCursor(Last)
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc moveParagraph(editor: TextEditor, backwards: bool, count: int = 1) {.exposeActive(editorContext, "move-paragraph").} =
@@ -745,7 +737,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #   if editor.vimState.selectLines:
 #     editor.selectLine()
 
-#   editor.scrollToCursor(Last)
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc vimDeleteLeft*(editor: TextEditor) =
@@ -763,37 +755,10 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 # exposeActive editorContext, "vim-delete-left", vimDeleteLeft
 # exposeActive editorContext, "vim-delete-right", vimDeleteRight
 
-# proc vimMoveCursorColumn(editor: TextEditor, direction: int, count: int = 1) {.exposeActive(editorContext, "vim-move-cursor-column").} =
-#   editor.moveCursorColumn(direction * max(count, 1), wrap=false, includeAfter=editor.vimState.cursorIncludeEol)
-#   if editor.vimState.selectLines:
-#     editor.selectLine()
-#   editor.updateTargetColumn()
-
-# proc vimMoveCursorLine(editor: TextEditor, direction: int, count: int = 1, center: bool = false) {.exposeActive(editorContext, "vim-move-cursor-line").} =
-#   editor.moveCursorLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
-#   let nextScrollBehaviour = if center: CenterAlways.some else: ScrollBehaviour.none
-#   editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
-#   editor.setNextSnapBehaviour(Never)
-#   if editor.vimState.selectLines:
-#     editor.selectLine()
-
-# proc vimMoveCursorVisualLine(editor: TextEditor, direction: int, count: int = 1, center: bool = false) {.exposeActive(editorContext, "vim-move-cursor-visual-line").} =
-#   if editor.vimState.selectLines:
-#     editor.moveCursorLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
-#   else:
-#     editor.moveCursorVisualLine(direction * max(count, 1), includeAfter=editor.vimState.cursorIncludeEol)
-#   let defaultScrollBehaviour = editor.getDefaultScrollBehaviour
-#   let defaultCenter = defaultScrollBehaviour in {CenterAlways, CenterOffscreen}
-#   let nextScrollBehaviour = if center and defaultCenter: CenterAlways.some else: ScrollBehaviour.none
-#   editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
-#   editor.setNextSnapBehaviour(Never)
-#   if editor.vimState.selectLines:
-#     editor.selectLine()
-
 # proc vimMoveCursorPage(editor: TextEditor, direction: float, count: int = 1, center: bool = false) {.exposeActive(editorContext, "vim-move-cursor-page").} =
 #   editor.moveCursorPage(direction * max(count, 1).float, includeAfter=editor.vimState.cursorIncludeEol)
 #   let nextScrollBehaviour = if center: CenterAlways.some else: ScrollBehaviour.none
-#   editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
+#   editor.scrollToCursor(scrollBehaviour = nextScrollBehaviour)
 #   editor.setNextSnapBehaviour(Never)
 #   if editor.vimState.selectLines:
 #     editor.selectLine()
@@ -806,22 +771,55 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #   let defaultScrollBehaviour = editor.getDefaultScrollBehaviour
 #   let defaultCenter = defaultScrollBehaviour in {CenterAlways, CenterOffscreen}
 #   let nextScrollBehaviour = if center and defaultCenter: CenterAlways.some else: ScrollBehaviour.none
-#   editor.scrollToCursor(Last, scrollBehaviour = nextScrollBehaviour)
+#   editor.scrollToCursor(scrollBehaviour = nextScrollBehaviour)
 #   editor.setNextSnapBehaviour(Never)
 #   if editor.vimState.selectLines:
 #     editor.selectLine()
 
-# proc vimMoveFirst(editor: TextEditor, move: string) {.exposeActive(editorContext, "vim-move-first").} =
-#   editor.moveFirst(move)
-#   if editor.vimState.selectLines:
-#     editor.selectLine()
-#   editor.updateTargetColumn()
+func toSelection*(cursor: Cursor, default: Selection, which: sca.SelectionCursor): Selection =
+  case which
+  of sca.Config: return default
+  of sca.Both: return (cursor, cursor).toSelection
+  of sca.First: return (cursor, default.last).toSelection
+  of sca.Last: return (default.first, cursor).toSelection
+  of sca.LastToFirst: return (default.last, cursor).toSelection
 
-# proc vimMoveLast(editor: TextEditor, move: string) {.exposeActive(editorContext, "vim-move-last").} =
-#   editor.moveLast(move)
-#   if editor.vimState.selectLines:
-#     editor.selectLine()
-#   editor.updateTargetColumn()
+proc moveFirst(editor: TextEditor, move: string) {.exposeActive(editorContext).} =
+  let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
+  editor.setSelections editor.selections.mapIt(
+    editor.applyMove(it.last, move, 1, wrap = true, includeEol = editor.vimState.cursorIncludeEol).first.toSelection(it, cursorSelector)
+  )
+
+  if editor.vimState.selectLines:
+    editor.selectLine()
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+
+proc moveLast(editor: TextEditor, move: string, count: int = 1, wrap: bool = false) {.exposeActive(editorContext).} =
+  let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
+  debugf"moveLast '{move}', {editor.vimState.cursorIncludeEol}"
+  editor.setSelections editor.selections.mapIt(
+    editor.applyMove(it.last, move, 1, wrap = wrap, includeEol = editor.vimState.cursorIncludeEol).last.toSelection(it, cursorSelector)
+  )
+
+  if editor.vimState.selectLines:
+    editor.selectLine()
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+
+proc moveDirection(editor: TextEditor, move: string, direction: int, count: int = 1, wrap: bool = false, updateTargetColumn: bool = true) {.exposeActive(editorContext).} =
+  let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
+  debugf"moveDirection '{move}', dir: {direction}, count: {count}, includeEol: {editor.vimState.cursorIncludeEol}"
+  editor.setSelections editor.multiMove(editor.selections, move.ws, direction * max(count, 1), wrap, includeEol = editor.vimState.cursorIncludeEol)
+  # editor.setSelections editor.selections.mapIt(
+  #   editor.applyMove(it.last, move, direction * max(count, 1), wrap = wrap, includeEol = editor.vimState.cursorIncludeEol).last.toSelection(it, cursorSelector)
+  # )
+
+  if editor.vimState.selectLines:
+    editor.selectLine()
+  editor.scrollToCursor()
+  if updateTargetColumn:
+    editor.updateTargetColumn()
 
 # proc vimMoveToEndOfLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-end-of-line").} =
 #   # infof"vimMoveToEndOfLine {count}"
@@ -829,7 +827,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #   if count > 1:
 #     editor.moveCursorLine(count - 1)
 #   editor.moveLast("vim-line")
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc vimMoveToEndOfVisualLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-end-of-visual-line").} =
@@ -838,7 +836,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #   if count > 1:
 #     editor.moveCursorLine(count - 1)
 #   editor.moveLast("vim-visual-line")
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc vimMoveCursorLineFirstChar(editor: TextEditor, direction: int, count: int = 1) {.exposeActive(editorContext, "vim-move-cursor-line-first-char").} =
@@ -852,7 +850,7 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #   if count > 1:
 #     editor.moveCursorLine(count - 1)
 #   editor.moveFirst "line-no-indent"
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc vimPaste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = false, register: string = "") {.exposeActive(editorContext, "vim-paste").} =
@@ -921,11 +919,11 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 
 # proc vimAddCursorAbove(editor: TextEditor) {.exposeActive(editorContext, "vim-add-cursor-above").} =
 #   editor.addCursorAbove()
-#   editor.scrollToCursor(Last)
+#   editor.scrollToCursor()
 
 # proc vimAddCursorBelow(editor: TextEditor) {.exposeActive(editorContext, "vim-add-cursor-below").} =
 #   editor.addCursorBelow()
-#   editor.scrollToCursor(Last)
+#   editor.scrollToCursor()
 
 # proc vimEnter(editor: TextEditor) {.exposeActive(editorContext, "vim-enter").} =
 #   editor.addNextCheckpoint "insert"
@@ -933,15 +931,14 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 
 proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
   ## Exit to normal mode and clear things
-  log lvlInfo, "normalMode"
   if $editor.mode == "vim-new.normal":
     editor.setSelection editor.getSelection.last.toSelection
     editor.clearTabStops()
   editor.setMode("vim-new.normal")
 
-# proc vimVisualLineMode(editor: TextEditor) {.exposeActive(editorContext, "vim-visual-line-mode").} =
-#   editor.setMode "vim-new.visual-line"
-#   editor.selectLine()
+proc visualLineMode(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.setMode "vim-new.visual-line"
+  editor.selectLine()
 
 # proc vimYankLine(editor: TextEditor) {.exposeActive(editorContext, "vim-yank-line").} =
 #   editor.vimState.selectLines = true
@@ -982,7 +979,7 @@ proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
 #   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 #   editor.setSelection (count - 1, 0).toSelection(editor.selection, which)
 #   editor.moveFirst "line-no-indent"
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimMoveFileEnd(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-file-end").} =
@@ -995,7 +992,7 @@ proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
 #   else:
 #     editor.setSelection newSelection
 #     editor.moveFirst "line-no-indent"
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimMoveToMatchingOrFileOffset(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-matching-or-file-offset").} =
@@ -1006,7 +1003,7 @@ proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
 #     let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 #     editor.setSelection (line, 0).toSelection(editor.selection, which)
 #     editor.moveFirst "line-no-indent"
-#     editor.scrollToCursor Last
+#     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimScrollLineToTopAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-top-and-move-line-start").} =
@@ -1083,13 +1080,13 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 
 # proc vimNextSearchResult(editor: TextEditor) {.exposeActive(editorContext, "vim-next-search-result").} =
 #   editor.setSelection editor.getNextFindResult(editor.selection.last).first.toSelection
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #   editor.updateTargetColumn()
 
 # proc vimPrevSearchResult(editor: TextEditor) {.exposeActive(editorContext, "vim-prev-search-result").} =
 #   editor.setSelection editor.getPrevFindResult(editor.selection.last).first.toSelection
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #   editor.updateTargetColumn()
 
@@ -1123,7 +1120,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 #   else:
 #     let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
 #     editor.setSelections editor.selections & next
-#     editor.scrollToCursor Last
+#     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
@@ -1137,7 +1134,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 #   else:
 #     let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
 #     editor.setSelections editor.selections[0..^2] & next
-#     editor.scrollToCursor Last
+#     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
@@ -1155,7 +1152,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 
 #   let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
 #   editor.setSelections editor.selections & next
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc vimSaveState() {.expose("vim-save-state").} =
@@ -1217,7 +1214,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 #       editor.setSelections newSelections
 
 #     editor.updateTargetColumn()
-#     editor.scrollToCursor Last
+#     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimDeleteWordBack(editor: TextEditor) {.exposeActive(editorContext, "vim-delete-word-back").} =
@@ -1239,7 +1236,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 #   else:
 #     (text, text)
 
-#   var insertSelections: Selections = @[]
+#   var insertSelections: seq[Selection] = @[]
 #   var insertTexts: seq[string] = @[]
 #   for s in editor.selections:
 #     let s = s.normalized
@@ -1283,19 +1280,19 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 
 # proc vimInvertSelections(editor: TextEditor) {.exposeActive(editorContext, "vim-invert-selections").} =
 #   editor.setSelections editor.selections.mapIt((it.last, it.first))
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimInvertLineSelections(editor: TextEditor) {.exposeActive(editorContext, "vim-invert-line-selections").} =
 #   editor.setSelections editor.selections.mapIt((it.last, it.first))
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimReverseSelections(editor: TextEditor) {.exposeActive(editorContext, "vim-reverse-selections").} =
 #   editor.setSelections editor.selections.reversed()
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
@@ -1322,34 +1319,34 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 
 # proc vimMoveToColumn(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-column").} =
 #   editor.setSelections editor.selections.mapIt((it.last.line, count).toSelection)
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
 # proc vimAddNextSameNodeToSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-add-next-same-node-to-selection").} =
 #   if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections & selection
-#     editor.scrollToCursor Last
+#     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
 # proc vimMoveSelectionToNextSameNode(editor: TextEditor) {.exposeActive(editorContext, "vim-move-selection-to-next-same-node").} =
 #   if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections[0..^2] & selection
-#     editor.scrollToCursor Last
+#     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
 # proc vimAddNextSiblingToSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-add-next-sibling-to-selection").} =
 #   if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections & selection
-#     editor.scrollToCursor Last
+#     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
 # proc vimMoveSelectionToNextSibling(editor: TextEditor) {.exposeActive(editorContext, "vim-move-selection-to-next-sibling").} =
 #   if editor.getNextNamedSiblingNodeSelection(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections[0..^2] & selection
-#     editor.scrollToCursor Last
+#     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
@@ -1360,7 +1357,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 #     else:
 #       (editor.doMoveCursorColumn(it.first, 1), editor.doMoveCursorColumn(it.last, -1))
 #   )
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #   editor.updateTargetColumn()
 
@@ -1401,26 +1398,26 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 # proc vimGotoNextDiagnostic(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-next-diagnostic").} =
 #   let severity = getOption("text.jump-diagnostic-severity", 1)
 #   editor.setSelection editor.getNextDiagnostic(editor.selection.last, severity).first.toSelection
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimGotoPrevDiagnostic(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-prev-diagnostic").} =
 #   let severity = getOption("text.jump-diagnostic-severity", 1)
 #   editor.setSelection editor.getPrevDiagnostic(editor.selection.last, severity).first.toSelection
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimGotoNextChange(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-next-change").} =
 #   editor.setSelection editor.getNextChange(editor.selection.last).first.toSelection
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.centerCursor()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimGotoPrevChange(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-prev-change").} =
 #   editor.setSelection editor.getPrevChange(editor.selection.last).first.toSelection
-#   editor.scrollToCursor Last
+#   editor.scrollToCursor()
 #   editor.centerCursor()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 

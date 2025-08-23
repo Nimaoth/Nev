@@ -62,6 +62,14 @@ type
   ReadFlag* = enum
     Binary = "binary"
   ReadFlags* = set[ReadFlag]
+  ScrollBehaviour* = enum
+    CenterAlways = "center-always", CenterOffscreen = "center-offscreen",
+    CenterMargin = "center-margin", ScrollToMargin = "scroll-to-margin",
+    TopOfScreen = "top-of-screen"
+  ScrollSnapBehaviour* = enum
+    Never = "never", Always = "always",
+    MinDistanceOffscreen = "min-distance-offscreen",
+    MinDistanceCenter = "min-distance-center"
 when not declared(RopeResource):
   {.error: "Missing resource type definition for " & "RopeResource" &
       ". Define the type before the importWit statement.".}
@@ -107,41 +115,41 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8556381802 = instance.getExport(context, "init_plugin")
-  if f_8556381802.isSome:
-    assert f_8556381802.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8556381802.get.of_field.func_field
+  let f_8573159018 = instance.getExport(context, "init_plugin")
+  if f_8573159018.isSome:
+    assert f_8573159018.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8573159018.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8556381818 = instance.getExport(context, "handle_command")
-  if f_8556381818.isSome:
-    assert f_8556381818.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8556381818.get.of_field.func_field
+  let f_8573159034 = instance.getExport(context, "handle_command")
+  if f_8573159034.isSome:
+    assert f_8573159034.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8573159034.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8556381868 = instance.getExport(context, "handle_mode_changed")
-  if f_8556381868.isSome:
-    assert f_8556381868.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8556381868.get.of_field.func_field
+  let f_8573159084 = instance.getExport(context, "handle_mode_changed")
+  if f_8573159084.isSome:
+    assert f_8573159084.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8573159084.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8556381869 = instance.getExport(context, "handle_view_render_callback")
-  if f_8556381869.isSome:
-    assert f_8556381869.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8556381869.get.of_field.func_field
+  let f_8573159085 = instance.getExport(context, "handle_view_render_callback")
+  if f_8573159085.isSome:
+    assert f_8573159085.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8573159085.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_8556381893 = instance.getExport(context, "handle_channel_update")
-  if f_8556381893.isSome:
-    assert f_8556381893.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_8556381893.get.of_field.func_field
+  let f_8573159109 = instance.getExport(context, "handle_channel_update")
+  if f_8573159109.isSome:
+    assert f_8573159109.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_8573159109.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_8556381894 = instance.getExport(context, "notify_task_complete")
-  if f_8556381894.isSome:
-    assert f_8556381894.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_8556381894.get.of_field.func_field
+  let f_8573159110 = instance.getExport(context, "notify_task_complete")
+  if f_8573159110.isSome:
+    assert f_8573159110.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_8573159110.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
 
@@ -377,6 +385,12 @@ proc textEditorClearCurrentCommandHistory(instance: ptr InstanceData;
 proc textEditorSaveCurrentCommandHistory(instance: ptr InstanceData;
     editor: TextEditor): void
 proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor): void
+proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor;
+                              behaviour: Option[ScrollBehaviour]): void
+proc textEditorSetNextSnapBehaviour(instance: ptr InstanceData;
+                                    editor: TextEditor;
+                                    behaviour: ScrollSnapBehaviour): void
+proc textEditorUpdateTargetColumn(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorGetUsage(instance: ptr InstanceData; editor: TextEditor): string
 proc textEditorGetRevision(instance: ptr InstanceData; editor: TextEditor): int32
 proc textEditorSetMode(instance: ptr InstanceData; editor: TextEditor;
@@ -399,6 +413,10 @@ proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor;
 proc textEditorApplyMove(instance: ptr InstanceData; editor: TextEditor;
                          selection: Selection; move: sink string; count: int32;
                          wrap: bool; includeEol: bool): seq[Selection]
+proc textEditorMultiMove(instance: ptr InstanceData; editor: TextEditor;
+                         selections: sink seq[Selection]; move: sink string;
+                         count: int32; wrap: bool; includeEol: bool): seq[
+    Selection]
 proc textEditorSetSelection(instance: ptr InstanceData; editor: TextEditor;
                             s: Selection): void
 proc textEditorSetSelections(instance: ptr InstanceData; editor: TextEditor;
@@ -414,8 +432,10 @@ proc textEditorGetSettingRaw(instance: ptr InstanceData; editor: TextEditor;
 proc textEditorSetSettingRaw(instance: ptr InstanceData; editor: TextEditor;
                              name: sink string; value: sink string): void
 proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor;
-                    selections: sink seq[Selection]; contents: sink seq[string]): seq[
-    Selection]
+                    selections: sink seq[Selection]; contents: sink seq[string];
+                    inclusive: bool): seq[Selection]
+proc textEditorDefineMove(instance: ptr InstanceData; move: sink string;
+                          fun: uint32; data: uint32): void
 proc textEditorContent(instance: ptr InstanceData; editor: TextEditor): RopeResource
 proc textDocumentContent(instance: ptr InstanceData; document: TextDocument): RopeResource
 proc layoutShow(instance: ptr InstanceData; v: View; slot: sink string;
@@ -1295,6 +1315,48 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "scroll-to-cursor",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var behaviour: Option[ScrollBehaviour]
+        editor.id = convert(parameters[0].i64, uint64)
+        if parameters[1].i32 != 0:
+          var temp: ScrollBehaviour
+          temp = cast[ScrollBehaviour](parameters[2].i32)
+          behaviour = temp.some
+        textEditorScrollToCursor(instance, editor, behaviour)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "set-next-snap-behaviour", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var behaviour: ScrollSnapBehaviour
+        editor.id = convert(parameters[0].i64, uint64)
+        behaviour = cast[ScrollSnapBehaviour](parameters[1].i32)
+        textEditorSetNextSnapBehaviour(instance, editor, behaviour)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "update-target-column", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        textEditorUpdateTargetColumn(instance, editor)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
           [WasmValkind.I64, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "get-usage", ty):
         var instance = cast[ptr InstanceData](store.getData())
@@ -1701,6 +1763,75 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "multi-move", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var editor: TextEditor
+        var selections: seq[Selection]
+        var move: string
+        var count: int32
+        var wrap: bool
+        var includeEol: bool
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
+          selections = newSeq[typeof(selections[0])](parameters[2].i32)
+          for i0 in 0 ..< selections.len:
+            selections[i0].first.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 0].addr)[], int32)
+            selections[i0].first.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 4].addr)[], int32)
+            selections[i0].last.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 8].addr)[], int32)
+            selections[i0].last.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 12].addr)[], int32)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[3].i32].addr)
+          move = newString(parameters[4].i32)
+          for i0 in 0 ..< move.len:
+            move[i0] = p0[i0]
+        count = convert(parameters[5].i32, int32)
+        wrap = parameters[6].i32.bool
+        includeEol = parameters[7].i32.bool
+        let res = textEditorMultiMove(instance, editor, selections, move, count,
+                                      wrap, includeEol)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 16).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 0].addr)[] = res[
+                  i0].first.line
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 4].addr)[] = res[
+                  i0].first.column
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 8].addr)[] = res[
+                  i0].last.line
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 12].addr)[] = res[
+                  i0].last.column
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "set-selection", ty):
         var instance = cast[ptr InstanceData](store.getData())
@@ -1929,8 +2060,8 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
-          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
-          [])
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "edit", ty):
         var instance = cast[ptr InstanceData](store.getData())
         var mainMemory = caller.getExport("memory")
@@ -1949,6 +2080,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         var editor: TextEditor
         var selections: seq[Selection]
         var contents: seq[string]
+        var inclusive: bool
         editor.id = convert(parameters[0].i64, uint64)
         block:
           let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
@@ -1972,7 +2104,9 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
               contents[i0] = newString(cast[ptr int32](p0[i0 * 8 + 4].addr)[])
               for i1 in 0 ..< contents[i0].len:
                 contents[i0][i1] = p1[i1]
-        let res = textEditorEdit(instance, editor, selections, contents)
+        inclusive = parameters[5].i32.bool
+        let res = textEditorEdit(instance, editor, selections, contents,
+                                 inclusive)
         let retArea = parameters[^1].i32
         if res.len > 0:
           let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
@@ -1991,6 +2125,38 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         else:
           cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
         cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "define-move", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var move: string
+        var fun: uint32
+        var data: uint32
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          move = newString(parameters[1].i32)
+          for i0 in 0 ..< move.len:
+            move[i0] = p0[i0]
+        fun = convert(parameters[2].i32, uint32)
+        data = convert(parameters[3].i32, uint32)
+        textEditorDefineMove(instance, move, fun, data)
     if e.isErr:
       return e
   block:

@@ -193,6 +193,21 @@ interface text-editor {
   use types.{editor, document, text-editor, text-document, cursor, selection, rope};
   use commands.{command-error};
 
+  enum scroll-behaviour {
+    center-always,
+    center-offscreen,
+    center-margin,
+    scroll-to-margin,
+    top-of-screen,
+  }
+
+  enum scroll-snap-behaviour {
+    never,
+    always,
+    min-distance-offscreen,
+    min-distance-center,
+  }
+
   /// Returns a handle for the currently active text editor.
   active-text-editor: func() -> option<text-editor>;
   /// Returns the text document the given editor is currently editing.
@@ -214,6 +229,14 @@ interface text-editor {
 
   /// todo
   hide-completions: func(editor: text-editor);
+
+  /// todo
+  scroll-to-cursor: func(editor: text-editor, behaviour: option<scroll-behaviour>);
+  /// todo
+  set-next-snap-behaviour: func(editor: text-editor, behaviour: scroll-snap-behaviour);
+
+  /// todo
+  update-target-column: func(editor: text-editor);
 
   /// todo
   get-usage: func(editor: text-editor) -> string;
@@ -244,6 +267,7 @@ interface text-editor {
 
   /// todo
   apply-move: func(editor: text-editor, selection: selection, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+  multi-move: func(editor: text-editor, selections: list<selection>, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
 
   /// Sets the given selection as the only selection for the given editor.
   set-selection: func(editor: text-editor, s: selection);
@@ -265,7 +289,9 @@ interface text-editor {
   set-setting-raw: func(editor: text-editor, name: string, value: string);
 
   /// todo
-  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>) -> list<selection>;
+  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
+
+  define-move: func(move: string, fun: u32, data: u32);
 
   /// Returns the rope containing the current content of the text editors document.
   /// This rope is not automatically kept up to date when the document changes, but
@@ -427,12 +453,14 @@ interface settings {
 interface guest {
   use render.{view};
   use channel.{channel-listen-response};
+  use types.{rope, selection};
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
   handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
   notify-task-complete: func(task: u64, canceled: bool);
+  handle-move: func(fun: u32, data: u32, text: rope, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
 }
 
 /// APIs which can safely be used on a background thread

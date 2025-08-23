@@ -1932,18 +1932,19 @@ proc vimMotionWordBig*(self: TextDocumentEditor; cursor: Cursor; count: int = 0)
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_wasm(
+proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
-                          move: string; count: int = 0): Selection {.gcsafe,
-    raises: [].} =
+                          move: string; count: int = 0; includeEol: bool = true): Selection {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add cursor.toJson()
   argsJson.add move.toJson()
   argsJson.add count.toJson()
+  argsJson.add includeEol.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_wasm(
+  let res {.used.} = editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_bool_wasm(
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
