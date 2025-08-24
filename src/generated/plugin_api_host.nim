@@ -1156,7 +1156,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           assert false
         let res = editorActiveEditor(instance)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1183,7 +1183,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         let res = editorGetDocument(instance, editor)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1208,7 +1208,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           assert false
         let res = textEditorActiveTextEditor(instance)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1235,7 +1235,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         let res = textEditorGetDocument(instance, editor)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1262,7 +1262,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         let res = textEditorAsTextEditor(instance, editor)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1290,7 +1290,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         document.id = convert(parameters[0].i64, uint64)
         let res = textEditorAsTextDocument(instance, document)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
