@@ -359,7 +359,7 @@ proc selectMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive
 
 proc deleteMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
   debugf"vimDeleteMove '{move}' {count}"
-  let oldSelections = @(editor.selections.toOpenArray)
+  let oldSelections = @(editor.selections)
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     discard editor.command(action.ws, arg.ws)
@@ -368,7 +368,7 @@ proc deleteMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive
 
 proc changeMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
   debugf"vimChangeMove '{move}' {count}"
-  let oldSelections = @(editor.selections.toOpenArray)
+  let oldSelections = @(editor.selections)
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     discard editor.command(action.ws, arg.ws)
