@@ -1,8 +1,11 @@
-import std/[strformat, json, jsonutils, strutils, sequtils, sugar]
+import std/[strformat, json, jsonutils, strutils, sequtils, sugar, os, terminal, colors]
 import wit_guest, wit_types, wit_runtime, generational_seq, event, util
 export wit_types, wit_runtime
 import async
 export async
+
+# todo: remove this eventually
+from "../../src/scripting_api.nim" as sca import nil
 
 const pluginWorld {.strdefine.} = "plugin"
 
@@ -78,7 +81,9 @@ proc notifyTasksComplete(tasks: WitList[tuple[task: uint64, canceled: bool]]) =
   for (task, canceled) in tasks:
     notifyTaskComplete(task, canceled)
 
-proc handleMove(fun: uint32; data: uint32; text: sink Rope; selections: WitList[Selection]; count: int32; eol: bool): WitList[Selection] =
+proc handleMove(fun: uint32; data: uint32; text: uint32; selections: WitList[Selection]; count: int32; eol: bool): WitList[Selection] =
+  echo "handleMove "
+  var text = Rope(handle: text.int32)
   let fun = cast[MoveHandler](fun)
   return stackWitList(fun(data, text.ensureMove, selections.toOpenArray(), count.int, eol))
 
@@ -140,17 +145,6 @@ when pluginWorld == "plugin":
 
   func `<=`*(a: Cursor, b: Cursor): bool =
     return a == b or a < b
-
-  func `>`*(a: Cursor, b: Cursor): bool =
-    if a.line > b.line:
-      return true
-    elif a.line == b.line and a.column > b.column:
-      return true
-    else:
-      return false
-
-  func `>=`*(a: Cursor, b: Cursor): bool =
-    return a == b or a >= b
 
   func min*(a: Cursor, b: Cursor): Cursor =
     if a < b:
@@ -227,6 +221,16 @@ when pluginWorld == "plugin":
 
   proc addCustomTextMove*(name: string, move: MoveHandler) =
     defineMove(name.ws, 0, cast[uint32](move))
+
+func toSelection*(cursor: Cursor, default: Selection, which: sca.SelectionCursor): Selection =
+  case which
+  of sca.SelectionCursor.Config: return default
+  of sca.SelectionCursor.Both: return (cursor, cursor).toSelection
+  of sca.SelectionCursor.First: return (cursor, default.last).toSelection
+  of sca.SelectionCursor.Last: return (default.first, cursor).toSelection
+  of sca.SelectionCursor.LastToFirst: return (default.last, cursor).toSelection
+
+proc charAt*(rope: Rope, cursor: Cursor): char = rope.byteAt(cursor).char
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)
@@ -357,3 +361,27 @@ proc runInBackground*(executor: BackgroundExecutor, p: proc(task: BackgroundTask
   let args = &"{cast[int](p)}\n{readerPath}\n{writerPath}"
   spawnBackground(stackWitString(args), executor)
 
+############################# logging ############################
+
+type LogLevel* = enum lvlInfo, lvlNotice, lvlDebug, lvlWarn, lvlError
+
+proc log*(level: LogLevel, str: string) =
+  let color = case level
+  of lvlDebug: rgb(100, 100, 200)
+  of lvlInfo: rgb(200, 200, 200)
+  of lvlNotice: rgb(200, 255, 255)
+  of lvlWarn: rgb(200, 200, 100)
+  of lvlError: rgb(255, 150, 150)
+  # of lvlFatal: rgb(255, 0, 0)
+  else: rgb(255, 255, 255)
+  try:
+    {.gcsafe.}:
+      stdout.write(ansiForegroundColorCode(color))
+      stdout.write("[vim] ")
+      stdout.write(str)
+      stdout.write("\r\n")
+  except IOError:
+    discard
+
+template debugf*(x: static string) =
+  log lvlDebug, fmt(x)

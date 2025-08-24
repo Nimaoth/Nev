@@ -100,6 +100,7 @@ type
     handleViewRenderCallback*: FuncT
     handleChannelUpdate*: FuncT
     notifyTaskComplete*: FuncT
+    handleMove*: FuncT
 proc mem(funcs: ExportedFuncs): WasmMemory =
   if funcs.mMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
     return initWasmMemory(funcs.mMemory.get.of_field.sharedmemory)
@@ -115,43 +116,49 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8573159018 = instance.getExport(context, "init_plugin")
-  if f_8573159018.isSome:
-    assert f_8573159018.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8573159018.get.of_field.func_field
+  let f_8573159021 = instance.getExport(context, "init_plugin")
+  if f_8573159021.isSome:
+    assert f_8573159021.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_8573159021.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8573159034 = instance.getExport(context, "handle_command")
-  if f_8573159034.isSome:
-    assert f_8573159034.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8573159034.get.of_field.func_field
+  let f_8573159037 = instance.getExport(context, "handle_command")
+  if f_8573159037.isSome:
+    assert f_8573159037.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_8573159037.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8573159084 = instance.getExport(context, "handle_mode_changed")
-  if f_8573159084.isSome:
-    assert f_8573159084.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8573159084.get.of_field.func_field
+  let f_8573159087 = instance.getExport(context, "handle_mode_changed")
+  if f_8573159087.isSome:
+    assert f_8573159087.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_8573159087.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8573159085 = instance.getExport(context, "handle_view_render_callback")
-  if f_8573159085.isSome:
-    assert f_8573159085.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8573159085.get.of_field.func_field
+  let f_8573159088 = instance.getExport(context, "handle_view_render_callback")
+  if f_8573159088.isSome:
+    assert f_8573159088.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_8573159088.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_8573159109 = instance.getExport(context, "handle_channel_update")
-  if f_8573159109.isSome:
-    assert f_8573159109.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_8573159109.get.of_field.func_field
+  let f_8573159112 = instance.getExport(context, "handle_channel_update")
+  if f_8573159112.isSome:
+    assert f_8573159112.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_8573159112.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_8573159110 = instance.getExport(context, "notify_task_complete")
-  if f_8573159110.isSome:
-    assert f_8573159110.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_8573159110.get.of_field.func_field
+  let f_8573159113 = instance.getExport(context, "notify_task_complete")
+  if f_8573159113.isSome:
+    assert f_8573159113.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_8573159113.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
+  let f_8573159114 = instance.getExport(context, "handle_move")
+  if f_8573159114.isSome:
+    assert f_8573159114.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_8573159114.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "handle_move", "\'"
 
 proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   var args: array[max(1, 0), ValT]
@@ -336,6 +343,71 @@ proc notifyTaskComplete*(funcs: ExportedFuncs; task: uint64; canceled: bool): Wa
   if res.isErr:
     return res.toResult(void)
   
+proc handleMove*(funcs: ExportedFuncs; fun: uint32; data: uint32; text: uint32;
+                 selections: seq[Selection]; count: int32; eol: bool): WasmtimeResult[
+    seq[Selection]] =
+  var args: array[max(1, 7), ValT]
+  var results: array[max(1, 1), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  var dataPtrWasm0: WasmPtr
+  args[0] = toWasmVal(fun)
+  args[1] = toWasmVal(data)
+  args[2] = toWasmVal(text)
+  if selections.len > 0:
+    dataPtrWasm0 = block:
+      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
+                            funcs.mContext, (selections.len * 16).int32, 4)
+      if temp.isErr:
+        return temp.toResult(seq[Selection])
+      temp.val
+    args[3] = toWasmVal(cast[int32](dataPtrWasm0))
+    block:
+      for i0 in 0 ..< selections.len:
+        cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 0].addr)[] = selections[
+            i0].first.line
+        cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 4].addr)[] = selections[
+            i0].first.column
+        cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 8].addr)[] = selections[
+            i0].last.line
+        cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 12].addr)[] = selections[
+            i0].last.column
+  else:
+    args[3] = toWasmVal(0.int32)
+  args[4] = toWasmVal(cast[int32](selections.len))
+  args[5] = toWasmVal(count)
+  args[6] = toWasmVal(eol)
+  let res = funcs.handleMove.addr.call(funcs.mContext,
+                                       args.toOpenArray(0, 7 - 1),
+                                       results.toOpenArray(0, 1 - 1), trap.addr).toResult(
+      seq[Selection])
+  if trap != nil:
+    return trap.toResult(seq[Selection])
+  if res.isErr:
+    return res.toResult(seq[Selection])
+  var retVal: seq[Selection]
+  let retArea: ptr UncheckedArray[uint8] = memory.getRawPtr(
+      results[0].to(WasmPtr))
+  block:
+    let p0 = cast[ptr UncheckedArray[uint8]](memory.getRawPtr(
+        cast[ptr int32](retArea[0].addr)[].WasmPtr))
+    retVal = newSeq[typeof(retVal[0])](cast[ptr int32](retArea[4].addr)[])
+    for i0 in 0 ..< retVal.len:
+      retVal[i0].first.line = convert(cast[ptr int32](p0[i0 * 16 + 0].addr)[],
+                                      int32)
+      retVal[i0].first.column = convert(cast[ptr int32](p0[i0 * 16 + 4].addr)[],
+                                        int32)
+      retVal[i0].last.line = convert(cast[ptr int32](p0[i0 * 16 + 8].addr)[],
+                                     int32)
+      retVal[i0].last.column = convert(cast[ptr int32](p0[i0 * 16 + 12].addr)[],
+                                       int32)
+  return wasmtime.ok(retVal)
+
 proc coreApiVersion(instance: ptr InstanceData): int32
 proc coreGetTime(instance: ptr InstanceData): float64
 proc coreGetPlatform(instance: ptr InstanceData): Platform
@@ -364,6 +436,8 @@ proc typesSlice(instance: ptr InstanceData; self: var RopeResource; a: int64;
                 b: int64): RopeResource
 proc typesSlicePoints(instance: ptr InstanceData; self: var RopeResource;
                       a: Cursor; b: Cursor): RopeResource
+proc typesRuneAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune
+proc typesByteAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8
 proc editorActiveEditor(instance: ptr InstanceData): Option[Editor]
 proc editorGetDocument(instance: ptr InstanceData; editor: Editor): Option[
     Document]
@@ -1029,6 +1103,38 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         b.column = convert(parameters[3].i32, int32)
         let res = typesSlicePoints(instance, self[], a, b)
         parameters[0].i32 = ?instance.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.rune-at", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr RopeResource
+        var a: Cursor
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            RopeResource)
+        a.line = convert(parameters[1].i32, int32)
+        a.column = convert(parameters[2].i32, int32)
+        let res = typesRuneAt(instance, self[], a)
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/types", "[method]rope.byte-at", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr RopeResource
+        var a: Cursor
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            RopeResource)
+        a.line = convert(parameters[1].i32, int32)
+        a.column = convert(parameters[2].i32, int32)
+        let res = typesByteAt(instance, self[], a)
+        parameters[0].i32 = cast[int32](res)
     if e.isErr:
       return e
   block:

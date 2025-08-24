@@ -157,23 +157,23 @@ proc notifyTaskCompleteExported(a0: uint64; a1: bool): void {.
   canceled = a1.bool
   notifyTaskComplete(task, canceled)
 
-proc handleMove(fun: uint32; data: uint32; text: sink Rope;
+proc handleMove(fun: uint32; data: uint32; text: uint32;
                 selections: WitList[Selection]; count: int32; eol: bool): WitList[
     Selection]
 var handleMoveRetArea: array[28, uint8]
-proc handleMoveExported(a0: uint32; a1: uint32; a2: int32; a3: int32; a4: int32;
-                        a5: int32; a6: bool): int32 {.
+proc handleMoveExported(a0: uint32; a1: uint32; a2: uint32; a3: int32;
+                        a4: int32; a5: int32; a6: bool): int32 {.
     wasmexport("handle-move", "nev:plugins/guest").} =
   var
     fun: uint32
     data: uint32
-    text: Rope
+    text: uint32
     selections: WitList[Selection]
     count: int32
     eol: bool
   fun = convert(a0, uint32)
   data = convert(a1, uint32)
-  text.handle = a2 + 1
+  text = convert(a2, uint32)
   selections = wl(cast[ptr typeof(selections[0])](a3), a4)
   count = convert(a5, int32)
   eol = a6.bool

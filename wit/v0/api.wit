@@ -48,6 +48,8 @@ interface types {
     // /// Returns a slice of the rope from line 'a' to 'b'. 'b' is inclusive.
     // /// This operation is cheap because it doesn't create a copy of the text.
     // slice-lines: func(a: s64, b: s64) -> rope;
+    rune-at: func(a: cursor) -> char;
+    byte-at: func(a: cursor) -> u8;
   }
 
   /// Non-owning handle to an editor.
@@ -460,7 +462,7 @@ interface guest {
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
   handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
   notify-task-complete: func(task: u64, canceled: bool);
-  handle-move: func(fun: u32, data: u32, text: rope, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
+  handle-move: func(fun: u32, data: u32, text: u32, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
 }
 
 /// APIs which can safely be used on a background thread

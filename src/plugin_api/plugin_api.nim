@@ -1,5 +1,5 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, pathnorm, locks, tables]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils]
 import nimsumtree/[rope, sumtree, arc]
 import service
 import layout
@@ -7,9 +7,9 @@ import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service
-import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service
+import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
-from scripting_api import nil
+from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
 
@@ -50,6 +50,7 @@ type
     settings*: ConfigStore
     vfsService*: VFSService
     vfs*: VFS
+    moves*: MoveDatabase
     timer*: Timer
 
   InstanceData = object of InstanceDataWasi
@@ -161,6 +162,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.settings = services.getService(ConfigService).get.runtime
   self.host.vfsService = services.getService(VFSService).get
   self.host.vfs = self.host.vfsService.vfs
+  self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
 
   # self.channels = Arc[ChannelRegistry].new()
@@ -270,7 +272,7 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
     self.instances.removeShift(instance)
     return
 
-  let options = scripting_api.CreateTerminalOptions(
+  let options = sca.CreateTerminalOptions(
     group: plugin.manifest.id,
   )
   self.host.layout.registerView(self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options))
@@ -353,25 +355,25 @@ var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
 
 ###################################### Conversion functions #####################################
 
-proc toInternal(c: Cursor): scripting_api.Cursor = (c.line.int, c.column.int)
-proc toInternal(c: Selection): scripting_api.Selection = (c.first.toInternal, c.last.toInternal)
-proc toInternal(c: ScrollBehaviour): scripting_api.ScrollBehaviour =
+proc toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
+proc toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
+proc toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
   case c
-  of CenterAlways: scripting_api.CenterAlways
-  of CenterOffscreen: scripting_api.CenterOffscreen
-  of CenterMargin: scripting_api.CenterMargin
-  of ScrollToMargin: scripting_api.ScrollToMargin
-  of TopOfScreen: scripting_api.TopOfScreen
+  of CenterAlways: sca.CenterAlways
+  of CenterOffscreen: sca.CenterOffscreen
+  of CenterMargin: sca.CenterMargin
+  of ScrollToMargin: sca.ScrollToMargin
+  of TopOfScreen: sca.TopOfScreen
 
-proc toInternal(c: ScrollSnapBehaviour): scripting_api.ScrollSnapBehaviour =
+proc toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
   case c
-  of Never: scripting_api.Never
-  of Always: scripting_api.Always
-  of MinDistanceOffscreen: scripting_api.MinDistanceOffscreen
-  of MinDistanceCenter: scripting_api.MinDistanceCenter
+  of Never: sca.Never
+  of Always: sca.Always
+  of MinDistanceOffscreen: sca.MinDistanceOffscreen
+  of MinDistanceCenter: sca.MinDistanceCenter
 
-proc toWasm(c: scripting_api.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
-proc toWasm(c: scripting_api.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+proc toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+proc toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
 
 proc toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
   result = {}
@@ -485,7 +487,7 @@ proc textEditorApplyMove(instance: ptr InstanceData; editor: TextEditor; selecti
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
-    return @[textEditor.getSelectionForMove(selection.last.toInternal, move, count, includeEol).toWasm]
+    return textEditor.getSelectionsForMove(@[selection.toInternal], move, count, includeEol).mapIt(it.toWasm)
 
 proc textEditorMultiMove(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
   if instance.host == nil:
@@ -539,10 +541,17 @@ proc textEditorDefineMove(instance: ptr InstanceData; move: sink string; fun: ui
   if instance.host == nil:
     return
 
-  proc moveImpl(rope: Rope, move: string, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.gcsafe, raises: [].} =
-    let res = instance.funcs.handleMove(fun, $args.removed, $args.added)
-    if res.isErr:
-      log lvlError, "Failed to call handleModeChanged: " & res.err.msg
+  proc moveImpl(rope: Rope, move: string, selections: openArray[sca.Selection], count: int, includeEol: bool): seq[sca.Selection] {.gcsafe, raises: [].} =
+    var self: ptr ProcessResource
+    var ropeRes = RopeResource(rope: rope.slice().suffix(Point()))
+    let index = instance.resources.resourceNew(instance.store.context, ropeRes)
+    if index.isOk:
+      let res = instance.funcs.handleMove(fun, data, index.val.uint32, selections.mapIt(it.toWasm), count.int32, includeEol)
+      if res.isErr:
+        log lvlError, "Failed to call handleMove: " & res.err.msg
+      else:
+        return res.val.mapIt(it.toInternal)
+    return @[]
 
   instance.host.moves.registerMove(move, moveImpl)
 
@@ -597,7 +606,7 @@ proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor; be
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.scrollToCursor(scripting_api.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal))
+    editor.TextDocumentEditor.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal))
 
 proc textEditorSetNextSnapBehaviour(instance: ptr InstanceData; editor: TextEditor; behaviour: ScrollSnapBehaviour): void =
   if instance.host == nil:
@@ -700,6 +709,12 @@ proc typesSlicePoints(instance: ptr InstanceData, self: var RopeResource, a: Cur
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
   return RopeResource(rope: self.rope[range])
 
+proc typesRuneAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune =
+  return self.rope.runeAt(a.toInternal.toPoint)
+
+proc typesByteAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8 =
+  return self.rope.charAt(a.toInternal.toPoint).uint8
+
 proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
   if permissions.disallowAll.get(false):
     return false
@@ -785,8 +800,8 @@ proc coreGetPlatform(instance: ptr InstanceData): Platform =
   if instance.host == nil:
     return
   case instance.host.platform.backend
-  of scripting_api.Backend.Gui: return Platform.Gui
-  of scripting_api.Backend.Terminal: return Platform.Tui
+  of sca.Backend.Gui: return Platform.Gui
+  of sca.Backend.Terminal: return Platform.Tui
 
 proc coreApiVersion(instance: ptr InstanceData): int32 =
   return apiVersion

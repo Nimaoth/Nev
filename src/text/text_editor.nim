@@ -2954,21 +2954,6 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
   if selection.isBackwards:
     result = result.reverse
 
-proc getEnclosing(text: RopeSlice, column: int, predicate: proc(c: char): bool {.gcsafe, raises: [].}): (int, int) =
-  var cf = text.cursor(column)
-  var cb = cf.clone()
-  while cf.offset < text.len - 1:
-    cf.seekNextRune()
-    if not predicate(cf.currentChar()):
-      cf.seekPrevRune()
-      break
-  while cb.offset > 0:
-    cb.seekPrevRune()
-    if not predicate(cb.currentChar()):
-      cb.seekNextRune()
-      break
-  return (cb.offset, cf.offset)
-
 proc vimMotionWord*(self: TextDocumentEditor, cursor: Cursor, count: int = 0): Selection {.expose("editor.text").} =
   const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
 

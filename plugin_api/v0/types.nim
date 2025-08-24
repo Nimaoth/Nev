@@ -147,3 +147,32 @@ proc slicePoints*(self: Rope; a: Cursor; b: Cursor): Rope {.nodestroy.} =
   arg3 = b.column
   let res = typesSlicePointsImported(arg0, arg1, arg2, arg3, arg4)
   result.handle = res + 1
+
+proc typesRuneAtImported(a0: int32; a1: int32; a2: int32): Rune {.
+    wasmimport("[method]rope.rune-at", "nev:plugins/types").}
+proc runeAt*(self: Rope; a: Cursor): Rune {.nodestroy.} =
+  ## /// Returns a slice of the rope from line 'a' to 'b'. 'b' is inclusive.
+  ## /// This operation is cheap because it doesn't create a copy of the text.
+  ## slice-lines: func(a: s64, b: s64) -> rope;
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = a.line
+  arg2 = a.column
+  let res = typesRuneAtImported(arg0, arg1, arg2)
+  result = res.Rune
+
+proc typesByteAtImported(a0: int32; a1: int32; a2: int32): uint8 {.
+    wasmimport("[method]rope.byte-at", "nev:plugins/types").}
+proc byteAt*(self: Rope; a: Cursor): uint8 {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = a.line
+  arg2 = a.column
+  let res = typesByteAtImported(arg0, arg1, arg2)
+  result = convert(res, uint8)

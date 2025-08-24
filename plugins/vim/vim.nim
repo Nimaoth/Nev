@@ -7,29 +7,6 @@ import api
 from "../../src/scripting_api.nim" as sca import nil
 import "../../src/input_api.nim"
 
-type LogLevel = enum lvlInfo, lvlNotice, lvlDebug, lvlWarn, lvlError
-
-proc log(level: LogLevel, str: string) =
-  let color = case level
-  of lvlDebug: rgb(100, 100, 200)
-  of lvlInfo: rgb(200, 200, 200)
-  of lvlNotice: rgb(200, 255, 255)
-  of lvlWarn: rgb(200, 200, 100)
-  of lvlError: rgb(255, 150, 150)
-  # of lvlFatal: rgb(255, 0, 0)
-  else: rgb(255, 255, 255)
-  try:
-    {.gcsafe.}:
-      stdout.write(ansiForegroundColorCode(color))
-      stdout.write("[vim] ")
-      stdout.write(str)
-      stdout.write("\r\n")
-  except IOError:
-    discard
-
-template debugf*(x: static string) =
-  log lvlDebug, fmt(x)
-
 var yankedLines: bool = false ## Whether the last thing we yanked was in a line mode
 
 type EditorVimState = object
@@ -367,46 +344,45 @@ proc yankSelectionClipboard*(editor: TextEditor) {.exposeActive(editorContext).}
 #     newText
 #   )
 
-#   # infof"replace {editor.selections} with '{input}' -> {texts}"
+#   # debugf"replace {editor.selections} with '{input}' -> {texts}"
 
 #   editor.addNextCheckpoint "insert"
 #   editor.setSelections editor.edit(editor.selections, texts, inclusiveEnd=true).mapIt(it.first.toSelection)
 #   editor.setMode "vim-new.normal"
 
-# proc vimSelectMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext, "vim-select-move").} =
-#   # infof"vimSelectMove '{move}' {count}"
-#   let (action, arg) = move.parseAction
-#   for i in 0..<max(count, 1):
-#     editor.runAction(action, arg)
-#   editor.updateTargetColumn()
+proc selectMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
+  debugf"selectMove '{move}' {count}"
+  let (action, arg) = move.parseAction
+  for i in 0..<max(count, 1):
+    log lvlDebug, $editor.command(action.ws, arg.ws)
+  editor.updateTargetColumn()
 
-# proc vimDeleteMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext, "vim-delete-move").} =
-#   # infof"vimDeleteMove '{move}' {count}"
-#   let oldSelections = editor.selections
-#   let (action, arg) = move.parseAction
-#   for i in 0..<max(count, 1):
-#     editor.runAction(action, arg)
-#   editor.vimDeleteSelection(false, oldSelections=oldSelections.some)
+proc deleteMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
+  debugf"vimDeleteMove '{move}' {count}"
+  let oldSelections = @(editor.selections.toOpenArray)
+  let (action, arg) = move.parseAction
+  for i in 0..<max(count, 1):
+    discard editor.command(action.ws, arg.ws)
+  editor.deleteSelection(false, oldSelections=oldSelections.some)
+  editor.recordCurrentCommandInPeriodMacro()
 
-#   editor.recordCurrentCommandInPeriodMacro()
+proc changeMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
+  debugf"vimChangeMove '{move}' {count}"
+  let oldSelections = @(editor.selections.toOpenArray)
+  let (action, arg) = move.parseAction
+  for i in 0..<max(count, 1):
+    discard editor.command(action.ws, arg.ws)
+  editor.changeSelection(false, oldSelections=oldSelections.some)
 
-# proc vimChangeMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext, "vim-change-move").} =
-#   # infof"vimChangeMove '{move}' {count}"
-#   let oldSelections = editor.selections
-#   let (action, arg) = move.parseAction
-#   for i in 0..<max(count, 1):
-#     editor.runAction(action, arg)
-#   editor.vimChangeSelection(false, oldSelections=oldSelections.some)
-
-# proc vimYankMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext, "vim-yank-move").} =
-#   # infof"vimYankMove '{move}' {count}"
-#   let (action, arg) = move.parseAction
-#   for i in 0..<max(count, 1):
-#     editor.runAction(action, arg)
-#   editor.vimYankSelection()
+proc yankMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
+  debugf"vimYankMove '{move}' {count}"
+  let (action, arg) = move.parseAction
+  for i in 0..<max(count, 1):
+    discard editor.command(action.ws, arg.ws)
+  editor.yankSelection()
 
 # proc vimMoveTo*(editor: TextEditor, target: string, before: bool, count: int = 1) {.exposeActive(editorContext, "vim-move-to").} =
-#   # infof"vimMoveTo '{target}' {before}"
+#   # debugf"vimMoveTo '{target}' {before}"
 
 #   proc parseTarget(target: string): string =
 #     if target.len == 1:
@@ -418,7 +394,7 @@ proc yankSelectionClipboard*(editor: TextEditor) {.exposeActive(editorContext).}
 #       elif res.inputCode.a <= int32.high:
 #         return $Rune(res.inputCode.a)
 #     else:
-#       infof" -> failed to parse key: {target}"
+#       debugf" -> failed to parse key: {target}"
 
 #   let key = parseTarget(target)
 
@@ -462,11 +438,11 @@ proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
 #   if result.last.line + 1 < editor.lineCount:
 #     result = result or editor.vimMotionParagraphInner((result.last.line + 1, 0), 1)
 
-proc vimMotionWordOuter(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl, raises: [].} =
-# proc vimMotionWordOuter*(rope: sink Rope, cursor: Cursor, count: int): Selection =
-  result = vimMotionWord(editor, cursor, count)
-  if result.last.column < editor.lineLength(result.last.line) and editor.getChar(result.last) in Whitespace:
-    result.last = editor.vimMotionWord(result.last, 1).last
+# proc vimMotionWordOuter(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl, raises: [].} =
+# # proc vimMotionWordOuter*(rope: sink Rope, cursor: Cursor, count: int): Selection =
+#   result = vimMotionWord(editor, cursor, count)
+#   if result.last.column < editor.lineLength(result.last.line) and editor.getChar(result.last) in Whitespace:
+#     result.last = editor.vimMotionWord(result.last, 1).last
 
 # proc vimMotionWordBigOuter*(editor: TextEditor, cursor: Cursor, count: int): Selection =
 #   result = vimMotionWordBig(editor, cursor, count)
@@ -482,7 +458,7 @@ proc vimMotionWordOuter(data: uint32, text: sink Rope, selections: openArray[Sel
 
 # proc vimMotionSurround*(editor: TextEditor, cursor: Cursor, count: int, c0: char, c1: char, inside: bool): Selection =
 #   result = cursor.toSelection
-#   # infof"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}"
+#   # debugf"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}"
 #   while true:
 #     let lastChar = editor.charAt(result.last)
 #     let (startDepth, endDepth) = if lastChar == c0:
@@ -492,25 +468,25 @@ proc vimMotionWordOuter(data: uint32, text: sink Rope, selections: openArray[Sel
 #     else:
 #       (1, 1)
 
-#     # infof"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}: try find around: {startDepth}, {endDepth}"
+#     # debugf"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}: try find around: {startDepth}, {endDepth}"
 #     if editor.findSurroundStart(result.first, count, c0, c1, startDepth).getSome(opening) and editor.findSurroundEnd(result.last, count, c0, c1, endDepth).getSome(closing):
 #       result = (opening, closing)
-#       # infof"vimMotionSurround: found inside {result}"
+#       # debugf"vimMotionSurround: found inside {result}"
 #       if inside:
 #         result.first = editor.doMoveCursorColumn(result.first, 1)
 #         result.last = editor.doMoveCursorColumn(result.last, -1)
 #       return
 
-#     # infof"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}: try find ahead: {startDepth}, {endDepth}"
+#     # debugf"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}: try find ahead: {startDepth}, {endDepth}"
 #     if editor.findSurroundEnd(result.first, count, c0, c1, -1).getSome(opening) and editor.findSurroundEnd(opening, count, c0, c1, 0).getSome(closing):
 #       result = (opening, closing)
-#       # infof"vimMotionSurround: found ahead {result}"
+#       # debugf"vimMotionSurround: found ahead {result}"
 #       if inside:
 #         result.first = editor.doMoveCursorColumn(result.first, 1)
 #         result.last = editor.doMoveCursorColumn(result.last, -1)
 #       return
 #     else:
-#       # infof"vimMotionSurround: found nothing {result}"
+#       # debugf"vimMotionSurround: found nothing {result}"
 #       return
 
 # proc vimMoveToMatching(editor: TextEditor) {.exposeActive(editorContext, "vim-move-to-matching").} =
@@ -562,7 +538,7 @@ proc vimMotionWordOuter(data: uint32, text: sink Rope, selections: openArray[Sel
 # # todo
 # addCustomTextMove "vim-line", vimMotionLine
 # addCustomTextMove "vim-visual-line", vimMotionVisualLine
-addCustomTextMove "vim-word-outer", vimMotionWordOuter
+# addCustomTextMove "vim-word-outer", vimMotionWordOuter
 # addCustomTextMove "vim-WORD-outer", vimMotionWordBigOuter
 # addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
 # addCustomTextMove "vim-paragraph-outer", vimMotionParagraphOuter
@@ -579,69 +555,69 @@ addCustomTextMove "vim-word-outer", vimMotionWordOuter
 # addCustomTextMove "vim-surround-'-inner", vimMotionSurroundSingleQuotesInner
 # addCustomTextMove "vim-surround-'-outer", vimMotionSurroundSingleQuotesOuter
 
-# iterator iterateTextObjects*(editor: TextEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
-#   var selection = editor.getSelectionForMove(cursor, move, 0)
-#   # infof"iterateTextObjects({cursor}, {move}, {backwards}), selection: {selection}"
-#   yield selection
-#   while true:
-#     let lastSelection = selection
-#     if not backwards and selection.last.column == editor.lineLength(selection.last.line):
-#       if selection.last.line == editor.lineCount - 1:
-#         break
-#       selection = (selection.last.line + 1, 0).toSelection
-#     elif backwards and selection.first.column == 0:
-#       if selection.first.line == 0:
-#         break
-#       selection = (selection.first.line - 1, editor.lineLength(selection.first.line - 1)).toSelection
-#       if selection.first.column == 0:
-#         yield selection
-#         continue
+iterator iterateTextObjects*(editor: TextEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
+  var selection = editor.applyMove(cursor, move, 0)
+  # debugf"iterateTextObjects({cursor}, {move}, {backwards}), selection: {selection}"
+  yield selection
+  while true:
+    let lastSelection = selection
+    if not backwards and selection.last.column == editor.lineLength(selection.last.line):
+      if selection.last.line == editor.lineCount - 1:
+        break
+      selection = (selection.last.line.int + 1, 0).toSelection
+    elif backwards and selection.first.column == 0:
+      if selection.first.line == 0:
+        break
+      selection = (selection.first.line - 1, editor.lineLength(selection.first.line - 1)).toSelection
+      if selection.first.column == 0:
+        yield selection
+        continue
 
-#     let nextCursor = if backwards: (selection.first.line, selection.first.column - 1) else: (selection.last.line, selection.last.column + 1)
-#     let newSelection = editor.getSelectionForMove(nextCursor, move, 0)
-#     # infof"iterateTextObjects({cursor}, {move}, {backwards}) nextCursor: {nextCursor}, newSelection: {newSelection}"
-#     if newSelection == lastSelection:
-#       break
+    let nextCursor = if backwards: (selection.first.line, selection.first.column - 1) else: (selection.last.line, selection.last.column + 1)
+    let newSelection = editor.applyMove(nextCursor, move, 0)
+    # debugf"iterateTextObjects({cursor}, {move}, {backwards}) nextCursor: {nextCursor}, newSelection: {newSelection}"
+    if newSelection == lastSelection:
+      break
 
-#     selection = newSelection
-#     yield selection
+    selection = newSelection
+    yield selection
 
-# iterator enumerateTextObjects*(editor: TextEditor, cursor: Cursor, move: string, backwards: bool = false): (int, Selection) =
-#   var i = 0
-#   for selection in iterateTextObjects(editor, cursor, move, backwards):
-#     yield (i, selection)
-#     inc i
+iterator enumerateTextObjects*(editor: TextEditor, cursor: Cursor, move: string, backwards: bool = false): (int, Selection) =
+  var i = 0
+  for selection in iterateTextObjects(editor, cursor, move, backwards):
+    yield (i, selection)
+    inc i
 
-# proc vimSelectTextObject(editor: TextEditor, textObject: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext, "vim-select-text-object").} =
-#   # infof"vimSelectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
+proc selectTextObject(editor: TextEditor, textObject: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext).} =
+  debugf"selectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
 
-#   editor.setSelections editor.selections.mapIt(block:
-#       var res = it.last
-#       var resultSelection = it
-#       # infof"-> {resultSelection}"
+  editor.setSelections editor.selections.mapIt(block:
+      var res = it.last
+      var resultSelection = it
+      # debugf"-> {resultSelection}"
 
-#       for i, selection in enumerateTextObjects(editor, res, textObject, backwards):
-#         # infof"{i}: {res} -> {selection}"
-#         resultSelection = resultSelection or selection
-#         if i == max(count, 1) - 1:
-#           break
+      for i, selection in enumerateTextObjects(editor, res, textObject, backwards):
+        debugf"{i}: {res} -> {selection}"
+        resultSelection = resultSelection or selection
+        if i == max(count, 1) - 1:
+          break
 
-#       # infof"vimSelectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
-#       if it.isBackwards:
-#         resultSelection.reverse
-#       else:
-#         resultSelection
-#     )
+      # debugf"selectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
+      if it.isBackwards:
+        resultSelection.reverse
+      else:
+        resultSelection
+    )
 
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
 
 # proc vimSelectSurrounding(editor: TextEditor, textObject: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext, "vim-select-surrounding").} =
-#   # infof"vimSelectSurrounding({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
+#   # debugf"vimSelectSurrounding({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
 
 #   editor.setSelections editor.selections.mapIt(block:
 #       let resultSelection = editor.getSelectionForMove(it.last, textObject, count)
-#       # infof"vimSelectSurrounding({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
+#       # debugf"vimSelectSurrounding({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
 #       if it.isBackwards:
 #         resultSelection.reverse
 #       else:
@@ -651,76 +627,78 @@ addCustomTextMove "vim-word-outer", vimMotionWordOuter
 #   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 
-# proc moveSelectionNext(editor: TextEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.exposeActive(editorContext, "move-selection-next").} =
-#   # infof"moveSelectionNext '{move}' {count} {backwards} {allowEmpty}"
-#   editor.vimState.deleteInclusiveEnd = false
-#   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
-#   editor.setSelections editor.selections.mapIt(block:
-#       var res = it.last
-#       for k in 0..<max(1, count):
-#         for i, selection in enumerateTextObjects(editor, res, move, backwards):
-#           if i == 0: continue
-#           let cursor = if backwards: selection.last else: selection.first
-#           # echo i, ", ", selection, ", ", cursor, ", ", it
-#           if cursor == it.last:
-#             continue
-#           if editor.lineLength(selection.first.line) == 0:
-#             if allowEmpty:
-#               res = cursor
-#               break
-#             else:
-#               continue
+proc moveSelectionNext(editor: TextEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.exposeActive(editorContext).} =
+  # debugf"moveSelectionNext '{move}' {count} {backwards} {allowEmpty}"
+  let text = editor.content
+  editor.vimState.deleteInclusiveEnd = false
+  let which = getSetting[sca.SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
+  editor.setSelections editor.selections.mapIt(block:
+      var res = it.last
+      for k in 0..<max(1, count):
+        for i, selection in enumerateTextObjects(editor, res, move, backwards):
+          if i == 0: continue
+          let cursor = if backwards: selection.last else: selection.first
+          # echo i, ", ", selection, ", ", cursor, ", ", it
+          if cursor == it.last:
+            continue
+          if editor.lineLength(selection.first.line) == 0:
+            if allowEmpty:
+              res = cursor
+              break
+            else:
+              continue
 
-#           if selection.first.column >= editor.lineLength(selection.first.line) or editor.getChar(selection.first) notin Whitespace:
-#             res = cursor
-#             break
-#       # echo res, ", ", it, ", ", which
-#       res.toSelection(it, which)
-#     )
+          if selection.first.column >= editor.lineLength(selection.first.line) or text.charAt(selection.first) notin Whitespace:
+            res = cursor
+            break
+      # echo res, ", ", it, ", ", which
+      res.toSelection(it, which)
+    )
 
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
 
-# proc applyMove(editor: TextEditor, selections: seq[Selection], move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, which: Option[SelectionCursor] = SelectionCursor.none): seq[Selection] =
-#   ## Applies the given move `count` times and returns the resulting selections
-#   ## `allowEmpty` If true then the move can stop on empty lines
-#   ## `backwards` Move backwards
-#   ## `count` How often to apply the move
-#   ## `which` How to assemble the final selection from the input and the move. If not set uses `editor.text.cursor.movement`
+proc applyMove(editor: TextEditor, selections: openArray[Selection], move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, which: Option[sca.SelectionCursor] = sca.SelectionCursor.none): seq[Selection] =
+  ## Applies the given move `count` times and returns the resulting selections
+  ## `allowEmpty` If true then the move can stop on empty lines
+  ## `backwards` Move backwards
+  ## `count` How often to apply the move
+  ## `which` How to assemble the final selection from the input and the move. If not set uses `editor.text.cursor.movement`
 
-#   # infof"moveSelectionEnd '{move}' {count} {backwards} {allowEmpty}"
-#   let which = which.get(getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both))
-#   return selections.mapIt(block:
-#       var res = it.last
-#       for k in 0..<max(1, count):
-#         for i, selection in enumerateTextObjects(editor, res, move, backwards):
-#           let cursor = if backwards: selection.first else: selection.last
-#           if cursor == it.last:
-#             continue
-#           if editor.lineLength(selection.last.line) == 0:
-#             if allowEmpty:
-#               res = cursor
-#               break
-#             else:
-#               continue
-#           if selection.last.column < editor.lineLength(selection.last.line) and
-#               editor.getChar(selection.last) notin Whitespace:
-#             res = cursor
-#             break
-#           if backwards and selection.last.column == editor.lineLength(selection.last.line):
-#             res = cursor
-#             break
-#       res.toSelection(it, which)
-#     )
+  debugf"moveSelectionEnd '{move}' {count} {backwards} {allowEmpty}"
+  let text = editor.content
+  let which = which.get(getSetting[sca.SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both))
+  return selections.mapIt(block:
+      var res = it.last
+      for k in 0..<max(1, count):
+        for i, selection in enumerateTextObjects(editor, res, move, backwards):
+          let cursor = if backwards: selection.first else: selection.last
+          if cursor == it.last:
+            continue
+          if editor.lineLength(selection.last.line) == 0:
+            if allowEmpty:
+              res = cursor
+              break
+            else:
+              continue
+          if selection.last.column < editor.lineLength(selection.last.line) and
+              text.charAt(selection.last) notin Whitespace:
+            res = cursor
+            break
+          if backwards and selection.last.column == editor.lineLength(selection.last.line):
+            res = cursor
+            break
+      res.toSelection(it, which)
+    )
 
-# proc moveSelectionEnd(editor: TextEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.exposeActive(editorContext, "move-selection-end").} =
+proc moveSelectionEnd(editor: TextEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.exposeActive(editorContext).} =
 
-#   editor.setSelections editor.applyMove(editor.selections, move, backwards, allowEmpty, count)
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
+  editor.setSelections editor.applyMove(editor.selections.toOpenArray, move, backwards, allowEmpty, count)
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
 
 # proc moveParagraph(editor: TextEditor, backwards: bool, count: int = 1) {.exposeActive(editorContext, "move-paragraph").} =
-#   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
+#   let which = getSetting[sca.SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
 #   editor.setSelections editor.selections.mapIt(block:
 #       var res = it.last
 #       for k in 0..<max(1, count):
@@ -822,7 +800,7 @@ proc moveDirection(editor: TextEditor, move: string, direction: int, count: int 
     editor.updateTargetColumn()
 
 # proc vimMoveToEndOfLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-end-of-line").} =
-#   # infof"vimMoveToEndOfLine {count}"
+#   # debugf"vimMoveToEndOfLine {count}"
 #   let count = max(1, count)
 #   if count > 1:
 #     editor.moveCursorLine(count - 1)
@@ -831,7 +809,7 @@ proc moveDirection(editor: TextEditor, move: string, direction: int, count: int 
 #   editor.updateTargetColumn()
 
 # proc vimMoveToEndOfVisualLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-end-of-visual-line").} =
-#   # infof"vimMoveToEndOfLine {count}"
+#   # debugf"vimMoveToEndOfLine {count}"
 #   let count = max(1, count)
 #   if count > 1:
 #     editor.moveCursorLine(count - 1)
@@ -845,7 +823,7 @@ proc moveDirection(editor: TextEditor, move: string, direction: int, count: int 
 #   editor.updateTargetColumn()
 
 # proc vimMoveToStartOfLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-start-of-line").} =
-#   # infof"vimMoveToStartOfLine {count}"
+#   # debugf"vimMoveToStartOfLine {count}"
 #   let count = max(1, count)
 #   if count > 1:
 #     editor.moveCursorLine(count - 1)
@@ -854,7 +832,7 @@ proc moveDirection(editor: TextEditor, move: string, direction: int, count: int 
 #   editor.updateTargetColumn()
 
 # proc vimPaste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = false, register: string = "") {.exposeActive(editorContext, "vim-paste").} =
-#   # infof"vimPaste {register}, lines: {yankedLines}"
+#   # debugf"vimPaste {register}, lines: {yankedLines}"
 #   let register = if register == "vim-default-register":
 #     getVimDefaultRegister()
 #   else:
@@ -943,40 +921,40 @@ proc visualLineMode(editor: TextEditor) {.exposeActive(editorContext).} =
 # proc vimYankLine(editor: TextEditor) {.exposeActive(editorContext, "vim-yank-line").} =
 #   editor.vimState.selectLines = true
 #   editor.selectLine()
-#   editor.vimYankSelection()
+#   editor.yankSelection()
 #   editor.vimState.selectLines = false
 
 # proc vimDeleteLine(editor: TextEditor) {.exposeActive(editorContext, "vim-delete-line").} =
 #   editor.vimState.selectLines = true
 #   let oldSelections = editor.selections
 #   editor.selectLine()
-#   editor.vimDeleteSelection(true, oldSelections=oldSelections.some)
+#   editor.deleteSelection(true, oldSelections=oldSelections.some)
 #   editor.vimState.selectLines = false
 
 # proc vimChangeLine(editor: TextEditor) {.exposeActive(editorContext, "vim-change-line").} =
 #   let oldSelections = editor.selections
 #   editor.selectLine()
-#   editor.vimChangeSelection(true, oldSelections=oldSelections.some)
+#   editor.changeSelection(true, oldSelections=oldSelections.some)
 
 # proc vimDeleteToLineEnd(editor: TextEditor) {.exposeActive(editorContext, "vim-delete-to-line-end").} =
 #   let oldSelections = editor.selections
 #   editor.setSelections editor.selections.mapIt (it.last, editor.vimMotionLine(it.last, 0).last)
-#   editor.vimDeleteSelection(true, oldSelections=oldSelections.some)
+#   editor.deleteSelection(true, oldSelections=oldSelections.some)
 #   editor.vimState.selectLines = false
 
 # proc vimChangeToLineEnd(editor: TextEditor) {.exposeActive(editorContext, "vim-change-to-line-end").} =
 #   let oldSelections = editor.selections
 #   editor.setSelections editor.selections.mapIt (it.last, editor.vimMotionLine(it.last, 0).last)
-#   editor.vimChangeSelection(true, oldSelections=oldSelections.some)
+#   editor.changeSelection(true, oldSelections=oldSelections.some)
 #   editor.vimState.selectLines = false
 
 # proc vimYankToLineEnd(editor: TextEditor) {.exposeActive(editorContext, "vim-yank-to-line-end").} =
 #   editor.setSelections editor.selections.mapIt (it.last, editor.vimMotionLine(it.last, 0).last)
-#   editor.vimYankSelection()
+#   editor.yankSelection()
 #   editor.vimState.selectLines = false
 
 # proc vimMoveFileStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-file-start").} =
-#   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
+#   let which = getSetting[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 #   editor.setSelection (count - 1, 0).toSelection(editor.selection, which)
 #   editor.moveFirst "line-no-indent"
 #   editor.scrollToCursor()
@@ -984,7 +962,7 @@ proc visualLineMode(editor: TextEditor) {.exposeActive(editorContext).} =
 
 # proc vimMoveFileEnd(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-file-end").} =
 #   let line = if count == 0: editor.lineCount - 1 else: count - 1
-#   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
+#   let which = getSetting[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 #   var newSelection = (line, 0).toSelection(editor.selection, which)
 #   if newSelection == editor.selection:
 #     let lineLen = editor.lineLength(line)
@@ -1000,7 +978,7 @@ proc visualLineMode(editor: TextEditor) {.exposeActive(editorContext).} =
 #     editor.vimMoveToMatching()
 #   else:
 #     let line = clamp((count * editor.lineCount) div 100, 0, editor.lineCount - 1)
-#     let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
+#     let which = getSetting[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 #     editor.setSelection (line, 0).toSelection(editor.selection, which)
 #     editor.moveFirst "line-no-indent"
 #     editor.scrollToCursor()
@@ -1145,7 +1123,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 #     let text = editor.getText(editor.selection, inclusiveEnd=true)
 #     let textEscaped = text.escapeRegex
 #     let currentSearchQuery = editor.getSearchQuery()
-#     # infof"'{text}' -> '{textEscaped}' -> '{currentSearchQuery}'"
+#     # debugf"'{text}' -> '{textEscaped}' -> '{currentSearchQuery}'"
 #     if textEscaped != currentSearchQuery and r"\b" & textEscaped & r"\b" != currentSearchQuery:
 #       if editor.setSearchQuery(text, escapeRegex=true):
 #         return
@@ -1179,7 +1157,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 
 #     setSessionData("vim.states", states)
 #   except:
-#     infof"Failed to save vim editor states"
+#     debugf"Failed to save vim editor states"
 
 # proc resolveMarks(editor: TextEditor) =
 #   let unresolveMarks = editor.vimState.unresolveMarks
@@ -1396,14 +1374,14 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 #   editor.setSelections editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
 
 # proc vimGotoNextDiagnostic(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-next-diagnostic").} =
-#   let severity = getOption("text.jump-diagnostic-severity", 1)
+#   let severity = getSetting("text.jump-diagnostic-severity", 1)
 #   editor.setSelection editor.getNextDiagnostic(editor.selection.last, severity).first.toSelection
 #   editor.scrollToCursor()
 #   editor.updateTargetColumn()
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimGotoPrevDiagnostic(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-prev-diagnostic").} =
-#   let severity = getOption("text.jump-diagnostic-severity", 1)
+#   let severity = getSetting("text.jump-diagnostic-severity", 1)
 #   editor.setSelection editor.getPrevDiagnostic(editor.selection.last, severity).first.toSelection
 #   editor.scrollToCursor()
 #   editor.updateTargetColumn()
@@ -1509,7 +1487,7 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
 #               for name, selections in marks:
 #                 editor.vimState.unresolveMarks[name] = selections
 #         except:
-#           infof"Failed to restore marks for {editor}"
+#           debugf"Failed to restore marks for {editor}"
 #   scriptSetCallback("after-restore-session", afterRestoreSessionHandle)
 
 #   let beforeSaveAppStateHandle = addCallback proc(args: JsonNode): JsonNode =
