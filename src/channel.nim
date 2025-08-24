@@ -1,4 +1,4 @@
-import std/[strformat, hashes, macros, genasts, atomics]
+import std/[strformat, hashes, macros, genasts, atomics, locks, tables, options]
 import misc/[event, custom_async, id, generational_seq]
 import nimsumtree/arc
 
@@ -29,6 +29,11 @@ type
     writeChannelPeekable: Atomic[int]
     channel: ptr Channel[seq[uint8]]
 
+  ChannelRegistry* = object
+    lock*: Lock
+    readChannels*: Table[string, Arc[BaseChannel]]
+    writeChannels*: Table[string, Arc[BaseChannel]]
+
 proc `==`*(a, b: ListenId): bool {.borrow.}
 proc hash*(vr: ListenId): Hash {.borrow.}
 proc `$`*(vr: ListenId): string {.borrow.}
@@ -49,6 +54,7 @@ proc close*(self: Arc[BaseChannel]) {.gcsafe, raises: [].} = self.getMutUnsafe.c
 proc isOpen*(self: Arc[BaseChannel]): bool {.raises: [].} = self.getMutUnsafe.isOpen()
 proc peek*(self: Arc[BaseChannel]): int {.raises: [].} = self.getMutUnsafe.peek()
 proc write*(self: Arc[BaseChannel], data: openArray[uint8]) {.raises: [IOError].} = self.getMutUnsafe.write(data)
+proc write*(self: Arc[BaseChannel], data: openArray[char]) {.raises: [IOError].} = self.getMutUnsafe.write(cast[ptr UncheckedArray[uint8]](data[0].addr).toOpenArray(0, data.high))
 proc read*(self: Arc[BaseChannel], res: var openArray[uint8]): int {.raises: [IOError].} = self.getMutUnsafe.read(res)
 proc flushRead*(self: Arc[BaseChannel]): int {.raises: [IOError].} = self.getMutUnsafe.flushRead()
 proc listen*(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = self.get.listenImpl(self, cb)
@@ -174,3 +180,38 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
     listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listenInMemoryChannel(self.cloneAs(InMemoryChannel), cb),
   )
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()
+
+var gChannelRegistry = ChannelRegistry()
+gChannelRegistry.lock.initLock()
+
+proc openGlobalReadChannel*(path: string): Option[Arc[BaseChannel]] {.gcsafe.} =
+  let channels = ({.gcsafe.}: gChannelRegistry.addr)
+  withLock(channels.lock):
+    var chan: Arc[BaseChannel]
+    if channels.readChannels.take(path, chan):
+      return chan.some
+
+proc openGlobalWriteChannel*(path: string): Option[Arc[BaseChannel]] {.gcsafe.} =
+  let channels = ({.gcsafe.}: gChannelRegistry.addr)
+  withLock(channels.lock):
+    var chan: Arc[BaseChannel]
+    if channels.writeChannels.take(path, chan):
+      return chan.some
+
+proc mountGlobalReadChannel*(path: string, chan: Arc[BaseChannel], unique: bool): string {.gcsafe.} =
+  var path = path
+  if unique:
+    path.add "-" & $newId()
+  let channels = ({.gcsafe.}: gChannelRegistry.addr)
+  withLock(channels.lock):
+    channels.readChannels[path] = chan
+    return path
+
+proc mountGlobalWriteChannel*(path: string, chan: Arc[BaseChannel], unique: bool): string {.gcsafe.} =
+  var path = path
+  if unique:
+    path.add "-" & $newId()
+  let channels = ({.gcsafe.}: gChannelRegistry.addr)
+  withLock(channels.lock):
+    channels.writeChannels[path] = chan
+    return path

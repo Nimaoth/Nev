@@ -13,7 +13,7 @@ import document, document_editor, events, vmath, bumpy, input, custom_treesitter
 import completion, completion_provider_document, completion_provider_lsp,
   completion_provider_snippet, selector_popup_builder, dispatch_tables, register
 import config_provider, service, layout, platform_service, vfs, vfs_service, command_service, toast
-import diff, plugin_service
+import diff, plugin_service, move_database
 import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
@@ -231,6 +231,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   plugins: PluginService
   registers: Registers
   workspace: Workspace
+  moveDatabase: MoveDatabase
   vfsService: VFSService
   vfs*: VFS
   commands*: CommandService
@@ -441,7 +442,7 @@ proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventRe
 proc showCompletionWindow(self: TextDocumentEditor)
 proc updateCompletionsFromEngine(self: TextDocumentEditor)
 proc hideCompletions*(self: TextDocumentEditor)
-proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
+proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0, includeEol: bool = true): Selection
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
 proc updateInlayHints*(self: TextDocumentEditor)
@@ -1181,7 +1182,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   {.gcsafe.}:
     if gServices.getService(DocumentEditorService).getSome(editors):
-      if editors.getEditorForId(wrapper.id).getSome(editor):
+      if editors.getEditorForId(wrapper.id.EditorIdNew).getSome(editor):
         if editor of TextDocumentEditor:
           return editor.TextDocumentEditor.some
   return TextDocumentEditor.none
@@ -1648,6 +1649,10 @@ proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
     return modes.last
   return ""
 
+proc modes*(self: TextDocumentEditor): seq[string] {.expose("editor.text").} =
+  ## Returns the current modes of the text editor
+  return self.settings.modes.get()
+
 proc getContextWithMode(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
   ## Appends the current mode to context
   return context & "." & $self.mode
@@ -1693,8 +1698,7 @@ proc delete*(self: TextDocumentEditor, selections: seq[Selection], notify: bool 
 proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string],
     notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.
     expose("editor.text").} =
-  return self.document.edit(selections, self.selections, texts, notify, record,
-    inclusiveEnd=inclusiveEnd)
+  return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
 proc deleteLines(self: TextDocumentEditor, slice: Slice[int], oldSelections: Selections) {.
     expose("editor.text").} =
@@ -2950,21 +2954,6 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
   if selection.isBackwards:
     result = result.reverse
 
-proc getEnclosing(text: RopeSlice, column: int, predicate: proc(c: char): bool {.gcsafe, raises: [].}): (int, int) =
-  var cf = text.cursor(column)
-  var cb = cf.clone()
-  while cf.offset < text.len - 1:
-    cf.seekNextRune()
-    if not predicate(cf.currentChar()):
-      cf.seekPrevRune()
-      break
-  while cb.offset > 0:
-    cb.seekPrevRune()
-    if not predicate(cb.currentChar()):
-      cb.seekNextRune()
-      break
-  return (cb.offset, cf.offset)
-
 proc vimMotionWord*(self: TextDocumentEditor, cursor: Cursor, count: int = 0): Selection {.expose("editor.text").} =
   const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
 
@@ -2999,8 +2988,41 @@ proc vimMotionWordBig*(self: TextDocumentEditor, cursor: Cursor, count: int = 0)
     let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
     return ((cursor.line, startColumn), (cursor.line, endColumn))
 
+proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string,
+    count: int = 0, includeEol: bool = true): seq[Selection] =
+
+  let cursorSelector = self.config.get(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
+
+  case move
+  of "visual-line-up", "visual-line-down":
+    var minLine = int.high
+    var maxLine = int.low
+    for s in self.selections:
+      minLine = min(minLine, s.last.line)
+      maxLine = max(maxLine, s.last.line)
+
+    let direction = if move == "visual-line-down": 1 else: -1
+
+    proc doMoveCursor(self: TextDocumentEditor, cursor: Cursor, offset: int, includeAfter: bool): Cursor =
+      let targetColumn = if maxLine - minLine + 1 < self.selections.len:
+        self.displayMap.toDisplayPoint(cursor.toPoint).column.int
+      else:
+        self.targetColumn
+      self.doMoveCursorVisualLine(cursor, offset, false, includeAfter, targetColumn.some)
+    return selections.mapIt(doMoveCursor(self, it.last, direction * max(count, 1), includeEol).toSelection(it, cursorSelector))
+
+  of "line-up", "line-down":
+    let direction = if move == "line-down": 1 else: -1
+    return selections.mapIt(self.doMoveCursorLine(it.last, direction * max(count, 1), false, includeEol).toSelection(it, cursorSelector))
+
+  of "column":
+    result = selections.mapIt(self.doMoveCursorColumn(it.last, count, includeAfter = includeEol).toSelection(it, cursorSelector))
+
+  else:
+    return self.moveDatabase.applyMove(self.document.rope, move, selections, count, includeEol)
+
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
-    count: int = 0): Selection {.expose("editor.text").} =
+    count: int = 0, includeEol: bool = true): Selection {.expose("editor.text").} =
   case move
   of "word":
     result = self.findWordBoundary(cursor)
@@ -3080,9 +3102,13 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result = (first, (cursor.line, self.document.lineLength(cursor.line)))
 
   of "line":
-    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
+    let lineLen = self.document.lineLength(cursor.line)
+    result = ((cursor.line, 0), (cursor.line, lineLen))
+    if not includeEol and result.last.column == lineLen:
+      result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
   of "visual-line":
+    let lineLen = self.document.lineLength(cursor.line)
     let wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
     let displayLineStart = wrapPoint(wrapPoint.row)
     let displayLineEnd = wrapPoint(wrapPoint.row + 1)
@@ -3091,6 +3117,12 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     if result[1].column == 0:
       result[1].line -= 1
       result[1].column = self.document.lineLength(result[1].line)
+
+    if not includeEol:
+      if result.last.column == lineLen:
+        result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
+      elif result.last.column < self.document.lineLength(cursor.line): # This is the case if we're not in the last visual sub line
+        result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
 
   of "line-next":
     result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
@@ -3121,6 +3153,9 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     result.first = (0, 0)
     let line = self.document.numLines - 1
     result.last = (line, self.document.lineLength(line))
+
+  of "column":
+    result = self.doMoveCursorColumn(cursor, count, includeAfter = includeEol).toSelection
 
   of "prev-find-result":
     result = self.getPrevFindResult(cursor, count)
@@ -3173,7 +3208,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
       result = cursor.toSelection
 
       let cursorJson = self.plugins.invokeAnyCallback("editor.text.custom-move", %*{
-        "editor": self.id,
+        "editor": self.id.EditorId,
         "move": move,
         "cursor": cursor.toJson,
         "count": count,
@@ -3410,7 +3445,7 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
       self.updateTargetColumn(Last)
       self.centerCursor()
       self.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
-      self.layout.showEditor(self.id)
+      self.layout.showEditor(self.id.EditorId)
 
   else:
     let editor = self.layout.openFile(filename)
@@ -4706,7 +4741,17 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   # debugf"[textedit] handleAction {action}, '{args}'"
 
   var args = args.copy
-  args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
+  args.elems.insert api.TextDocumentEditor(id: self.id.EditorId).toJson, 0
+
+  if self.commands.activeCommands.contains(action):
+    try:
+      let res = self.commands.activeCommands[action].execute(args.elems.mapIt($it).join(" "))
+      if res == "":
+        return newJNull().some
+      return res.parseJson().some
+    except CatchableError as e:
+      log lvlError, &"Failed to execute command '{action} {args}': {e.msg}"
+      return newJNull().some
 
   block:
     let res = self.plugins.invokeAnyCallback(action, args)
@@ -5110,6 +5155,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.plugins = self.services.getService(PluginService).get
   self.registers = self.services.getService(Registers).get
   self.workspace = self.services.getService(Workspace).get
+  self.moveDatabase = self.services.getService(MoveDatabase).get
   self.vfs = self.services.getService(VFSService).get.vfs
   self.commands = self.services.getService(CommandService).get
   self.displayMap = DisplayMap.new()

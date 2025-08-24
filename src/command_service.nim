@@ -23,7 +23,7 @@ type
     parameters*: seq[tuple[name: string, `type`: string]]
     returnType*: string
     signature*: string
-    execute*: proc(args: string): string {.gcsafe.}
+    execute*: proc(args: string): string {.gcsafe, raises: [CatchableError].}
 
   CommandPermissions* = object
     allowAll*: Option[bool]
@@ -51,6 +51,7 @@ type
     prefixCommandHandlers: seq[tuple[prefix: string, execute: proc(command: string): Option[string] {.gcsafe, raises: [].}]]
     commandIdCounter: int = 1
     commands*: Table[string, Command]
+    activeCommands*: Table[string, Command]
     idToCommand*: Table[CommandId, string]
 
 proc all*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(true), disallowAll: some(true))
@@ -114,6 +115,27 @@ proc unregisterCommand*(self: CommandService, id: CommandId) =
   if self.idToCommand.contains(id):
     self.commands.del(self.idToCommand[id])
     self.idToCommand.del(id)
+
+proc registerActiveCommand*(self: CommandService, command: sink Command, override: bool = false): CommandId =
+  if command.name == "":
+    log lvlError, &"Trying to register command with no name"
+    return
+
+  if not override and self.activeCommands.contains(command.name):
+    log lvlError, &"Trying to register command '{command.name}' which already exists"
+    return
+
+  let id = self.commandIdCounter.CommandId
+  inc self.commandIdCounter
+
+  self.unregisterCommand(command.name)
+
+  command.id = id
+  command.signature = "(" & command.parameters.mapIt(it.name & ": " & it.`type`).join(", ") & ") " & command.returnType
+  self.idToCommand[id] = command.name
+  self.activeCommands[command.name] = command.ensureMove
+
+  return id
 
 proc registerCommand*(self: CommandService, command: sink Command, override: bool = false): CommandId =
   if command.name == "":

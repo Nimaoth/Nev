@@ -1350,7 +1350,7 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
 proc logs*(self: App, slot: string = "", focus: bool = true, scrollToBottom: bool = false) {.expose("editor").} =
   let editors = self.editors.getEditorsForDocument(self.logDocument)
   let editor = if editors.len > 0:
-    self.layout.showEditor(editors[0].id, slot = slot, focus = focus)
+    self.layout.showEditor(editors[0].id.EditorId, slot = slot, focus = focus)
     editors[0]
   else:
     self.layout.createAndAddView(self.logDocument).get
@@ -2089,7 +2089,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     let item = popup.getSelectedItem().getOr:
       return true
 
-    let editorId = item.data.parseInt.EditorId.catch:
+    let editorId = item.data.parseInt.EditorIdNew.catch:
       log lvlError, fmt"Failed to parse editor id from data '{item}'"
       return true
 
@@ -3155,13 +3155,13 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
     if gEditor.isNil:
       return EditorId(-1)
     if gEditor.commands.commandLineMode:
-      return gEditor.commands.commandLineEditor.id
+      return gEditor.commands.commandLineEditor.id.EditorId
 
     if gEditor.layout.popups.len > 0 and gEditor.layout.popups[gEditor.layout.popups.high].getActiveEditor().getSome(editor):
-      return editor.id
+      return editor.id.EditorId
 
     if gEditor.layout.tryGetCurrentView().getSome(view) and view.getActiveEditor().getSome(editor):
-      return editor.id
+      return editor.id.EditorId
 
   return EditorId(-1)
 
@@ -3194,7 +3194,7 @@ proc scriptIsTextEditor*(editorId: EditorId): bool {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
       return false
-    if gEditor.editors.getEditorForId(editorId).getSome(editor):
+    if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
       return editor of TextDocumentEditor
   return false
 
@@ -3203,7 +3203,7 @@ proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
     if gEditor.isNil:
       return false
     when enableAst:
-      if gEditor.editors.getEditorForId(editorId).getSome(editor):
+      if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
         return editor of ModelDocumentEditor
   return false
 
@@ -3213,9 +3213,9 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expo
       return
     defer:
       gEditor.platform.requestRender()
-    if gEditor.editors.getEditorForId(editorId).getSome(editor):
+    if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
       discard editor.handleAction(action, arg, record=false)
-    elif gEditor.layout.getPopupForId(editorId).getSome(popup):
+    elif gEditor.layout.getPopupForId(editorId.EditorId).getSome(popup):
       discard popup.handleAction(action, arg)
 
 proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =

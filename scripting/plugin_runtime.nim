@@ -338,7 +338,7 @@ block: # Custom moves
       count: int
 
     let input = args.jsonTo(Payload)
-    if input.editor.isTextEditor editor:
+    if input.editor.EditorId.isTextEditor editor:
       let selection = handleCustomTextMove(editor, input.move, input.cursor, input.count)
       if selection.isSome:
         return selection.toJson

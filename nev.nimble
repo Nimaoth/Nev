@@ -38,7 +38,7 @@ requires "https://github.com/Nimaoth/wasm3 >= 0.1.17"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
-requires "https://github.com/Nimaoth/nimwasmtime#22cfeef"
+requires "https://github.com/Nimaoth/nimwasmtime#858ff37"
 requires "https://github.com/Nimaoth/nimsumtree#cc1362f"
 requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 
@@ -182,6 +182,10 @@ proc buildPlugin(name: string) =
 task buildWasmModule, "":
   buildPlugin("test_plugin")
   # buildPlugin("pong")
+  # buildPlugin("vim")
+
+task buildVimPlugin, "":
+  buildPlugin("vim")
 
 task buildWasmModule1, "":
   withDir "plugins/test_plugin_1":

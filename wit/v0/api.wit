@@ -48,6 +48,8 @@ interface types {
     // /// Returns a slice of the rope from line 'a' to 'b'. 'b' is inclusive.
     // /// This operation is cheap because it doesn't create a copy of the text.
     // slice-lines: func(a: s64, b: s64) -> rope;
+    rune-at: func(a: cursor) -> char;
+    byte-at: func(a: cursor) -> u8;
   }
 
   /// Non-owning handle to an editor.
@@ -193,6 +195,21 @@ interface text-editor {
   use types.{editor, document, text-editor, text-document, cursor, selection, rope};
   use commands.{command-error};
 
+  enum scroll-behaviour {
+    center-always,
+    center-offscreen,
+    center-margin,
+    scroll-to-margin,
+    top-of-screen,
+  }
+
+  enum scroll-snap-behaviour {
+    never,
+    always,
+    min-distance-offscreen,
+    min-distance-center,
+  }
+
   /// Returns a handle for the currently active text editor.
   active-text-editor: func() -> option<text-editor>;
   /// Returns the text document the given editor is currently editing.
@@ -205,20 +222,99 @@ interface text-editor {
   /// Run the given command on the given text editor. This requires 'command' permissions.
   command: func(editor: text-editor, name: string, arguments: string) -> result<string, command-error>;
 
+  /// todo
+  record-current-command: func(editor: text-editor, registers: list<string>);
+  /// todo
+  clear-current-command-history: func(editor: text-editor, retain-last: bool);
+  /// todo
+  save-current-command-history: func(editor: text-editor);
+
+  /// todo
+  hide-completions: func(editor: text-editor);
+
+  /// todo
+  scroll-to-cursor: func(editor: text-editor, behaviour: option<scroll-behaviour>);
+  /// todo
+  set-next-snap-behaviour: func(editor: text-editor, behaviour: scroll-snap-behaviour);
+
+  /// todo
+  update-target-column: func(editor: text-editor);
+
+  /// todo
+  get-usage: func(editor: text-editor) -> string;
+  /// todo
+  get-revision: func(editor: text-editor) -> s32;
+  /// todo
+  set-mode: func(editor: text-editor, mode: string, exclusive: bool);
+  /// todo
+  mode: func(editor: text-editor) -> string;
+  /// todo
+  modes: func(editor: text-editor) -> list<string>;
+  /// todo
+  clear-tab-stops: func(editor: text-editor);
+  /// todo
+  select-next-tab-stop: func(editor: text-editor);
+  /// todo
+  select-prev-tab-stop: func(editor: text-editor);
+  /// todo
+  undo: func(editor: text-editor, checkpoint: string);
+  /// todo
+  redo: func(editor: text-editor, checkpoint: string);
+  /// todo
+  add-next-checkpoint: func(editor: text-editor, checkpoint: string);
+  /// todo
+  copy: func(editor: text-editor, register: string, inclusive-end: bool);
+  /// todo
+  paste: func(editor: text-editor, register: string, inclusive-end: bool);
+
+  /// todo
+  apply-move: func(editor: text-editor, selection: selection, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+  multi-move: func(editor: text-editor, selections: list<selection>, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+
   /// Sets the given selection as the only selection for the given editor.
   set-selection: func(editor: text-editor, s: selection);
+  /// Sets the selections for the given editor.
+  set-selections: func(editor: text-editor, s: list<selection>);
   /// Returns the last selection of the given editor.
   get-selection: func(editor: text-editor) -> selection;
+  /// Returns the selections of the given editor.
+  get-selections: func(editor: text-editor) -> list<selection>;
+  /// Return the length of the given line (0 based)
+  line-length: func(editor: text-editor, line: s32) -> s32;
   /// Add a callback which will be called whenever any editor changes mode.
   add-mode-changed-handler: func(fun: u32) -> s32;
 
-  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>) -> list<selection>;
+  /// Returns the value of the setting with the given path, encoded as JSON.
+  get-setting-raw: func(editor: text-editor, name: string) -> string;
+
+  /// Set the value of the setting with the given path. The value must be encoded as JSON.
+  set-setting-raw: func(editor: text-editor, name: string, value: string);
+
+  /// todo
+  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
+
+  define-move: func(move: string, fun: u32, data: u32);
 
   /// Returns the rope containing the current content of the text editors document.
   /// This rope is not automatically kept up to date when the document changes, but
   /// represents the content at the point in time this is called instead. Keeping ropes
   /// around should not have significant memory overhead because ropes share data under the hood.
   content: func(editor: text-editor) -> rope;
+}
+
+interface registers {
+  /// todo
+  is-replaying-commands: func() -> bool;
+  /// todo
+  is-recording-commands: func(register: string) -> bool;
+  /// todo
+  set-register-text: func(text: string, register: string);
+  /// todo
+  get-register-text: func(register: string) -> string;
+  /// todo
+  start-recording-commands: func(register: string);
+  /// todo
+  stop-recording-commands: func(register: string);
 }
 
 interface text-document {
@@ -359,12 +455,14 @@ interface settings {
 interface guest {
   use render.{view};
   use channel.{channel-listen-response};
+  use types.{rope, selection};
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
   handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
   notify-task-complete: func(task: u64, canceled: bool);
+  handle-move: func(fun: u32, data: u32, text: u32, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
 }
 
 /// APIs which can safely be used on a background thread
@@ -391,6 +489,7 @@ world plugin {
   import vfs;
   import channel;
   import process;
+  import registers;
 
   export guest;
 }

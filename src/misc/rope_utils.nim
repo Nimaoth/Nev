@@ -169,6 +169,13 @@ func lineRange*[D](self: RopeSlice[D], line: int, includeLineEnd: bool = true): 
 
   return 0...0
 
+func getLine*(self: Rope, line: int, D: typedesc = int): RopeSlice[D] =
+  if line notin 0..<self.lines:
+    return Rope.new("").slice(D)
+
+  let lineRange = self.lineRange(line, int)
+  return self.slice(lineRange)
+
 func indentRange*(self: RopeSlice, line: int, D: typedesc): Range[D] =
   if line < 0 or line >= self.lines:
     return D.default...D.default
@@ -247,6 +254,21 @@ func firstNonWhitespace*(self: RopeSlice): int =
 func runeIndex*(self: RopeSlice, offset: int): RuneIndex =
   ## Convert byte offset to rune index
   return self.convert(offset, Count).RuneIndex
+
+proc getEnclosing*(text: RopeSlice, column: int, predicate: proc(c: char): bool {.gcsafe, raises: [].}): (int, int) =
+  var cf = text.cursor(column)
+  var cb = cf.clone()
+  while cf.offset < text.len - 1:
+    cf.seekNextRune()
+    if not predicate(cf.currentChar()):
+      cf.seekPrevRune()
+      break
+  while cb.offset > 0:
+    cb.seekPrevRune()
+    if not predicate(cb.currentChar()):
+      cb.seekNextRune()
+      break
+  return (cb.offset, cf.offset)
 
 proc lineStartsWith*(self: Rope, line: int, text: string, ignoreWhitespace: bool): bool =
   let lineRange = if ignoreWhitespace:

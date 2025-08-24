@@ -1,5 +1,5 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, pathnorm, locks, tables]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils]
 import nimsumtree/[rope, sumtree, arc]
 import service
 import layout
@@ -7,9 +7,9 @@ import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service
-import plugin_service, document_editor, vfs, vfs_service, channel
+import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
-from scripting_api import nil
+from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
 
@@ -38,24 +38,22 @@ type ProcessResource = object
   stderr: Arc[BaseChannel]
 
 type
-  ChannelRegistry* = object
-    lock: Lock
-    readChannels: Table[string, ReadChannelResource]
-    writeChannels: Table[string, WriteChannelResource]
-
   HostContext* = ref object
     services: Services
     platform: Platform
     commands*: CommandService
+    registers*: Registers
+    terminals*: TerminalService
     editors*: DocumentEditorService
     layout*: LayoutService
     plugins*: PluginService
     settings*: ConfigStore
     vfsService*: VFSService
     vfs*: VFS
+    moves*: MoveDatabase
     timer*: Timer
 
-  InstanceData = object of RootObj
+  InstanceData = object of InstanceDataWasi
     resources*: WasmModuleResources
     isMainThread: bool
     engine: ptr WasmEngineT
@@ -68,7 +66,7 @@ type
     commands: seq[CommandId]
     namespace: string
     args: string
-    channels: Arc[ChannelRegistry]
+    # channels: Arc[ChannelRegistry]
     destroyRequested: bool
     timer*: Timer
 
@@ -149,23 +147,26 @@ type
     linkerWasiFull: ptr LinkerT
     host: HostContext
     instances: seq[WasmModuleInstanceImpl]
-    channels: Arc[ChannelRegistry]
+    # channels: Arc[ChannelRegistry]
 
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
   self.host.platform = services.getService(PlatformService).get.platform
   self.host.commands = services.getService(CommandService).get
+  self.host.registers = services.getService(Registers).get
+  self.host.terminals = services.getService(TerminalService).get
   self.host.editors = services.getService(DocumentEditorService).get
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
   self.host.vfsService = services.getService(VFSService).get
   self.host.vfs = self.host.vfsService.vfs
+  self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
 
-  self.channels = Arc[ChannelRegistry].new()
-  self.channels.getMut.lock.initLock()
+  # self.channels = Arc[ChannelRegistry].new()
+  # self.channels.getMut.lock.initLock()
 
   self.engine = engine
   self.linkerWasiNone = engine.newLinker()
@@ -217,7 +218,10 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
   instanceData.getMut.permissions = plugin.permissions
   instanceData.getMut.namespace = plugin.manifest.id
   instanceData.getMut.host = self.host
-  instanceData.getMut.channels = self.channels
+  instanceData.getMut.stdin = newInMemoryChannel()
+  instanceData.getMut.stdout = newInMemoryChannel()
+  instanceData.getMut.stderr = newInMemoryChannel()
+  # instanceData.getMut.channels = self.channels
   instanceData.getMut.timer = startTimer()
   let ctx = instanceData.get.store.context
 
@@ -268,6 +272,11 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
     self.instances.removeShift(instance)
     return
 
+  let options = sca.CreateTerminalOptions(
+    group: plugin.manifest.id,
+  )
+  self.host.layout.registerView(self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options))
+
   return instance
 
 method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
@@ -293,7 +302,7 @@ method cloneInstance*(instance: ptr InstanceData): Arc[InstanceDataImpl] =
   instanceData.getMut.permissions = instance.permissions
   instanceData.getMut.namespace = instance.namespace
   instanceData.getMut.host = instance.host
-  instanceData.getMut.channels = instance.channels
+  # instanceData.getMut.channels = instance.channels
   instanceData.getMut.timer = startTimer()
   let ctx = instanceData.get.store.context
 
@@ -346,11 +355,25 @@ var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
 
 ###################################### Conversion functions #####################################
 
-proc toInternal(c: Cursor): scripting_api.Cursor = (c.line.int, c.column.int)
-proc toInternal(c: Selection): scripting_api.Selection = (c.first.toInternal, c.last.toInternal)
+proc toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
+proc toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
+proc toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
+  case c
+  of CenterAlways: sca.CenterAlways
+  of CenterOffscreen: sca.CenterOffscreen
+  of CenterMargin: sca.CenterMargin
+  of ScrollToMargin: sca.ScrollToMargin
+  of TopOfScreen: sca.TopOfScreen
 
-proc toWasm(c: scripting_api.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
-proc toWasm(c: scripting_api.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+proc toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
+  case c
+  of Never: sca.Never
+  of Always: sca.Always
+  of MinDistanceOffscreen: sca.MinDistanceOffscreen
+  of MinDistanceCenter: sca.MinDistanceCenter
+
+proc toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+proc toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
 
 proc toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
   result = {}
@@ -363,7 +386,7 @@ proc editorActiveEditor(instance: ptr InstanceData): Option[Editor] =
   if instance.host == nil:
     return
   if instance.host.layout.tryGetCurrentEditorView().getSome(view):
-    return Editor(id: view.editor.DocumentEditor.idNew.uint64).some
+    return Editor(id: view.editor.DocumentEditor.id.uint64).some
   return Editor.none
 
 proc editorGetDocument(instance: ptr InstanceData; editor: Editor): Option[Document] =
@@ -379,7 +402,7 @@ proc textEditorActiveTextEditor(instance: ptr InstanceData): Option[TextEditor] 
   if instance.host == nil:
     return
   if instance.host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    return TextEditor(id: view.editor.TextDocumentEditor.idNew.uint64).some
+    return TextEditor(id: view.editor.TextDocumentEditor.id.uint64).some
   return TextEditor.none
 
 proc textEditorGetDocument(instance: ptr InstanceData; editor: TextEditor): Option[TextDocument] =
@@ -395,7 +418,7 @@ proc textEditorAsTextEditor(instance: ptr InstanceData; editor: Editor): Option[
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return TextEditor(id: editor.TextDocumentEditor.idNew.uint64).some
+    return TextEditor(id: editor.TextDocumentEditor.id.uint64).some
   return TextEditor.none
 
 proc textEditorAsTextDocument(instance: ptr InstanceData; document: Document): Option[TextDocument] =
@@ -405,12 +428,87 @@ proc textEditorAsTextDocument(instance: ptr InstanceData; document: Document): O
     return TextDocument(id: text_document.TextDocument(document).id.uint64).some
   return TextDocument.none
 
+proc textEditorLineLength(instance: ptr InstanceData; editor: TextEditor; line: int32): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.lineLength(line.int).int32
+
+proc textEditorClearTabStops(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.clearTabStops()
+
+proc textEditorSelectNextTabStop(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.selectNextTabStop()
+
+proc textEditorSelectPrevTabStop(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.selectPrevTabStop()
+
+proc textEditorUndo(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.undo(checkpoint)
+
+proc textEditorRedo(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.redo(checkpoint)
+
+proc textEditorAddNextCheckpoint(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.addNextCheckpoint(checkpoint)
+
+proc textEditorCopy(instance: ptr InstanceData; editor: TextEditor, register: sink string, inclusiveEnd: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.copy(register, inclusiveEnd)
+
+proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor, register: sink string, inclusiveEnd: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.paste(register, inclusiveEnd)
+
+proc textEditorApplyMove(instance: ptr InstanceData; editor: TextEditor; selection: Selection; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    return textEditor.getSelectionsForMove(@[selection.toInternal], move, count, includeEol).mapIt(it.toWasm)
+
+proc textEditorMultiMove(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    return textEditor.getSelectionsForMove(selections.mapIt(it.toInternal), move, count, includeEol).mapIt(it.toWasm)
+
 proc textEditorSetSelection(instance: ptr InstanceData; editor: TextEditor; s: Selection): void =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
     textEditor.selection = ((s.first.line.int, s.first.column.int), (s.last.line.int, s.last.column.int))
+
+proc textEditorSetSelections(instance: ptr InstanceData; editor: TextEditor; s: sink seq[Selection]): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    textEditor.selections = s.mapIt(it.toInternal)
 
 proc textEditorGetSelection(instance: ptr InstanceData; editor: TextEditor): Selection =
   if instance.host == nil:
@@ -422,14 +520,40 @@ proc textEditorGetSelection(instance: ptr InstanceData; editor: TextEditor): Sel
   else:
     Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9))
 
-proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string]): seq[Selection] =
+proc textEditorGetSelections(instance: ptr InstanceData; editor: TextEditor): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    let s = textEditor.selection
+    return editor.TextDocumentEditor.selections.mapIt(it.toWasm)
+
+proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string], inclusive: bool): seq[Selection] =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let selections = selections.mapIt(it.toInternal)
-    let res = editor.TextDocumentEditor.edit(selections, contents)
+    let res = editor.TextDocumentEditor.edit(selections, contents, inclusiveEnd = inclusive)
     return res.mapIt(it.toWasm)
   return selections
+
+proc textEditorDefineMove(instance: ptr InstanceData; move: sink string; fun: uint32; data: uint32): void =
+  if instance.host == nil:
+    return
+
+  proc moveImpl(rope: Rope, move: string, selections: openArray[sca.Selection], count: int, includeEol: bool): seq[sca.Selection] {.gcsafe, raises: [].} =
+    var self: ptr ProcessResource
+    var ropeRes = RopeResource(rope: rope.slice().suffix(Point()))
+    let index = instance.resources.resourceNew(instance.store.context, ropeRes)
+    if index.isOk:
+      let res = instance.funcs.handleMove(fun, data, index.val.uint32, selections.mapIt(it.toWasm), count.int32, includeEol)
+      if res.isErr:
+        log lvlError, "Failed to call handleMove: " & res.err.msg
+      else:
+        return res.val.mapIt(it.toInternal)
+    return @[]
+
+  instance.host.moves.registerMove(move, moveImpl)
 
 proc textEditor_addModeChangedHandler(instance: ptr InstanceData, fun: uint32): int32 =
   if instance.host == nil:
@@ -442,6 +566,60 @@ proc textEditor_addModeChangedHandler(instance: ptr InstanceData, fun: uint32): 
         log lvlError, "Failed to call handleModeChanged: " & res.err.msg
   return 0
 
+proc textEditorSetMode(instance: ptr InstanceData; editor: TextEditor, mode: sink string, exclusive: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setMode(mode, exclusive)
+
+proc textEditorMode(instance: ptr InstanceData; editor: TextEditor): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.mode()
+
+proc textEditorModes(instance: ptr InstanceData; editor: TextEditor): seq[string] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.modes()
+
+proc textEditorClearCurrentCommandHistory(instance: ptr InstanceData; editor: TextEditor, retainLast: bool) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.clearCurrentCommandHistory(retainLast)
+
+proc textEditorSaveCurrentCommandHistory(instance: ptr InstanceData; editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.saveCurrentCommandHistory()
+
+proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.hideCompletions()
+
+proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor; behaviour: Option[ScrollBehaviour]): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal))
+
+proc textEditorSetNextSnapBehaviour(instance: ptr InstanceData; editor: TextEditor; behaviour: ScrollSnapBehaviour): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setNextSnapBehaviour(behaviour.toInternal)
+
+proc textEditorUpdateTargetColumn(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.updateTargetColumn()
+
 proc textEditorCommand(instance: ptr InstanceData; editor: TextEditor, name: sink string, arguments: sink string): Result[string, CommandError] =
   if instance.host == nil:
     return
@@ -452,6 +630,24 @@ proc textEditorCommand(instance: ptr InstanceData; editor: TextEditor, name: sin
     if editor.handleAction(name, arguments, true).getSome(res):
       return results.ok($res)
   result.err(CommandError.NotFound)
+
+proc textEditorRecordCurrentCommand(instance: ptr InstanceData; editor: TextEditor; registers: sink seq[string]): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.recordCurrentCommand(registers)
+
+proc textEditorGetUsage(instance: ptr InstanceData; editor: TextEditor): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getUsage()
+
+proc textEditorGetRevision(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getRevision().int32
 
 proc textEditorContent(instance: ptr InstanceData; editor: TextEditor): RopeResource =
   if instance.host == nil:
@@ -469,6 +665,22 @@ proc textDocumentContent(instance: ptr InstanceData; document: TextDocument): Ro
     let textDocument = text_document.TextDocument(document)
     return RopeResource(rope: textDocument.rope.clone().slice().suffix(Point()))
   return RopeResource(rope: createRope("").slice().suffix(Point()))
+
+proc textEditorGetSettingRaw(instance: ptr InstanceData, editor: TextEditor, name: sink string): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return $editor.TextDocumentEditor.config.get(name, newJexNull())
+
+proc textEditorSetSettingRaw(instance: ptr InstanceData, editor: TextEditor, name: sink string, value: sink string) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    try:
+      # todo: permissions
+      editor.TextDocumentEditor.config.set(name, parseJsonex(value))
+    except CatchableError as e:
+      log lvlError, "set-setting-raw: Failed to set setting '{name}' to {value}: {e.msg}"
 
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
@@ -496,6 +708,12 @@ proc typesSlice(instance: ptr InstanceData, self: var RopeResource, a: int64, b:
 proc typesSlicePoints(instance: ptr InstanceData, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
   return RopeResource(rope: self.rope[range])
+
+proc typesRuneAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune =
+  return self.rope.runeAt(a.toInternal.toPoint)
+
+proc typesByteAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8 =
+  return self.rope.charAt(a.toInternal.toPoint).uint8
 
 proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
   if permissions.disallowAll.get(false):
@@ -582,8 +800,8 @@ proc coreGetPlatform(instance: ptr InstanceData): Platform =
   if instance.host == nil:
     return
   case instance.host.platform.backend
-  of scripting_api.Backend.Gui: return Platform.Gui
-  of scripting_api.Backend.Terminal: return Platform.Tui
+  of sca.Backend.Gui: return Platform.Gui
+  of sca.Backend.Terminal: return Platform.Tui
 
 proc coreApiVersion(instance: ptr InstanceData): int32 =
   return apiVersion
@@ -626,6 +844,36 @@ proc coreSpawnBackground(instance: ptr InstanceData, args: sink string, executor
 proc coreFinishBackground(instance: ptr InstanceData) =
   instance.destroyRequested = true
 
+proc registersIsReplayingCommands(instance: ptr InstanceData): bool =
+  if instance.host == nil:
+    return false
+  return instance.host.registers.isReplayingCommands()
+
+proc registersIsRecordingCommands(instance: ptr InstanceData; register: sink string): bool =
+  if instance.host == nil:
+    return false
+  return instance.host.registers.isRecordingCommands(register)
+
+proc registersSetRegisterText(instance: ptr InstanceData; text: sink string; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.setRegisterText(text, register)
+
+proc registersGetRegisterText(instance: ptr InstanceData; register: sink string): string =
+  if instance.host == nil:
+    return
+  return instance.host.registers.getRegisterText(register)
+
+proc registersStartRecordingCommands(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.startRecordingCommands(register)
+
+proc registersStopRecordingCommands(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.stopRecordingCommands(register)
+
 proc commandsDefineCommand(instance: ptr InstanceData, name: sink string, active: bool, docs: sink string,
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
   if instance.host == nil:
@@ -643,7 +891,10 @@ proc commandsDefineCommand(instance: ptr InstanceData, name: sink string, active
       return res
     ),
   )
-  instance.commands.add(instance.host.commands.registerCommand(command, override = true))
+  if active:
+    instance.commands.add(instance.host.commands.registerActiveCommand(command, override = true))
+  else:
+    instance.commands.add(instance.host.commands.registerCommand(command, override = true))
 
 proc commandsRunCommand(instance: ptr InstanceData, name: sink string, arguments: sink string): Result[string, CommandError] =
   if instance.host == nil:
@@ -852,38 +1103,46 @@ proc channelWriteBytes(instance: ptr InstanceData; self: var WriteChannelResourc
     discard
 
 proc channelReadChannelOpen(instance: ptr InstanceData; path: sink string): Option[ReadChannelResource] =
-  let channels = instance.channels.getMutUnsafe.addr
-  withLock(channels.lock):
-    var chan: ReadChannelResource
-    if channels.readChannels.take(path, chan):
-      return chan.some
-  return ReadChannelResource.none
+  let chan = openGlobalReadChannel(path)
+  if chan.isSome:
+    return ReadChannelResource(channel: chan.get).some
+  # let channels = instance.channels.getMutUnsafe.addr
+  # withLock(channels.lock):
+  #   var chan: ReadChannelResource
+  #   if channels.readChannels.take(path, chan):
+  #     return chan.some
+  # return ReadChannelResource.none
 
 proc channelReadChannelMount(instance: ptr InstanceData; channel: sink ReadChannelResource; path: sink string; unique: bool): string =
-  var path = path
-  if unique:
-    path.add "-" & $newId()
-  let channels = instance.channels.getMutUnsafe.addr
-  withLock(channels.lock):
-    channels.readChannels[path] = channel
-    return path
+  mountGlobalReadChannel(path, channel.channel, unique)
+  # var path = path
+  # if unique:
+  #   path.add "-" & $newId()
+  # let channels = instance.channels.getMutUnsafe.addr
+  # withLock(channels.lock):
+  #   channels.readChannels[path] = channel
+  #   return path
 
 proc channelWriteChannelOpen(instance: ptr InstanceData; path: sink string): Option[WriteChannelResource] =
-  let channels = instance.channels.getMutUnsafe.addr
-  withLock(channels.lock):
-    var chan: WriteChannelResource
-    if channels.writeChannels.take(path, chan):
-      return chan.some
-  return WriteChannelResource.none
+  let chan = openGlobalWriteChannel(path)
+  if chan.isSome:
+    return WriteChannelResource(channel: chan.get).some
+  # let channels = instance.channels.getMutUnsafe.addr
+  # withLock(channels.lock):
+  #   var chan: WriteChannelResource
+  #   if channels.writeChannels.take(path, chan):
+  #     return chan.some
+  # return WriteChannelResource.none
 
 proc channelWriteChannelMount(instance: ptr InstanceData; channel: sink WriteChannelResource; path: sink string; unique: bool): string =
-  var path = path
-  if unique:
-    path.add "-" & $newId()
-  let channels = instance.channels.getMutUnsafe.addr
-  withLock(channels.lock):
-    channels.writeChannels[path] = channel
-    return path
+  mountGlobalWriteChannel(path, channel.channel, unique)
+  # var path = path
+  # if unique:
+  #   path.add "-" & $newId()
+  # let channels = instance.channels.getMutUnsafe.addr
+  # withLock(channels.lock):
+  #   channels.writeChannels[path] = channel
+  #   return path
 
 proc channelNewInMemoryChannel(instance: ptr InstanceData): (ReadChannelResource, WriteChannelResource) =
   var c = newInMemoryChannel()
