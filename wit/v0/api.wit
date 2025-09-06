@@ -39,12 +39,19 @@ interface types {
     lines: func() -> s64;
     /// Returns the text of the rope as a string. This is expensive for large ropes.
     text: func() -> string;
-    /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
+    /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is inclusive if `inclusive` is true.
     /// This operation is cheap because it doesn't create a copy of the text.
-    slice: func(a: s64, b: s64) -> rope;
+    slice: func(a: s64, b: s64, inclusive: bool) -> rope;
+    /// Returns a slice of the rope from the given selection. 's.last' is inclusive if `inclusive` is true.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice-selection: func(s: selection, inclusive: bool) -> rope;
+    /// Find the byte index of the sub string 'sub', starting the search at 'start'. The returned index is relative to the start of the rope, not 'start'.
+    find: func(sub: string, start: s64) -> option<s64>;
     /// Returns a slice of the rope from 'a' to 'b'. The column of 'b' is exclusive. Columns are in bytes.
     /// This operation is cheap because it doesn't create a copy of the text.
     slice-points: func(a: cursor, b: cursor) -> rope;
+    /// Return the length in bytes of the given line (0 based).
+    line-length: func(line: s64) -> s64;
     // /// Returns a slice of the rope from line 'a' to 'b'. 'b' is inclusive.
     // /// This operation is cheap because it doesn't create a copy of the text.
     // slice-lines: func(a: s64, b: s64) -> rope;
@@ -267,6 +274,15 @@ interface text-editor {
   /// todo
   paste: func(editor: text-editor, register: string, inclusive-end: bool);
 
+  /// Set the search query by applying the given move to the current selection.
+  /// 'prefix' and 'suffix' are appended to the string after escaping.
+  set-search-query-from-move: func(editor: text-editor, move: string, count: s32, prefix: string, suffix: string) -> selection;
+  /// Set the search query to 'query'. If 'escape-regex' is true the the 'query' string is escaped so special characters
+  /// are searched for literally. 'prefix' and 'suffix' are appended to the string after escaping.
+  set-search-query: func(editor: text-editor, query: string, escape-regex: bool, prefix: string, suffix: string) -> bool;
+  /// Returns the current search query.
+  get-search-query: func(editor: text-editor) -> string;
+
   /// todo
   apply-move: func(editor: text-editor, selection: selection, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
   multi-move: func(editor: text-editor, selections: list<selection>, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
@@ -363,6 +379,12 @@ interface render {
     size: func() -> vec2f;
     /// Returns whether the given key is currently pressed.
     key-down: func(key: s64) -> bool;
+    /// Returns the mouse position relative to the position of the view. (0, 0) is in the top left corner.
+    mouse-pos: func() -> vec2f;
+    /// Returns whether the given mouse button is pressed.
+    mouse-down: func(button: s64) -> bool;
+    /// Returns how much the mouse was scrolled this frame.
+    scroll-delta: func() -> vec2f;
     /// Specify how often the view should render. -1 means don't render in a timer, 0 means render every frame,
     /// a number bigger than 0 specifies the interval in milliseconds.
     set-render-interval: func(ms: s32);
@@ -411,7 +433,7 @@ interface core {
   /// 0 means the latest version, 1 or bigger means a specific version.
   api-version: func() -> s32;
 
-  /// Returns the time since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
+  /// Returns the time in milliseconds since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
   get-time: func() -> f64;
 
   /// Returns what kind platform the app is running on. E.g. 'terminal' or 'gui'

@@ -4,7 +4,7 @@ from scripting_api as sca import nil
 import misc/[util, custom_logger, custom_unicode, myjsonutils, regex, rope_utils, rope_regex, custom_async]
 import text/custom_treesitter, text/indent
 import config_provider, service
-# import text/[overlay_map, tab_map, wrap_map, diff_map, display_map]
+import text/[overlay_map, tab_map, wrap_map, diff_map, display_map]
 import nimsumtree/[rope]
 
 {.push gcsafe, raises: [].}
@@ -57,8 +57,77 @@ proc vimMotionWordBig*(text: Rope, cursor: Cursor): Selection =
     let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
     return ((cursor.line, startColumn), (cursor.line, endColumn))
 
-proc applyMove*(self: MoveDatabase, rope: Rope, move: string, selections: openArray[Selection], count: int = 0, includeEol: bool = true): seq[Selection] =
+proc findNext*(text: Rope, cursor: Cursor, target: Rune): Cursor =
+  var c = text.cursorT(cursor.toPoint)
+  c.seekNextRune()
+  while not c.atEnd and c.currentRune != target:
+    c.seekNextRune()
+  return c.position.toCursor
+
+proc clampCursor*(text: Rope, cursor: Cursor, includeAfter: bool = true): Cursor =
+  var cursor = cursor
+  cursor.line = clamp(cursor.line, 0, text.lines - 1)
+
+  var res = text.clipPoint(cursor.toPoint, Bias.Left).toCursor
+  var c = text.cursorT(res.toPoint)
+  if not includeAfter and c.currentRune == '\n'.Rune and res.column > 0:
+    c.seekPrevRune()
+    res = c.position.toCursor
+  return res
+
+proc moveCursorColumn(text: Rope, cursor: Cursor, offset: int, wrap: bool = true, includeEol: bool = true): Cursor =
+  var cursor = cursor
+
+  if cursor.line notin 0..<text.lines:
+    return cursor
+
+  var c = text.cursorT(cursor.toPoint)
+  var lastIndex = text.lastValidIndex(cursor.line, includeEol)
+
+  if offset > 0:
+    for i in 0..<offset:
+      if cursor.column >= lastIndex:
+        if not wrap:
+          break
+        if cursor.line < text.lines - 1:
+          cursor.line = cursor.line + 1
+          cursor.column = 0
+          lastIndex = text.lastValidIndex(cursor.line, includeEol)
+          c.seekForward(point(cursor.line, 0))
+          continue
+        else:
+          cursor.column = lastIndex
+          break
+
+      c.seekNextRune()
+      cursor = c.position.toCursor
+
+  elif offset < 0:
+    for i in 0..<(-offset):
+      if cursor.column == 0:
+        if not wrap:
+          break
+        if cursor.line > 0:
+          cursor.line = cursor.line - 1
+          lastIndex = text.lastValidIndex(cursor.line, includeEol)
+          c.seekPrevRune()
+          if not includeEol:
+            c.seekPrevRune()
+          cursor.column = lastIndex
+          continue
+        else:
+          cursor.column = 0
+          break
+
+      c.seekPrevRune()
+      cursor = c.position.toCursor
+
+  return text.clampCursor(cursor, includeEol)
+
+proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], count: int = 0, includeEol: bool = true): seq[Selection] =
   debugf"applyMove '{move}', {selections}, {count}, {includeEol}"
+
+  let rope {.cursor.} = displayMap.buffer.visibleText
 
   if move in self.moves:
     let impl = self.moves[move]
@@ -146,28 +215,37 @@ proc applyMove*(self: MoveDatabase, rope: Rope, move: string, selections: openAr
   #     (cursor.line, 0)
   #   result = (first, (cursor.line, self.document.lineLength(cursor.line)))
 
-  # of "line":
-  #   let lineLen = self.document.lineLength(cursor.line)
-  #   result = ((cursor.line, 0), (cursor.line, lineLen))
-  #   if not includeEol and result.last.column == lineLen:
-  #     result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
+  of "line":
+    return selections.mapIt(block:
+      let lineLen = rope.lineLen(it.last.line)
+      var res: Selection = ((it.last.line, 0), (it.last.line, lineLen))
+      if not includeEol and res.last.column == lineLen:
+        res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+      res
+    )
 
-  # of "visual-line":
-  #   let lineLen = self.document.lineLength(cursor.line)
-  #   let wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
-  #   let displayLineStart = wrapPoint(wrapPoint.row)
-  #   let displayLineEnd = wrapPoint(wrapPoint.row + 1)
-  #   result[0] = self.displayMap.toPoint(displayLineStart, Right).toCursor
-  #   result[1] = self.displayMap.toPoint(displayLineEnd, Right).toCursor
-  #   if result[1].column == 0:
-  #     result[1].line -= 1
-  #     result[1].column = self.document.lineLength(result[1].line)
+  of "visual-line":
+    return selections.mapIt(block:
+      let lineLen = rope.lineLen(it.last.line)
+      let wrapPoint = displayMap.toWrapPoint(it.last.toPoint)
+      let displayLineStart = wrapPoint(wrapPoint.row)
+      let displayLineEnd = wrapPoint(wrapPoint.row + 1)
+      var res: Selection = (
+        displayMap.toPoint(displayLineStart, Right).toCursor,
+        displayMap.toPoint(displayLineEnd, Right).toCursor,
+      )
+      if res[1].column == 0:
+        res[1].line -= 1
+        res[1].column = rope.lineLen(res[1].line)
 
-  #   if not includeEol:
-  #     if result.last.column == lineLen:
-  #       result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
-  #     elif result.last.column < self.document.lineLength(cursor.line): # This is the case if we're not in the last visual sub line
-  #       result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
+      if not includeEol:
+        if res.last.column == lineLen:
+          res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+        elif res.last.column < rope.lineLen(it.last.line): # This is the case if we're not in the last visual sub line
+          res.last = rope.moveCursorColumn(res.last, -1, wrap = false)
+
+      res
+    )
 
   # of "line-next":
   #   result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
@@ -199,8 +277,8 @@ proc applyMove*(self: MoveDatabase, rope: Rope, move: string, selections: openAr
   #   let line = self.document.numLines - 1
   #   result.last = (line, self.document.lineLength(line))
 
-  # of "column":
-  #   result = self.doMoveCursorColumn(cursor, count, includeAfter = includeEol).toSelection
+  of "column":
+    return selections.mapIt((it.first, rope.moveCursorColumn(it.last, count, includeEol)))
 
   # of "prev-find-result":
   #   result = self.getPrevFindResult(cursor, count)
@@ -225,8 +303,11 @@ proc applyMove*(self: MoveDatabase, rope: Rope, move: string, selections: openAr
 
   else:
     if move.startsWith("move-to "):
-      discard
-    #   # todo: use RopeCursor
+      let c = move["move-to ".len..^1]
+      if c.len > 0:
+        let r = c.runeAt(0)
+        return selections.mapIt((it.first, rope.findNext(it.last, r)))
+
     #   let str = move[8..^1]
     #   let line = self.document.getLine cursor.line
     #   result = cursor.toSelection

@@ -355,9 +355,10 @@ var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
 
 ###################################### Conversion functions #####################################
 
-proc toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
-proc toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
-proc toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
+converter toPoint(c: Cursor): Point = point(c.line.int, c.column.int)
+converter toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
+converter toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
+converter toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
   case c
   of CenterAlways: sca.CenterAlways
   of CenterOffscreen: sca.CenterOffscreen
@@ -365,17 +366,17 @@ proc toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
   of ScrollToMargin: sca.ScrollToMargin
   of TopOfScreen: sca.TopOfScreen
 
-proc toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
+converter toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
   case c
   of Never: sca.Never
   of Always: sca.Always
   of MinDistanceOffscreen: sca.MinDistanceOffscreen
   of MinDistanceCenter: sca.MinDistanceCenter
 
-proc toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
-proc toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+converter toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+converter toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
 
-proc toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
+converter toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
   result = {}
   if ReadFlag.Binary in flags:
     result.incl vfs.ReadFlag.Binary
@@ -508,7 +509,8 @@ proc textEditorSetSelections(instance: ptr InstanceData; editor: TextEditor; s: 
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
-    textEditor.selections = s.mapIt(it.toInternal)
+    if s.len > 0:
+      textEditor.selections = s.mapIt(it.toInternal)
 
 proc textEditorGetSelection(instance: ptr InstanceData; editor: TextEditor): Selection =
   if instance.host == nil:
@@ -682,6 +684,25 @@ proc textEditorSetSettingRaw(instance: ptr InstanceData, editor: TextEditor, nam
     except CatchableError as e:
       log lvlError, "set-setting-raw: Failed to set setting '{name}' to {value}: {e.msg}"
 
+proc textEditorSetSearchQueryFromMove(instance: ptr InstanceData, editor: TextEditor, move: sink string, count: int32, prefix: sink string, suffix: sink string): Selection =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.setSearchQueryFromMove(move, count, prefix, suffix)
+
+proc textEditorSetSearchQuery(instance: ptr InstanceData, editor: TextEditor, query: sink string, escapeRegex: bool, prefix: sink string, suffix: sink string): bool =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.setSearchQuery(query, escapeRegex, prefix, suffix)
+
+proc textEditorGetSearchQuery(instance: ptr InstanceData, editor: TextEditor): string =
+  if instance.host == nil:
+    return ""
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getSearchQuery()
+  return ""
+
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
 
@@ -700,14 +721,32 @@ proc typesRunes(instance: ptr InstanceData, self: var RopeResource): int64 =
 proc typesLines(instance: ptr InstanceData, self: var RopeResource): int64 =
   return self.rope.lines.int64
 
-proc typesSlice(instance: ptr InstanceData, self: var RopeResource, a: int64, b: int64): RopeResource =
-  let a = min(a, b).clamp(0, self.rope.len)
-  let b = max(a, b).clamp(0, self.rope.len)
+proc typesSlice(instance: ptr InstanceData, self: var RopeResource, a: int64, b: int64, inclusive: bool): RopeResource =
+  let a = min(a.int, b.int).clamp(0, self.rope.len)
+  var b = max(a.int, b.int).clamp(0, self.rope.len)
+  if inclusive:
+    b = self.rope.clip(b + 1, Bias.Right)
   return RopeResource(rope: self.rope[a.int...b.int].suffix(Point()))
+
+proc typesSliceSelection(instance: ptr InstanceData, self: var RopeResource, s: Selection, inclusive: bool): RopeResource =
+  let a = min(s.first.toPoint, s.last.toPoint).clamp(point(0, 0), self.rope.summary.lines)
+  var b = max(s.first.toPoint, s.last.toPoint).clamp(point(0, 0), self.rope.summary.lines)
+  if inclusive:
+    b = self.rope.clip(b + point(0, 1), Bias.Right)
+  return RopeResource(rope: self.rope[a...b].suffix(Point()))
 
 proc typesSlicePoints(instance: ptr InstanceData, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
   return RopeResource(rope: self.rope[range])
+
+proc typesLineLength(instance: ptr InstanceData, self: var RopeResource, line: int64): int64 =
+  return self.rope.lineRange(line).len
+
+proc typesFind(instance: ptr InstanceData, self: var RopeResource, sub: sink string, start: int64): Option[int64] =
+  let i = self.rope.find(sub, start).int64
+  if i >= 0:
+    return i.some
+  return int64.none
 
 proc typesRuneAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune =
   return self.rope.runeAt(a.toInternal.toPoint)
@@ -953,10 +992,19 @@ proc renderId(instance: ptr InstanceData; self: var RenderViewResource): int32 =
   return self.view.id2
 
 proc renderSize(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
-  return Vec2f(x: self.view.size.x, y: self.view.size.y)
+  return Vec2f(x: self.view.bounds.w, y: self.view.bounds.h)
 
 proc renderKeyDown(instance: ptr InstanceData; self: var RenderViewResource, key: int64): bool =
   return key in self.view.keyStates
+
+proc renderMousePos(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
+  return Vec2f(x: self.view.mousePos.x, y: self.view.mousePos.y)
+
+proc renderMouseDown(instance: ptr InstanceData; self: var RenderViewResource; button: int64): bool =
+  return button in self.view.mouseStates
+
+proc renderScrollDelta(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
+  return Vec2f(x: self.view.scrollDelta.x, y: self.view.scrollDelta.y)
 
 proc renderSetRenderWhenInactive(instance: ptr InstanceData; self: var RenderViewResource; enabled: bool): void =
   self.view.setRenderWhenInactive(enabled)

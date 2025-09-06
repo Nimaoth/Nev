@@ -2591,27 +2591,29 @@ proc getSelections*(self: TextDocumentEditor): Selections {.gcsafe, raises: [].}
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
+proc editor_text_setSelection_void_TextDocumentEditor_Selection_Option_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc setSelection*(self: TextDocumentEditor; selection: Selection) {.gcsafe,
-    raises: [].} =
+proc setSelection*(self: TextDocumentEditor; selection: Selection;
+                   addToHistory: Option[bool] = bool.none) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add selection.toJson()
+  argsJson.add addToHistory.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
+  let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Selection_Option_bool_wasm(
       argsJsonString.cstring)
 
 
-proc editor_text_setSelections_void_TextDocumentEditor_Selections_wasm(
+proc editor_text_setSelections_void_TextDocumentEditor_Selections_Option_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc setSelections*(self: TextDocumentEditor; selections: Selections) {.gcsafe,
-    raises: [].} =
+proc setSelections*(self: TextDocumentEditor; selections: Selections;
+                    addToHistory: Option[bool] = bool.none) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add selections.toJson()
+  argsJson.add addToHistory.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSelections_void_TextDocumentEditor_Selections_wasm(
+  let res {.used.} = editor_text_setSelections_void_TextDocumentEditor_Selections_Option_bool_wasm(
       argsJsonString.cstring)
 
 

@@ -38,8 +38,8 @@ requires "https://github.com/Nimaoth/wasm3 >= 0.1.17"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.4"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
-requires "https://github.com/Nimaoth/nimwasmtime#858ff37"
-requires "https://github.com/Nimaoth/nimsumtree#cc1362f"
+requires "https://github.com/Nimaoth/nimwasmtime#415a252"
+requires "https://github.com/Nimaoth/nimsumtree#47f7208"
 requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 
 # Use this to include all treesitter languages (takes longer to download)

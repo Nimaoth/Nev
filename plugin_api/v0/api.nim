@@ -1,4 +1,4 @@
-import std/[strformat, json, jsonutils, strutils, sequtils, sugar, os, terminal, colors]
+import std/[strformat, json, jsonutils, strutils, sequtils, sugar, os, terminal, colors, unicode]
 import wit_guest, wit_types, wit_runtime, generational_seq, event, util
 export wit_types, wit_runtime
 import async
@@ -82,8 +82,7 @@ proc notifyTasksComplete(tasks: WitList[tuple[task: uint64, canceled: bool]]) =
     notifyTaskComplete(task, canceled)
 
 proc handleMove(fun: uint32; data: uint32; text: uint32; selections: WitList[Selection]; count: int32; eol: bool): WitList[Selection] =
-  echo "handleMove "
-  var text = Rope(handle: text.int32)
+  var text = Rope(handle: text.int32 + 1)
   let fun = cast[MoveHandler](fun)
   return stackWitList(fun(data, text.ensureMove, selections.toOpenArray(), count.int, eol))
 
@@ -220,7 +219,7 @@ when pluginWorld == "plugin":
     editor.scrollToCursor(ScrollBehaviour.none)
 
   proc addCustomTextMove*(name: string, move: MoveHandler) =
-    defineMove(name.ws, 0, cast[uint32](move))
+    defineMove(name.ws, cast[uint32](move), 0)
 
 func toSelection*(cursor: Cursor, default: Selection, which: sca.SelectionCursor): Selection =
   case which
@@ -231,6 +230,7 @@ func toSelection*(cursor: Cursor, default: Selection, which: sca.SelectionCursor
   of sca.SelectionCursor.LastToFirst: return (default.last, cursor).toSelection
 
 proc charAt*(rope: Rope, cursor: Cursor): char = rope.byteAt(cursor).char
+proc slice*(rope: Rope, a: Natural, b: Natural): Rope = rope.slice(a.int64, b.int64, inclusive = false)
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)

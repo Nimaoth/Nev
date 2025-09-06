@@ -285,6 +285,7 @@ template buildCommands*(self: var BinaryEncoder, body: untyped) =
       self.write(RenderCommandKind.Rect.uint8 + 1.uint8)
       self.write(inBounds)
       self.write(inColor)
+      self.write(0.UINodeFlags)
     template fillRect(inBounds: Rect, inColor: Color): untyped {.used.} =
       self.write(RenderCommandKind.FilledRect.uint8 + 1.uint8)
       self.write(inBounds)
@@ -302,6 +303,12 @@ template buildCommands*(self: var BinaryEncoder, body: untyped) =
       self.write(inColor)
       self.write(inFlags)
       self.write(txt.toOpenArray(0, txt.high))
+    template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
+      self.write(RenderCommandKind.TextRaw.uint8 + 1.uint8)
+      self.write(inBounds)
+      self.write(inColor)
+      self.write(inFlags)
+      self.write(inText)
     # template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
     #   let offset = renderCommands.strings.len.uint32
     #   for c in inText:

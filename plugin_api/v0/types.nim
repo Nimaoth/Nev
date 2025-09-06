@@ -113,20 +113,65 @@ proc text*(self: Rope): WitString {.nodestroy.} =
   result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
               cast[ptr int32](retArea[4].addr)[])
 
-proc typesSliceImported(a0: int32; a1: int64; a2: int64): int32 {.
+proc typesSliceImported(a0: int32; a1: int64; a2: int64; a3: bool): int32 {.
     wasmimport("[method]rope.slice", "nev:plugins/types").}
-proc slice*(self: Rope; a: int64; b: int64): Rope {.nodestroy.} =
+proc slice*(self: Rope; a: int64; b: int64; inclusive: bool): Rope {.nodestroy.} =
   ## Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
   ## This operation is cheap because it doesn't create a copy of the text.
   var
     arg0: int32
     arg1: int64
     arg2: int64
+    arg3: bool
   arg0 = cast[int32](self.handle - 1)
   arg1 = a
   arg2 = b
-  let res = typesSliceImported(arg0, arg1, arg2)
+  arg3 = inclusive
+  let res = typesSliceImported(arg0, arg1, arg2, arg3)
   result.handle = res + 1
+
+proc typesSliceSelectionImported(a0: int32; a1: int32; a2: int32; a3: int32;
+                                 a4: int32; a5: bool): int32 {.
+    wasmimport("[method]rope.slice-selection", "nev:plugins/types").}
+proc sliceSelection*(self: Rope; s: Selection; inclusive: bool): Rope {.
+    nodestroy.} =
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+    arg5: bool
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = s.first.line
+  arg2 = s.first.column
+  arg3 = s.last.line
+  arg4 = s.last.column
+  arg5 = inclusive
+  let res = typesSliceSelectionImported(arg0, arg1, arg2, arg3, arg4, arg5)
+  result.handle = res + 1
+
+proc typesFindImported(a0: int32; a1: int32; a2: int32; a3: int64; a4: int32): void {.
+    wasmimport("[method]rope.find", "nev:plugins/types").}
+proc find*(self: Rope; sub: WitString; start: int64): Option[int64] {.nodestroy.} =
+  var
+    retArea: array[24, uint8]
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: int64
+  arg0 = cast[int32](self.handle - 1)
+  if sub.len > 0:
+    arg1 = cast[int32](sub[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](sub.len)
+  arg3 = start
+  typesFindImported(arg0, arg1, arg2, arg3, cast[int32](retArea[0].addr))
+  if cast[ptr int64](retArea[0].addr)[] != 0:
+    var temp: int64
+    temp = convert(cast[ptr int64](retArea[8].addr)[], int64)
+    result = temp.some
 
 proc typesSlicePointsImported(a0: int32; a1: int32; a2: int32; a3: int32;
                               a4: int32): int32 {.
@@ -143,10 +188,21 @@ proc slicePoints*(self: Rope; a: Cursor; b: Cursor): Rope {.nodestroy.} =
   arg0 = cast[int32](self.handle - 1)
   arg1 = a.line
   arg2 = a.column
-  arg2 = b.line
-  arg3 = b.column
+  arg3 = b.line
+  arg4 = b.column
   let res = typesSlicePointsImported(arg0, arg1, arg2, arg3, arg4)
   result.handle = res + 1
+
+proc typesLineLengthImported(a0: int32; a1: int64): int64 {.
+    wasmimport("[method]rope.line-length", "nev:plugins/types").}
+proc lineLength*(self: Rope; line: int64): int64 {.nodestroy.} =
+  var
+    arg0: int32
+    arg1: int64
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = line
+  let res = typesLineLengthImported(arg0, arg1)
+  result = convert(res, int64)
 
 proc typesRuneAtImported(a0: int32; a1: int32; a2: int32): Rune {.
     wasmimport("[method]rope.rune-at", "nev:plugins/types").}

@@ -368,6 +368,95 @@ proc paste*(editor: TextEditor; register: WitString; inclusiveEnd: bool): void {
   arg3 = inclusiveEnd
   textEditorPasteImported(arg0, arg1, arg2, arg3)
 
+proc textEditorSetSearchQueryFromMoveImported(a0: uint64; a1: int32; a2: int32;
+    a3: int32; a4: int32; a5: int32; a6: int32; a7: int32; a8: int32): void {.
+    wasmimport("set-search-query-from-move", "nev:plugins/text-editor").}
+proc setSearchQueryFromMove*(editor: TextEditor; move: WitString; count: int32;
+                             prefix: WitString; suffix: WitString): Selection {.
+    nodestroy.} =
+  ## todo
+  var
+    retArea: array[40, uint8]
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: int32
+    arg4: int32
+    arg5: int32
+    arg6: int32
+    arg7: int32
+  arg0 = editor.id
+  if move.len > 0:
+    arg1 = cast[int32](move[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](move.len)
+  arg3 = count
+  if prefix.len > 0:
+    arg4 = cast[int32](prefix[0].addr)
+  else:
+    arg4 = 0.int32
+  arg5 = cast[int32](prefix.len)
+  if suffix.len > 0:
+    arg6 = cast[int32](suffix[0].addr)
+  else:
+    arg6 = 0.int32
+  arg7 = cast[int32](suffix.len)
+  textEditorSetSearchQueryFromMoveImported(arg0, arg1, arg2, arg3, arg4, arg5,
+      arg6, arg7, cast[int32](retArea[0].addr))
+  result.first.line = convert(cast[ptr int32](retArea[0].addr)[], int32)
+  result.first.column = convert(cast[ptr int32](retArea[4].addr)[], int32)
+  result.last.line = convert(cast[ptr int32](retArea[8].addr)[], int32)
+  result.last.column = convert(cast[ptr int32](retArea[12].addr)[], int32)
+
+proc textEditorSetSearchQueryImported(a0: uint64; a1: int32; a2: int32;
+                                      a3: bool; a4: int32; a5: int32; a6: int32;
+                                      a7: int32): bool {.
+    wasmimport("set-search-query", "nev:plugins/text-editor").}
+proc setSearchQuery*(editor: TextEditor; query: WitString; escapeRegex: bool;
+                     prefix: WitString; suffix: WitString): bool {.nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: bool
+    arg4: int32
+    arg5: int32
+    arg6: int32
+    arg7: int32
+  arg0 = editor.id
+  if query.len > 0:
+    arg1 = cast[int32](query[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](query.len)
+  arg3 = escapeRegex
+  if prefix.len > 0:
+    arg4 = cast[int32](prefix[0].addr)
+  else:
+    arg4 = 0.int32
+  arg5 = cast[int32](prefix.len)
+  if suffix.len > 0:
+    arg6 = cast[int32](suffix[0].addr)
+  else:
+    arg6 = 0.int32
+  arg7 = cast[int32](suffix.len)
+  let res = textEditorSetSearchQueryImported(arg0, arg1, arg2, arg3, arg4, arg5,
+      arg6, arg7)
+  result = res.bool
+
+proc textEditorGetSearchQueryImported(a0: uint64; a1: int32): void {.
+    wasmimport("get-search-query", "nev:plugins/text-editor").}
+proc getSearchQuery*(editor: TextEditor): WitString {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: uint64
+  arg0 = editor.id
+  textEditorGetSearchQueryImported(arg0, cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc textEditorApplyMoveImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                                  a4: int32; a5: int32; a6: int32; a7: int32;
                                  a8: bool; a9: bool; a10: int32): void {.

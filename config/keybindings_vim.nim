@@ -770,7 +770,8 @@ proc vimEnter(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-ent
 proc vimNormalMode(editor: TextDocumentEditor) {.exposeActive(editorContext, "vim-normal-mode").} =
   ## Exit to normal mode and clear things
   if editor.mode == "vim.normal":
-    editor.selection = editor.selection.last.toSelection
+    # editor.selection = editor.selection.last.toSelection
+    editor.setSelection(editor.selection.last.toSelection, addToHistory = true.some)
     editor.clearTabStops()
   editor.setMode("vim.normal")
 

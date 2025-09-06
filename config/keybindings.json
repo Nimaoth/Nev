@@ -738,7 +738,6 @@
         "<HOME>": ["vim.move-first", "visual-line"],
         "^": ["vim.move-first", "line-no-indent"],
         "<?-count>$": ["vim.move-to-end-of-line", "<#move.count>"],
-        // "<?-count><END>": ["vim.move-to-end-of-visual-line", "<#move.count>"],
         "<?-count><END>": ["vim.move-last", "visual-line", "<#move.count>"],
         "g0": ["vim.move-first", "line"],
         "g^": ["vim.move-first", "line-no-indent"],
@@ -759,8 +758,8 @@
         "<?-count><C-LEFT>": ["vim.move-selection-end", "vim.WORD", true, true, "<#move.count>"],
         "<?-count>ge": ["vim.move-selection-next", "vim.word", true, false, "<#move.count>"],
         "<?-count>gE": ["vim.move-selection-next", "vim.WORD", true, false, "<#move.count>"],
-        "<?-count>}": ["move-paragraph", false, "<#move.count>"],
-        "<?-count>{": ["move-paragraph", true, "<#move.count>"],
+        "<?-count>}": ["vim.move-paragraph", false, "<#move.count>"],
+        "<?-count>{": ["vim.move-paragraph", true, "<#move.count>"],
         "<?-count>f<ANY>": ["vim.move-to <move.ANY>", false, "<#move.count>"],
         "<?-count>t<ANY>": ["vim.move-to <move.ANY>", true, "<#move.count>"],
 

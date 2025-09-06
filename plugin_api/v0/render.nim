@@ -108,6 +108,42 @@ proc keyDown*(self: RenderView; key: int64): bool {.nodestroy.} =
   let res = renderKeyDownImported(arg0, arg1)
   result = res.bool
 
+proc renderMousePosImported(a0: int32; a1: int32): void {.
+    wasmimport("[method]render-view.mouse-pos", "nev:plugins/render").}
+proc mousePos*(self: RenderView): Vec2f {.nodestroy.} =
+  ## Returns the mouse position relative to the position of the view. (0, 0) is in the top left corner.
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  renderMousePosImported(arg0, cast[int32](retArea[0].addr))
+  result.x = convert(cast[ptr float32](retArea[0].addr)[], float32)
+  result.y = convert(cast[ptr float32](retArea[4].addr)[], float32)
+
+proc renderMouseDownImported(a0: int32; a1: int64): bool {.
+    wasmimport("[method]render-view.mouse-down", "nev:plugins/render").}
+proc mouseDown*(self: RenderView; button: int64): bool {.nodestroy.} =
+  ## Returns whether the given mouse button is pressed.
+  var
+    arg0: int32
+    arg1: int64
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = button
+  let res = renderMouseDownImported(arg0, arg1)
+  result = res.bool
+
+proc renderScrollDeltaImported(a0: int32; a1: int32): void {.
+    wasmimport("[method]render-view.scroll-delta", "nev:plugins/render").}
+proc scrollDelta*(self: RenderView): Vec2f {.nodestroy.} =
+  ## todo
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  renderScrollDeltaImported(arg0, cast[int32](retArea[0].addr))
+  result.x = convert(cast[ptr float32](retArea[0].addr)[], float32)
+  result.y = convert(cast[ptr float32](retArea[4].addr)[], float32)
+
 proc renderSetRenderIntervalImported(a0: int32; a1: int32): void {.
     wasmimport("[method]render-view.set-render-interval", "nev:plugins/render").}
 proc setRenderInterval*(self: RenderView; ms: int32): void {.nodestroy.} =

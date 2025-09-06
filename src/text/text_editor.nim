@@ -2993,6 +2993,30 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
 
   let cursorSelector = self.config.get(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 
+  var move = move
+  var args: JsonNode = nil
+
+  let argsStart = move.find(" ")
+  if argsStart > 0:
+    try:
+      args = newJArray()
+      for a in newStringStream(move[(argsStart + 1)..^1]).parseJsonFragments():
+        args.add a
+    except CatchableError as e:
+      log lvlError, &"getSelectionsForMove: '{move}', Failed to parse args: {e.msg}"
+
+    move = move[0..<argsStart]
+
+  template getArg(index: int, typ: untyped, default: untyped): untyped =
+    if args != nil and index < args.len:
+      try:
+        args[index].to(typ)
+      except CatchableError as e:
+        log lvlError, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
+        default
+    else:
+      default
+
   case move
   of "visual-line-up", "visual-line-down":
     var minLine = int.high
@@ -3018,8 +3042,18 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
   of "column":
     result = selections.mapIt(self.doMoveCursorColumn(it.last, count, includeAfter = includeEol).toSelection(it, cursorSelector))
 
+  of "prev-search-result":
+    let count = getArg(0, int, 0)
+    let wrap = getArg(1, bool, true)
+    result = selections.mapIt(self.getPrevFindResult(it.last, count, includeEol, wrap))
+
+  of "next-search-result":
+    let count = getArg(0, int, 0)
+    let wrap = getArg(1, bool, true)
+    result = selections.mapIt(self.getNextFindResult(it.last, count, includeEol, wrap))
+
   else:
-    return self.moveDatabase.applyMove(self.document.rope, move, selections, count, includeEol)
+    return self.moveDatabase.applyMove(self.displayMap, move, selections, count, includeEol)
 
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
     count: int = 0, includeEol: bool = true): Selection {.expose("editor.text").} =
@@ -4533,14 +4567,16 @@ proc getSelection*(self: TextDocumentEditor): Selection {.expose("editor.text").
 proc getSelections*(self: TextDocumentEditor): Selections {.expose("editor.text").} =
   self.selections
 
-proc setSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
-  self.selection = selection
+proc setSelection*(self: TextDocumentEditor, selection: Selection, addToHistory: Option[bool] = bool.none) {.expose("editor.text").} =
+  self.`selections=`(@[selection], addToHistory)
+  # self.selection = selection
 
-proc setSelections*(self: TextDocumentEditor, selections: Selections) {.expose("editor.text").} =
+proc setSelections*(self: TextDocumentEditor, selections: Selections, addToHistory: Option[bool] = bool.none) {.expose("editor.text").} =
   if selections.len == 0:
     log lvlError, &"Failed to set selections for '{self.getFileName()}': no selections provided"
     return
-  self.selections = selections
+  self.`selections=`(selections, addToHistory)
+  # self.selections = selections
 
 proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
   self.targetSelection = selection

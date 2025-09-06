@@ -153,6 +153,10 @@ func lineRange*(self: Rope, line: int, includeLineEnd: bool = true): Range[int] 
 
   return 0...0
 
+func validateOffset*[D](self: RopeSlice[D], offset: int, bias: Bias): int =
+  let startOffset = self.rope.toOffset(self.range.a)
+  return self.rope.validateOffset(startOffset + offset, bias) - startOffset
+
 func lineRange*[D](self: RopeSlice[D], line: int, includeLineEnd: bool = true): Range[int] =
   ## Returns a the range of the given line. If `includeLineEnd` is true then the end of the range will
   ## be the index of the newline character (used for a selection with an _exclusive_ end cursor),
