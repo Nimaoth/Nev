@@ -160,7 +160,7 @@
     },
     "boxy": {
       "version": "0.4.4",
-      "vcsRevision": "371c40a0b7cf8eced67a31797b019570154c3906",
+      "vcsRevision": "bfc8665443fe9af264eaa80769a6699679f5f273",
       "url": "https://github.com/Nimaoth/boxy",
       "downloadMethod": "git",
       "dependencies": [
@@ -170,7 +170,7 @@
         "bitty"
       ],
       "checksums": {
-        "sha1": "364d0f9d48141eb4bcee96bb0ff33372b476230f"
+        "sha1": "81becde73d830307dd6dc5a77967e9b1ebe8953a"
       }
     },
     "c2nim": {
