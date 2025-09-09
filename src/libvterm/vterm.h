@@ -535,6 +535,7 @@ typedef struct {
 
 typedef struct {
   int (*damage)(VTermRect rect, void *user);
+  int (*erase)(VTermRect rect, void *user);
   int (*moverect)(VTermRect dest, VTermRect src, void *user);
   int (*movecursor)(VTermPos pos, VTermPos oldpos, int visible, void *user);
   int (*settermprop)(VTermProp prop, VTermValue *val, void *user);

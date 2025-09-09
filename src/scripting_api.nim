@@ -1,5 +1,5 @@
 import std/[algorithm, sequtils, sugar, strutils, options]
-import misc/custom_unicode
+import misc/[custom_unicode, myjsonutils]
 
 when defined(nimscript):
   type
@@ -11,7 +11,7 @@ else:
   export vmath
 
 type
-  EditorId* = int
+  EditorId* = uint64
   EditorType* = enum Text, Ast, Model, Other
 
   TextDocumentEditor* = object

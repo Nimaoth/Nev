@@ -1,6 +1,6 @@
-import std/[tables, strutils, options, sets, os, strformat]
+import std/[tables, strutils, options, sets, os, strformat, sugar]
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
-import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer]
+import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
 import ui/node
 import platform
 import input, monitors, lrucache, theme, compilation_config, vfs, app_options
@@ -42,7 +42,7 @@ type
     framebufferId: GLuint
     framebuffer: Texture
 
-    textures: Table[string, Texture]
+    textures: GenerationalSeq[Texture, TextureId]
 
     typefaces: Table[string, Typeface]
     glyphCache: LruCache[(Rune, UINodeFlags), string]
@@ -736,17 +736,32 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
 method createTexture*(self: GuiPlatform, image: Image): TextureId {.gcsafe, raises: [].} =
   try:
     let tex = newTexture(image)
-    return tex.textureId.TextureId
+    return self.textures.add(tex)
   except GLerror as e:
     return 0.TextureId
+
+method deleteTexture*(self: GuiPlatform, texture: TextureId) {.gcsafe, raises: [].} =
+  try:
+    if self.textures.tryGet(texture).getSome(tex):
+      if tex.textureId != 0:
+        echo "delete texture ", texture.int, ", ", tex.textureId
+        glDeleteTextures(1, tex.textureId.addr)
+      self.textures.del(texture)
+    let existingTextures = collect:
+      for key in self.textures.keys:
+        key
+    echo existingTextures
+  except GLerror:
+    discard
 
 proc handleRenderCommand(node: UINode, platform: GuiPlatform, command: RenderCommand, nodePos: Vec2, maskBounds: var seq[Rect]) {.inline, raises: [Exception].} =
   case command.kind
   of RenderCommandKind.Rect:
     platform.boxy.strokeRect(command.bounds + nodePos, command.color)
   of RenderCommandKind.Image:
-    let textureId = command.textureId.GLuint
-    platform.boxy.drawUvRect(nodePos + command.bounds.xy, nodePos + command.bounds.xy + command.bounds.wh, vec2(0), vec2(1), command.color, textureId)
+    if platform.textures.tryGet(command.textureId).getSome(tex):
+      let textureId = tex.textureId
+      platform.boxy.drawUvRect(nodePos + command.bounds.xy, nodePos + command.bounds.xy + command.bounds.wh, vec2(0), vec2(1), command.color, textureId)
 
   of RenderCommandKind.FilledRect:
     platform.boxy.drawRect(command.bounds + nodePos, command.color)

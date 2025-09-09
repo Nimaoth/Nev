@@ -1,6 +1,6 @@
 import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes]
 import vmath
-import chroma
+import chroma, pixie
 import nimsumtree/[rope, arc]
 import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref, myjsonutils, render_command, embed_source, async_process]
 import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
@@ -285,7 +285,7 @@ type
     inputChannel: ptr system.Channel[InputEvent]
     outputChannel: ptr system.Channel[OutputEvent]
     terminalBuffer*: TerminalBuffer
-    sixels*: Table[Hash, Sixel]
+    sixels*: seq[tuple[contentHash: Hash, row, col: int, px, py: int, width, height: int]]
     cursor*: tuple[row, col: int, visible: bool, shape: CursorShape, blink: bool] = (0, 0, true, CursorShape.Block, true)
     scrollY: int
     exitCode*: Option[int]
@@ -317,7 +317,6 @@ type
     closeOnTerminate: bool
     slot: string
     open: bool = true
-    sixelTextures*: Table[Hash, TextureId]
 
   TerminalService* = ref object of Service
     events: EventHandlerService
@@ -328,14 +327,21 @@ type
     commands: CommandService
     idCounter: int = 0
     settings: TerminalSettings
+    mPlatform: Platform
 
     terminals*: Table[int, TerminalView]
     activeView: TerminalView
+    sixelTextures*: Table[Hash, TextureId]
 
 proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView
 
 proc vterm(state: ThreadState): ptr VTerm = cast[ptr VTerm](state.vtermInternal)
 proc screen(state: ThreadState): ptr VTermScreen = cast[ptr VTermScreen](state.screenInternal)
+
+proc platform(self: TerminalService): Platform =
+  if self.mPlatform == nil:
+    self.mPlatform = self.services.getService(PlatformService).get.platform
+  return self.mPlatform
 
 proc createRope*(state: var ThreadState, scrollback: bool = true): Rope =
   var cell: VTermScreenCell
@@ -467,6 +473,52 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
       result[col, scrolledRow] = c
       prevOverlap = cell.width.int
 
+proc createTexture(self: TerminalService, sixel: sink Sixel) =
+  proc toRgbaFast(c: colortypes.Color): ColorRGBA {.inline.} =
+    ## Convert Color to ColorRGBA
+    result.r = (c.r * 255 + 0.5).uint8
+    result.g = (c.g * 255 + 0.5).uint8
+    result.b = (c.b * 255 + 0.5).uint8
+    result.a = (c.a * 255 + 0.5).uint8
+
+  try:
+    debugf"cache sixel {sixel.contentHash} {sixel.width}x{sixel.height}"
+    let image = newImage(sixel.width, sixel.height)
+    for y in 0..<sixel.height:
+      for x in 0..<sixel.width:
+        image.data[x + y * sixel.width] = sixel.colors[x + y * sixel.width].toRgbaFast()
+    let textureId = self.platform.createTexture(image)
+    self.sixelTextures[sixel.contentHash] = textureId
+  except PixieError as e:
+    log lvlError, &"Failed to create image for sixel: {e.msg}"
+
+proc cleanupUnusedSixels(self: TerminalService) {.async.} =
+  while true:
+    var unusedSixels = self.sixelTextures
+    for view in self.terminals.values:
+      for s in view.terminal.sixels:
+        unusedSixels.del(s.contentHash)
+
+    for key, id in unusedSixels:
+      debugf"delete unused sixel {key}, {id.int}"
+      self.platform.deleteTexture(id)
+      self.sixelTextures.del(key)
+
+    catch sleepAsync(1000.milliseconds).await:
+      discard
+
+proc handleBufferOutputEvent(self: TerminalService, terminal: Terminal, event: var OutputEvent) =
+  # Swap to avoid expensive copies, and because ensureMove doesn't work for fields
+  swap terminal.terminalBuffer, event.buffer
+  terminal.sixels.setLen(0)
+  for pos, s in event.sixels.mpairs:
+    let h = s.contentHash
+    terminal.sixels.add (h, pos[0], pos[1], s.px, s.py, s.width, s.height)
+    if h notin self.sixelTextures:
+      var temp = Sixel()
+      swap(temp, s)
+      self.createTexture(temp.ensureMove)
+
 proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
   while not terminal.threadTerminated:
     var updated = false
@@ -474,18 +526,11 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
       var event = terminal.outputChannel[].recv()
       case event.kind
       of OutputEventKind.TerminalBuffer:
-        # Swap to avoid expensive copies, and because ensureMove doesn't work for fields
-        swap terminal.terminalBuffer, event.buffer
-        terminal.sixels.clear()
-        for s in event.sixels.mvalues:
-          let h = s.contentHash
-          terminal.sixels[h] = Sixel()
-          swap s, terminal.sixels[h]
+        self.handleBufferOutputEvent(terminal, event)
       of OutputEventKind.Size:
         when defined(enableLibssh):
           if terminal.ssh.isSome:
             sshAsyncWait "update terminal size":
-              echo &"update ssh terminal size {event.width}x{event.height}"
               # todo: pixel size
               terminal.sshChannel.impl.channel_request_pty_size_ex(event.width, event.height, event.width * 10, event.height * 20)
       of OutputEventKind.Cursor:
@@ -586,7 +631,6 @@ proc handleInputEvents(state: var ThreadState) =
           state.vterm.setSize(state.height.cint, state.width.cint)
           state.screen.flushDamage()
 
-          echo &"resize {state.width}x{state.height}"
           if not state.useChannels:
             when defined(windows):
               ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
@@ -904,7 +948,7 @@ iterator handleSixel(s: ptr ThreadState): int {.closure, gcsafe, raises: [].} =
       pos: s.sixel.pos,
       contentHash: s.sixel.colors.hash(),
     )
-    echo &"sixel {s.sixel.width}x{s.sixel.height}, {s.sixel.px}:{s.sixel.py}, {s.cursor.row}:{s.cursor.col}, {s.sixel.colors.hash}"
+    # echo &"sixel {s.sixel.width}x{s.sixel.height}, {s.sixel.px}:{s.sixel.py}, {s.cursor.row}:{s.cursor.col}, {s.sixel.colors.hash}"
 
   except CatchableError as e:
     echo &"Failed to parse sixel data at {s.sixel.i}: {e.msg}"
@@ -930,22 +974,24 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   var callbacks = VTermScreenCallbacks(
     damage: (proc(rect: VTermRect; user: pointer): cint {.cdecl.} =
       # echo &"damage: {rect}"
+    ),
+    erase: (proc(rect: VTermRect; user: pointer): cint {.cdecl.} =
+      # echo &"erase: {rect}"
       let state = cast[ptr ThreadState](user)
       var keysToRemove = newSeq[(int, int)]()
       for key in state.sixels.keys:
         if key[0] in rect.start_row..rect.end_row and key[1] in rect.start_col..rect.end_col:
           keysToRemove.add key
-      # for key in keysToRemove:
-      #   state.sixels.del key
+      for key in keysToRemove:
+        echo &"remove sixel {key} {state.sixels[key].contentHash}, {state.sixels[key].width}x{state.sixels[key].height}"
+        state.sixels.del key
       if keysToRemove.len > 0:
-        # echo &"remove sixels {keysToRemove}"
         state.outputChannel[].send OutputEvent(
           kind: OutputEventKind.TerminalBuffer,
           buffer: state[].createTerminalBuffer(),
           sixels: state.sixels,
         )
     ),
-    # moverect: (proc(dest: VTermRect; src: VTermRect; user: pointer): cint {.cdecl.} = discard),
     movecursor: (proc(pos: VTermPos; oldpos: VTermPos; visible: cint; user: pointer): cint {.cdecl.} =
       let state = cast[ptr ThreadState](user)
       state.cursor.row = pos.row.int
@@ -979,8 +1025,10 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
     # bell: (proc(user: pointer): cint {.cdecl.} = discard),
     resize: (proc(rows: cint; cols: cint; user: pointer): cint {.cdecl.} =
       let state = cast[ptr ThreadState](user)
-      echo &"resize: clear sixels"
-      # state.sixels.clear()
+      if cols == state.width and rows.int == state.height:
+        return
+      echo &"resize: clear sixels {state.width}x{state.height} -> {cols}x{rows}"
+      state.sixels.clear()
       state.outputChannel[].send OutputEvent(kind: OutputEventKind.Size, width: cols.int, height: rows.int)
     ),
     sb_pushline: (proc(cols: cint; cells: ptr UncheckedArray[VTermScreenCell]; user: pointer): cint {.cdecl.} =
@@ -1334,7 +1382,13 @@ when defined(enableLibssh):
       let sshChannel = client.initChannel()
 
       sshAsyncWait "request pty":
-        sshChannel.impl.channel_request_pty("xterm-256color")
+        var term = "xterm-256color"
+        let width = terminal.terminalBuffer.width
+        let height = terminal.terminalBuffer.height
+        let pixelWidth = width * 10
+        let pixelHeight = height * 20
+        sshChannel.impl.channel_request_pty_ex(term.cstring, term.len.uint, nil, 0, width, height, pixelWidth, pixelHeight)
+
       sshAsyncWait "start shell":
         sshChannel.impl.channel_shell()
 
@@ -1766,6 +1820,8 @@ method init*(self: TerminalService): Future[Result[void, ref CatchableError]] {.
     config.options.mode = self.settings.defaultMode.get().some
     return self.createTerminalView(config.command, config.options, id = config.id)
 
+  asyncSpawn self.cleanupUnusedSixels()
+
   return ok()
 
 method deinit*(self: TerminalService) =
@@ -1773,7 +1829,7 @@ method deinit*(self: TerminalService) =
     term.close()
 
 proc requestRender(self: TerminalService) =
-  self.services.getService(PlatformService).get.platform.requestRender()
+  self.platform.requestRender()
 
 proc handleInput(self: TerminalService, view: TerminalView, text: string) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Text, text: text))
@@ -1841,7 +1897,7 @@ proc createTerminalView(self: TerminalService, command: string, options: CreateT
     self.updateModeEventHandlers(view)
 
     discard term.onUpdated.subscribe proc() =
-      self.services.getService(PlatformService).get.platform.requestRender()
+      self.platform.requestRender()
       view.markDirty()
 
     discard term.onTerminated.subscribe proc(exitCode: Option[int]) =
@@ -1882,7 +1938,7 @@ proc createTerminalView*(self: TerminalService, stdin: Arc[BaseChannel], stdout:
     self.updateModeEventHandlers(view)
 
     discard term.onUpdated.subscribe proc() =
-      self.services.getService(PlatformService).get.platform.requestRender()
+      self.platform.requestRender()
       view.markDirty()
 
     discard term.onTerminated.subscribe proc(exitCode: Option[int]) =

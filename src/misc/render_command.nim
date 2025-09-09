@@ -1,4 +1,4 @@
-import std/[macros, genasts, tables, sets]
+import std/[macros, genasts, tables, sets, hashes]
 import fusion/matching
 import chroma, vmath
 import macro_utils, util, custom_unicode, rect_utils, binary_encoder
@@ -105,6 +105,10 @@ type
     lineHeight*: float
     lineGap*: float
     scale*: float
+
+proc `==`*(a, b: TextureId): bool {.borrow.}
+proc hash*(vr: TextureId): Hash {.borrow.}
+proc `$`*(vr: TextureId): string {.borrow.}
 
 proc write*(self: var BinaryEncoder, flags: UINodeFlags) =
   self.writeLEB128(uint64, flags.uint64)

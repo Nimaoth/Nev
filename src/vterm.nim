@@ -200,6 +200,7 @@ type
 
   VTermScreenCallbacks* {.bycopy, importc.} = object
     damage*: proc (rect: VTermRect; user: pointer): cint {.cdecl.}
+    erase*: proc (rect: VTermRect; user: pointer): cint {.cdecl.}
     moverect*: proc (dest: VTermRect; src: VTermRect; user: pointer): cint {.cdecl.}
     movecursor*: proc (pos: VTermPos; oldpos: VTermPos; visible: cint; user: pointer): cint {.cdecl.}
     settermprop*: proc (prop: VTermProp; val: ptr VTermValue; user: pointer): cint {.cdecl.}

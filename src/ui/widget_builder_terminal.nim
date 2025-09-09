@@ -59,6 +59,8 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
   else:
     app.themes.theme.color("tab.inactiveBackground", color(0.176, 0.176, 0.176)).withAlpha(1).lighten(inactiveBrightnessChange)
 
+  let imageScale = app.config.runtime.get("debug.image-scale", 1.0)
+
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
 
@@ -287,23 +289,12 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
                 # Flush last part of the line
                 flush()
 
-              # echo &"draw {self.terminal.sixels.len} sixels"
-              for s in self.terminal.sixels.values:
-                let offset = vec2(s.pos.column.float * builder.charWidth, s.pos.line.float * builder.textHeight)
-                if s.contentHash notin self.sixelTextures:
-                  try:
-                    echo &"cache image {s.contentHash} {s.width}x{s.height}"
-                    let image = newImage(s.width, s.height)
-                    for y in 0..<s.height:
-                      for x in 0..<s.width:
-                        image.data[x + y * s.width] = s.colors[x + y * s.width].toRgbaFast()
-                    let textureId = app.platform.createTexture(image)
-                    self.sixelTextures[s.contentHash] = textureId
-                  except PixieError as e:
-                    log lvlError, &"Failed to create image for sixel: {e.msg}"
-                # echo &"draw image {self.sixelTextures[s.contentHash].uint64}, {s.contentHash}, {s.width}x{s.height} at {offset}"
-                let scale = app.config.runtime.get("debug.image-scale", 1.0)
-                drawImage(rect(offset.x, offset.y, s.px.float * s.width.float * scale, s.py.float * s.height.float * scale), self.sixelTextures[s.contentHash])
+              for s in self.terminal.sixels:
+                self.terminals.sixelTextures.withValue(s.contentHash, textureId):
+                  let offset = vec2(s.col.float * builder.charWidth, s.row.float * builder.textHeight)
+                  let bounds = rect(offset.x, offset.y,
+                    s.px.float * s.width.float * imageScale, s.py.float * s.height.float * imageScale)
+                  drawImage(bounds, textureId[])
 
           currentNode.markDirty(builder)
 
