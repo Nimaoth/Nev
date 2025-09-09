@@ -50,10 +50,13 @@ type
   RenderCommandKind* {.pure.} = enum
     Rect
     FilledRect
+    Image
     Text
     TextRaw
     ScissorStart
     ScissorEnd
+
+  TextureId* = distinct uint64
 
   RenderCommand* = object
     bounds*: Rect # 16
@@ -68,6 +71,8 @@ type
     of RenderCommandKind.TextRaw:
       data*: ptr UncheckedArray[char]
       len*: int
+    of RenderCommandKind.Image:
+      textureId*: TextureId
     else:
       discard
 
@@ -107,6 +112,12 @@ proc write*(self: var BinaryEncoder, flags: UINodeFlags) =
 proc read*(self: var BinaryDecoder, _: typedesc[UINodeFlags]): UINodeFlags =
   return self.readLEB128(uint64).UINodeFlags
 
+proc write*(self: var BinaryEncoder, textureId: TextureId) =
+  self.writeLEB128(uint64, textureId.uint64)
+
+proc read*(self: var BinaryDecoder, _: typedesc[TextureId]): TextureId =
+  return self.readLEB128(uint64).TextureId
+
 proc write*(self: var BinaryEncoder, bounds: Rect) =
   self.write(bounds.x)
   self.write(bounds.y)
@@ -135,6 +146,11 @@ proc write*(self: var BinaryEncoder, command: RenderCommand) =
   of RenderCommandKind.FilledRect:
     self.write(command.bounds)
     self.write(command.color)
+    self.write(command.flags)
+  of RenderCommandKind.Image:
+    self.write(command.bounds)
+    self.write(command.color)
+    self.write(command.textureId)
     self.write(command.flags)
   of RenderCommandKind.TextRaw:
     self.write(command.bounds)
@@ -165,6 +181,12 @@ iterator decodeRenderCommands*(self: var BinaryDecoder): RenderCommand =
       let color = self.read(Color)
       let flags = self.read(UINodeFlags)
       yield RenderCommand(kind: RenderCommandKind.FilledRect, bounds: bounds, color: color, flags: flags)
+    of RenderCommandKind.Image:
+      let bounds = self.read(Rect)
+      let color = self.read(Color)
+      let textureId = self.read(TextureId)
+      let flags = self.read(UINodeFlags)
+      yield RenderCommand(kind: RenderCommandKind.Image, bounds: bounds, color: color, flags: flags, textureId: textureId)
     of RenderCommandKind.TextRaw:
       let bounds = self.read(Rect)
       let color = self.read(Color)
@@ -255,6 +277,8 @@ template buildCommands*(renderCommands: var RenderCommands, body: untyped) =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor))
     template fillRect(inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
       renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.FilledRect, bounds: inBounds, color: inColor, flags: inFlags))
+    template drawImage(inBounds: Rect, inTextureId: TextureId): untyped {.used.} =
+      renderCommands.commands.add(RenderCommand(kind: RenderCommandKind.Image, bounds: inBounds, color: color(1, 1, 1), textureId: inTextureId))
     template drawText(inText: string, inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
       let txt = inText
       let offset = renderCommands.strings.len.uint32
@@ -285,6 +309,7 @@ template buildCommands*(self: var BinaryEncoder, body: untyped) =
       self.write(RenderCommandKind.Rect.uint8 + 1.uint8)
       self.write(inBounds)
       self.write(inColor)
+      self.write(0.UINodeFlags)
     template fillRect(inBounds: Rect, inColor: Color): untyped {.used.} =
       self.write(RenderCommandKind.FilledRect.uint8 + 1.uint8)
       self.write(inBounds)
@@ -302,6 +327,12 @@ template buildCommands*(self: var BinaryEncoder, body: untyped) =
       self.write(inColor)
       self.write(inFlags)
       self.write(txt.toOpenArray(0, txt.high))
+    template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
+      self.write(RenderCommandKind.TextRaw.uint8 + 1.uint8)
+      self.write(inBounds)
+      self.write(inColor)
+      self.write(inFlags)
+      self.write(inText)
     # template drawText(inText: openArray[char], inBounds: Rect, inColor: Color, inFlags: UINodeFlags): untyped {.used.} =
     #   let offset = renderCommands.strings.len.uint32
     #   for c in inText:

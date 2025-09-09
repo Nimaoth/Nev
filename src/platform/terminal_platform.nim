@@ -676,6 +676,8 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
           platform.cursor.row = pos.y.int
         else:
           platform.fillRect(command.bounds + nodePos, command.color)
+      of RenderCommandKind.Image:
+        discard
       of RenderCommandKind.TextRaw:
         var text = newStringOfCap(command.len)
         text.setLen(command.len)
@@ -704,6 +706,8 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
           platform.cursor.row = pos.y.int
         else:
           platform.fillRect(command.bounds + nodePos, command.color)
+      of RenderCommandKind.Image:
+        discard
       of RenderCommandKind.TextRaw:
         var text = newStringOfCap(command.len)
         text.setLen(command.len)

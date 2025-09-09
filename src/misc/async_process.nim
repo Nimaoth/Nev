@@ -42,6 +42,7 @@ type AsyncProcess* = ref object
   writerFlowVar: FlowVarBase
   killOnExit: bool = false
   eval: bool = false
+  errToOut: bool = false
 
 proc isAlive*(process: AsyncProcess): bool =
   return process.process.isNotNil and process.process.running
@@ -421,6 +422,8 @@ proc start*(process: AsyncProcess): bool =
     var options: set[ProcessOption] = {poUsePath, poDaemon}
     if process.eval:
       options.incl poEvalCommand
+    if process.errToOut:
+      options.incl poStdErrToStdOut
     process.process = startProcess(process.name, args=process.args, options=options)
   except CatchableError as e:
     log(lvlError, fmt"Failed to start {process.name}: {e.msg}")
@@ -469,7 +472,7 @@ proc restartServer(process: AsyncProcess) {.async, gcsafe.} =
     if not process.onRestarted.isNil:
       process.onRestarted().await
 
-proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true, killOnExit = false, eval: bool = false): AsyncProcess {.gcsafe.} =
+proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true, autoStart = true, killOnExit = false, eval: bool = false, errToOut: bool = false): AsyncProcess {.gcsafe.} =
   let process = AsyncProcess()
   process.name = name
   process.args = @args
@@ -479,6 +482,7 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
   process.output = newAsyncChannel[Option[string]]()
   process.killOnExit = killOnExit
   process.eval = eval
+  process.errToOut = errToOut
 
   process.inputStreamChannel = Arc[Channel[Option[ProcessObj]]].new()
   process.inputStreamChannel.getMutUnsafe.open()
@@ -684,9 +688,11 @@ proc listen*(self: Arc[ProcessOutputChannel], cb: ChannelListener): ListenId {.g
     asyncSpawn self.listenPoll()
 
 proc newProcessOutputChannel*(process: AsyncProcess): Arc[BaseChannel] =
+  let signal = ThreadSignalPtr.new()
   var res = Arc[ProcessOutputChannel].new()
   res.getMut() = ProcessOutputChannel(
     process: process,
+    signal: signal.value,
     destroyImpl: destroyChannelImpl(ProcessOutputChannel),
     closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr ProcessOutputChannel](self))),
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr ProcessOutputChannel](self)),
@@ -707,9 +713,11 @@ proc write*(self: ptr ProcessInputChannel, data: openArray[uint8]) {.raises: [IO
   self.process.sendSync(str.ensureMove)
 
 proc newProcessInputChannel*(process: AsyncProcess): Arc[BaseChannel] =
+  let signal = ThreadSignalPtr.new()
   var res = Arc[ProcessInputChannel].new()
   res.getMut() = ProcessInputChannel(
     process: process,
+    signal: signal.value,
     destroyImpl: destroyChannelImpl(ProcessInputChannel),
     closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr ProcessInputChannel](self))),
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr ProcessInputChannel](self)),

@@ -6,6 +6,7 @@ import platform/[platform, tui]
 import ui/[widget_builders_base]
 import app, theme, view
 import config_provider, terminal_service, terminal_previewer, layout
+import pixie
 
 from std/colors as colors import nil
 
@@ -15,6 +16,13 @@ import ui/node
 {.used.}
 
 logCategory "widget_builder_terminal"
+
+proc toRgbaFast*(c: Color): ColorRGBA {.inline.} =
+  ## Convert Color to ColorRGBA
+  result.r = (c.r * 255 + 0.5).uint8
+  result.g = (c.g * 255 + 0.5).uint8
+  result.b = (c.b * 255 + 0.5).uint8
+  result.a = (c.a * 255 + 0.5).uint8
 
 method createUI*(self: TerminalPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
   if self.view != nil:
@@ -278,6 +286,24 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
 
                 # Flush last part of the line
                 flush()
+
+              # echo &"draw {self.terminal.sixels.len} sixels"
+              for s in self.terminal.sixels.values:
+                let offset = vec2(s.pos.column.float * builder.charWidth, s.pos.line.float * builder.textHeight)
+                if s.contentHash notin self.sixelTextures:
+                  try:
+                    echo &"cache image {s.contentHash} {s.width}x{s.height}"
+                    let image = newImage(s.width, s.height)
+                    for y in 0..<s.height:
+                      for x in 0..<s.width:
+                        image.data[x + y * s.width] = s.colors[x + y * s.width].toRgbaFast()
+                    let textureId = app.platform.createTexture(image)
+                    self.sixelTextures[s.contentHash] = textureId
+                  except PixieError as e:
+                    log lvlError, &"Failed to create image for sixel: {e.msg}"
+                # echo &"draw image {self.sixelTextures[s.contentHash].uint64}, {s.contentHash}, {s.width}x{s.height} at {offset}"
+                let scale = app.config.runtime.get("debug.image-scale", 1.0)
+                drawImage(rect(offset.x, offset.y, s.px.float * s.width.float * scale, s.py.float * s.height.float * scale), self.sixelTextures[s.contentHash])
 
           currentNode.markDirty(builder)
 

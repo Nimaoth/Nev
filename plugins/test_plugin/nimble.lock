@@ -45,12 +45,12 @@
     },
     "nimwasmtime": {
       "version": "0.2.1",
-      "vcsRevision": "22cfeef719757063ba951079374bee67a917c0bb",
+      "vcsRevision": "415a252eb4cada08d7ced468d42c92b1b0d4ae72",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "b583e2c45336f1d6ec6a720f3fd5638bc0337b5f"
+        "sha1": "da3c2261fac93db812ac62808b606d45b4d25e0d"
       }
     },
     "unicodedb": {

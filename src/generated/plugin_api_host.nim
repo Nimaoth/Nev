@@ -107,41 +107,41 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8556381821 = instance.getExport(context, "init_plugin")
-  if f_8556381821.isSome:
-    assert f_8556381821.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8556381821.get.of_field.func_field
+  let f_9646900845 = instance.getExport(context, "init_plugin")
+  if f_9646900845.isSome:
+    assert f_9646900845.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9646900845.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8556381837 = instance.getExport(context, "handle_command")
-  if f_8556381837.isSome:
-    assert f_8556381837.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8556381837.get.of_field.func_field
+  let f_9646900861 = instance.getExport(context, "handle_command")
+  if f_9646900861.isSome:
+    assert f_9646900861.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9646900861.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8556381887 = instance.getExport(context, "handle_mode_changed")
-  if f_8556381887.isSome:
-    assert f_8556381887.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8556381887.get.of_field.func_field
+  let f_9646900911 = instance.getExport(context, "handle_mode_changed")
+  if f_9646900911.isSome:
+    assert f_9646900911.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9646900911.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8556381888 = instance.getExport(context, "handle_view_render_callback")
-  if f_8556381888.isSome:
-    assert f_8556381888.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8556381888.get.of_field.func_field
+  let f_9646900912 = instance.getExport(context, "handle_view_render_callback")
+  if f_9646900912.isSome:
+    assert f_9646900912.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9646900912.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_8556381912 = instance.getExport(context, "handle_channel_update")
-  if f_8556381912.isSome:
-    assert f_8556381912.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_8556381912.get.of_field.func_field
+  let f_9646900936 = instance.getExport(context, "handle_channel_update")
+  if f_9646900936.isSome:
+    assert f_9646900936.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9646900936.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_8556381913 = instance.getExport(context, "notify_task_complete")
-  if f_8556381913.isSome:
-    assert f_8556381913.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_8556381913.get.of_field.func_field
+  let f_9646900937 = instance.getExport(context, "notify_task_complete")
+  if f_9646900937.isSome:
+    assert f_9646900937.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9646900937.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
 
@@ -393,6 +393,10 @@ proc renderId(instance: ptr InstanceData; self: var RenderViewResource): int32
 proc renderSize(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
 proc renderKeyDown(instance: ptr InstanceData; self: var RenderViewResource;
                    key: int64): bool
+proc renderMousePos(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
+proc renderMouseDown(instance: ptr InstanceData; self: var RenderViewResource;
+                     button: int64): bool
+proc renderScrollDelta(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
 proc renderSetRenderInterval(instance: ptr InstanceData;
                              self: var RenderViewResource; ms: int32): void
 proc renderSetRenderCommandsRaw(instance: ptr InstanceData;
@@ -460,6 +464,9 @@ proc channelWriteChannelMount(instance: ptr InstanceData;
                               path: sink string; unique: bool): string
 proc channelNewInMemoryChannel(instance: ptr InstanceData): (
     ReadChannelResource, WriteChannelResource)
+proc channelCreateTerminal(instance: ptr InstanceData;
+                           stdin: sink WriteChannelResource;
+                           stdout: sink ReadChannelResource; group: sink string): void
 proc processProcessStart(instance: ptr InstanceData; name: sink string;
                          args: sink seq[string]): ProcessResource
 proc processStderr(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource
@@ -955,8 +962,8 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
             RopeResource)
         a.line = convert(parameters[1].i32, int32)
         a.column = convert(parameters[2].i32, int32)
-        b.line = convert(parameters[2].i32, int32)
-        b.column = convert(parameters[3].i32, int32)
+        b.line = convert(parameters[3].i32, int32)
+        b.column = convert(parameters[4].i32, int32)
         let res = typesSlicePoints(instance, self[], a, b)
         parameters[0].i32 = ?instance.resources.resourceNew(store, res)
     if e.isErr:
@@ -980,7 +987,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           assert false
         let res = editorActiveEditor(instance)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1007,7 +1014,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         let res = editorGetDocument(instance, editor)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1032,7 +1039,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           assert false
         let res = textEditorActiveTextEditor(instance)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1059,7 +1066,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         let res = textEditorGetDocument(instance, editor)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1086,7 +1093,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         let res = textEditorAsTextEditor(instance, editor)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1114,7 +1121,7 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         document.id = convert(parameters[0].i64, uint64)
         let res = textEditorAsTextDocument(instance, document)
         let retArea = parameters[^1].i32
-        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int32
+        cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
           cast[ptr uint64](memory[retArea + 8].addr)[] = res.get.id
     if e.isErr:
@@ -1536,6 +1543,78 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         key = convert(parameters[1].i64, int64)
         let res = renderKeyDown(instance, self[], key)
         parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.mouse-pos", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        let res = renderMousePos(instance, self[])
+        let retArea = parameters[^1].i32
+        cast[ptr float32](memory[retArea + 0].addr)[] = res.x
+        cast[ptr float32](memory[retArea + 4].addr)[] = res.y
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64], [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.mouse-down", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr RenderViewResource
+        var button: int64
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        button = convert(parameters[1].i64, int64)
+        let res = renderMouseDown(instance, self[], button)
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/render",
+                                 "[method]render-view.scroll-delta", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr RenderViewResource
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            RenderViewResource)
+        let res = renderScrollDelta(instance, self[])
+        let retArea = parameters[^1].i32
+        cast[ptr float32](memory[retArea + 0].addr)[] = res.x
+        cast[ptr float32](memory[retArea + 4].addr)[] = res.y
     if e.isErr:
       return e
   block:
@@ -2549,6 +2628,48 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
             store, res[0])
         cast[ptr int32](memory[retArea + 4].addr)[] = ?instance.resources.resourceNew(
             store, res[1])
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/channel", "create-terminal", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var stdin: WriteChannelResource
+        var stdout: ReadChannelResource
+        var group: string
+        block:
+          let resPtr = ?instance.resources.resourceHostData(
+              parameters[0].i32, WriteChannelResource)
+          copyMem(stdin.addr, resPtr, sizeof(typeof(stdin)))
+          ?instance.resources.resourceDrop(parameters[0].i32,
+              callDestroy = false)
+        block:
+          let resPtr = ?instance.resources.resourceHostData(
+              parameters[1].i32, ReadChannelResource)
+          copyMem(stdout.addr, resPtr, sizeof(typeof(stdout)))
+          ?instance.resources.resourceDrop(parameters[1].i32,
+              callDestroy = false)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
+          group = newString(parameters[3].i32)
+          for i0 in 0 ..< group.len:
+            group[i0] = p0[i0]
+        channelCreateTerminal(instance, stdin, stdout, group)
     if e.isErr:
       return e
   block:

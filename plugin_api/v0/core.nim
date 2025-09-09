@@ -24,7 +24,7 @@ proc apiVersion*(): int32 {.nodestroy.} =
 
 proc coreGetTimeImported(): float64 {.wasmimport("get-time", "nev:plugins/core").}
 proc getTime*(): float64 {.nodestroy.} =
-  ## Returns the time since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
+  ## Returns the time in milliseconds since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
   let res = coreGetTimeImported()
   result = convert(res, float64)
 

@@ -1,5 +1,5 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, pathnorm, locks, tables]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils]
 import nimsumtree/[rope, sumtree, arc]
 import service
 import layout
@@ -7,9 +7,9 @@ import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service
-import plugin_service, document_editor, vfs, vfs_service, channel
+import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
-from scripting_api import nil
+from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
 
@@ -38,24 +38,22 @@ type ProcessResource = object
   stderr: Arc[BaseChannel]
 
 type
-  ChannelRegistry* = object
-    lock: Lock
-    readChannels: Table[string, ReadChannelResource]
-    writeChannels: Table[string, WriteChannelResource]
-
   HostContext* = ref object
     services: Services
     platform: Platform
     commands*: CommandService
+    registers*: Registers
+    terminals*: TerminalService
     editors*: DocumentEditorService
     layout*: LayoutService
     plugins*: PluginService
     settings*: ConfigStore
     vfsService*: VFSService
     vfs*: VFS
+    moves*: MoveDatabase
     timer*: Timer
 
-  InstanceData = object of RootObj
+  InstanceData = object of InstanceDataWasi
     resources*: WasmModuleResources
     isMainThread: bool
     engine: ptr WasmEngineT
@@ -68,7 +66,6 @@ type
     commands: seq[CommandId]
     namespace: string
     args: string
-    channels: Arc[ChannelRegistry]
     destroyRequested: bool
     timer*: Timer
 
@@ -149,23 +146,22 @@ type
     linkerWasiFull: ptr LinkerT
     host: HostContext
     instances: seq[WasmModuleInstanceImpl]
-    channels: Arc[ChannelRegistry]
 
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
   self.host.services = services
   self.host.platform = services.getService(PlatformService).get.platform
   self.host.commands = services.getService(CommandService).get
+  self.host.registers = services.getService(Registers).get
+  self.host.terminals = services.getService(TerminalService).get
   self.host.editors = services.getService(DocumentEditorService).get
   self.host.layout = services.getService(LayoutService).get
   self.host.plugins = services.getService(PluginService).get
   self.host.settings = services.getService(ConfigService).get.runtime
   self.host.vfsService = services.getService(VFSService).get
   self.host.vfs = self.host.vfsService.vfs
+  self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
-
-  self.channels = Arc[ChannelRegistry].new()
-  self.channels.getMut.lock.initLock()
 
   self.engine = engine
   self.linkerWasiNone = engine.newLinker()
@@ -217,7 +213,9 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
   instanceData.getMut.permissions = plugin.permissions
   instanceData.getMut.namespace = plugin.manifest.id
   instanceData.getMut.host = self.host
-  instanceData.getMut.channels = self.channels
+  instanceData.getMut.stdin = newInMemoryChannel()
+  instanceData.getMut.stdout = newInMemoryChannel()
+  instanceData.getMut.stderr = newInMemoryChannel()
   instanceData.getMut.timer = startTimer()
   let ctx = instanceData.get.store.context
 
@@ -268,6 +266,12 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
     self.instances.removeShift(instance)
     return
 
+  let options = sca.CreateTerminalOptions(
+    group: plugin.manifest.id,
+  )
+  let view = self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options)
+  self.host.layout.registerView(view)
+
   return instance
 
 method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
@@ -293,7 +297,6 @@ method cloneInstance*(instance: ptr InstanceData): Arc[InstanceDataImpl] =
   instanceData.getMut.permissions = instance.permissions
   instanceData.getMut.namespace = instance.namespace
   instanceData.getMut.host = instance.host
-  instanceData.getMut.channels = instance.channels
   instanceData.getMut.timer = startTimer()
   let ctx = instanceData.get.store.context
 
@@ -346,11 +349,11 @@ var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
 
 ###################################### Conversion functions #####################################
 
-proc toInternal(c: Cursor): scripting_api.Cursor = (c.line.int, c.column.int)
-proc toInternal(c: Selection): scripting_api.Selection = (c.first.toInternal, c.last.toInternal)
+proc toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
+proc toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
 
-proc toWasm(c: scripting_api.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
-proc toWasm(c: scripting_api.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+proc toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+proc toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
 
 proc toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
   result = {}
@@ -582,8 +585,8 @@ proc coreGetPlatform(instance: ptr InstanceData): Platform =
   if instance.host == nil:
     return
   case instance.host.platform.backend
-  of scripting_api.Backend.Gui: return Platform.Gui
-  of scripting_api.Backend.Terminal: return Platform.Tui
+  of sca.Backend.Gui: return Platform.Gui
+  of sca.Backend.Terminal: return Platform.Tui
 
 proc coreApiVersion(instance: ptr InstanceData): int32 =
   return apiVersion
@@ -702,10 +705,19 @@ proc renderId(instance: ptr InstanceData; self: var RenderViewResource): int32 =
   return self.view.id2
 
 proc renderSize(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
-  return Vec2f(x: self.view.size.x, y: self.view.size.y)
+  return Vec2f(x: self.view.bounds.w, y: self.view.bounds.h)
 
 proc renderKeyDown(instance: ptr InstanceData; self: var RenderViewResource, key: int64): bool =
   return key in self.view.keyStates
+
+proc renderMousePos(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
+  return Vec2f(x: self.view.mousePos.x, y: self.view.mousePos.y)
+
+proc renderMouseDown(instance: ptr InstanceData; self: var RenderViewResource; button: int64): bool =
+  return button in self.view.mouseStates
+
+proc renderScrollDelta(instance: ptr InstanceData; self: var RenderViewResource): Vec2f =
+  return Vec2f(x: self.view.scrollDelta.x, y: self.view.scrollDelta.y)
 
 proc renderSetRenderWhenInactive(instance: ptr InstanceData; self: var RenderViewResource; enabled: bool): void =
   self.view.setRenderWhenInactive(enabled)
@@ -752,6 +764,16 @@ proc renderRemoveMode(instance: ptr InstanceData; self: var RenderViewResource; 
 
 
 ###################### Channel
+
+proc channelCreateTerminal(instance: ptr InstanceData, stdin: sink WriteChannelResource, stdout: sink ReadChannelResource, group: sink string) =
+  if instance.host == nil:
+    return
+  let options = sca.CreateTerminalOptions(
+    group: group,
+  )
+  let view = instance.host.terminals.createTerminalView(stdin.channel, stdout.channel, options)
+  instance.host.layout.registerView(view)
+  instance.host.layout.showView(view.id, "#build-run-terminal", true, true)
 
 proc channelCanRead(instance: ptr InstanceData; self: var ReadChannelResource): bool =
   return self.channel.isOpen
@@ -852,38 +874,20 @@ proc channelWriteBytes(instance: ptr InstanceData; self: var WriteChannelResourc
     discard
 
 proc channelReadChannelOpen(instance: ptr InstanceData; path: sink string): Option[ReadChannelResource] =
-  let channels = instance.channels.getMutUnsafe.addr
-  withLock(channels.lock):
-    var chan: ReadChannelResource
-    if channels.readChannels.take(path, chan):
-      return chan.some
-  return ReadChannelResource.none
+  let chan = openGlobalReadChannel(path)
+  if chan.isSome:
+    return ReadChannelResource(channel: chan.get).some
 
 proc channelReadChannelMount(instance: ptr InstanceData; channel: sink ReadChannelResource; path: sink string; unique: bool): string =
-  var path = path
-  if unique:
-    path.add "-" & $newId()
-  let channels = instance.channels.getMutUnsafe.addr
-  withLock(channels.lock):
-    channels.readChannels[path] = channel
-    return path
+  mountGlobalReadChannel(path, channel.channel, unique)
 
 proc channelWriteChannelOpen(instance: ptr InstanceData; path: sink string): Option[WriteChannelResource] =
-  let channels = instance.channels.getMutUnsafe.addr
-  withLock(channels.lock):
-    var chan: WriteChannelResource
-    if channels.writeChannels.take(path, chan):
-      return chan.some
-  return WriteChannelResource.none
+  let chan = openGlobalWriteChannel(path)
+  if chan.isSome:
+    return WriteChannelResource(channel: chan.get).some
 
 proc channelWriteChannelMount(instance: ptr InstanceData; channel: sink WriteChannelResource; path: sink string; unique: bool): string =
-  var path = path
-  if unique:
-    path.add "-" & $newId()
-  let channels = instance.channels.getMutUnsafe.addr
-  withLock(channels.lock):
-    channels.writeChannels[path] = channel
-    return path
+  mountGlobalWriteChannel(path, channel.channel, unique)
 
 proc channelNewInMemoryChannel(instance: ptr InstanceData): (ReadChannelResource, WriteChannelResource) =
   var c = newInMemoryChannel()

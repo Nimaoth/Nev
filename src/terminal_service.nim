@@ -1,14 +1,18 @@
-import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors]
+import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes]
 import vmath
 import chroma
-import nimsumtree/[rope]
-import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref, myjsonutils]
+import nimsumtree/[rope, arc]
+import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref, myjsonutils, render_command, embed_source, async_process]
 import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
 import scripting/expose
 import platform/[tui, platform]
 import finder/[finder, previewer]
-import vterm, input, input_api, register, command_service
+import vterm, input, input_api, register, command_service, channel
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
+import compilation_config
+
+when defined(enableLibssh):
+  import libssh2, ssh
 
 from scripting_api import RunInTerminalOptions, CreateTerminalOptions
 
@@ -174,12 +178,22 @@ type
     of InputEventKind.EnableLog:
       enableLog: bool
 
+  Sixel* = object
+    colors*: seq[chroma.Color]
+    width*: int
+    height*: int
+    px*: int
+    py*: int
+    pos*: tuple[line, column: int]
+    contentHash*: Hash
+
   CursorShape* {.pure.} = enum Block, Underline, BarLeft
   OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, CursorBlink, Terminated, Rope, Scroll, Log
   OutputEvent = object
     case kind: OutputEventKind
     of OutputEventKind.TerminalBuffer:
       buffer: TerminalBuffer
+      sixels: Table[(int, int), Sixel]
     of OutputEventKind.Size:
       width: int
       height: int
@@ -204,6 +218,8 @@ type
       msg: string
 
   OsHandles = object
+    inputWriteEvent2: ThreadSignalPtr
+    outputReadEvent2: ThreadSignalPtr
     when defined(windows):
       hpcon: HPCON
       inputWriteHandle: HANDLE
@@ -218,11 +234,31 @@ type
       inputWriteEventFd: cint
       childPid: Pid
 
+  SixelState = object
+    active: bool
+    colors: seq[chroma.Color]
+    palette: array[256, chroma.Color] = default(array[256, chroma.Color])
+    i: int =  0
+    x: int =  0
+    y: int =  0
+    width: int = 0
+    height: int = 0
+    sizeFixed: bool  = false
+    px: int = 0
+    py: int = 0
+    currentColor: int = 1
+    iter: iterator(s: ptr ThreadState): int {.gcsafe, raises: [].}
+    frag: VTermStringFragment
+    pos*: tuple[line, column: int]
+
   ThreadState = object
-    vterm: ptr VTerm
-    screen: ptr VTermScreen
-    inputChannel: ptr Channel[InputEvent]
-    outputChannel: ptr Channel[OutputEvent]
+    vtermInternal: pointer
+    screenInternal: pointer
+    inputChannel: ptr system.Channel[InputEvent]
+    outputChannel: ptr system.Channel[OutputEvent]
+    useChannels: bool
+    readChannel: Arc[BaseChannel]
+    writeChannel: Arc[BaseChannel]
     width: int
     height: int
     scrollY: int = 0
@@ -233,6 +269,8 @@ type
     processTerminated: bool = false
     autoRunCommand: string
     enableLog: bool = false
+    sixel: SixelState
+    sixels: Table[(int, int), Sixel]
 
     handles: OsHandles
     when defined(windows):
@@ -244,13 +282,15 @@ type
     group*: string
     command*: string
     thread: Thread[ThreadState]
-    inputChannel: ptr Channel[InputEvent]
-    outputChannel: ptr Channel[OutputEvent]
+    inputChannel: ptr system.Channel[InputEvent]
+    outputChannel: ptr system.Channel[OutputEvent]
     terminalBuffer*: TerminalBuffer
+    sixels*: Table[Hash, Sixel]
     cursor*: tuple[row, col: int, visible: bool, shape: CursorShape, blink: bool] = (0, 0, true, CursorShape.Block, true)
     scrollY: int
     exitCode*: Option[int]
     autoRunCommand: string
+    createPty: bool = false
     threadTerminated: bool = false
 
     # Events
@@ -259,7 +299,13 @@ type
     onRope: Event[ptr Rope]
     onUpdated: Event[void]
 
+    useChannels: bool
     handles: OsHandles
+
+    ssh: Option[SshOptions]
+    when defined(enableLibssh):
+      sshChannel: SSHChannel
+      sshClient: SSHClient
 
   TerminalView* = ref object of View
     terminals*: TerminalService
@@ -271,6 +317,7 @@ type
     closeOnTerminate: bool
     slot: string
     open: bool = true
+    sixelTextures*: Table[Hash, TextureId]
 
   TerminalService* = ref object of Service
     events: EventHandlerService
@@ -286,6 +333,9 @@ type
     activeView: TerminalView
 
 proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView
+
+proc vterm(state: ThreadState): ptr VTerm = cast[ptr VTerm](state.vtermInternal)
+proc screen(state: ThreadState): ptr VTermScreen = cast[ptr VTermScreen](state.screenInternal)
 
 proc createRope*(state: var ThreadState, scrollback: bool = true): Rope =
   var cell: VTermScreenCell
@@ -421,12 +471,23 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
   while not terminal.threadTerminated:
     var updated = false
     while terminal.outputChannel[].peek() > 0:
-      let event = terminal.outputChannel[].recv()
+      var event = terminal.outputChannel[].recv()
       case event.kind
       of OutputEventKind.TerminalBuffer:
-        terminal.terminalBuffer = event.buffer
+        # Swap to avoid expensive copies, and because ensureMove doesn't work for fields
+        swap terminal.terminalBuffer, event.buffer
+        terminal.sixels.clear()
+        for s in event.sixels.mvalues:
+          let h = s.contentHash
+          terminal.sixels[h] = Sixel()
+          swap s, terminal.sixels[h]
       of OutputEventKind.Size:
-        discard
+        when defined(enableLibssh):
+          if terminal.ssh.isSome:
+            sshAsyncWait "update terminal size":
+              echo &"update ssh terminal size {event.width}x{event.height}"
+              # todo: pixel size
+              terminal.sshChannel.impl.channel_request_pty_size_ex(event.width, event.height, event.width * 10, event.height * 20)
       of OutputEventKind.Cursor:
         terminal.cursor.row = event.row
         terminal.cursor.col = event.col
@@ -461,15 +522,23 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
 proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
   if len > 0:
     let state = cast[ptr ThreadState](user)
-    when defined(windows):
-      var bytesWritten: int32
-      if WriteFile(state[].handles.inputWriteHandle, s[0].addr, len.cint, bytesWritten.addr, nil) == 0:
-        echo "Failed to write data to shell: ", newOSError(osLastError()).msg
-      if bytesWritten.int < len.int:
-        echo "--------------------------------------------"
-        echo "failed to write all bytes to shell"
+    # echo "send input ", s.toOpenArray(0, len.int - 1)
+    if state.useChannels:
+      discard
+      try:
+        state.writeChannel.write(s.toOpenArray(0, len.int - 1))
+      except IOError as e:
+        echo "Failed to write data to channel: ", e.msg
     else:
-      discard write(state.handles.masterFd, s[0].addr, len.int)
+      when defined(windows):
+        var bytesWritten: int32
+        if WriteFile(state[].handles.inputWriteHandle, s[0].addr, len.cint, bytesWritten.addr, nil) == 0:
+          echo "Failed to write data to shell: ", newOSError(osLastError()).msg
+        if bytesWritten.int < len.int:
+          echo "--------------------------------------------"
+          echo "failed to write all bytes to shell"
+      else:
+        discard write(state.handles.masterFd, s[0].addr, len.int)
 
 proc handleInputEvents(state: var ThreadState) =
   while state.inputChannel[].peek() > 0:
@@ -517,11 +586,16 @@ proc handleInputEvents(state: var ThreadState) =
           state.vterm.setSize(state.height.cint, state.width.cint)
           state.screen.flushDamage()
 
-          when defined(windows):
-            ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
+          echo &"resize {state.width}x{state.height}"
+          if not state.useChannels:
+            when defined(windows):
+              ResizePseudoConsole(state.handles.hpcon, wincon.COORD(X: state.width.SHORT, Y: state.height.SHORT))
+            else:
+              var winp: IOctl_WinSize = IOctl_WinSize(ws_row: state.height.cushort, ws_col: state.width.cushort, ws_xpixel: 500.cushort, ws_ypixel: 500.cushort)
+              discard termios.ioctl(state.handles.masterFd, TIOCSWINSZ, winp.addr)
           else:
-            var winp: IOctl_WinSize = IOctl_WinSize(ws_row: state.height.cushort, ws_col: state.width.cushort, ws_xpixel: 500.cushort, ws_ypixel: 500.cushort)
-            discard termios.ioctl(state.handles.masterFd, TIOCSWINSZ, winp.addr)
+            let msg = ""
+            handleOutput(msg.cstring, msg.len.csize_t, state.addr)
 
           state.dirty = true
 
@@ -545,69 +619,89 @@ proc handleInputEvents(state: var ThreadState) =
       echo &"Failed to send input: {getCurrentExceptionMsg()}"
 
 proc handleProcessOutput(state: var ThreadState, buffer: var string) {.raises: [OSError].} =
-  when defined(windows):
-    template handleData(data: untyped, bytesToWrite: int): untyped =
-      let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
-      if written != bytesToWrite:
-        echo "fix me: vterm.nim.terminalThread vterm.writeInput"
-        assert written == bytesToWrite, "fix me: vterm.nim.terminalThread vterm.writeInput"
+  if state.useChannels:
+    try:
+      buffer.setLen(state.readChannel.flushRead())
+      if buffer.len > 0:
+        let read = state.readChannel.read(cast[ptr UncheckedArray[uint8]](buffer[0].addr).toOpenArray(0, buffer.high))
+        buffer.setLen(read)
 
-      state.screen.flushDamage()
-      state.dirty = true
+        # echo buffer.toOpenArray(0, read.int - 1)
+        let written = state.vterm.writeInput(buffer.cstring, read.csize_t).int
+        if written != read:
+          echo "fix me: vterm.nim.terminalThread vterm.writeInput"
+          assert written == read, "fix me: vterm.nim.terminalThread vterm.writeInput"
 
-    var bytesRead: DWORD = 0
-    if state.waitingForOvelapped:
-      if GetOverlappedResult(state.handles.outputReadHandle, state.outputOverlapped.addr, bytesRead.addr, 0) != 0:
-        state.waitingForOvelapped = false
-        handleData(buffer.cstring, bytesRead.int)
+        state.screen.flushDamage()
+        state.dirty = true
+    except IOError as e:
+      discard
+  else:
+    when defined(windows):
+      template handleData(data: untyped, bytesToWrite: int): untyped =
+        # echo data.toOpenArray(0, bytesToWrite - 1)
+        let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
+        if written != bytesToWrite:
+          echo "fix me: vterm.nim.terminalThread vterm.writeInput"
+          assert written == bytesToWrite, "fix me: vterm.nim.terminalThread vterm.writeInput"
 
-      else:
-        let error = osLastError()
-        case error.int32
-        of ERROR_HANDLE_EOF:
+        state.screen.flushDamage()
+        state.dirty = true
+
+      var bytesRead: DWORD = 0
+      if state.waitingForOvelapped:
+        if GetOverlappedResult(state.handles.outputReadHandle, state.outputOverlapped.addr, bytesRead.addr, 0) != 0:
           state.waitingForOvelapped = false
-          return
-
-        of ERROR_IO_INCOMPLETE:
-          state.waitingForOvelapped = true
-          return
+          handleData(buffer.cstring, bytesRead.int)
 
         else:
-          raiseOSError(error)
+          let error = osLastError()
+          case error.int32
+          of ERROR_HANDLE_EOF:
+            state.waitingForOvelapped = false
+            return
 
-    buffer.setLen(bufferSize)
-    state.outputOverlapped.hEvent = state.handles.outputReadEvent
-    if ReadFile(state.handles.outputReadHandle, buffer[0].addr, buffer.len.DWORD, bytesRead.addr, state.outputOverlapped.addr) != 0:
-      handleData(buffer.cstring, bytesRead.int)
-      state.waitingForOvelapped = false
-      return
+          of ERROR_IO_INCOMPLETE:
+            state.waitingForOvelapped = true
+            return
 
-    let error = osLastError()
-    case error.int32
-    of ERROR_HANDLE_EOF:
-      state.waitingForOvelapped = false
-      return
+          else:
+            raiseOSError(error)
 
-    of ERROR_IO_PENDING:
-      state.waitingForOvelapped = true
-      return
+      buffer.setLen(bufferSize)
+      state.outputOverlapped.hEvent = state.handles.outputReadEvent
+      if ReadFile(state.handles.outputReadHandle, buffer[0].addr, buffer.len.DWORD, bytesRead.addr, state.outputOverlapped.addr) != 0:
+        handleData(buffer.cstring, bytesRead.int)
+        state.waitingForOvelapped = false
+        return
+
+      let error = osLastError()
+      case error.int32
+      of ERROR_HANDLE_EOF:
+        state.waitingForOvelapped = false
+        return
+
+      of ERROR_IO_PENDING:
+        state.waitingForOvelapped = true
+        return
+
+      else:
+        raiseOSError(error)
 
     else:
-      raiseOSError(error)
+      buffer.setLen(bufferSize)
+      let n = read(state.handles.masterFd, buffer[0].addr, buffer.len)
+      if n > 0:
+        # echo buffer.toOpenArray(0, n.int - 1)
+        let written = state.vterm.writeInput(buffer.cstring, n.csize_t).int
+        if written != n:
+          echo "fix me: vterm.nim.terminalThread vterm.writeInput"
+          assert written == n, "fix me: vterm.nim.terminalThread vterm.writeInput"
 
-  else:
-    buffer.setLen(bufferSize)
-    let n = read(state.handles.masterFd, buffer[0].addr, buffer.len)
-    if n > 0:
-      let written = state.vterm.writeInput(buffer.cstring, n.csize_t).int
-      if written != n:
-        echo "fix me: vterm.nim.terminalThread vterm.writeInput"
-        assert written == n, "fix me: vterm.nim.terminalThread vterm.writeInput"
-
-      state.screen.flushDamage()
-      state.dirty = true
-    elif n == 0:
-      state.processTerminated = true
+        state.screen.flushDamage()
+        state.dirty = true
+      elif n == 0:
+        state.processTerminated = true
 
 proc log*(state: ThreadState, str: string) =
   if state.enableLog:
@@ -617,6 +711,215 @@ proc log*(state: ptr ThreadState, str: string) =
   if state.enableLog:
     state[].outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
 
+iterator chars(state: ptr ThreadState): char {.closure, gcsafe, raises: [].} =
+  while true:
+    while state.sixel.i < state.sixel.frag.len.int:
+      yield state.sixel.frag.str[state.sixel.i]
+      inc state.sixel.i
+
+proc resizeSixel(s: ptr ThreadState, w: int, h: int) =
+  if s.sixel.sizeFixed:
+    return
+
+  assert w >= s.sixel.width and h >= s.sixel.height
+  assert w > s.sixel.width or h > s.sixel.height
+
+  if w == s.sixel.width:
+    # echo "quick resize, only s.sixel.height changed"
+    s.sixel.colors.setLen(w * h)
+  else:
+    # echo "slow resize, s.sixel.width changed"
+    var colorsNew = newSeq[chroma.Color](w * h)
+    for y in 0..<s.sixel.height:
+      for x in 0..<s.sixel.width:
+        colorsNew[x + y * w] = s.sixel.colors[x + y * s.sixel.width]
+    swap s.sixel.colors, colorsNew
+
+  s.sixel.width = w
+  s.sixel.height = h
+
+iterator handleSixel(s: ptr ThreadState): int {.closure, gcsafe, raises: [].} =
+  # echo &"handle sixel"
+  # echo "============="
+  # if s.sixel.frag.len.int > 0:
+  #   echo s.sixel.frag
+  # echo "============="
+
+  template resetState() =
+    s.sixel.x = 0
+    s.sixel.y = 0
+    s.sixel.px = 0
+    s.sixel.py = 0
+    s.sixel.width = 0
+    s.sixel.height = 0
+    s.sixel.sizeFixed = false
+    s.sixel.currentColor = 1
+    s.sixel.colors = newSeq[chroma.Color](0)
+    s.sixel.pos = (s.cursor.row, s.cursor.col)
+    for i in 0..s.sixel.palette.high:
+      s.sixel.palette[i] = color(0, 0, 0, 1)
+    s.sixel.palette[1] = color(1, 1, 1, 1)
+
+  resetState()
+  s.sixel.active = true
+
+  template waitForData(): untyped =
+    if s.sixel.i >= s.sixel.frag.len.int and s.sixel.frag.final:
+      break
+    while s.sixel.i >= s.sixel.frag.len.int:
+      # echo &"wait for more data {s.sixel.i} at {s.sixel.x}, {s.sixel.y}, {currentSourceLocation(-2)}"
+      yield 5
+      # echo "============="
+      # if s.sixel.frag.len.int > 0:
+      #   echo s.sixel.frag
+      # echo "============="
+
+  try:
+    var buffer = newString(0)
+
+    s.sixel.i = 0
+    while s.sixel.i < s.sixel.frag.len.int:
+      template parseInt(): int =
+        waitForData()
+        while s.sixel.i < s.sixel.frag.len.int and s.sixel.frag.str[s.sixel.i] in {'0'..'9'}:
+          buffer.add s.sixel.frag.str[s.sixel.i]
+          inc s.sixel.i
+          waitForData()
+        let num = if buffer.len == 0:
+          0
+        else:
+          buffer.parseInt()
+        buffer.setLen(0)
+        num
+
+      let c = s.sixel.frag.str[s.sixel.i]
+      case c
+      of '"':
+        inc s.sixel.i
+        s.sixel.px = parseInt()
+        inc s.sixel.i
+        s.sixel.py = parseInt()
+        inc s.sixel.i
+        s.sixel.width = parseInt()
+        inc s.sixel.i
+        s.sixel.height = parseInt()
+        s.sixel.colors.setLen(s.sixel.width * s.sixel.height)
+        s.sixel.sizeFixed = true
+
+      of '#':
+        inc s.sixel.i
+        s.sixel.currentColor = parseInt()
+        if s.sixel.i < s.sixel.frag.len.int and s.sixel.frag.str[s.sixel.i] == ';':
+          inc s.sixel.i
+          let format = parseInt()
+          inc s.sixel.i
+          let x = parseInt()
+          inc s.sixel.i
+          let y = parseInt()
+          inc s.sixel.i
+          let z = parseInt()
+          # echo &"# {s.sixel.currentColor}, {format}, ({x} {y} {z})"
+
+          if format == 1:
+            # todo: HLS
+            discard
+          elif format == 2:
+            # RGB
+            s.sixel.palette[s.sixel.currentColor].r = x / 100
+            s.sixel.palette[s.sixel.currentColor].g = y / 100
+            s.sixel.palette[s.sixel.currentColor].b = z / 100
+          else:
+            echo "Invalid format ", format
+
+      of '$':
+        s.sixel.x = 0
+        inc s.sixel.i
+
+      of '-':
+        s.sixel.x = 0
+        s.sixel.y += 6
+        if s.sixel.y >= s.sixel.height:
+          s.resizeSixel(s.sixel.width, s.sixel.y + 1)
+        inc s.sixel.i
+
+        if s.sixel.y >= s.sixel.height:
+          break
+
+      of '!':
+        inc s.sixel.i
+        let num = parseInt()
+        waitForData()
+        if s.sixel.i < s.sixel.frag.len.int:
+          let ch = s.sixel.frag.str[s.sixel.i]
+
+          let code = ch.int - 63
+          if code in 0..63:
+            if s.sixel.x + num > s.sixel.width:
+              s.resizeSixel(s.sixel.x + num, s.sixel.height)
+            for k in 0..<max(num, 1):
+              if s.sixel.x < s.sixel.width:
+                for bit in 0..5:
+                  if (code and (1 shl bit)) != 0:
+                    let yy = s.sixel.y + bit
+                    if yy < s.sixel.height:
+                      s.sixel.colors[s.sixel.x + yy * s.sixel.width] = s.sixel.palette[s.sixel.currentColor]
+              inc s.sixel.x
+
+          else:
+            echo "invalid char '", ch, "' ", code
+
+          inc s.sixel.i
+
+      of '\x1b':
+        inc s.sixel.i
+        if s.sixel.i + 1 < s.sixel.frag.len.int and s.sixel.frag.str[s.sixel.i + 1] == '\\':
+          inc s.sixel.i
+          break
+
+      else:
+        let code = c.int - 63
+        if code in 0..63:
+          if s.sixel.x >= s.sixel.width:
+            s.resizeSixel(s.sixel.x + 1, s.sixel.height)
+          if s.sixel.x < s.sixel.width:
+            for bit in 0..5:
+              if (code and (1 shl bit)) != 0:
+                let yy = s.sixel.y + bit
+                if yy < s.sixel.height:
+                  s.sixel.colors[s.sixel.x + yy * s.sixel.width] = s.sixel.palette[s.sixel.currentColor]
+          inc s.sixel.x
+        else:
+          echo "invalid char '", c, "' ", code
+
+        inc s.sixel.i
+
+      waitForData()
+
+    s.sixels[s.sixel.pos] = Sixel(
+      colors: s.sixel.colors,
+      width: s.sixel.width,
+      height: s.sixel.height,
+      px: s.sixel.px,
+      py: s.sixel.py,
+      pos: s.sixel.pos,
+      contentHash: s.sixel.colors.hash(),
+    )
+    echo &"sixel {s.sixel.width}x{s.sixel.height}, {s.sixel.px}:{s.sixel.py}, {s.cursor.row}:{s.cursor.col}, {s.sixel.colors.hash}"
+
+  except CatchableError as e:
+    echo &"Failed to parse sixel data at {s.sixel.i}: {e.msg}"
+
+  s.sixel.active = false
+
+proc handleSixelData(s: ptr ThreadState, frag: VTermStringFragment) =
+  if s.sixel.iter == nil or not s.sixel.active:
+    s.sixel.iter = handleSixel
+  s.sixel.i = 0
+  s.sixel.frag = frag
+  discard s.sixel.iter(s)
+  if finished(s.sixel.iter):
+    s.sixel.iter = nil
+
 proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   var state = s
 
@@ -625,7 +928,23 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       state.outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
 
   var callbacks = VTermScreenCallbacks(
-    # damage: (proc(rect: VTermRect; user: pointer): cint {.cdecl.} = discard),
+    damage: (proc(rect: VTermRect; user: pointer): cint {.cdecl.} =
+      # echo &"damage: {rect}"
+      let state = cast[ptr ThreadState](user)
+      var keysToRemove = newSeq[(int, int)]()
+      for key in state.sixels.keys:
+        if key[0] in rect.start_row..rect.end_row and key[1] in rect.start_col..rect.end_col:
+          keysToRemove.add key
+      # for key in keysToRemove:
+      #   state.sixels.del key
+      if keysToRemove.len > 0:
+        # echo &"remove sixels {keysToRemove}"
+        state.outputChannel[].send OutputEvent(
+          kind: OutputEventKind.TerminalBuffer,
+          buffer: state[].createTerminalBuffer(),
+          sixels: state.sixels,
+        )
+    ),
     # moverect: (proc(dest: VTermRect; src: VTermRect; user: pointer): cint {.cdecl.} = discard),
     movecursor: (proc(pos: VTermPos; oldpos: VTermPos; visible: cint; user: pointer): cint {.cdecl.} =
       let state = cast[ptr ThreadState](user)
@@ -660,6 +979,8 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
     # bell: (proc(user: pointer): cint {.cdecl.} = discard),
     resize: (proc(rows: cint; cols: cint; user: pointer): cint {.cdecl.} =
       let state = cast[ptr ThreadState](user)
+      echo &"resize: clear sixels"
+      # state.sixels.clear()
       state.outputChannel[].send OutputEvent(kind: OutputEventKind.Size, width: cols.int, height: rows.int)
     ),
     sb_pushline: (proc(cols: cint; cells: ptr UncheckedArray[VTermScreenCell]; user: pointer): cint {.cdecl.} =
@@ -681,6 +1002,8 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
     ),
     sb_clear: (proc(user: pointer): cint {.cdecl.} =
       let state = cast[ptr ThreadState](user)
+      echo &"sb_clear: clear sixels"
+      state.sixels.clear()
       state[].scrollbackBuffer.setLen(0)
       state.scrollY = 0
       state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY)
@@ -699,6 +1022,73 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
     ),
   )
 
+  var parserCallbacks = VTermStateFallbacks(
+    control: (proc(control: char; user: pointer): cint {.cdecl.} =
+      # echo &"control '{control}'"
+      return 1
+    ),
+    csi: (proc(leader: cstring; args: ptr clong; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.} =
+      let state = cast[ptr ThreadState](user)
+      let args = cast[ptr UncheckedArray[clong]](args)
+      echo &"csi '{intermed}', '{command}', {args.toOpenArray(0, argcount.int - 1)}"
+      case command
+      of 't':
+        if argcount > 0:
+          echo "send size"
+          case args[0]
+          of 14:
+            let width = state.width * 10 # todo: pixel size
+            let height = state.height * 10 # todo: pixel size
+            let msg = &"\x1b[4;{height};{width}t"
+            echo msg.toOpenArray
+            handleOutput(msg.cstring, msg.len.csize_t, user)
+          of 15:
+            let width = 10 # todo: pixel size
+            let height = 10 # todo: pixel size
+            let msg = &"\x1b[5;{height};{width}t"
+            echo msg.toOpenArray
+            handleOutput(msg.cstring, msg.len.csize_t, user)
+          of 16:
+            let width = state.width * 10 # todo: pixel size
+            let height = state.height * 10 # todo: pixel size
+            let msg = &"\x1b[6;{height};{width}t"
+            echo msg.toOpenArray
+            handleOutput(msg.cstring, msg.len.csize_t, user)
+          of 18:
+            let msg = &"\x1b[8;{state.height};{state.width}t"
+            echo msg.toOpenArray
+            handleOutput(msg.cstring, msg.len.csize_t, user)
+          else:
+            discard
+      else:
+        discard
+      return 1
+    ),
+    osc: (proc(command: cint; frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
+      return 1
+    ),
+    dcs: (proc(command: cstring; commandlen: csize_t; frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
+      let state = cast[ptr ThreadState](user)
+      let commandStr = newString(commandlen.int)
+      copyMem(commandStr[0].addr, command[0].addr, commandlen.int)
+      # echo &"dcs '{commandStr}', {frag}"
+      if commandlen > 0 and command[commandlen - 1] == 'q':
+        handleSixelData(state, frag)
+        return 1
+    ),
+    apc: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
+      return 1
+    ),
+    pm: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
+      return 1
+    ),
+    sos: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
+      return 1
+    ),
+  )
+
+  state.vterm.screen.setUnrecognisedFallbacks(parserCallbacks.addr, state.addr)
+
   state.vterm.setOutputCallback(handleOutput, state.addr)
   state.vterm.screen.setCallbacks(callbacks.addr, state.addr)
   state.vterm.state.setSelectionCallbacks(selectionCallbacks.addr, state.addr, nil, 1024)
@@ -711,70 +1101,95 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   var buffer = ""
   var exitCode = int.none
 
+  proc handleInput(state: ptr ThreadState) {.async.} =
+    while not state.terminateRequested:
+      await state.handles.inputWriteEvent2.wait()
+      try:
+        state[].handleInputEvents()
+      except CatchableError as e:
+        echo "async error handle input events ", e.msg
+        discard
+
+  if state.useChannels:
+    asyncSpawn handleInput(state.addr)
+
   try:
     while true:
-      when defined(windows):
-        var handles = [state.handles.inputWriteEvent, state.handles.outputReadEvent, state.handles.processInfo.hProcess]
-        let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
-        if res == WAIT_FAILED:
-          discard
-        elif res == WAIT_TIMEOUT:
-          discard
-        else:
-          if res >= WAIT_ABANDONED_0:
-            # let index = res - WAIT_ABANDONED_0
+      if state.useChannels:
+        try:
+          waitFor state.readChannel.get.signal.wait()
+          try:
+            state.handleProcessOutput(buffer)
+          except CatchableError as e:
+            echo "async error handle process output ", e.msg
             discard
-          elif res >= WAIT_OBJECT_0:
-            let index = res - WAIT_OBJECT_0
-            assert index >= 0 and index < 3
-
-            if index == 2:
-              # Process ended
-              var exitCodeC: DWORD = 0
-              discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCodeC.addr)
-              exitCode = exitCodeC.int.some
-              state.processTerminated = true
-              break
-
-        state.handleProcessOutput(buffer)
-        state.handleInputEvents()
+        except AsyncError, CancelledError:
+          # echo "async error ", getCurrentExceptionMsg()
+          discard
 
       else:
-        var fds = [
-          TPollfd(fd: state.handles.masterFd, events: POLLIN),
-          TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
-        ]
+        when defined(windows):
+          var handles = [state.handles.inputWriteEvent, state.handles.outputReadEvent, state.handles.processInfo.hProcess]
+          let res = WaitForMultipleObjects(handles.len.DWORD, handles[0].addr, FALSE, INFINITE)
+          if res == WAIT_FAILED:
+            discard
+          elif res == WAIT_TIMEOUT:
+            discard
+          else:
+            if res >= WAIT_ABANDONED_0:
+              # let index = res - WAIT_ABANDONED_0
+              discard
+            elif res >= WAIT_OBJECT_0:
+              let index = res - WAIT_OBJECT_0
+              assert index >= 0 and index < 3
 
-        let res = poll(fds[0].addr, fds.len.Tnfds, -1)
-        if res < 0:
-          break
+              if index == 2:
+                # Process ended
+                var exitCodeC: DWORD = 0
+                discard GetExitCodeProcess(state.handles.processInfo.hProcess, exitCodeC.addr)
+                exitCode = exitCodeC.int.some
+                state.processTerminated = true
+                break
 
-        proc wifexited(status: cint): cint = {.emit: [result, " = WIFEXITED(", status, ");"].}
-        proc wexitstatus(status: cint): cint = {.emit: [result, " = WEXITSTATUS(", status, ");"].}
-
-        var status: cint
-        let waitRes = waitpid(state.handles.childPid, status, WNOHANG)
-        if waitRes == state.handles.childPid:
-          state.processTerminated = true
-          var exitCodeC: cint
-          if wifexited(status) != 0:
-            exitCodeC = wexitstatus(status)
-          exitCode = exitCodeC.int.some
-          break
-
-        if (fds[0].revents and POLLIN) != 0:
           state.handleProcessOutput(buffer)
-          if state.processTerminated:
+          state.handleInputEvents()
+
+        else:
+          var fds = [
+            TPollfd(fd: state.handles.masterFd, events: POLLIN),
+            TPollfd(fd: state.handles.inputWriteEventFd, events: POLLIN),
+          ]
+
+          let res = poll(fds[0].addr, fds.len.Tnfds, -1)
+          if res < 0:
+            break
+
+          proc wifexited(status: cint): cint = {.emit: [result, " = WIFEXITED(", status, ");"].}
+          proc wexitstatus(status: cint): cint = {.emit: [result, " = WEXITSTATUS(", status, ");"].}
+
+          var status: cint
+          let waitRes = waitpid(state.handles.childPid, status, WNOHANG)
+          if waitRes == state.handles.childPid:
+            state.processTerminated = true
             var exitCodeC: cint
             if wifexited(status) != 0:
               exitCodeC = wexitstatus(status)
             exitCode = exitCodeC.int.some
             break
 
-        if (fds[1].revents and POLLIN) != 0:
-          var b: uint64 = 0
-          discard read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
-          state.handleInputEvents()
+          if (fds[0].revents and POLLIN) != 0:
+            state.handleProcessOutput(buffer)
+            if state.processTerminated:
+              var exitCodeC: cint
+              if wifexited(status) != 0:
+                exitCodeC = wexitstatus(status)
+              exitCode = exitCodeC.int.some
+              break
+
+          if (fds[1].revents and POLLIN) != 0:
+            var b: uint64 = 0
+            discard read(state.handles.inputWriteEventFd, b.addr, sizeof(typeof(b)))
+            state.handleInputEvents()
 
       if state.terminateRequested:
         break
@@ -783,7 +1198,9 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
         state.dirty = false
         state.outputChannel[].send OutputEvent(
           kind: OutputEventKind.TerminalBuffer,
-          buffer: state.createTerminalBuffer())
+          buffer: state.createTerminalBuffer(),
+          sixels: state.sixels,
+        )
 
   except OSError as e:
     log(&"terminal thread raised error: {e.msg}")
@@ -798,6 +1215,7 @@ proc sendEvent(self: Terminal, event: InputEvent) =
   if self.threadTerminated:
     return
   self.inputChannel[].send(event)
+  discard self.handles.inputWriteEvent2.fireSync()
   when defined(windows):
     discard SetEvent(self.handles.inputWriteEvent)
   else:
@@ -810,23 +1228,27 @@ proc terminate*(self: Terminal) {.async.} =
   if not self.threadTerminated:
     self.sendEvent(InputEvent(kind: InputEventKind.Terminate))
 
-  when defined(windows):
-    ClosePseudoConsole(self.handles.hpcon)
-  else:
-    discard close(self.handles.masterFd)
+  if not self.useChannels:
+    when defined(windows):
+      ClosePseudoConsole(self.handles.hpcon)
+    else:
+      discard close(self.handles.masterFd)
 
   while not self.threadTerminated:
     # todo: use async signals
     await sleepAsync(10.milliseconds)
 
-  when defined(windows):
-    CloseHandle(self.handles.inputWriteEvent)
-    CloseHandle(self.handles.outputReadEvent)
-    CloseHandle(self.handles.inputWriteHandle)
-    CloseHandle(self.handles.outputReadHandle)
-    HeapFree(GetProcessHeap(), 0, self.handles.startupInfo.lpAttributeList)
-  else:
-    discard close(self.handles.inputWriteEventFd)
+  discard self.handles.inputWriteEvent2.close()
+  discard self.handles.outputReadEvent2.close()
+  if not self.useChannels:
+    when defined(windows):
+      CloseHandle(self.handles.inputWriteEvent)
+      CloseHandle(self.handles.outputReadEvent)
+      CloseHandle(self.handles.inputWriteHandle)
+      CloseHandle(self.handles.outputReadHandle)
+      HeapFree(GetProcessHeap(), 0, self.handles.startupInfo.lpAttributeList)
+    else:
+      discard close(self.handles.inputWriteEventFd)
 
   self.inputChannel[].close()
   self.inputChannel.deallocShared()
@@ -834,7 +1256,164 @@ proc terminate*(self: Terminal) {.async.} =
   self.outputChannel[].close()
   self.outputChannel.deallocShared()
 
-proc createTerminal*(self: TerminalService, width: int, height: int, command: string, autoRunCommand: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].} =
+proc createTerminal*(self: TerminalService, width: int, height: int, writeChannel: Arc[BaseChannel], readChannel: Arc[BaseChannel], autoRunCommand: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].}
+
+proc logErrors(process: AsyncProcess): Future[void] {.async.} =
+  while true:
+    let line = await process.recvErrorLine()
+    log lvlError, "[stderr] ", line
+
+when defined(enableLibssh):
+  when defined(windows):
+    from winlean import nil
+    import chronos/transports/stream
+
+  proc authPublicKey*(session: Session; username, privKey: string, pubKey = "", passphrase = ""): bool {.raises: [IOError].} =
+    let privKey = expandTilde(privKey)
+    var pubKey = pubKey
+    if pubKey.len > 0:
+      pubKey = expandTilde(pubKey)
+
+    while true:
+      let rc = session.userauth_publickey_from_file(username, pubKey.cstring, privKey.cstring, passphrase)
+      if rc == LIBSSH2_ERROR_EAGAIN:
+        discard
+      elif rc < 0:
+        raise newException(IOError, &"Authentication with privateKey {privKey} failed!")
+      else:
+        break
+    result = true
+
+  proc createSshSession(self: TerminalService, terminal: Terminal, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel], command: string, args: seq[string] = @[], options: SshOptions): Future[void] {.async: (raises: []).} =
+    try:
+      log lvlInfo, &"Create ssh session {options}"
+      discard libssh2.init(0)
+      let ipAddress = options.address.get("127.0.0.1")
+      let port = options.port.get(22)
+      let addressess = resolveTAddress(ipAddress & ":" & $port)
+      if addressess.len == 0:
+        raise newException(IOError, &"Failed to resolve address '{ipAddress}:{port}'")
+
+      let address = addressess[0]
+      let transp = await connect(address, bufferSize = 1024 * 1024)
+
+      # defer:
+      #   libssh2.exit()
+
+      let session = session_init()
+      # defer:
+      #   discard session_free(session)
+
+      let socket: winlean.SocketHandle = winlean.SocketHandle(transp.fd)
+      session_set_blocking(session, 0)
+      var rc: int
+      while true:
+        rc = session_handshake(session, socket)
+        if rc != LIBSSH2_ERROR_EAGAIN:
+          break
+      if rc != 0:
+        raise newException(IOError, "SSH session handshake failed: " & $rc)
+
+      # Authenticate
+      let vfs = self.services.getService(VFSService).get.vfs
+      let privateKeyPath = vfs.localize(options.privateKeyPath)
+      let publicKeyPath = vfs.localize(options.publicKeyPath)
+      let passphrase = await self.layout.promptString("Passphrase for " & options.username)
+      if passphrase.isNone:
+        log lvlInfo, &"Cancel authentication for ssh session '{options.username}@{address}' ({privateKeyPath})"
+        return
+
+      log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath})"
+      let authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, passphrase.get(""))
+      if not authResult:
+        raise newException(IOError, &"Failed to authenticate ssh session '{options.username}@{address}'")
+      log lvlInfo, &"Authentication successfull for ssh session '{options.username}@{address}' ({privateKeyPath})"
+
+      let client = newSSHClient()
+      client.session = session
+      let sshChannel = client.initChannel()
+
+      sshAsyncWait "request pty":
+        sshChannel.impl.channel_request_pty("xterm-256color")
+      sshAsyncWait "start shell":
+        sshChannel.impl.channel_shell()
+
+      proc forwardSshChannelToStdOutChannel(sshChannel: SSHChannel, chan: Arc[BaseChannel]) {.async: (raises: []).} =
+        try:
+          var buffer = newString(1024)
+          while true:
+            let rc = sshChannel.impl.channel_read(buffer[0].addr, buffer.len)
+            if rc > 0:
+              chan.write(buffer.toOpenArrayByte(0, rc - 1))
+              discard chan.getMutUnsafe.signal.fireSync()
+            elif rc == LIBSSH2_ERROR_EAGAIN:
+              catch sleepAsync(1.milliseconds).await:
+                discard
+            else:
+              break
+        except CatchableError as e:
+          echo "Failed to read output: ", e.msg
+
+        echo "=================== forwardSshChannelToStdOutChannel end"
+
+      asyncSpawn forwardSshChannelToStdOutChannel(sshChannel, stdout)
+
+      discard stdin.listen(proc(channel: var BaseChannel, closed: bool): ChannelListenResponse {.gcsafe, raises: [].} =
+        try:
+          let num = channel.peek
+          if num > 0:
+            var buff = newString(num)
+            let read = channel.read(buff.toOpenArrayByte(0, buff.high))
+            buff.setLen(read)
+
+            var rc: int
+            while true:
+              rc = sshChannel.impl.channel_write(buff.cstring, buff.len)
+              if rc != LIBSSH2_ERROR_EAGAIN:
+                break
+            if rc < 0:
+              echo "Failed to write to ssh channel: ", rc
+            rc = sshChannel.impl.channel_flush()
+        except IOError as e:
+          echo "Failed to read stdin: ", e.msg
+
+        discard
+      )
+
+      # Clean up
+      # libssh2.exit()
+      terminal.ssh = options.some
+      terminal.sshChannel = sshChannel
+      terminal.sshClient = client
+    except CatchableError as e:
+      log lvlError, &"Failed to create ssh connection: {e.msg}"
+
+proc createTerminal*(self: TerminalService, width: int, height: int, command: string, args: seq[string] = @[], autoRunCommand: string = "", createPty: bool = true, ssh: Option[SshOptions]): Terminal {.raises: [OSError, IOError, ResourceExhaustedError, TransportError, CancelledError].} =
+  if ssh.isSome:
+    var stdin = newInMemoryChannel()
+    var stdout = newInMemoryChannel()
+    result = self.createTerminal(width, height, stdin, stdout, autoRunCommand)
+    when defined(enableLibssh):
+      asyncSpawn self.createSshSession(result, stdin, stdout, command, args, ssh.get)
+    else:
+      log lvlError, &"Direct ssh terminals not supported in this build. Use 'ssh' as a shell instead."
+    return
+
+  if not createPty:
+    try:
+      echo &"start process '{command}' {args}"
+      var process = startAsyncProcess(command, args, killOnExit = true, autoStart = false, errToOut = false)
+      asyncSpawn process.logErrors()
+      discard process.start()
+      let stdout = newProcessOutputChannel(process)
+      discard stdout.listen(proc(channel: var BaseChannel, closed: bool): ChannelListenResponse {.gcsafe, raises: [].} =
+        discard channel.signal.fireSync()
+      )
+      let stdin = newProcessInputChannel(process)
+      return self.createTerminal(width, height, stdin, stdout, autoRunCommand)
+    except ValueError as e:
+      log lvlError, &"Failed to start process {command}: {e.msg}"
+
   let id = self.idCounter
   inc self.idCounter
 
@@ -873,11 +1452,15 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     if CreatePseudoConsole(wincon.COORD(X: width.SHORT, Y: height.SHORT), inputReadHandle, outputWriteHandle, 0, addr(hPC)) != S_OK:
       raiseOSError(osLastError(), "Failed to create pseude console")
 
-    var siEx: STARTUPINFOEX = prepareStartupInformation(hPC)
     var pi: PROCESS_INFORMATION
     ZeroMemory(addr(pi), sizeof((pi)))
 
     let cmd = newWideCString(command)
+    var siEx: STARTUPINFOEX
+    ZeroMemory(addr(siEx), sizeof((siEx)))
+    siEx.StartupInfo.cb = sizeof((STARTUPINFOEX)).DWORD
+    siEx = prepareStartupInformation(hPC)
+
     if CreateProcessW(nil, cmd, nil, nil, FALSE, EXTENDED_STARTUPINFO_PRESENT, nil, nil, siEx.StartupInfo.addr, pi.addr) == 0:
       raiseOSError(osLastError(), "Failed to start sub process")
 
@@ -894,6 +1477,8 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
       hpcon: hPC,
       inputWriteHandle: inputWriteHandle,
       outputReadHandle: outputReadHandle,
+      inputWriteEvent2: ThreadSignalPtr.new().value,
+      outputReadEvent2: ThreadSignalPtr.new().value,
       inputWriteEvent: inputWriteEvent,
       outputReadEvent: outputReadEvent,
       processInfo: pi,
@@ -942,6 +1527,8 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
       raise newOSError(osLastError(), "execlp")
 
     let handles = OsHandles(
+      inputWriteEvent2: ThreadSignalPtr.new().value,
+      outputReadEvent2: ThreadSignalPtr.new().value,
       masterFd: master_fd,
       slaveFd: slave_fd,
       inputWriteEventFd: inputWriteEventFd,
@@ -963,10 +1550,11 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     command: command,
     autoRunCommand: autoRunCommand,
     handles: handles,
+    createPty: createPty,
   )
 
-  proc createChannel[T](channel: var ptr[Channel[T]]) =
-    channel = cast[ptr Channel[T]](allocShared0(sizeof(Channel[T])))
+  proc createChannel[T](channel: var ptr[system.Channel[T]]) =
+    channel = cast[ptr system.Channel[T]](allocShared0(sizeof(system.Channel[T])))
     channel[].open()
 
   result.inputChannel.createChannel()
@@ -976,8 +1564,8 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
   asyncSpawn self.handleOutputChannel(result)
 
   var threadState = ThreadState(
-    vterm: vterm,
-    screen: screen,
+    vtermInternal: vterm,
+    screenInternal: screen,
     inputChannel: result.inputChannel,
     outputChannel: result.outputChannel,
     width: width,
@@ -985,6 +1573,59 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     cursor: (0, 0, true, true),
     autoRunCommand: autoRunCommand,
     handles: handles,
+  )
+
+  result.thread.createThread(terminalThread, threadState)
+
+proc createTerminal*(self: TerminalService, width: int, height: int, writeChannel: Arc[BaseChannel], readChannel: Arc[BaseChannel], autoRunCommand: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].} =
+  let id = self.idCounter
+  inc self.idCounter
+
+  let handles = OsHandles(
+    inputWriteEvent2: ThreadSignalPtr.new().value,
+    outputReadEvent2: ThreadSignalPtr.new().value,
+  )
+
+  let vterm = VTerm.new(height.cint, width.cint)
+  if vterm == nil:
+    raise newException(IOError, "Failed to init VTerm")
+
+  vterm.setUtf8(1)
+
+  let screen = vterm.screen()
+  screen.reset(1)
+  screen.setDamageMerge(VTERM_DAMAGE_SCROLL)
+
+  result = Terminal(
+    id: id,
+    autoRunCommand: autoRunCommand,
+    handles: handles,
+    useChannels: true,
+  )
+
+  proc createChannel[T](channel: var ptr[system.Channel[T]]) =
+    channel = cast[ptr system.Channel[T]](allocShared0(sizeof(system.Channel[T])))
+    channel[].open()
+
+  result.inputChannel.createChannel()
+  result.outputChannel.createChannel()
+
+  result.terminalBuffer.initTerminalBuffer(width, height)
+  asyncSpawn self.handleOutputChannel(result)
+
+  var threadState = ThreadState(
+    vtermInternal: vterm,
+    screenInternal: screen,
+    inputChannel: result.inputChannel,
+    outputChannel: result.outputChannel,
+    width: width,
+    height: height,
+    cursor: (0, 0, true, true),
+    autoRunCommand: autoRunCommand,
+    handles: handles,
+    useChannels: true,
+    writeChannel: writeChannel,
+    readChannel: readChannel,
   )
 
   result.thread.createThread(terminalThread, threadState)
@@ -1052,6 +1693,8 @@ method desc*(self: TerminalView): string = &"TerminalView"
 method kind*(self: TerminalView): string = "terminal"
 method display*(self: TerminalView): string = &"term://{self.terminal.command} - {self.terminal.group}"
 method saveState*(self: TerminalView): JsonNode =
+  if self.terminal.useChannels and not self.terminal.ssh.isSome:
+    return nil
   result = newJObject()
   result["kind"] = self.kind.toJson
   result["id"] = self.id.toJson
@@ -1063,6 +1706,8 @@ method saveState*(self: TerminalView): JsonNode =
     closeOnTerminate: self.closeOnTerminate,
     slot: self.slot,
     focus: false,
+    createPty: self.terminal.createPty,
+    ssh: self.terminal.ssh,
   ).toJson
 
 proc setTheme(self: Terminal, theme: Theme) =
@@ -1177,7 +1822,7 @@ proc setSize*(self: TerminalView, width: int, height: int) =
 
 proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView =
   try:
-    let term = self.createTerminal(80, 50, command, options.autoRunCommand)
+    let term = self.createTerminal(80, 50, command, options.args, options.autoRunCommand, options.createPty, options.ssh)
     term.group = options.group
     term.setTheme(self.themes.theme)
 
@@ -1203,6 +1848,47 @@ proc createTerminalView(self: TerminalService, command: string, options: CreateT
       if not view.open:
         return
       log lvlInfo, &"Terminal process '{command}' terminated with exit code {exitCode}"
+      view.mode = self.settings.defaultMode.get()
+      self.updateModeEventHandlers(view)
+      if view.closeOnTerminate:
+        self.layout.closeView(view)
+      view.markDirty()
+      self.requestRender()
+
+    self.terminals[term.id] = view
+
+    return view
+  except:
+    log lvlError, &"Failed to create terminal: {getCurrentExceptionMsg()}"
+
+proc createTerminalView*(self: TerminalService, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel], options: CreateTerminalOptions, id: Id = idNone()): TerminalView =
+  try:
+    let term = self.createTerminal(80, 50, stdin, stdout, options.autoRunCommand)
+    term.group = options.group
+    term.setTheme(self.themes.theme)
+
+    let view = TerminalView(
+      mId: id,
+      terminals: self,
+      terminal: term,
+      closeOnTerminate: options.closeOnTerminate,
+      slot: options.slot,
+    )
+
+    if options.mode.getSome(mode):
+      view.mode = mode
+    else:
+      view.mode = self.settings.defaultMode.get()
+    self.updateModeEventHandlers(view)
+
+    discard term.onUpdated.subscribe proc() =
+      self.services.getService(PlatformService).get.platform.requestRender()
+      view.markDirty()
+
+    discard term.onTerminated.subscribe proc(exitCode: Option[int]) =
+      if not view.open:
+        return
+      log lvlInfo, &"Terminal process '' terminated with exit code {exitCode}"
       view.mode = self.settings.defaultMode.get()
       self.updateModeEventHandlers(view)
       if view.closeOnTerminate:
@@ -1272,7 +1958,9 @@ proc createTerminal*(self: TerminalService, command: string = "", options: Creat
   ## `options.slot`              Where to open the terminal view. Uses `default` slot if not specified.
   ## `options.focus`             Whether to focus the terminal view. `true` by default.
   log lvlInfo, &"createTerminal '{command}', {options}"
-  self.layout.addView(self.createTerminalView(command, options), slot=options.slot, focus=options.focus)
+  let view = self.createTerminalView(command, options)
+  if view != nil:
+    self.layout.addView(view, slot=options.slot, focus=options.focus)
 
 proc isIdle(self: TerminalService, terminal: Terminal): bool =
   if not terminal.cursor.visible or terminal.cursor.col == 0:
@@ -1325,7 +2013,12 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
     closeOnTerminate: options.closeOnTerminate,
     slot: options.slot,
     focus: options.focus,
+    createPty: options.createPty,
+    ssh: options.ssh,
+    args: options.args,
   ))
+  if view == nil:
+    return
   if command.len > 0:
     self.handleInput(view, command)
     self.handleKey(view, INPUT_ENTER, {})
