@@ -137,6 +137,9 @@ interface channel {
 
   /// Creates a new channel which buffers data in memory and returns the read and write end.
   new-in-memory-channel: func() -> tuple<read-channel, write-channel>;
+
+  /// Creates a new channel which buffers data in memory and returns the read and write end.
+  create-terminal: func(stdin: write-channel, stdout: read-channel, group: string);
 }
 
 /// Thread safe

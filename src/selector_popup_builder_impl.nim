@@ -10,6 +10,7 @@ import finder/[finder, previewer]
 
 proc pushSelectorPopupImpl(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
   var popup = newSelectorPopup(self.services, builder.scope, builder.finder, builder.previewer.toDisposableRef)
+  popup.title = builder.title
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
   popup.previewScale = builder.previewScale

@@ -1261,7 +1261,7 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
     val = CSI_ARG_OR(args[0], 0);
     if(val == 0)
       // DEC VT100 response
-      vterm_push_output_sprintf_ctrl(state->vt, C1_CSI, "?1;2c");
+      vterm_push_output_sprintf_ctrl(state->vt, C1_CSI, "?63;1;2;4;22;29c"); // Include some flags for graphics support
     break;
 
   case LEADER('>', 0x63): // DEC secondary Device Attributes
@@ -1545,10 +1545,6 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
 
     scroll(state, rect, 0, count);
 
-    break;
-
-  case 't':
-    DEBUG_LOG("csi t (leader '%s', intermed '%s', command '%c', args %d)\n", leader, intermed, command, argcount);
     break;
 
   default:

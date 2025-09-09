@@ -275,7 +275,8 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
   let options = sca.CreateTerminalOptions(
     group: plugin.manifest.id,
   )
-  self.host.layout.registerView(self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options))
+  let view = self.host.terminals.createTerminalView(instanceData.get.stdin, instanceData.get.stdout, options)
+  self.host.layout.registerView(view)
 
   return instance
 
@@ -1051,6 +1052,16 @@ proc renderRemoveMode(instance: ptr InstanceData; self: var RenderViewResource; 
 
 
 ###################### Channel
+
+proc channelCreateTerminal(instance: ptr InstanceData, stdin: sink WriteChannelResource, stdout: sink ReadChannelResource, group: sink string) =
+  if instance.host == nil:
+    return
+  let options = sca.CreateTerminalOptions(
+    group: group,
+  )
+  let view = instance.host.terminals.createTerminalView(stdin.channel, stdout.channel, options)
+  instance.host.layout.registerView(view)
+  instance.host.layout.showView(view.id, "#build-run-terminal", true, true)
 
 proc channelCanRead(instance: ptr InstanceData; self: var ReadChannelResource): bool =
   return self.channel.isOpen

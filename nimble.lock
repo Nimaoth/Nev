@@ -290,6 +290,16 @@
         "sha1": "58fadfae8cb82cab1061dded8066c03b0460ad4d"
       }
     },
+    "libssh2": {
+      "version": "0.1.9",
+      "vcsRevision": "a5cf5180cddf864b1bddbb0d35b3b5c499160176",
+      "url": "https://github.com/ba0f3/libssh2.nim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "424cbdaea8bc2662d8d7601dabe458bbc1d15c1f"
+      }
+    },
     "lrucache": {
       "version": "1.1.4",
       "vcsRevision": "479d4cf03a961d00fb2204e4773c394fe62ac44b",
@@ -386,6 +396,18 @@
       "dependencies": [],
       "checksums": {
         "sha1": "6bc181924709c8a2d06b1459a31e73eb42cf1283"
+      }
+    },
+    "ssh2": {
+      "version": "0.1.9",
+      "vcsRevision": "b45447fa3892024eb5ceb5d1516beba57bd68d05",
+      "url": "https://github.com/ba0f3/ssh2.nim",
+      "downloadMethod": "git",
+      "dependencies": [
+        "libssh2"
+      ],
+      "checksums": {
+        "sha1": "32cb3446c5f2f7d4f01dabb577aa8c136b4ae1d9"
       }
     },
     "treesitter": {

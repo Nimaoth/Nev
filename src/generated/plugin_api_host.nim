@@ -116,47 +116,47 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_8556381805 = instance.getExport(context, "init_plugin")
-  if f_8556381805.isSome:
-    assert f_8556381805.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_8556381805.get.of_field.func_field
+  let f_9663678061 = instance.getExport(context, "init_plugin")
+  if f_9663678061.isSome:
+    assert f_9663678061.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9663678061.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_8556381821 = instance.getExport(context, "handle_command")
-  if f_8556381821.isSome:
-    assert f_8556381821.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_8556381821.get.of_field.func_field
+  let f_9663678077 = instance.getExport(context, "handle_command")
+  if f_9663678077.isSome:
+    assert f_9663678077.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9663678077.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_8556381871 = instance.getExport(context, "handle_mode_changed")
-  if f_8556381871.isSome:
-    assert f_8556381871.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_8556381871.get.of_field.func_field
+  let f_9663678127 = instance.getExport(context, "handle_mode_changed")
+  if f_9663678127.isSome:
+    assert f_9663678127.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9663678127.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_8556381872 = instance.getExport(context, "handle_view_render_callback")
-  if f_8556381872.isSome:
-    assert f_8556381872.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_8556381872.get.of_field.func_field
+  let f_9663678128 = instance.getExport(context, "handle_view_render_callback")
+  if f_9663678128.isSome:
+    assert f_9663678128.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9663678128.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_8556381896 = instance.getExport(context, "handle_channel_update")
-  if f_8556381896.isSome:
-    assert f_8556381896.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_8556381896.get.of_field.func_field
+  let f_9663678152 = instance.getExport(context, "handle_channel_update")
+  if f_9663678152.isSome:
+    assert f_9663678152.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9663678152.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_8556381897 = instance.getExport(context, "notify_task_complete")
-  if f_8556381897.isSome:
-    assert f_8556381897.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_8556381897.get.of_field.func_field
+  let f_9663678153 = instance.getExport(context, "notify_task_complete")
+  if f_9663678153.isSome:
+    assert f_9663678153.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9663678153.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_8556381898 = instance.getExport(context, "handle_move")
-  if f_8556381898.isSome:
-    assert f_8556381898.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_8556381898.get.of_field.func_field
+  let f_9663678154 = instance.getExport(context, "handle_move")
+  if f_9663678154.isSome:
+    assert f_9663678154.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9663678154.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
 
@@ -612,6 +612,9 @@ proc channelWriteChannelMount(instance: ptr InstanceData;
                               path: sink string; unique: bool): string
 proc channelNewInMemoryChannel(instance: ptr InstanceData): (
     ReadChannelResource, WriteChannelResource)
+proc channelCreateTerminal(instance: ptr InstanceData;
+                           stdin: sink WriteChannelResource;
+                           stdout: sink ReadChannelResource; group: sink string): void
 proc processProcessStart(instance: ptr InstanceData; name: sink string;
                          args: sink seq[string]): ProcessResource
 proc processStderr(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource
@@ -3820,6 +3823,48 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
             store, res[0])
         cast[ptr int32](memory[retArea + 4].addr)[] = ?instance.resources.resourceNew(
             store, res[1])
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/channel", "create-terminal", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var stdin: WriteChannelResource
+        var stdout: ReadChannelResource
+        var group: string
+        block:
+          let resPtr = ?instance.resources.resourceHostData(
+              parameters[0].i32, WriteChannelResource)
+          copyMem(stdin.addr, resPtr, sizeof(typeof(stdin)))
+          ?instance.resources.resourceDrop(parameters[0].i32,
+              callDestroy = false)
+        block:
+          let resPtr = ?instance.resources.resourceHostData(
+              parameters[1].i32, ReadChannelResource)
+          copyMem(stdout.addr, resPtr, sizeof(typeof(stdout)))
+          ?instance.resources.resourceDrop(parameters[1].i32,
+              callDestroy = false)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[2].i32].addr)
+          group = newString(parameters[3].i32)
+          for i0 in 0 ..< group.len:
+            group[i0] = p0[i0]
+        channelCreateTerminal(instance, stdin, stdout, group)
     if e.isErr:
       return e
   block:

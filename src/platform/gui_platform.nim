@@ -42,6 +42,8 @@ type
     framebufferId: GLuint
     framebuffer: Texture
 
+    textures: Table[string, Texture]
+
     typefaces: Table[string, Typeface]
     glyphCache: LruCache[(Rune, UINodeFlags), string]
     asciiGlyphCache: array[128, string]
@@ -731,10 +733,21 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
   except GLerror, Exception:
     discard
 
+method createTexture*(self: GuiPlatform, image: Image): TextureId {.gcsafe, raises: [].} =
+  try:
+    let tex = newTexture(image)
+    return tex.textureId.TextureId
+  except GLerror as e:
+    return 0.TextureId
+
 proc handleRenderCommand(node: UINode, platform: GuiPlatform, command: RenderCommand, nodePos: Vec2, maskBounds: var seq[Rect]) {.inline, raises: [Exception].} =
   case command.kind
   of RenderCommandKind.Rect:
     platform.boxy.strokeRect(command.bounds + nodePos, command.color)
+  of RenderCommandKind.Image:
+    let textureId = command.textureId.GLuint
+    platform.boxy.drawUvRect(nodePos + command.bounds.xy, nodePos + command.bounds.xy + command.bounds.wh, vec2(0), vec2(1), command.color, textureId)
+
   of RenderCommandKind.FilledRect:
     platform.boxy.drawRect(command.bounds + nodePos, command.color)
   of RenderCommandKind.TextRaw:

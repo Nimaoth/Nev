@@ -135,7 +135,7 @@ proc mouseDown*(self: RenderView; button: int64): bool {.nodestroy.} =
 proc renderScrollDeltaImported(a0: int32; a1: int32): void {.
     wasmimport("[method]render-view.scroll-delta", "nev:plugins/render").}
 proc scrollDelta*(self: RenderView): Vec2f {.nodestroy.} =
-  ## todo
+  ## Returns how much the mouse was scrolled this frame.
   var
     retArea: array[8, uint8]
     arg0: int32

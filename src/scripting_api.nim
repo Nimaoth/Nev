@@ -261,15 +261,26 @@ proc getChangedSelection*(selection: Selection, text: string): Selection =
 
   return (selection.last, newLast).normalized
 
+type SshOptions* = object
+  address*: Option[string]
+  port*: Option[int]
+  username*: string
+  publicKeyPath*: string
+  privateKeyPath*: string
+
 type CreateTerminalOptions* = object
+  args*: seq[string]
   group*: string = ""
   autoRunCommand*: string = ""
   mode*: Option[string]
   closeOnTerminate*: bool = true
   slot*: string = ""
   focus*: bool = true
+  createPty*: bool = true
+  ssh*: Option[SshOptions]
 
 type RunInTerminalOptions* = object
+  args*: seq[string]
   group*: string = ""
   autoRunCommand*: string = ""
   mode*: Option[string]
@@ -277,6 +288,8 @@ type RunInTerminalOptions* = object
   reuseExisting*: bool = true
   slot*: string = ""
   focus*: bool = true
+  createPty*: bool = true
+  ssh*: Option[SshOptions]
 
 when defined(wasm):
   # todo: this should use the types from the nimsumtree library so it doesn't go out of sync

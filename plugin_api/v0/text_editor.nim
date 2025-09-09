@@ -374,7 +374,8 @@ proc textEditorSetSearchQueryFromMoveImported(a0: uint64; a1: int32; a2: int32;
 proc setSearchQueryFromMove*(editor: TextEditor; move: WitString; count: int32;
                              prefix: WitString; suffix: WitString): Selection {.
     nodestroy.} =
-  ## todo
+  ## Set the search query by applying the given move to the current selection.
+  ## 'prefix' and 'suffix' are appended to the string after escaping.
   var
     retArea: array[40, uint8]
     arg0: uint64
@@ -415,7 +416,8 @@ proc textEditorSetSearchQueryImported(a0: uint64; a1: int32; a2: int32;
     wasmimport("set-search-query", "nev:plugins/text-editor").}
 proc setSearchQuery*(editor: TextEditor; query: WitString; escapeRegex: bool;
                      prefix: WitString; suffix: WitString): bool {.nodestroy.} =
-  ## todo
+  ## Set the search query to 'query'. If 'escape-regex' is true the the 'query' string is escaped so special characters
+  ## are searched for literally. 'prefix' and 'suffix' are appended to the string after escaping.
   var
     arg0: uint64
     arg1: int32
@@ -449,6 +451,7 @@ proc setSearchQuery*(editor: TextEditor; query: WitString; escapeRegex: bool;
 proc textEditorGetSearchQueryImported(a0: uint64; a1: int32): void {.
     wasmimport("get-search-query", "nev:plugins/text-editor").}
 proc getSearchQuery*(editor: TextEditor): WitString {.nodestroy.} =
+  ## Returns the current search query.
   var
     retArea: array[8, uint8]
     arg0: uint64

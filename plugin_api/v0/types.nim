@@ -116,7 +116,7 @@ proc text*(self: Rope): WitString {.nodestroy.} =
 proc typesSliceImported(a0: int32; a1: int64; a2: int64; a3: bool): int32 {.
     wasmimport("[method]rope.slice", "nev:plugins/types").}
 proc slice*(self: Rope; a: int64; b: int64; inclusive: bool): Rope {.nodestroy.} =
-  ## Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
+  ## Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is inclusive if `inclusive` is true.
   ## This operation is cheap because it doesn't create a copy of the text.
   var
     arg0: int32
@@ -135,6 +135,8 @@ proc typesSliceSelectionImported(a0: int32; a1: int32; a2: int32; a3: int32;
     wasmimport("[method]rope.slice-selection", "nev:plugins/types").}
 proc sliceSelection*(self: Rope; s: Selection; inclusive: bool): Rope {.
     nodestroy.} =
+  ## Returns a slice of the rope from the given selection. 's.last' is inclusive if `inclusive` is true.
+  ## This operation is cheap because it doesn't create a copy of the text.
   var
     arg0: int32
     arg1: int32
@@ -154,6 +156,7 @@ proc sliceSelection*(self: Rope; s: Selection; inclusive: bool): Rope {.
 proc typesFindImported(a0: int32; a1: int32; a2: int32; a3: int64; a4: int32): void {.
     wasmimport("[method]rope.find", "nev:plugins/types").}
 proc find*(self: Rope; sub: WitString; start: int64): Option[int64] {.nodestroy.} =
+  ## Find the byte index of the sub string 'sub', starting the search at 'start'. The returned index is relative to the start of the rope, not 'start'.
   var
     retArea: array[24, uint8]
     arg0: int32
@@ -196,6 +199,7 @@ proc slicePoints*(self: Rope; a: Cursor; b: Cursor): Rope {.nodestroy.} =
 proc typesLineLengthImported(a0: int32; a1: int64): int64 {.
     wasmimport("[method]rope.line-length", "nev:plugins/types").}
 proc lineLength*(self: Rope; line: int64): int64 {.nodestroy.} =
+  ## Return the length in bytes of the given line (0 based).
   var
     arg0: int32
     arg1: int64

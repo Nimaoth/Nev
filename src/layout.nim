@@ -547,6 +547,37 @@ proc popPopup*(self: LayoutService, popup: Popup = nil) =
 proc pushSelectorPopup*(self: LayoutService, builder: SelectorPopupBuilder): ISelectorPopup =
   self.pushSelectorPopupImpl(self, builder)
 
+proc promptString*(self: LayoutService, title: string = ""): Future[Option[string]] =
+  defer:
+    self.platform.requestRender()
+
+  var fut = newFuture[Option[string]]("App.prompt")
+
+  var builder = SelectorPopupBuilder()
+  builder.scope = "prompt".some
+  builder.title = title
+  builder.scaleX = 0.5
+  builder.scaleY = 0.5
+
+  var res = newSeq[FinderItem]()
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
+
+  builder.handleCanceled = proc(popup: ISelectorPopup) =
+    fut.complete(string.none)
+
+  builder.customActions["accept"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
+    fut.complete(popup.getSearchString().some)
+    popup.pop()
+    true
+
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    fut.complete(item.displayName.some)
+    return true
+
+  discard self.pushSelectorPopup(builder)
+  return fut
+
 iterator visibleEditors*(self: LayoutService): DocumentEditor =
   ## Returns a list of all editors which are currently shown
   for view in self.layout.visibleLeafViews():

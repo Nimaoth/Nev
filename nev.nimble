@@ -41,6 +41,8 @@ requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
 requires "https://github.com/Nimaoth/nimwasmtime#415a252"
 requires "https://github.com/Nimaoth/nimsumtree#47f7208"
 requires "https://github.com/Nimaoth/zippy >= 0.10.17"
+requires "libssh2 >= 0.1.9"
+requires "ssh2 >= 0.1.9"
 
 # Use this to include all treesitter languages (takes longer to download)
 requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.11"

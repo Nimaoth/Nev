@@ -1,7 +1,7 @@
 import vmath
 import ui/node
 import misc/[event, timer]
-import input, vfs, app_options, scripting_api
+import input, vfs, app_options, scripting_api, pixie
 
 export input, event
 
@@ -30,7 +30,6 @@ type
     layoutOptions*: WLayoutOptions
     logNextFrameTime*: bool
     lastEventTime*: Timer
-
     vfs*: VFS
     backend*: Backend
 
@@ -56,6 +55,7 @@ method getStatisticsString*(self: Platform): string {.base, gcsafe, raises: [].}
 method layoutText*(self: Platform, text: string): seq[Rect] {.base, gcsafe, raises: [].} = discard
 method setVsync*(self: Platform, enabled: bool) {.base, gcsafe, raises: [].} = discard
 method moveToMonitor*(self: Platform, index: int) {.base, gcsafe, raises: [].} = discard
+method createTexture*(self: Platform, image: Image): TextureId {.base, gcsafe, raises: [].} = discard
 
 func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance
 
