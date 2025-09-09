@@ -2988,6 +2988,33 @@ proc vimMotionWordBig*(self: TextDocumentEditor, cursor: Cursor, count: int = 0)
     let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
     return ((cursor.line, startColumn), (cursor.line, endColumn))
 
+proc getSurrounding*(self: TextDocumentEditor, selection: Selection, count: int, includeEol: bool, c0: char, c1: char, inside: bool): Selection =
+  result = selection
+  while true:
+    let lastChar = self.getChar(result.last)
+    let (startDepth, endDepth) = if lastChar == c0:
+      (1, 0)
+    elif lastChar == c1:
+      (0, 1)
+    else:
+      (1, 1)
+
+    if self.findSurroundStart(result.first, count, c0, c1, startDepth).getSome(opening) and self.findSurroundEnd(result.last, count, c0, c1, endDepth).getSome(closing):
+      result = (opening, closing)
+      if inside:
+        result.first = self.doMoveCursorColumn(result.first, 1)
+        result.last = self.doMoveCursorColumn(result.last, -1)
+      return
+
+    if self.findSurroundEnd(result.first, count, c0, c1, -1).getSome(opening) and self.findSurroundEnd(opening, count, c0, c1, 0).getSome(closing):
+      result = (opening, closing)
+      if inside:
+        result.first = self.doMoveCursorColumn(result.first, 1)
+        result.last = self.doMoveCursorColumn(result.last, -1)
+      return
+    else:
+      return
+
 proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string,
     count: int = 0, includeEol: bool = true): seq[Selection] =
 
@@ -3018,6 +3045,13 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
       default
 
   case move
+  of "surround":
+    let c0 = getArg(0, string, "(")
+    let c1 = getArg(1, string, ")")
+    let inside = getArg(2, bool, true)
+    if c0.len > 0 and c1.len > 0:
+      result = selections.mapIt(self.getSurrounding(it, count, includeEol, c0[0], c1[0], inside))
+
   of "visual-line-up", "visual-line-down":
     var minLine = int.high
     var maxLine = int.low
@@ -4569,14 +4603,12 @@ proc getSelections*(self: TextDocumentEditor): Selections {.expose("editor.text"
 
 proc setSelection*(self: TextDocumentEditor, selection: Selection, addToHistory: Option[bool] = bool.none) {.expose("editor.text").} =
   self.`selections=`(@[selection], addToHistory)
-  # self.selection = selection
 
 proc setSelections*(self: TextDocumentEditor, selections: Selections, addToHistory: Option[bool] = bool.none) {.expose("editor.text").} =
   if selections.len == 0:
     log lvlError, &"Failed to set selections for '{self.getFileName()}': no selections provided"
     return
   self.`selections=`(selections, addToHistory)
-  # self.selections = selections
 
 proc setTargetSelection*(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
   self.targetSelection = selection
