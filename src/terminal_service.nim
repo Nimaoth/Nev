@@ -1,6 +1,6 @@
-import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes]
+import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm]
 import vmath
-import chroma, pixie
+import chroma, pixie, pixie/fileformats/png
 import nimsumtree/[rope, arc]
 import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref, myjsonutils, render_command, embed_source, async_process]
 import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
@@ -34,6 +34,12 @@ when defined(windows):
   const PIPE_TYPE_BYTE = 0x0
   const PIPE_WAIT = 0x0
   const FILE_FLAG_OVERLAPPED = 0x40000000
+
+  # From a random commit on windows terminal:
+  # https://github.com/microsoft/terminal/pull/11264/files#diff-ce403215b7defc6a499585a9cc996313c135c647ceffec2bdecfbbb2f29ff537
+  const PSEUDOCONSOLE_RESIZE_QUIRK = 2
+  const PSEUDOCONSOLE_WIN32_INPUT_MODE = 4
+  const PSEUDOCONSOLE_PASSTHROUGH_MODE = 8
 
   proc CreatePseudoConsole*(size: wincon.COORD, hInput: HANDLE, hOutput: HANDLE, dwFlags: DWORD, phPC: ptr HPCON): HRESULT {.winapi, stdcall, dynlib: "kernel32", importc.}
   proc ClosePseudoConsole*(hPC: HPCON) {.winapi, stdcall, dynlib: "kernel32", importc.}
@@ -168,7 +174,9 @@ type
     of InputEventKind.Scroll:
       deltaY: int
     of InputEventKind.Size:
-      discard # use row, col
+      # also use row, col
+      cellPixelWidth: int
+      cellPixelHeight: int
     of InputEventKind.Terminate:
       discard
     of InputEventKind.RequestRope:
@@ -187,6 +195,17 @@ type
     pos*: tuple[line, column: int]
     contentHash*: Hash
 
+  PlacedImage* = object
+    sx*, sy*, sw*, sh*: int
+    cx*, cy*, cw*, ch*: int
+    z*: int
+    offsetX*: int
+    offsetY*: int
+    effectiveNumRows*: int
+    effectiveNumCols*: int
+    imageId*: int
+    textureId*: TextureId
+
   CursorShape* {.pure.} = enum Block, Underline, BarLeft
   OutputEventKind {.pure.} = enum TerminalBuffer, Size, Cursor, CursorVisible, CursorShape, CursorBlink, Terminated, Rope, Scroll, Log
   OutputEvent = object
@@ -194,9 +213,12 @@ type
     of OutputEventKind.TerminalBuffer:
       buffer: TerminalBuffer
       sixels: Table[(int, int), Sixel]
+      placements*: seq[PlacedImage]
     of OutputEventKind.Size:
       width: int
       height: int
+      pixelWidth: int
+      pixelHeight: int
     of OutputEventKind.Cursor:
       row: int
       col: int
@@ -247,11 +269,21 @@ type
     px: int = 0
     py: int = 0
     currentColor: int = 1
-    iter: iterator(s: ptr ThreadState): int {.gcsafe, raises: [].}
+    iter: iterator(s: ptr TerminalThreadState): int {.gcsafe, raises: [].}
     frag: VTermStringFragment
     pos*: tuple[line, column: int]
 
-  ThreadState = object
+  KittyState = object
+    active: bool
+    colors: seq[chroma.Color]
+    iter: iterator(s: ptr TerminalThreadState) {.gcsafe, raises: [].}
+    frag: VTermStringFragment
+    pos*: tuple[line, column: int]
+    pathPrefix: string
+    images*: Table[int, tuple[width, height: int, textureId: TextureId]]
+    placements*: Table[(int, int), PlacedImage]
+
+  TerminalThreadState = object
     vtermInternal: pointer
     screenInternal: pointer
     inputChannel: ptr system.Channel[InputEvent]
@@ -261,6 +293,10 @@ type
     writeChannel: Arc[BaseChannel]
     width: int
     height: int
+    cellPixelWidth: int
+    cellPixelHeight: int
+    pixelWidth: int
+    pixelHeight: int
     scrollY: int = 0
     cursor: tuple[row, col: int, visible: bool, blink: bool] = (0, 0, true, true)
     scrollbackBuffer: seq[seq[VTermScreenCell]]
@@ -270,6 +306,7 @@ type
     autoRunCommand: string
     enableLog: bool = false
     sixel: SixelState
+    kitty: KittyState
     sixels: Table[(int, int), Sixel]
 
     handles: OsHandles
@@ -281,16 +318,22 @@ type
     id*: int
     group*: string
     command*: string
-    thread: Thread[ThreadState]
+    thread: Thread[TerminalThreadState]
     inputChannel: ptr system.Channel[InputEvent]
     outputChannel: ptr system.Channel[OutputEvent]
-    terminalBuffer*: TerminalBuffer
+    terminalBuffer*: TerminalBuffer # The latest terminalBuffer received from the terminal thread
     sixels*: seq[tuple[contentHash: Hash, row, col: int, px, py: int, width, height: int]]
+    images*: seq[PlacedImage]
     cursor*: tuple[row, col: int, visible: bool, shape: CursorShape, blink: bool] = (0, 0, true, CursorShape.Block, true)
+    width*: int # The latest width received from the terminal thread. Might not match 'terminalBuffer' size.
+    height*: int # The latest height received from the terminal thread. Might not match 'terminalBuffer' size.
+    pixelWidth*: int # The latest pixel width received from the terminal thread. Might not match current view size.
+    pixelHeight*: int # The latest pixel height received from the terminal thread. Might not match current view size.
     scrollY: int
     exitCode*: Option[int]
     autoRunCommand: string
     createPty: bool = false
+    kittyPathPrefix: string
     threadTerminated: bool = false
 
     # Events
@@ -312,7 +355,7 @@ type
     eventHandlers: Table[string, EventHandler]
     modeEventHandler: EventHandler
     mode*: string
-    size*: tuple[width, height: int]
+    size*: tuple[width, height, cellPixelWidth, cellPixelHeight: int] # Current size of the view in cells. Might not match 'terminal.width' and 'terminal.height'
     terminal*: Terminal
     closeOnTerminate: bool
     slot: string
@@ -335,15 +378,15 @@ type
 
 proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView
 
-proc vterm(state: ThreadState): ptr VTerm = cast[ptr VTerm](state.vtermInternal)
-proc screen(state: ThreadState): ptr VTermScreen = cast[ptr VTermScreen](state.screenInternal)
+proc vterm(state: TerminalThreadState): ptr VTerm = cast[ptr VTerm](state.vtermInternal)
+proc screen(state: TerminalThreadState): ptr VTermScreen = cast[ptr VTermScreen](state.screenInternal)
 
 proc platform(self: TerminalService): Platform =
   if self.mPlatform == nil:
     self.mPlatform = self.services.getService(PlatformService).get.platform
   return self.mPlatform
 
-proc createRope*(state: var ThreadState, scrollback: bool = true): Rope =
+proc createRope*(state: var TerminalThreadState, scrollback: bool = true): Rope =
   var cell: VTermScreenCell
   var rope = Rope.new()
 
@@ -399,7 +442,7 @@ proc createRope*(state: var ThreadState, scrollback: bool = true): Rope =
 
   return rope
 
-proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
+proc createTerminalBuffer*(state: var TerminalThreadState): TerminalBuffer =
   result.initTerminalBuffer(state.width, state.height)
 
   var cell: VTermScreenCell
@@ -474,20 +517,11 @@ proc createTerminalBuffer*(state: var ThreadState): TerminalBuffer =
       prevOverlap = cell.width.int
 
 proc createTexture(self: TerminalService, sixel: sink Sixel) =
-  proc toRgbaFast(c: colortypes.Color): ColorRGBA {.inline.} =
-    ## Convert Color to ColorRGBA
-    result.r = (c.r * 255 + 0.5).uint8
-    result.g = (c.g * 255 + 0.5).uint8
-    result.b = (c.b * 255 + 0.5).uint8
-    result.a = (c.a * 255 + 0.5).uint8
-
   try:
     debugf"cache sixel {sixel.contentHash} {sixel.width}x{sixel.height}"
-    let image = newImage(sixel.width, sixel.height)
-    for y in 0..<sixel.height:
-      for x in 0..<sixel.width:
-        image.data[x + y * sixel.width] = sixel.colors[x + y * sixel.width].toRgbaFast()
-    let textureId = self.platform.createTexture(image)
+    var colors = newSeq[chroma.Color]()
+    swap(colors, sixel.colors)
+    let textureId = createTexture(sixel.width, sixel.height, colors.ensureMove)
     self.sixelTextures[sixel.contentHash] = textureId
   except PixieError as e:
     log lvlError, &"Failed to create image for sixel: {e.msg}"
@@ -501,7 +535,7 @@ proc cleanupUnusedSixels(self: TerminalService) {.async.} =
 
     for key, id in unusedSixels:
       debugf"delete unused sixel {key}, {id.int}"
-      self.platform.deleteTexture(id)
+      deleteTexture(id)
       self.sixelTextures.del(key)
 
     catch sleepAsync(1000.milliseconds).await:
@@ -518,6 +552,7 @@ proc handleBufferOutputEvent(self: TerminalService, terminal: Terminal, event: v
       var temp = Sixel()
       swap(temp, s)
       self.createTexture(temp.ensureMove)
+  swap(terminal.images, event.placements)
 
 proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
   while not terminal.threadTerminated:
@@ -528,11 +563,15 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
       of OutputEventKind.TerminalBuffer:
         self.handleBufferOutputEvent(terminal, event)
       of OutputEventKind.Size:
+        terminal.width = event.width
+        terminal.height = event.height
+        terminal.pixelWidth = event.pixelWidth
+        terminal.pixelHeight = event.pixelHeight
         when defined(enableLibssh):
           if terminal.ssh.isSome:
             sshAsyncWait "update terminal size":
               # todo: pixel size
-              terminal.sshChannel.impl.channel_request_pty_size_ex(event.width, event.height, event.width * 10, event.height * 20)
+              terminal.sshChannel.impl.channel_request_pty_size_ex(event.width, event.height, event.pixelWidth, event.pixelHeight)
       of OutputEventKind.Cursor:
         terminal.cursor.row = event.row
         terminal.cursor.col = event.col
@@ -566,7 +605,7 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
 
 proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
   if len > 0:
-    let state = cast[ptr ThreadState](user)
+    let state = cast[ptr TerminalThreadState](user)
     # echo "send input ", s.toOpenArray(0, len.int - 1)
     if state.useChannels:
       discard
@@ -585,7 +624,7 @@ proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
       else:
         discard write(state.handles.masterFd, s[0].addr, len.int)
 
-proc handleInputEvents(state: var ThreadState) =
+proc handleInputEvents(state: var TerminalThreadState) =
   while state.inputChannel[].peek() > 0:
     try:
       let event = state.inputChannel[].recv()
@@ -628,6 +667,10 @@ proc handleInputEvents(state: var ThreadState) =
         if event.col != 0 and event.row != 0:
           state.width = event.col
           state.height = event.row
+          state.cellPixelWidth = event.cellPixelWidth
+          state.cellPixelHeight = event.cellPixelHeight
+          state.pixelWidth = event.cellPixelWidth * state.width
+          state.pixelHeight = event.cellPixelHeight * state.height
           state.vterm.setSize(state.height.cint, state.width.cint)
           state.screen.flushDamage()
 
@@ -662,7 +705,7 @@ proc handleInputEvents(state: var ThreadState) =
     except:
       echo &"Failed to send input: {getCurrentExceptionMsg()}"
 
-proc handleProcessOutput(state: var ThreadState, buffer: var string) {.raises: [OSError].} =
+proc handleProcessOutput(state: var TerminalThreadState, buffer: var string) {.raises: [OSError].} =
   if state.useChannels:
     try:
       buffer.setLen(state.readChannel.flushRead())
@@ -747,21 +790,18 @@ proc handleProcessOutput(state: var ThreadState, buffer: var string) {.raises: [
       elif n == 0:
         state.processTerminated = true
 
-proc log*(state: ThreadState, str: string) =
+proc log*(state: TerminalThreadState, str: string) =
   if state.enableLog:
     state.outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
 
-proc log*(state: ptr ThreadState, str: string) =
+proc log*(state: ptr TerminalThreadState, str: string) =
   if state.enableLog:
     state[].outputChannel[].send OutputEvent(kind: OutputEventKind.Log, level: lvlDebug, msg: str)
 
-iterator chars(state: ptr ThreadState): char {.closure, gcsafe, raises: [].} =
-  while true:
-    while state.sixel.i < state.sixel.frag.len.int:
-      yield state.sixel.frag.str[state.sixel.i]
-      inc state.sixel.i
+proc moveCursor(s: ptr TerminalThreadState, cols: int, rows: int) {.gcsafe, raises: [].} =
+  s[].vterm.state.moveCursor(cols.cint, rows.cint)
 
-proc resizeSixel(s: ptr ThreadState, w: int, h: int) =
+proc resizeSixel(s: ptr TerminalThreadState, w: int, h: int) =
   if s.sixel.sizeFixed:
     return
 
@@ -782,7 +822,7 @@ proc resizeSixel(s: ptr ThreadState, w: int, h: int) =
   s.sixel.width = w
   s.sixel.height = h
 
-iterator handleSixel(s: ptr ThreadState): int {.closure, gcsafe, raises: [].} =
+iterator handleSixel(s: ptr TerminalThreadState): int {.closure, gcsafe, raises: [].} =
   # echo &"handle sixel"
   # echo "============="
   # if s.sixel.frag.len.int > 0:
@@ -948,14 +988,19 @@ iterator handleSixel(s: ptr ThreadState): int {.closure, gcsafe, raises: [].} =
       pos: s.sixel.pos,
       contentHash: s.sixel.colors.hash(),
     )
-    # echo &"sixel {s.sixel.width}x{s.sixel.height}, {s.sixel.px}:{s.sixel.py}, {s.cursor.row}:{s.cursor.col}, {s.sixel.colors.hash}"
+    let effectiveNumCols = (s.sixel.width / s.cellPixelWidth).ceil.int
+    let effectiveNumRows = (s.sixel.height / s.cellPixelHeight).ceil.int
+    s.moveCursor(effectiveNumCols, 0)
+    if effectiveNumRows > 0:
+      s.moveCursor(0, effectiveNumRows - 1)
+    # echo &"sixel {s.sixel.width}x{s.sixel.height}, {s.sixel.px}:{s.sixel.py}, {s.cursor.row}:{s.cursor.col}, {s.sixel.colors.hash}, effective: {effectiveNumCols}x{effectiveNumRows}"
 
   except CatchableError as e:
     echo &"Failed to parse sixel data at {s.sixel.i}: {e.msg}"
 
   s.sixel.active = false
 
-proc handleSixelData(s: ptr ThreadState, frag: VTermStringFragment) =
+proc handleSixelData(s: ptr TerminalThreadState, frag: VTermStringFragment) =
   if s.sixel.iter == nil or not s.sixel.active:
     s.sixel.iter = handleSixel
   s.sixel.i = 0
@@ -964,7 +1009,482 @@ proc handleSixelData(s: ptr ThreadState, frag: VTermStringFragment) =
   if finished(s.sixel.iter):
     s.sixel.iter = nil
 
-proc terminalThread(s: ThreadState) {.thread, nimcall.} =
+template kittyDebugf*(x: static string) =
+  when defined(debugKGP):
+    echo fmt(x)
+
+proc addImage(s: var KittyState, id: int, width, height: int, colors: var seq[chroma.Color]) =
+  var tempColors = newSeq[chroma.Color]()
+  swap(tempColors, colors)
+  let textureId = createTexture(width, height, tempColors.ensureMove)
+  kittyDebugf"Kitty.add image {id} {width}x{height}, {textureId.int}"
+  s.images[id] = (width, height, textureId)
+
+proc updateDestRect(placement: var PlacedImage, numCols: int, numRows: int, cell: Ivec2) =
+  kittyDebugf"Kitty.updateDestRect placement {numCols}x{numRows}, {cell} {placement}"
+  var numCols = numCols
+  var numRows = numRows
+  if numCols == 0:
+    if numRows == 0:
+      let t = placement.sw + placement.offsetX
+      numCols = t div cell.x
+      if t > numCols * cell.x:
+        inc(numCols, 1)
+    else:
+      var heightPx: float = cell.y.float * numRows.float + placement.offsetY.float
+      var widthPx: float = heightPx.float * placement.sw.float / placement.sh.float
+      numCols = ceil(widthPx / cell.x.float).int
+  if numRows == 0:
+    if numCols == 0:
+      let t = placement.sh + placement.offsetY
+      numRows = t div cell.y
+      if t > numRows * cell.y:
+        inc(numRows, 1)
+    else:
+      var widthPx: float = cell.x.float * numCols.float + placement.offsetX.float
+      var heightPx: float = widthPx * placement.sh.float / placement.sw.float.float
+      numRows = ceil(heightPx / cell.y.float).int
+  placement.effectiveNumRows = numRows
+  placement.effectiveNumCols = numCols
+
+proc addPlacement(s: var KittyState, id: int, placement: PlacedImage) =
+  kittyDebugf"Kitty.add placement {id} {placement}"
+  s.placements[(placement.imageId, id)] = placement
+
+proc clear(s: var KittyState) =
+  for image in s.images.values:
+    deleteTexture(image.textureId)
+  s.images.clear()
+  s.placements.clear()
+
+proc deleteImage(s: var KittyState, id: int) =
+  kittyDebugf"Kitty.delete image {id}"
+  s.images.withValue(id, image):
+    deleteTexture(image.textureId)
+    s.images.del(id)
+    var placementsToRemove = newSeq[(int, int)]()
+    for ids, p in s.placements:
+      if p.imageId == id:
+        placementsToRemove.add ids
+
+    for ids in placementsToRemove:
+      kittyDebugf"Kitty.delete placement {id}:{ids[1]}"
+      s.placements.del(ids)
+
+proc deletePlacement(s: var KittyState, imageId: int, pid: int, deleteImageWhenUnused: bool) =
+  if (imageId, pid) in s.placements:
+    kittyDebugf"Kitty.delete placement {imageId}:{pid}"
+    let imageId = s.placements[(imageId, pid)].imageId
+    s.placements.del((imageId, pid))
+
+    if deleteImageWhenUnused:
+      var imageStillUsed = false
+      for ids, p in s.placements:
+        if p.imageId == imageId:
+          imageStillUsed = true
+          break
+
+      if not imageStillUsed:
+        s.deleteImage(imageId)
+
+proc deleteVisiblePlacements(s: var KittyState, deleteImageWhenUnused: bool) =
+  var placementsToRemove = newSeq[(int, int)]()
+
+  for ids, placement in s.placements:
+    # todo: bounds checks
+    placementsToRemove.add ids
+
+  for ids in placementsToRemove:
+    s.deletePlacement(ids[0], ids[1], deleteImageWhenUnused)
+
+iterator handleKitty(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].} =
+  let t = startTimer()
+  var i = 1
+  var suppressOk = false
+  var suppressFailure = false
+
+  template waitForData(): untyped =
+    if i >= s.kitty.frag.len.int and s.kitty.frag.final:
+      break
+    while i >= s.kitty.frag.len.int:
+      yield
+      i = 0
+
+  proc sendOutput(s: ptr TerminalThreadState, raw: openArray[char]) =
+    # echo "> ", raw
+    handleOutput(cast[cstring](raw[0].addr), raw.len.csize_t, s)
+
+  template sendResponse(keys: untyped, body: untyped): untyped =
+    let prefix = "\x1b_G"
+    let suffix = "\x1b\\"
+    s.sendOutput(prefix)
+    keys
+    s.sendOutput(";")
+    body
+    s.sendOutput(suffix)
+
+  template sendOKResponse(keys: untyped): untyped =
+    if not suppressOk:
+      sendResponse(keys):
+        s.sendOutput("OK")
+
+  template sendErrResponse(err, keys: untyped): untyped =
+    if not suppressFailure:
+      sendResponse(keys):
+        s.sendOutput(err)
+
+  try:
+    var numBuffer = newString(0)
+    var buffer = newString(0)
+    var format = 24
+    var width = 1
+    var height = 1
+    var compression = '\0'
+    var transmission = 'd'
+    var chunked = false
+    var id = 0
+    var placementId = 0
+    var imageNumber = 0
+    var fileOffset = 0
+    var fileSize = 0
+    var action = 't'
+    var toDelete = 'a'
+    var placeX = 0
+    var placeY = 0
+    var placeZ = 0
+    var placeW = 0
+    var placeH = 0
+    var pixelOffsetX = 0
+    var pixelOffsetY = 0
+    var cellWidth = 0
+    var cellHeight = 0
+    var cursorMovement = 0
+    var unicodePlaceholder = 0
+    var first = true
+    var keys = ""
+
+    while true:
+      defer:
+        first = false
+
+      while i < s.kitty.frag.len.int:
+        template parseInt(): int =
+          waitForData()
+          while i < s.kitty.frag.len.int and s.kitty.frag.str[i] in {'0'..'9'}:
+            numBuffer.add s.kitty.frag.str[i]
+            inc i
+            waitForData()
+          let num = if numBuffer.len == 0:
+            0
+          else:
+            numBuffer.parseInt()
+          numBuffer.setLen(0)
+          num
+
+        waitForData()
+        let key = s.kitty.frag.str[i]
+        i += 2
+
+        waitForData()
+        let charValue = s.kitty.frag.str[i]
+        var intValue = 0
+        if charValue in {'0'..'9'}:
+          intValue = parseInt()
+        else:
+          inc i
+
+        case key
+        of 'q':
+          if intValue == 1:
+            suppressOk = true
+          elif intValue == 2:
+            suppressFailure = true
+        of 'a':
+          action = charValue
+
+        # Keys for image transmission
+        of 'f': format = intValue
+        of 't': transmission = charValue
+        of 's': width = intValue
+        of 'v': height = intValue
+        of 'S': fileSize = intValue
+        of 'O': fileOffset = intValue
+        of 'i':
+          if not first:
+            if id != intValue:
+              kittyDebugf"got chunk for different id: {id} != {intValue}"
+          id = intValue
+        of 'I': imageNumber = intValue
+        of 'p': placementId = intValue
+        of 'o': compression = charValue
+        of 'm': chunked = intValue != 0
+
+        # Keys for image display
+        of 'x': placeX = intValue
+        of 'y': placeY = intValue
+        of 'w': placeW = intValue
+        of 'h': placeH = intValue
+        of 'X': pixelOffsetX = intValue
+        of 'Y': pixelOffsetY = intValue
+        of 'c': cellWidth = intValue
+        of 'r': cellHeight = intValue
+        of 'C': cursorMovement = intValue
+        of 'U': unicodePlaceholder = intValue
+        of 'z': placeZ = intValue
+        of 'P': kittyDebugf"todo: P"
+        of 'Q': kittyDebugf"todo: Q"
+        of 'H': kittyDebugf"todo: H"
+        of 'V': kittyDebugf"todo: V"
+
+        of 'd':
+          toDelete = charValue
+
+        else:
+          kittyDebugf"Unknown kitty key '{key}'"
+
+        if i >= s.kitty.frag.len.int and s.kitty.frag.final and not chunked:
+          keys = s.kitty.frag.str.toOpenArray(0, i - 1).join("")
+          break
+
+        case s.kitty.frag.str[i]
+        of ',':
+          inc i
+        of ';':
+          if first:
+            # keys = s.kitty.frag.str[0..<i] #.toOpenArray(0, i).join("")
+            keys = s.kitty.frag.str.toOpenArray(0, i - 1).join("")
+          inc i
+          break
+        else:
+          inc i
+
+        waitForData()
+
+      # parse payload
+      while i < s.kitty.frag.len.int:
+        let oldLen = buffer.len
+        let remaining = s.kitty.frag.len.int - i
+        buffer.setLen(oldLen + remaining)
+        copyMem(buffer[oldLen].addr, s.kitty.frag.str[i].addr, remaining)
+        i = s.kitty.frag.len.int
+        waitForData()
+
+      if not chunked:
+        break
+
+      yield
+      i = 1
+
+    # kittyDebugf"[kitty] '{keys}', {buffer.len} payload bytes, action = {action}"
+    var data = ""
+    if buffer.len > 0:
+      data = base64.decode(buffer)
+      if action == 'q':
+        kittyDebugf"payload '{buffer}' -> '{data}'"
+
+    case transmission
+    of 'd': discard
+    of 'f':
+      let path = s.kitty.pathPrefix & data
+      # kittyDebugf"Read file '{path}'"
+      try:
+        data = readFile(path)
+      except IOError as e:
+        kittyDebugf"Failed to read file '{path}': {e.msg}"
+        sendErrResponse("EBADF"):
+          discard
+        return
+    of 't':
+      let path = s.kitty.pathPrefix & data
+      # kittyDebugf"Read temp file '{path}'"
+      try:
+        data = readFile(path)
+        removeFile(path)
+      except IOError as e:
+        kittyDebugf"Failed to read file '{path}': {e.msg}"
+        sendErrResponse("EBADF"):
+          discard
+        return
+    of 's': kittyDebugf"not implemented: shared memory transmission"
+    else:
+      kittyDebugf"Unknown transmission method '{transmission}'"
+
+    case action
+    of 'a':
+      kittyDebugf"control animation"
+    of 'c':
+      kittyDebugf"compose animation frames"
+
+    of 'd':
+      let deleteUnused = toDelete.isUpperAscii
+      let toDeleteNorm = toDelete.toLowerAscii
+      case toDeleteNorm
+      of 'a':
+        s.kitty.deleteVisiblePlacements(deleteUnused)
+      of 'i':
+        if placementId != 0:
+          s.kitty.deletePlacement(id, placementId, deleteUnused)
+        else:
+          s.kitty.deleteImage(id)
+        s.dirty = true
+      of 'n': kittyDebugf"unhandled delete {toDelete}"
+      of 'c': kittyDebugf"unhandled delete {toDelete}"
+      of 'f': kittyDebugf"unhandled delete {toDelete}"
+      of 'p': kittyDebugf"unhandled delete {toDelete}"
+      of 'q': kittyDebugf"unhandled delete {toDelete}"
+      of 'r': kittyDebugf"unhandled delete {toDelete}"
+      of 'x': kittyDebugf"unhandled delete {toDelete}"
+      of 'y': kittyDebugf"unhandled delete {toDelete}"
+      of 'z': kittyDebugf"unhandled delete {toDelete}"
+      else:
+        kittyDebugf"Unknown delete method '{toDelete}'"
+
+      # sendOKResponse:
+      #   discard
+
+    of 'f':
+      kittyDebugf"transmit data for animation frames"
+    of 'q':
+      kittyDebugf"query terminal"
+
+      sendOKResponse:
+        discard
+
+    of 't', 'T':
+      var colors = newSeq[chroma.Color]()
+      case format
+      of 24:
+        colors.setLen(width * height)
+        let expectedLen = 3 * width * height
+        if data.len != expectedLen:
+          kittyDebugf"Expected {expectedLen} bytes, got {data.len}"
+          sendErrResponse("ERROR"):
+            discard
+          return
+        for y in 0..<height:
+          for x in 0..<width:
+            let r = data[(x + y * width) * 3 + 0].int
+            let g = data[(x + y * width) * 3 + 1].int
+            let b = data[(x + y * width) * 3 + 2].int
+            colors[x + y * width] = color(r / 255, g / 255, b / 255, 1)
+      of 32:
+        colors.setLen(width * height)
+        let expectedLen = 4 * width * height
+        if data.len != expectedLen:
+          kittyDebugf"Expected {expectedLen} bytes, got {data.len}"
+          sendErrResponse("ERROR"):
+            discard
+          return
+        for y in 0..<height:
+          for x in 0..<width:
+            let r = data[(x + y * width) * 4 + 0].int
+            let g = data[(x + y * width) * 4 + 1].int
+            let b = data[(x + y * width) * 4 + 2].int
+            let a = data[(x + y * width) * 4 + 3].int
+            colors[x + y * width] = color(r / 255, g / 255, b / 255, a / 255)
+      of 100:
+        let png = decodePng(data[0].addr, data.len)
+        let image = newImage(png)
+        width = image.width
+        height = image.height
+        colors.setLen(width * height)
+        for y in 0..<height:
+          for x in 0..<width:
+            colors[x + y * width] = image.data[x + y * width].color
+      else:
+        kittyDebugf"Unknown format {format}"
+
+      s.kitty.addImage(id, width, height, colors)
+
+      if action == 'T':
+        var placedImage = PlacedImage(
+          sx: placeX,
+          sy: placeY,
+          sw: if placeW > 0: placeW else: width,
+          sh: if placeH > 0: placeH else: height,
+          z: placeZ,
+          offsetX: pixelOffsetX,
+          offsetY: pixelOffsetY,
+          cx: s.cursor.col,
+          cy: s.cursor.row,
+          cw: cellWidth,
+          ch: cellHeight,
+          imageId: id,
+        )
+        placedImage.updateDestRect(placedImage.cw, placedImage.ch, ivec2(s.cellPixelWidth.int32, s.cellPixelHeight.int32))
+        # if cursorMovement == 0 and unicodePlaceholder == 0:
+        #   s.moveCursor(placedImage.effectiveNumCols, 0)
+        #   if placedImage.effectiveNumRows > 0:
+        #     s.moveCursor(0, placedImage.effectiveNumRows - 1)
+
+        s.kitty.addPlacement 0, placedImage
+        s.dirty = true
+
+        sendOKResponse:
+          discard
+
+    of 'p':
+      var placedImage = PlacedImage(
+        sx: placeX,
+        sy: placeY,
+        sw: if placeW > 0: placeW else: width,
+        sh: if placeH > 0: placeH else: height,
+        z: placeZ,
+        offsetX: pixelOffsetX,
+        offsetY: pixelOffsetY,
+        cx: s.cursor.col,
+        cy: s.cursor.row,
+        cw: cellWidth,
+        ch: cellHeight,
+        imageId: id,
+      )
+      placedImage.updateDestRect(placedImage.cw, placedImage.ch, ivec2(s.cellPixelWidth.int32, s.cellPixelHeight.int32))
+      # if cursorMovement == 0 and unicodePlaceholder == 0:
+      #   s.moveCursor(placedImage.effectiveNumCols, 0)
+      #   if placedImage.effectiveNumRows > 0:
+      #     s.moveCursor(0, placedImage.effectiveNumRows - 1)
+
+      s.kitty.addPlacement placementId, placedImage
+      s.dirty = true
+
+      # sendOKResponse:
+      #   discard
+
+    else:
+      kittyDebugf"Unknown kitty action '{action}'"
+
+    # kittyDebugf"Handled kitty request in {t.elapsed.ms}ms"
+  except CatchableError as e:
+    kittyDebugf"Failed to parse kitty data at {i}: {e.msg}"
+    let msg = &"ERROR:{e.msg}"
+    sendErrResponse(msg):
+      discard
+
+proc handleKittyData(s: ptr TerminalThreadState, frag: VTermStringFragment) =
+  if s.kitty.iter == nil:
+    s.kitty.iter = handleKitty
+  s.kitty.frag = frag
+  s.kitty.iter(s)
+  if finished(s.kitty.iter):
+    s.kitty.iter = nil
+
+proc createPlacements(state: KittyState): seq[PlacedImage] =
+  result = newSeqOfCap[PlacedImage](state.placements.len)
+  for p in state.placements.values:
+    if p.imageId in state.images:
+      result.add p
+      result.last.textureId = state.images[p.imageId].textureId
+      # result.add((
+      #   p.x, p.y, p.width, p.height, p.z,
+      #   p.sx, p.sy, p.sw, p.sh,
+      #   p.imageId, state.images[p.imageId].textureId))
+
+  result.sort proc(a, b: PlacedImage): int =
+    if a.z != b.z:
+      return cmp(a.z, b.z)
+    return cmp(a.imageId, b.imageId)
+
+proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
   var state = s
 
   proc log(str: string) =
@@ -976,31 +1496,31 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       # echo &"damage: {rect}"
     ),
     erase: (proc(rect: VTermRect; user: pointer): cint {.cdecl.} =
-      # echo &"erase: {rect}"
-      let state = cast[ptr ThreadState](user)
+      # echo "erase: {rect}"
+      let state = cast[ptr TerminalThreadState](user)
       var keysToRemove = newSeq[(int, int)]()
       for key in state.sixels.keys:
         if key[0] in rect.start_row..rect.end_row and key[1] in rect.start_col..rect.end_col:
           keysToRemove.add key
       for key in keysToRemove:
-        echo &"remove sixel {key} {state.sixels[key].contentHash}, {state.sixels[key].width}x{state.sixels[key].height}"
         state.sixels.del key
       if keysToRemove.len > 0:
         state.outputChannel[].send OutputEvent(
           kind: OutputEventKind.TerminalBuffer,
           buffer: state[].createTerminalBuffer(),
           sixels: state.sixels,
+          placements: state.kitty.createPlacements(),
         )
     ),
     movecursor: (proc(pos: VTermPos; oldpos: VTermPos; visible: cint; user: pointer): cint {.cdecl.} =
-      let state = cast[ptr ThreadState](user)
+      let state = cast[ptr TerminalThreadState](user)
       state.cursor.row = pos.row.int
       state.cursor.col = pos.col.int
       state.outputChannel[].send OutputEvent(kind: OutputEventKind.Cursor, row: pos.row.int + state.scrollY, col: pos.col.int)
       # state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: visible != 0)
     ),
     settermprop: (proc(prop: VTermProp; val: ptr VTermValue; user: pointer): cint {.cdecl.} =
-      let state = cast[ptr ThreadState](user)
+      let state = cast[ptr TerminalThreadState](user)
       case prop
       of VTERM_PROP_CURSORVISIBLE:
         # log state, &"settermmprop VTERM_PROP_CURSORVISIBLE {val.boolean != 0}"
@@ -1021,18 +1541,21 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
 
       else:
         discard
+      return 1
     ),
     # bell: (proc(user: pointer): cint {.cdecl.} = discard),
     resize: (proc(rows: cint; cols: cint; user: pointer): cint {.cdecl.} =
-      let state = cast[ptr ThreadState](user)
+      let state = cast[ptr TerminalThreadState](user)
+      state.outputChannel[].send OutputEvent(kind: OutputEventKind.Size, width: cols.int, height: rows.int, pixelWidth: state.pixelWidth, pixelHeight: state.pixelHeight)
       if cols == state.width and rows.int == state.height:
         return
-      echo &"resize: clear sixels {state.width}x{state.height} -> {cols}x{rows}"
+      # echo &"resize: clear sixels {state.width}x{state.height} -> {cols}x{rows}"
+      state.kitty.clear()
       state.sixels.clear()
-      state.outputChannel[].send OutputEvent(kind: OutputEventKind.Size, width: cols.int, height: rows.int)
+      state.dirty = true
     ),
     sb_pushline: (proc(cols: cint; cells: ptr UncheckedArray[VTermScreenCell]; user: pointer): cint {.cdecl.} =
-      let state = cast[ptr ThreadState](user)
+      let state = cast[ptr TerminalThreadState](user)
       var line = newSeq[VTermScreenCell](cols)
       for i in 0..<cols:
         line[i] = cells[i]
@@ -1040,7 +1563,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       return 0 # return value is ignored
     ),
     sb_popline: (proc(cols: cint; cells: ptr UncheckedArray[VTermScreenCell]; user: pointer): cint {.cdecl.} =
-      let state = cast[ptr ThreadState](user)
+      let state = cast[ptr TerminalThreadState](user)
       if state[].scrollbackBuffer.len > 0:
         let line = state[].scrollbackBuffer.pop()
         for i in 0..<min(cols, line.len):
@@ -1049,12 +1572,14 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       return 0
     ),
     sb_clear: (proc(user: pointer): cint {.cdecl.} =
-      let state = cast[ptr ThreadState](user)
-      echo &"sb_clear: clear sixels"
+      let state = cast[ptr TerminalThreadState](user)
+      # echo &"sb_clear: clear sixels"
+      state.kitty.clear()
       state.sixels.clear()
       state[].scrollbackBuffer.setLen(0)
       state.scrollY = 0
       state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY)
+      state.dirty = true
       return 1
     ),
   )
@@ -1076,35 +1601,35 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       return 1
     ),
     csi: (proc(leader: cstring; args: ptr clong; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.} =
-      let state = cast[ptr ThreadState](user)
+      let state = cast[ptr TerminalThreadState](user)
       let args = cast[ptr UncheckedArray[clong]](args)
-      echo &"csi '{intermed}', '{command}', {args.toOpenArray(0, argcount.int - 1)}"
+      # echo &"csi '{intermed}', '{command}', {args.toOpenArray(0, argcount.int - 1)}"
       case command
       of 't':
         if argcount > 0:
-          echo "send size"
+          # echo "send size"
           case args[0]
           of 14:
             let width = state.width * 10 # todo: pixel size
             let height = state.height * 10 # todo: pixel size
             let msg = &"\x1b[4;{height};{width}t"
-            echo msg.toOpenArray
+            # echo msg.toOpenArray
             handleOutput(msg.cstring, msg.len.csize_t, user)
           of 15:
             let width = 10 # todo: pixel size
             let height = 10 # todo: pixel size
             let msg = &"\x1b[5;{height};{width}t"
-            echo msg.toOpenArray
+            # echo msg.toOpenArray
             handleOutput(msg.cstring, msg.len.csize_t, user)
           of 16:
             let width = state.width * 10 # todo: pixel size
             let height = state.height * 10 # todo: pixel size
             let msg = &"\x1b[6;{height};{width}t"
-            echo msg.toOpenArray
+            # echo msg.toOpenArray
             handleOutput(msg.cstring, msg.len.csize_t, user)
           of 18:
             let msg = &"\x1b[8;{state.height};{state.width}t"
-            echo msg.toOpenArray
+            # echo msg.toOpenArray
             handleOutput(msg.cstring, msg.len.csize_t, user)
           else:
             discard
@@ -1116,7 +1641,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
       return 1
     ),
     dcs: (proc(command: cstring; commandlen: csize_t; frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
-      let state = cast[ptr ThreadState](user)
+      let state = cast[ptr TerminalThreadState](user)
       let commandStr = newString(commandlen.int)
       copyMem(commandStr[0].addr, command[0].addr, commandlen.int)
       # echo &"dcs '{commandStr}', {frag}"
@@ -1125,6 +1650,10 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
         return 1
     ),
     apc: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
+      let state = cast[ptr TerminalThreadState](user)
+      # echo &"apc '{frag}'"
+      if frag.len.int > 0 and (frag.str[0] == 'G' or state.kitty.iter != nil):
+        handleKittyData(state, frag)
       return 1
     ),
     pm: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
@@ -1140,6 +1669,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   state.vterm.setOutputCallback(handleOutput, state.addr)
   state.vterm.screen.setCallbacks(callbacks.addr, state.addr)
   state.vterm.state.setSelectionCallbacks(selectionCallbacks.addr, state.addr, nil, 1024)
+  state.vterm.screen.enableAltscreen(1)
 
   if state.autoRunCommand.len > 0:
     for r in state.autoRunCommand.runes:
@@ -1149,7 +1679,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
   var buffer = ""
   var exitCode = int.none
 
-  proc handleInput(state: ptr ThreadState) {.async.} =
+  proc handleInput(state: ptr TerminalThreadState) {.async.} =
     while not state.terminateRequested:
       await state.handles.inputWriteEvent2.wait()
       try:
@@ -1248,6 +1778,7 @@ proc terminalThread(s: ThreadState) {.thread, nimcall.} =
           kind: OutputEventKind.TerminalBuffer,
           buffer: state.createTerminalBuffer(),
           sixels: state.sixels,
+          placements: state.kitty.createPlacements(),
         )
 
   except OSError as e:
@@ -1304,7 +1835,7 @@ proc terminate*(self: Terminal) {.async.} =
   self.outputChannel[].close()
   self.outputChannel.deallocShared()
 
-proc createTerminal*(self: TerminalService, width: int, height: int, writeChannel: Arc[BaseChannel], readChannel: Arc[BaseChannel], autoRunCommand: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].}
+proc createTerminal*(self: TerminalService, width: int, height: int, writeChannel: Arc[BaseChannel], readChannel: Arc[BaseChannel], autoRunCommand: string = "", kittyPathPrefix: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].}
 
 proc logErrors(process: AsyncProcess): Future[void] {.async.} =
   while true:
@@ -1316,7 +1847,7 @@ when defined(enableLibssh):
     from winlean import nil
     import chronos/transports/stream
 
-  proc authPublicKey*(session: Session; username, privKey: string, pubKey = "", passphrase = ""): bool {.raises: [IOError].} =
+  proc authPublicKey*(session: Session; username, privKey: string, pubKey = "", passphrase = ""): int {.raises: [IOError].} =
     let privKey = expandTilde(privKey)
     var pubKey = pubKey
     if pubKey.len > 0:
@@ -1327,10 +1858,11 @@ when defined(enableLibssh):
       if rc == LIBSSH2_ERROR_EAGAIN:
         discard
       elif rc < 0:
-        raise newException(IOError, &"Authentication with privateKey {privKey} failed!")
+        return rc
       else:
         break
-    result = true
+
+    result = 0
 
   proc createSshSession(self: TerminalService, terminal: Terminal, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel], command: string, args: seq[string] = @[], options: SshOptions): Future[void] {.async: (raises: []).} =
     try:
@@ -1362,19 +1894,29 @@ when defined(enableLibssh):
       if rc != 0:
         raise newException(IOError, "SSH session handshake failed: " & $rc)
 
-      # Authenticate
+      # Authenticate. Try with empty password first, if that fails then prompt user for password.
       let vfs = self.services.getService(VFSService).get.vfs
       let privateKeyPath = vfs.localize(options.privateKeyPath)
       let publicKeyPath = vfs.localize(options.publicKeyPath)
-      let passphrase = await self.layout.promptString("Passphrase for " & options.username)
-      if passphrase.isNone:
-        log lvlInfo, &"Cancel authentication for ssh session '{options.username}@{address}' ({privateKeyPath})"
-        return
+      log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath}) with empty password"
+      var authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, "")
+      if authResult < 0:
+        # If we failed to verify the public key with the empty password, prompt user for password.
+        if authResult == LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED:
+          let passphrase = if options.password.isSome:
+            options.password
+          else:
+            await self.layout.promptString("Passphrase for " & options.username)
+          if passphrase.isNone:
+            log lvlInfo, &"Cancel authentication for ssh session '{options.username}@{address}' ({privateKeyPath})"
+            return
 
-      log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath})"
-      let authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, passphrase.get(""))
-      if not authResult:
-        raise newException(IOError, &"Failed to authenticate ssh session '{options.username}@{address}'")
+          log lvlInfo, &"Authenticate ssh session '{options.username}@{address}' ({privateKeyPath}) with password"
+          authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, passphrase.get(""))
+
+        if authResult < 0:
+          raise newException(IOError, &"Failed to authenticate ssh session '{options.username}@{address}'")
+
       log lvlInfo, &"Authentication successfull for ssh session '{options.username}@{address}' ({privateKeyPath})"
 
       let client = newSSHClient()
@@ -1383,11 +1925,9 @@ when defined(enableLibssh):
 
       sshAsyncWait "request pty":
         var term = "xterm-256color"
-        let width = terminal.terminalBuffer.width
-        let height = terminal.terminalBuffer.height
-        let pixelWidth = width * 10
-        let pixelHeight = height * 20
-        sshChannel.impl.channel_request_pty_ex(term.cstring, term.len.uint, nil, 0, width, height, pixelWidth, pixelHeight)
+        let width = terminal.width
+        let height = terminal.height
+        sshChannel.impl.channel_request_pty_ex(term.cstring, term.len.uint, nil, 0, width, height, terminal.pixelWidth, terminal.pixelHeight)
 
       sshAsyncWait "start shell":
         sshChannel.impl.channel_shell()
@@ -1408,7 +1948,7 @@ when defined(enableLibssh):
         except CatchableError as e:
           echo "Failed to read output: ", e.msg
 
-        echo "=================== forwardSshChannelToStdOutChannel end"
+        # echo "=================== forwardSshChannelToStdOutChannel end"
 
       asyncSpawn forwardSshChannelToStdOutChannel(sshChannel, stdout)
 
@@ -1436,17 +1976,23 @@ when defined(enableLibssh):
 
       # Clean up
       # libssh2.exit()
+
+      sshAsyncWait "resize shell":
+        let width = terminal.width
+        let height = terminal.height
+        sshChannel.impl.channel_request_pty_size_ex(width, height, terminal.pixelWidth, terminal.pixelHeight)
+
       terminal.ssh = options.some
       terminal.sshChannel = sshChannel
       terminal.sshClient = client
     except CatchableError as e:
       log lvlError, &"Failed to create ssh connection: {e.msg}"
 
-proc createTerminal*(self: TerminalService, width: int, height: int, command: string, args: seq[string] = @[], autoRunCommand: string = "", createPty: bool = true, ssh: Option[SshOptions]): Terminal {.raises: [OSError, IOError, ResourceExhaustedError, TransportError, CancelledError].} =
+proc createTerminal*(self: TerminalService, width: int, height: int, command: string, args: seq[string] = @[], autoRunCommand: string = "", createPty: bool = true, kittyPathPrefix: string = "", ssh: Option[SshOptions]): Terminal {.raises: [OSError, IOError, ResourceExhaustedError, TransportError, CancelledError].} =
   if ssh.isSome:
     var stdin = newInMemoryChannel()
     var stdout = newInMemoryChannel()
-    result = self.createTerminal(width, height, stdin, stdout, autoRunCommand)
+    result = self.createTerminal(width, height, stdin, stdout, autoRunCommand, kittyPathPrefix)
     when defined(enableLibssh):
       asyncSpawn self.createSshSession(result, stdin, stdout, command, args, ssh.get)
     else:
@@ -1455,7 +2001,6 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
 
   if not createPty:
     try:
-      echo &"start process '{command}' {args}"
       var process = startAsyncProcess(command, args, killOnExit = true, autoStart = false, errToOut = false)
       asyncSpawn process.logErrors()
       discard process.start()
@@ -1464,7 +2009,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
         discard channel.signal.fireSync()
       )
       let stdin = newProcessInputChannel(process)
-      return self.createTerminal(width, height, stdin, stdout, autoRunCommand)
+      return self.createTerminal(width, height, stdin, stdout, autoRunCommand, kittyPathPrefix)
     except ValueError as e:
       log lvlError, &"Failed to start process {command}: {e.msg}"
 
@@ -1502,8 +2047,16 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     if outputWriteHandle == INVALID_HANDLE_VALUE:
       raiseOSError(osLastError(), "Failed to open write end of terminal pipe")
 
+    var flags: DWORD = 0
+    if self.config.runtime.get("experimental.terminal.enablePassthrough", false):
+      log lvlWarn, &"Enabling very experimental ContPTY passthrough mode."
+      # From windows terminal: Enable passthrough mode. This doesn't seem to be in the current windows version yet though.
+      flags = flags or PSEUDOCONSOLE_RESIZE_QUIRK
+      flags = flags or PSEUDOCONSOLE_WIN32_INPUT_MODE
+      flags = flags or PSEUDOCONSOLE_PASSTHROUGH_MODE
+
     var hPC: HPCON
-    if CreatePseudoConsole(wincon.COORD(X: width.SHORT, Y: height.SHORT), inputReadHandle, outputWriteHandle, 0, addr(hPC)) != S_OK:
+    if CreatePseudoConsole(wincon.COORD(X: width.SHORT, Y: height.SHORT), inputReadHandle, outputWriteHandle, flags, addr(hPC)) != S_OK:
       raiseOSError(osLastError(), "Failed to create pseude console")
 
     var pi: PROCESS_INFORMATION
@@ -1605,6 +2158,9 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     autoRunCommand: autoRunCommand,
     handles: handles,
     createPty: createPty,
+    kittyPathPrefix: kittyPathPrefix,
+    width: width,
+    height: height,
   )
 
   proc createChannel[T](channel: var ptr[system.Channel[T]]) =
@@ -1617,7 +2173,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
   result.terminalBuffer.initTerminalBuffer(width, height)
   asyncSpawn self.handleOutputChannel(result)
 
-  var threadState = ThreadState(
+  var threadState = TerminalThreadState(
     vtermInternal: vterm,
     screenInternal: screen,
     inputChannel: result.inputChannel,
@@ -1627,11 +2183,14 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
     cursor: (0, 0, true, true),
     autoRunCommand: autoRunCommand,
     handles: handles,
+    kitty: KittyState(
+      pathPrefix: kittyPathPrefix,
+    )
   )
 
   result.thread.createThread(terminalThread, threadState)
 
-proc createTerminal*(self: TerminalService, width: int, height: int, writeChannel: Arc[BaseChannel], readChannel: Arc[BaseChannel], autoRunCommand: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].} =
+proc createTerminal*(self: TerminalService, width: int, height: int, writeChannel: Arc[BaseChannel], readChannel: Arc[BaseChannel], autoRunCommand: string = "", kittyPathPrefix: string = ""): Terminal {.raises: [OSError, IOError, ResourceExhaustedError].} =
   let id = self.idCounter
   inc self.idCounter
 
@@ -1655,6 +2214,9 @@ proc createTerminal*(self: TerminalService, width: int, height: int, writeChanne
     autoRunCommand: autoRunCommand,
     handles: handles,
     useChannels: true,
+    kittyPathPrefix: kittyPathPrefix,
+    width: width,
+    height: height,
   )
 
   proc createChannel[T](channel: var ptr[system.Channel[T]]) =
@@ -1667,7 +2229,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, writeChanne
   result.terminalBuffer.initTerminalBuffer(width, height)
   asyncSpawn self.handleOutputChannel(result)
 
-  var threadState = ThreadState(
+  var threadState = TerminalThreadState(
     vtermInternal: vterm,
     screenInternal: screen,
     inputChannel: result.inputChannel,
@@ -1680,6 +2242,9 @@ proc createTerminal*(self: TerminalService, width: int, height: int, writeChanne
     useChannels: true,
     writeChannel: writeChannel,
     readChannel: readChannel,
+    kitty: KittyState(
+      pathPrefix: kittyPathPrefix,
+    )
   )
 
   result.thread.createThread(terminalThread, threadState)
@@ -1761,6 +2326,7 @@ method saveState*(self: TerminalView): JsonNode =
     slot: self.slot,
     focus: false,
     createPty: self.terminal.createPty,
+    kittyPathPrefix: self.terminal.kittyPathPrefix,
     ssh: self.terminal.ssh,
   ).toJson
 
@@ -1870,15 +2436,15 @@ proc updateModeEventHandlers(self: TerminalService, view: TerminalView) =
         self.handleKey(view, input, mods)
         Handled
 
-proc setSize*(self: TerminalView, width: int, height: int) =
-  if self.size != (width, height):
-    self.size = (width, height)
+proc setSize*(self: TerminalView, width: int, height: int, cellPixelWidth: int, cellPixelHeight: int) =
+  if self.size != (width, height, cellPixelWidth, cellPixelHeight):
+    self.size = (width, height, cellPixelWidth, cellPixelHeight)
     if self.terminal != nil:
-      self.terminal.sendEvent(InputEvent(kind: InputEventKind.Size, row: height, col: width))
+      self.terminal.sendEvent(InputEvent(kind: InputEventKind.Size, row: height, col: width, cellPixelWidth: cellPixelWidth, cellPixelHeight: cellPixelHeight))
 
 proc createTerminalView(self: TerminalService, command: string, options: CreateTerminalOptions, id: Id = idNone()): TerminalView =
   try:
-    let term = self.createTerminal(80, 50, command, options.args, options.autoRunCommand, options.createPty, options.ssh)
+    let term = self.createTerminal(80, 50, command, options.args, options.autoRunCommand, options.createPty, options.kittyPathPrefix, options.ssh)
     term.group = options.group
     term.setTheme(self.themes.theme)
 
@@ -2070,6 +2636,7 @@ proc runInTerminal*(self: TerminalService, shell: string, command: string, optio
     slot: options.slot,
     focus: options.focus,
     createPty: options.createPty,
+    kittyPathPrefix: options.kittyPathPrefix,
     ssh: options.ssh,
     args: options.args,
   ))

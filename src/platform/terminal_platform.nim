@@ -617,6 +617,38 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Co
         self.writeLine(pos + vec2(0, yOffset), line, italic)
       yOffset += 1
 
+proc handleCommand(builder: UINodeBuilder, platform: TerminalPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, offset: Vec2) =
+  const cursorFlags = &{CursorBlock, CursorBar, CursorUnderline, CursorBlinking}
+  case command.kind
+  of RenderCommandKind.Rect:
+    platform.drawRect(command.bounds + offset, command.color)
+  of RenderCommandKind.FilledRect:
+    if command.flags * cursorFlags != 0.UINodeFlags:
+      let pos = command.bounds + offset
+      platform.cursor.shape = command.flags * cursorFlags
+      platform.cursor.visible = true
+      platform.cursor.col = pos.x.int
+      platform.cursor.row = pos.y.int
+    else:
+      platform.fillRect(command.bounds + offset, command.color)
+  of RenderCommandKind.Image:
+    discard
+  of RenderCommandKind.TextRaw:
+    var text = newStringOfCap(command.len)
+    text.setLen(command.len)
+    copyMem(text[0].addr, command.data, command.len)
+    platform.buffer.setBackgroundColor(bgNone)
+    platform.writeText(command.bounds.xy + offset, text, command.color, renderCommands.spacesColor, renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
+  of RenderCommandKind.Text:
+    # todo: don't copy string data
+    let text = renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
+    platform.buffer.setBackgroundColor(bgNone)
+    platform.writeText(command.bounds.xy + offset, text, command.color, renderCommands.spacesColor, renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
+  of RenderCommandKind.ScissorStart:
+    platform.pushMask(command.bounds + offset)
+  of RenderCommandKind.ScissorEnd:
+    platform.popMask()
+
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
   {.gcsafe.}:
     var nodePos = offset
@@ -663,66 +695,16 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
 
+    for list in node.renderCommandList:
+      for command in list.commands:
+        handleCommand(builder, platform, list[].addr, command, nodePos)
+      for command in list[].decodeRenderCommands:
+        handleCommand(builder, platform, list[].addr, command, nodePos)
+
     for command in node.renderCommands.commands:
-      case command.kind
-      of RenderCommandKind.Rect:
-        platform.drawRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.FilledRect:
-        if command.flags * cursorFlags != 0.UINodeFlags:
-          let pos = command.bounds + nodePos
-          platform.cursor.shape = command.flags * cursorFlags
-          platform.cursor.visible = true
-          platform.cursor.col = pos.x.int
-          platform.cursor.row = pos.y.int
-        else:
-          platform.fillRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.Image:
-        discard
-      of RenderCommandKind.TextRaw:
-        var text = newStringOfCap(command.len)
-        text.setLen(command.len)
-        copyMem(text[0].addr, command.data, command.len)
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-      of RenderCommandKind.Text:
-        # todo: don't copy string data
-        let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-      of RenderCommandKind.ScissorStart:
-        platform.pushMask(command.bounds + nodePos)
-      of RenderCommandKind.ScissorEnd:
-        platform.popMask()
+      handleCommand(builder, platform, node.renderCommands.addr, command, nodePos)
     for command in node.renderCommands.decodeRenderCommands:
-      case command.kind
-      of RenderCommandKind.Rect:
-        platform.drawRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.FilledRect:
-        if command.flags * cursorFlags != 0.UINodeFlags:
-          let pos = command.bounds + nodePos
-          platform.cursor.shape = command.flags * cursorFlags
-          platform.cursor.visible = true
-          platform.cursor.col = pos.x.int
-          platform.cursor.row = pos.y.int
-        else:
-          platform.fillRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.Image:
-        discard
-      of RenderCommandKind.TextRaw:
-        var text = newStringOfCap(command.len)
-        text.setLen(command.len)
-        copyMem(text[0].addr, command.data, command.len)
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-      of RenderCommandKind.Text:
-        # todo: don't copy string data
-        let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-      of RenderCommandKind.ScissorStart:
-        platform.pushMask(command.bounds + nodePos)
-      of RenderCommandKind.ScissorEnd:
-        platform.popMask()
+      handleCommand(builder, platform, node.renderCommands.addr, command, nodePos)
 
     if DrawBorderTerminal in node.flags:
       platform.drawRect(bounds, node.borderColor)

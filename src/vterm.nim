@@ -340,6 +340,8 @@ proc getCbdata*(state: ptr VTermState): pointer {.importc: "vterm_state_get_cbda
 proc setUnrecognisedFallbacks*(state: ptr VTermState; fallbacks: ptr VTermStateFallbacks; user: pointer) {.importc: ":".}
 proc getUnrecognisedFbdata*(state: ptr VTermState): pointer {.importc: "vterm_state_get_unrecognised_fbdata".}
 proc reset*(state: ptr VTermState; hard: cint) {.importc: "vterm_state_reset".}
+proc moveCursor*(state: ptr VTermState; cols: cint; rows: cint) {.importc: "vterm_state_move_cursor".}
+proc setCursor*(state: ptr VTermState; col: cint; row: cint) {.importc: "vterm_state_set_cursor".}
 proc getCursorpos*(state: ptr VTermState; cursorpos: ptr VTermPos) {.importc: "vterm_state_get_cursorpos".}
 proc getDefaultColors*(state: ptr VTermState; default_fg: ptr VTermColor; default_bg: ptr VTermColor) {.importc: "vterm_state_get_default_colors".}
 proc getPaletteColor*(state: ptr VTermState; index: cint; col: ptr VTermColor) {.importc: "vterm_state_get_palette_color".}

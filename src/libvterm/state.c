@@ -2149,6 +2149,22 @@ void vterm_state_reset(VTermState *state, int hard)
   }
 }
 
+void vterm_state_move_cursor(VTermState *state, int cols, int rows)
+{
+  VTermPos oldpos = state->pos;
+  state->pos.col += cols;
+  state->pos.row += rows;
+  updatecursor(state, &oldpos, 0);
+}
+
+void vterm_state_set_cursor(VTermState *state, int col, int row)
+{
+  VTermPos oldpos = state->pos;
+  state->pos.col = col;
+  state->pos.row = row;
+  updatecursor(state, &oldpos, 0);
+}
+
 void vterm_state_get_cursorpos(const VTermState *state, VTermPos *cursorpos)
 {
   *cursorpos = state->pos;

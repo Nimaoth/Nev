@@ -1,4 +1,5 @@
-import vmath
+import std/[atomics, locks]
+import vmath, chroma
 import ui/node
 import misc/[event, timer]
 import input, vfs, app_options, scripting_api, pixie
@@ -55,8 +56,38 @@ method getStatisticsString*(self: Platform): string {.base, gcsafe, raises: [].}
 method layoutText*(self: Platform, text: string): seq[Rect] {.base, gcsafe, raises: [].} = discard
 method setVsync*(self: Platform, enabled: bool) {.base, gcsafe, raises: [].} = discard
 method moveToMonitor*(self: Platform, index: int) {.base, gcsafe, raises: [].} = discard
-method createTexture*(self: Platform, image: Image): TextureId {.base, gcsafe, raises: [].} = discard
-method deleteTexture*(self: Platform, texture: TextureId) {.base, gcsafe, raises: [].} = discard
+
+var texturesToUpload: seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.Color]]]
+var texturesToDelete: seq[TextureId]
+var texturesLock*: Lock
+texturesLock.initLock()
+
+proc takeTexturesToUpload*(): seq[tuple[id: TextureId, width: int, height: int, data: seq[chroma.Color]]] =
+  {.gcsafe.}:
+    withLock(texturesLock):
+      swap(result, texturesToUpload)
+
+proc takeTexturesToDelete*(): seq[TextureId] =
+  {.gcsafe.}:
+    withLock(texturesLock):
+      swap(result, texturesToDelete)
+
+var reserveTextureImpl*: proc(): TextureId {.gcsafe, raises: [].}
+proc createTexture*(width: int, height: int, data: sink seq[chroma.Color]): TextureId =
+  {.gcsafe.}:
+    withLock(texturesLock):
+      if reserveTextureImpl == nil:
+        return 0.TextureId
+      let id = reserveTextureImpl()
+      texturesToUpload.add((id, width, height, data))
+      return id
+
+proc deleteTexture*(id: TextureId) =
+  {.gcsafe.}:
+    withLock(texturesLock):
+      if reserveTextureImpl == nil:
+        return
+      texturesToDelete.add(id)
 
 func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance
 
