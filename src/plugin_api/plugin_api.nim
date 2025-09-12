@@ -7,7 +7,7 @@ import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service
-import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database
+import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 from scripting_api as sca import nil
 

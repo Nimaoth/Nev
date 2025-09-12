@@ -52,7 +52,7 @@ proc drawImages(self: TerminalView, builder: UINodeBuilder, renderCommands: var 
           bounds.w = s.sw.float
         bounds.h = bounds.w * s.sh.float / s.sw.float
 
-      echo &"render image {s.textureId.int} {bounds}, cell size: {builder.charWidth}x{builder.lineHeight}"
+      # echo &"render image {s.textureId.int} {bounds}, cell size: {builder.charWidth}x{builder.lineHeight}"
       drawImage(bounds, s.textureId)
 
 method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
