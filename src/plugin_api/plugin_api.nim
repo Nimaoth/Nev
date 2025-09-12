@@ -50,7 +50,6 @@ type
     settings*: ConfigStore
     vfsService*: VFSService
     vfs*: VFS
-    moves*: MoveDatabase
     timer*: Timer
 
   InstanceData = object of InstanceDataWasi
@@ -160,7 +159,6 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.settings = services.getService(ConfigService).get.runtime
   self.host.vfsService = services.getService(VFSService).get
   self.host.vfs = self.host.vfsService.vfs
-  self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
 
   self.engine = engine
