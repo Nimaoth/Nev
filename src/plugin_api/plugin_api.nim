@@ -903,7 +903,7 @@ proc processProcessStart(instance: ptr InstanceData; name: sink string; args: si
 
 proc processStdout(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource =
   if self.stdout.isNil:
-    self.stdout = newProcessOutputChannel(self.process)
+    self.stdout = self.process.stdout
   return ReadChannelResource(channel: self.stdout)
 
 proc processStderr(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource =
@@ -912,5 +912,5 @@ proc processStderr(instance: ptr InstanceData; self: var ProcessResource): ReadC
 
 proc processStdin(instance: ptr InstanceData; self: var ProcessResource): WriteChannelResource =
   if self.stdin.isNil:
-    self.stdin = newProcessInputChannel(self.process)
+    self.stdin = self.process.stdin
   return WriteChannelResource(channel: self.stdin)

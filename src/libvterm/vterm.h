@@ -448,6 +448,7 @@ typedef struct {
   int (*apc)(VTermStringFragment frag, void *user);
   int (*pm)(VTermStringFragment frag, void *user);
   int (*sos)(VTermStringFragment frag, void *user);
+  int (*reset)(int hard, void *user);
 } VTermStateFallbacks;
 
 typedef struct {

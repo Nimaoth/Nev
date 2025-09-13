@@ -21,7 +21,6 @@ type
     boxy: Boxy
     currentModifiers: Modifiers
     currentMouseButtons: set[MouseButton]
-    eventCounter: int
 
     fontRegular: string
     fontBold*: string

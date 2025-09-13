@@ -165,6 +165,15 @@ block: ## Parse command line options
       of "session", "s":
         opts.sessionOverride = val.some
 
+      of "nopty":
+        opts.noPty = true
+
+      of "noui":
+        opts.noUI = true
+
+      of "kittykey":
+        opts.kittyKeyboardFlags = val
+
       of "monitor":
         opts.monitor = val.parseInt.some.catch:
           echo "Expected integer for monitor: --monitor:1"
@@ -306,7 +315,7 @@ import ui/node
 
 import chronos/config
 
-proc run(app: App, plat: Platform, backend: Backend) =
+proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
   var frameIndex = 0
   var frameTime = 0.0
 
@@ -452,7 +461,7 @@ gServices.waitForServices()
 
 proc main() =
   let app = waitFor newApp(backend.get, plat, gServices, opts)
-  run(app, plat, backend.get)
+  run(app, plat, backend.get, opts)
 
   try:
     log lvlInfo, "Shutting down editor"

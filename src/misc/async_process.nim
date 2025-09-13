@@ -56,9 +56,9 @@ type AsyncProcess* = ref object
   onRestartFailed*: proc(): Future[void] {.gcsafe, raises: [].}
   dontRestart: bool
   process: Process
-  input: AsyncChannel[char]
-  output: AsyncChannel[Option[string]]
-  error: AsyncChannel[char]
+  stdin*: Arc[BaseChannel]
+  stdout*: Arc[BaseChannel]
+  stderr*: Arc[BaseChannel]
   inputStreamChannel: Arc[OwnedChannel[Option[ProcessObj]]]
   outputStreamChannel: Arc[OwnedChannel[Option[ProcessObj]]]
   errorStreamChannel: Arc[OwnedChannel[Option[ProcessObj]]]
@@ -90,9 +90,9 @@ proc destroy*(process: AsyncProcess) =
   process.errorStreamChannel.getMutUnsafe.channel.send ProcessObj.none
   process.onRestarted = nil
   process.onRestartFailed = nil
-  process.input.close()
-  process.output.close()
-  process.error.close()
+  process.stdin.close()
+  process.stdout.close()
+  process.stderr.close()
 
 proc peek*[T](achan: AsyncChannel[T]): int =
   return achan.chan.getMutUnsafe.channel.peek
@@ -249,10 +249,6 @@ proc send*[T](achan: AsyncChannel[T], data: sink T) {.async.} =
   while not achan.closed and not achan.chan.getMutUnsafe.channel.trySend(data.move):
     await sleepAsync 10.milliseconds
 
-proc sendSync*[T](achan: AsyncChannel[T], data: sink T) =
-  if not achan.closed:
-    achan.chan.getMutUnsafe.channel.send(data.move)
-
 proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
   bind milliseconds
 
@@ -265,107 +261,41 @@ proc recv*[T](achan: AsyncChannel[T]): Future[Option[T]] {.async.} =
 
   return T.none
 
-proc recvAvailable*[char](achan: AsyncChannel[char], res: var seq[uint8]) =
-  while not achan.closed:
-    let (ok, data) = achan.chan.getMutUnsafe.channel.tryRecv()
-    if not ok:
-      return
-
-    res.add(data.uint8)
-
-proc recvAvailable*[char](achan: AsyncChannel[char], res: var string) =
-  while not achan.closed:
-    let (ok, data) = achan.chan.getMutUnsafe.channel.tryRecv()
-    if not ok:
-      return
-
-    res.add(data)
-
-proc recvAvailable*[char](achan: AsyncChannel[char], res: var openArray[uint8]): int =
-  result = 0
-  while not achan.closed and result < res.len:
-    let (ok, data) = achan.chan.getMutUnsafe.channel.tryRecv()
-    if not ok:
-      return
-
-    res[result] = data.uint8
-    # res[result].addr[] = data.uint8
-    inc result
-
-proc recv*(process: AsyncProcess, amount: int): Future[string] =
-  if process.input.isNil or process.input.chan.isNil:
-    result = newFuture[string]("recv")
-    result.fail(newException(IOError, "(recv) Input stream closed while reading"))
-    return result
-  return process.input.recv(amount)
+proc recv*(process: AsyncProcess, amount: int): Future[string] {.async: (raises: [IOError]).} =
+  if process.stdout.isNil or process.stdout.atEnd:
+    raise newException(IOError, "(peek) Input stream closed")
+  var buffer = newString(amount)
+  var i = 0
+  while i < amount and not process.stdout.atEnd():
+    i += process.stdout.read(buffer.toOpenArrayByte(i, amount - 1))
+    catch(await sleepAsync 5.milliseconds):
+      discard
+  return buffer
 
 proc peek*(process: AsyncProcess): int =
-  if process.input.isNil or process.input.chan.isNil:
+  if process.stdout.isNil or process.stdout.atEnd:
     raise newException(IOError, "(peek) Input stream closed")
-  return process.input.peek()
-
-proc recvAvailable*(process: AsyncProcess, res: var seq[uint8]) {.raises: [IOError].} =
-  if process.input.isNil or process.input.chan.isNil:
-    raise newException(IOError, "(recvLine) Input stream closed while reading")
-  try:
-    process.input.recvAvailable(res)
-  except ValueError as e:
-    raise newException(IOError, "(recvAvailable) Error while reading", e)
-
-proc recvAvailable*(process: AsyncProcess, res: var string) {.raises: [IOError].} =
-  if process.input.isNil or process.input.chan.isNil:
-    raise newException(IOError, "(recvLine) Input stream closed while reading")
-  try:
-    process.input.recvAvailable(res)
-  except ValueError as e:
-    raise newException(IOError, "(recvAvailable) Error while reading", e)
-
-proc recvAvailable*(process: AsyncProcess, res: var openArray[uint8]): int {.raises: [IOError].} =
-  if process.input.isNil or process.input.chan.isNil:
-    raise newException(IOError, "(recvLine) Input stream closed while reading")
-  try:
-    process.input.recvAvailable(res)
-  except ValueError as e:
-    raise newException(IOError, "(recvAvailable) Error while reading", e)
+  discard process.stdout.flushRead()
+  return process.stdout.peek()
 
 proc recvLine*(process: AsyncProcess): Future[string] =
-  if process.input.isNil or process.input.chan.isNil:
-    result = newFuture[string]("recv")
-    result.fail(newException(IOError, "(recvLine) Input stream closed while reading"))
-    return result
-  return process.input.recvLine()
-
-proc tryRecvLine*(process: AsyncProcess): Future[Option[string]] {.async.} =
-  if process.input.isNil or process.input.chan.isNil:
-    return string.none
-  return process.input.tryRecvLine().await
+  return process.stdout.readLine()
 
 proc recvErrorLine*(process: AsyncProcess): Future[string] =
-  if process.error.isNil or process.error.chan.isNil:
-    result = newFuture[string]("recvError")
-    result.fail(newException(IOError, "(recvLine) Error stream closed while reading"))
-    return result
-  return process.error.recvLine()
-
-proc sendSync*(process: AsyncProcess, data: sink string) =
-  if process.output.isNil or process.output.chan.isNil:
-    return
-  process.output.sendSync(data.some)
+  return process.stderr.readLine()
 
 proc send*(process: AsyncProcess, data: string): Future[void] =
-  if process.output.isNil or process.output.chan.isNil:
+  if process.stdin.isNil or not process.stdin.isOpen:
     return
-  return process.output.send(data)
+  process.stdin.write(data.toOpenArrayByte(0, data.high))
+  return doneFuture()
 
-proc readInput(chan: Arc[OwnedChannel[Option[ProcessObj]]], serverDiedNotifications: Arc[OwnedChannel[bool]], data: Arc[OwnedChannel[char]], data2: Arc[OwnedChannel[Option[string]]], output: bool, name: string): NoExceptionDestroy =
+proc readInput(chan: Arc[OwnedChannel[Option[ProcessObj]]], serverDiedNotifications: Arc[OwnedChannel[bool]], stdout: Arc[BaseChannel], output: bool, name: string): NoExceptionDestroy =
   while true:
     var process = Process.new
     if chan.getMutUnsafe.channel.recv.getSome(chan):
       process[] = chan
     else:
-      # Send none to writeOutput to make it abandon the current stream
-      # and recheck, causing it to also get a nil stream and stop
-      data2.getMutUnsafe.channel.send string.none
       break
 
     var stream: Stream
@@ -376,15 +306,13 @@ proc readInput(chan: Arc[OwnedChannel[Option[ProcessObj]]], serverDiedNotificati
       stream = process.errorStream()
       process.errStream = nil
 
+    var buffer = newString(100 * 1024)
     while true:
       try:
-        let c = stream.readChar()
-
-        data.getMutUnsafe.channel.send c
-
-        if c == '\0':
-          # echo "server died"
-          data2.getMutUnsafe.channel.send string.none
+        let read = stream.readData(buffer[0].addr, buffer.len)
+        if read > 0:
+          stdout.write buffer.toOpenArray(0, read - 1)
+        else:
           serverDiedNotifications.getMutUnsafe.channel.send true
           break
       except CatchableError:
@@ -394,7 +322,7 @@ proc readInput(chan: Arc[OwnedChannel[Option[ProcessObj]]], serverDiedNotificati
     # todo: figure out when to close the stream
     # stream.close()
 
-proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], data: Arc[OwnedChannel[Option[string]]]): NoExceptionDestroy =
+proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseChannel]): NoExceptionDestroy =
   var buffer: seq[string]
   while true:
     var process = Process.new
@@ -406,25 +334,20 @@ proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], data: Arc[OwnedCha
     let stream = process.inputStream()
     process.inStream = nil
 
-    while true:
+    var buffer = newString(100 * 1024)
+    while not stdin.atEnd:
       try:
-
-        let d = data.getMutUnsafe.channel.recv
-        if d.isNone:
-          # echo "data none"
-          buffer.setLen 0
-          break
-
-        # echo "> " & d.get
-        buffer.add d.get
-
-        for d in buffer:
-          stream.write(d)
-        buffer.setLen 0
+        let read = stdin.read(buffer.toOpenArrayByte(0, buffer.high))
+        if read > 0:
+          assert read <= buffer.len
+          stream.writeData(buffer[0].addr, read)
 
         # flush is required on linux
         # todo: Only flush when \n was written? Don't flush on
         stream.flush()
+
+        # todo: wait for stdin signal instead
+        sleep(1)
 
       except CatchableError:
         # echo "ioerror"
@@ -451,13 +374,13 @@ proc start*(process: AsyncProcess): bool =
     if process.killOnExit:
       discard AssignProcessToJobObject(jobObject, process.process.osProcessHandle())
 
-  process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan, true, process.name & ".output"))
+  process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.stdout, true, process.name & ".output"))
   process.inputStreamChannel.getMutUnsafe.channel.send process.process[].some
 
-  process.errorReaderFlowVar = spawn(readInput(process.errorStreamChannel, process.serverDiedNotifications, process.error.chan, process.output.chan, false, process.name & ".error"))
+  process.errorReaderFlowVar = spawn(readInput(process.errorStreamChannel, process.serverDiedNotifications, process.stderr, false, process.name & ".error"))
   process.errorStreamChannel.getMutUnsafe.channel.send process.process[].some
 
-  process.writerFlowVar = spawn(writeOutput(process.outputStreamChannel, process.output.chan))
+  process.writerFlowVar = spawn(writeOutput(process.outputStreamChannel, process.stdin))
   process.outputStreamChannel.getMutUnsafe.channel.send process.process[].some
 
   return true
@@ -496,9 +419,9 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
   process.info.name = name
   process.args = @args
   process.dontRestart = not autoRestart
-  process.input = newAsyncChannel[char]("input")
-  process.error = newAsyncChannel[char]("error")
-  process.output = newAsyncChannel[Option[string]]("output")
+  process.stdin = newInMemoryChannel()
+  process.stdout = newInMemoryChannel()
+  process.stderr = newInMemoryChannel()
   process.killOnExit = killOnExit
   process.eval = eval
   process.errToOut = errToOut
@@ -661,89 +584,3 @@ proc runProcessAsyncCallback*(name: string, args: seq[string] = @[], workingDir:
 
   except CatchableError:
     log lvlError, &"Failed to start process {name}, {args}"
-
-type
-  ProcessOutputChannel* = object of BaseChannel
-    process*: AsyncProcess
-    isPolling: bool
-
-  ProcessInputChannel* = object of BaseChannel
-    process*: AsyncProcess
-
-proc isOpen*(self: ptr ProcessOutputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
-proc close*(self: ptr ProcessOutputChannel) = discard
-proc peek*(self: ptr ProcessOutputChannel): int = self.process.peek.catch(0)
-proc read*(self: ptr ProcessOutputChannel, res: var openArray[uint8]): int {.raises: [IOError].} = self.process.recvAvailable(res)
-proc flushRead*(self: ptr ProcessOutputChannel): int {.raises: [IOError].} = self.peek()
-
-proc listenPoll*(self: Arc[ProcessOutputChannel]) {.async: (raises: []).} =
-  let self = self.getMutUnsafe.addr
-  if self.isPolling:
-    return
-  self.isPolling = true
-  defer:
-    self.isPolling = false
-
-  while self.isOpen or self.peek > 0:
-    if self.peek > 0:
-      self[].fireEvent(false)
-
-    if self.listeners.len == 0:
-      return
-
-    if not self.isOpen:
-      break
-
-    try:
-      await sleepAsync(10.milliseconds)
-    except CatchableError:
-      discard
-
-  self[].fireEvent(true)
-
-proc listen*(self: Arc[ProcessOutputChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} =
-  result = self.getMutUnsafe.listeners.add(cb)
-  if not self.get.isPolling:
-    asyncSpawn self.listenPoll()
-
-proc newProcessOutputChannel*(process: AsyncProcess): Arc[BaseChannel] =
-  let signal = ThreadSignalPtr.new()
-  var res = Arc[ProcessOutputChannel].new()
-  res.getMut() = ProcessOutputChannel(
-    process: process,
-    signal: signal.value,
-    destroyImpl: destroyChannelImpl(ProcessOutputChannel),
-    closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr ProcessOutputChannel](self))),
-    isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr ProcessOutputChannel](self)),
-    peekImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = peek(cast[ptr ProcessOutputChannel](self)),
-    writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = discard,
-    readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = read(cast[ptr ProcessOutputChannel](self), res),
-    flushReadImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].} = flushRead(cast[ptr ProcessOutputChannel](self)),
-    listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listen(self.cloneAs(ProcessOutputChannel), cb),
-  )
-  return cast[ptr Arc[BaseChannel]](res.addr)[].clone()
-
-proc isOpen*(self: ptr ProcessInputChannel): bool = self.process != nil and self.process.isAlive.catch(false)
-proc close*(self: ptr ProcessInputChannel) = discard
-proc write*(self: ptr ProcessInputChannel, data: openArray[uint8]) {.raises: [IOError].} =
-  var str = newString(data.len)
-  if data.len > 0:
-    copyMem(str[0].addr, data[0].addr, data.len)
-  self.process.sendSync(str.ensureMove)
-
-proc newProcessInputChannel*(process: AsyncProcess): Arc[BaseChannel] =
-  let signal = ThreadSignalPtr.new()
-  var res = Arc[ProcessInputChannel].new()
-  res.getMut() = ProcessInputChannel(
-    process: process,
-    signal: signal.value,
-    destroyImpl: destroyChannelImpl(ProcessInputChannel),
-    closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr ProcessInputChannel](self))),
-    isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr ProcessInputChannel](self)),
-    peekImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = 0,
-    writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr ProcessInputChannel](self), data),
-    readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = 0,
-    flushReadImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].} = 0,
-    listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = 0.ListenId,
-  )
-  return cast[ptr Arc[BaseChannel]](res.addr)[].clone()

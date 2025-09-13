@@ -939,8 +939,10 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
     }
 
     switch(leader[0]) {
-    case '?':
+    case '<':
+    case '=':
     case '>':
+    case '?':
       leader_byte = leader[0];
       break;
     default:
@@ -2147,6 +2149,9 @@ void vterm_state_reset(VTermState *state, int hard)
     VTermRect rect = { 0, state->rows, 0, state->cols };
     erase(state, rect, 0);
   }
+
+  if(state->fallbacks && state->fallbacks->reset)
+    (*state->fallbacks->reset)(hard, state->fbdata);
 }
 
 void vterm_state_move_cursor(VTermState *state, int cols, int rows)

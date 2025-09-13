@@ -1,4 +1,4 @@
-import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm]
+import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets]
 import vmath
 import chroma, pixie, pixie/fileformats/png
 import nimsumtree/[rope, arc]
@@ -161,11 +161,14 @@ type
     modifiers: Modifiers
     row: int
     col: int
+    noKitty: bool
     case kind: InputEventKind
     of InputEventKind.Text, InputEventKind.Paste:
       text: string
     of InputEventKind.Key:
       input: int64
+      action: InputAction
+
     of InputEventKind.MouseMove:
       discard
     of InputEventKind.MouseClick:
@@ -283,6 +286,13 @@ type
     images*: Table[int, tuple[width, height: int, textureId: TextureId]]
     placements*: Table[(int, int), PlacedImage]
 
+  KittyKeyboardState = enum
+    DisambiguateEscapeCodes
+    ReportEventTypes
+    ReportAlternateKeys
+    ReportAllKeysAsEscapeCodes
+    ReportAssociatedText
+
   TerminalThreadState = object
     vtermInternal: pointer
     screenInternal: pointer
@@ -308,8 +318,12 @@ type
     sixel: SixelState
     kitty: KittyState
     sixels: Table[(int, int), Sixel]
-
+    alternateScreen: bool
+    kittyKeyboardMain: seq[set[KittyKeyboardState]]
+    kittyKeyboardAlternate: seq[set[KittyKeyboardState]]
+    outputBuffer: string
     handles: OsHandles
+    sizeRequested: bool # Whether the size was requested use CSI 14/15/16/18 t
     when defined(windows):
       outputOverlapped: OVERLAPPED
       waitingForOvelapped: bool
@@ -338,6 +352,7 @@ type
 
     # Events
     lastUpdateTime: timer.Timer
+    lastEventTime: timer.Timer
     onTerminated: Event[Option[int]]
     onRope: Event[ptr Rope]
     onUpdated: Event[void]
@@ -561,12 +576,14 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
       var event = terminal.outputChannel[].recv()
       case event.kind
       of OutputEventKind.TerminalBuffer:
+        # debugf"time since last input: {terminal.lastEventTime.elapsed.ms}"
         self.handleBufferOutputEvent(terminal, event)
       of OutputEventKind.Size:
         terminal.width = event.width
         terminal.height = event.height
         terminal.pixelWidth = event.pixelWidth
         terminal.pixelHeight = event.pixelHeight
+
         when defined(enableLibssh):
           if terminal.ssh.isSome:
             sshAsyncWait "update terminal size":
@@ -624,14 +641,274 @@ proc handleOutput(s: cstring; len: csize_t; user: pointer) {.cdecl.} =
       else:
         discard write(state.handles.masterFd, s[0].addr, len.int)
 
+proc flushOutput(s: var TerminalThreadState) =
+  if s.outputBuffer.len > 0:
+    handleOutput(cast[cstring](s.outputBuffer[0].addr), s.outputBuffer.len.csize_t, s.addr)
+    s.outputBuffer.setLen(0)
+
+proc sendOutput(s: var TerminalThreadState, raw: openArray[char]) =
+  if raw.len == 0:
+    return
+  if s.outputBuffer.len > 0:
+    handleOutput(cast[cstring](s.outputBuffer[0].addr), s.outputBuffer.len.csize_t, s.addr)
+    s.outputBuffer.setLen(0)
+
+  handleOutput(cast[cstring](raw[0].addr), raw.len.csize_t, s.addr)
+
+proc sendOutput(s: ptr TerminalThreadState, raw: openArray[char]) =
+  s[].sendOutput(raw)
+
+proc sendOutputBuffered(s: var TerminalThreadState, raw: openArray[char]) =
+  if raw.len == 0:
+    return
+  let oldLen = s.outputBuffer.len
+  s.outputBuffer.setLen(oldLen + raw.len)
+  copyMem(s.outputBuffer[oldLen].addr, raw[0].addr, raw.len)
+
+proc kittyKeyboardFlags(state: var TerminalThreadState): set[KittyKeyboardState] =
+  if state.alternateScreen:
+    if state.kittyKeyboardAlternate.len > 0:
+      return state.kittyKeyboardAlternate.last
+    return {}
+  else:
+    if state.kittyKeyboardMain.len > 0:
+      return state.kittyKeyboardMain.last
+    return {}
+
+type
+  KittyEncodingData = object
+    key: uint32
+    shiftedKey: uint32
+    alternateKey: uint32
+    addAlternates: bool
+    hasMods: bool
+    addActions: bool
+    addText: bool
+    encodedMods: string
+    text: string
+    action: InputAction
+
+proc inputToKittyKey(input: int): (uint32, char) =
+  case input
+  of INPUT_ENTER: (13, 'u')
+  of INPUT_ESCAPE: (27, 'u')
+  of INPUT_BACKSPACE: (127, 'u')
+  of INPUT_SPACE: (' '.uint32, 'u')
+  of INPUT_DELETE: (3, '~')
+  of INPUT_TAB: (9, 'u')
+  of INPUT_LEFT: (1, 'D')
+  of INPUT_RIGHT: (1, 'C')
+  of INPUT_UP: (1, 'A')
+  of INPUT_DOWN: (1, 'B')
+  of INPUT_HOME: (1, 'H')
+  of INPUT_END: (1, 'F')
+  of INPUT_PAGE_UP: (5, '~')
+  of INPUT_PAGE_DOWN: (6, '~')
+  of INPUT_F1: (1, 'P')
+  of INPUT_F2: (1, 'Q')
+  of INPUT_F3: (13, '~')
+  of INPUT_F4: (1, 'S')
+  of INPUT_F5: (15, '~')
+  of INPUT_F6: (17, '~')
+  of INPUT_F7: (18, '~')
+  of INPUT_F8: (19, '~')
+  of INPUT_F9: (20, '~')
+  of INPUT_F10: (21, '~')
+  of INPUT_F11: (23, '~')
+  of INPUT_F12: (24, '~')
+  else:
+    (input.uint32, 'u')
+
+proc serialize(state: var TerminalThreadState, data: KittyEncodingData, csiTrailer: char) =
+  # echo &"serialize {data}"
+  var buffer = "\e["
+  let secondUsed = data.hasMods or data.addActions
+  let thirdUsed = data.addText
+
+  if data.key != 1 or data.addAlternates or secondUsed or thirdUsed:
+    buffer.add $data.key
+
+  if data.addAlternates:
+    buffer.add ":"
+    if data.shiftedKey != 0:
+      buffer.add $data.shiftedKey
+    if data.alternateKey != 0:
+      buffer.add ":"
+      buffer.add $data.alternateKey
+
+  if secondUsed or thirdUsed:
+    buffer.add ";"
+    if secondUsed:
+      buffer.add data.encodedMods
+    if data.addActions:
+      buffer.add ":"
+      buffer.add $(data.action.int + 1)
+
+  if thirdUsed:
+    for i, r in data.text:
+      if i == 0:
+        buffer.add ";"
+      else:
+        buffer.add ":"
+
+      buffer.add $r.int
+
+  buffer.add csiTrailer
+  state.sendOutputBuffered(buffer)
+
+proc encodeLegacyFunctionalKeyWithMods(state: var TerminalThreadState, event: InputEvent): bool =
+  var prefix = ""
+  if Alt in event.modifiers:
+    prefix = "\x1b"
+  case event.input
+  of INPUT_ENTER:
+    state.sendOutputBuffered(prefix)
+    state.sendOutputBuffered("\x0d")
+    return true
+  of INPUT_ESCAPE:
+    state.sendOutputBuffered(prefix)
+    state.sendOutputBuffered("\x1b")
+    return true
+  of INPUT_BACKSPACE:
+    state.sendOutputBuffered(prefix)
+    if Control in event.modifiers:
+      state.sendOutputBuffered("\x08")
+    else:
+      state.sendOutputBuffered("\x7f")
+    return true
+  of INPUT_TAB:
+    if Shift in event.modifiers:
+      if Alt in event.modifiers:
+        state.sendOutputBuffered("\x1b")
+      state.sendOutputBuffered("\x1b[Z")
+    else:
+      state.sendOutputBuffered(prefix)
+      state.sendOutputBuffered("\t")
+    return true
+  else:
+    return false
+
+# proc encodeFunctionKey(state: var TerminalThreadState, event: InputEvent): bool =
+
+proc encodeKittyKey(state: var TerminalThreadState, event: InputEvent) =
+  # if event.input < 0:
+  #   state.encodeFunctionKey(event)
+  let kittyKeyboardFlags = state.kittyKeyboardFlags
+  let reportText = ReportAllKeysAsEscapeCodes in kittyKeyboardFlags
+  let sendTextStandalone = not reportText
+
+  var input = event.input
+  var modifiers = event.modifiers
+  let text = if event.input > 0:
+    if modifiers == {} and event.input.Rune.isUpper:
+      input = event.input.Rune.toLower.int
+      modifiers.incl Shift
+      $event.input.Rune
+    elif modifiers == {}:
+      $event.input.Rune
+    elif modifiers == {Shift} and event.input.Rune.isUpper:
+      input = event.input.Rune.toLower.int
+      $event.input.Rune
+    elif modifiers == {Shift}:
+      $event.input.Rune
+    else:
+      ""
+  else:
+    if modifiers == {}:
+      case event.input
+      of INPUT_TAB:
+        "\t"
+      of INPUT_SPACE:
+        " "
+      of INPUT_BACKSPACE:
+        "\x7f"
+      of INPUT_ENTER:
+        "\r"
+      else:
+        ""
+    else:
+      ""
+
+  # echo &"encodeKittyKey text: '{text}', "
+  if sendTextStandalone and text.len > 0 and event.action in {InputAction.Press, Repeat}:
+    # echo &"sendTextStandalone '{text}'"
+    state.sendOutputBuffered(text)
+    return
+
+  var (key, csiSuffix) = inputToKittyKey(event.input)
+  var shiftedKey = event.input.uint32
+  var alternateKey = 0.uint32
+  if event.input > 0 and event.input.Rune.isUpper:
+    shiftedKey = event.input.uint32
+    key = event.input.Rune.toLower.uint32
+
+  var data = KittyEncodingData(
+    key: key,
+    addActions: ReportEventTypes in kittyKeyboardFlags and event.action != Press,
+    hasMods: modifiers != {},
+    addAlternates: ReportAlternateKeys in kittyKeyboardFlags and ((Shift in modifiers) and shiftedKey > 0 or alternateKey > 0), # ...,
+    addText: ReportAssociatedText in kittyKeyboardFlags and text.len > 0,
+    text: text,
+    action: Press,
+  )
+  if data.addAlternates:
+    if Shift in modifiers:
+      data.shiftedKey = shiftedKey
+    data.alternateKey = alternateKey
+  var mods = 0
+  if Shift in modifiers:
+    mods = mods or 0x1
+  if Alt in modifiers:
+    mods = mods or 0x2
+  if Control in modifiers:
+    mods = mods or 0x4
+  if Super in modifiers:
+    mods = mods or 0x8
+
+  data.encodedMods = $(mods + 1)
+  let simpleEncodingOk = not data.addActions and not data.addAlternates and not data.addText
+  # if simpleEncodingOk:
+  #   if not data.hasMods:
+  #     state.vterm.uniChar(' '.uint32, modifiers.toVtermModifiers)
+  #   else:
+  #     state.serialize(data, csiSuffix)
+  # else:
+  state.serialize(data, csiSuffix)
+
+  # var buffer = "\e["
+  # buffer.add "u"
+
+  # if event.input > 0:
+  #   buffer.add $event.input
+  #   # if ReportAlternateKeys in kittyKeyboardFlags:
+  #   #   buffer.add ":"
+  #   #   buffer.add ":"
+  #     buffer.add ":"
+  # elif event.input < 0:
+  #   case event.input
+  #   of INPUT_SPACE:
+  #     state.vterm.uniChar(' '.uint32, modifiers.toVtermModifiers)
+  #   else:
+  #     state.vterm.key(event.input.inputToVtermKey, modifiers.toVtermModifiers)
+  #     # state.sendOutputBuffered(&"\e{}[u")
+
+  # state.sendOutputBuffered(buffer)
+
 proc handleInputEvents(state: var TerminalThreadState) =
   while state.inputChannel[].peek() > 0:
     try:
       let event = state.inputChannel[].recv()
       case event.kind
       of InputEventKind.Text:
-        for r in event.text.runes:
-          state.vterm.uniChar(r.uint32, event.modifiers.toVtermModifiers)
+        let kittyKeyboardFlags = state.kittyKeyboardFlags
+        # echo event, &", kitty: {kittyKeyboardFlags}"
+        if kittyKeyboardFlags == {} or event.noKitty:
+          for r in event.text.runes:
+            state.vterm.uniChar(r.uint32, event.modifiers.toVtermModifiers)
+        else:
+          for r in event.text.runes:
+            state.encodeKittyKey(InputEvent(kind: InputEventKind.Key, modifiers: event.modifiers, input: r.int64, action: Press))
+          state.flushOutput()
 
       of InputEventKind.Paste:
         state.vterm.startPaste()
@@ -639,14 +916,20 @@ proc handleInputEvents(state: var TerminalThreadState) =
         state.vterm.endPaste()
 
       of InputEventKind.Key:
-        if event.input > 0:
-          state.vterm.uniChar(event.input.uint32, event.modifiers.toVtermModifiers)
-        elif event.input < 0:
-          case event.input
-          of INPUT_SPACE:
-            state.vterm.uniChar(' '.uint32, event.modifiers.toVtermModifiers)
-          else:
-            state.vterm.key(event.input.inputToVtermKey, event.modifiers.toVtermModifiers)
+        let kittyKeyboardFlags = state.kittyKeyboardFlags
+        # echo event, &", kitty: {kittyKeyboardFlags}"
+        if kittyKeyboardFlags == {} or event.noKitty:
+          if event.input > 0:
+            state.vterm.uniChar(event.input.uint32, event.modifiers.toVtermModifiers)
+          elif event.input < 0:
+            case event.input
+            of INPUT_SPACE:
+              state.vterm.uniChar(' '.uint32, event.modifiers.toVtermModifiers)
+            else:
+              state.vterm.key(event.input.inputToVtermKey, event.modifiers.toVtermModifiers)
+        else:
+          state.encodeKittyKey(event)
+          state.flushOutput()
 
       of InputEventKind.MouseMove:
         state.vterm.mouseMove(event.row.cint, event.col.cint, event.modifiers.toVtermModifiers)
@@ -673,6 +956,10 @@ proc handleInputEvents(state: var TerminalThreadState) =
           state.pixelHeight = event.cellPixelHeight * state.height
           state.vterm.setSize(state.height.cint, state.width.cint)
           state.screen.flushDamage()
+
+          if state.sizeRequested:
+            state.sendOutput(&"\e[8;{state.height};{state.width}t")
+            state.sendOutput(&"\e[5;{state.cellPixelHeight};{state.cellPixelWidth}t")
 
           if not state.useChannels:
             when defined(windows):
@@ -1010,7 +1297,7 @@ proc handleSixelData(s: ptr TerminalThreadState, frag: VTermStringFragment) =
     s.sixel.iter = nil
 
 template kittyDebugf*(x: static string) =
-  when defined(debugKGP):
+  when defined(debugKGP) or true:
     echo fmt(x)
 
 proc addImage(s: var KittyState, id: int, width, height: int, colors: var seq[chroma.Color]) =
@@ -1109,10 +1396,6 @@ iterator handleKitty(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].}
     while i >= s.kitty.frag.len.int:
       yield
       i = 0
-
-  proc sendOutput(s: ptr TerminalThreadState, raw: openArray[char]) =
-    # echo "> ", raw
-    handleOutput(cast[cstring](raw[0].addr), raw.len.csize_t, s)
 
   template sendResponse(keys: untyped, body: untyped): untyped =
     let prefix = "\x1b_G"
@@ -1468,6 +1751,71 @@ proc handleKittyData(s: ptr TerminalThreadState, frag: VTermStringFragment) =
   if finished(s.kitty.iter):
     s.kitty.iter = nil
 
+proc handleKittyKeyboard(s: ptr TerminalThreadState, leader: char, args: openArray[clong], intermed: cstring) =
+  let stack = if s.alternateScreen:
+    s.kittyKeyboardAlternate.addr
+  else:
+    s.kittyKeyboardMain.addr
+
+  case leader
+  of '=':
+    let mode = if args.len >= 2:
+      args[1].int
+    else:
+      1
+
+    let flagsInt = if args.len >= 1:
+      args[0].int and 0x7f
+    else:
+      0
+    let flags = cast[set[KittyKeyboardState]](flagsInt)
+
+    if stack[].len == 0:
+      stack[].add {}
+
+    case mode
+    of 1: stack[].last = flags
+    of 2: stack[].last.incl flags
+    of 3: stack[].last.excl flags
+    else:
+      echo &"Unknown mode {3}"
+    echo &"new flags: {stack[]}"
+    # s.sendOutput(&"new flags: {stack[]}\r\n")
+
+  of '>':
+    let flagsInt = if args.len >= 1:
+      args[0].int and 0x7f
+    else:
+      0
+
+    let flags = cast[set[KittyKeyboardState]](flagsInt)
+    stack[].add flags
+    if stack[].len > 64:
+      stack[].removeShift(0)
+    echo &"new flags: {stack[]}"
+    # s.sendOutput(&"new flags: {stack[]}\r\n")
+  of '<':
+    let num = if args.len >= 1:
+      args[0].int
+    else:
+      1
+
+    for i in 0..<num:
+      if stack[].len == 0:
+        break
+      discard stack[].pop()
+    echo &"new flags: {stack[]}"
+    # s.sendOutput(&"new flags: {stack[]}\r\n")
+  of '?':
+    let flags = if stack[].len > 0:
+      cast[int](stack[].last)
+    else:
+      0
+    echo &"request kitty keyboard protocol {stack[]} -> {flags}"
+    s.sendOutput(&"\e[?{flags}u")
+  else:
+    echo &"unsupported"
+
 proc createPlacements(state: KittyState): seq[PlacedImage] =
   result = newSeqOfCap[PlacedImage](state.placements.len)
   for p in state.placements.values:
@@ -1522,6 +1870,8 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
     settermprop: (proc(prop: VTermProp; val: ptr VTermValue; user: pointer): cint {.cdecl.} =
       let state = cast[ptr TerminalThreadState](user)
       case prop
+      of VTERM_PROP_ALTSCREEN:
+        state.alternateScreen  = val.boolean != 0
       of VTERM_PROP_CURSORVISIBLE:
         # log state, &"settermmprop VTERM_PROP_CURSORVISIBLE {val.boolean != 0}"
         state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorVisible, visible: val.boolean != 0)
@@ -1600,36 +1950,45 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
       # echo &"control '{control}'"
       return 1
     ),
-    csi: (proc(leader: cstring; args: ptr clong; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.} =
+    csi: (proc(leader: cstring; args: ptr UncheckedArray[clong]; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.} =
+      let leaderChar = if leader.len > 0:
+        leader[0]
+      else:
+        '\0'
+
       let state = cast[ptr TerminalThreadState](user)
-      let args = cast[ptr UncheckedArray[clong]](args)
-      # echo &"csi '{intermed}', '{command}', {args.toOpenArray(0, argcount.int - 1)}"
+      # echo &"csi '{leader}' '{intermed}', '{command}', {args.toOpenArray(0, argcount.int - 1)}"
       case command
+      of 'u':
+        state.handleKittyKeyboard(leaderChar, args.toOpenArray(0, argcount - 1), intermed)
       of 't':
         if argcount > 0:
-          # echo "send size"
           case args[0]
           of 14:
-            let width = state.width * 10 # todo: pixel size
-            let height = state.height * 10 # todo: pixel size
-            let msg = &"\x1b[4;{height};{width}t"
-            # echo msg.toOpenArray
+            # pixel size
+            state.sizeRequested = true
+            let width = state.pixelWidth
+            let height = state.pixelHeight
+            let msg = &"\e[4;{height};{width}t"
             handleOutput(msg.cstring, msg.len.csize_t, user)
           of 15:
-            let width = 10 # todo: pixel size
-            let height = 10 # todo: pixel size
-            let msg = &"\x1b[5;{height};{width}t"
-            # echo msg.toOpenArray
+            # cell pixel size
+            state.sizeRequested = true
+            let width = state.cellPixelWidth
+            let height = state.cellPixelHeight
+            let msg = &"\e[5;{height};{width}t"
             handleOutput(msg.cstring, msg.len.csize_t, user)
           of 16:
-            let width = state.width * 10 # todo: pixel size
-            let height = state.height * 10 # todo: pixel size
-            let msg = &"\x1b[6;{height};{width}t"
-            # echo msg.toOpenArray
+            # pixel size
+            state.sizeRequested = true
+            let width = state.pixelWidth
+            let height = state.pixelHeight
+            let msg = &"\e[6;{height};{width}t"
             handleOutput(msg.cstring, msg.len.csize_t, user)
           of 18:
-            let msg = &"\x1b[8;{state.height};{state.width}t"
-            # echo msg.toOpenArray
+            # grid size
+            state.sizeRequested = true
+            let msg = &"\e[8;{state.height};{state.width}t"
             handleOutput(msg.cstring, msg.len.csize_t, user)
           else:
             discard
@@ -1661,6 +2020,14 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
     ),
     sos: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
       return 1
+    ),
+    reset: (proc (hard: int; user: pointer): cint {.cdecl.} =
+      let state = cast[ptr TerminalThreadState](user)
+      echo &"===================== reset: {hard}"
+      if state.alternateScreen:
+        state.kittyKeyboardAlternate.setLen(0)
+      else:
+        state.kittyKeyboardMain.setLen(0)
     ),
   )
 
@@ -2004,12 +2371,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
       var process = startAsyncProcess(command, args, killOnExit = true, autoStart = false, errToOut = false)
       asyncSpawn process.logErrors()
       discard process.start()
-      let stdout = newProcessOutputChannel(process)
-      discard stdout.listen(proc(channel: var BaseChannel, closed: bool): ChannelListenResponse {.gcsafe, raises: [].} =
-        discard channel.signal.fireSync()
-      )
-      let stdin = newProcessInputChannel(process)
-      return self.createTerminal(width, height, stdin, stdout, autoRunCommand, kittyPathPrefix)
+      return self.createTerminal(width, height, process.stdin, process.stdout, autoRunCommand, kittyPathPrefix)
     except ValueError as e:
       log lvlError, &"Failed to start process {command}: {e.msg}"
 
@@ -2251,7 +2613,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, writeChanne
 
 proc handleAction(self: TerminalService, view: TerminalView, action: string, arg: string): Option[string]
 proc handleInput(self: TerminalService, view: TerminalView, text: string)
-proc handleKey(self: TerminalService, view: TerminalView, input: int64, modifiers: Modifiers)
+proc handleKey(self: TerminalService, view: TerminalView, input: int64, modifiers: Modifiers, noKitty: bool = false)
 
 method close*(self: TerminalView) =
   if not self.open:
@@ -2399,21 +2761,27 @@ proc requestRender(self: TerminalService) =
 
 proc handleInput(self: TerminalService, view: TerminalView, text: string) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Text, text: text))
+  view.terminal.lastEventTime = startTimer()
 
 proc handlePaste(self: TerminalService, view: TerminalView, text: string) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Paste, text: text))
+  view.terminal.lastEventTime = startTimer()
 
-proc handleKey(self: TerminalService, view: TerminalView, input: int64, modifiers: Modifiers) =
-  view.terminal.sendEvent(InputEvent(kind: InputEventKind.Key, input: input, modifiers: modifiers))
+proc handleKey(self: TerminalService, view: TerminalView, input: int64, modifiers: Modifiers, noKitty: bool = false) =
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.Key, input: input, modifiers: modifiers, noKitty: noKitty))
+  view.terminal.lastEventTime = startTimer()
 
 proc handleScroll*(view: TerminalView, deltaY: int, modifiers: Modifiers) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.Scroll, deltaY: deltaY, modifiers: modifiers))
+  view.terminal.lastEventTime = startTimer()
 
 proc handleClick*(view: TerminalView, button: input.MouseButton, pressed: bool, modifiers: Modifiers, col: int, row: int) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseClick, button: button, pressed: pressed, row: row, col: col, modifiers: modifiers))
+  view.terminal.lastEventTime = startTimer()
 
 proc handleDrag*(view: TerminalView, button: input.MouseButton, col: int, row: int, modifiers: Modifiers) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col, modifiers: modifiers))
+  view.terminal.lastEventTime = startTimer()
 
 proc updateModeEventHandlers(self: TerminalService, view: TerminalView) =
   if view.mode.len == 0:
@@ -2659,10 +3027,10 @@ proc enableTerminalDebugLog*(self: TerminalService, enable: bool) {.expose("term
   if self.getActiveView().getSome(view):
     view.terminal.sendEvent(InputEvent(kind: InputEventKind.EnableLog, enableLog: enable))
 
-proc sendTerminalInput*(self: TerminalService, input: string) {.expose("terminal").} =
+proc sendTerminalInput*(self: TerminalService, input: string, noKitty: bool = false) {.expose("terminal").} =
   if self.getActiveView().getSome(view):
     for (inputCode, mods, _) in parseInputs(input):
-      self.handleKey(view, inputCode.a, mods)
+      self.handleKey(view, inputCode.a, mods, noKitty)
 
 proc sendTerminalInputAndSetMode*(self: TerminalService, input: string, mode: string) {.expose("terminal").} =
   self.sendTerminalInput(input)

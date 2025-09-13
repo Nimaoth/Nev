@@ -324,8 +324,8 @@ func toKey(c: int): Key =
 {.pop}
 
 
-var gIllwillInitialised = false
-var gFullScreen = false
+var gIllwillInitialised* = false
+var gFullScreen* = false
 var gFullRedrawNextFrame = false
 
 when defined(windows):
@@ -570,7 +570,7 @@ else:  # OS X & Linux
     # set the terminal attributes.
     discard tcSetAttr(STDIN_FILENO, TCSANOW, ttyState.addr)
 
-  proc kbhit(): cint =
+  proc kbhit*(): cint =
     var tv: Timeval
     tv.tv_sec = Time(0)
     tv.tv_usec = 0
@@ -1161,6 +1161,26 @@ proc setTrueBackgroundColor*(color: Color) =
   stdout.write(ansiBackgroundColorCode(color))
 
 const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
+const ENABLE_LINE_INPUT = 0x0002
+const ENABLE_ECHO_INPUT = 0x0004
+
+proc enableVirtualTerminalInput*(): bool =
+  ## Enables true color.
+  result = false
+  when defined(windows):
+    var mode: DWORD = 0
+    if getConsoleMode(getStdHandle(STD_INPUT_HANDLE), addr(mode)) != 0:
+      mode = (mode or ENABLE_VIRTUAL_TERMINAL_INPUT) and not (ENABLE_LINE_INPUT or ENABLE_ECHO_INPUT)
+      result = setConsoleMode(getStdHandle(STD_INPUT_HANDLE), mode) != 0
+
+proc disableVirtualTerminalInput*() =
+  ## Disables true color.
+  when defined(windows):
+    var mode: DWORD = 0
+    if getConsoleMode(getStdHandle(STD_INPUT_HANDLE), addr(mode)) != 0:
+      mode = (mode and not ENABLE_VIRTUAL_TERMINAL_INPUT) or ENABLE_LINE_INPUT or ENABLE_ECHO_INPUT
+      discard setConsoleMode(getStdHandle(STD_INPUT_HANDLE), mode)
 
 proc myEnableTrueColors*(): bool =
   ## Enables true color.
@@ -1361,7 +1381,7 @@ var displayBuffer = ""
 
 proc flushDisplayBuffer() =
   if displayBuffer.len > 0:
-    put displayBuffer
+    stdout.write displayBuffer
     displayBuffer.setLen 0
 
 proc setPos(buffer: var string, x: int, y: int) =
@@ -1371,7 +1391,7 @@ proc setPos(buffer: var string, x: int, y: int) =
   buffer.add $(x + 1)
   buffer.add "f"
 
-proc displayFull(tb: TerminalBuffer) =
+proc displayFull*(tb: TerminalBuffer) =
   for y in 0..<tb.height:
     displayBuffer.setPos(0, y)
 

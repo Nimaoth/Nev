@@ -17,6 +17,7 @@ type
     supportsThinCursor*: bool
     focused*: bool
     deltaTime*: float
+    eventCounter*: int
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
     onKeyRelease*: Event[tuple[input: int64, modifiers: Modifiers]]
     onRune*: Event[tuple[input: int64, modifiers: Modifiers]]
