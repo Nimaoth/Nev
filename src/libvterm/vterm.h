@@ -374,6 +374,7 @@ void vterm_keyboard_end_paste(VTerm *vt);
 
 void vterm_mouse_move(VTerm *vt, int row, int col, VTermModifier mod);
 void vterm_mouse_button(VTerm *vt, int button, bool pressed, VTermModifier mod);
+int vterm_get_mouse_flags(VTerm *vt);
 
 // ------------
 // Parser layer

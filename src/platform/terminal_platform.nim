@@ -1,4 +1,4 @@
-import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate, typedthreads, parseutils]
+import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate, typedthreads, parseutils, envvars]
 import std/colors as stdcolors
 import vmath
 import chroma as chroma
@@ -15,9 +15,24 @@ export platform
 
 logCategory "terminal-platform"
 
-type
-  InputState = enum Normal, Escape, CSI
+# Mouse
+# https://de.wikipedia.org/wiki/ANSI-Escapesequenz
+# https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Extended-coordinates
+const
+  CSI = 0x1B.chr & 0x5B.chr
+  SET_BTN_EVENT_MOUSE = "1002"
+  SET_ANY_EVENT_MOUSE = "1003"
+  SET_SGR_EXT_MODE_MOUSE = "1006"
+  # SET_URXVT_EXT_MODE_MOUSE = "1015"
+  ENABLE = "h"
+  DISABLE = "l"
+  MouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{ENABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{ENABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{ENABLE}"
+  DisableMouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{DISABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{DISABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{DISABLE}"
 
+  XtermColor    = "xterm-color"
+  Xterm256Color = "xterm-256color"
+
+type
   TerminalPlatform* = ref object of Platform
     buffer: TerminalBuffer
     trueColorSupport*: bool
@@ -34,19 +49,49 @@ type
 
     inputParser: TerminalInputParser
     useKittyKeyboard: bool
-    kittyKeyboardFlags: int
-    enableVirtualTerminalInput: bool # windows only: use escape sequences for input instead of old api
+    kittyKeyboardFlags: int = 0b1001
 
     gridSize: IVec2
     pixelSize: IVec2
     cellPixelSize: IVec2
 
+proc enterFullScreen() =
+  ## Enters full-screen mode (clears the terminal).
+  when defined(windows):
+    stdout.write "\e[?47h\e[?1049h" # use alternate screen
+  elif defined(posix):
+    case getEnv("TERM"):
+    of XtermColor:
+      stdout.write "\e7\e[?47h"
+    of Xterm256Color:
+      stdout.write "\e[?1049h"
+    else:
+      eraseScreen()
+  else:
+    eraseScreen()
+
+proc exitFullScreen() =
+  ## Exits full-screen mode (restores the previous contents of the terminal).
+  when defined(windows):
+    stdout.write "\e?47l\e[?1049l"
+  elif defined(posix):
+    case getEnv("TERM"):
+    of XtermColor:
+      stdout.write "\e[2J\e[?47l\e8"
+    of Xterm256Color:
+      stdout.write "\e[?1049l"
+    else:
+      eraseScreen()
+  else:
+    eraseScreen()
+    setCursorPos(0, 0)
+
 proc exitProc() {.noconv.} =
   stdout.write("\e[<u") # todo: only if enabled
-  resetAttributes()
-  disableVirtualTerminalInput()
-  myDisableTrueColors()
-  illwillDeinit()
+  stdout.write(DisableMouseTrackAny)
+  exitFullScreen()
+  consoleDeinit()
+  stdout.write(tui.ansiResetCode)
   showCursor()
   quit(0)
 
@@ -196,6 +241,11 @@ method init*(self: TerminalPlatform, options: AppOptions) =
     self.noPty = options.noPty
     self.noUI = options.noUI
 
+    self.inputParser.enableEscapeTimeout = true
+    self.inputParser.escapeTimeout = 32
+
+    when defined(windows):
+      self.readInputOnThread = true
     if self.noPty:
       self.readInputOnThread = true
 
@@ -203,49 +253,53 @@ method init*(self: TerminalPlatform, options: AppOptions) =
     self.cellPixelSize = ivec2(10, 20)
     self.pixelSize = self.gridSize * self.cellPixelSize
 
-    let useKitty = if self.noPty:
-      true
-    else:
-      when defined(windows):
-        true
-      else:
-        # todo: detect kitty
-        true
+    var useKitty = true
 
-    self.useKittyKeyboard = useKitty
-    self.kittyKeyboardFlags = 1
+    # self.kittyKeyboardFlags = 0b1001
     if options.kittyKeyboardFlags != "":
       try:
         var flags: int = 0
         discard options.kittyKeyboardFlags.parseBin(flags)
         self.kittyKeyboardFlags = flags
-        self.useKittyKeyboard = flags != 0
+        useKitty = flags != 0
       except CatchableError as e:
         log lvlError, &"Failed to parse kitty keyboard flags: {e.msg}"
 
+    if not options.noPty:
+      if myEnableTrueColors():
+        log(lvlInfo, "Enable true color support")
+        self.trueColorSupport = true
+      else:
+        when defined(posix):
+          log(lvlInfo, "Enable true color support")
+          self.trueColorSupport = true
+    else:
+      self.trueColorSupport = true
+
     when defined(windows):
-      if self.useKittyKeyboard:
-        self.readInputOnThread = true
+      enableVirtualTerminalInput()
+
+    gIllwillInitialised = true
+    gFullScreen = true
+
+    enterFullScreen()
+
+    if useKitty:
+      log lvlInfo, &"Query kitty keyboard protol with flags {self.kittyKeyboardFlags.toBin(5)}"
+      stdout.write("\e[?u") # query kitty keyboard protocol support
+
+    stdout.write(tui.ansiResetCode)
+    stdout.write(MouseTrackAny)
 
     if options.noPty:
-      # stdout.write("\e[?u") # query kitty keyboard protocol support
-      stdout.write "\e[?1049h" # use alternate screen
       stdout.write "\e[2J" # clear
       stdout.write "\e[18t" # request grid size
 
-      # f.write("\e[2J")
-      stdout.write "\e[?25l"  # hide cursor
-      gIllwillInitialised = true
-      gFullScreen = true
     else:
-      illwillInit(fullscreen=true, mouse=true)
+      consoleInit()
       setControlCHook(exitProc)
-      hideCursor()
 
-    if self.useKittyKeyboard:
-      debugf"Use enable kitty keyboard protol with flags {self.kittyKeyboardFlags.toBin(5)}"
-      stdout.write(&"\e[>{self.kittyKeyboardFlags}u") # enable kitty keyboard protocol
-      self.enableVirtualTerminalInput = enableVirtualTerminalInput()
+    stdout.write "\e[?25l"  # hide cursor
 
     self.builder = newNodeBuilder()
     self.builder.useInvalidation = true
@@ -257,19 +311,6 @@ method init*(self: TerminalPlatform, options: AppOptions) =
     self.doubleClickTime = 0.35
 
     self.focused = true
-
-    if not options.noPty:
-      if myEnableTrueColors():
-        log(lvlInfo, "Enable true color support")
-        self.trueColorSupport = true
-      else:
-        when not defined(posix):
-          log(lvlError, "Failed to enable true color support")
-        else:
-          log(lvlInfo, "Enable true color support")
-          self.trueColorSupport = true
-    else:
-      self.trueColorSupport = true
 
     if self.readInputOnThread:
       try:
@@ -353,14 +394,16 @@ method init*(self: TerminalPlatform, options: AppOptions) =
   except:
     discard
 
+  stdout.flushFile()
+
 method deinit*(self: TerminalPlatform) =
   try:
     if self.useKittyKeyboard:
       stdout.write("\e[<u")
-    resetAttributes()
-    disableVirtualTerminalInput()
-    myDisableTrueColors()
-    illwillDeinit()
+    stdout.write(DisableMouseTrackAny)
+    exitFullScreen()
+    consoleDeinit()
+    stdout.write(tui.ansiResetCode)
     showCursor()
   except:
     discard
@@ -490,152 +533,183 @@ proc setCursorPos(x: int, y: int) =
 method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
   try:
     var eventCounter = 0
-    if self.noPty or self.useKittyKeyboard or self.readInputOnThread:
-      var buffer = ""
+    var buffer = ""
 
-      if self.readInputOnThread:
-        while true:
-          let (ok, c) = chan.tryRecv()
-          if not ok:
-            break
-          buffer.add c
-      else:
-        when defined(linux):
-          buffer.setLen(100)
-          var i = 0
-          while kbhit() > 0 and i < buffer.len:
-            var ret = read(0, buffer[i].addr, 1)
-            if ret > 0:
-              i += ret
-            else:
-              break
-          buffer.setLen(i)
-        else:
-          # todo
-          discard
-
-      if buffer.len > 0:
-        if self.noUI:
-          stdout.write &"> {buffer.toOpenArrayByte(0, buffer.high)}, {buffer.toOpenArray(0, buffer.high)}\r\n"
-        for event in self.inputParser.parseInput(buffer.toOpenArray(0, buffer.high)):
-          if self.noUI:
-            stdout.write &"{event}\r\n"
-
-          case event.kind
-          of Text:
-            if not self.noUI:
-              for r in event.text.runes:
-                if not self.builder.handleKeyPressed(r.int64, {}):
-                  self.onKeyPress.invoke (r.int64, {})
-          of Key:
-            if not self.noUI:
-              case event.action
-              of Press, Repeat:
-                if not self.builder.handleKeyPressed(event.input.int64, event.mods):
-                  self.onKeyPress.invoke (event.input.int64, event.mods)
-              of Release:
-                if not self.builder.handleKeyReleased(event.input.int64, event.mods):
-                  self.onKeyRelease.invoke (event.input.int64, event.mods)
-            if event.input == 'c'.int64 and event.mods == {Control}:
-              stdout.write &"============ exit\r\n"
-              stdout.flushFile()
-              quit(1)
-          of GridSize:
-            if self.noUI:
-              stdout.write &"GridSize: {event.width}x{event.height}\r\n"
-            self.gridSize = ivec2(event.width.int32, event.height.int32)
-            self.requestRender(true)
-          of PixelSize:
-            if self.noUI:
-              stdout.write &"PixelSize: {event.width}x{event.height}\r\n"
-            self.pixelSize = ivec2(event.width.int32, event.height.int32)
-            self.requestRender(true)
-          of CellPixelSize:
-            if self.noUI:
-              stdout.write &"CellPixelSize: {event.width}x{event.height}\r\n"
-            self.cellPixelSize = ivec2(event.width.int32, event.height.int32)
-            self.requestRender(true)
-
-          inc eventCounter
-          inc self.eventCounter
-
-      stdout.flushFile()
-
-    else:
+    if self.readInputOnThread:
       while true:
-        let key = getKey()
-        if key == tui.Key.None:
+        let (ok, c) = chan.tryRecv()
+        if not ok:
           break
-
-        inc eventCounter
-        inc self.eventCounter
-
-        if key == Mouse:
-          let mouseInfo = getMouse()
-          let pos = vec2(mouseInfo.x.float, mouseInfo.y.float)
-          let button: input.MouseButton = case mouseInfo.button
-          of mbLeft: input.MouseButton.Left
-          of mbMiddle: input.MouseButton.Middle
-          of mbRight: input.MouseButton.Right
-          else: input.MouseButton.Unknown
-
-          var modifiers: Modifiers = {}
-          if mouseInfo.ctrl:
-            modifiers.incl Modifier.Control
-          if mouseInfo.shift:
-            modifiers.incl Modifier.Shift
-
-          if mouseInfo.scroll:
-            let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
-
-            if not self.builder.handleMouseScroll(pos, vec2(0, scroll), {}):
-              self.onScroll.invoke (pos, vec2(0, scroll), {})
-          elif mouseInfo.move:
-            # log(lvlInfo, fmt"move to {pos}")
-            if not self.builder.handleMouseMoved(pos, self.mouseButtons):
-              self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
+        buffer.add c
+    else:
+      when defined(linux):
+        buffer.setLen(100)
+        var i = 0
+        while kbhit() > 0 and i < buffer.len:
+          var ret = read(0, buffer[i].addr, 1)
+          if ret > 0:
+            i += ret
           else:
-            # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
-            case mouseInfo.action
-            of mbaPressed:
-              self.mouseButtons.incl button
+            break
+        buffer.setLen(i)
+      else:
+        # todo
+        discard
 
-              var events = @[button]
+    # if buffer.len > 0 and self.noUI:
+    #   stdout.write &"> {buffer.toOpenArrayByte(0, buffer.high)}, {buffer.toOpenArray(0, buffer.high)}\r\n"
+    for event in self.inputParser.parseInput(buffer.toOpenArray(0, buffer.high)):
+      if self.noUI:
+        stdout.write &"{event}\r\n"
 
-              if button == input.MouseButton.Left:
-                if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
-                  inc self.doubleClickCounter
-                  case self.doubleClickCounter
-                  of 1:
-                    events.add input.MouseButton.DoubleClick
-                  of 2:
-                    events.add input.MouseButton.TripleClick
-                  else:
-                    self.doubleClickCounter = 0
-                else:
-                  self.doubleClickCounter = 0
+      case event.kind
+      of Text:
+        if not self.noUI:
+          for r in event.text.runes:
+            if not self.builder.handleKeyPressed(r.int64, {}):
+              self.onKeyPress.invoke (r.int64, {})
+      of Key:
+        var input = event.input
+        if Shift in event.mods and input > 0:
+          input = input.Rune.toUpper.int
+        if not self.noUI:
+          case event.action
+          of Press, Repeat:
+            if not self.builder.handleKeyPressed(input.int64, event.mods):
+              self.onKeyPress.invoke (input.int64, event.mods)
+          of Release:
+            if not self.builder.handleKeyReleased(input.int64, event.mods):
+              self.onKeyRelease.invoke (input.int64, event.mods)
+        if self.noUI:
+          if event.input == 'c'.int64 and event.mods == {Control}:
+            exitProc()
+            stdout.write &"exited\r\n"
+            stdout.flushFile()
+            quit(1)
+      of Mouse:
+        if not self.noUI:
+          let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
+          case event.mouse.action
+          of Press, Repeat:
+            self.mouseButtons.incl event.mouse.button
+            if not self.builder.handleMousePressed(event.mouse.button, event.mouse.mods, pos):
+              self.onMousePress.invoke (event.mouse.button, event.mouse.mods, pos)
+          else:
+            self.mouseButtons.excl event.mouse.button
+            if not self.builder.handleMouseReleased(event.mouse.button, event.mouse.mods, pos):
+              self.onMouseRelease.invoke (event.mouse.button, event.mouse.mods, pos)
+      of MouseMove:
+        if not self.noUI:
+          let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
+          if not self.builder.handleMouseMoved(pos, {}):
+            self.onMouseMove.invoke (pos, vec2(0, 0), event.move.mods, {})
+      of MouseDrag:
+        if not self.noUI:
+          let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
+          if not self.builder.handleMouseMoved(pos, {event.drag.button}):
+            self.onMouseMove.invoke (pos, vec2(0, 0), event.drag.mods, {event.drag.button})
+      of Scroll:
+        if not self.noUI:
+          let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
+          if not self.builder.handleMouseScroll(pos, vec2(0, event.scroll.delta.float), event.scroll.mods):
+            self.onScroll.invoke (pos, vec2(0, event.scroll.delta.float), event.scroll.mods)
+      of GridSize:
+        self.gridSize = ivec2(event.width.int32, event.height.int32)
+        self.requestRender(true)
+      of PixelSize:
+        self.pixelSize = ivec2(event.width.int32, event.height.int32)
+        self.requestRender(true)
+      of CellPixelSize:
+        self.cellPixelSize = ivec2(event.width.int32, event.height.int32)
+        self.requestRender(true)
+      of KittyKeyboardFlags:
+        if self.noUI:
+          stdout.write &"KittyKeyboardFlags: current: {event.flags.toBin(5)}, requested: {self.kittyKeyboardFlags.toBin(5)}\r\n"
+        log lvlInfo, &"Enable kitty keyboard protol with flags {self.kittyKeyboardFlags.toBin(5)}"
+        stdout.write(&"\e[>{self.kittyKeyboardFlags}u") # enable kitty keyboard protocol
+        self.inputParser.enableEscapeTimeout = false
+        self.useKittyKeyboard = true
 
-                self.doubleClickTimer = startTimer()
-              else:
-                self.doubleClickCounter = 0
+      inc eventCounter
+      inc self.eventCounter
 
-              for event in events:
-                if not self.builder.handleMousePressed(event, modifiers, pos):
-                  self.onMousePress.invoke (event, modifiers, pos)
+    stdout.flushFile()
 
-            of mbaReleased:
-              self.mouseButtons = {}
-              if not self.builder.handleMouseReleased(button, modifiers, pos):
-                self.onMouseRelease.invoke (button, modifiers, pos)
-            else:
-              discard
+    # else:
+    #   while true:
+    #     let key = getKey()
+    #     if key == tui.Key.None:
+    #       break
 
-        else:
-          var modifiers: Modifiers = {}
-          let button = key.toInput(modifiers)
-          # debugf"key press k: {key}, input: {inputToString(button, modifiers)}"
-          if not self.builder.handleKeyPressed(button, modifiers):
-            self.onKeyPress.invoke (button, modifiers)
+    #     inc eventCounter
+    #     inc self.eventCounter
+
+    #     if key == Mouse:
+    #       let mouseInfo = getMouse()
+    #       let pos = vec2(mouseInfo.x.float, mouseInfo.y.float)
+    #       let button: input.MouseButton = case mouseInfo.button
+    #       of mbLeft: input.MouseButton.Left
+    #       of mbMiddle: input.MouseButton.Middle
+    #       of mbRight: input.MouseButton.Right
+    #       else: input.MouseButton.Unknown
+
+    #       var modifiers: Modifiers = {}
+    #       if mouseInfo.ctrl:
+    #         modifiers.incl Modifier.Control
+    #       if mouseInfo.shift:
+    #         modifiers.incl Modifier.Shift
+
+    #       if mouseInfo.scroll:
+    #         let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
+
+    #         if not self.builder.handleMouseScroll(pos, vec2(0, scroll), {}):
+    #           self.onScroll.invoke (pos, vec2(0, scroll), {})
+    #       elif mouseInfo.move:
+    #         # log(lvlInfo, fmt"move to {pos}")
+    #         if not self.builder.handleMouseMoved(pos, self.mouseButtons):
+    #           self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
+    #       else:
+    #         # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
+    #         case mouseInfo.action
+    #         of mbaPressed:
+    #           self.mouseButtons.incl button
+
+    #           var events = @[button]
+
+    #           if button == input.MouseButton.Left:
+    #             if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
+    #               inc self.doubleClickCounter
+    #               case self.doubleClickCounter
+    #               of 1:
+    #                 events.add input.MouseButton.DoubleClick
+    #               of 2:
+    #                 events.add input.MouseButton.TripleClick
+    #               else:
+    #                 self.doubleClickCounter = 0
+    #             else:
+    #               self.doubleClickCounter = 0
+
+    #             self.doubleClickTimer = startTimer()
+    #           else:
+    #             self.doubleClickCounter = 0
+
+    #           for event in events:
+    #             if not self.builder.handleMousePressed(event, modifiers, pos):
+    #               self.onMousePress.invoke (event, modifiers, pos)
+
+    #         of mbaReleased:
+    #           self.mouseButtons = {}
+    #           if not self.builder.handleMouseReleased(button, modifiers, pos):
+    #             self.onMouseRelease.invoke (button, modifiers, pos)
+    #         else:
+    #           discard
+
+    #     else:
+    #       var modifiers: Modifiers = {}
+    #       let button = key.toInput(modifiers)
+    #       # debugf"key press k: {key}, input: {inputToString(button, modifiers)}"
+    #       if not self.builder.handleKeyPressed(button, modifiers):
+    #         self.onKeyPress.invoke (button, modifiers)
 
     let terminalSize = self.getTerminalSize()
     let sizeChanged = self.buffer.width != terminalSize.x.int or self.buffer.height != terminalSize.y.int

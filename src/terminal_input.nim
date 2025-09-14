@@ -43,6 +43,7 @@ type
       SOS,
 
   TerminalInputParser* = object
+    prevEsc: bool = false # After \e
     inEsc: bool = false # After \e
     inEscO: bool = false # After \eO
     inUtf8: bool = false # Middle of multi byte utf8 code point
@@ -57,11 +58,15 @@ type
     string_initial: bool
     emit_nul: bool
     escTimer: Timer
+    endedInEsc: bool
 
-    width: int
-    height: int
+    width*: int
+    height*: int
+    mouseCol*: int
+    mouseRow*: int
 
     escapeTimeout*: int
+    enableEscapeTimeout*: bool
 
 type
   InputEventKind* = enum
@@ -70,6 +75,11 @@ type
     GridSize
     PixelSize
     CellPixelSize
+    Mouse
+    MouseMove
+    MouseDrag
+    Scroll
+    KittyKeyboardFlags
 
   InputEvent* = object
     case kind*: InputEventKind
@@ -83,12 +93,26 @@ type
     of GridSize, PixelSize, CellPixelSize:
       width*: int
       height*: int
+    of Mouse:
+      mouse*: tuple[button: MouseButton, action: InputAction, mods: Modifiers, col: int, row: int]
+    of MouseMove:
+      move*: tuple[mods: Modifiers, col: int, row: int]
+    of MouseDrag:
+      drag*: tuple[button: MouseButton, mods: Modifiers, col: int, row: int]
+    of Scroll:
+      scroll*: tuple[delta: int, mods: Modifiers, col: int, row: int]
+    of KittyKeyboardFlags:
+      flags*: int
 
 proc textEvent*(text: sink string): InputEvent = InputEvent(kind: Text, text: text.ensureMove)
 proc keyEvent*(input: int, mods: Modifiers, action: InputAction): InputEvent = InputEvent(kind: Key, input: input, mods: mods, action: action, inputName: inputToString(input, mods))
 proc gridSizeEvent*(width, height: int): InputEvent = InputEvent(kind: GridSize, width: width, height: height)
 proc pixelSizeEvent*(width, height: int): InputEvent = InputEvent(kind: PixelSize, width: width, height: height)
 proc cellPixelSizeEvent*(width, height: int): InputEvent = InputEvent(kind: CellPixelSize, width: width, height: height)
+proc mouseButtonEvent*(button: MouseButton, mods: Modifiers, action: InputAction, col: int, row: int): InputEvent = InputEvent(kind: Mouse, mouse: (button, action, mods, col, row))
+proc mouseScrollEvent*(delta: int, mods: Modifiers, col: int, row: int): InputEvent = InputEvent(kind: Scroll, scroll: (delta, mods, col, row))
+proc mouseMoveEvent*(mods: Modifiers, col: int, row: int): InputEvent = InputEvent(kind: MouseMove, move: (mods, col, row))
+proc mouseDragEvent*(button: MouseButton, mods: Modifiers, col: int, row: int): InputEvent = InputEvent(kind: MouseDrag, drag: (button, mods, col, row))
 
 proc csiArgHasMore*(a: int64): bool = (a.int and CSI_ARG_FLAG_MORE) != 0
 proc csiArg*(a: int64): int = a.int and CSI_ARG_MASK
@@ -125,13 +149,10 @@ proc isIntermed*(c: char): bool =
   return c.int >= 0x20 and c.int <= 0x2f
 
 iterator handleCsi(vt: var TerminalInputParser; command: char): InputEvent =
-  let leader = if vt.csi.leaderlen > 0: vt.csi.leader[0].addr else: nil
+  let leader = if vt.csi.leaderlen > 0: vt.csi.leader[0] else: '\0'
   let args = vt.csi.args
   let argcount =  vt.csi.argi
   let intermed = if vt.intermedlen > 0: vt.intermed[0].addr else: nil
-  # stdout.write &"handleCsi {command}, {argcount}\r\n"
-  # for i in 0..<argcount:
-  #   stdout.write &"  {args[i]}\r\n"
   # stdout.write &"CSI {leader}{intermed} {args.toOpenArray(0, argcount - 1)} {command}\r\n"
 
   proc parseModsAndAction(vt: TerminalInputParser): (Modifiers, InputAction) =
@@ -178,23 +199,29 @@ iterator handleCsi(vt: var TerminalInputParser; command: char): InputEvent =
       yield pixelSizeEvent(args[2], args[1])
     of 8:
       # grid size
+      vt.width = args[2]
+      vt.height = args[1]
       yield gridSizeEvent(args[2], args[1])
     else:
       discard
-  of 'u':
-    let input = vt.csiArg(0)
-    if input != 0:
-      let (mods, action) = vt.parseModsAndAction()
-      case input
-      of 13: yieldKey INPUT_ENTER
-      of 27: yieldKey INPUT_ESCAPE
-      of 127: yieldKey INPUT_BACKSPACE
-      of ' '.int: yieldKey INPUT_SPACE
-      of 9: yieldKey INPUT_TAB
-      else:
-        yieldKey input
 
-        # yieldKey INPUT_"NKNOWN {args[0]}"
+  of 'u':
+    if leader == '?':
+      let flags = vt.csiArg(0)
+      yield InputEvent(kind: KittyKeyboardFlags, flags: flags)
+    else:
+      let input = vt.csiArg(0)
+      if input != 0:
+        let (mods, action) = vt.parseModsAndAction()
+        case input
+        of 13: yieldKey INPUT_ENTER
+        of 27: yieldKey INPUT_ESCAPE
+        of 127: yieldKey INPUT_BACKSPACE
+        of ' '.int: yieldKey INPUT_SPACE
+        of 9: yieldKey INPUT_TAB
+        else:
+          yieldKey input
+
   of 'A':
     let (mods, action) = vt.parseModsAndAction()
     yieldKey INPUT_UP
@@ -251,6 +278,55 @@ iterator handleCsi(vt: var TerminalInputParser; command: char): InputEvent =
       of 24: yieldKey INPUT_F12
       else:
         logKey &"UNKNOWN {args[0]}"
+
+  of 'm', 'M':
+    if argcount == 3:
+      let codeAndMods = vt.csiArg(0)
+      let button = if (codeAndMods and 0x40) == 0:
+        codeAndMods and 0b11
+      else:
+        (codeAndMods and 0b11) + 4
+      let mods = (codeAndMods shr 2) and 0b111
+      let col = vt.csiArg(1) - 1
+      let row = vt.csiArg(2) - 1
+      let action = if command == 'M': Press else: Release
+      let move = (codeAndMods and 0x20) != 0
+      let scroll = (codeAndMods and 0x40) != 0
+      # stdout.write &"button: {button}, mods: {mods}, {col}, {row}, {action} "
+
+      let mouseButton: MouseButton = case button
+      of 0: MouseButton.Left
+      of 1: MouseButton.Middle
+      of 2: MouseButton.Right
+      else:
+        MouseButton.Unknown
+
+      var modifiers: Modifiers = {}
+      if (mods and 0x1) != 0:
+        modifiers.incl Shift
+      if (mods and 0x2) != 0:
+        modifiers.incl Alt
+      if (mods and 0x4) != 0:
+        modifiers.incl Control
+
+      vt.mouseCol = col
+      vt.mouseRow = row
+      if move:
+        if button == 3:
+          yield mouseMoveEvent(modifiers, col, row)
+        else:
+          yield mouseDragEvent(mouseButton, modifiers, col, row)
+      elif scroll:
+        let delta = if (codeAndMods and 0x1) == 0:
+          1
+        else:
+          -1
+        yield mouseScrollEvent(delta, modifiers, col, row)
+      else:
+        yield mouseButtonEvent(mouseButton, modifiers, action, col, row)
+    else:
+      stdout.write &"CSI {leader}{intermed} {args.toOpenArray(0, argcount - 1)} {command}\r\n"
+      stdout.write &"got {argcount} args\r\n"
   else:
     discard
 
@@ -259,25 +335,44 @@ iterator handleControl(vt: var TerminalInputParser; command: char): InputEvent =
     vt.inEscO = true
 
 iterator parseInput*(vt: var TerminalInputParser, text: openArray[char]): InputEvent =
+  # stdout.write &"{i}: '{c}' (0x{c.int.toHex}), {c1Allowed}, {vt.state}, {vt.inEsc}\r\n"
+  var mods: Modifiers = {}
+
+  template yieldKey(name: untyped) =
+    yield keyEvent(name, mods, Press)
+    mods = {}
+
+  template yieldControlKey(key: char) =
+    if vt.inEsc:
+      mods.incl Alt
+    mods.incl Control
+    vt.inEsc = false
+    yieldKey key.int
+    continue
+
+  # Emit escape key event if the last character received was \e and a certain timeout has elapsed
+  if vt.enableEscapeTimeout and vt.endedInEsc and vt.escTimer.elapsed.ms >= vt.escapeTimeout.float:
+    if vt.prevEsc:
+      mods.incl Alt
+    yieldKey INPUT_ESCAPE
+    vt.inEsc = false
+    vt.prevEsc = false
+    vt.endedInEsc = false
+
+  if text.len > 0:
+    vt.endedInEsc = false
+
   var i = 0
-  var stringStart = cast[ptr UncheckedArray[char]](text[0])
   var stringLen = 0
 
   template enterState(s: ParserState): untyped =
     vt.state = s
-    stringStart = nil
 
   while i < text.len:
     defer:
       inc i
     var c1Allowed = false
     var c = text[i]
-
-    # stdout.write &"{i}: '{c}' (0x{c.int.toHex}), {c1Allowed}, {vt.state}, {vt.inEsc}\r\n"
-    var mods: Modifiers = {}
-
-    template yieldKey(name: untyped) =
-      yield keyEvent(name, mods, Press)
 
     if vt.inEscO: # state after \eO, check for \eOP, \eOQ, \eOR, \eOS which are F1, F2, F3 and F4
       vt.inEscO = false
@@ -297,24 +392,22 @@ iterator parseInput*(vt: var TerminalInputParser, text: openArray[char]): InputE
       else:
         discard
 
-    template yieldControlKey(key: char) =
-      if vt.inEsc:
-        mods.incl Alt
-      mods.incl Control
-      vt.inEsc = false
-      yieldKey key.int
-      continue
+    vt.prevEsc = vt.inEsc
 
     case c
     of '\x1b':
+      vt.intermedLen = 0
+      if not vt.state.isStringState():
+        vt.state = Normal
+      vt.inEsc = true
+
       if i == text.len - 1:
-        if vt.inEsc:
-          mods.incl Alt
-        yieldKey INPUT_ESCAPE
+        vt.endedInEsc = true
+        vt.escTimer = startTimer()
         continue
 
-      vt.state = Normal
-      vt.inEsc = true
+      vt.endedInEsc = false
+      continue
 
     of '\x7f':
       if vt.inEsc:
@@ -390,7 +483,6 @@ iterator parseInput*(vt: var TerminalInputParser, text: openArray[char]): InputE
           stringLen -= 1
         vt.inEsc = false
       else:
-        stringStart = nil
         vt.state = Normal
 
     if vt.state == CSILeader:

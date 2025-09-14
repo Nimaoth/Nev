@@ -305,6 +305,7 @@ proc startPaste*(vt: ptr VTerm) {.importc: "vterm_keyboard_start_paste".}
 proc endPaste*(vt: ptr VTerm) {.importc: "vterm_keyboard_end_paste".}
 proc mouseMove*(vt: ptr VTerm; row: cint; col: cint; modifiers: uint32) {.importc: "vterm_mouse_move".}
 proc mouseButton*(vt: ptr VTerm; button: cint; pressed: bool; modifiers: uint32) {.importc: "vterm_mouse_button".}
+proc getMouseFlags*(vt: ptr VTerm): cint {.importc: "vterm_get_mouse_flags".}
 
 proc setOutputCallback*(vt: ptr VTerm; f: VTermOutputCallback; user: pointer) {.importc: "vterm_output_set_callback".}
 proc setParserCallbacks*(vt: ptr VTerm; callbacks: ptr VTermParserCallbacks; user: pointer) {.importc: "vterm_parser_set_callbacks".}

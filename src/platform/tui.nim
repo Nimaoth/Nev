@@ -430,7 +430,8 @@ when defined(windows):
   var gOldConsoleModeInput: DWORD
   var gOldConsoleMode: DWORD
 
-  proc consoleInit() =
+  proc consoleInit*() =
+    discard getConsoleMode(getStdHandle(STD_OUTPUT_HANDLE), gOldConsoleMode.addr)
     discard getConsoleMode(getStdHandle(STD_INPUT_HANDLE), gOldConsoleModeInput.addr)
     if gFullScreen:
       if getConsoleMode(getStdHandle(STD_OUTPUT_HANDLE), gOldConsoleMode.addr) != 0:
@@ -439,9 +440,11 @@ when defined(windows):
     else:
       discard getConsoleMode(getStdHandle(STD_OUTPUT_HANDLE), gOldConsoleMode.addr)
 
-  proc consoleDeinit() =
+  proc consoleDeinit*() =
     if gOldConsoleMode != 0:
       discard setConsoleMode(getStdHandle(STD_OUTPUT_HANDLE), gOldConsoleMode)
+    if gOldConsoleModeInput != 0:
+      discard setConsoleMode(getStdHandle(STD_INPUT_HANDLE), gOldConsoleModeInput)
 
 
   func getKeyAsync(): Key =
@@ -511,8 +514,8 @@ else:  # OS X & Linux
   import posix, tables, termios
   import strutils, strformat
 
-  proc consoleInit()
-  proc consoleDeinit()
+  proc consoleInit*()
+  proc consoleDeinit*()
 
   # Mouse
   # https://de.wikipedia.org/wiki/ANSI-Escapesequenz
@@ -1165,14 +1168,13 @@ const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
 const ENABLE_LINE_INPUT = 0x0002
 const ENABLE_ECHO_INPUT = 0x0004
 
-proc enableVirtualTerminalInput*(): bool =
+proc enableVirtualTerminalInput*() =
   ## Enables true color.
-  result = false
   when defined(windows):
     var mode: DWORD = 0
     if getConsoleMode(getStdHandle(STD_INPUT_HANDLE), addr(mode)) != 0:
       mode = (mode or ENABLE_VIRTUAL_TERMINAL_INPUT) and not (ENABLE_LINE_INPUT or ENABLE_ECHO_INPUT)
-      result = setConsoleMode(getStdHandle(STD_INPUT_HANDLE), mode) != 0
+      discard setConsoleMode(getStdHandle(STD_INPUT_HANDLE), mode) != 0
 
 proc disableVirtualTerminalInput*() =
   ## Disables true color.

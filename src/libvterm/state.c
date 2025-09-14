@@ -780,6 +780,10 @@ static void set_dec_mode(VTermState *state, int num, int val)
     settermprop_bool(state, VTERM_PROP_CURSORVISIBLE, val);
     break;
 
+  case 47:
+    settermprop_bool(state, VTERM_PROP_ALTSCREEN, val);
+    break;
+
   case 69: // DECVSSM - vertical split screen mode
            // DECLRMM - left/right margin mode
     state->mode.leftrightmargin = val;

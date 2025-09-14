@@ -168,6 +168,10 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
             let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
             self.handleDrag(btn, cellPos.x.int, cellPos.y.int, modifiers)
             return true
+          currentNode.handleHover = proc(node: UINode, pos: Vec2): bool =
+            let cellPos = pos / vec2(builder.charWidth, builder.textHeight)
+            self.handleMove(cellPos.x.int, cellPos.y.int)
+            return true
 
           let bounds = currentNode.bounds
           let cellWidth = (bounds.w / builder.charWidth).floor.int

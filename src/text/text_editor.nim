@@ -1240,6 +1240,8 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
 
 proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[DisplayPoint] =
   assert self.numDisplayLines > 0
+  if self.platform.totalLineHeight == 0:
+    return displayPoint(0, 0)...displayPoint(0, 0)
   let baseLine = int(-self.interpolatedScrollOffset.y / self.platform.totalLineHeight)
   var displayRange: Range[DisplayPoint]
   displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32

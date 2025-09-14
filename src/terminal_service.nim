@@ -105,8 +105,8 @@ proc toVtermButton(button: input.MouseButton): cint =
   # todo: figure out what to do here and handle other mouse buttons
   case button
   of input.MouseButton.Left: return 1
-  of input.MouseButton.Right: return 2
-  of input.MouseButton.Middle: return 3
+  of input.MouseButton.Middle: return 2
+  of input.MouseButton.Right: return 3
   else: return 4
 
 when defined(windows):
@@ -917,7 +917,6 @@ proc handleInputEvents(state: var TerminalThreadState) =
 
       of InputEventKind.Key:
         let kittyKeyboardFlags = state.kittyKeyboardFlags
-        # echo event, &", kitty: {kittyKeyboardFlags}"
         if kittyKeyboardFlags == {} or event.noKitty:
           if event.input > 0:
             state.vterm.uniChar(event.input.uint32, event.modifiers.toVtermModifiers)
@@ -935,16 +934,24 @@ proc handleInputEvents(state: var TerminalThreadState) =
         state.vterm.mouseMove(event.row.cint, event.col.cint, event.modifiers.toVtermModifiers)
 
       of InputEventKind.MouseClick:
-        state.vterm.mouseMove(event.row.cint, event.col.cint, event.modifiers.toVtermModifiers)
-        state.vterm.mouseButton(event.button.toVtermButton, event.pressed, event.modifiers.toVtermModifiers)
+        if event.button in {input.MouseButton.Left, input.MouseButton.Middle, input.MouseButton.Right}: # todo: other buttons. DoubleClick would currently be interpreted as scroll
+          state.vterm.mouseButton(event.button.toVtermButton, event.pressed, event.modifiers.toVtermModifiers)
 
       of InputEventKind.Scroll:
-        let prevScrollY = state.scrollY
-        state.scrollY += event.deltaY
-        state.scrollY = state.scrollY.clamp(0, state.scrollbackBuffer.len)
-        state.outputChannel[].send OutputEvent(kind: OutputEventKind.Cursor, row: state.cursor.row + state.scrollY, col: state.cursor.col)
-        state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY, deltaY: state.scrollY - prevScrollY)
-        state.dirty = true
+        let mouseFlags = state.vterm.getMouseFlags().int
+        if mouseFlags != 0 or state.alternateScreen:
+          if event.deltaY > 0:
+            state.vterm.mouseButton(4, true, event.modifiers.toVtermModifiers)
+          else:
+            state.vterm.mouseButton(5, true, event.modifiers.toVtermModifiers)
+
+        if mouseFlags == 0 and not state.alternateScreen:
+          let prevScrollY = state.scrollY
+          state.scrollY += event.deltaY
+          state.scrollY = state.scrollY.clamp(0, state.scrollbackBuffer.len)
+          state.outputChannel[].send OutputEvent(kind: OutputEventKind.Cursor, row: state.cursor.row + state.scrollY, col: state.cursor.col)
+          state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY, deltaY: state.scrollY - prevScrollY)
+          state.dirty = true
 
       of InputEventKind.Size:
         if event.col != 0 and event.row != 0:
@@ -1779,7 +1786,7 @@ proc handleKittyKeyboard(s: ptr TerminalThreadState, leader: char, args: openArr
     of 3: stack[].last.excl flags
     else:
       echo &"Unknown mode {3}"
-    echo &"new flags: {stack[]}"
+    # echo &"new flags: {stack[]}"
     # s.sendOutput(&"new flags: {stack[]}\r\n")
 
   of '>':
@@ -1792,7 +1799,7 @@ proc handleKittyKeyboard(s: ptr TerminalThreadState, leader: char, args: openArr
     stack[].add flags
     if stack[].len > 64:
       stack[].removeShift(0)
-    echo &"new flags: {stack[]}"
+    # echo &"new flags: {stack[]}"
     # s.sendOutput(&"new flags: {stack[]}\r\n")
   of '<':
     let num = if args.len >= 1:
@@ -1804,14 +1811,13 @@ proc handleKittyKeyboard(s: ptr TerminalThreadState, leader: char, args: openArr
       if stack[].len == 0:
         break
       discard stack[].pop()
-    echo &"new flags: {stack[]}"
+    # echo &"new flags: {stack[]}"
     # s.sendOutput(&"new flags: {stack[]}\r\n")
   of '?':
     let flags = if stack[].len > 0:
       cast[int](stack[].last)
     else:
       0
-    echo &"request kitty keyboard protocol {stack[]} -> {flags}"
     s.sendOutput(&"\e[?{flags}u")
   else:
     echo &"unsupported"
@@ -1878,8 +1884,6 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
 
       of VTERM_PROP_CURSORBLINK:
         state.outputChannel[].send OutputEvent(kind: OutputEventKind.CursorBlink, cursorBlink: val.boolean != 0)
-      # of VTERM_PROP_ALTSCREEN:
-        # log state, &"settermmprop VTERM_PROP_ALTSCREEN {val.boolean != 0}"
 
       of VTERM_PROP_CURSORSHAPE:
         let shape = case val.number
@@ -2781,6 +2785,10 @@ proc handleClick*(view: TerminalView, button: input.MouseButton, pressed: bool, 
 
 proc handleDrag*(view: TerminalView, button: input.MouseButton, col: int, row: int, modifiers: Modifiers) =
   view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col, modifiers: modifiers))
+  view.terminal.lastEventTime = startTimer()
+
+proc handleMove*(view: TerminalView, col: int, row: int) =
+  view.terminal.sendEvent(InputEvent(kind: InputEventKind.MouseMove, row: row, col: col))
   view.terminal.lastEventTime = startTimer()
 
 proc updateModeEventHandlers(self: TerminalService, view: TerminalView) =
