@@ -1,4 +1,4 @@
-import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets]
+import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros]
 import vmath
 import chroma, pixie, pixie/fileformats/png
 import nimsumtree/[rope, arc]
@@ -12,6 +12,8 @@ import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocume
 import compilation_config
 
 when defined(enableLibssh):
+  static:
+    hint("Build with libssh2")
   import libssh2, ssh
 
 from scripting_api import RunInTerminalOptions, CreateTerminalOptions
@@ -2188,6 +2190,12 @@ proc terminate*(self: Terminal) {.async.} =
     # todo: use async signals
     await sleepAsync(10.milliseconds)
 
+  when defined(enableLibssh):
+    if self.ssh.isSome:
+      self.sshChannel.close()
+      self.sshChannel.free()
+      self.sshClient.disconnect()
+
   discard self.handles.inputWriteEvent2.close()
   discard self.handles.outputReadEvent2.close()
   if not self.useChannels:
@@ -2247,19 +2255,15 @@ when defined(enableLibssh):
 
       let address = addressess[0]
       let transp = await connect(address, bufferSize = 1024 * 1024)
-
-      # defer:
-      #   libssh2.exit()
-
       let session = session_init()
-      # defer:
-      #   discard session_free(session)
 
-      let socket: winlean.SocketHandle = winlean.SocketHandle(transp.fd)
       session_set_blocking(session, 0)
       var rc: int
       while true:
-        rc = session_handshake(session, socket)
+        when defined(windows):
+          rc = session_handshake(session, winlean.SocketHandle(transp.fd))
+        else:
+          rc = session_handshake(session, posix.SocketHandle(transp.fd))
         if rc != LIBSSH2_ERROR_EAGAIN:
           break
       if rc != 0:
@@ -2286,13 +2290,13 @@ when defined(enableLibssh):
           authResult = session.authPublicKey(options.username, privateKeyPath, publicKeyPath, passphrase.get(""))
 
         if authResult < 0:
-          raise newException(IOError, &"Failed to authenticate ssh session '{options.username}@{address}'")
+          raise newException(IOError, &"Failed to authenticate ssh session '{options.username}@{address}': {authResult}")
 
       log lvlInfo, &"Authentication successfull for ssh session '{options.username}@{address}' ({privateKeyPath})"
 
-      let client = newSSHClient()
-      client.session = session
-      let sshChannel = client.initChannel()
+      let sshClient = newSSHClient()
+      sshClient.session = session
+      let sshChannel = sshClient.initChannel()
 
       sshAsyncWait "request pty":
         var term = "xterm-256color"
@@ -2345,9 +2349,6 @@ when defined(enableLibssh):
         discard
       )
 
-      # Clean up
-      # libssh2.exit()
-
       sshAsyncWait "resize shell":
         let width = terminal.width
         let height = terminal.height
@@ -2355,7 +2356,7 @@ when defined(enableLibssh):
 
       terminal.ssh = options.some
       terminal.sshChannel = sshChannel
-      terminal.sshClient = client
+      terminal.sshClient = sshClient
     except CatchableError as e:
       log lvlError, &"Failed to create ssh connection: {e.msg}"
 
