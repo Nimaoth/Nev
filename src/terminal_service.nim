@@ -3095,6 +3095,10 @@ proc selectTerminal*(self: TerminalService, preview: bool = true, scaleX: float 
       if allViews[i] of TerminalView:
         let view = allViews[i].TerminalView
         var name = view.terminal.command
+        if view.terminal.ssh.getSome(opts):
+          let port = if opts.port.getSome(port): &":{port}" else: ""
+          let address = opts.address.get("127.0.0.1")
+          name = &"ssh {opts.username}@{address}{port}"
         if view.terminal.autoRunCommand != "":
           name.add " -- "
           name.add view.terminal.autoRunCommand
