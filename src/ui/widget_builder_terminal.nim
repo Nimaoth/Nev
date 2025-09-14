@@ -149,7 +149,14 @@ method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[Over
             section($exitCode, foreground.some, background.some)
 
           section(" - ")
-          section(self.terminal.command, "terminal.header.command.foreground".some, "terminal.header.command.background".some)
+
+          if self.terminal.ssh.getSome(opts):
+            let port = if opts.port.getSome(port): &":{port}" else: ""
+            let address = opts.address.get("127.0.0.1")
+            let desc = &"ssh {opts.username}@{address}{port}"
+            section(desc, "terminal.header.command.foreground".some, "terminal.header.command.background".some)
+          else:
+            section(self.terminal.command, "terminal.header.command.foreground".some, "terminal.header.command.background".some)
 
         # Body
         builder.panel(sizeFlags + &{FillBackground, MouseHover}, backgroundColor = backgroundColor):

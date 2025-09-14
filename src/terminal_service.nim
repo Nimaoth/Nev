@@ -362,7 +362,7 @@ type
     useChannels: bool
     handles: OsHandles
 
-    ssh: Option[SshOptions]
+    ssh*: Option[SshOptions]
     when defined(enableLibssh):
       sshChannel: SSHChannel
       sshClient: SSHClient
