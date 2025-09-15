@@ -1,4 +1,4 @@
-import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros]
+import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros, bitops, deques]
 import vmath
 import chroma, pixie, pixie/fileformats/png
 import nimsumtree/[rope, arc]
@@ -311,7 +311,8 @@ type
     pixelHeight: int
     scrollY: int = 0
     cursor: tuple[row, col: int, visible: bool, blink: bool] = (0, 0, true, true)
-    scrollbackBuffer: seq[seq[VTermScreenCell]]
+    scrollbackBuffer: Deque[seq[VTermScreenCell]]
+    scrollbackLines: int
     dirty: bool = false # When true send updated terminal buffer to main thread
     terminateRequested: bool = false
     processTerminated: bool = false
@@ -326,6 +327,7 @@ type
     outputBuffer: string
     handles: OsHandles
     sizeRequested: bool # Whether the size was requested use CSI 14/15/16/18 t
+    processStdoutBuffer: string
     when defined(windows):
       outputOverlapped: OVERLAPPED
       waitingForOvelapped: bool
@@ -1023,10 +1025,11 @@ proc handleProcessOutput(state: var TerminalThreadState, buffer: var string) {.r
     when defined(windows):
       template handleData(data: untyped, bytesToWrite: int): untyped =
         # echo data.toOpenArray(0, bytesToWrite - 1)
-        let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
-        if written != bytesToWrite:
-          echo "fix me: vterm.nim.terminalThread vterm.writeInput"
-          assert written == bytesToWrite, "fix me: vterm.nim.terminalThread vterm.writeInput"
+        if bytesToWrite > 0:
+          let written = state.vterm.writeInput(data, bytesToWrite.csize_t).int
+          if written != bytesToWrite:
+            echo "fix me: vterm.nim.terminalThread vterm.writeInput"
+            assert written == bytesToWrite, "fix me: vterm.nim.terminalThread vterm.writeInput"
 
         state.screen.flushDamage()
         state.dirty = true
@@ -1842,6 +1845,8 @@ proc createPlacements(state: KittyState): seq[PlacedImage] =
 
 proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
   var state = s
+  state.scrollbackLines = 16384
+  state.scrollbackBuffer = initDeque[seq[VTermScreenCell]](state.scrollbackLines)
 
   proc log(str: string) =
     if state.enableLog:
@@ -1915,13 +1920,15 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
       var line = newSeq[VTermScreenCell](cols)
       for i in 0..<cols:
         line[i] = cells[i]
-      state[].scrollbackBuffer.add(line)
+      while state.scrollbackBuffer.len >= state.scrollbackLines:
+        state.scrollbackBuffer.popFirst()
+      state.scrollbackBuffer.addLast(line)
       return 0 # return value is ignored
     ),
     sb_popline: (proc(cols: cint; cells: ptr UncheckedArray[VTermScreenCell]; user: pointer): cint {.cdecl.} =
       let state = cast[ptr TerminalThreadState](user)
-      if state[].scrollbackBuffer.len > 0:
-        let line = state[].scrollbackBuffer.pop()
+      if state.scrollbackBuffer.len > 0:
+        let line = state.scrollbackBuffer.popLast()
         for i in 0..<min(cols, line.len):
           cells[i] = line[i]
         return 1
@@ -1932,7 +1939,7 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
       # echo &"sb_clear: clear sixels"
       state.kitty.clear()
       state.sixels.clear()
-      state[].scrollbackBuffer.setLen(0)
+      state.scrollbackBuffer.clear()
       state.scrollY = 0
       state.outputChannel[].send OutputEvent(kind: OutputEventKind.Scroll, scrollY: state.scrollY)
       state.dirty = true
@@ -2057,23 +2064,46 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
       await state.handles.inputWriteEvent2.wait()
       try:
         state[].handleInputEvents()
+        if state.dirty:
+          state.dirty = false
+          state.outputChannel[].send OutputEvent(
+            kind: OutputEventKind.TerminalBuffer,
+            buffer: state[].createTerminalBuffer(),
+            sixels: state.sixels,
+            placements: state.kitty.createPlacements(),
+          )
       except CatchableError as e:
         echo "async error handle input events ", e.msg
         discard
 
+  proc handleOutput(state: ptr TerminalThreadState) {.async.} =
+    while not state.terminateRequested:
+      await state.readChannel.get.signal.wait()
+      try:
+        state[].handleProcessOutput(state.processStdoutBuffer)
+        if state.dirty:
+          state.dirty = false
+          state.outputChannel[].send OutputEvent(
+            kind: OutputEventKind.TerminalBuffer,
+            buffer: state[].createTerminalBuffer(),
+            sixels: state.sixels,
+            placements: state.kitty.createPlacements(),
+          )
+      except CatchableError as e:
+        echo "async error handle process output ", e.msg
+        discard
+
+  chronosDontSkipCallbacksAtStart = true
   if state.useChannels:
     asyncSpawn handleInput(state.addr)
+    asyncSpawn handleOutput(state.addr)
 
   try:
     while true:
       if state.useChannels:
         try:
-          waitFor state.readChannel.get.signal.wait()
-          try:
-            state.handleProcessOutput(buffer)
-          except CatchableError as e:
-            echo "async error handle process output ", e.msg
-            discard
+          let timeout = 1000000000
+          poll(timeout)
         except AsyncError, CancelledError:
           # echo "async error ", getCurrentExceptionMsg()
           discard

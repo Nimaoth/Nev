@@ -204,8 +204,7 @@ proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseCha
         # todo: Only flush when \n was written? Don't flush on
         stream.flush()
 
-        # todo: wait for stdin signal instead
-        sleep(1)
+        discard stdin.get.signal.waitSync()
 
       except CatchableError:
         # echo "ioerror"
