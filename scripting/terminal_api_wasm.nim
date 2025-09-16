@@ -79,13 +79,15 @@ proc enableTerminalDebugLog*(enable: bool) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc terminal_sendTerminalInput_void_TerminalService_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc sendTerminalInput*(input: string) {.gcsafe, raises: [].} =
+proc terminal_sendTerminalInput_void_TerminalService_string_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc sendTerminalInput*(input: string; noKitty: bool = false) {.gcsafe,
+    raises: [].} =
   var argsJson = newJArray()
   argsJson.add input.toJson()
+  argsJson.add noKitty.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = terminal_sendTerminalInput_void_TerminalService_string_wasm(
+  let res {.used.} = terminal_sendTerminalInput_void_TerminalService_string_bool_wasm(
       argsJsonString.cstring)
 
 

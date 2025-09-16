@@ -306,6 +306,10 @@ static int erase_user(VTermRect rect, int selective, void *user)
 
 static int erase(VTermRect rect, int selective, void *user)
 {
+  VTermScreen *screen = user;
+  if(screen->callbacks && screen->callbacks->erase)
+    (*screen->callbacks->erase)(rect, screen->cbdata);
+
   erase_internal(rect, selective, user);
   return erase_user(rect, 0, user);
 }

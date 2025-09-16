@@ -13,7 +13,7 @@ else:
   --clang.linkerexe:emcc # Replace C linker
   --clang.cpp.exe:emcc # Replace C++
   --clang.cpp.linkerexe:emcc # Replace C++ linker.
---listCmd # List what commands we are running so that we can debug them.
+# --listCmd # List what commands we are running so that we can debug them.
 
 --gc:arc # GC:arc is friendlier with crazy platforms.
 --exceptions:goto # Goto exceptions are friendlier with crazy platforms.

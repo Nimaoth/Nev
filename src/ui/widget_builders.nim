@@ -1,4 +1,4 @@
-import std/[sugar, os, strutils]
+import std/[sugar, os, strutils, sets]
 import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
@@ -27,8 +27,9 @@ method createUI*(self: RenderView, builder: UINodeBuilder, app: App): seq[Overla
   builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
     onClickAny btn:
       self.layout.tryActivateView(self)
+      self.mouseStates.incl(btn.int64)
 
-    self.size = currentNode.bounds.wh
+    self.bounds = currentNode.boundsAbsolute
     self.render()
     currentNode.renderCommands = self.commands
     currentNode.markDirty(builder)

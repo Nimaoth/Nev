@@ -17,6 +17,7 @@
     "+language-mappings": {
         "\\..(agda|lagda)$": "agda",
         "\\..(c|cc|h|inc)$": "c",
+        "\\..(vert|frag)$": "glsl",
         "\\..sh$": "bash",
         "\\..cs$": "c_sharp",
         "\\..(cpp|tcc|hpp)$": "cpp",
@@ -378,6 +379,40 @@
                     "/*",
                     "*/"
                 ]
+            }
+        },
+        "glsl": {
+            "+text": {
+                "treesitter.repository": "tree-sitter/tree-sitter-c",
+                "treesitter.language": "c",
+                "tab-width": 2,
+                "indent": "spaces",
+                "indent-after": [
+                    ":",
+                    "=",
+                    "(",
+                    "{",
+                    "["
+                ],
+                "line-comment": "//",
+                "block-comment": [
+                    "/*",
+                    "*/"
+                ],
+                "+search-regexes": {
+                    "goto-definition": [
+                        "^\\s*(\\w+[\\*\\s]+)[[0]]\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                        "^\\s*(typedef\\s+)?(struct|enum|union)\\s+[[0]]"
+                     ],
+                    "symbols": [
+                        "^\\s*(\\w+[\\*\\s]+)\\w+\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                        "^\\s*(typedef\\s+)?(struct|enum|union)\\s+\\w+"
+                    ],
+                    "workspace-symbols-by-kind": {
+                        "Function": "^\\s*(\\w+[\\*\\s]+)\\w+\\s*\\([^()]*\\)\\s*(const)?\\s*(\\{)?$",
+                        "Class": "^\\s*(typedef\\s+)?(struct|enum|union)\\s+\\w+"
+                    }
+                }
             }
         },
         "c": {
