@@ -1,9 +1,11 @@
 import std/[strformat]
 import libssh2
+import chronos/transports/stream
+import misc/[util]
 
 type
   SSHClient* = ref object of RootObj
-    # socket*: AsyncSocket
+    transport*: StreamTransport
     session*: Session
 
   SCPClient* = object
@@ -23,31 +25,51 @@ type
   AuthenticationException* = object of SSHException
   FileNotFoundException* = object of SSHException
 
+template sshWait*(msg: string, body: untyped): untyped =
+  var rc: int
+  while true:
+    rc = body
+    if rc != LIBSSH2_ERROR_EAGAIN:
+      break
+  if rc != 0:
+    echo "Failed to ", msg, ": ", rc
+
+template sshAsyncWait*(msg: string, body: untyped): untyped =
+  var rc: int
+  while true:
+    rc = body
+    if rc != LIBSSH2_ERROR_EAGAIN:
+      break
+    catch sleepAsync(10.milliseconds).await:
+      discard
+  if rc != 0:
+    echo "Failed to ", msg, ": ", rc
+
 proc newSSHClient*(): SSHClient =
   ## Creates a new SSH client and initializes the underlying libssh2 library.
   ## Raises SSHException if initialization fails.
   ##
   ## Returns:
   ##   A new SSHClient instance ready for connections
-  # if init(0) != 0:
-  #   raise newException(SSHException, "libssh2 initialization failed")
   result = new SSHClient
 
-# proc disconnect*(ssh: SSHClient) =
-#   ## Cleanly disconnects the SSH session and frees resources.
-#   ## Should be called when the client is no longer needed.
-#   ##
-#   ## It's recommended to use this in a `finally` block or with defer:
-#   ## ```nim
-#   ## let client = newSSHClient()
-#   ## defer: client.disconnect()
-#   ## ```
-#   if ssh.session != nil:
-#     ssh.session.close_session()
-#     ssh.session = nil
+proc disconnect*(ssh: SSHClient) =
+  ## Cleanly disconnects the SSH session and frees resources.
+  ## Should be called when the client is no longer needed.
+  ##
+  ## It's recommended to use this in a `finally` block or with defer:
+  ## ```nim
+  ## let client = newSSHClient()
+  ## defer: client.disconnect()
+  ## ```
+  if ssh.session != nil:
+    sshWait "disconnect session":
+      ssh.session.session_disconnect("")
+    discard ssh.session.session_free()
+    ssh.session = nil
 
-#   ssh.socket.close()
-#   libssh2.exit()
+  if ssh.transport != nil:
+    ssh.transport.close()
 
 # proc connect*(s: SSHClient, hostname: string, username: string, port = Port(22), password = "", privKey = "", pubKey = "", useAgent = false) {.async.} =
 #   ## Establishes an SSH connection to a remote host with the specified authentication method.
@@ -127,78 +149,20 @@ proc exec*(channel: SSHChannel, command: string): bool =
       break
   return rc == 0
 
-# proc read*(channel: SSHChannel): string =
-#   var
-#     buffer: array[0..1024, char]
-#     rc: cint
-#     stream = newStringStream()
-
-#   while true:
-#     rc = channel.impl.channel_read(addr buffer, buffer.len)
-#     if rc > 0:
-#       stream.writeData(addr buffer, rc)
-#     elif rc == LIBSSH2_ERROR_EAGAIN:
-#       # discard waitsocket(channel.client)
-#       discard
-#     else:
-#       break
-#   stream.setPosition(0)
-#   result = stream.readAll()
-
-# proc readError*(channel: SSHChannel): string =
-#   var
-#     buffer: array[0..1024, char]
-#     rc: cint
-#     stream = newStringStream()
-
-#   while true:
-#     rc = channel.impl.channel_read_stderr(addr buffer, buffer.len)
-#     if rc > 0:
-#       stream.writeData(addr buffer, rc)
-#     elif rc == LIBSSH2_ERROR_EAGAIN:
-#       # discard waitsocket(channel.client)
-#       discard
-#     else:
-#       break
-#   stream.setPosition(0)
-#   result = stream.readAll()
-
-proc close*(channel: SSHChannel): bool =
-  var rc: cint
-  while true:
-    rc = channel.impl.channel_close()
-    if rc == LIBSSH2_ERROR_EAGAIN:
-      # discard waitsocket(channel.client)
-      discard
-    else:
-      break
-  return rc == 0
+proc close*(channel: SSHChannel) =
+  if channel.impl != nil:
+    var rc: cint
+    while true:
+      rc = channel.impl.channel_close()
+      if rc == LIBSSH2_ERROR_EAGAIN:
+        # discard waitsocket(channel.client)
+        discard
+      else:
+        break
 
 proc getExitStatus*(channel: SSHChannel): int {.inline.} =
   channel.impl.channel_get_exit_status()
 
-#proc getExitSignal*(channel: SSHChannel): int {.inline.} =
-#  channel.impl.channel_get_exit_signal()
-
 proc free*(channel: SSHChannel) =
-  discard channel.impl.channel_free()
-
-template sshWait*(msg: string, body: untyped): untyped =
-  var rc: int
-  while true:
-    rc = body
-    if rc != LIBSSH2_ERROR_EAGAIN:
-      break
-  if rc != 0:
-    echo "Failed to ", msg, ": ", rc
-
-template sshAsyncWait*(msg: string, body: untyped): untyped =
-  var rc: int
-  while true:
-    rc = body
-    if rc != LIBSSH2_ERROR_EAGAIN:
-      break
-    catch sleepAsync(10.milliseconds).await:
-      discard
-  if rc != 0:
-    echo "Failed to ", msg, ": ", rc
+  if channel.impl != nil:
+    discard channel.impl.channel_free()

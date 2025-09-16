@@ -91,6 +91,7 @@ type
     mHandleHover: proc(node: UINode, pos: Vec2): bool {.gcsafe, raises: [].}
     mHandleScroll: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool {.gcsafe, raises: [].}
     renderCommands*: RenderCommands
+    renderCommandList*: seq[ref RenderCommands]
 
   UINodeBuilder* = ref object
     nodes: seq[UINode]
@@ -589,6 +590,7 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
     node.renderCommands = RenderCommands.default
   else:
     node.renderCommands.clear()
+  node.renderCommandList.setLen(0)
 
 proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
   if last.isNil:
@@ -1025,6 +1027,7 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
     node.aDebugData.css.setLen 0
 
   node.renderCommands.clear()
+  node.renderCommandList.setLen(0)
 
   node.mHandlePressed = nil
   node.mHandleReleased = nil

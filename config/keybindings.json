@@ -284,7 +284,7 @@
         "a": ["all", ["set-terminal-mode", "insert"], ["send-terminal-input", "<RIGHT>"]],
         "I": ["all", ["set-terminal-mode", "insert"], ["send-terminal-input", "<HOME>"]],
         "A": ["all", ["set-terminal-mode", "insert"], ["send-terminal-input", "<END>"]],
-        "<C-c>": ["send-terminal-input", "<C-c>"],
+        "<C-c>": ["send-terminal-input", "<C-c>", true],
         "<ENTER>": ["send-terminal-input", "<ENTER>"],
         "<UP>": ["send-terminal-input", "<UP>"],
         "<DOWN>": ["send-terminal-input", "<DOWN>"],

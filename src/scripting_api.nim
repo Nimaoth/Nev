@@ -1,5 +1,5 @@
 import std/[algorithm, sequtils, sugar, strutils, options]
-import misc/custom_unicode
+import misc/[custom_unicode, myjsonutils]
 
 when defined(nimscript):
   type
@@ -267,6 +267,7 @@ type SshOptions* = object
   username*: string
   publicKeyPath*: string
   privateKeyPath*: string
+  password*: Option[string]
 
 type CreateTerminalOptions* = object
   args*: seq[string]
@@ -277,6 +278,7 @@ type CreateTerminalOptions* = object
   slot*: string = ""
   focus*: bool = true
   createPty*: bool = true
+  kittyPathPrefix*: string = ""
   ssh*: Option[SshOptions]
 
 type RunInTerminalOptions* = object
@@ -289,6 +291,7 @@ type RunInTerminalOptions* = object
   slot*: string = ""
   focus*: bool = true
   createPty*: bool = true
+  kittyPathPrefix*: string = ""
   ssh*: Option[SshOptions]
 
 when defined(wasm):

@@ -101,7 +101,7 @@ jobs:
       - run: nim c --out:nev-musl -D:enableGui=false -D:enableTerminal=true --app:console -d:musl -d:nimWasmtimeBuildMusl -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached=${{steps.cache-nimble.outputs.cache-hit}} src/desktop_main.nim
       #- run: PATH=/github/home/.nimble/bin:$PATH nimble buildRemoteWorkspaceHost
       #- run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
-      
+
       # create release packages
       - run: rm -r ./config/nimcache
       - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims -l
@@ -192,7 +192,7 @@ jobs:
       #  with:
       #    files: release_windows
       #    dest: release_windows.zip
-      
+
 
       # upload artifacts
       - name: Upload release_windows

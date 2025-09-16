@@ -116,47 +116,47 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9663678061 = instance.getExport(context, "init_plugin")
-  if f_9663678061.isSome:
-    assert f_9663678061.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9663678061.get.of_field.func_field
+  let f_9697232495 = instance.getExport(context, "init_plugin")
+  if f_9697232495.isSome:
+    assert f_9697232495.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9697232495.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9663678077 = instance.getExport(context, "handle_command")
-  if f_9663678077.isSome:
-    assert f_9663678077.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9663678077.get.of_field.func_field
+  let f_9697232511 = instance.getExport(context, "handle_command")
+  if f_9697232511.isSome:
+    assert f_9697232511.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9697232511.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9663678127 = instance.getExport(context, "handle_mode_changed")
-  if f_9663678127.isSome:
-    assert f_9663678127.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9663678127.get.of_field.func_field
+  let f_9697232561 = instance.getExport(context, "handle_mode_changed")
+  if f_9697232561.isSome:
+    assert f_9697232561.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9697232561.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9663678128 = instance.getExport(context, "handle_view_render_callback")
-  if f_9663678128.isSome:
-    assert f_9663678128.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9663678128.get.of_field.func_field
+  let f_9697232562 = instance.getExport(context, "handle_view_render_callback")
+  if f_9697232562.isSome:
+    assert f_9697232562.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9697232562.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9663678152 = instance.getExport(context, "handle_channel_update")
-  if f_9663678152.isSome:
-    assert f_9663678152.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9663678152.get.of_field.func_field
+  let f_9697232586 = instance.getExport(context, "handle_channel_update")
+  if f_9697232586.isSome:
+    assert f_9697232586.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9697232586.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9663678153 = instance.getExport(context, "notify_task_complete")
-  if f_9663678153.isSome:
-    assert f_9663678153.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9663678153.get.of_field.func_field
+  let f_9697232587 = instance.getExport(context, "notify_task_complete")
+  if f_9697232587.isSome:
+    assert f_9697232587.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9697232587.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9663678154 = instance.getExport(context, "handle_move")
-  if f_9663678154.isSome:
-    assert f_9663678154.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9663678154.get.of_field.func_field
+  let f_9697232588 = instance.getExport(context, "handle_move")
+  if f_9697232588.isSome:
+    assert f_9697232588.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9697232588.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
 

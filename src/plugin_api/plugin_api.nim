@@ -66,7 +66,6 @@ type
     commands: seq[CommandId]
     namespace: string
     args: string
-    # channels: Arc[ChannelRegistry]
     destroyRequested: bool
     timer*: Timer
 
@@ -147,7 +146,6 @@ type
     linkerWasiFull: ptr LinkerT
     host: HostContext
     instances: seq[WasmModuleInstanceImpl]
-    # channels: Arc[ChannelRegistry]
 
 method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host = HostContext()
@@ -164,9 +162,6 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.vfs = self.host.vfsService.vfs
   self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
-
-  # self.channels = Arc[ChannelRegistry].new()
-  # self.channels.getMut.lock.initLock()
 
   self.engine = engine
   self.linkerWasiNone = engine.newLinker()
@@ -221,7 +216,6 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
   instanceData.getMut.stdin = newInMemoryChannel()
   instanceData.getMut.stdout = newInMemoryChannel()
   instanceData.getMut.stderr = newInMemoryChannel()
-  # instanceData.getMut.channels = self.channels
   instanceData.getMut.timer = startTimer()
   let ctx = instanceData.get.store.context
 
@@ -303,7 +297,6 @@ method cloneInstance*(instance: ptr InstanceData): Arc[InstanceDataImpl] =
   instanceData.getMut.permissions = instance.permissions
   instanceData.getMut.namespace = instance.namespace
   instanceData.getMut.host = instance.host
-  # instanceData.getMut.channels = instance.channels
   instanceData.getMut.timer = startTimer()
   let ctx = instanceData.get.store.context
 
@@ -1165,43 +1158,17 @@ proc channelReadChannelOpen(instance: ptr InstanceData; path: sink string): Opti
   let chan = openGlobalReadChannel(path)
   if chan.isSome:
     return ReadChannelResource(channel: chan.get).some
-  # let channels = instance.channels.getMutUnsafe.addr
-  # withLock(channels.lock):
-  #   var chan: ReadChannelResource
-  #   if channels.readChannels.take(path, chan):
-  #     return chan.some
-  # return ReadChannelResource.none
 
 proc channelReadChannelMount(instance: ptr InstanceData; channel: sink ReadChannelResource; path: sink string; unique: bool): string =
   mountGlobalReadChannel(path, channel.channel, unique)
-  # var path = path
-  # if unique:
-  #   path.add "-" & $newId()
-  # let channels = instance.channels.getMutUnsafe.addr
-  # withLock(channels.lock):
-  #   channels.readChannels[path] = channel
-  #   return path
 
 proc channelWriteChannelOpen(instance: ptr InstanceData; path: sink string): Option[WriteChannelResource] =
   let chan = openGlobalWriteChannel(path)
   if chan.isSome:
     return WriteChannelResource(channel: chan.get).some
-  # let channels = instance.channels.getMutUnsafe.addr
-  # withLock(channels.lock):
-  #   var chan: WriteChannelResource
-  #   if channels.writeChannels.take(path, chan):
-  #     return chan.some
-  # return WriteChannelResource.none
 
 proc channelWriteChannelMount(instance: ptr InstanceData; channel: sink WriteChannelResource; path: sink string; unique: bool): string =
   mountGlobalWriteChannel(path, channel.channel, unique)
-  # var path = path
-  # if unique:
-  #   path.add "-" & $newId()
-  # let channels = instance.channels.getMutUnsafe.addr
-  # withLock(channels.lock):
-  #   channels.writeChannels[path] = channel
-  #   return path
 
 proc channelNewInMemoryChannel(instance: ptr InstanceData): (ReadChannelResource, WriteChannelResource) =
   var c = newInMemoryChannel()
@@ -1219,7 +1186,7 @@ proc processProcessStart(instance: ptr InstanceData; name: sink string; args: si
 
 proc processStdout(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource =
   if self.stdout.isNil:
-    self.stdout = newProcessOutputChannel(self.process)
+    self.stdout = self.process.stdout
   return ReadChannelResource(channel: self.stdout)
 
 proc processStderr(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource =
@@ -1228,5 +1195,5 @@ proc processStderr(instance: ptr InstanceData; self: var ProcessResource): ReadC
 
 proc processStdin(instance: ptr InstanceData; self: var ProcessResource): WriteChannelResource =
   if self.stdin.isNil:
-    self.stdin = newProcessInputChannel(self.process)
+    self.stdin = self.process.stdin
   return WriteChannelResource(channel: self.stdin)

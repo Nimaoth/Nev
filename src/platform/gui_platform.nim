@@ -1,6 +1,6 @@
-import std/[tables, strutils, options, sets, os, strformat]
+import std/[tables, strutils, options, sets, os, strformat, sugar, locks]
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
-import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer]
+import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
 import ui/node
 import platform
 import input, monitors, lrucache, theme, compilation_config, vfs, app_options
@@ -21,7 +21,6 @@ type
     boxy: Boxy
     currentModifiers: Modifiers
     currentMouseButtons: set[MouseButton]
-    eventCounter: int
 
     fontRegular: string
     fontBold*: string
@@ -70,6 +69,12 @@ method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Drawn Nodes: {self.drawnNodes.len}\n"
 
 {.pop.} # gcsafe
+
+
+var gTextures: GenerationalSeq[Texture, TextureId]
+reserveTextureImpl = proc(): TextureId {.gcsafe, raises: [].} =
+  {.gcsafe.}:
+    return gTextures.add(nil)
 
 method init*(self: GuiPlatform, options: AppOptions) =
   try:
@@ -527,8 +532,50 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
+proc toRgbaFast(c: colortypes.Color): ColorRGBA {.inline.} =
+  ## Convert Color to ColorRGBA
+  result.r = (c.r * 255 + 0.5).uint8
+  result.g = (c.g * 255 + 0.5).uint8
+  result.b = (c.b * 255 + 0.5).uint8
+  result.a = (c.a * 255 + 0.5).uint8
+
+proc updateTextures(self: GuiPlatform) =
+  var texturesToUpload = takeTexturesToUpload()
+  var texturesToDelete = takeTexturesToDelete()
+
+  withLock(texturesLock):
+    let textures = ({.gcsafe.}: gTextures.addr)
+    for tex in texturesToUpload:
+      try:
+        if tex.id in textures[]:
+          let image = newImage(tex.width, tex.height)
+          for y in 0..<tex.height:
+            for x in 0..<tex.width:
+              image.data[x + y * tex.width] = tex.data[x + y * tex.width].toRgbaFast()
+          let texture = newTexture(image)
+          textures[].set(tex.id, texture)
+      except CatchableError as e:
+        log lvlError, &"Failed to create texture: {e.msg}"
+      except GLerror as e:
+        log lvlError, &"Failed to create texture: {e.msg}"
+    for texId in texturesToDelete:
+      try:
+        if textures[].tryGet(texId).getSome(texture):
+          if texture.textureId != 0:
+            glDeleteTextures(1, texture.textureId.addr)
+          textures[].del(texId)
+      except CatchableError as e:
+        log lvlError, &"Failed to create texture: {e.msg}"
+      except GLerror as e:
+        log lvlError, &"Failed to create texture: {e.msg}"
+
+    if texturesToDelete.len > 30:
+      echo &"{textures[].len} active ----------------"
+
 method render*(self: GuiPlatform, rerender: bool) =
   try:
+    self.updateTextures()
+
     if rerender:
       if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
         self.framebuffer.width = self.size.x.int32
@@ -566,7 +613,8 @@ method render*(self: GuiPlatform, rerender: bool) =
       defer:
         self.drawnNodes.setLen 0
 
-      self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+      withLock(texturesLock):
+        self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
 
       if self.showDrawnNodes:
         let size = if self.showDrawnNodes: self.size * vec2(0.5, 1) else: self.size
@@ -609,7 +657,7 @@ method render*(self: GuiPlatform, rerender: bool) =
     discard
 
 var solidPaint = newPaint(SolidPaint)
-proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: string, arrangementIndex: int, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1)) =
+proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune) =
   let wrap = TextWrap in flags
   let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
     vec2(bounds.w, bounds.h)
@@ -643,110 +691,137 @@ proc drawText(platform: GuiPlatform, renderCommands: var RenderCommands, text: s
   try:
     let font = platform.getFont(platform.ctx.fontSize, flags)
 
-    if arrangementIndex == -1 or arrangementIndex >= uint32.high.int:
-      let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
-      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
-        let color = if tintRune(rune):
-          inColor
-        else:
-          color(1, 1, 1)
-
-        if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags:
-          if platform.asciiGlyphCache[rune.int].len == 0:
-            var path = font.typeface.getGlyphPath(rune)
-            let rect = arrangement.selectionRects[i]
-            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-            var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
-            for paint in font.paints:
-              image.fillPath(path, paint)
-            platform.boxy.addImage($rune, image, genMipmaps=false)
-            platform.asciiGlyphCache[rune.int] = $rune
-
-          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-          platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
-
-        else:
-          let key = (rune, textFlags)
-          if not platform.glyphCache.contains(key):
-            var path = font.typeface.getGlyphPath(rune)
-            let rect = arrangement.selectionRects[i]
-            path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
-            var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
-            for paint in font.paints:
-              image.fillPath(path, paint)
-            platform.boxy.addImage($key, image, genMipmaps=false)
-            platform.glyphCache[key] = $key
-
-          let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
-          platform.boxy.drawImage($key, pos, color)
-
-      if TextDrawSpaces in flags:
-        let spaceRune = renderCommands.space
-        for i, rune in arrangement.runes:
-          let (rune, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
-          drawRune(i, rune, color)
+    let arrangement = font.typeset(text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap, snapToPixel = false)
+    template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+      let color = if tintRune(rune):
+        inColor
       else:
-        for i, rune in arrangement.runes:
-          drawRune(i, rune, color)
+        color(1, 1, 1)
 
-      if TextUndercurl in flags:
-        platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
+      if rune.int < platform.asciiGlyphCache.len and textFlags == 0.UINodeFlags:
+        if platform.asciiGlyphCache[rune.int].len == 0:
+          var path = font.typeface.getGlyphPath(rune)
+          let rect = arrangement.selectionRects[i]
+          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+          var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+          for paint in font.paints:
+            image.fillPath(path, paint)
+          platform.boxy.addImage($rune, image, genMipmaps=false)
+          platform.asciiGlyphCache[rune.int] = $rune
 
-    else:
-      let typeface = platform.getTypeface(flags)
-      let fontScale = platform.ctx.fontSize / typeface.scale
-      let indices {.cursor.} = renderCommands.arrangements[arrangementIndex]
-      let solidPaint = ({.cast(gcsafe).}: solidPaint)
-      solidPaint.color = color(1, 1, 1)
-      template drawRune(i: int, rune: Rune, inColor: Color): untyped =
-        let color = if tintRune(rune):
-          inColor
-        else:
-          color(1, 1, 1)
+        let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+        platform.boxy.drawImage(platform.asciiGlyphCache[rune.int], pos, color)
+
+      else:
         let key = (rune, textFlags)
         if not platform.glyphCache.contains(key):
-          var path = typeface.getGlyphPath(rune)
-          let rect = renderCommands.arrangement.selectionRects[i]
-          path.transform(translate(renderCommands.arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
+          var path = font.typeface.getGlyphPath(rune)
+          let rect = arrangement.selectionRects[i]
+          path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
           var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
-          image.fillPath(path, solidPaint)
+          for paint in font.paints:
+            image.fillPath(path, paint)
           platform.boxy.addImage($key, image, genMipmaps=false)
           platform.glyphCache[key] = $key
 
-        let pos = (vec2(pos.x, pos.y) + renderCommands.arrangement.selectionRects[i].xy).round
+        let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
         platform.boxy.drawImage($key, pos, color)
 
-      if TextDrawSpaces in flags:
-        let spaceRune = renderCommands.space
-        for i in indices.runes:
-          let rune = renderCommands.arrangement.runes[i]
-          let (rune2, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
-          drawRune(i, rune2, color)
-      else:
-        for i in indices.runes:
-          let rune = renderCommands.arrangement.runes[i]
-          drawRune(i, rune, color)
+    if TextDrawSpaces in flags:
+      for i, rune in arrangement.runes:
+        let (rune, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
+        drawRune(i, rune, color)
+    else:
+      for i, rune in arrangement.runes:
+        drawRune(i, rune, color)
 
-      if TextUndercurl in flags:
-        platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
+    if TextUndercurl in flags:
+      platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
 
   except GLerror, Exception:
     discard
 
-method createTexture*(self: GuiPlatform, image: Image): TextureId {.gcsafe, raises: [].} =
-  try:
-    let tex = newTexture(image)
-    return tex.textureId.TextureId
-  except GLerror as e:
-    return 0.TextureId
+proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.Arrangement, indices: RenderCommandArrangement, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune) =
+  let wrap = TextWrap in flags
+  let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
+    vec2(bounds.w, bounds.h)
+  else:
+    vec2(0, 0)
 
-proc handleRenderCommand(node: UINode, platform: GuiPlatform, command: RenderCommand, nodePos: Vec2, maskBounds: var seq[Rect]) {.inline, raises: [Exception].} =
+  let hAlign = if TextAlignHorizontalLeft in flags:
+    HorizontalAlignment.LeftAlign
+  elif TextAlignHorizontalCenter in flags:
+    HorizontalAlignment.CenterAlign
+  elif TextAlignHorizontalRight in flags:
+    HorizontalAlignment.RightAlign
+  else:
+    HorizontalAlignment.LeftAlign
+
+  let vAlign = if TextAlignVerticalTop in flags:
+    VerticalAlignment.TopAlign
+  elif TextAlignVerticalCenter in flags:
+    VerticalAlignment.MiddleAlign
+  elif TextAlignVerticalBottom in flags:
+    VerticalAlignment.BottomAlign
+  else:
+    VerticalAlignment.TopAlign
+
+  let textFlags = flags * &{TextItalic, TextBold}
+
+  proc tintRune(r: Rune): bool =
+    return true
+
+  # todo: convert typeset to not use strings to avoid copying
+  try:
+    let font = platform.getFont(platform.ctx.fontSize, flags)
+    let typeface = platform.getTypeface(flags)
+    let fontScale = platform.ctx.fontSize / typeface.scale
+    let solidPaint = ({.cast(gcsafe).}: solidPaint)
+    solidPaint.color = color(1, 1, 1)
+    template drawRune(i: int, rune: Rune, inColor: Color): untyped =
+      let color = if tintRune(rune):
+        inColor
+      else:
+        color(1, 1, 1)
+      let key = (rune, textFlags)
+      if not platform.glyphCache.contains(key):
+        var path = typeface.getGlyphPath(rune)
+        let rect = arrangement.selectionRects[i]
+        path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(fontScale)))
+        var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+        image.fillPath(path, solidPaint)
+        platform.boxy.addImage($key, image, genMipmaps=false)
+        platform.glyphCache[key] = $key
+
+      let pos = (vec2(pos.x, pos.y) + arrangement.selectionRects[i].xy).round
+      platform.boxy.drawImage($key, pos, color)
+
+    if TextDrawSpaces in flags:
+      for i in indices.runes:
+        let rune = arrangement.runes[i]
+        let (rune2, color) = if rune == ' '.Rune: (spaceRune, spaceColor) else: (rune, color)
+        drawRune(i, rune2, color)
+    else:
+      for i in indices.runes:
+        let rune = arrangement.runes[i]
+        drawRune(i, rune, color)
+
+    if TextUndercurl in flags:
+      platform.boxy.drawRect(rect(pos.x, pos.y + bounds.h - 2, bounds.w, 2), underlineColor)
+
+  except GLerror, Exception:
+    discard
+
+proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, nodePos: Vec2, spaceColor: Color, space: Rune, maskBounds: var seq[Rect]) {.inline, raises: [Exception].} =
   case command.kind
   of RenderCommandKind.Rect:
     platform.boxy.strokeRect(command.bounds + nodePos, command.color)
   of RenderCommandKind.Image:
-    let textureId = command.textureId.GLuint
-    platform.boxy.drawUvRect(nodePos + command.bounds.xy, nodePos + command.bounds.xy + command.bounds.wh, vec2(0), vec2(1), command.color, textureId)
+    {.gcsafe.}:
+      if gTextures.tryGet(command.textureId).getSome(tex):
+        if tex != nil:
+          let glTexId = tex.textureId
+          platform.boxy.drawUvRect(nodePos + command.bounds.xy, nodePos + command.bounds.xy + command.bounds.wh, command.uv0, command.uv1, command.color, glTexId)
 
   of RenderCommandKind.FilledRect:
     platform.boxy.drawRect(command.bounds + nodePos, command.color)
@@ -755,11 +830,16 @@ proc handleRenderCommand(node: UINode, platform: GuiPlatform, command: RenderCom
     var text = newStringOfCap(command.len)
     text.setLen(command.len)
     copyMem(text[0].addr, command.data, command.len)
-    platform.drawText(node.renderCommands, text, -1, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags, command.underlineColor)
+    platform.drawText(text, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, spaceColor, command.flags, command.underlineColor, space)
+
   of RenderCommandKind.Text:
     # todo: don't copy string data
-    let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-    platform.drawText(node.renderCommands, text, command.arrangementIndex.int, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, node.renderCommands.spacesColor, command.flags, command.underlineColor)
+    assert renderCommands != nil
+    let text = renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
+    if command.arrangementIndex == uint32.high:
+      platform.drawText(text, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, spaceColor, command.flags, command.underlineColor, space)
+    else:
+      platform.drawText(text, renderCommands.arrangement, renderCommands.arrangements[command.arrangementIndex], command.bounds.xy + nodePos, command.bounds + nodePos, command.color, spaceColor, command.flags, command.underlineColor, space)
   of RenderCommandKind.ScissorStart:
     platform.boxy.pushLayer()
     maskBounds.add(command.bounds + nodePos)
@@ -812,7 +892,7 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
         platform.boxy.popLayer()
 
     if DrawText in node.flags:
-      platform.drawText(node.renderCommands, node.text, -1, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor)
+      platform.drawText(node.text, nodePos, node.boundsRaw, node.textColor, node.textColor, node.flags, node.underlineColor)
 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
@@ -821,10 +901,15 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       platform.boxy.strokeRect(bounds, node.borderColor)
 
     var maskBounds: seq[Rect]
+    for list in node.renderCommandList:
+      for command in list.commands:
+        handleRenderCommand(platform, list[].addr, command, nodePos, list.spacesColor, list.space, maskBounds)
+      for command in list[].decodeRenderCommands:
+        handleRenderCommand(platform, list[].addr, command, nodePos, node.textColor, list.space, maskBounds)
     for command in node.renderCommands.commands:
-      handleRenderCommand(node, platform, command, nodePos, maskBounds)
+      handleRenderCommand(platform, node.renderCommands.addr, command, nodePos, node.renderCommands.spacesColor, node.renderCommands.space, maskBounds)
     for command in node.renderCommands.decodeRenderCommands:
-      handleRenderCommand(node, platform, command, nodePos, maskBounds)
+      handleRenderCommand(platform, node.renderCommands.addr, command, nodePos, node.textColor, node.renderCommands.space, maskBounds)
 
   except GLerror, Exception:
     discard

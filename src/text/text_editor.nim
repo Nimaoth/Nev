@@ -1,4 +1,4 @@
-import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables,
+import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables, parseutils,
   deques, sets, algorithm, os]
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -1241,6 +1241,8 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
 
 proc visibleDisplayRange*(self: TextDocumentEditor, buffer: int = 0): Range[DisplayPoint] =
   assert self.numDisplayLines > 0
+  if self.platform.totalLineHeight == 0:
+    return displayPoint(0, 0)...displayPoint(0, 0)
   let baseLine = int(-self.interpolatedScrollOffset.y / self.platform.totalLineHeight)
   var displayRange: Range[DisplayPoint]
   displayRange.a.row = clamp(baseLine - buffer, 0, self.numDisplayLines - 1).uint32
@@ -1946,8 +1948,7 @@ proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   else:
     self.hideCompletions()
 
-proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true) {.
-    expose("editor.text").} =
+proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
     return
 
@@ -2038,6 +2039,30 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
   self.updateTargetColumn(Last)
 
   self.autoShowCompletions()
+
+proc insertRawAsync(self: TextDocumentEditor) {.async.} =
+  let text = await self.layout.promptString("Enter number")
+  if text.isNone or self.document.isNil:
+    return
+
+  try:
+    var num = 0
+    if text.get.startsWith("0x"):
+      discard text.get.toOpenArray(2, text.get.high).parseHex(num)
+    elif text.get.startsWith("0b"):
+      discard text.get.toOpenArray(2, text.get.high).parseBin(num)
+    elif text.get.startsWith("0o"):
+      discard text.get.toOpenArray(2, text.get.high).parseOct(num)
+    else:
+      discard text.get.parseInt(num)
+
+    let r = num.Rune
+    self.insertText($r)
+  except CatchableError as e:
+    log lvlError, &"Failed to parse '{text}': {e.msg}"
+
+proc insertRaw*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncSpawn self.insertRawAsync()
 
 proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()

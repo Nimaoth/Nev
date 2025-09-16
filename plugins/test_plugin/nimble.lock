@@ -43,12 +43,34 @@
         "sha1": "408bde8679bce63dfb6f424e107eb37c5eb31510"
       }
     },
+    "nimclay": {
+      "version": "0.2.0",
+      "vcsRevision": "a834a7324a606a77a7512d9ecc589ac2c26dc4a8",
+      "url": "https://github.com/Nimaoth/nimclay",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "5ec93ba563031987f9260ee016272d30b7eed775"
+      }
+    },
+    "nimgen": {
+      "version": "0.5.4",
+      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
+      "url": "https://github.com/Nimaoth/nimgen",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
+      }
+    },
     "nimwasmtime": {
       "version": "0.2.1",
       "vcsRevision": "415a252eb4cada08d7ced468d42c92b1b0d4ae72",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
-      "dependencies": [],
+      "dependencies": [
+        "nimgen"
+      ],
       "checksums": {
         "sha1": "da3c2261fac93db812ac62808b606d45b4d25e0d"
       }

@@ -780,6 +780,10 @@ static void set_dec_mode(VTermState *state, int num, int val)
     settermprop_bool(state, VTERM_PROP_CURSORVISIBLE, val);
     break;
 
+  case 47:
+    settermprop_bool(state, VTERM_PROP_ALTSCREEN, val);
+    break;
+
   case 69: // DECVSSM - vertical split screen mode
            // DECLRMM - left/right margin mode
     state->mode.leftrightmargin = val;
@@ -939,8 +943,10 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
     }
 
     switch(leader[0]) {
-    case '?':
+    case '<':
+    case '=':
     case '>':
+    case '?':
       leader_byte = leader[0];
       break;
     default:
@@ -2147,6 +2153,25 @@ void vterm_state_reset(VTermState *state, int hard)
     VTermRect rect = { 0, state->rows, 0, state->cols };
     erase(state, rect, 0);
   }
+
+  if(state->fallbacks && state->fallbacks->reset)
+    (*state->fallbacks->reset)(hard, state->fbdata);
+}
+
+void vterm_state_move_cursor(VTermState *state, int cols, int rows)
+{
+  VTermPos oldpos = state->pos;
+  state->pos.col += cols;
+  state->pos.row += rows;
+  updatecursor(state, &oldpos, 0);
+}
+
+void vterm_state_set_cursor(VTermState *state, int col, int row)
+{
+  VTermPos oldpos = state->pos;
+  state->pos.col = col;
+  state->pos.row = row;
+  updatecursor(state, &oldpos, 0);
 }
 
 void vterm_state_get_cursorpos(const VTermState *state, VTermPos *cursorpos)

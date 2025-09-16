@@ -1,14 +1,36 @@
-import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate]
+import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate, typedthreads, parseutils, envvars]
 import std/colors as stdcolors
 import vmath
 import chroma as chroma
-import misc/[custom_logger, rect_utils, event, timer, custom_unicode]
+import misc/[custom_logger, rect_utils, event, timer, custom_unicode, custom_async]
 import tui, input, ui/node
-import platform, app_options
+import platform, app_options, terminal_input
+
+when defined(windows):
+  import winlean
+else:
+  from posix import read
 
 export platform
 
 logCategory "terminal-platform"
+
+# Mouse
+# https://de.wikipedia.org/wiki/ANSI-Escapesequenz
+# https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Extended-coordinates
+const
+  CSI = 0x1B.chr & 0x5B.chr
+  SET_BTN_EVENT_MOUSE = "1002"
+  SET_ANY_EVENT_MOUSE = "1003"
+  SET_SGR_EXT_MODE_MOUSE = "1006"
+  # SET_URXVT_EXT_MODE_MOUSE = "1015"
+  ENABLE = "h"
+  DISABLE = "l"
+  MouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{ENABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{ENABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{ENABLE}"
+  DisableMouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{DISABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{DISABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{DISABLE}"
+
+  XtermColor    = "xterm-color"
+  Xterm256Color = "xterm-256color"
 
 type
   TerminalPlatform* = ref object of Platform
@@ -17,15 +39,59 @@ type
     mouseButtons: set[input.MouseButton]
     masks: seq[Rect]
     cursor: tuple[row: int, col: int, visible: bool, shape: UINodeFlags]
+    noPty: bool
+    noUI: bool
+    readInputOnThread: bool
 
     doubleClickTimer: Timer
     doubleClickCounter: int
     doubleClickTime: float
 
+    inputParser: TerminalInputParser
+    useKittyKeyboard: bool
+    kittyKeyboardFlags: int = 0b1001
+
+    gridSize: IVec2
+    pixelSize: IVec2
+    cellPixelSize: IVec2
+
+proc enterFullScreen() =
+  ## Enters full-screen mode (clears the terminal).
+  when defined(windows):
+    stdout.write "\e[?47h\e[?1049h" # use alternate screen
+  elif defined(posix):
+    case getEnv("TERM"):
+    of XtermColor:
+      stdout.write "\e7\e[?47h"
+    of Xterm256Color:
+      stdout.write "\e[?1049h"
+    else:
+      eraseScreen()
+  else:
+    eraseScreen()
+
+proc exitFullScreen() =
+  ## Exits full-screen mode (restores the previous contents of the terminal).
+  when defined(windows):
+    stdout.write "\e?47l\e[?1049l"
+  elif defined(posix):
+    case getEnv("TERM"):
+    of XtermColor:
+      stdout.write "\e[2J\e[?47l\e8"
+    of Xterm256Color:
+      stdout.write "\e[?1049l"
+    else:
+      eraseScreen()
+  else:
+    eraseScreen()
+    setCursorPos(0, 0)
+
 proc exitProc() {.noconv.} =
-  resetAttributes()
-  myDisableTrueColors()
-  illwillDeinit()
+  stdout.write("\e[<u") # todo: only if enabled
+  stdout.write(DisableMouseTrackAny)
+  exitFullScreen()
+  consoleDeinit()
+  stdout.write(tui.ansiResetCode)
   showCursor()
   quit(0)
 
@@ -135,11 +201,104 @@ proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int] {.gcsafe.
 
   return (1, 1)
 
+proc getTerminalSize(self: TerminalPlatform): IVec2 =
+  when defined(linux):
+    return ivec2(terminalWidth().int32, terminalHeight().int32)
+  if self.noPty:
+    return self.gridSize
+    try:
+      stdout.write("\e[18t") # request grid size
+      stdout.write("\e[15t") # request cell pixel size
+      stdout.flushFile()
+    except IOError:
+      discard
+  else:
+    return ivec2(terminalWidth().int32, terminalHeight().int32)
+
+type ThreadState = object
+  a: int
+
+var thread: Thread[ptr ThreadState]
+var state = ThreadState(
+)
+var chan: Channel[char]
+chan.open()
+var stdinEvent = ThreadSignalPtr.new().value
+
+proc threadFunc(state: ptr ThreadState) {.thread.} =
+  while true:
+    var str = stdin.readChar()
+    chan.send(str)
+    discard stdinEvent.fireSync()
+
+proc waitForStdin(self: TerminalPlatform) {.async.} =
+  while true:
+    discard self.processEvents()
+    await stdinEvent.wait()
+
 method init*(self: TerminalPlatform, options: AppOptions) =
   try:
-    illwillInit(fullscreen=true, mouse=true)
-    setControlCHook(exitProc)
-    hideCursor()
+    self.noPty = options.noPty
+    self.noUI = options.noUI
+
+    self.inputParser.enableEscapeTimeout = true
+    self.inputParser.escapeTimeout = 32
+
+    when defined(windows):
+      self.readInputOnThread = true
+    if self.noPty:
+      self.readInputOnThread = true
+
+    self.gridSize = ivec2(80, 50)
+    self.cellPixelSize = ivec2(10, 20)
+    self.pixelSize = self.gridSize * self.cellPixelSize
+
+    var useKitty = true
+
+    if options.kittyKeyboardFlags != "":
+      try:
+        var flags: int = 0
+        discard options.kittyKeyboardFlags.parseBin(flags)
+        self.kittyKeyboardFlags = flags
+        useKitty = flags != 0
+      except CatchableError as e:
+        log lvlError, &"Failed to parse kitty keyboard flags: {e.msg}"
+
+    if not options.noPty:
+      if myEnableTrueColors():
+        log(lvlInfo, "Enable true color support")
+        self.trueColorSupport = true
+      else:
+        when defined(posix):
+          log(lvlInfo, "Enable true color support")
+          self.trueColorSupport = true
+    else:
+      self.trueColorSupport = true
+
+    when defined(windows):
+      enableVirtualTerminalInput()
+
+    gIllwillInitialised = true
+    gFullScreen = true
+
+    enterFullScreen()
+
+    if useKitty:
+      log lvlInfo, &"Query kitty keyboard protol with flags {self.kittyKeyboardFlags.toBin(5)}"
+      stdout.write("\e[?u") # query kitty keyboard protocol support
+
+    stdout.write(tui.ansiResetCode)
+    stdout.write(MouseTrackAny)
+
+    if options.noPty:
+      stdout.write "\e[2J" # clear
+      stdout.write "\e[18t" # request grid size
+
+    else:
+      consoleInit()
+      setControlCHook(exitProc)
+
+    stdout.write "\e[?25l"  # hide cursor
 
     self.builder = newNodeBuilder()
     self.builder.useInvalidation = true
@@ -152,21 +311,20 @@ method init*(self: TerminalPlatform, options: AppOptions) =
 
     self.focused = true
 
-    if myEnableTrueColors():
-      log(lvlInfo, "Enable true color support")
-      self.trueColorSupport = true
-    else:
-      when not defined(posix):
-        log(lvlError, "Failed to enable true color support")
-      else:
-        log(lvlInfo, "Enable true color support")
-        self.trueColorSupport = true
+    if self.readInputOnThread:
+      try:
+        thread.createThread(threadFunc, state.addr)
+      except CatchableError:
+        discard
+
+      # asyncSpawn self.waitForStdin()
 
     self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
       result.x = text.len.float
       result.y = 1
 
-    self.buffer.initTerminalBuffer(terminalWidth(), terminalHeight())
+    let terminalSize = self.getTerminalSize()
+    self.buffer.initTerminalBuffer(terminalSize.x, terminalSize.y)
     self.buffer.clear()
     self.redrawEverything = true
 
@@ -235,11 +393,16 @@ method init*(self: TerminalPlatform, options: AppOptions) =
   except:
     discard
 
+  stdout.flushFile()
+
 method deinit*(self: TerminalPlatform) =
   try:
-    resetAttributes()
-    myDisableTrueColors()
-    illwillDeinit()
+    if self.useKittyKeyboard:
+      stdout.write("\e[<u")
+    stdout.write(DisableMouseTrackAny)
+    exitFullScreen()
+    consoleDeinit()
+    stdout.write(tui.ansiResetCode)
     showCursor()
   except:
     discard
@@ -251,8 +414,8 @@ method requestRender*(self: TerminalPlatform, redrawEverything = false) =
 method size*(self: TerminalPlatform): Vec2 = vec2(self.buffer.width.float, self.buffer.height.float)
 
 method sizeChanged*(self: TerminalPlatform): bool =
-  let (w, h) = (terminalWidth(), terminalHeight())
-  return self.buffer.width != w or self.buffer.height != h
+  let terminalSize = self.getTerminalSize()
+  return self.buffer.width != terminalSize.x.int or self.buffer.height != terminalSize.y.int
 
 method fontSize*(self: TerminalPlatform): float = 1
 method lineDistance*(self: TerminalPlatform): float = 0
@@ -276,47 +439,47 @@ proc popMask(self: TerminalPlatform) =
   assert self.masks.len > 0
   discard self.masks.pop()
 
-proc toInput(key: Key, modifiers: var Modifiers): int64 =
+proc toInput(key: tui.Key, modifiers: var Modifiers): int64 =
   return case key
-  of Key.Enter: INPUT_ENTER
-  of Key.Escape: INPUT_ESCAPE
-  of Key.Backspace: INPUT_BACKSPACE
-  of Key.Space: INPUT_SPACE
-  of Key.Delete: INPUT_DELETE
-  of Key.Tab: INPUT_TAB
-  of Key.Left: INPUT_LEFT
-  of Key.Right: INPUT_RIGHT
-  of Key.Up: INPUT_UP
-  of Key.Down: INPUT_DOWN
-  of Key.Home: INPUT_HOME
-  of Key.End: INPUT_END
-  of Key.PageUp: INPUT_PAGE_UP
-  of Key.PageDown: INPUT_PAGE_DOWN
-  of Key.A..Key.Z: ord(key) - ord(Key.A) + ord('a')
-  of Key.ShiftA..Key.ShiftZ:
+  of tui.Key.Enter: INPUT_ENTER
+  of tui.Key.Escape: INPUT_ESCAPE
+  of tui.Key.Backspace: INPUT_BACKSPACE
+  of tui.Key.Space: INPUT_SPACE
+  of tui.Key.Delete: INPUT_DELETE
+  of tui.Key.Tab: INPUT_TAB
+  of tui.Key.Left: INPUT_LEFT
+  of tui.Key.Right: INPUT_RIGHT
+  of tui.Key.Up: INPUT_UP
+  of tui.Key.Down: INPUT_DOWN
+  of tui.Key.Home: INPUT_HOME
+  of tui.Key.End: INPUT_END
+  of tui.Key.PageUp: INPUT_PAGE_UP
+  of tui.Key.PageDown: INPUT_PAGE_DOWN
+  of tui.Key.A..tui.Key.Z: ord(key) - ord(tui.Key.A) + ord('a')
+  of tui.Key.ShiftA..tui.Key.ShiftZ:
     modifiers.incl Modifier.Shift
-    ord(key) - ord(Key.ShiftA) + ord('A')
-  of Key.CtrlA..Key.CtrlH, Key.CtrlJ..Key.CtrlL, Key.CtrlN..Key.CtrlZ:
+    ord(key) - ord(tui.Key.ShiftA) + ord('A')
+  of tui.Key.CtrlA..tui.Key.CtrlH, tui.Key.CtrlJ..tui.Key.CtrlL, tui.Key.CtrlN..tui.Key.CtrlZ:
     modifiers.incl Modifier.Control
-    ord(key) - ord(Key.CtrlA) + ord('a')
-  of Key.Zero..Key.Nine: ord(key) - ord(Key.Zero) + ord('0')
-  of Key.F1..Key.F12: INPUT_F1 - (ord(key) - ord(Key.F1))
+    ord(key) - ord(tui.Key.CtrlA) + ord('a')
+  of tui.Key.Zero..tui.Key.Nine: ord(key) - ord(tui.Key.Zero) + ord('0')
+  of tui.Key.F1..tui.Key.F12: INPUT_F1 - (ord(key) - ord(tui.Key.F1))
 
-  of Key.ExclamationMark : '!'.int64
-  of Key.DoubleQuote     : '"'.int64
-  of Key.Hash            : '#'.int64
-  of Key.Dollar          : '$'.int64
-  of Key.Percent         : '%'.int64
-  of Key.Ampersand       : '&'.int64
-  of Key.SingleQuote     : '\''.int64
-  of Key.LeftParen       : '('.int64
-  of Key.RightParen      : ')'.int64
-  of Key.Asterisk        : '*'.int64
-  of Key.Plus            : '+'.int64
-  of Key.Comma           : ','.int64
-  of Key.Minus           : '-'.int64
-  of Key.Dot             : '.'.int64
-  of Key.Slash           : '/'.int64
+  of tui.Key.ExclamationMark : '!'.int64
+  of tui.Key.DoubleQuote     : '"'.int64
+  of tui.Key.Hash            : '#'.int64
+  of tui.Key.Dollar          : '$'.int64
+  of tui.Key.Percent         : '%'.int64
+  of tui.Key.Ampersand       : '&'.int64
+  of tui.Key.SingleQuote     : '\''.int64
+  of tui.Key.LeftParen       : '('.int64
+  of tui.Key.RightParen      : ')'.int64
+  of tui.Key.Asterisk        : '*'.int64
+  of tui.Key.Plus            : '+'.int64
+  of tui.Key.Comma           : ','.int64
+  of tui.Key.Minus           : '-'.int64
+  of tui.Key.Dot             : '.'.int64
+  of tui.Key.Slash           : '/'.int64
 
   of Colon        : ':'.int64
   of Semicolon    : ';'.int64
@@ -359,83 +522,122 @@ method getFontInfo*(self: TerminalPlatform, fontSize: float, flags: UINodeFlags)
     advance: proc(rune: Rune): float = 1
   )
 
+proc setCursorPos(x: int, y: int) =
+  stdout.write "\e["
+  stdout.write $(y + 1)
+  stdout.write ";"
+  stdout.write $(x + 1)
+  stdout.write "f"
+
 method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
   try:
     var eventCounter = 0
-    while true:
-      let key = getKey()
-      if key == Key.None:
-        break
+    var buffer = ""
+
+    if self.readInputOnThread:
+      while true:
+        let (ok, c) = chan.tryRecv()
+        if not ok:
+          break
+        buffer.add c
+    else:
+      when defined(linux):
+        buffer.setLen(100)
+        var i = 0
+        while kbhit() > 0 and i < buffer.len:
+          var ret = read(0, buffer[i].addr, 1)
+          if ret > 0:
+            i += ret
+          else:
+            break
+        buffer.setLen(i)
+      else:
+        # todo
+        discard
+
+    # if buffer.len > 0 and self.noUI:
+    #   stdout.write &"> {buffer.toOpenArrayByte(0, buffer.high)}, {buffer.toOpenArray(0, buffer.high)}\r\n"
+    for event in self.inputParser.parseInput(buffer.toOpenArray(0, buffer.high)):
+      if self.noUI:
+        stdout.write &"{event}\r\n"
+
+      case event.kind
+      of Text:
+        if not self.noUI:
+          for r in event.text.runes:
+            if not self.builder.handleKeyPressed(r.int64, {}):
+              self.onKeyPress.invoke (r.int64, {})
+      of Key:
+        var input = event.input
+        if Shift in event.mods and input > 0:
+          input = input.Rune.toUpper.int
+        if not self.noUI:
+          case event.action
+          of Press, Repeat:
+            if not self.builder.handleKeyPressed(input.int64, event.mods):
+              self.onKeyPress.invoke (input.int64, event.mods)
+          of Release:
+            if not self.builder.handleKeyReleased(input.int64, event.mods):
+              self.onKeyRelease.invoke (input.int64, event.mods)
+        if self.noUI:
+          if event.input == 'c'.int64 and event.mods == {Control}:
+            exitProc()
+            stdout.write &"exited\r\n"
+            stdout.flushFile()
+            quit(1)
+      of Mouse:
+        if not self.noUI:
+          let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
+          case event.mouse.action
+          of Press, Repeat:
+            self.mouseButtons.incl event.mouse.button
+            if not self.builder.handleMousePressed(event.mouse.button, event.mouse.mods, pos):
+              self.onMousePress.invoke (event.mouse.button, event.mouse.mods, pos)
+          else:
+            self.mouseButtons.excl event.mouse.button
+            if not self.builder.handleMouseReleased(event.mouse.button, event.mouse.mods, pos):
+              self.onMouseRelease.invoke (event.mouse.button, event.mouse.mods, pos)
+      of MouseMove:
+        if not self.noUI:
+          let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
+          if not self.builder.handleMouseMoved(pos, {}):
+            self.onMouseMove.invoke (pos, vec2(0, 0), event.move.mods, {})
+      of MouseDrag:
+        if not self.noUI:
+          let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
+          if not self.builder.handleMouseMoved(pos, {event.drag.button}):
+            self.onMouseMove.invoke (pos, vec2(0, 0), event.drag.mods, {event.drag.button})
+      of Scroll:
+        if not self.noUI:
+          let pos = vec2(self.inputParser.mouseCol.float, self.inputParser.mouseRow.float)
+          if not self.builder.handleMouseScroll(pos, vec2(0, event.scroll.delta.float), event.scroll.mods):
+            self.onScroll.invoke (pos, vec2(0, event.scroll.delta.float), event.scroll.mods)
+      of GridSize:
+        self.gridSize = ivec2(event.width.int32, event.height.int32)
+        self.requestRender(true)
+      of PixelSize:
+        self.pixelSize = ivec2(event.width.int32, event.height.int32)
+        self.requestRender(true)
+      of CellPixelSize:
+        self.cellPixelSize = ivec2(event.width.int32, event.height.int32)
+        self.requestRender(true)
+      of KittyKeyboardFlags:
+        if self.noUI:
+          stdout.write &"KittyKeyboardFlags: current: {event.flags.toBin(5)}, requested: {self.kittyKeyboardFlags.toBin(5)}\r\n"
+        log lvlInfo, &"Enable kitty keyboard protol with flags {self.kittyKeyboardFlags.toBin(5)}"
+        stdout.write(&"\e[>{self.kittyKeyboardFlags}u") # enable kitty keyboard protocol
+        self.inputParser.enableEscapeTimeout = false
+        self.useKittyKeyboard = true
 
       inc eventCounter
+      inc self.eventCounter
 
-      if key == Mouse:
-        let mouseInfo = getMouse()
-        let pos = vec2(mouseInfo.x.float, mouseInfo.y.float)
-        let button: input.MouseButton = case mouseInfo.button
-        of mbLeft: input.MouseButton.Left
-        of mbMiddle: input.MouseButton.Middle
-        of mbRight: input.MouseButton.Right
-        else: input.MouseButton.Unknown
+    stdout.flushFile()
 
-        var modifiers: Modifiers = {}
-        if mouseInfo.ctrl:
-          modifiers.incl Modifier.Control
-        if mouseInfo.shift:
-          modifiers.incl Modifier.Shift
-
-        if mouseInfo.scroll:
-          let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
-
-          if not self.builder.handleMouseScroll(pos, vec2(0, scroll), {}):
-            self.onScroll.invoke (pos, vec2(0, scroll), {})
-        elif mouseInfo.move:
-          # log(lvlInfo, fmt"move to {pos}")
-          if not self.builder.handleMouseMoved(pos, self.mouseButtons):
-            self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
-        else:
-          # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
-          case mouseInfo.action
-          of mbaPressed:
-            self.mouseButtons.incl button
-
-            var events = @[button]
-
-            if button == input.MouseButton.Left:
-              if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
-                inc self.doubleClickCounter
-                case self.doubleClickCounter
-                of 1:
-                  events.add input.MouseButton.DoubleClick
-                of 2:
-                  events.add input.MouseButton.TripleClick
-                else:
-                  self.doubleClickCounter = 0
-              else:
-                self.doubleClickCounter = 0
-
-              self.doubleClickTimer = startTimer()
-            else:
-              self.doubleClickCounter = 0
-
-            for event in events:
-              if not self.builder.handleMousePressed(event, modifiers, pos):
-                self.onMousePress.invoke (event, modifiers, pos)
-
-          of mbaReleased:
-            self.mouseButtons = {}
-            if not self.builder.handleMouseReleased(button, modifiers, pos):
-              self.onMouseRelease.invoke (button, modifiers, pos)
-          else:
-            discard
-
-      else:
-        var modifiers: Modifiers = {}
-        let button = key.toInput(modifiers)
-        # debugf"key press k: {key}, input: {inputToString(button, modifiers)}"
-        if not self.builder.handleKeyPressed(button, modifiers):
-          self.onKeyPress.invoke (button, modifiers)
-
+    let terminalSize = self.getTerminalSize()
+    let sizeChanged = self.buffer.width != terminalSize.x.int or self.buffer.height != terminalSize.y.int
+    if sizeChanged:
+      self.requestRender(true)
     return eventCounter
   except:
     discard
@@ -448,11 +650,12 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
 
 method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
   try:
-    if rerender:
-      if self.sizeChanged:
-        let (w, h) = (terminalWidth(), terminalHeight())
-        log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
-        self.buffer.initTerminalBuffer(w, h)
+    let terminalSize = self.getTerminalSize()
+    let sizeChanged = self.buffer.width != terminalSize.x.int or self.buffer.height != terminalSize.y.int
+    if rerender or sizeChanged:
+      if sizeChanged:
+        log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {terminalSize.x}x{terminalSize.y}, recreate buffer")
+        self.buffer.initTerminalBuffer(terminalSize.x, terminalSize.y)
         self.buffer.clear()
         self.redrawEverything = true
 
@@ -464,15 +667,20 @@ method render*(self: TerminalPlatform, rerender: bool) {.gcsafe.} =
 
       # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
       try:
-        {.gcsafe.}:
-          self.buffer.display()
+        if not self.noUI:
+          {.gcsafe.}:
+            self.buffer.display()
 
         self.redrawEverything = false
-      except CatchableError:
-        log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
+      except CatchableError as e:
+        log(lvlError, fmt"Failed to display buffer: {e.msg}")
+        stdout.write fmt"Failed to display buffer: {e.msg}\r\n"
         self.redrawEverything = true
+
+    stdout.flushFile()
   except:
     discard
+
 
 proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
   if self.trueColorSupport:
@@ -617,6 +825,38 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, color: chroma.Co
         self.writeLine(pos + vec2(0, yOffset), line, italic)
       yOffset += 1
 
+proc handleCommand(builder: UINodeBuilder, platform: TerminalPlatform, renderCommands: ptr RenderCommands, command: RenderCommand, offset: Vec2) =
+  const cursorFlags = &{CursorBlock, CursorBar, CursorUnderline, CursorBlinking}
+  case command.kind
+  of RenderCommandKind.Rect:
+    platform.drawRect(command.bounds + offset, command.color)
+  of RenderCommandKind.FilledRect:
+    if command.flags * cursorFlags != 0.UINodeFlags:
+      let pos = command.bounds + offset
+      platform.cursor.shape = command.flags * cursorFlags
+      platform.cursor.visible = true
+      platform.cursor.col = pos.x.int
+      platform.cursor.row = pos.y.int
+    else:
+      platform.fillRect(command.bounds + offset, command.color)
+  of RenderCommandKind.Image:
+    discard
+  of RenderCommandKind.TextRaw:
+    var text = newStringOfCap(command.len)
+    text.setLen(command.len)
+    copyMem(text[0].addr, command.data, command.len)
+    platform.buffer.setBackgroundColor(bgNone)
+    platform.writeText(command.bounds.xy + offset, text, command.color, renderCommands.spacesColor, renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
+  of RenderCommandKind.Text:
+    # todo: don't copy string data
+    let text = renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
+    platform.buffer.setBackgroundColor(bgNone)
+    platform.writeText(command.bounds.xy + offset, text, command.color, renderCommands.spacesColor, renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
+  of RenderCommandKind.ScissorStart:
+    platform.pushMask(command.bounds + offset)
+  of RenderCommandKind.ScissorEnd:
+    platform.popMask()
+
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
   {.gcsafe.}:
     var nodePos = offset
@@ -663,66 +903,16 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
     for _, c in node.children:
       builder.drawNode(platform, c, nodePos, force)
 
+    for list in node.renderCommandList:
+      for command in list.commands:
+        handleCommand(builder, platform, list[].addr, command, nodePos)
+      for command in list[].decodeRenderCommands:
+        handleCommand(builder, platform, list[].addr, command, nodePos)
+
     for command in node.renderCommands.commands:
-      case command.kind
-      of RenderCommandKind.Rect:
-        platform.drawRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.FilledRect:
-        if command.flags * cursorFlags != 0.UINodeFlags:
-          let pos = command.bounds + nodePos
-          platform.cursor.shape = command.flags * cursorFlags
-          platform.cursor.visible = true
-          platform.cursor.col = pos.x.int
-          platform.cursor.row = pos.y.int
-        else:
-          platform.fillRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.Image:
-        discard
-      of RenderCommandKind.TextRaw:
-        var text = newStringOfCap(command.len)
-        text.setLen(command.len)
-        copyMem(text[0].addr, command.data, command.len)
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-      of RenderCommandKind.Text:
-        # todo: don't copy string data
-        let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-      of RenderCommandKind.ScissorStart:
-        platform.pushMask(command.bounds + nodePos)
-      of RenderCommandKind.ScissorEnd:
-        platform.popMask()
+      handleCommand(builder, platform, node.renderCommands.addr, command, nodePos)
     for command in node.renderCommands.decodeRenderCommands:
-      case command.kind
-      of RenderCommandKind.Rect:
-        platform.drawRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.FilledRect:
-        if command.flags * cursorFlags != 0.UINodeFlags:
-          let pos = command.bounds + nodePos
-          platform.cursor.shape = command.flags * cursorFlags
-          platform.cursor.visible = true
-          platform.cursor.col = pos.x.int
-          platform.cursor.row = pos.y.int
-        else:
-          platform.fillRect(command.bounds + nodePos, command.color)
-      of RenderCommandKind.Image:
-        discard
-      of RenderCommandKind.TextRaw:
-        var text = newStringOfCap(command.len)
-        text.setLen(command.len)
-        copyMem(text[0].addr, command.data, command.len)
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-      of RenderCommandKind.Text:
-        # todo: don't copy string data
-        let text = node.renderCommands.strings[command.textOffset..<command.textOffset + command.textLen]
-        platform.buffer.setBackgroundColor(bgNone)
-        platform.writeText(command.bounds.xy + nodePos, text, command.color, node.renderCommands.spacesColor, node.renderCommands.space, TextWrap in command.flags, round(command.bounds.w).RuneCount, TextItalic in command.flags, command.flags)
-      of RenderCommandKind.ScissorStart:
-        platform.pushMask(command.bounds + nodePos)
-      of RenderCommandKind.ScissorEnd:
-        platform.popMask()
+      handleCommand(builder, platform, node.renderCommands.addr, command, nodePos)
 
     if DrawBorderTerminal in node.flags:
       platform.drawRect(bounds, node.borderColor)
