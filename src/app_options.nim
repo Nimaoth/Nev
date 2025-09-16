@@ -14,3 +14,6 @@ type AppOptions* = object
   earlyCommands*: seq[string]
   lateCommands*: seq[string]
   monitor*: Option[int]
+  noPty*: bool
+  noUI*: bool
+  kittyKeyboardFlags*: string

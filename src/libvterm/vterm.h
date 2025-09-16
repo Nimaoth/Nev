@@ -374,6 +374,7 @@ void vterm_keyboard_end_paste(VTerm *vt);
 
 void vterm_mouse_move(VTerm *vt, int row, int col, VTermModifier mod);
 void vterm_mouse_button(VTerm *vt, int button, bool pressed, VTermModifier mod);
+int vterm_get_mouse_flags(VTerm *vt);
 
 // ------------
 // Parser layer
@@ -448,6 +449,7 @@ typedef struct {
   int (*apc)(VTermStringFragment frag, void *user);
   int (*pm)(VTermStringFragment frag, void *user);
   int (*sos)(VTermStringFragment frag, void *user);
+  int (*reset)(int hard, void *user);
 } VTermStateFallbacks;
 
 typedef struct {
@@ -464,6 +466,8 @@ void  vterm_state_set_unrecognised_fallbacks(VTermState *state, const VTermState
 void *vterm_state_get_unrecognised_fbdata(VTermState *state);
 
 void vterm_state_reset(VTermState *state, int hard);
+void vterm_state_move_cursor(VTermState *state, int cols, int rows);
+void vterm_state_set_cursor(VTermState *state, int col, int row);
 void vterm_state_get_cursorpos(const VTermState *state, VTermPos *cursorpos);
 void vterm_state_get_default_colors(const VTermState *state, VTermColor *default_fg, VTermColor *default_bg);
 void vterm_state_get_palette_color(const VTermState *state, int index, VTermColor *col);
@@ -535,6 +539,7 @@ typedef struct {
 
 typedef struct {
   int (*damage)(VTermRect rect, void *user);
+  int (*erase)(VTermRect rect, void *user);
   int (*moverect)(VTermRect dest, VTermRect src, void *user);
   int (*movecursor)(VTermPos pos, VTermPos oldpos, int visible, void *user);
   int (*settermprop)(VTermProp prop, VTermValue *val, void *user);

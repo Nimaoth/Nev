@@ -191,15 +191,17 @@ type
 
   VTermStateFallbacks* {.bycopy, importc.} = object
     control*: proc (control: char; user: pointer): cint {.cdecl.}
-    csi*: proc (leader: cstring; args: ptr clong; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.}
+    csi*: proc (leader: cstring; args: ptr UncheckedArray[clong]; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.}
     osc*: proc (command: cint; frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     dcs*: proc (command: cstring; commandlen: csize_t; frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     apc*: proc (frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     pm*: proc (frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     sos*: proc (frag: VTermStringFragment; user: pointer): cint {.cdecl.}
+    reset*: proc (hard: int; user: pointer): cint {.cdecl.}
 
   VTermScreenCallbacks* {.bycopy, importc.} = object
     damage*: proc (rect: VTermRect; user: pointer): cint {.cdecl.}
+    erase*: proc (rect: VTermRect; user: pointer): cint {.cdecl.}
     moverect*: proc (dest: VTermRect; src: VTermRect; user: pointer): cint {.cdecl.}
     movecursor*: proc (pos: VTermPos; oldpos: VTermPos; visible: cint; user: pointer): cint {.cdecl.}
     settermprop*: proc (prop: VTermProp; val: ptr VTermValue; user: pointer): cint {.cdecl.}
@@ -303,6 +305,7 @@ proc startPaste*(vt: ptr VTerm) {.importc: "vterm_keyboard_start_paste".}
 proc endPaste*(vt: ptr VTerm) {.importc: "vterm_keyboard_end_paste".}
 proc mouseMove*(vt: ptr VTerm; row: cint; col: cint; modifiers: uint32) {.importc: "vterm_mouse_move".}
 proc mouseButton*(vt: ptr VTerm; button: cint; pressed: bool; modifiers: uint32) {.importc: "vterm_mouse_button".}
+proc getMouseFlags*(vt: ptr VTerm): cint {.importc: "vterm_get_mouse_flags".}
 
 proc setOutputCallback*(vt: ptr VTerm; f: VTermOutputCallback; user: pointer) {.importc: "vterm_output_set_callback".}
 proc setParserCallbacks*(vt: ptr VTerm; callbacks: ptr VTermParserCallbacks; user: pointer) {.importc: "vterm_parser_set_callbacks".}
@@ -339,6 +342,8 @@ proc getCbdata*(state: ptr VTermState): pointer {.importc: "vterm_state_get_cbda
 proc setUnrecognisedFallbacks*(state: ptr VTermState; fallbacks: ptr VTermStateFallbacks; user: pointer) {.importc: ":".}
 proc getUnrecognisedFbdata*(state: ptr VTermState): pointer {.importc: "vterm_state_get_unrecognised_fbdata".}
 proc reset*(state: ptr VTermState; hard: cint) {.importc: "vterm_state_reset".}
+proc moveCursor*(state: ptr VTermState; cols: cint; rows: cint) {.importc: "vterm_state_move_cursor".}
+proc setCursor*(state: ptr VTermState; col: cint; row: cint) {.importc: "vterm_state_set_cursor".}
 proc getCursorpos*(state: ptr VTermState; cursorpos: ptr VTermPos) {.importc: "vterm_state_get_cursorpos".}
 proc getDefaultColors*(state: ptr VTermState; default_fg: ptr VTermColor; default_bg: ptr VTermColor) {.importc: "vterm_state_get_default_colors".}
 proc getPaletteColor*(state: ptr VTermState; index: cint; col: ptr VTermColor) {.importc: "vterm_state_get_palette_color".}

@@ -1,5 +1,5 @@
-import std/[strformat, hashes, macros, genasts, atomics]
-import misc/[event, custom_async, id, generational_seq]
+import std/[strformat, hashes, macros, genasts, atomics, locks, tables, options]
+import misc/[event, custom_async, id, generational_seq, util]
 import nimsumtree/arc
 
 {.push gcsafe.}
@@ -15,7 +15,7 @@ type
     destroyImpl*: proc(self: ptr BaseChannel) {.gcsafe, raises: [].}
     closeImpl*: proc(self: ptr BaseChannel) {.gcsafe, raises: [].}
     isOpenImpl*: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].}
-    peekImpl*: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].}
+    peekImpl*: proc(self: ptr BaseChannel, to: Option[uint8]): int {.gcsafe, raises: [].}
     writeImpl*: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].}
     flushReadImpl*: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].}
     readImpl*: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].}
@@ -29,6 +29,11 @@ type
     writeChannelPeekable: Atomic[int]
     channel: ptr Channel[seq[uint8]]
 
+  ChannelRegistry* = object
+    lock*: Lock
+    readChannels*: Table[string, Arc[BaseChannel]]
+    writeChannels*: Table[string, Arc[BaseChannel]]
+
 proc `==`*(a, b: ListenId): bool {.borrow.}
 proc hash*(vr: ListenId): Hash {.borrow.}
 proc `$`*(vr: ListenId): string {.borrow.}
@@ -40,15 +45,16 @@ proc `=destroy`*(a {.byref.}: BaseChannel) {.raises: [], noSideEffect, inline, n
 
 proc close*(self: var BaseChannel) {.gcsafe, raises: [].} = self.closeImpl(self.addr)
 proc isOpen*(self: var BaseChannel): bool {.raises: [].} = self.isOpenImpl(self.addr)
-proc peek*(self: var BaseChannel): int {.raises: [].} = self.peekImpl(self.addr)
+proc peek*(self: var BaseChannel, to: Option[uint8] = uint8.none): int {.raises: [].} = self.peekImpl(self.addr, to)
 proc write*(self: var BaseChannel, data: openArray[uint8]) {.raises: [IOError].} = self.writeImpl(self.addr, data)
 proc read*(self: var BaseChannel, res: var openArray[uint8]): int {.raises: [IOError].} = self.readImpl(self.addr, res)
 proc flushRead*(self: var BaseChannel): int {.raises: [IOError].} = self.flushReadImpl(self.addr)
 
 proc close*(self: Arc[BaseChannel]) {.gcsafe, raises: [].} = self.getMutUnsafe.close()
 proc isOpen*(self: Arc[BaseChannel]): bool {.raises: [].} = self.getMutUnsafe.isOpen()
-proc peek*(self: Arc[BaseChannel]): int {.raises: [].} = self.getMutUnsafe.peek()
+proc peek*(self: Arc[BaseChannel], to: Option[uint8] = uint8.none): int {.raises: [].} = self.getMutUnsafe.peek(to)
 proc write*(self: Arc[BaseChannel], data: openArray[uint8]) {.raises: [IOError].} = self.getMutUnsafe.write(data)
+proc write*(self: Arc[BaseChannel], data: openArray[char]) {.raises: [IOError].} = self.getMutUnsafe.write(cast[ptr UncheckedArray[uint8]](data[0].addr).toOpenArray(0, data.high))
 proc read*(self: Arc[BaseChannel], res: var openArray[uint8]): int {.raises: [IOError].} = self.getMutUnsafe.read(res)
 proc flushRead*(self: Arc[BaseChannel]): int {.raises: [IOError].} = self.getMutUnsafe.flushRead()
 proc listen*(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = self.get.listenImpl(self, cb)
@@ -56,10 +62,47 @@ proc stopListening*(self: Arc[BaseChannel], id: ListenId) {.gcsafe, raises: [].}
   self.getMutUnsafe.listeners.del(id)
 
 proc atEnd*(self {.byref.}: BaseChannel): bool {.gcsafe, raises: [].} =
-  not self.isOpenImpl(self.addr) and self.peekImpl(self.addr) == 0
+  not self.isOpenImpl(self.addr) and self.peekImpl(self.addr, uint8.none) == 0
 
 proc atEnd*(self: Arc[BaseChannel]): bool {.gcsafe, raises: [].} =
   not self.isOpen and self.peek == 0
+
+proc readAsync*(self: Arc[BaseChannel], amount: int): Future[string] {.async: (raises: [IOError]).} =
+  if self.isNil or self.atEnd:
+    raise newException(IOError, "(readAsync) Channel closed")
+  var buffer = newString(amount)
+  var i = 0
+  while true:
+    discard self.flushRead()
+    i += self.read(buffer.toOpenArrayByte(i, amount - 1))
+    if i >= amount:
+      assert i == amount
+      break
+    if not self.isOpen():
+      break
+    catch(await self.get.signal.wait()):
+      discard
+  return buffer
+
+proc readLine*(self: Arc[BaseChannel]): Future[string] {.async: (raises: [IOError]).} =
+  if self.isNil or self.atEnd:
+    raise newException(IOError, "(readLine) Channel closed")
+  while true:
+    discard self.flushRead()
+    var nl = self.peek('\n'.uint8.some)
+    if nl == -1:
+      if not self.isOpen:
+        nl = self.peek() - 1
+        break
+      catch(await self.get.signal.wait()):
+        discard
+      continue
+
+    var buffer = newString(nl + 1)
+    if buffer.len > 0:
+      let read = self.read(buffer.toOpenArrayByte(0, buffer.high))
+      buffer.setLen(read)
+    return buffer
 
 proc fireEvent*(self: var BaseChannel, closed: bool) {.gcsafe, raises: [].} =
   for key in self.listeners.keys:
@@ -92,7 +135,11 @@ proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
   discard self.signal.fireSync()
 
 proc isOpen(self: ptr InMemoryChannel): bool = self.isOpen
-proc peek(self: ptr InMemoryChannel): int = self.data.len
+proc peek(self: ptr InMemoryChannel, to: Option[uint8] = uint8.none): int =
+  if to.getSome(to):
+    self.data.find(to)
+  else:
+    self.data.len
 
 proc write(self: ptr InMemoryChannel, data: openArray[uint8]) =
   if data.len > 0:
@@ -167,10 +214,45 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
     destroyImpl: destroyChannelImpl(InMemoryChannel),
     closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr InMemoryChannel](self))),
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr InMemoryChannel](self)),
-    peekImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = peek(cast[ptr InMemoryChannel](self)),
+    peekImpl: proc(self: ptr BaseChannel, to: Option[uint8]): int {.gcsafe, raises: [].} = peek(cast[ptr InMemoryChannel](self), to),
     writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr InMemoryChannel](self), data),
     readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = read(cast[ptr InMemoryChannel](self), res),
     flushReadImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].} = flushRead(cast[ptr InMemoryChannel](self)),
     listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listenInMemoryChannel(self.cloneAs(InMemoryChannel), cb),
   )
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()
+
+var gChannelRegistry = ChannelRegistry()
+gChannelRegistry.lock.initLock()
+
+proc openGlobalReadChannel*(path: string): Option[Arc[BaseChannel]] {.gcsafe.} =
+  let channels = ({.gcsafe.}: gChannelRegistry.addr)
+  withLock(channels.lock):
+    var chan: Arc[BaseChannel]
+    if channels.readChannels.take(path, chan):
+      return chan.some
+
+proc openGlobalWriteChannel*(path: string): Option[Arc[BaseChannel]] {.gcsafe.} =
+  let channels = ({.gcsafe.}: gChannelRegistry.addr)
+  withLock(channels.lock):
+    var chan: Arc[BaseChannel]
+    if channels.writeChannels.take(path, chan):
+      return chan.some
+
+proc mountGlobalReadChannel*(path: string, chan: Arc[BaseChannel], unique: bool): string {.gcsafe.} =
+  var path = path
+  if unique:
+    path.add "-" & $newId()
+  let channels = ({.gcsafe.}: gChannelRegistry.addr)
+  withLock(channels.lock):
+    channels.readChannels[path] = chan
+    return path
+
+proc mountGlobalWriteChannel*(path: string, chan: Arc[BaseChannel], unique: bool): string {.gcsafe.} =
+  var path = path
+  if unique:
+    path.add "-" & $newId()
+  let channels = ({.gcsafe.}: gChannelRegistry.addr)
+  withLock(channels.lock):
+    channels.writeChannels[path] = chan
+    return path

@@ -19,7 +19,7 @@ type
     commands*: RenderCommands
     userId*: string
 
-    size*: Vec2
+    bounds*: Rect
     interval: int = -1
     onRender*: proc(view: RenderView) {.gcsafe, raises: [].}
     renderTask: DelayedTask
@@ -31,6 +31,9 @@ type
     modes*: seq[string]
 
     keyStates*: HashSet[int64]
+    mouseStates*: HashSet[int64]
+    mousePos*: Vec2
+    scrollDelta*: Vec2
 
 proc handleAction(self: RenderView, action: string, arg: string): Option[string]
 proc handleInput(self: RenderView, text: string)
@@ -44,10 +47,26 @@ proc handleKeyRelease*(self: RenderView, input: int64, modifiers: Modifiers) =
 proc handleRune*(self: RenderView, input: int64, modifiers: Modifiers) =
   self.keyStates.incl(input)
 
+proc handleMousePress(self: RenderView, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
+  self.mouseStates.incl(button.int64)
+
+proc handleMouseRelease(self: RenderView, button: MouseButton, modifiers: Modifiers, pos: Vec2) =
+  self.mouseStates.excl(button.int64)
+
+proc handleMouseMove(self: RenderView, pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+  self.mousePos = pos - self.bounds.xy
+
+proc handleScroll(self: RenderView, pos: Vec2, scroll: Vec2, modifiers: Modifiers) =
+  self.scrollDelta = scroll
+
 proc bindPlatformEvents(self: RenderView) =
   discard self.platform.onKeyPress.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyPress(event.input, event.modifiers)
   discard self.platform.onKeyRelease.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleKeyRelease(event.input, event.modifiers)
   discard self.platform.onRune.subscribe proc(event: auto): void {.gcsafe, raises: [].} = self.handleRune(event.input, event.modifiers)
+  discard self.platform.onMousePress.subscribe proc(event: tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]): void {.gcsafe, raises: [].} = self.handleMousePress(event.button, event.modifiers, event.pos)
+  discard self.platform.onMouseRelease.subscribe proc(event: tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]): void {.gcsafe, raises: [].} = self.handleMouseRelease(event.button, event.modifiers, event.pos)
+  discard self.platform.onMouseMove.subscribe proc(event: tuple[pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]]): void {.gcsafe, raises: [].} = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
+  discard self.platform.onScroll.subscribe proc(event: tuple[pos: Vec2, scroll: Vec2, modifiers: Modifiers]): void {.gcsafe, raises: [].} = self.handleScroll(event.pos, event.scroll, event.modifiers)
 
 proc newRenderView*(services: Services): RenderView =
   result = RenderView(services: services)
@@ -81,6 +100,8 @@ proc render*(self: RenderView) =
       self.onRender(self)
     except Exception:
       discard
+
+  self.scrollDelta = vec2(0, 0)
 
 method activate*(self: RenderView) =
   self.active = true

@@ -6,10 +6,12 @@ traitRef ISelectorPopup:
   method getSearchString*(self: ISelectorPopup): string {.base, gcsafe, raises: [].}
   method closed*(self: ISelectorPopup): bool {.base, gcsafe, raises: [].}
   method getSelectedItem*(self: ISelectorPopup): Option[FinderItem] {.base, gcsafe, raises: [].}
+  method pop*(self: ISelectorPopup) {.base, gcsafe, raises: [].}
 
 type
   SelectorPopupBuilder* = object
     scope*: Option[string]
+    title*: string
     scaleX*: float = 0.5
     scaleY*: float = 0.5
     previewScale*: float = 0.5

@@ -128,3 +128,67 @@ template thenItOrElse*[T](f: Future[T], body: untyped, errBody: untyped): untype
       errCb(ff, e)
 
   f.thenOrElse(cb, errCb)
+
+proc pollFor[F: Future | InternalRaisesFuture](fut: F, timeout: int): F {.raises: [].} =
+  # Blocks the current thread of execution until `fut` has finished, returning
+  # the given future.
+  #
+  # Must not be called recursively (from inside `async` procedures).
+  #
+  # See alse `awaitne`.
+  if not(fut.finished()):
+    var finished = false
+    # Ensure that callbacks currently scheduled on the future run before returning
+    proc continuation(udata: pointer) {.gcsafe.} = finished = true
+    fut.addCallback(continuation)
+
+    while not(finished):
+      poll(timeout)
+
+  fut
+
+proc waitFor*[T: not void](fut: Future[T], timeout: int): lent T {.raises: [CatchableError].} =
+  ## Blocks the current thread of execution until `fut` has finished, returning
+  ## its value.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## Must not be called recursively (from inside `async` procedures).
+  ##
+  ## See also `await`, `Future.read`
+  pollFor(fut, timeout).readFinished()
+
+proc waitFor*(fut: Future[void], timeout: int) {.raises: [CatchableError].} =
+  ## Blocks the current thread of execution until `fut` has finished.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## Must not be called recursively (from inside `async` procedures).
+  ##
+  ## See also `await`, `Future.read`
+  pollFor(fut, timeout).internalRaiseIfError(fut)
+
+proc waitFor*[T: not void; E](fut: InternalRaisesFuture[T, E], timeout: int): lent T = # {.raises: [E]}
+  ## Blocks the current thread of execution until `fut` has finished, returning
+  ## its value.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## Must not be called recursively (from inside `async` procedures).
+  ##
+  ## See also `await`, `Future.read`
+  pollFor(fut, timeout).readFinished()
+
+proc waitFor*[E](fut: InternalRaisesFuture[void, E], timeout: int) = # {.raises: [E]}
+  ## Blocks the current thread of execution until `fut` has finished.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## Must not be called recursively (from inside `async` procedures).
+  ##
+  ## See also `await`, `Future.read`
+  pollFor(fut, timeout).internalRaiseIfError(E, fut)

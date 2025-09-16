@@ -4,6 +4,7 @@ import scripting/expose
 from workspaces/workspace as ws import nil
 import lsp_types, dispatch_tables, vfs
 from std/logging import nil
+import channel
 
 import misc/async_process
 
@@ -244,8 +245,8 @@ type LSPConnectionAsyncProcess = ref object of LSPConnection
   process: AsyncProcess
 
 method close(connection: LSPConnectionAsyncProcess) = connection.process.destroy
-method recvLine(connection: LSPConnectionAsyncProcess): Future[string] = connection.process.recvLine
-method recv(connection: LSPConnectionAsyncProcess, length: int): Future[string] = connection.process.recv(length)
+method recvLine(connection: LSPConnectionAsyncProcess): Future[string] = connection.process.stdout.readLine()
+method recv(connection: LSPConnectionAsyncProcess, length: int): Future[string] = connection.process.stdout.readAsync(length)
 method send(connection: LSPConnectionAsyncProcess, data: string): Future[void] = connection.process.send(data)
 
 proc encodePathUri(path: string): string = path.normalizePathUnix.split("/").mapIt(it.encodeUrl(false)).join("/")

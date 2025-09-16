@@ -288,3 +288,22 @@ proc newInMemoryChannel*(): (ReadChannel, WriteChannel) {.nodestroy.} =
   channelNewInMemoryChannelImported(cast[int32](retArea[0].addr))
   result[0].handle = cast[ptr int32](retArea[0].addr)[] + 1
   result[1].handle = cast[ptr int32](retArea[4].addr)[] + 1
+
+proc channelCreateTerminalImported(a0: int32; a1: int32; a2: int32; a3: int32): void {.
+    wasmimport("create-terminal", "nev:plugins/channel").}
+proc createTerminal*(stdin: sink WriteChannel; stdout: sink ReadChannel;
+                     group: WitString): void {.nodestroy.} =
+  ## Creates a new channel which buffers data in memory and returns the read and write end.
+  var
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: int32
+  arg0 = cast[int32](stdin.handle - 1)
+  arg1 = cast[int32](stdout.handle - 1)
+  if group.len > 0:
+    arg2 = cast[int32](group[0].addr)
+  else:
+    arg2 = 0.int32
+  arg3 = cast[int32](group.len)
+  channelCreateTerminalImported(arg0, arg1, arg2, arg3)

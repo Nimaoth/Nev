@@ -181,12 +181,17 @@ proc forEachVisibleView*(self: Layout, cb: proc(view: View): bool {.gcsafe, rais
   discard self.forEachVisibleViewImpl(cb)
 
 proc parentLayout*(self: Layout, view: View): Layout =
-  var res: Layout = nil
-  self.forEachView proc(v: View): bool =
-    if v of Layout and view in v.Layout.children:
-      res = v.Layout
-      return true
-  return res
+  for i, c in self.children:
+    if c == nil:
+      continue
+    if c == view:
+      return self
+    if c of Layout:
+      let p = c.Layout.parentLayout(view)
+      if p != nil:
+        return p
+
+  return nil
 
 proc leafViews*(self: Layout): seq[View] =
   var res = newSeq[View]()
@@ -201,6 +206,25 @@ proc visibleLeafViews*(self: Layout): seq[View] =
     if not (v of Layout):
       res.add v
   return res
+
+proc isVisible*(self: Layout, view: View): bool =
+  var res = false
+  self.forEachVisibleView proc(v: View): bool =
+    if v == view:
+      res = true
+      return true
+  return res
+
+proc contains*(self: Layout, view: View): bool =
+  for i, c in self.children:
+    if c == nil:
+      continue
+    if c == view:
+      return true
+    if c of Layout:
+      if c.Layout.contains(view):
+        return true
+  return false
 
 method desc*(self: View): string {.base.} = "View"
 method desc*(self: Layout): string = "Layout"

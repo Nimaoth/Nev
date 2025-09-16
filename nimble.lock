@@ -160,7 +160,7 @@
     },
     "boxy": {
       "version": "0.4.4",
-      "vcsRevision": "371c40a0b7cf8eced67a31797b019570154c3906",
+      "vcsRevision": "bfc8665443fe9af264eaa80769a6699679f5f273",
       "url": "https://github.com/Nimaoth/boxy",
       "downloadMethod": "git",
       "dependencies": [
@@ -170,7 +170,7 @@
         "bitty"
       ],
       "checksums": {
-        "sha1": "364d0f9d48141eb4bcee96bb0ff33372b476230f"
+        "sha1": "81becde73d830307dd6dc5a77967e9b1ebe8953a"
       }
     },
     "c2nim": {
@@ -290,6 +290,16 @@
         "sha1": "58fadfae8cb82cab1061dded8066c03b0460ad4d"
       }
     },
+    "libssh2": {
+      "version": "0.1.9",
+      "vcsRevision": "a5cf5180cddf864b1bddbb0d35b3b5c499160176",
+      "url": "https://github.com/ba0f3/libssh2.nim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "424cbdaea8bc2662d8d7601dabe458bbc1d15c1f"
+      }
+    },
     "lrucache": {
       "version": "1.1.4",
       "vcsRevision": "479d4cf03a961d00fb2204e4773c394fe62ac44b",
@@ -338,12 +348,12 @@
     },
     "nimsumtree": {
       "version": "0.5.6",
-      "vcsRevision": "cc1362f102da4522ddf9b26bd66547288ea0b094",
+      "vcsRevision": "47f7208faeeb8ee6a9c6913af7be40ba494857df",
       "url": "https://github.com/Nimaoth/nimsumtree",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "c05edebaa853e4b0b31b6fda3af9fee7a07ca6e7"
+        "sha1": "83cdadd2e88aabc7e7edbc26dd0d9b7b370c612d"
       }
     },
     "nimtreesitter": {
@@ -358,14 +368,14 @@
     },
     "nimwasmtime": {
       "version": "0.2.1",
-      "vcsRevision": "22cfeef719757063ba951079374bee67a917c0bb",
+      "vcsRevision": "415a252eb4cada08d7ced468d42c92b1b0d4ae72",
       "url": "https://github.com/Nimaoth/nimwasmtime",
       "downloadMethod": "git",
       "dependencies": [
         "nimgen"
       ],
       "checksums": {
-        "sha1": "b583e2c45336f1d6ec6a720f3fd5638bc0337b5f"
+        "sha1": "da3c2261fac93db812ac62808b606d45b4d25e0d"
       }
     },
     "npeg": {
@@ -386,6 +396,18 @@
       "dependencies": [],
       "checksums": {
         "sha1": "6bc181924709c8a2d06b1459a31e73eb42cf1283"
+      }
+    },
+    "ssh2": {
+      "version": "0.1.9",
+      "vcsRevision": "b45447fa3892024eb5ceb5d1516beba57bd68d05",
+      "url": "https://github.com/ba0f3/ssh2.nim",
+      "downloadMethod": "git",
+      "dependencies": [
+        "libssh2"
+      ],
+      "checksums": {
+        "sha1": "32cb3446c5f2f7d4f01dabb577aa8c136b4ae1d9"
       }
     },
     "treesitter": {

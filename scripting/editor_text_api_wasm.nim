@@ -954,6 +954,16 @@ proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true
       argsJsonString.cstring)
 
 
+proc editor_text_insertRaw_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc insertRaw*(self: TextDocumentEditor) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_insertRaw_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_indent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc indent*(self: TextDocumentEditor) {.gcsafe, raises: [].} =

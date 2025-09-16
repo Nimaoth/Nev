@@ -97,3 +97,8 @@ void vterm_mouse_button(VTerm *vt, int button, bool pressed, VTermModifier mod)
     output_mouse(state, button-4 + 0x40, pressed, mod, state->mouse_col, state->mouse_row);
   }
 }
+
+int vterm_get_mouse_flags(VTerm *vt)
+{
+  return vt->state->mouse_flags;
+}

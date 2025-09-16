@@ -165,6 +165,15 @@ block: ## Parse command line options
       of "session", "s":
         opts.sessionOverride = val.some
 
+      of "nopty":
+        opts.noPty = true
+
+      of "noui":
+        opts.noUI = true
+
+      of "kittykey":
+        opts.kittyKeyboardFlags = val
+
       of "monitor":
         opts.monitor = val.parseInt.some.catch:
           echo "Expected integer for monitor: --monitor:1"
@@ -284,6 +293,7 @@ of Terminal:
   when enableTerminal:
     log(lvlInfo, "Creating terminal renderer")
     plat = new TerminalPlatform
+    plat[] = default(typeof(TerminalPlatform()[]))
     plat.backend = Terminal
   else:
     echo "[error] Terminal backend not available in this build"
@@ -293,6 +303,7 @@ of Gui:
   when enableGui:
     log(lvlInfo, "Creating GUI renderer")
     plat = new GuiPlatform
+    plat[] = default(typeof(GuiPlatform()[]))
     plat.backend = Gui
   else:
     echo "[error] GUI backend not available in this build"
@@ -306,7 +317,7 @@ import ui/node
 
 import chronos/config
 
-proc run(app: App, plat: Platform, backend: Backend) =
+proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
   var frameIndex = 0
   var frameTime = 0.0
 
@@ -452,7 +463,7 @@ gServices.waitForServices()
 
 proc main() =
   let app = waitFor newApp(backend.get, plat, gServices, opts)
-  run(app, plat, backend.get)
+  run(app, plat, backend.get, opts)
 
   try:
     log lvlInfo, "Shutting down editor"

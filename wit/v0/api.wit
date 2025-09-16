@@ -128,6 +128,9 @@ interface channel {
 
   /// Creates a new channel which buffers data in memory and returns the read and write end.
   new-in-memory-channel: func() -> tuple<read-channel, write-channel>;
+
+  /// Creates a new channel which buffers data in memory and returns the read and write end.
+  create-terminal: func(stdin: write-channel, stdout: read-channel, group: string);
 }
 
 /// Thread safe
@@ -267,6 +270,12 @@ interface render {
     size: func() -> vec2f;
     /// Returns whether the given key is currently pressed.
     key-down: func(key: s64) -> bool;
+    /// Returns the mouse position relative to the position of the view. (0, 0) is in the top left corner.
+    mouse-pos: func() -> vec2f;
+    /// Returns whether the given mouse button is pressed.
+    mouse-down: func(button: s64) -> bool;
+    /// Returns how much the mouse was scrolled this frame.
+    scroll-delta: func() -> vec2f;
     /// Specify how often the view should render. -1 means don't render in a timer, 0 means render every frame,
     /// a number bigger than 0 specifies the interval in milliseconds.
     set-render-interval: func(ms: s32);
@@ -315,7 +324,7 @@ interface core {
   /// 0 means the latest version, 1 or bigger means a specific version.
   api-version: func() -> s32;
 
-  /// Returns the time since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
+  /// Returns the time in milliseconds since the plugin was loaded. Returns 0 if the plugin has no 'time' permission.
   get-time: func() -> f64;
 
   /// Returns what kind platform the app is running on. E.g. 'terminal' or 'gui'

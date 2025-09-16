@@ -41,6 +41,11 @@ type
     Loop,
     Optional
 
+  InputAction* = enum
+    Press
+    Repeat
+    Release
+
 proc isAscii*(input: int64): bool =
   if input >= char.low.ord and input <= char.high.ord:
     return true

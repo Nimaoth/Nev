@@ -1,4 +1,4 @@
-import std/[strformat, json, jsonutils, strutils, sequtils]
+import std/[strformat, json, jsonutils, strutils, sequtils, sugar, os, terminal, colors, unicode]
 import wit_guest, wit_types, wit_runtime, generational_seq, event, util
 export wit_types, wit_runtime
 import async
@@ -224,3 +224,27 @@ proc runInBackground*(executor: BackgroundExecutor, p: proc(task: BackgroundTask
   let args = &"{cast[int](p)}\n{readerPath}\n{writerPath}"
   spawnBackground(stackWitString(args), executor)
 
+############################# logging ############################
+
+type LogLevel* = enum lvlInfo, lvlNotice, lvlDebug, lvlWarn, lvlError
+
+proc log*(level: LogLevel, str: string) =
+  let color = case level
+  of lvlDebug: rgb(100, 100, 200)
+  of lvlInfo: rgb(200, 200, 200)
+  of lvlNotice: rgb(200, 255, 255)
+  of lvlWarn: rgb(200, 200, 100)
+  of lvlError: rgb(255, 150, 150)
+  # of lvlFatal: rgb(255, 0, 0)
+  else: rgb(255, 255, 255)
+  try:
+    {.gcsafe.}:
+      stdout.write(ansiForegroundColorCode(color))
+      stdout.write("[vim] ")
+      stdout.write(str)
+      stdout.write("\r\n")
+  except IOError:
+    discard
+
+template debugf*(x: static string) =
+  log lvlDebug, fmt(x)
