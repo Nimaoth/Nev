@@ -24,6 +24,7 @@ proc parseFileStatusGit(status: char): VCSFileStatus =
   of 'M': Modified
   of 'A': Added
   of 'D': Deleted
+  of 'U': Conflict
   of '?': Untracked
   else: None
 

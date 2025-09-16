@@ -10,7 +10,7 @@ import service, config_provider, vfs, vfs_service
 logCategory "vcs"
 
 type
-  VCSFileStatus* = enum None = ".", Modified = "M", Added = "A", Deleted = "D", Untracked = "?"
+  VCSFileStatus* = enum None = ".", Modified = "M", Added = "A", Deleted = "D", Conflict = "U", Untracked = "?"
   VCSFileInfo* = object
     stagedStatus*: VCSFileStatus
     unstagedStatus*: VCSFileStatus
