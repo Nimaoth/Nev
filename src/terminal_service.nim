@@ -245,8 +245,7 @@ type
       msg: string
 
   OsHandles = object
-    inputWriteEvent2: ThreadSignalPtr
-    outputReadEvent2: ThreadSignalPtr
+    inputEventSignal: ThreadSignalPtr # used to signal input events when using channels. todo: use for native terminal aswell
     when defined(windows):
       hpcon: HPCON
       inputWriteHandle: HANDLE
@@ -537,7 +536,7 @@ proc createTerminalBuffer*(state: var TerminalThreadState): TerminalBuffer =
 
 proc createTexture(self: TerminalService, sixel: sink Sixel) =
   try:
-    debugf"cache sixel {sixel.contentHash} {sixel.width}x{sixel.height}"
+    # debugf"cache sixel {sixel.contentHash} {sixel.width}x{sixel.height}"
     var colors = newSeq[chroma.Color]()
     swap(colors, sixel.colors)
     let textureId = createTexture(sixel.width, sixel.height, colors.ensureMove)
@@ -553,7 +552,7 @@ proc cleanupUnusedSixels(self: TerminalService) {.async.} =
         unusedSixels.del(s.contentHash)
 
     for key, id in unusedSixels:
-      debugf"delete unused sixel {key}, {id.int}"
+      # debugf"delete unused sixel {key}, {id.int}"
       deleteTexture(id)
       self.sixelTextures.del(key)
 
@@ -591,7 +590,6 @@ proc handleOutputChannel(self: TerminalService, terminal: Terminal) {.async.} =
         when defined(enableLibssh):
           if terminal.ssh.isSome:
             sshAsyncWait "update terminal size":
-              # todo: pixel size
               terminal.sshChannel.impl.channel_request_pty_size_ex(event.width, event.height, event.pixelWidth, event.pixelHeight)
       of OutputEventKind.Cursor:
         terminal.cursor.row = event.row
@@ -792,11 +790,7 @@ proc encodeLegacyFunctionalKeyWithMods(state: var TerminalThreadState, event: In
   else:
     return false
 
-# proc encodeFunctionKey(state: var TerminalThreadState, event: InputEvent): bool =
-
 proc encodeKittyKey(state: var TerminalThreadState, event: InputEvent) =
-  # if event.input < 0:
-  #   state.encodeFunctionKey(event)
   let kittyKeyboardFlags = state.kittyKeyboardFlags
   let reportText = ReportAllKeysAsEscapeCodes in kittyKeyboardFlags
   let sendTextStandalone = not reportText
@@ -871,6 +865,7 @@ proc encodeKittyKey(state: var TerminalThreadState, event: InputEvent) =
 
   data.encodedMods = $(mods + 1)
   let simpleEncodingOk = not data.addActions and not data.addAlternates and not data.addText
+  # todo
   # if simpleEncodingOk:
   #   if not data.hasMods:
   #     state.vterm.uniChar(' '.uint32, modifiers.toVtermModifiers)
@@ -879,25 +874,6 @@ proc encodeKittyKey(state: var TerminalThreadState, event: InputEvent) =
   # else:
   state.serialize(data, csiSuffix)
 
-  # var buffer = "\e["
-  # buffer.add "u"
-
-  # if event.input > 0:
-  #   buffer.add $event.input
-  #   # if ReportAlternateKeys in kittyKeyboardFlags:
-  #   #   buffer.add ":"
-  #   #   buffer.add ":"
-  #     buffer.add ":"
-  # elif event.input < 0:
-  #   case event.input
-  #   of INPUT_SPACE:
-  #     state.vterm.uniChar(' '.uint32, modifiers.toVtermModifiers)
-  #   else:
-  #     state.vterm.key(event.input.inputToVtermKey, modifiers.toVtermModifiers)
-  #     # state.sendOutputBuffered(&"\e{}[u")
-
-  # state.sendOutputBuffered(buffer)
-
 proc handleInputEvents(state: var TerminalThreadState) =
   while state.inputChannel[].peek() > 0:
     try:
@@ -905,7 +881,6 @@ proc handleInputEvents(state: var TerminalThreadState) =
       case event.kind
       of InputEventKind.Text:
         let kittyKeyboardFlags = state.kittyKeyboardFlags
-        # echo event, &", kitty: {kittyKeyboardFlags}"
         if kittyKeyboardFlags == {} or event.noKitty:
           for r in event.text.runes:
             state.vterm.uniChar(r.uint32, event.modifiers.toVtermModifiers)
@@ -1121,7 +1096,7 @@ proc resizeSixel(s: ptr TerminalThreadState, w: int, h: int) =
   s.sixel.width = w
   s.sixel.height = h
 
-iterator handleSixel(s: ptr TerminalThreadState): int {.closure, gcsafe, raises: [].} =
+iterator parseSixelData(s: ptr TerminalThreadState): int {.closure, gcsafe, raises: [].} =
   # echo &"handle sixel"
   # echo "============="
   # if s.sixel.frag.len.int > 0:
@@ -1299,9 +1274,9 @@ iterator handleSixel(s: ptr TerminalThreadState): int {.closure, gcsafe, raises:
 
   s.sixel.active = false
 
-proc handleSixelData(s: ptr TerminalThreadState, frag: VTermStringFragment) =
+proc handleDcsSixel(s: ptr TerminalThreadState, frag: VTermStringFragment) =
   if s.sixel.iter == nil or not s.sixel.active:
-    s.sixel.iter = handleSixel
+    s.sixel.iter = parseSixelData
   s.sixel.i = 0
   s.sixel.frag = frag
   discard s.sixel.iter(s)
@@ -1309,7 +1284,7 @@ proc handleSixelData(s: ptr TerminalThreadState, frag: VTermStringFragment) =
     s.sixel.iter = nil
 
 template kittyDebugf*(x: static string) =
-  when defined(debugKGP) or true:
+  when defined(debugKGP):
     echo fmt(x)
 
 proc addImage(s: var KittyState, id: int, width, height: int, colors: var seq[chroma.Color]) =
@@ -1396,7 +1371,7 @@ proc deleteVisiblePlacements(s: var KittyState, deleteImageWhenUnused: bool) =
   for ids in placementsToRemove:
     s.deletePlacement(ids[0], ids[1], deleteImageWhenUnused)
 
-iterator handleKitty(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].} =
+iterator parseKittyData(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].} =
   let t = startTimer()
   var i = 1
   var suppressOk = false
@@ -1707,6 +1682,7 @@ iterator handleKitty(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].}
           imageId: id,
         )
         placedImage.updateDestRect(placedImage.cw, placedImage.ch, ivec2(s.cellPixelWidth.int32, s.cellPixelHeight.int32))
+        # todo
         # if cursorMovement == 0 and unicodePlaceholder == 0:
         #   s.moveCursor(placedImage.effectiveNumCols, 0)
         #   if placedImage.effectiveNumRows > 0:
@@ -1734,6 +1710,7 @@ iterator handleKitty(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].}
         imageId: id,
       )
       placedImage.updateDestRect(placedImage.cw, placedImage.ch, ivec2(s.cellPixelWidth.int32, s.cellPixelHeight.int32))
+      # todo
       # if cursorMovement == 0 and unicodePlaceholder == 0:
       #   s.moveCursor(placedImage.effectiveNumCols, 0)
       #   if placedImage.effectiveNumRows > 0:
@@ -1741,9 +1718,6 @@ iterator handleKitty(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].}
 
       s.kitty.addPlacement placementId, placedImage
       s.dirty = true
-
-      # sendOKResponse:
-      #   discard
 
     else:
       kittyDebugf"Unknown kitty action '{action}'"
@@ -1755,9 +1729,9 @@ iterator handleKitty(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].}
     sendErrResponse(msg):
       discard
 
-proc handleKittyData(s: ptr TerminalThreadState, frag: VTermStringFragment) =
+proc handleApcKitty(s: ptr TerminalThreadState, frag: VTermStringFragment) =
   if s.kitty.iter == nil:
-    s.kitty.iter = handleKitty
+    s.kitty.iter = parseKittyData
   s.kitty.frag = frag
   s.kitty.iter(s)
   if finished(s.kitty.iter):
@@ -1791,8 +1765,6 @@ proc handleKittyKeyboard(s: ptr TerminalThreadState, leader: char, args: openArr
     of 3: stack[].last.excl flags
     else:
       echo &"Unknown mode {3}"
-    # echo &"new flags: {stack[]}"
-    # s.sendOutput(&"new flags: {stack[]}\r\n")
 
   of '>':
     let flagsInt = if args.len >= 1:
@@ -1804,8 +1776,6 @@ proc handleKittyKeyboard(s: ptr TerminalThreadState, leader: char, args: openArr
     stack[].add flags
     if stack[].len > 64:
       stack[].removeShift(0)
-    # echo &"new flags: {stack[]}"
-    # s.sendOutput(&"new flags: {stack[]}\r\n")
   of '<':
     let num = if args.len >= 1:
       args[0].int
@@ -1816,8 +1786,6 @@ proc handleKittyKeyboard(s: ptr TerminalThreadState, leader: char, args: openArr
       if stack[].len == 0:
         break
       discard stack[].pop()
-    # echo &"new flags: {stack[]}"
-    # s.sendOutput(&"new flags: {stack[]}\r\n")
   of '?':
     let flags = if stack[].len > 0:
       cast[int](stack[].last)
@@ -1833,10 +1801,6 @@ proc createPlacements(state: KittyState): seq[PlacedImage] =
     if p.imageId in state.images:
       result.add p
       result.last.textureId = state.images[p.imageId].textureId
-      # result.add((
-      #   p.x, p.y, p.width, p.height, p.z,
-      #   p.sx, p.sy, p.sw, p.sh,
-      #   p.imageId, state.images[p.imageId].textureId))
 
   result.sort proc(a, b: PlacedImage): int =
     if a.z != b.z:
@@ -2018,14 +1982,14 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
       copyMem(commandStr[0].addr, command[0].addr, commandlen.int)
       # echo &"dcs '{commandStr}', {frag}"
       if commandlen > 0 and command[commandlen - 1] == 'q':
-        handleSixelData(state, frag)
+        handleDcsSixel(state, frag)
         return 1
     ),
     apc: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
       let state = cast[ptr TerminalThreadState](user)
       # echo &"apc '{frag}'"
       if frag.len.int > 0 and (frag.str[0] == 'G' or state.kitty.iter != nil):
-        handleKittyData(state, frag)
+        handleApcKitty(state, frag)
       return 1
     ),
     pm: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
@@ -2036,7 +2000,7 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
     ),
     reset: (proc (hard: int; user: pointer): cint {.cdecl.} =
       let state = cast[ptr TerminalThreadState](user)
-      echo &"===================== reset: {hard}"
+      # echo &"===================== reset: {hard}"
       if state.alternateScreen:
         state.kittyKeyboardAlternate.setLen(0)
       else:
@@ -2061,7 +2025,7 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
 
   proc handleInput(state: ptr TerminalThreadState) {.async.} =
     while not state.terminateRequested:
-      await state.handles.inputWriteEvent2.wait()
+      await state.handles.inputEventSignal.wait()
       try:
         state[].handleInputEvents()
         if state.dirty:
@@ -2197,7 +2161,7 @@ proc sendEvent(self: Terminal, event: InputEvent) =
   if self.threadTerminated:
     return
   self.inputChannel[].send(event)
-  discard self.handles.inputWriteEvent2.fireSync()
+  discard self.handles.inputEventSignal.fireSync()
   when defined(windows):
     discard SetEvent(self.handles.inputWriteEvent)
   else:
@@ -2226,8 +2190,7 @@ proc terminate*(self: Terminal) {.async.} =
       self.sshChannel.free()
       self.sshClient.disconnect()
 
-  discard self.handles.inputWriteEvent2.close()
-  discard self.handles.outputReadEvent2.close()
+  discard self.handles.inputEventSignal.close()
   if not self.useChannels:
     when defined(windows):
       CloseHandle(self.handles.inputWriteEvent)
@@ -2481,8 +2444,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
       hpcon: hPC,
       inputWriteHandle: inputWriteHandle,
       outputReadHandle: outputReadHandle,
-      inputWriteEvent2: ThreadSignalPtr.new().value,
-      outputReadEvent2: ThreadSignalPtr.new().value,
+      inputEventSignal: ThreadSignalPtr.new().value,
       inputWriteEvent: inputWriteEvent,
       outputReadEvent: outputReadEvent,
       processInfo: pi,
@@ -2531,8 +2493,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, command: st
       raise newOSError(osLastError(), "execlp")
 
     let handles = OsHandles(
-      inputWriteEvent2: ThreadSignalPtr.new().value,
-      outputReadEvent2: ThreadSignalPtr.new().value,
+      inputEventSignal: ThreadSignalPtr.new().value,
       masterFd: master_fd,
       slaveFd: slave_fd,
       inputWriteEventFd: inputWriteEventFd,
@@ -2592,8 +2553,7 @@ proc createTerminal*(self: TerminalService, width: int, height: int, writeChanne
   inc self.idCounter
 
   let handles = OsHandles(
-    inputWriteEvent2: ThreadSignalPtr.new().value,
-    outputReadEvent2: ThreadSignalPtr.new().value,
+    inputEventSignal: ThreadSignalPtr.new().value,
   )
 
   let vterm = VTerm.new(height.cint, width.cint)

@@ -255,7 +255,6 @@ method init*(self: TerminalPlatform, options: AppOptions) =
 
     var useKitty = true
 
-    # self.kittyKeyboardFlags = 0b1001
     if options.kittyKeyboardFlags != "":
       try:
         var flags: int = 0
@@ -634,82 +633,6 @@ method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
       inc self.eventCounter
 
     stdout.flushFile()
-
-    # else:
-    #   while true:
-    #     let key = getKey()
-    #     if key == tui.Key.None:
-    #       break
-
-    #     inc eventCounter
-    #     inc self.eventCounter
-
-    #     if key == Mouse:
-    #       let mouseInfo = getMouse()
-    #       let pos = vec2(mouseInfo.x.float, mouseInfo.y.float)
-    #       let button: input.MouseButton = case mouseInfo.button
-    #       of mbLeft: input.MouseButton.Left
-    #       of mbMiddle: input.MouseButton.Middle
-    #       of mbRight: input.MouseButton.Right
-    #       else: input.MouseButton.Unknown
-
-    #       var modifiers: Modifiers = {}
-    #       if mouseInfo.ctrl:
-    #         modifiers.incl Modifier.Control
-    #       if mouseInfo.shift:
-    #         modifiers.incl Modifier.Shift
-
-    #       if mouseInfo.scroll:
-    #         let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
-
-    #         if not self.builder.handleMouseScroll(pos, vec2(0, scroll), {}):
-    #           self.onScroll.invoke (pos, vec2(0, scroll), {})
-    #       elif mouseInfo.move:
-    #         # log(lvlInfo, fmt"move to {pos}")
-    #         if not self.builder.handleMouseMoved(pos, self.mouseButtons):
-    #           self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
-    #       else:
-    #         # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
-    #         case mouseInfo.action
-    #         of mbaPressed:
-    #           self.mouseButtons.incl button
-
-    #           var events = @[button]
-
-    #           if button == input.MouseButton.Left:
-    #             if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
-    #               inc self.doubleClickCounter
-    #               case self.doubleClickCounter
-    #               of 1:
-    #                 events.add input.MouseButton.DoubleClick
-    #               of 2:
-    #                 events.add input.MouseButton.TripleClick
-    #               else:
-    #                 self.doubleClickCounter = 0
-    #             else:
-    #               self.doubleClickCounter = 0
-
-    #             self.doubleClickTimer = startTimer()
-    #           else:
-    #             self.doubleClickCounter = 0
-
-    #           for event in events:
-    #             if not self.builder.handleMousePressed(event, modifiers, pos):
-    #               self.onMousePress.invoke (event, modifiers, pos)
-
-    #         of mbaReleased:
-    #           self.mouseButtons = {}
-    #           if not self.builder.handleMouseReleased(button, modifiers, pos):
-    #             self.onMouseRelease.invoke (button, modifiers, pos)
-    #         else:
-    #           discard
-
-    #     else:
-    #       var modifiers: Modifiers = {}
-    #       let button = key.toInput(modifiers)
-    #       # debugf"key press k: {key}, input: {inputToString(button, modifiers)}"
-    #       if not self.builder.handleKeyPressed(button, modifiers):
-    #         self.onKeyPress.invoke (button, modifiers)
 
     let terminalSize = self.getTerminalSize()
     let sizeChanged = self.buffer.width != terminalSize.x.int or self.buffer.height != terminalSize.y.int
