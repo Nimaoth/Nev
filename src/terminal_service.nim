@@ -1262,12 +1262,13 @@ iterator parseSixelData(s: ptr TerminalThreadState): int {.closure, gcsafe, rais
       pos: s.sixel.pos,
       contentHash: s.sixel.colors.hash(),
     )
-    let effectiveNumCols = (s.sixel.width / s.cellPixelWidth).ceil.int
-    let effectiveNumRows = (s.sixel.height / s.cellPixelHeight).ceil.int
-    s.moveCursor(effectiveNumCols, 0)
-    if effectiveNumRows > 0:
-      s.moveCursor(0, effectiveNumRows - 1)
-    # echo &"sixel {s.sixel.width}x{s.sixel.height}, {s.sixel.px}:{s.sixel.py}, {s.cursor.row}:{s.cursor.col}, {s.sixel.colors.hash}, effective: {effectiveNumCols}x{effectiveNumRows}"
+    if s.cellPixelWidth != 0 and s.cellPixelHeight != 0:
+      let effectiveNumCols = (s.sixel.width / s.cellPixelWidth).ceil.int
+      let effectiveNumRows = (s.sixel.height / s.cellPixelHeight).ceil.int
+      s.moveCursor(effectiveNumCols, 0)
+      if effectiveNumRows > 0:
+        s.moveCursor(0, effectiveNumRows - 1)
+      # echo &"sixel {s.sixel.width}x{s.sixel.height}, {s.sixel.px}:{s.sixel.py}, {s.cursor.row}:{s.cursor.col}, {s.sixel.colors.hash}, effective: {effectiveNumCols}x{effectiveNumRows}"
 
   except CatchableError as e:
     echo &"Failed to parse sixel data at {s.sixel.i}: {e.msg}"
