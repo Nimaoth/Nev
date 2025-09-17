@@ -1416,9 +1416,8 @@ proc displayFull*(tb: TerminalBuffer) =
       displayBuffer.add "                                                                   "
       displayBuffer.add ' '.Rune.repeat(additionalSpaces)
 
-    flushDisplayBuffer()
-
   flushDisplayBuffer()
+  stdout.flushFile()
 
 proc displayDiff(tb: TerminalBuffer) =
   var bufXPos, bufYPos: int
@@ -1494,9 +1493,8 @@ proc displayDiff(tb: TerminalBuffer) =
         displayBuffer.add c.ch
         inc bufXPos
 
-    flushDisplayBuffer()
-
   flushDisplayBuffer()
+  stdout.flushFile()
 
 var gDoubleBufferingEnabled = true
 
