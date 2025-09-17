@@ -104,6 +104,24 @@ method getCompletions*(self: LanguageServerCommandLine, filename: string, locati
             documentation: CompletionItemDocumentationVariant.init(docs).some,
           )
 
+      for (name, command) in self.commands.activeCommands.pairs:
+        var docs = ""
+        if self.events.commandInfos.getInfos(name).getSome(infos):
+          for i, info in infos:
+            if i > 0:
+              docs.add "\n"
+            docs.add &"[{info.context}] {info.keys} -> {info.command}"
+          docs.add "\n\n"
+
+        docs.add command.description
+
+        completions.add CompletionItem(
+          label: name,
+          kind: CompletionKind.Function,
+          detail: command.signature.some,
+          documentation: CompletionItemDocumentationVariant.init(docs).some,
+        )
+
   else:
     {.gcsafe.}:
       for (name, command) in self.commands.commands.pairs:

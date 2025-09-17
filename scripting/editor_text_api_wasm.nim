@@ -490,6 +490,20 @@ proc mode*(self: TextDocumentEditor): string {.gcsafe, raises: [].} =
     raiseAssert(getCurrentExceptionMsg())
 
 
+proc editor_text_modes_seq_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc modes*(self: TextDocumentEditor): seq[string] {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_modes_seq_string_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  try:
+    result = parseJson($res).jsonTo(typeof(result))
+  except CatchableError:
+    raiseAssert(getCurrentExceptionMsg())
+
+
 proc editor_text_getContextWithMode_string_TextDocumentEditor_string_wasm(
     arg: cstring): cstring {.importc.}
 proc getContextWithMode*(self: TextDocumentEditor; context: string): string {.
@@ -1928,18 +1942,19 @@ proc vimMotionWordBig*(self: TextDocumentEditor; cursor: Cursor; count: int = 0)
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_wasm(
+proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
-                          move: string; count: int = 0): Selection {.gcsafe,
-    raises: [].} =
+                          move: string; count: int = 0; includeEol: bool = true): Selection {.
+    gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add cursor.toJson()
   argsJson.add move.toJson()
   argsJson.add count.toJson()
+  argsJson.add includeEol.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_wasm(
+  let res {.used.} = editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_bool_wasm(
       argsJsonString.cstring)
   try:
     result = parseJson($res).jsonTo(typeof(result))
@@ -2586,27 +2601,29 @@ proc getSelections*(self: TextDocumentEditor): Selections {.gcsafe, raises: [].}
     raiseAssert(getCurrentExceptionMsg())
 
 
-proc editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
+proc editor_text_setSelection_void_TextDocumentEditor_Selection_Option_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc setSelection*(self: TextDocumentEditor; selection: Selection) {.gcsafe,
-    raises: [].} =
+proc setSelection*(self: TextDocumentEditor; selection: Selection;
+                   addToHistory: Option[bool] = bool.none) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add selection.toJson()
+  argsJson.add addToHistory.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Selection_wasm(
+  let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Selection_Option_bool_wasm(
       argsJsonString.cstring)
 
 
-proc editor_text_setSelections_void_TextDocumentEditor_Selections_wasm(
+proc editor_text_setSelections_void_TextDocumentEditor_Selections_Option_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc setSelections*(self: TextDocumentEditor; selections: Selections) {.gcsafe,
-    raises: [].} =
+proc setSelections*(self: TextDocumentEditor; selections: Selections;
+                    addToHistory: Option[bool] = bool.none) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
   argsJson.add self.toJson()
   argsJson.add selections.toJson()
+  argsJson.add addToHistory.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSelections_void_TextDocumentEditor_Selections_wasm(
+  let res {.used.} = editor_text_setSelections_void_TextDocumentEditor_Selections_Option_bool_wasm(
       argsJsonString.cstring)
 
 

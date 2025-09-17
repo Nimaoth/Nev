@@ -286,7 +286,7 @@ defineCommand(ws"test-start-process",
         if stdout.atEnd:
           if buffer.endsWith("\0"):
             buffer.setLen(buffer.len - 1)
-          let selections = editor.edit(@@[editor.getSelection], @@[ws(buffer.replace("\r", ""))])
+          let selections = editor.edit(@@[editor.getSelection], @@[ws(buffer.replace("\r", ""))], false)
           if selections.len > 0:
             editor.setSelection(selections[0].last.toSelection)
           return Stop

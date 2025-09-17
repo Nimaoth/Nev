@@ -5,7 +5,7 @@ import platform/[platform]
 import scripting/expose
 import document, events, input, service, platform_service, dispatch_tables, config_provider
 
-from scripting_api import EditorId, newEditorId
+from scripting_api import EditorId
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -19,8 +19,7 @@ declareSettings EditorSettings, "editor":
 type
   EditorIdNew* = distinct uint64
   DocumentEditor* = ref object of RootObj
-    id*: EditorId
-    idNew*: EditorIdNew
+    id*: EditorIdNew
     userId*: Id
     renderHeader*: bool
     fillAvailableSpace*: bool
@@ -37,8 +36,8 @@ type
 
   DocumentEditorService* = ref object of Service
     platform: Platform
-    editors*: Table[EditorId, DocumentEditor]
-    pinnedEditors*: HashSet[EditorId]
+    editors*: Table[EditorIdNew, DocumentEditor]
+    pinnedEditors*: HashSet[EditorIdNew]
     pinnedDocuments*: seq[Document]
     onEditorRegistered*: Event[DocumentEditor]
     onEditorDeregistered*: Event[DocumentEditor]
@@ -61,7 +60,7 @@ addBuiltinService(DocumentEditorService)
 
 method init*(self: DocumentEditorService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"DocumentEditorService.init"
-  self.pinnedEditors = initHashSet[EditorId]()
+  self.pinnedEditors = initHashSet[EditorIdNew]()
   return ok()
 
 method canOpenFile*(self: DocumentFactory, path: string): bool {.base, gcsafe, raises: [].} = discard
@@ -70,10 +69,9 @@ method createDocument*(self: DocumentFactory, services: Services, path: string, 
 method canEditDocument*(self: DocumentEditorFactory, document: Document): bool {.base, gcsafe, raises: [].} = discard
 method createEditor*(self: DocumentEditorFactory, services: Services, document: Document): DocumentEditor {.base, gcsafe, raises: [].} = discard
 
-func id*(self: DocumentEditor): EditorId = self.id
+func id*(self: DocumentEditor): EditorIdNew = self.id
 
 proc init*(self: DocumentEditor) =
-  self.id = newEditorId()
   self.userId = newId()
 
   self.renderHeader = true
@@ -166,12 +164,12 @@ proc unregisterDocument*(self: DocumentEditorService, document: Document) =
   self.documents.del(document.id)
 
 proc registerEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
-  editor.idNew = self.allEditors.add(editor)
+  editor.id = self.allEditors.add(editor)
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
 
 proc unregisterEditor*(self: DocumentEditorService, editor: DocumentEditor): void =
-  self.allEditors.del(editor.idNew)
+  self.allEditors.del(editor.id)
 
   self.editors.del(editor.id)
   self.onEditorDeregistered.invoke editor
@@ -198,7 +196,7 @@ proc getEditorsForDocument*(self: DocumentEditorService, document: Document): se
     if editor.getDocument() == document:
       result.add editor
 
-proc getEditorForId*(self: DocumentEditorService, id: EditorId): Option[DocumentEditor] =
+proc getEditorForId*(self: DocumentEditorService, id: EditorIdNew): Option[DocumentEditor] =
   self.editors.withValue(id, editor):
     return editor[].some
 
@@ -292,7 +290,7 @@ static:
 
 proc getAllEditors*(self: DocumentEditorService): seq[EditorId] {.expose("editors").} =
   for id in self.editors.keys:
-    result.add id
+    result.add id.EditorId
 
 proc getExistingEditor*(self: DocumentEditorService, path: string): Option[EditorId] {.expose("editors").} =
   ## Returns an existing editor for the given file if one exists,
@@ -308,7 +306,7 @@ proc getExistingEditor*(self: DocumentEditorService, path: string): Option[Edito
       continue
     if editor.getDocument().filename != path:
       continue
-    return id.some
+    return id.EditorId.some
 
   return EditorId.none
 
