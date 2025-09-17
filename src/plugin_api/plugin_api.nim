@@ -477,19 +477,25 @@ proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor; selections:
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     asyncSpawn editor.TextDocumentEditor.pasteAsync(selections.mapIt(it.toInternal), register, inclusiveEnd)
 
+proc textEditorAutoShowCompletions(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.autoShowCompletions()
+
 proc textEditorApplyMove(instance: ptr InstanceData; editor: TextEditor; selection: Selection; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
-    return textEditor.getSelectionsForMove(@[selection.toInternal], move, count, includeEol).mapIt(it.toWasm)
+    return textEditor.getSelectionsForMove(@[selection.toInternal], move, count, includeEol, wrap).mapIt(it.toWasm)
 
 proc textEditorMultiMove(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
-    return textEditor.getSelectionsForMove(selections.mapIt(it.toInternal), move, count, includeEol).mapIt(it.toWasm)
+    return textEditor.getSelectionsForMove(selections.mapIt(it.toInternal), move, count, includeEol, wrap).mapIt(it.toWasm)
 
 proc textEditorSetSelection(instance: ptr InstanceData; editor: TextEditor; s: Selection): void =
   if instance.host == nil:

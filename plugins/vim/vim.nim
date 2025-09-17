@@ -753,20 +753,19 @@ proc moveParagraph(editor: TextEditor, backwards: bool, count: int = 1) {.expose
   editor.scrollToCursor()
   editor.updateTargetColumn()
 
-# proc vimDeleteLeft*(editor: TextEditor) =
-#   yankedLines = editor.vimState.selectLines
-#   editor.copy()
-#   editor.addNextCheckpoint "insert"
-#   editor.deleteLeft()
+proc deleteLeft*(editor: TextEditor) {.exposeActive(editorContext).} =
+  yankedLines = editor.vimState.selectLines
+  editor.copy(ws"", inclusiveEnd = false)
+  editor.addNextCheckpoint ws"insert"
+  let selections = editor.multiMove(editor.getSelections, ws"column", -1, wrap = false, includeEol = true)
+  editor.setSelections editor.edit(selections, @@[ws""], inclusive=editor.vimState.cursorIncludeEol)
 
-# proc vimDeleteRight*(editor: TextEditor) =
-#   yankedLines = editor.vimState.selectLines
-#   editor.copy()
-#   editor.addNextCheckpoint "insert"
-#   editor.deleteRight(includeAfter=editor.vimState.cursorIncludeEol)
-
-# exposeActive editorContext, "vim-delete-left", vimDeleteLeft
-# exposeActive editorContext, "vim-delete-right", vimDeleteRight
+proc deleteRight*(editor: TextEditor) {.exposeActive(editorContext).} =
+  yankedLines = editor.vimState.selectLines
+  editor.copy(ws"", inclusiveEnd = false)
+  editor.addNextCheckpoint ws"insert"
+  let selections = editor.getSelections
+  editor.setSelections editor.edit(selections, @@[ws""], inclusive=true)
 
 proc moveCursorPage(editor: TextEditor, direction: int, count: int = 1, center: bool = false) {.exposeActive(editorContext).} =
   ## Direction 100 means 100% of window height downwards -100 is upwards, 50 would be 50%
@@ -862,7 +861,7 @@ proc moveDirection(editor: TextEditor, move: string, direction: int, count: int 
 #   editor.updateTargetColumn()
 
 proc paste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = false, register: string = "") {.exposeActive(editorContext).} =
-  debugf"vimPaste {register}, lines: {yankedLines}"
+  # debugf"vimPaste {register}, lines: {yankedLines}, pasteRight: {pasteRight}"
   let register = if register == "vim.default-register":
     getVimDefaultRegister()
   else:
@@ -876,7 +875,7 @@ proc paste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = fa
     selections = editor.multiMove(selections, ws"line", 1, wrap = false, includeEol = true).mapIt(it.last.toSelection).stackWitList()
     selections = editor.edit(selections, @@[ws("\n")], inclusive=false).mapIt(it.last.toSelection).stackWitList()
   elif pasteRight:
-    selections = editor.multiMove(selections, ws"column", 1, true, true).mapIt(it.last.toSelection).stackWitList()
+    selections = editor.multiMove(selections, ws"column", 1, false, true).mapIt(it.last.toSelection).stackWitList()
 
   editor.setMode "vim-new.normal"
   editor.paste selections, register.stackWitString, inclusiveEnd=inclusiveEnd

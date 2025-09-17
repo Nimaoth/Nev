@@ -376,6 +376,14 @@ proc paste*(editor: TextEditor; selections: WitList[Selection];
   arg5 = inclusiveEnd
   textEditorPasteImported(arg0, arg1, arg2, arg3, arg4, arg5)
 
+proc textEditorAutoShowCompletionsImported(a0: uint64): void {.
+    wasmimport("auto-show-completions", "nev:plugins/text-editor").}
+proc autoShowCompletions*(editor: TextEditor): void {.nodestroy.} =
+  ## todo
+  var arg0: uint64
+  arg0 = editor.id
+  textEditorAutoShowCompletionsImported(arg0)
+
 proc textEditorSetSearchQueryFromMoveImported(a0: uint64; a1: int32; a2: int32;
     a3: int32; a4: int32; a5: int32; a6: int32; a7: int32; a8: int32): void {.
     wasmimport("set-search-query-from-move", "nev:plugins/text-editor").}

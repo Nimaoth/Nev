@@ -3041,7 +3041,7 @@ proc getSurrounding*(self: TextDocumentEditor, selection: Selection, count: int,
       return
 
 proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selection], move: string,
-    count: int = 0, includeEol: bool = true): seq[Selection] =
+    count: int = 0, includeEol: bool = true, wrap: bool = true): seq[Selection] =
 
   let cursorSelector = self.config.get(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 
@@ -3110,7 +3110,7 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
     return selections.mapIt(self.doMoveCursorLine(it.last, direction * max(count, 1), false, includeEol).toSelection(it, cursorSelector))
 
   of "column":
-    result = selections.mapIt(self.doMoveCursorColumn(it.last, count, includeAfter = includeEol).toSelection(it, cursorSelector))
+    result = selections.mapIt(self.doMoveCursorColumn(it.last, count, wrap = wrap, includeAfter = includeEol).toSelection(it, cursorSelector))
 
   of "prev-search-result":
     let count = getArg(0, int, 0)

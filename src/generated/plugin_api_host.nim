@@ -491,6 +491,8 @@ proc textEditorCopy(instance: ptr InstanceData; editor: TextEditor;
 proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor;
                      selections: sink seq[Selection]; register: sink string;
                      inclusiveEnd: bool): void
+proc textEditorAutoShowCompletions(instance: ptr InstanceData;
+                                   editor: TextEditor): void
 proc textEditorSetSearchQueryFromMove(instance: ptr InstanceData;
                                       editor: TextEditor; move: sink string;
                                       count: int32; prefix: sink string;
@@ -1914,6 +1916,17 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
             register[i0] = p0[i0]
         inclusiveEnd = parameters[5].i32.bool
         textEditorPaste(instance, editor, selections, register, inclusiveEnd)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "auto-show-completions", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        textEditorAutoShowCompletions(instance, editor)
     if e.isErr:
       return e
   block:
