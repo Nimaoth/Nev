@@ -471,11 +471,11 @@ proc textEditorCopy(instance: ptr InstanceData; editor: TextEditor, register: si
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.copy(register, inclusiveEnd)
 
-proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor, register: sink string, inclusiveEnd: bool): void =
+proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection], register: sink string, inclusiveEnd: bool): void =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.paste(register, inclusiveEnd)
+    asyncSpawn editor.TextDocumentEditor.pasteAsync(selections.mapIt(it.toInternal), register, inclusiveEnd)
 
 proc textEditorApplyMove(instance: ptr InstanceData; editor: TextEditor; selection: Selection; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
   if instance.host == nil:

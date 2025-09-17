@@ -275,7 +275,7 @@ interface text-editor {
   /// todo
   copy: func(editor: text-editor, register: string, inclusive-end: bool);
   /// todo
-  paste: func(editor: text-editor, register: string, inclusive-end: bool);
+  paste: func(editor: text-editor, selections: list<selection>, register: string, inclusive-end: bool);
 
   /// Set the search query by applying the given move to the current selection.
   /// 'prefix' and 'suffix' are appended to the string after escaping.

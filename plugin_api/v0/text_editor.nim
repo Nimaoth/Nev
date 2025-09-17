@@ -349,24 +349,32 @@ proc copy*(editor: TextEditor; register: WitString; inclusiveEnd: bool): void {.
   arg3 = inclusiveEnd
   textEditorCopyImported(arg0, arg1, arg2, arg3)
 
-proc textEditorPasteImported(a0: uint64; a1: int32; a2: int32; a3: bool): void {.
+proc textEditorPasteImported(a0: uint64; a1: int32; a2: int32; a3: int32;
+                             a4: int32; a5: bool): void {.
     wasmimport("paste", "nev:plugins/text-editor").}
-proc paste*(editor: TextEditor; register: WitString; inclusiveEnd: bool): void {.
-    nodestroy.} =
+proc paste*(editor: TextEditor; selections: WitList[Selection];
+            register: WitString; inclusiveEnd: bool): void {.nodestroy.} =
   ## todo
   var
     arg0: uint64
     arg1: int32
     arg2: int32
-    arg3: bool
+    arg3: int32
+    arg4: int32
+    arg5: bool
   arg0 = editor.id
-  if register.len > 0:
-    arg1 = cast[int32](register[0].addr)
+  if selections.len > 0:
+    arg1 = cast[int32](selections[0].addr)
   else:
     arg1 = 0.int32
-  arg2 = cast[int32](register.len)
-  arg3 = inclusiveEnd
-  textEditorPasteImported(arg0, arg1, arg2, arg3)
+  arg2 = cast[int32](selections.len)
+  if register.len > 0:
+    arg3 = cast[int32](register[0].addr)
+  else:
+    arg3 = 0.int32
+  arg4 = cast[int32](register.len)
+  arg5 = inclusiveEnd
+  textEditorPasteImported(arg0, arg1, arg2, arg3, arg4, arg5)
 
 proc textEditorSetSearchQueryFromMoveImported(a0: uint64; a1: int32; a2: int32;
     a3: int32; a4: int32; a5: int32; a6: int32; a7: int32; a8: int32): void {.

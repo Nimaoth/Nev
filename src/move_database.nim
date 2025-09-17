@@ -268,9 +268,8 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, select
   #     if result.first.line > 0:
   #       result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
 
-  # of "line-no-indent":
-  #   let indent = self.document.rope.indentBytes(cursor.line)
-  #   result = ((cursor.line, indent), (cursor.line, self.document.lineLength(cursor.line)))
+  of "line-no-indent":
+    result = selections.mapIt ((it.last.line, rope.indentBytes(it.last.line)), (it.last.line, rope.lineLen(it.last.line)))
 
   # of "file":
   #   result.first = (0, 0)

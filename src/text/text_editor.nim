@@ -2175,7 +2175,7 @@ proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool =
     expose("editor.text").} =
   asyncSpawn self.copyAsync(register, inclusiveEnd)
 
-proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: bool = false):
+proc pasteAsync*(self: TextDocumentEditor, selections: seq[Selection], registerName: string, inclusiveEnd: bool = false):
     Future[void] {.async.} =
   log lvlInfo, fmt"paste register from '{registerName}', inclusiveEnd: {inclusiveEnd}"
 
@@ -2188,26 +2188,26 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
 
   let numLines = register.numLines()
 
-  let newSelections = if numLines == self.selections.len and numLines > 1:
+  let newSelections = if numLines == selections.len and numLines > 1:
     case register.kind
     of RegisterKind.Text:
       let lines = register.text.splitLines()
-      self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+      self.document.edit(selections, selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
     of RegisterKind.Rope:
       let lines = register.rope.splitLines()
-      self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+      self.document.edit(selections, selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
   else:
     case register.kind
     of RegisterKind.Text:
-      self.document.edit(self.selections, self.selections, [register.text.move], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+      self.document.edit(selections, selections, [register.text.move], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
     of RegisterKind.Rope:
-      self.document.edit(self.selections, self.selections, [register.rope.move], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
+      self.document.edit(selections, selections, [register.rope.move], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
 
   # add list of selections for what was just pasted to history
-  if newSelections.len == self.selections.len:
+  if newSelections.len == selections.len:
     var tempSelections = newSelections
     for i in 0..tempSelections.high:
-      tempSelections[i].first = self.selections[i].first
+      tempSelections[i].first = selections[i].first
     self.selections = tempSelections
 
   self.selections = newSelections
@@ -2217,7 +2217,7 @@ proc pasteAsync*(self: TextDocumentEditor, registerName: string, inclusiveEnd: b
 
 proc paste*(self: TextDocumentEditor, registerName: string = "", inclusiveEnd: bool = false) {.
     expose("editor.text").} =
-  asyncSpawn self.pasteAsync(registerName, inclusiveEnd)
+  asyncSpawn self.pasteAsync(self.selections, registerName, inclusiveEnd)
 
 proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
@@ -3076,6 +3076,17 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
     let inside = getArg(2, bool, true)
     if c0.len > 0 and c1.len > 0:
       result = selections.mapIt(self.getSurrounding(it, count, includeEol, c0[0], c1[0], inside))
+
+  of "page":
+    let linesToMove = int(self.screenLineCount() * count div 100)
+    return selections.mapIt(self.doMoveCursorLine(it.last, linesToMove, false, includeEol).toSelection(it, cursorSelector))
+
+  of "visual-page":
+    let linesToMove = int(self.screenLineCount() * count div 100)
+    return selections.mapIt(self.doMoveCursorVisualLine(it.last, linesToMove, false, includeEol).toSelection(it, cursorSelector))
+    # let visibleLines = self.screenLineCount()
+    # let linesToMove = int(visibleLines.float * distance)
+    # self.moveCursorVisualLine(linesToMove, cursor, all, wrap, includeAfter)
 
   of "visual-line-up", "visual-line-down":
     var minLine = int.high

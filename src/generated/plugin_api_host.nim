@@ -489,7 +489,8 @@ proc textEditorAddNextCheckpoint(instance: ptr InstanceData; editor: TextEditor;
 proc textEditorCopy(instance: ptr InstanceData; editor: TextEditor;
                     register: sink string; inclusiveEnd: bool): void
 proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor;
-                     register: sink string; inclusiveEnd: bool): void
+                     selections: sink seq[Selection]; register: sink string;
+                     inclusiveEnd: bool): void
 proc textEditorSetSearchQueryFromMove(instance: ptr InstanceData;
                                       editor: TextEditor; move: sink string;
                                       count: int32; prefix: sink string;
@@ -1872,8 +1873,8 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
           [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "paste", ty):
         var instance = cast[ptr InstanceData](store.getData())
@@ -1890,16 +1891,29 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         else:
           assert false
         var editor: TextEditor
+        var selections: seq[Selection]
         var register: string
         var inclusiveEnd: bool
         editor.id = convert(parameters[0].i64, uint64)
         block:
-          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
-          register = newString(parameters[2].i32)
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
+          selections = newSeq[typeof(selections[0])](parameters[2].i32)
+          for i0 in 0 ..< selections.len:
+            selections[i0].first.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 0].addr)[], int32)
+            selections[i0].first.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 4].addr)[], int32)
+            selections[i0].last.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 8].addr)[], int32)
+            selections[i0].last.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 12].addr)[], int32)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[3].i32].addr)
+          register = newString(parameters[4].i32)
           for i0 in 0 ..< register.len:
             register[i0] = p0[i0]
-        inclusiveEnd = parameters[3].i32.bool
-        textEditorPaste(instance, editor, register, inclusiveEnd)
+        inclusiveEnd = parameters[5].i32.bool
+        textEditorPaste(instance, editor, selections, register, inclusiveEnd)
     if e.isErr:
       return e
   block:

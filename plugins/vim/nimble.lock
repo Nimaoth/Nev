@@ -53,16 +53,6 @@
         "sha1": "408bde8679bce63dfb6f424e107eb37c5eb31510"
       }
     },
-    "glob": {
-      "version": "0.11.2",
-      "vcsRevision": "64f71af2fa4572c2bdf8987a56a427c1d88fc34f",
-      "url": "https://github.com/haltcase/glob",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "58fadfae8cb82cab1061dded8066c03b0460ad4d"
-      }
-    },
     "unicodedb": {
       "version": "0.12.0",
       "vcsRevision": "b055310c08db8f879057b4fec15c8301ee93bb2a",
@@ -83,6 +73,18 @@
       ],
       "checksums": {
         "sha1": "cb2e24397c051e55ad5b72b3c0d4f270a90084df"
+      }
+    },
+    "glob": {
+      "version": "0.11.2",
+      "vcsRevision": "64f71af2fa4572c2bdf8987a56a427c1d88fc34f",
+      "url": "https://github.com/haltcase/glob",
+      "downloadMethod": "git",
+      "dependencies": [
+        "regex"
+      ],
+      "checksums": {
+        "sha1": "58fadfae8cb82cab1061dded8066c03b0460ad4d"
       }
     },
     "nimgen": {
