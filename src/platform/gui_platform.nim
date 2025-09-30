@@ -845,7 +845,7 @@ proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderComman
     maskBounds.add(command.bounds + nodePos)
   of RenderCommandKind.ScissorEnd:
     if maskBounds.len == 0:
-      log lvlError, &"Unbalanced ScisscorStart/End pairs"
+      # log lvlError, &"Unbalanced ScisscorStart/End pairs"
       return
     let bounds = maskBounds.pop()
     platform.boxy.pushLayer()

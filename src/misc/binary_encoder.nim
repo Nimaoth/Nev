@@ -3,6 +3,9 @@ type
   BinaryEncoder* = object
     buffer*: seq[byte]
 
+template toOpenArray*(self: BinaryEncoder): openArray[uint8] =
+  self.buffer.toOpenArray(0, self.buffer.high)
+
 macro getByte(v: typed, i: static[int]): untyped =
   let shift = i * 8
   result = genAst(v, shift):

@@ -958,7 +958,7 @@ proc updateSearchResultsAsync(self: TextDocumentEditor) {.async.} =
       return
 
     let searchResults = await findAllAsync(buffer.visibleText.slice(int), searchQuery)
-    if self.document.isNil:
+    if self.document.isNil or self.document.buffer.isNil:
       return
 
     self.searchResults = searchResults
