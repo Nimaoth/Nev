@@ -17,17 +17,22 @@ type
     isOpenImpl*: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].}
     peekImpl*: proc(self: ptr BaseChannel, to: Option[uint8]): int {.gcsafe, raises: [].}
     writeImpl*: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].}
+    writeSinkImpl*: proc(self: ptr BaseChannel, data: sink seq[uint8]) {.gcsafe, raises: [IOError].}
     flushReadImpl*: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].}
     readImpl*: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].}
     listenImpl*: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].}
 
   # todo: make this thread save
+  InMemoryBuffer = object
+    data: ptr UncheckedArray[uint8]
+    len: int
   InMemoryChannel* = object of BaseChannel
     isOpen: bool
     isWaiting: bool
     data: seq[uint8] # todo: use something more efficient which doesn't require moving memory
+    dataStart: int
     writeChannelPeekable: Atomic[int]
-    channel: ptr Channel[seq[uint8]]
+    channel: ptr Channel[InMemoryBuffer]
 
   ChannelRegistry* = object
     lock*: Lock
@@ -47,6 +52,7 @@ proc close*(self: var BaseChannel) {.gcsafe, raises: [].} = self.closeImpl(self.
 proc isOpen*(self: var BaseChannel): bool {.raises: [].} = self.isOpenImpl(self.addr)
 proc peek*(self: var BaseChannel, to: Option[uint8] = uint8.none): int {.raises: [].} = self.peekImpl(self.addr, to)
 proc write*(self: var BaseChannel, data: openArray[uint8]) {.raises: [IOError].} = self.writeImpl(self.addr, data)
+proc write*(self: var BaseChannel, data: sink seq[uint8]) {.raises: [IOError].} = self.writeSinkImpl(self.addr, data.ensureMove)
 proc read*(self: var BaseChannel, res: var openArray[uint8]): int {.raises: [IOError].} = self.readImpl(self.addr, res)
 proc flushRead*(self: var BaseChannel): int {.raises: [IOError].} = self.flushReadImpl(self.addr)
 
@@ -55,6 +61,7 @@ proc isOpen*(self: Arc[BaseChannel]): bool {.raises: [].} = self.getMutUnsafe.is
 proc peek*(self: Arc[BaseChannel], to: Option[uint8] = uint8.none): int {.raises: [].} = self.getMutUnsafe.peek(to)
 proc write*(self: Arc[BaseChannel], data: openArray[uint8]) {.raises: [IOError].} = self.getMutUnsafe.write(data)
 proc write*(self: Arc[BaseChannel], data: openArray[char]) {.raises: [IOError].} = self.getMutUnsafe.write(cast[ptr UncheckedArray[uint8]](data[0].addr).toOpenArray(0, data.high))
+proc write*(self: Arc[BaseChannel], data: sink seq[uint8]) {.raises: [IOError].} = self.getMutUnsafe.write(data.ensureMove)
 proc read*(self: Arc[BaseChannel], res: var openArray[uint8]): int {.raises: [IOError].} = self.getMutUnsafe.read(res)
 proc flushRead*(self: Arc[BaseChannel]): int {.raises: [IOError].} = self.getMutUnsafe.flushRead()
 proc listen*(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = self.get.listenImpl(self, cb)
@@ -137,13 +144,22 @@ proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
 proc isOpen(self: ptr InMemoryChannel): bool = self.isOpen
 proc peek(self: ptr InMemoryChannel, to: Option[uint8] = uint8.none): int =
   if to.getSome(to):
-    self.data.find(to)
+    self.data.find(to, self.dataStart) - self.dataStart
   else:
-    self.data.len
+    self.data.len - self.dataStart
 
 proc write(self: ptr InMemoryChannel, data: openArray[uint8]) =
   if data.len > 0:
-    self.channel[].send(@data)
+    var buff = InMemoryBuffer(data: cast[ptr UncheckedArray[uint8]](alloc(data.len)), len: data.len)
+    copyMem(buff.data[0].addr, data[0].addr, data.len)
+    self.channel[].send(buff)
+    discard self.signal.fireSync()
+
+proc write(self: ptr InMemoryChannel, data: sink seq[uint8]) =
+  if data.len > 0:
+    var buff = InMemoryBuffer(data: cast[ptr UncheckedArray[uint8]](alloc(data.len)), len: data.len)
+    copyMem(buff.data[0].addr, data[0].addr, data.len)
+    self.channel[].send(buff)
     discard self.signal.fireSync()
 
 proc flushRead(self: ptr InMemoryChannel): int =
@@ -152,17 +168,27 @@ proc flushRead(self: ptr InMemoryChannel): int =
       var (ok, data) = self.channel[].tryRecv()
       if not ok:
         break
-      self.data.add data.ensureMove
+      let oldLen = self.data.len
+      self.data.setLen(oldLen + data.len)
+      copyMem(self.data[oldLen].addr, data.data, data.len)
+      dealloc(data.data)
   except ValueError as e:
     echo "Failed to read memory channel: ", e.msg
-  return self.data.len
+  return self.data.len - self.dataStart
 
 proc read(self: ptr InMemoryChannel, res: var openArray[uint8]): int =
   discard self.flushRead()
-  if self.data.len > 0 and res.len > 0:
-    let toRead = min(self.data.len, res.len)
-    copyMem(res[0].addr, self.data[0].addr, toRead)
-    self.data = self.data[toRead..^1]
+  if self.data.len > self.dataStart and res.len > 0:
+    let toRead = min(self.data.len - self.dataStart, res.len)
+    copyMem(res[0].addr, self.data[self.dataStart].addr, toRead)
+    self.dataStart += toRead
+    if self.dataStart == self.data.len:
+      self.data.setLen(0)
+      self.dataStart = 0
+    elif self.dataStart > (self.data.len - self.dataStart) * 5:
+      moveMem(self.data[0].addr, self.data[self.dataStart].addr, self.data.len - self.dataStart)
+      self.data.setLen(self.data.len - self.dataStart)
+      self.dataStart = 0
     return toRead
   return 0
 
@@ -203,7 +229,7 @@ proc cloneAs*[B](self: Arc[B], T: typedesc[B]): Arc[T] =
 proc newInMemoryChannel*(): Arc[BaseChannel] =
   let signal = ThreadSignalPtr.new()
 
-  var channel = create(Channel[seq[uint8]])
+  var channel = create(Channel[InMemoryBuffer])
   channel[].open()
 
   var res = Arc[InMemoryChannel].new()
@@ -216,6 +242,7 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr InMemoryChannel](self)),
     peekImpl: proc(self: ptr BaseChannel, to: Option[uint8]): int {.gcsafe, raises: [].} = peek(cast[ptr InMemoryChannel](self), to),
     writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr InMemoryChannel](self), data),
+    writeSinkImpl: proc(self: ptr BaseChannel, data: sink seq[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr InMemoryChannel](self), data.ensureMove),
     readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = read(cast[ptr InMemoryChannel](self), res),
     flushReadImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].} = flushRead(cast[ptr InMemoryChannel](self)),
     listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listenInMemoryChannel(self.cloneAs(InMemoryChannel), cb),
