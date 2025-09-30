@@ -1,5 +1,6 @@
 include "../wasm.config.nims"
 switch("d", "pluginApiVersion=0")
+switch("d", "witRebuild")
 switch("nimcache", "../../nimcache/vim")
 
 # Put custom build configs which shouldn't be commited in local.nims

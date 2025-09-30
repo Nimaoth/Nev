@@ -1266,25 +1266,30 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
 #   editor.addNextCheckpoint "insert"
 #   editor.toggleLineComment()
 
-# proc vimStartMacro(editor: TextEditor, name: string) {.exposeActive(editorContext, "vim-start-macro").} =
-#   if isReplayingCommands() or isRecordingCommands(getCurrentMacroRegister()):
-#     return
-#   setOption("editor.current-macro-register", name)
-#   setRegisterText(ws"", name)
-#   startRecordingCommands(name)
+proc startMacro(editor: TextEditor, name: string) {.exposeActive(editorContext).} =
+  if isReplayingCommands() or isRecordingCommands(getCurrentMacroRegister().stackWitString):
+    return
+  setSetting("editor.current-macro-register", name)
+  let name = name.stackWitString
+  setRegisterText(ws"", name)
+  startRecordingCommands(name)
 
-# proc vimPlayMacro(editor: TextEditor, name: string) {.exposeActive(editorContext, "vim-play-macro").} =
-#   let register = if name == "@":
-#     getCurrentMacroRegister()
-#   else:
-#     name
+proc playMacro(editor: TextEditor, name: string) {.exposeActive(editorContext).} =
+  let register = if name == "@":
+    getCurrentMacroRegister()
+  else:
+    name
 
-#   replayCommands(register)
+  let text = getRegisterText(register.stackWitString)
+  replayCommands(register.stackWitString)
 
-# proc vimStopMacro(editor: TextEditor) {.exposeActive(editorContext, "vim-stop-macro").} =
-#   if isReplayingCommands() or not isRecordingCommands(getCurrentMacroRegister()):
-#     return
-#   stopRecordingCommands(getCurrentMacroRegister())
+proc stopMacro(editor: TextEditor) {.exposeActive(editorContext).} =
+  if isReplayingCommands():
+    return
+  let register = getCurrentMacroRegister().stackWitString
+  if isReplayingCommands() or not isRecordingCommands(register):
+    return
+  stopRecordingCommands(register)
 
 # proc vimInvertSelections(editor: TextEditor) {.exposeActive(editorContext, "vim-invert-selections").} =
 #   editor.setSelections editor.selections.mapIt((it.last, it.first))

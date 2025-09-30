@@ -3224,24 +3224,6 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
       return
     gEditor.plugins.callbacks[path] = id
 
-proc replayCommands*(self: App, register: string) {.expose("editor").} =
-  if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
-    log lvlError, fmt"No commands recorded in register '{register}'"
-    return
-
-  if self.registers.bIsReplayingCommands:
-    log lvlError, fmt"replayCommands '{register}': Already replaying commands"
-    return
-
-  log lvlInfo, &"replayCommands '{register}':\n{self.registers.registers[register].text}"
-  self.registers.bIsReplayingCommands = true
-  defer:
-    self.registers.bIsReplayingCommands = false
-
-  for command in self.registers.registers[register].text.splitLines:
-    let (action, arg) = parseAction(command)
-    discard self.handleAction(action, arg, record=false)
-
 proc replayKeys*(self: App, register: string) {.expose("editor").} =
   if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
     log lvlError, fmt"No commands recorded in register '{register}'"

@@ -108,3 +108,13 @@ proc isRecordingCommands*(registry: string): bool {.gcsafe, raises: [].} =
   except CatchableError:
     raiseAssert(getCurrentExceptionMsg())
 
+
+proc registers_replayCommands_void_Registers_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc replayCommands*(register: string) {.gcsafe, raises: [].} =
+  var argsJson = newJArray()
+  argsJson.add register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = registers_replayCommands_void_Registers_string_wasm(
+      argsJsonString.cstring)
+

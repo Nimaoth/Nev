@@ -633,6 +633,7 @@ proc registersStartRecordingCommands(instance: ptr InstanceData;
                                      register: sink string): void
 proc registersStopRecordingCommands(instance: ptr InstanceData;
                                     register: sink string): void
+proc registersReplayCommands(instance: ptr InstanceData; register: sink string): void
 proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
@@ -4145,5 +4146,32 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           for i0 in 0 ..< register.len:
             register[i0] = p0[i0]
         registersStopRecordingCommands(instance, register)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/registers", "replay-commands", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var register: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          register = newString(parameters[1].i32)
+          for i0 in 0 ..< register.len:
+            register[i0] = p0[i0]
+        registersReplayCommands(instance, register)
     if e.isErr:
       return e

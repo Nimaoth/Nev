@@ -96,3 +96,17 @@ proc stopRecordingCommands*(register: WitString): void {.nodestroy.} =
     arg0 = 0.int32
   arg1 = cast[int32](register.len)
   registersStopRecordingCommandsImported(arg0, arg1)
+
+proc registersReplayCommandsImported(a0: int32; a1: int32): void {.
+    wasmimport("replay-commands", "nev:plugins/registers").}
+proc replayCommands*(register: WitString): void {.nodestroy.} =
+  ## todo
+  var
+    arg0: int32
+    arg1: int32
+  if register.len > 0:
+    arg0 = cast[int32](register[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](register.len)
+  registersReplayCommandsImported(arg0, arg1)

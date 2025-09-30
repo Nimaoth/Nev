@@ -336,6 +336,8 @@ interface registers {
   start-recording-commands: func(register: string);
   /// todo
   stop-recording-commands: func(register: string);
+  /// todo
+  replay-commands: func(register: string);
 }
 
 interface text-document {

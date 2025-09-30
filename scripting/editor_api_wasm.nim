@@ -754,15 +754,6 @@ proc scriptSetCallback*(path: string; id: int) {.gcsafe, raises: [].} =
       argsJsonString.cstring)
 
 
-proc editor_replayCommands_void_App_string_wasm(arg: cstring): cstring {.importc.}
-proc replayCommands*(register: string) {.gcsafe, raises: [].} =
-  var argsJson = newJArray()
-  argsJson.add register.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_replayCommands_void_App_string_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_replayKeys_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc replayKeys*(register: string) {.gcsafe, raises: [].} =
   var argsJson = newJArray()
