@@ -601,7 +601,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
         location: (line: r.range.start.line, column: r.range.start.character),
         name: r.name,
         symbolType: r.kind.toInternalSymbolKind,
-        filename: self.localVfs.normalize(filename),
+        filename: filename,
       )
 
       for child in r.children:
@@ -609,7 +609,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
           location: (line: child.range.start.line, column: child.range.start.character),
           name: child.name,
           symbolType: child.kind.toInternalSymbolKind,
-          filename: self.localVfs.normalize(filename),
+          filename: filename,
         )
 
 
