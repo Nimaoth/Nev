@@ -12,6 +12,16 @@
         "<ESCAPE>": "vim-exit-command-line",
     },
 
+    "vim-new.command-line-low": {
+        "<ESCAPE>": "vim.exit-command-line",
+        "<ENTER>": "execute-command-line",
+        "<UP>": "select-previous-command-in-history",
+        "<DOWN>": "select-next-command-in-history",
+    },
+    "vim-new.command-line-result-low": {
+        "<ESCAPE>": "vim.exit-command-line",
+    },
+
     "editor": {
         "<C-x><C-x>": "quit",
         "<ESCAPE>": "escape",
@@ -151,7 +161,8 @@
         "<ENTER>": ["accept"],
         "<C-y>": ["accept"],
         // "<ESCAPE>": ["cancel"],
-        "<ESCAPE>": ["vim-exit-popup"],
+        "<ESCAPE>": ["vim-exit-popup"], // todo: replace this with vim.exit-popup
+        "<S-ESCAPE>": ["vim.exit-popup"], // todo: remove this
         "<UP>": ["prev"],
         "<C-p>": ["prev"],
         "<DOWN>": ["next"],
@@ -733,6 +744,8 @@
         "<?-count>j": ["vim.move-direction", "visual-line-down", 1, "<#move.count>", false, false],
         "gm": ["move-cursor-line-center"],
         "gM": ["move-cursor-center"],
+        "<?-count>n": ["vim.next-search-result", "<#move.count>"],
+        "<?-count>N": ["vim.prev-search-result", "<#move.count>"],
 
         "0": ["vim.move-first", "line"],
         "<HOME>": ["vim.move-first", "visual-line"],
@@ -840,8 +853,6 @@
         "/": ["vim.open-search-bar"],
         "gc": ["vim.toggle-line-comment"],
         "*": ["vim.set-search-query-from-word"],
-        "n": ["vim.next-search-result"],
-        "N": ["vim.prev-search-result"],
 
         ".": ["replay-commands", "."],
         "L": ["vim.select-word-or-add-cursor"],

@@ -7,6 +7,20 @@ import api
 from "../../src/scripting_api.nim" as sca import nil
 import "../../src/input_api.nim"
 
+proc last*[T](list: WitList[T]): lent T =
+  assert list.len > 0
+  return list[list.len - 1]
+
+proc `==`*[T](a, b: WitList[T]): bool =
+  if a.len != b.len:
+    return false
+  return equalMem(a.data, b.data, a.len)
+
+proc `==`*(a, b: WitString): bool =
+  if a.len != b.len:
+    return false
+  return equalMem(a.data, b.data, a.len)
+
 var yankedLines: bool = false ## Whether the last thing we yanked was in a line mode
 
 type EditorVimState = object
@@ -145,12 +159,9 @@ proc exposeImpl*(context: NimNode, name: string, fun: NimNode, active: bool): Ni
 
           return ws""
 
-macro expose*(name: string, fun: typed): untyped =
-  return exposeImpl(newLit"script", name.repr, fun, active=false)
-
-macro expose*(context, string: string, fun: typed): untyped =
+macro command*(fun: typed): untyped =
   let name = fun.name.repr.splitCase.parts.joinCase(Kebab)
-  return exposeImpl(context, name, fun, active=false)
+  return exposeImpl(newLit(""), name, fun, active=false)
 
 macro exposeActive*(context: string, fun: typed): untyped =
   let name = fun.name.repr.splitCase.parts.joinCase(Kebab)
@@ -1027,10 +1038,8 @@ proc moveFileEnd(editor: TextEditor, count: int = 1) {.exposeActive(editorContex
 #   editor.moveFirst "line-no-indent"
 #   editor.centerCursor()
 
-# proc vimCenterLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-center-line").} =
-#   if editor.getCommandCount != 0:
-#     editor.setSelection (editor.getCommandCount, editor.selection.last.column).toSelection
-#   editor.centerCursor()
+proc centerLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  editor.scrollToCursor(ScrollBehaviour.CenterAlways.some)
 
 # proc vimScrollLineToBottomAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-bottom-and-move-line-start").} =
 #   if editor.getCommandCount != 0:
@@ -1064,61 +1073,64 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
 proc insertLineBelow(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setSelections editor.multiMove(editor.getSelections, ws"line", 0, wrap=false, includeEol=true).mapIt(it.last.toSelection)
   editor.addNextCheckpoint ws"insert"
-  editor.insertText ws("\n"), autoIndent = true
+  editor.insertText ws("\n"), autoIndent=true
   editor.setMode "vim-new.insert"
 
-# proc vimInsertLineAbove(editor: TextEditor, move: string = "") {.exposeActive(editorContext, "vim-insert-line-above").} =
-#   editor.moveFirst "line", sca.SelectionCursor.Both
-#   editor.addNextCheckpoint "insert"
-#   editor.insertText "\n", autoIndent=false
-#   editor.vimMoveCursorLine -1
-#   editor.setMode "vim-new.insert"
+proc insertLineAbove(editor: TextEditor, move: string = "") {.exposeActive(editorContext).} =
+  editor.setSelections editor.multiMove(editor.getSelections, ws"line", 0, wrap=false, includeEol=true).mapIt(it.first.toSelection)
+  editor.addNextCheckpoint ws"insert"
+  editor.insertText ws("\n"), autoIndent=false
+  editor.moveDirection("line-up", 1, 1, false, false)
+  editor.setMode "vim-new.insert"
 
-# proc vimSetSearchQueryFromWord(editor: TextEditor) {.exposeActive(editorContext, "vim-set-search-query-from-word").} =
-#   editor.setSelection editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b").first.toSelection
+proc setSearchQueryFromWord(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.setSelection editor.setSearchQueryFromMove(ws"word", 1, prefix=ws(r"\b"), suffix=ws(r"\b")).first.toSelection
 
-# proc vimSetSearchQueryFromSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-set-search-query-from-selection").} =
-#   discard editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
-#   editor.setSelection editor.selection.first.toSelection
-#   editor.setMode("vim-new.normal")
+proc setSearchQueryFromSelection(editor: TextEditor) {.exposeActive(editorContext).} =
+  let content = editor.content.sliceSelection(editor.getSelection, inclusive=true)
+  discard editor.setSearchQuery(content.text, escapeRegex=true, prefix=ws"", suffix=ws"")
+  editor.setSelection editor.getSelection.first.toSelection
+  editor.normalMode()
 
-# proc vimNextSearchResult(editor: TextEditor) {.exposeActive(editorContext, "vim-next-search-result").} =
-#   editor.setSelection editor.getNextFindResult(editor.selection.last).first.toSelection
-#   editor.scrollToCursor()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
-#   editor.updateTargetColumn()
+proc nextSearchResult(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
+  let selections = editor.getSelections
+  let next = editor.multiMove(selections, ws"next-search-result", count, wrap = true, includeEol=false)
+  let newSelections = mergeSelections(selections, next):
+    (it1.first, it2.first).toSelection
 
-# proc vimPrevSearchResult(editor: TextEditor) {.exposeActive(editorContext, "vim-prev-search-result").} =
-#   editor.setSelection editor.getPrevFindResult(editor.selection.last).first.toSelection
-#   editor.scrollToCursor()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
-#   editor.updateTargetColumn()
+  editor.setSelections @@newSelections
+  editor.scrollToCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
 
-# proc vimOpenSearchBar(editor: TextEditor) {.exposeActive(editorContext, "vim-open-search-bar").} =
-#   editor.openSearchBar()
-#   if getActiveEditor().isTextEditor(editor):
-#     editor.setMode("vim-new.insert")
+proc prevSearchResult(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
+  let selections = editor.getSelections
+  let prev = editor.multiMove(selections, ws"prev-search-result", count, wrap = true, includeEol=false)
+  let newSelections = mergeSelections(selections, prev):
+    (it1.first, it2.first).toSelection
 
-# proc vimExitCommandLine() {.expose("vim-exit-command-line").} =
-#   if getActiveEditor().isTextEditor(editor):
-#     if editor.mode == "vim-new.normal":
-#       exitCommandLine()
-#       return
+  editor.setSelections @@newSelections
+  editor.scrollToCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
 
-#     editor.setMode("vim-new.normal")
+proc openSearchBar(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.openSearchBar(ws"", scrollToPreview=true, selectResult=true)
 
-# proc vimExitPopup() {.expose("vim-exit-popup").} =
-#   if getActiveEditor().isTextEditor(editor):
-#     if editor.mode == "vim-new.normal":
-#       if getActivePopup().isSelectorPopup(popup):
-#         popup.cancel()
-#       return
+proc exitCommandLine() {.command.} =
+  if activeTextEditor({IncludeCommandLine}).getSome(editor):
+    if editor.mode == ws"vim-new.normal":
+      discard runCommand(ws"exit-command-line", ws"")
+      return
 
-#     editor.setMode("vim-new.normal")
+    editor.setMode("vim-new.normal")
 
-proc last*[T](list: WitList[T]): lent T =
-  assert list.len > 0
-  return list[list.len - 1]
+proc exitPopup() {.command.} =
+  if activeTextEditor({IncludePopups}).getSome(editor) and editor.mode != ws"vim-new.normal":
+    editor.setMode("vim-new.normal")
+    return
+
+  discard runCommand(ws"close-active-view", ws"")
 
 proc selectWordOrAddCursor(editor: TextEditor) {.exposeActive(editorContext).} =
   let selections = editor.selections

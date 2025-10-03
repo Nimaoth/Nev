@@ -24,12 +24,16 @@ type
     Never = "never", Always = "always",
     MinDistanceOffscreen = "min-distance-offscreen",
     MinDistanceCenter = "min-distance-center"
-proc textEditorActiveTextEditorImported(a0: int32): void {.
+proc textEditorActiveTextEditorImported(a0: uint8; a1: int32): void {.
     wasmimport("active-text-editor", "nev:plugins/text-editor").}
-proc activeTextEditor*(): Option[TextEditor] {.nodestroy.} =
+proc activeTextEditor*(options: ActiveEditorFlags): Option[TextEditor] {.
+    nodestroy.} =
   ## Returns a handle for the currently active text editor.
-  var retArea: array[16, uint8]
-  textEditorActiveTextEditorImported(cast[int32](retArea[0].addr))
+  var
+    retArea: array[16, uint8]
+    arg0: uint8
+  arg0 = cast[uint8](options)
+  textEditorActiveTextEditorImported(arg0, cast[int32](retArea[0].addr))
   if cast[ptr int64](retArea[0].addr)[] != 0:
     var temp: TextEditor
     temp.id = convert(cast[ptr uint64](retArea[8].addr)[], uint64)
@@ -410,6 +414,28 @@ proc insertText*(editor: TextEditor; text: WitString; autoIndent: bool): void {.
   arg2 = cast[int32](text.len)
   arg3 = autoIndent
   textEditorInsertTextImported(arg0, arg1, arg2, arg3)
+
+proc textEditorOpenSearchBarImported(a0: uint64; a1: int32; a2: int32; a3: bool;
+                                     a4: bool): void {.
+    wasmimport("open-search-bar", "nev:plugins/text-editor").}
+proc openSearchBar*(editor: TextEditor; query: WitString; scrollToPreview: bool;
+                    selectResult: bool): void {.nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: bool
+    arg4: bool
+  arg0 = editor.id
+  if query.len > 0:
+    arg1 = cast[int32](query[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](query.len)
+  arg3 = scrollToPreview
+  arg4 = selectResult
+  textEditorOpenSearchBarImported(arg0, arg1, arg2, arg3, arg4)
 
 proc textEditorSetSearchQueryFromMoveImported(a0: uint64; a1: int32; a2: int32;
     a3: int32; a4: int32; a5: int32; a6: int32; a7: int32; a8: int32): void {.

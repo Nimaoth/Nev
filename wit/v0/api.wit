@@ -24,6 +24,11 @@ interface types {
     size: vec2f,
   }
 
+  flags active-editor-flags {
+    include-command-line,
+    include-popups,
+  }
+
   /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   /// can be used to efficiently access any document content or share a string with another plugin.
   /// Ropes are reference counted internally, and this resource also affects that reference count.
@@ -194,15 +199,15 @@ interface vfs {
 }
 
 interface editor {
-  use types.{editor, document};
+  use types.{editor, document, active-editor-flags};
   /// Returns a handle for the currently active text editor.
-  active-editor: func() -> option<editor>;
+  active-editor: func(options: active-editor-flags) -> option<editor>;
   /// Returns the document the given editor is currently editing.
   get-document: func(editor: editor) -> option<document>;
 }
 
 interface text-editor {
-  use types.{editor, document, text-editor, text-document, cursor, selection, rope};
+  use types.{editor, document, text-editor, text-document, cursor, selection, rope, active-editor-flags};
   use commands.{command-error};
 
   enum scroll-behaviour {
@@ -221,7 +226,7 @@ interface text-editor {
   }
 
   /// Returns a handle for the currently active text editor.
-  active-text-editor: func() -> option<text-editor>;
+  active-text-editor: func(options: active-editor-flags) -> option<text-editor>;
   /// Returns the text document the given editor is currently editing.
   get-document: func(editor: text-editor) -> option<text-document>;
   /// Try to cast the given editor handle to a text editor handle.
@@ -282,6 +287,8 @@ interface text-editor {
   toggle-line-comment: func(editor: text-editor);
   /// todo
   insert-text: func(editor: text-editor, text: string, auto-indent: bool);
+  /// todo
+  open-search-bar: func(editor: text-editor, query: string, scroll-to-preview: bool, select-result: bool);
 
   /// Set the search query by applying the given move to the current selection.
   /// 'prefix' and 'suffix' are appended to the string after escaping.

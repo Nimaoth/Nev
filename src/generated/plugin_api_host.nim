@@ -25,6 +25,10 @@ type
   Rect* = object
     pos*: Vec2f
     size*: Vec2f
+  ActiveEditorFlag* = enum
+    IncludeCommandLine = "include-command-line",
+    IncludePopups = "include-popups"
+  ActiveEditorFlags* = set[ActiveEditorFlag]
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.
@@ -116,47 +120,47 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9697232495 = instance.getExport(context, "init_plugin")
-  if f_9697232495.isSome:
-    assert f_9697232495.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9697232495.get.of_field.func_field
+  let f_9697232496 = instance.getExport(context, "init_plugin")
+  if f_9697232496.isSome:
+    assert f_9697232496.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9697232496.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9697232511 = instance.getExport(context, "handle_command")
-  if f_9697232511.isSome:
-    assert f_9697232511.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9697232511.get.of_field.func_field
+  let f_9697232512 = instance.getExport(context, "handle_command")
+  if f_9697232512.isSome:
+    assert f_9697232512.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9697232512.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9697232561 = instance.getExport(context, "handle_mode_changed")
-  if f_9697232561.isSome:
-    assert f_9697232561.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9697232561.get.of_field.func_field
-  else:
-    echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9697232562 = instance.getExport(context, "handle_view_render_callback")
+  let f_9697232562 = instance.getExport(context, "handle_mode_changed")
   if f_9697232562.isSome:
     assert f_9697232562.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9697232562.get.of_field.func_field
+    funcs.handleModeChanged = f_9697232562.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "handle_mode_changed", "\'"
+  let f_9697232563 = instance.getExport(context, "handle_view_render_callback")
+  if f_9697232563.isSome:
+    assert f_9697232563.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9697232563.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9697232586 = instance.getExport(context, "handle_channel_update")
-  if f_9697232586.isSome:
-    assert f_9697232586.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9697232586.get.of_field.func_field
-  else:
-    echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9697232587 = instance.getExport(context, "notify_task_complete")
+  let f_9697232587 = instance.getExport(context, "handle_channel_update")
   if f_9697232587.isSome:
     assert f_9697232587.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9697232587.get.of_field.func_field
+    funcs.handleChannelUpdate = f_9697232587.get.of_field.func_field
   else:
-    echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9697232588 = instance.getExport(context, "handle_move")
+    echo "Failed to find exported function \'", "handle_channel_update", "\'"
+  let f_9697232588 = instance.getExport(context, "notify_task_complete")
   if f_9697232588.isSome:
     assert f_9697232588.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9697232588.get.of_field.func_field
+    funcs.notifyTaskComplete = f_9697232588.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "notify_task_complete", "\'"
+  let f_9697232589 = instance.getExport(context, "handle_move")
+  if f_9697232589.isSome:
+    assert f_9697232589.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9697232589.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
 
@@ -444,10 +448,12 @@ proc typesLineLength(instance: ptr InstanceData; self: var RopeResource;
                      line: int64): int64
 proc typesRuneAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune
 proc typesByteAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8
-proc editorActiveEditor(instance: ptr InstanceData): Option[Editor]
+proc editorActiveEditor(instance: ptr InstanceData; options: ActiveEditorFlags): Option[
+    Editor]
 proc editorGetDocument(instance: ptr InstanceData; editor: Editor): Option[
     Document]
-proc textEditorActiveTextEditor(instance: ptr InstanceData): Option[TextEditor]
+proc textEditorActiveTextEditor(instance: ptr InstanceData;
+                                options: ActiveEditorFlags): Option[TextEditor]
 proc textEditorGetDocument(instance: ptr InstanceData; editor: TextEditor): Option[
     TextDocument]
 proc textEditorAsTextEditor(instance: ptr InstanceData; editor: Editor): Option[
@@ -496,6 +502,9 @@ proc textEditorAutoShowCompletions(instance: ptr InstanceData;
 proc textEditorToggleLineComment(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorInsertText(instance: ptr InstanceData; editor: TextEditor;
                           text: sink string; autoIndent: bool): void
+proc textEditorOpenSearchBar(instance: ptr InstanceData; editor: TextEditor;
+                             query: sink string; scrollToPreview: bool;
+                             selectResult: bool): void
 proc textEditorSetSearchQueryFromMove(instance: ptr InstanceData;
                                       editor: TextEditor; move: sink string;
                                       count: int32; prefix: sink string;
@@ -1244,7 +1253,8 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/editor", "active-editor", ty):
         var instance = cast[ptr InstanceData](store.getData())
         var mainMemory = caller.getExport("memory")
@@ -1259,7 +1269,9 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
-        let res = editorActiveEditor(instance)
+        var options: ActiveEditorFlags
+        options = cast[ActiveEditorFlags](parameters[0].i32)
+        let res = editorActiveEditor(instance, options)
         let retArea = parameters[^1].i32
         cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
@@ -1295,7 +1307,8 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
       return e
   block:
     let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/text-editor",
                                  "active-text-editor", ty):
         var instance = cast[ptr InstanceData](store.getData())
@@ -1311,7 +1324,9 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
               mainMemory.get.of_field.memory.addr))
         else:
           assert false
-        let res = textEditorActiveTextEditor(instance)
+        var options: ActiveEditorFlags
+        options = cast[ActiveEditorFlags](parameters[0].i32)
+        let res = textEditorActiveTextEditor(instance, options)
         let retArea = parameters[^1].i32
         cast[ptr int64](memory[retArea + 0].addr)[] = res.isSome.int64
         if res.isSome:
@@ -1974,6 +1989,41 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
             text[i0] = p0[i0]
         autoIndent = parameters[3].i32.bool
         textEditorInsertText(instance, editor, text, autoIndent)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "open-search-bar",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var editor: TextEditor
+        var query: string
+        var scrollToPreview: bool
+        var selectResult: bool
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          query = newString(parameters[2].i32)
+          for i0 in 0 ..< query.len:
+            query[i0] = p0[i0]
+        scrollToPreview = parameters[3].i32.bool
+        selectResult = parameters[4].i32.bool
+        textEditorOpenSearchBar(instance, editor, query, scrollToPreview,
+                                selectResult)
     if e.isErr:
       return e
   block:

@@ -25,6 +25,10 @@ type
   Rect* = object
     pos*: Vec2f
     size*: Vec2f
+  ActiveEditorFlag* = enum
+    IncludeCommandLine = "include-command-line",
+    IncludePopups = "include-popups"
+  ActiveEditorFlags* = set[ActiveEditorFlag]
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.

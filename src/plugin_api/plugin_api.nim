@@ -7,7 +7,7 @@ import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
 import config_provider, command_service
-import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database
+import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 from scripting_api as sca import nil
 
@@ -377,9 +377,13 @@ converter toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
 
 ###################################### API implementations #####################################
 
-proc editorActiveEditor(instance: ptr InstanceData): Option[Editor] =
+proc editorActiveEditor(instance: ptr InstanceData, options: ActiveEditorFlags): Option[Editor] =
   if instance.host == nil:
     return
+  if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode():
+    return Editor(id: instance.host.commands.commandLineEditor.id.uint64).some
+  if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor):
+    return Editor(id: editor.id.uint64).some
   if instance.host.layout.tryGetCurrentEditorView().getSome(view):
     return Editor(id: view.editor.DocumentEditor.id.uint64).some
   return Editor.none
@@ -393,9 +397,13 @@ proc editorGetDocument(instance: ptr InstanceData; editor: Editor): Option[Docum
       return Document(id: document.id.uint64).some
   return Document.none
 
-proc textEditorActiveTextEditor(instance: ptr InstanceData): Option[TextEditor] =
+proc textEditorActiveTextEditor(instance: ptr InstanceData, options: ActiveEditorFlags): Option[TextEditor] =
   if instance.host == nil:
     return
+  if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode() and instance.host.commands.commandLineEditor of TextDocumentEditor:
+    return TextEditor(id: instance.host.commands.commandLineEditor.id.uint64).some
+  if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
+    return TextEditor(id: editor.id.uint64).some
   if instance.host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
     return TextEditor(id: view.editor.TextDocumentEditor.id.uint64).some
   return TextEditor.none
@@ -714,6 +722,12 @@ proc textEditorInsertText(instance: ptr InstanceData, editor: TextEditor, text: 
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.insertText(text, autoIndent)
+
+proc textEditorOpenSearchBar(instance: ptr InstanceData; editor: TextEditor; query: sink string; scrollToPreview: bool; selectResult: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.openSearchBar(query, scrollToPreview, selectResult)
 
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
