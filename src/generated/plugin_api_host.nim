@@ -493,6 +493,9 @@ proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor;
                      inclusiveEnd: bool): void
 proc textEditorAutoShowCompletions(instance: ptr InstanceData;
                                    editor: TextEditor): void
+proc textEditorToggleLineComment(instance: ptr InstanceData; editor: TextEditor): void
+proc textEditorInsertText(instance: ptr InstanceData; editor: TextEditor;
+                          text: sink string; autoIndent: bool): void
 proc textEditorSetSearchQueryFromMove(instance: ptr InstanceData;
                                       editor: TextEditor; move: sink string;
                                       count: int32; prefix: sink string;
@@ -1928,6 +1931,49 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         var editor: TextEditor
         editor.id = convert(parameters[0].i64, uint64)
         textEditorAutoShowCompletions(instance, editor)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "toggle-line-comment", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        textEditorToggleLineComment(instance, editor)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "insert-text", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var editor: TextEditor
+        var text: string
+        var autoIndent: bool
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          text = newString(parameters[2].i32)
+          for i0 in 0 ..< text.len:
+            text[i0] = p0[i0]
+        autoIndent = parameters[3].i32.bool
+        textEditorInsertText(instance, editor, text, autoIndent)
     if e.isErr:
       return e
   block:

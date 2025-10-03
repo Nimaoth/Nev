@@ -278,6 +278,10 @@ interface text-editor {
   paste: func(editor: text-editor, selections: list<selection>, register: string, inclusive-end: bool);
   /// todo
   auto-show-completions: func(editor: text-editor);
+  /// todo
+  toggle-line-comment: func(editor: text-editor);
+  /// todo
+  insert-text: func(editor: text-editor, text: string, auto-indent: bool);
 
   /// Set the search query by applying the given move to the current selection.
   /// 'prefix' and 'suffix' are appended to the string after escaping.

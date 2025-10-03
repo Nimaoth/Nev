@@ -703,6 +703,18 @@ proc textEditorGetSearchQuery(instance: ptr InstanceData, editor: TextEditor): s
     return editor.TextDocumentEditor.getSearchQuery()
   return ""
 
+proc textEditorToggleLineComment(instance: ptr InstanceData, editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.toggleLineComment()
+
+proc textEditorInsertText(instance: ptr InstanceData, editor: TextEditor, text: sink string, autoIndent: bool) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.insertText(text, autoIndent)
+
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
 

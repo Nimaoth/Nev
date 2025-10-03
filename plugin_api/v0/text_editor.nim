@@ -384,6 +384,33 @@ proc autoShowCompletions*(editor: TextEditor): void {.nodestroy.} =
   arg0 = editor.id
   textEditorAutoShowCompletionsImported(arg0)
 
+proc textEditorToggleLineCommentImported(a0: uint64): void {.
+    wasmimport("toggle-line-comment", "nev:plugins/text-editor").}
+proc toggleLineComment*(editor: TextEditor): void {.nodestroy.} =
+  ## todo
+  var arg0: uint64
+  arg0 = editor.id
+  textEditorToggleLineCommentImported(arg0)
+
+proc textEditorInsertTextImported(a0: uint64; a1: int32; a2: int32; a3: bool): void {.
+    wasmimport("insert-text", "nev:plugins/text-editor").}
+proc insertText*(editor: TextEditor; text: WitString; autoIndent: bool): void {.
+    nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: bool
+  arg0 = editor.id
+  if text.len > 0:
+    arg1 = cast[int32](text[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](text.len)
+  arg3 = autoIndent
+  textEditorInsertTextImported(arg0, arg1, arg2, arg3)
+
 proc textEditorSetSearchQueryFromMoveImported(a0: uint64; a1: int32; a2: int32;
     a3: int32; a4: int32; a5: int32; a6: int32; a7: int32; a8: int32): void {.
     wasmimport("set-search-query-from-move", "nev:plugins/text-editor").}

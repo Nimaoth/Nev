@@ -920,17 +920,24 @@ proc paste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = fa
 #   editor.addNextCheckpoint "insert"
 #   editor.unindent()
 
-# proc vimAddCursorAbove(editor: TextEditor) {.exposeActive(editorContext, "vim-add-cursor-above").} =
-#   editor.addCursorAbove()
-#   editor.scrollToCursor()
+proc addCursorAbove(editor: TextEditor) {.exposeActive(editorContext).} =
+  var selections = @(editor.getSelections.toOpenArray)
+  let newSelections = editor.multiMove(@@[selections.last], ws"line-up", 0, wrap=false, includeEol=false).mapIt(it.last.toSelection)
+  selections.add newSelections
+  editor.setSelections selections
+  editor.scrollToCursor()
 
-# proc vimAddCursorBelow(editor: TextEditor) {.exposeActive(editorContext, "vim-add-cursor-below").} =
-#   editor.addCursorBelow()
-#   editor.scrollToCursor()
+proc addCursorBelow(editor: TextEditor) {.exposeActive(editorContext).} =
+  var selections = @(editor.getSelections.toOpenArray)
+  let newSelections = editor.multiMove(@@[selections.last], ws"line-down", 0, wrap=false, includeEol=false).mapIt(it.last.toSelection)
+  selections.add newSelections
+  editor.setSelections selections
+  editor.scrollToCursor()
 
-# proc vimEnter(editor: TextEditor) {.exposeActive(editorContext, "vim-enter").} =
-#   editor.addNextCheckpoint "insert"
-#   editor.insertText("\n")
+proc enter(editor: TextEditor) {.exposeActive(editorContext).} =
+  debugf"vim.enter"
+  editor.addNextCheckpoint ws"insert"
+  editor.insertText ws("\n"), autoIndent=true
 
 proc yankLine(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.vimState.selectLines = true
@@ -1054,14 +1061,14 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
   editor.setMode "vim-new.insert"
   editor.addNextCheckpoint ws"insert"
 
-# proc vimInsertLineBelow(editor: TextEditor) {.exposeActive(editorContext, "vim-insert-line-below").} =
-#   editor.moveLast "line", Both
-#   editor.addNextCheckpoint "insert"
-#   editor.insertText "\n"
-#   editor.setMode "vim-new.insert"
+proc insertLineBelow(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.setSelections editor.multiMove(editor.getSelections, ws"line", 0, wrap=false, includeEol=true).mapIt(it.last.toSelection)
+  editor.addNextCheckpoint ws"insert"
+  editor.insertText ws("\n"), autoIndent = true
+  editor.setMode "vim-new.insert"
 
 # proc vimInsertLineAbove(editor: TextEditor, move: string = "") {.exposeActive(editorContext, "vim-insert-line-above").} =
-#   editor.moveFirst "line", Both
+#   editor.moveFirst "line", sca.SelectionCursor.Both
 #   editor.addNextCheckpoint "insert"
 #   editor.insertText "\n", autoIndent=false
 #   editor.vimMoveCursorLine -1
@@ -1253,7 +1260,7 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
 #     insertTexts.add left
 #     insertTexts.add right
 
-#   editor.addNextCheckpoint "insert"
+#   editor.addNextCheckpoint ws"insert"
 #   let newSelections = editor.insertMulti(insertSelections, insertTexts)
 #   if newSelections.len mod 2 != 0:
 #     return
@@ -1262,9 +1269,9 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
 #     for i in 0..<newSelections.len div 2:
 #       editor.includeSelectionEnd((newSelections[i * 2].first, newSelections[i * 2 + 1].last), false)
 
-# proc vimToggleLineComment(editor: TextEditor) {.exposeActive(editorContext, "vim-toggle-line-comment").} =
-#   editor.addNextCheckpoint "insert"
-#   editor.toggleLineComment()
+proc toggleLineComment(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint ws"insert"
+  text_editor.toggleLineComment(editor)
 
 proc startMacro(editor: TextEditor, name: string) {.exposeActive(editorContext).} =
   if isReplayingCommands() or isRecordingCommands(getCurrentMacroRegister().stackWitString):
@@ -1310,7 +1317,7 @@ proc stopMacro(editor: TextEditor) {.exposeActive(editorContext).} =
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 # proc vimJoinLines(editor: TextEditor, reduceSpace: bool) {.exposeActive(editorContext, "vim-join-lines").} =
-#   editor.addNextCheckpoint "insert"
+#   editor.addNextCheckpoint ws"insert"
 #   if reduceSpace:
 #     var insertTexts: seq[string]
 #     let selectionsToDelete = editor.selections.mapIt(block:
@@ -1375,36 +1382,36 @@ proc stopMacro(editor: TextEditor) {.exposeActive(editorContext).} =
 #   editor.updateTargetColumn()
 
 # proc vimEvaluateSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-evaluate-selection").} =
-#   editor.addNextCheckpoint("insert")
+#   editor.addNextCheckpoint(ws"insert")
 #   editor.evaluateExpressions(editor.selections, true)
 
 # proc vimIncrementSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-increment-selection").} =
-#   editor.addNextCheckpoint("insert")
+#   editor.addNextCheckpoint(ws"insert")
 #   editor.evaluateExpressions(editor.selections, true, suffix = "+1")
 
 # proc vimDecrementSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-decrement-selection").} =
-#   editor.addNextCheckpoint("insert")
+#   editor.addNextCheckpoint(ws"insert")
 #   editor.evaluateExpressions(editor.selections, true, suffix = "-1")
 
 # proc vimIncrementSelectionByIndex(editor: TextEditor) {.exposeActive(editorContext, "vim-increment-selection-by-index").} =
-#   editor.addNextCheckpoint("insert")
+#   editor.addNextCheckpoint(ws"insert")
 #   editor.evaluateExpressions(editor.selections, true, addSelectionIndex = true)
 
 # proc vimIncrement(editor: TextEditor) {.exposeActive(editorContext, "vim-increment").} =
 #   editor.setSelections editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-#   editor.addNextCheckpoint("insert")
+#   editor.addNextCheckpoint(ws"insert")
 #   editor.evaluateExpressions(editor.selections, false, suffix = "+1")
 #   editor.setSelections editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
 
 # proc vimDecrement(editor: TextEditor) {.exposeActive(editorContext, "vim-decrement").} =
 #   editor.setSelections editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-#   editor.addNextCheckpoint("insert")
+#   editor.addNextCheckpoint(ws"insert")
 #   editor.evaluateExpressions(editor.selections, false, suffix = "-1")
 #   editor.setSelections editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
 
 # proc vimIncrementByIndex(editor: TextEditor) {.exposeActive(editorContext, "vim-increment-by-index").} =
 #   editor.setSelections editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-#   editor.addNextCheckpoint("insert")
+#   editor.addNextCheckpoint(ws"insert")
 #   editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
 #   editor.setSelections editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
 
