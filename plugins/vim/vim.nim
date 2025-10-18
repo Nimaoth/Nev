@@ -247,13 +247,13 @@ proc selectLine(editor: TextEditor) {.exposeActive(editorContext).} =
 
 proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
   ## Exit to normal mode and clear things
-  if $editor.mode == "vim-new.normal":
+  if $editor.mode == "vim.normal":
     editor.setSelection editor.getSelection.last.toSelection
     editor.clearTabStops()
-  editor.setMode("vim-new.normal")
+  editor.setMode("vim.normal")
 
 proc visualLineMode(editor: TextEditor) {.exposeActive(editorContext).} =
-  editor.setMode "vim-new.visual-line"
+  editor.setMode "vim.visual-line"
   editor.selectLine()
 
 proc selectLast(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
@@ -270,25 +270,25 @@ proc select(editor: TextEditor, move: string, count: int = 1) {.exposeActive(edi
 
 proc undo(editor: TextEditor, enterNormalModeBefore: bool) {.exposeActive(editorContext).} =
   if enterNormalModeBefore:
-    editor.setMode "vim-new.normal"
+    editor.setMode "vim.normal"
 
   editor.undo(editor.vimState.currentUndoCheckpoint.ws)
   if enterNormalModeBefore:
     if not editor.selections.toOpenArray().allEmpty:
-      editor.setMode "vim-new.visual"
+      editor.setMode "vim.visual"
     else:
-      editor.setMode "vim-new.normal"
+      editor.setMode "vim.normal"
 
 proc redo(editor: TextEditor, enterNormalModeBefore: bool) {.exposeActive(editorContext).} =
   if enterNormalModeBefore:
-    editor.setMode "vim-new.normal"
+    editor.setMode "vim.normal"
 
   editor.redo(editor.vimState.currentUndoCheckpoint.ws)
   if enterNormalModeBefore:
     if not editor.selections.toOpenArray().allEmpty:
-      editor.setMode "vim-new.visual"
+      editor.setMode "vim.visual"
     else:
-      editor.setMode "vim-new.normal"
+      editor.setMode "vim.normal"
 
 proc copySelection(editor: TextEditor, register: string = ""): seq[Selection] =
   ## Copies the selected text
@@ -327,7 +327,7 @@ proc deleteSelection(editor: TextEditor, forceInclusiveEnd: bool, oldSelections:
   editor.scrollToCursor()
   editor.updateTargetColumn()
   editor.vimState.deleteInclusiveEnd = true
-  editor.setMode "vim-new.normal"
+  editor.setMode "vim.normal"
 
 proc changeSelection*(editor: TextEditor, forceInclusiveEnd: bool, oldSelections: Option[seq[Selection]] = seq[Selection].none) {.exposeActive(editorContext).} =
   let newSelections = editor.copySelection(getVimDefaultRegister())
@@ -340,17 +340,17 @@ proc changeSelection*(editor: TextEditor, forceInclusiveEnd: bool, oldSelections
   editor.scrollToCursor()
   editor.updateTargetColumn()
   editor.vimState.deleteInclusiveEnd = true
-  editor.setMode "vim-new.insert"
+  editor.setMode "vim.insert"
 
 proc yankSelection*(editor: TextEditor) {.exposeActive(editorContext).} =
   let selections = editor.copySelection(getVimDefaultRegister())
   editor.setSelections selections
-  editor.setMode "vim-new.normal"
+  editor.setMode "vim.normal"
 
 proc yankSelectionClipboard*(editor: TextEditor) {.exposeActive(editorContext).} =
   let selections = editor.copySelection()
   editor.setSelections selections
-  editor.setMode "vim-new.normal"
+  editor.setMode "vim.normal"
 
 template mergeSelections*(a, b: WitList[Selection], body: untyped): seq[Selection] =
   let aa = a
@@ -753,13 +753,13 @@ proc paste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = fa
 
   var selections = editor.getSelections
 
-  if yankedLines and $editor.mode == "vim-new.normal":
+  if yankedLines and $editor.mode == "vim.normal":
     selections = editor.multiMove(selections, ws"line", 1, wrap = false, includeEol = true).mapIt(it.last.toSelection).stackWitList()
     selections = editor.edit(selections, @@[ws("\n")], inclusive=false).mapIt(it.last.toSelection).stackWitList()
   elif pasteRight:
     selections = editor.multiMove(selections, ws"column", 1, false, true).mapIt(it.last.toSelection).stackWitList()
 
-  editor.setMode "vim-new.normal"
+  editor.setMode "vim.normal"
   editor.paste selections, register.stackWitString, inclusiveEnd=inclusiveEnd
 
 proc toggleCase(editor: TextEditor, moveCursorRight: bool) {.exposeActive(editorContext).} =
@@ -781,7 +781,7 @@ proc toggleCase(editor: TextEditor, moveCursorRight: bool) {.exposeActive(editor
   discard editor.edit(editor.selections, editTexts.stackWitList(), inclusive=true)
   editor.setSelections oldSelections.mapIt(it.first.toSelection).stackWitList()
 
-  editor.setMode "vim-new.normal"
+  editor.setMode "vim.normal"
 
   if moveCursorRight:
     editor.moveCursorColumn(1, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
@@ -885,7 +885,7 @@ proc moveFileEnd(editor: TextEditor, count: int = 1) {.exposeActive(editorContex
 proc moveToMatching(editor: TextEditor) {.exposeActive(editorContext).} =
   # todo: pass as parameter
   let mode = $editor.mode
-  let which = if mode == "vim-new.visual" or mode == "vim-new.visual-line":
+  let which = if mode == "vim.visual" or mode == "vim.visual-line":
     sca.SelectionCursor.Last
   else:
     sca.SelectionCursor.Both
@@ -978,21 +978,21 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
     editor.setSelections editor.selections.mapIt(editor.applyMove(it.last, "line", 1).first.toSelection)
   else:
     discard
-  editor.setMode "vim-new.insert"
+  editor.setMode "vim.insert"
   editor.addNextCheckpoint ws"insert"
 
 proc insertLineBelow(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setSelections editor.multiMove(editor.getSelections, ws"line", 0, wrap=false, includeEol=true).mapIt(it.last.toSelection)
   editor.addNextCheckpoint ws"insert"
   editor.insertText ws("\n"), autoIndent=true
-  editor.setMode "vim-new.insert"
+  editor.setMode "vim.insert"
 
 proc insertLineAbove(editor: TextEditor, move: string = "") {.exposeActive(editorContext).} =
   editor.setSelections editor.multiMove(editor.getSelections, ws"line", 0, wrap=false, includeEol=true).mapIt(it.first.toSelection)
   editor.addNextCheckpoint ws"insert"
   editor.insertText ws("\n"), autoIndent=false
   editor.moveDirection("line-up", 1, 1, false, false)
-  editor.setMode "vim-new.insert"
+  editor.setMode "vim.insert"
 
 proc setSearchQueryFromWord(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setSelection editor.setSearchQueryFromMove(ws"word", 1, prefix=ws(r"\b"), suffix=ws(r"\b")).first.toSelection
@@ -1075,15 +1075,15 @@ proc openSearchBar(editor: TextEditor) {.exposeActive(editorContext).} =
 proc exitCommandLine() {.command.} =
   if activeTextEditor({IncludeCommandLine}).getSome(editor):
     let mode = $editor.mode
-    if mode == "vim-new.normal":
+    if mode == "vim.normal":
       commands.exitCommandLine()
       return
 
-    editor.setMode("vim-new.normal")
+    editor.setMode("vim.normal")
 
 proc exitPopup() {.command.} =
-  if activeTextEditor({IncludePopups}).getSome(editor) and $editor.mode != "vim-new.normal":
-    editor.setMode("vim-new.normal")
+  if activeTextEditor({IncludePopups}).getSome(editor) and $editor.mode != "vim.normal":
+    editor.setMode("vim.normal")
     return
 
   discard runCommand(ws"close-active-view", ws"")
@@ -1102,7 +1102,7 @@ proc selectWordOrAddCursor(editor: TextEditor) {.exposeActive(editorContext).} =
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
     editor.updateTargetColumn()
 
-  editor.setMode("vim-new.visual")
+  editor.setMode("vim.visual")
 
 proc moveLastSelectionToNextSearchResult(editor: TextEditor) {.exposeActive(editorContext).} =
   let selections = editor.selections
@@ -1118,7 +1118,7 @@ proc moveLastSelectionToNextSearchResult(editor: TextEditor) {.exposeActive(edit
     editor.setNextSnapBehaviour(MinDistanceOffscreen)
     editor.updateTargetColumn()
 
-  editor.setMode("vim-new.visual")
+  editor.setMode("vim.visual")
 
 proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext).} =
   let selections = editor.selections
@@ -1186,7 +1186,7 @@ proc gotoMark(editor: TextEditor, name: string) {.exposeActive(editorContext).} 
       return
 
     case $editor.mode
-    of "vim-new.visual", "vim-new.visual-line":
+    of "vim.visual", "vim.visual-line":
       let oldSelections = editor.selections
       if newSelections.len == oldSelections.len:
         editor.setSelections stackWitList(collect(block:
@@ -1398,7 +1398,7 @@ proc replaceInputHandler(editor: TextEditor, input: string) {.exposeActive(edito
 # todo
 # proc vimInsertRegisterInputHandler(editor: TextEditor, input: string) {.exposeActive(editorContext, "vim-insert-register-input-handler").} =
 #   editor.vimPaste register=input, inclusiveEnd=true
-#   editor.setMode "vim-new.insert"
+#   editor.setMode "vim.insert"
 
 proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq[string]) {.exposeActive(editorContext).} =
   # log lvlInfo, &"modeChangedHandler {editor}, {oldModes} -> {newModes}"
@@ -1413,24 +1413,24 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
 
   let newMode = newModes[0]
 
-  if not editor.modes().toOpenArray.contains(ws"vim-new"):
+  if not editor.modes().toOpenArray.contains(ws"vim"):
     return
 
   if newMode == "":
-    editor.setMode "vim-new.normal"
+    editor.setMode "vim.normal"
     return
 
   if not newMode.startsWith("vim"):
     return
 
   let recordModes = [
-    "vim-new.visual",
-    "vim-new.visual-line",
-    "vim-new.insert",
+    "vim.visual",
+    "vim.visual-line",
+    "vim.insert",
   ].toHashSet
 
   # debugf"vim: handle mode change {oldMode} -> {newMode}"
-  if newMode == "vim-new.normal":
+  if newMode == "vim.normal":
     if not isReplayingCommands() and isRecordingCommands(ws".-temp"):
       stopRecordingCommands(ws".-temp")
 
@@ -1439,29 +1439,29 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
         let text = getRegisterText(ws".-temp")
         setRegisterText(text, ws".")
   else:
-    if oldMode == "vim-new.normal" and newMode in recordModes:
+    if oldMode == "vim.normal" and newMode in recordModes:
       editor.startRecordingCurrentCommandInPeriodMacro()
 
     editor.clearCurrentCommandHistory(retainLast=true)
 
-  editor.vimState.selectLines = newMode == "vim-new.visual-line"
-  editor.vimState.cursorIncludeEol = newMode == "vim-new.insert"
-  editor.vimState.currentUndoCheckpoint = if newMode == "vim-new.insert": "word" else: "insert"
+  editor.vimState.selectLines = newMode == "vim.visual-line"
+  editor.vimState.cursorIncludeEol = newMode == "vim.insert"
+  editor.vimState.currentUndoCheckpoint = if newMode == "vim.insert": "word" else: "insert"
 
   case newMode
-  of "vim-new.normal":
+  of "vim.normal":
     editor.setSetting "text.inclusive-selection", false
     editor.setSelections editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
     editor.saveCurrentCommandHistory()
     editor.hideCompletions()
 
-  of "vim-new.insert":
+  of "vim.insert":
     editor.setSetting "text.inclusive-selection", false
 
-  of "vim-new.visual":
+  of "vim.visual":
     editor.setSetting "text.inclusive-selection", true
 
-  of "vim-new.visual-line":
+  of "vim.visual-line":
     editor.setSetting "text.inclusive-selection", false
 
   else:

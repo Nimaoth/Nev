@@ -280,10 +280,6 @@ import language_server_regex
 import plugin_api/[process]
 import scripting/expose
 
-generatePluginBindings()
-static:
-  generateScriptingApiPerModule()
-
 defineSetAllDefaultSettings()
 
 # Initialize renderer
@@ -505,3 +501,5 @@ when defined(windows) and copyWasmtimeDll:
     const dllOut = querySetting(SingleValueSetting.outDir) / "wasmtime.dll"
     echo "[desktop_main.nim] run tools/copy_wasmtime_dll.nims"
     echo staticExec &"nim \"-d:inDir={dllIn}\" \"-d:outDir={dllOut}\" --hints:off --skipUserCfg --skipProjCfg --skipParentCfg ../tools/copy_wasmtime_dll.nims"
+
+printDispatchStats()

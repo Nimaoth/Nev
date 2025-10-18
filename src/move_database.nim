@@ -152,7 +152,7 @@ proc moveCursorColumn(text: Rope, cursor: Cursor, offset: int, wrap: bool = true
   return text.clampCursor(cursor, includeEol)
 
 proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], count: int = 0, includeEol: bool = true): seq[Selection] =
-  debugf"applyMove '{move}', {selections}, {count}, {includeEol}"
+  # debugf"applyMove '{move}', {selections}, {count}, {includeEol}"
 
   let rope {.cursor.} = displayMap.buffer.visibleText
 

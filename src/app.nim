@@ -20,7 +20,6 @@ import misc/async_process
 when enableAst:
   import ast/[model, project]
 
-import scripting/[scripting_wasm]
 import plugin_system_wasm
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
@@ -108,7 +107,6 @@ type
     disableLogFrameTime*: bool = true
     logBuffer = ""
 
-    wasmScriptContext*: ScriptContextWasm
     pluginSystemWasm*: PluginSystemWasm
     initializeCalled: bool
 
@@ -228,26 +226,6 @@ proc runConfigCommands(self: App, key: string) =
       discard self.handleAction(action, arg, record=false)
 
 proc initScripting(self: App, options: AppOptions) {.async.} =
-  if not options.disableOldWasmPlugins:
-    try:
-      log(lvlInfo, fmt"load wasm configs")
-      self.wasmScriptContext = new ScriptContextWasm
-      self.plugins.pluginSystems.add self.wasmScriptContext
-      self.wasmScriptContext.moduleVfs = VFS()
-      self.wasmScriptContext.vfs = self.vfs
-      self.vfs.mount("plugs://", self.wasmScriptContext.moduleVfs)
-
-      withPluginSystem self.plugins, self.wasmScriptContext:
-        let t1 = startTimer()
-        await self.wasmScriptContext.init("app://config", self.vfs)
-        log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
-
-        let t2 = startTimer()
-        discard self.wasmScriptContext.postInitialize()
-        log(lvlInfo, fmt"post init wasm configs ({t2.elapsed.ms}ms)")
-    except CatchableError:
-      log lvlError, &"Failed to load wasm configs: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
   self.runConfigCommands("wasm-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
 
@@ -1086,9 +1064,6 @@ proc shutdown*(self: App) =
 
   for document in self.editors.documents:
     document.deinit()
-
-  if self.wasmScriptContext.isNotNil:
-    self.wasmScriptContext.deinit()
 
   {.gcsafe.}:
     gAppInterface = nil
@@ -2765,30 +2740,6 @@ proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
   if self.layout.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
     self.exploreFiles(view.document.filename.splitPath.head)
 
-# todo: move to scripting_base
-proc reloadPluginAsync*(self: App) {.async.} =
-  if self.wasmScriptContext.isNotNil:
-    log lvlInfo, "Reload wasm plugins"
-    try:
-      self.plugins.clearScriptActionsFor(self.wasmScriptContext)
-
-      let t1 = startTimer()
-      withPluginSystem self.plugins, self.wasmScriptContext:
-        await self.wasmScriptContext.reload()
-      log(lvlInfo, fmt"Reload wasm plugins ({t1.elapsed.ms}ms)")
-
-      withPluginSystem self.plugins, self.wasmScriptContext:
-        let t2 = startTimer()
-        discard self.wasmScriptContext.postInitialize()
-        log(lvlInfo, fmt"Post init wasm plugins ({t2.elapsed.ms}ms)")
-
-      log lvlInfo, &"Successfully reloaded wasm plugins"
-    except CatchableError:
-      log lvlError, &"Failed to reload wasm plugins: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
-    self.runConfigCommands("wasm-plugin-post-reload-commands")
-    self.runConfigCommands("plugin-post-reload-commands")
-
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadConfigFrom(appConfigDir, "app")
   if not self.appOptions.skipUserSettings:
@@ -2804,7 +2755,7 @@ proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
 
 proc reloadPlugin*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload current plugin"
-  asyncSpawn self.reloadPluginAsync()
+  # todo: delete
 
 proc reloadTheme*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload theme"
@@ -3486,6 +3437,3 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
 
   log lvlError, fmt"Unknown command '{action}'"
   return JsonNode.none
-
-template generatePluginBindings*(): untyped =
-  createEditorWasmImportConstructor()
