@@ -1,5 +1,5 @@
 # import std/[strutils, macros, genasts, sequtils, sets, algorithm, jsonutils]
-import std/[strformat, json, jsonutils, strutils, tables, macros, genasts, streams, sequtils, sets, os, terminal, colors]
+import std/[strformat, json, jsonutils, strutils, tables, macros, genasts, streams, sequtils, sets, os, terminal, colors, algorithm, unicode]
 import results
 import util, custom_unicode, myjsonutils, id, wrap, sugar, custom_regex
 # import input_api
@@ -39,6 +39,12 @@ const editorContext = "editor.text"
 
 
 type IdentifierCase = enum Camel, Pascal, Kebab, Snake, ScreamingSnake
+
+proc moveCursorColumn(editor: TextEditor, amount: int, wrap: bool = false, includeEol: bool = true) =
+  editor.setSelections editor.multiMove(editor.selections, ws"column", 1, wrap, includeEol).mapIt(it.last.toSelection).stackWitList()
+
+proc moveCursorColumn(editor: TextEditor, selections: WitList[Selection], amount: int, wrap: bool = false, includeEol: bool = true): WitList[Selection] =
+  editor.multiMove(selections, ws"column", 1, wrap, includeEol).mapIt(it.last.toSelection).stackWitList()
 
 proc splitCase(s: string): tuple[cas: IdentifierCase, parts: seq[string]] =
   if s == "":
@@ -891,30 +897,30 @@ proc paste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = fa
   editor.setMode "vim-new.normal"
   editor.paste selections, register.stackWitString, inclusiveEnd=inclusiveEnd
 
-# proc vimToggleCase(editor: TextEditor, moveCursorRight: bool) {.exposeActive(editorContext, "vim-toggle-case").} =
-#   var editTexts: seq[string]
+proc toggleCase(editor: TextEditor, moveCursorRight: bool) {.exposeActive(editorContext).} =
+  var editTexts: seq[WitString]
 
-#   for s in editor.selections:
-#     let text = editor.getText(s, inclusiveEnd=true)
-#     var newText = ""
-#     for r in text.runes:
-#       if r.isLower:
-#         newText.add $r.toUpper
-#       else:
-#         newText.add $r.toLower
-#     editTexts.add newText
+  let content = editor.content
+  for s in editor.selections:
+    let text = content.sliceSelection(s, inclusive=true).text
+    var newText = newStringOfCap(text.len)
+    for r in text.toOpenArray.runes:
+      if r.isLower:
+        newText.add $r.toUpper
+      else:
+        newText.add $r.toLower
+    editTexts.add newText.stackWitString()
 
-#   editor.addNextCheckpoint "insert"
-#   let oldSelections = editor.selections
-#   discard editor.edit(editor.selections, editTexts, inclusiveEnd=true)
-#   editor.setSelections oldSelections.mapIt(it.first.toSelection)
+  editor.addNextCheckpoint ws"insert"
+  let oldSelections = editor.selections
+  discard editor.edit(editor.selections, editTexts.stackWitList(), inclusive=true)
+  editor.setSelections oldSelections.mapIt(it.first.toSelection).stackWitList()
 
-#   editor.setMode "vim-new.normal"
+  editor.setMode "vim-new.normal"
 
-#   if moveCursorRight:
-#     editor.moveCursorColumn(1, Both, wrap=false,
-#       includeAfter=editor.vimState.cursorIncludeEol)
-#     editor.updateTargetColumn()
+  if moveCursorRight:
+    editor.moveCursorColumn(1, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
+    editor.updateTargetColumn()
 
 # proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-current-view-or-quit").} =
 #   let openEditors = getNumVisibleViews() + getNumHiddenViews()
@@ -923,13 +929,13 @@ proc paste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = fa
 #   else:
 #     closeActiveView()
 
-# proc vimIndent(editor: TextEditor) {.exposeActive(editorContext, "vim-indent").} =
-#   editor.addNextCheckpoint "insert"
-#   editor.indent()
+proc indent(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint ws"insert"
+  editor.indent(1)
 
-# proc vimUnindent(editor: TextEditor) {.exposeActive(editorContext, "vim-unindent").} =
-#   editor.addNextCheckpoint "insert"
-#   editor.unindent()
+proc unindent(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint ws"insert"
+  editor.indent(-1)
 
 proc addCursorAbove(editor: TextEditor) {.exposeActive(editorContext).} =
   var selections = @(editor.getSelections.toOpenArray)
@@ -1056,7 +1062,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
   # debugf"insertMode '{move}'"
   case move
   of "right":
-    editor.setSelections editor.multiMove(editor.selections, ws"column", 1, wrap = false, includeEol = true)
+    editor.setSelections editor.multiMove(editor.selections, ws"column", 1, wrap = false, includeEol = true).mapIt(it.last.toSelection).stackWitList()
   of "line-end":
     editor.setSelections editor.selections.mapIt(editor.applyMove(it.last, "line", 1).last.toSelection)
   of "line-no-indent":
@@ -1289,42 +1295,51 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc deleteWordBack(editor: TextEditor) {.exposeActive(editorContext).} =
-  let wordSelections = editor.multiMove(editor.selections, ws"vim.word", 1, wrap = false, includeEol = true)
+  let wordSelections = editor.multiMove(editor.selections, ws"vim.word-back", 1, wrap = false, includeEol = true)
   let selectionsToDelete = mergeSelections(wordSelections, editor.selections, (it1.first, it2.last).toSelection)
   editor.setSelections editor.edit(selectionsToDelete.stackWitList(), @@[ws""], inclusive = false)
   editor.autoShowCompletions()
 
-# proc vimDeleteLineBack(editor: TextEditor) {.exposeActive(editorContext, "vim-delete-line-back").} =
-#   let selections = editor.applyMove(editor.selections, "vim-line", true, true, 1, which = sca.SelectionCursor.Last.some)
-#   editor.setSelections editor.delete(selections)
-#   editor.autoShowCompletions()
+proc deleteLineBack(editor: TextEditor) {.exposeActive(editorContext).} =
+  let lineSelections = editor.selections.mapIt ((it.last.line.int, 0).toCursor, it.last).toSelection
+  editor.setSelections editor.edit(lineSelections.stackWitList(), @@[ws""], inclusive = false)
+  editor.autoShowCompletions()
 
-# proc vimSurround(editor: TextEditor, text: string) {.exposeActive(editorContext, "vim-surround").} =
-#   let (left, right) = case text
-#   of "(", ")": ("(", ")")
-#   of "{", "}": ("{", "}")
-#   of "[", "]": ("[", "]")
-#   of "<", ">": ("<", ">")
-#   else:
-#     (text, text)
+proc includeSelectionEnd*(self: TextEditor, res: Selection, includeAfter: bool = true): Selection =
+  result = res
+  if not includeAfter:
+    result = (res.first, self.applyMove(res.last, "column", -1, wrap = false, includeEol = true).last).toSelection
 
-#   var insertSelections: seq[Selection] = @[]
-#   var insertTexts: seq[string] = @[]
-#   for s in editor.selections:
-#     let s = s.normalized
-#     insertSelections.add s.first.toSelection
-#     insertSelections.add editor.doMoveCursorColumn(s.last, 1).toSelection
-#     insertTexts.add left
-#     insertTexts.add right
+proc surround(editor: TextEditor, text: string) {.exposeActive(editorContext).} =
+  let (left, right) = case text
+  of "(", ")": (ws"(", ws")")
+  of "{", "}": (ws"{", ws"}")
+  of "[", "]": (ws"[", ws"]")
+  of "<", ">": (ws"<", ws">")
+  else:
+    let text = text.stackWitString()
+    (text, text)
 
-#   editor.addNextCheckpoint ws"insert"
-#   let newSelections = editor.insertMulti(insertSelections, insertTexts)
-#   if newSelections.len mod 2 != 0:
-#     return
+  let selections = editor.selections.mapIt(it.normalized).stackWitList()
+  let rightCursors = editor.multiMove(selections, ws"column", 1, wrap = false, includeEol = true)
 
-#   editor.setSelections collect:
-#     for i in 0..<newSelections.len div 2:
-#       editor.includeSelectionEnd((newSelections[i * 2].first, newSelections[i * 2 + 1].last), false)
+  var insertSelections = newSeq[Selection](selections.len * 2)
+  var insertTexts = newSeq[WitString](selections.len * 2)
+  for i, s in selections:
+    insertSelections[i * 2 + 0] = s.first.toSelection
+    insertSelections[i * 2 + 1] = rightCursors[i].last.toSelection
+    insertTexts[i * 2 + 0] = left
+    insertTexts[i * 2 + 1] = right
+
+  editor.addNextCheckpoint ws"insert"
+  let newSelections = editor.edit(insertSelections.stackWitList(), insertTexts.stackWitList(), inclusive = false)
+  if newSelections.len mod 2 != 0:
+    return
+
+  let newSelectionsInclusive = collect:
+    for i in 0..<newSelections.len div 2:
+      editor.includeSelectionEnd((newSelections[i * 2].first, newSelections[i * 2 + 1].last), false)
+  editor.setSelections newSelectionsInclusive.stackWitList()
 
 proc toggleLineComment(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.addNextCheckpoint ws"insert"
@@ -1355,49 +1370,50 @@ proc stopMacro(editor: TextEditor) {.exposeActive(editorContext).} =
     return
   stopRecordingCommands(register)
 
-# proc vimInvertSelections(editor: TextEditor) {.exposeActive(editorContext, "vim-invert-selections").} =
-#   editor.setSelections editor.selections.mapIt((it.last, it.first))
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
+proc invertSelections(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.setSelections editor.selections.mapIt((it.last, it.first).toSelection).stackWitList()
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-# proc vimInvertLineSelections(editor: TextEditor) {.exposeActive(editorContext, "vim-invert-line-selections").} =
-#   editor.setSelections editor.selections.mapIt((it.last, it.first))
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
+proc invertLineSelections(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.setSelections editor.selections.mapIt((it.last, it.first).toSelection).stackWitList()
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-# proc vimReverseSelections(editor: TextEditor) {.exposeActive(editorContext, "vim-reverse-selections").} =
-#   editor.setSelections editor.selections.reversed()
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
+proc reverseSelections(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.setSelections editor.selections.toOpenArray.reversed().stackWitList()
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-# proc vimJoinLines(editor: TextEditor, reduceSpace: bool) {.exposeActive(editorContext, "vim-join-lines").} =
-#   editor.addNextCheckpoint ws"insert"
-#   if reduceSpace:
-#     var insertTexts: seq[string]
-#     let selectionsToDelete = editor.selections.mapIt(block:
-#       let lineLen = editor.lineLength(it.last.line)
-#       if lineLen == 0 or editor.charAt((it.last.line, lineLen - 1)) == ' ':
-#         insertTexts.add ""
-#       else:
-#         insertTexts.add " "
-#       var nextLineIndent = editor.getSelectionForMove((it.last.line + 1, 0), "line-no-indent", 0)
-#       ((it.last.line, lineLen), (it.last.line + 1, nextLineIndent.first.column))
-#     )
-#     editor.setSelections editor.edit(selectionsToDelete, insertTexts, inclusiveEnd=false).mapIt(it.first.toSelection)
-#   else:
-#     let selectionsToDelete = editor.selections.mapIt(block:
-#       let lineLen = editor.lineLength(it.last.line)
-#       ((it.last.line, lineLen), (it.last.line + 1, 0))
-#     )
-#     editor.setSelections editor.delete(selectionsToDelete, inclusiveEnd=false).mapIt(it.first.toSelection)
+proc joinLines(editor: TextEditor, reduceSpace: bool) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint ws"insert"
+  let content = editor.content
+  if reduceSpace:
+    var insertTexts: seq[WitString]
+    let selectionsToDelete = editor.selections.mapIt(block:
+      let lineLen = content.lineLength(it.last.line).int
+      if lineLen == 0 or content.charAt((it.last.line.int, lineLen - 1).toCursor) == ' ':
+        insertTexts.add ws""
+      else:
+        insertTexts.add ws" "
+      var nextLineIndent = editor.applyMove((it.last.line.int + 1, 0).toSelection, ws"line-no-indent", 0, wrap=false, includeEol=true)
+      ((it.last.line.int, lineLen).toCursor, (it.last.line + 1, nextLineIndent[0].first.column).toCursor).toSelection
+    )
+    editor.setSelections editor.edit(selectionsToDelete.stackWitList(), insertTexts.stackWitList(), inclusive=false).mapIt(it.first.toSelection).stackWitList()
+  else:
+    let selectionsToDelete = editor.selections.mapIt(block:
+      let lineLen = content.lineLength(it.last.line).int
+      ((it.last.line.int, lineLen).toCursor, (it.last.line.int + 1, 0).toCursor).toSelection
+    )
+    editor.setSelections editor.edit(selectionsToDelete.stackWitList(), @@[ws""], inclusive=false).mapIt(it.first.toSelection).stackWitList()
 
-# proc vimMoveToColumn(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-column").} =
-#   editor.setSelections editor.selections.mapIt((it.last.line, count).toSelection)
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
+proc moveToColumn(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  editor.setSelections editor.selections.mapIt((it.last.line.int, count).toSelection)
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
 
 # proc vimAddNextSameNodeToSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-add-next-same-node-to-selection").} =
 #   if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):

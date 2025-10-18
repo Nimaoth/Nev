@@ -735,6 +735,17 @@ proc textEditorEvaluateExpressions(instance: ptr InstanceData; editor: TextEdito
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.evaluateExpressions(selections.mapIt(it.toInternal), inclusive, prefix, suffix, addSelectionIndex)
 
+proc textEditorIndent(instance: ptr InstanceData; editor: TextEditor; delta: int32): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    if delta >= 0:
+      for i in 0..<delta:
+        editor.TextDocumentEditor.indent()
+    else:
+      for i in 0..<(-delta):
+        editor.TextDocumentEditor.unindent()
+
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
 

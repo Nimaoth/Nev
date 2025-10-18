@@ -231,6 +231,8 @@ func toSelection*(cursor: Cursor, default: Selection, which: sca.SelectionCursor
 
 proc charAt*(rope: Rope, cursor: Cursor): char = rope.byteAt(cursor).char
 proc slice*(rope: Rope, a: Natural, b: Natural): Rope = rope.slice(a.int64, b.int64, inclusive = false)
+proc `[]`*(rope: Rope, a: Natural, b: Natural): Rope = rope.slice(a.int64, b.int64, inclusive = false)
+proc `[]`*(rope: Rope, s: Selection): Rope = rope.sliceSelection(s, inclusive = false)
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)

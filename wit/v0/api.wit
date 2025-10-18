@@ -326,6 +326,9 @@ interface text-editor {
   evaluate-expressions: func(editor: text-editor, selections: list<selection>, inclusive: bool, prefix: string, suffix: string, add-selection-index: bool);
 
   /// todo
+  indent: func(editor: text-editor, delta: s32);
+
+  /// todo
   edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
 
   define-move: func(move: string, fun: u32, data: u32);

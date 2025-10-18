@@ -767,6 +767,17 @@ proc evaluateExpressions*(editor: TextEditor; selections: WitList[Selection];
   textEditorEvaluateExpressionsImported(arg0, arg1, arg2, arg3, arg4, arg5,
                                         arg6, arg7, arg8)
 
+proc textEditorIndentImported(a0: uint64; a1: int32): void {.
+    wasmimport("indent", "nev:plugins/text-editor").}
+proc indent*(editor: TextEditor; delta: int32): void {.nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int32
+  arg0 = editor.id
+  arg1 = delta
+  textEditorIndentImported(arg0, arg1)
+
 proc textEditorEditImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                             a4: int32; a5: bool; a6: int32): void {.
     wasmimport("edit", "nev:plugins/text-editor").}

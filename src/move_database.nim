@@ -43,6 +43,33 @@ proc vimMotionWord*(text: Rope, cursor: Cursor): Selection =
     let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace and c notin AlphaNumeric)
     return ((cursor.line, startColumn), (cursor.line, endColumn))
 
+type VimWordCharCategory {.pure.} = enum Word, Whitespace, Other
+
+proc vimWordCharCategory*(c: Rune): VimWordCharCategory =
+  if c.int < 128:
+    const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
+    if c.char in Whitespace:
+      return VimWordCharCategory.Whitespace
+    if c.char in AlphaNumeric:
+      return VimWordCharCategory.Word
+    return VimWordCharCategory.Other
+  if c.isWhitespace:
+    return VimWordCharCategory.Whitespace
+  if c.isAlpha:
+    return VimWordCharCategory.Word
+  return VimWordCharCategory.Other
+
+proc vimMotionWordBack*(text: Rope, cursor: Cursor): Selection =
+  if cursor.column == 0:
+    return cursor.toSelection
+
+  let prevCursor = text.clipPoint(point(cursor.line, cursor.column - 1), Left).toCursor
+  let current = text.runeAt(cursor.toPoint)
+  let prev = text.runeAt(prevCursor.toPoint)
+  if current.vimWordCharCategory == prev.vimWordCharCategory:
+    return vimMotionWord(text, cursor)
+  return vimMotionWord(text, prevCursor)
+
 proc vimMotionWordBig*(text: Rope, cursor: Cursor): Selection =
   var line = text.getLine(cursor.line)
   if line.len == 0:
@@ -144,6 +171,12 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, select
     for _ in 1..<count:
       for s in result.mitems:
         s = s or vimMotionWord(rope, s.last) or vimMotionWord(rope, s.first)
+
+  of "vim.word-back":
+    result = selections.mapIt(vimMotionWordBack(rope, it.last))
+    for _ in 1..<count:
+      for s in result.mitems:
+        s = s or vimMotionWordBack(rope, s.first)
 
   of "vim.WORD":
     result = selections.mapIt(vimMotionWordBig(rope, it.last))

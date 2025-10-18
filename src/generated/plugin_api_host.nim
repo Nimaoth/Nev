@@ -539,6 +539,8 @@ proc textEditorEvaluateExpressions(instance: ptr InstanceData;
                                    selections: sink seq[Selection];
                                    inclusive: bool; prefix: sink string;
                                    suffix: sink string; addSelectionIndex: bool): void
+proc textEditorIndent(instance: ptr InstanceData; editor: TextEditor;
+                      delta: int32): void
 proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor;
                     selections: sink seq[Selection]; contents: sink seq[string];
                     inclusive: bool): seq[Selection]
@@ -2577,6 +2579,19 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         addSelectionIndex = parameters[8].i32.bool
         textEditorEvaluateExpressions(instance, editor, selections, inclusive,
                                       prefix, suffix, addSelectionIndex)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "indent", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var delta: int32
+        editor.id = convert(parameters[0].i64, uint64)
+        delta = convert(parameters[1].i32, int32)
+        textEditorIndent(instance, editor, delta)
     if e.isErr:
       return e
   block:
