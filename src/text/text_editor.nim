@@ -454,7 +454,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selection
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor, relativePosition: float = 0.5)
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, margin: Option[float] = float.none, scrollBehaviour: Option[ScrollBehaviour] = ScrollBehaviour.none, relativePosition: float = 0.5)
-proc getFileName(self: TextDocumentEditor): string
+proc getFileName*(self: TextDocumentEditor): string
 proc closeDiff*(self: TextDocumentEditor)
 proc setNextSnapBehaviour*(self: TextDocumentEditor, snapBehaviour: ScrollSnapBehaviour)
 proc numDisplayLines*(self: TextDocumentEditor): int
@@ -1204,7 +1204,7 @@ proc enableAutoReload(self: TextDocumentEditor, enabled: bool) {.expose: "editor
 proc setLanguage(self: TextDocumentEditor, language: string) {.expose: "editor.text".} =
   self.document.languageId = language
 
-proc getFileName(self: TextDocumentEditor): string {.expose: "editor.text".} =
+proc getFileName*(self: TextDocumentEditor): string {.expose: "editor.text".} =
   if self.document.isNil:
     return ""
   return self.document.filename

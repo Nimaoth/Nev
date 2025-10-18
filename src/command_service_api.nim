@@ -1,4 +1,4 @@
-import std/[strutils, options, json]
+import std/[strutils, options, json, tables]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, async_process, delayed_task, timer]
@@ -73,6 +73,7 @@ proc exitCommandLine*(self: CommandService) {.expose("commands").} =
       discard self.defaultCommandHandler(string.none)
   except Exception as e:
     log lvlError, &"exitCommandLine: {e.msg}"
+  self.commandHandler = nil
   self.requestRender()
 
 proc commandLineResult*(self: CommandService, value: string, showInCommandLine: bool = false,
@@ -117,6 +118,7 @@ commandLineImpl = commandLine
 proc executeCommandLine*(self: CommandService): bool {.expose("commands").} =
   defer:
     self.requestRender()
+    self.commandHandler = nil
 
   let editor = self.commandLineEditor.TextDocumentEditor
   self.commandLineInputMode = false

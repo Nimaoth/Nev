@@ -720,11 +720,7 @@ proc moveLast(editor: TextEditor, move: string, count: int = 1, wrap: bool = fal
 
 proc moveDirection(editor: TextEditor, move: string, direction: int, count: int = 1, wrap: bool = false, updateTargetColumn: bool = true) {.exposeActive(editorContext).} =
   let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
-  debugf"moveDirection '{move}', dir: {direction}, count: {count}, includeEol: {editor.vimState.cursorIncludeEol}"
   editor.setSelections editor.multiMove(editor.selections, move.ws, direction * max(count, 1), wrap, includeEol = editor.vimState.cursorIncludeEol)
-  # editor.setSelections editor.selections.mapIt(
-  #   editor.applyMove(it.last, move, direction * max(count, 1), wrap = wrap, includeEol = editor.vimState.cursorIncludeEol).last.toSelection(it, cursorSelector)
-  # )
 
   if editor.vimState.selectLines:
     editor.selectLine()
@@ -791,6 +787,7 @@ proc toggleCase(editor: TextEditor, moveCursorRight: bool) {.exposeActive(editor
     editor.moveCursorColumn(1, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
     editor.updateTargetColumn()
 
+# todo
 # proc vimCloseCurrentViewOrQuit() {.exposeActive(editorContext, "vim-close-current-view-or-quit").} =
 #   let openEditors = getNumVisibleViews() + getNumHiddenViews()
 #   if openEditors == 1:
@@ -1077,14 +1074,15 @@ proc openSearchBar(editor: TextEditor) {.exposeActive(editorContext).} =
 
 proc exitCommandLine() {.command.} =
   if activeTextEditor({IncludeCommandLine}).getSome(editor):
-    if editor.mode == ws"vim-new.normal":
-      discard runCommand(ws"exit-command-line", ws"")
+    let mode = $editor.mode
+    if mode == "vim-new.normal":
+      commands.exitCommandLine()
       return
 
     editor.setMode("vim-new.normal")
 
 proc exitPopup() {.command.} =
-  if activeTextEditor({IncludePopups}).getSome(editor) and editor.mode != ws"vim-new.normal":
+  if activeTextEditor({IncludePopups}).getSome(editor) and $editor.mode != "vim-new.normal":
     editor.setMode("vim-new.normal")
     return
 
@@ -1140,6 +1138,7 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
   editor.scrollToCursor()
   editor.updateTargetColumn()
 
+# todo
 # proc vimSaveState() {.expose("vim-save-state").} =
 #   try:
 #     var states = initTable[string, JsonNode]()
@@ -1324,6 +1323,7 @@ proc moveToColumn(editor: TextEditor, count: int = 1) {.exposeActive(editorConte
   editor.scrollToCursor()
   editor.updateTargetColumn()
 
+# todo
 # proc vimAddNextSameNodeToSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-add-next-same-node-to-selection").} =
 #   if editor.getNextNodeWithSameType(editor.selection, includeAfter=false).getSome(selection):
 #     editor.setSelections editor.selections & selection
@@ -1395,6 +1395,7 @@ proc incrementByIndex(editor: TextEditor) {.exposeActive(editorContext).} =
 proc replaceInputHandler(editor: TextEditor, input: string) {.exposeActive(editorContext).} =
   editor.vimReplace(input)
 
+# todo
 # proc vimInsertRegisterInputHandler(editor: TextEditor, input: string) {.exposeActive(editorContext, "vim-insert-register-input-handler").} =
 #   editor.vimPaste register=input, inclusiveEnd=true
 #   editor.setMode "vim-new.insert"
@@ -1466,6 +1467,7 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
   else:
     editor.setSetting "text.inclusive-selection", false
 
+# todo
 # proc loadVimKeybindings*() {.expose("load-vim-keybindings").} =
 #   let afterRestoreSessionHandle = addCallback proc(args: JsonNode): JsonNode =
 #     let states = getSessionData[Table[string, JsonNode]]("vim.states")

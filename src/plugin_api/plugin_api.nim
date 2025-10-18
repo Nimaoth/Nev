@@ -6,7 +6,7 @@ import layout
 import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
-import config_provider, command_service
+import config_provider, command_service, command_service_api
 import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 from scripting_api as sca import nil
@@ -415,6 +415,7 @@ proc textEditorActiveTextEditor(instance: ptr InstanceData, options: ActiveEdito
   if instance.host == nil:
     return
   if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode() and instance.host.commands.commandLineEditor of TextDocumentEditor:
+    let editor = instance.host.commands.commandLineEditor
     return TextEditor(id: instance.host.commands.commandLineEditor.id.uint64).some
   if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
     return TextEditor(id: editor.id.uint64).some
@@ -1037,6 +1038,11 @@ proc commandsRunCommand(instance: ptr InstanceData, name: sink string, arguments
     return results.ok(res)
   result.err(CommandError.NotFound)
 
+proc commandsExitCommandLine(instance: ptr InstanceData) =
+  if instance.host == nil:
+    return
+  instance.host.commands.exitCommandLine()
+
 proc settingsGetSettingRaw(instance: ptr InstanceData, name: sink string): string =
   return $instance.host.settings.get(name, JsonNodeEx)
 
@@ -1060,6 +1066,9 @@ proc layoutClose(instance: ptr InstanceData; v: View, keepHidden: bool, restoreH
 
 proc layoutFocus(instance: ptr InstanceData, slot: sink string) =
   instance.host.layout.focusView(slot.ensureMove)
+
+proc layoutCloseActiveView(instance: ptr InstanceData; closeOpenPopup: bool; restoreHidden: bool): void =
+  instance.host.layout.closeActiveView(closeOpenPopup, restoreHidden)
 
 proc renderRenderViewFromUserId(instance: ptr InstanceData; id: sink string): Option[RenderViewResource] =
   if renderViewFromUserId(instance.host.layout, id).getSome(view):

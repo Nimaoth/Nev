@@ -161,8 +161,7 @@
         "<ENTER>": ["accept"],
         "<C-y>": ["accept"],
         // "<ESCAPE>": ["cancel"],
-        "<ESCAPE>": ["vim-exit-popup"], // todo: replace this with vim.exit-popup
-        "<S-ESCAPE>": ["vim.exit-popup"], // todo: remove this
+        "<ESCAPE>": ["vim.exit-popup"],
         "<UP>": ["prev"],
         "<C-p>": ["prev"],
         "<DOWN>": ["next"],

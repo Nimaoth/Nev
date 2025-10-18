@@ -412,6 +412,9 @@ interface layout {
   close: func(v: view, keep-hidden: bool, restore-hidden: bool);
   /// Set focus to the view in the given slot.
   focus: func(slot: string);
+  /// Close the active view. If 'close-open-popup' is set and a popup is open then the popup will be closed.
+  /// If 'restore-hidden' is true then the view will be replaced by a hidden view, otherwise the slot will be removed from the layout..
+  close-active-view: func(close-open-popup: bool, restore-hidden: bool);
 }
 
 interface render {
@@ -519,6 +522,9 @@ interface commands {
 
   /// Run the given command. This requires 'command' permissions.
   run-command: func(name: string, arguments: string) -> result<string, command-error>;
+
+  /// Close the command line.
+  exit-command-line: func();
 }
 
 interface settings {
