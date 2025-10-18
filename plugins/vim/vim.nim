@@ -1114,6 +1114,50 @@ proc prevSearchResult(editor: TextEditor, count: int = 0) {.exposeActive(editorC
   editor.setNextSnapBehaviour(MinDistanceOffscreen)
   editor.updateTargetColumn()
 
+proc gotoNextChange(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
+  let selections = editor.getSelections
+  let next = editor.multiMove(selections, ws"next-change", count, wrap = true, includeEol=false)
+  let newSelections = mergeSelections(selections, next):
+    (it1.first, it2.first).toSelection
+
+  editor.setSelections @@newSelections
+  editor.scrollToCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
+
+proc gotoPrevChange(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
+  let selections = editor.getSelections
+  let prev = editor.multiMove(selections, ws"prev-change", count, wrap = true, includeEol=false)
+  let newSelections = mergeSelections(selections, prev):
+    (it1.first, it2.first).toSelection
+
+  editor.setSelections @@newSelections
+  editor.scrollToCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
+
+proc gotoNextDiagnostic(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
+  let selections = editor.getSelections
+  let next = editor.multiMove(selections, ws"next-diagnostic", count, wrap = true, includeEol=false)
+  let newSelections = mergeSelections(selections, next):
+    (it1.first, it2.first).toSelection
+
+  editor.setSelections @@newSelections
+  editor.scrollToCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
+
+proc gotoPrevDiagnostic(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
+  let selections = editor.getSelections
+  let prev = editor.multiMove(selections, ws"prev-diagnostic", count, wrap = true, includeEol=false)
+  let newSelections = mergeSelections(selections, prev):
+    (it1.first, it2.first).toSelection
+
+  editor.setSelections @@newSelections
+  editor.scrollToCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
+
 proc openSearchBar(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.openSearchBar(ws"", scrollToPreview=true, selectResult=true)
 
@@ -1426,32 +1470,6 @@ proc stopMacro(editor: TextEditor) {.exposeActive(editorContext).} =
 #   editor.addNextCheckpoint(ws"insert")
 #   editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
 #   editor.setSelections editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
-
-# proc vimGotoNextDiagnostic(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-next-diagnostic").} =
-#   let severity = getSetting("text.jump-diagnostic-severity", 1)
-#   editor.setSelection editor.getNextDiagnostic(editor.selection.last, severity).first.toSelection
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
-
-# proc vimGotoPrevDiagnostic(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-prev-diagnostic").} =
-#   let severity = getSetting("text.jump-diagnostic-severity", 1)
-#   editor.setSelection editor.getPrevDiagnostic(editor.selection.last, severity).first.toSelection
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
-
-# proc vimGotoNextChange(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-next-change").} =
-#   editor.setSelection editor.getNextChange(editor.selection.last).first.toSelection
-#   editor.scrollToCursor()
-#   editor.centerCursor()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
-
-# proc vimGotoPrevChange(editor: TextEditor) {.exposeActive(editorContext, "vim-goto-prev-change").} =
-#   editor.setSelection editor.getPrevChange(editor.selection.last).first.toSelection
-#   editor.scrollToCursor()
-#   editor.centerCursor()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc replaceInputHandler(editor: TextEditor, input: string) {.exposeActive(editorContext).} =
   editor.vimReplace(input)

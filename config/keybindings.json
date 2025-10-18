@@ -746,6 +746,8 @@
         "gM": ["move-cursor-center"],
         "<?-count>n": ["vim.next-search-result", "<#move.count>"],
         "<?-count>N": ["vim.prev-search-result", "<#move.count>"],
+        "<?-count>gf": ["vim.goto-next-change", "<#move.count>"],
+        "<?-count>gh": ["vim.goto-prev-change", "<#move.count>"],
 
         "0": ["vim.move-first", "line"],
         "<HOME>": ["vim.move-first", "visual-line"],
@@ -876,8 +878,6 @@
         "<C-v>": ["select-prev-tab-stop"],
         "gt": ["vim.goto-next-diagnostic"],
         "gn": ["vim.goto-prev-diagnostic"],
-        "gf": ["vim.goto-next-change"],
-        "gh": ["vim.goto-prev-change"],
 
         // copy/paste
         "p": ["vim.paste", true, false, "vim.default-register"],
