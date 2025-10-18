@@ -29,6 +29,15 @@ type
     IncludeCommandLine = "include-command-line",
     IncludePopups = "include-popups"
   ActiveEditorFlags* = set[ActiveEditorFlag]
+  Lamport* = object
+    replicaId*: uint16
+    value*: uint32
+  Bias* = enum
+    Left = "left", Right = "right"
+  Anchor* = object
+    timestamp*: Lamport
+    offset*: uint32
+    bias*: Bias
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.

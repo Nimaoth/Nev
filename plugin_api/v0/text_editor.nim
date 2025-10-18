@@ -816,6 +816,49 @@ proc getVisibleLineCount*(editor: TextEditor): int32 {.nodestroy.} =
   let res = textEditorGetVisibleLineCountImported(arg0)
   result = convert(res, int32)
 
+proc textEditorCreateAnchorsImported(a0: uint64; a1: int32; a2: int32; a3: int32): void {.
+    wasmimport("create-anchors", "nev:plugins/text-editor").}
+proc createAnchors*(editor: TextEditor; selections: WitList[Selection]): WitList[
+    (Anchor, Anchor)] {.nodestroy.} =
+  ## todo
+  var
+    retArea: array[16, uint8]
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+  arg0 = editor.id
+  if selections.len > 0:
+    arg1 = cast[int32](selections[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](selections.len)
+  textEditorCreateAnchorsImported(arg0, arg1, arg2,
+                                  cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
+proc textEditorResolveAnchorsImported(a0: uint64; a1: int32; a2: int32;
+                                      a3: int32): void {.
+    wasmimport("resolve-anchors", "nev:plugins/text-editor").}
+proc resolveAnchors*(editor: TextEditor; anchors: WitList[(Anchor, Anchor)]): WitList[
+    Selection] {.nodestroy.} =
+  ## todo
+  var
+    retArea: array[16, uint8]
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+  arg0 = editor.id
+  if anchors.len > 0:
+    arg1 = cast[int32](anchors[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](anchors.len)
+  textEditorResolveAnchorsImported(arg0, arg1, arg2,
+                                   cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
 proc textEditorEditImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                             a4: int32; a5: bool; a6: int32): void {.
     wasmimport("edit", "nev:plugins/text-editor").}

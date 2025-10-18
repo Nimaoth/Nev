@@ -30,8 +30,8 @@ type EditorVimState = object
   cursorIncludeEol: bool = false ## Whether the cursor can be after the last character in a line (e.g. in insert mode)
   currentUndoCheckpoint: string = "insert" ## Which checkpoint to undo to (depends on mode)
   revisionBeforeImplicitInsertMacro: int
-  marks: Table[string, seq[(sca.Anchor, sca.Anchor)]]
-  unresolveMarks: Table[string, seq[sca.Selection]]
+  marks: Table[string, seq[(Anchor, Anchor)]]
+  unresolvedMarks: Table[string, seq[Selection]]
 
 var editorStates: Table[sca.EditorId, EditorVimState]
 
@@ -1154,7 +1154,7 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
 #         for name, anchors in editor.vimState.marks:
 #           let selections = editor.resolveAnchors(anchors)
 #           marks[name] = selections
-#         for name, selections in editor.vimState.unresolveMarks:
+#         for name, selections in editor.vimState.unresolvedMarks:
 #           marks[name] = selections
 
 #         if marks.len > 0:
@@ -1166,41 +1166,42 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
 #   except:
 #     debugf"Failed to save vim editor states"
 
-# proc resolveMarks(editor: TextEditor) =
-#   let unresolveMarks = editor.vimState.unresolveMarks
-#   for name, selections in unresolveMarks:
-#     let anchors = editor.createAnchors(selections)
-#     if anchors.len > 0:
-#       editor.vimState.marks[name] = anchors
-#       editor.vimState.unresolveMarks.del(name)
+proc resolveMarks(editor: TextEditor) =
+  let unresolvedMarks = editor.vimState.unresolvedMarks
+  for name, selections in unresolvedMarks:
+    let anchors = @(editor.createAnchors(selections.stackWitList()))
+    if anchors.len > 0:
+      editor.vimState.marks[name] = anchors
+      editor.vimState.unresolvedMarks.del(name)
 
-# proc vimAddMark(editor: TextEditor, name: string) {.exposeActive(editorContext, "vim-add-mark").} =
-#   editor.resolveMarks()
-#   editor.vimState.marks[name] = editor.createAnchors(editor.selections)
+proc addMark(editor: TextEditor, name: string) {.exposeActive(editorContext).} =
+  editor.resolveMarks()
+  editor.vimState.marks[name] = @(editor.createAnchors(editor.selections))
 
-# proc vimGotoMark(editor: TextEditor, name: string) {.exposeActive(editorContext, "vim-goto-mark").} =
-#   editor.resolveMarks()
+proc gotoMark(editor: TextEditor, name: string) {.exposeActive(editorContext).} =
+  editor.resolveMarks()
 
-#   if name in editor.vimState.marks:
-#     let newSelections = editor.resolveAnchors(editor.vimState.marks[name])
-#     if newSelections.len == 0:
-#       return
+  if name in editor.vimState.marks:
+    let newSelections = editor.resolveAnchors(editor.vimState.marks[name].stackWitList())
+    if newSelections.len == 0:
+      return
 
-#     case editor.mode
-#     of "vim-new.visual", "vim-new.visual-line":
-#       let oldSelections = editor.selections
-#       if newSelections.len == oldSelections.len:
-#         editor.setSelections collect:
-#           for i in 0..newSelections.high:
-#             oldSelections[i] or newSelections[i]
-#       else:
-#         editor.setSelections newSelections
-#     else:
-#       editor.setSelections newSelections
+    case $editor.mode
+    of "vim-new.visual", "vim-new.visual-line":
+      let oldSelections = editor.selections
+      if newSelections.len == oldSelections.len:
+        editor.setSelections stackWitList(collect(block:
+          for i in 0..newSelections.high:
+            oldSelections[i] or newSelections[i]
+        ))
+      else:
+        editor.setSelections newSelections
+    else:
+      editor.setSelections newSelections
 
-#     editor.updateTargetColumn()
-#     editor.scrollToCursor()
-#     editor.setNextSnapBehaviour(MinDistanceOffscreen)
+    editor.updateTargetColumn()
+    editor.scrollToCursor()
+    editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
 proc deleteWordBack(editor: TextEditor) {.exposeActive(editorContext).} =
   let wordSelections = editor.multiMove(editor.selections, ws"vim.word-back", 1, wrap = false, includeEol = true)
@@ -1477,7 +1478,7 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
 #             if editorState.hasKey("marks"):
 #               let marks = editorState["marks"].jsonTo(Table[string, seq[Selection]])
 #               for name, selections in marks:
-#                 editor.vimState.unresolveMarks[name] = selections
+#                 editor.vimState.unresolvedMarks[name] = selections
 #         except:
 #           debugf"Failed to restore marks for {editor}"
 #   scriptSetCallback("after-restore-session", afterRestoreSessionHandle)

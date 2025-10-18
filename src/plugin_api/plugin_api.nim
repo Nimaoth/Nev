@@ -1,6 +1,6 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, pathnorm, locks, tables]
 import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils]
-import nimsumtree/[rope, sumtree, arc]
+import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout
 import text/[text_editor, text_document]
@@ -352,6 +352,13 @@ var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
 converter toPoint(c: Cursor): Point = point(c.line.int, c.column.int)
 converter toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
 converter toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
+converter toInternal(c: Lamport): clock.Lamport = clock.Lamport(replicaId: clock.ReplicaId(c.replicaId), value: clock.SeqNumber(c.value))
+converter toInternal(c: Bias): sumtree.Bias =
+  case c
+  of Left: sumtree.Left
+  of Right: sumtree.Right
+converter toInternal(c: Anchor): buffer.Anchor = buffer.Anchor(timestamp: c.timestamp, offset: c.offset.int, bias: c.bias)
+converter toInternal(c: (Anchor, Anchor)): (buffer.Anchor, buffer.Anchor) = (c[0].toInternal, c[1].toInternal)
 converter toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
   case c
   of CenterAlways: sca.CenterAlways
@@ -369,6 +376,13 @@ converter toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
 
 converter toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
 converter toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+converter toWasm(c: clock.Lamport): Lamport = Lamport(replicaId: c.replicaId.uint16, value: c.value.uint32)
+converter toWasm(c: sumtree.Bias): Bias =
+  case c
+  of sumtree.Left: Left
+  of sumtree.Right: Right
+converter toWasm(c: buffer.Anchor): Anchor = Anchor(timestamp: c.timestamp, offset: c.offset.uint32, bias: c.bias)
+converter toWasm(c: (buffer.Anchor, buffer.Anchor)): (Anchor, Anchor) = (c[0].toWasm, c[1].toWasm)
 
 converter toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
   result = {}
@@ -763,6 +777,18 @@ proc textEditorSetCursorScrollOffset(instance: ptr InstanceData; editor: TextEdi
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.setCursorScrollOffset(cursor.toInternal, scrollOffset)
+
+proc textEditorCreateAnchors(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]): seq[(Anchor, Anchor)] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.createAnchors(selections.mapIt(it.toInternal)).mapIt(it.toWasm)
+
+proc textEditorResolveAnchors(instance: ptr InstanceData; editor: TextEditor; anchors: sink seq[(Anchor, Anchor)]): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.resolveAnchors(anchors.mapIt(it.toInternal)).mapIt(it.toWasm)
 
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))

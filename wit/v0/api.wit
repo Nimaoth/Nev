@@ -29,6 +29,22 @@ interface types {
     include-popups,
   }
 
+  record lamport {
+    replica-id: u16,
+    value: u32,
+  }
+
+  enum bias {
+    left,
+    right,
+  }
+
+  record anchor {
+    timestamp: lamport,
+    offset: u32,
+    bias: bias,
+  }
+
   /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   /// can be used to efficiently access any document content or share a string with another plugin.
   /// Ropes are reference counted internally, and this resource also affects that reference count.
@@ -207,7 +223,7 @@ interface editor {
 }
 
 interface text-editor {
-  use types.{editor, document, text-editor, text-document, cursor, selection, rope, active-editor-flags};
+  use types.{editor, document, text-editor, text-document, cursor, selection, rope, active-editor-flags, anchor};
   use commands.{command-error};
 
   enum scroll-behaviour {
@@ -336,6 +352,12 @@ interface text-editor {
 
   /// Returns the number of lines that fit on the current screen size for this editor.
   get-visible-line-count: func(editor: text-editor) -> s32;
+
+  /// todo
+  create-anchors: func(editor: text-editor, selections: list<selection>) -> list<tuple<anchor, anchor>>;
+
+  /// todo
+  resolve-anchors: func(editor: text-editor, anchors: list<tuple<anchor, anchor>>) -> list<selection>;
 
   /// todo
   edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;

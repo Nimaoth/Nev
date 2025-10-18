@@ -29,6 +29,15 @@ type
     IncludeCommandLine = "include-command-line",
     IncludePopups = "include-popups"
   ActiveEditorFlags* = set[ActiveEditorFlag]
+  Lamport* = object
+    replicaId*: uint16
+    value*: uint32
+  Bias* = enum
+    Left = "left", Right = "right"
+  Anchor* = object
+    timestamp*: Lamport
+    offset*: uint32
+    bias*: Bias
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.
@@ -120,47 +129,47 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9697232496 = instance.getExport(context, "init_plugin")
-  if f_9697232496.isSome:
-    assert f_9697232496.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9697232496.get.of_field.func_field
+  let f_9697232498 = instance.getExport(context, "init_plugin")
+  if f_9697232498.isSome:
+    assert f_9697232498.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9697232498.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9697232512 = instance.getExport(context, "handle_command")
-  if f_9697232512.isSome:
-    assert f_9697232512.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9697232512.get.of_field.func_field
+  let f_9697232514 = instance.getExport(context, "handle_command")
+  if f_9697232514.isSome:
+    assert f_9697232514.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9697232514.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9697232562 = instance.getExport(context, "handle_mode_changed")
-  if f_9697232562.isSome:
-    assert f_9697232562.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9697232562.get.of_field.func_field
+  let f_9697232564 = instance.getExport(context, "handle_mode_changed")
+  if f_9697232564.isSome:
+    assert f_9697232564.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9697232564.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9697232563 = instance.getExport(context, "handle_view_render_callback")
-  if f_9697232563.isSome:
-    assert f_9697232563.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9697232563.get.of_field.func_field
+  let f_9697232565 = instance.getExport(context, "handle_view_render_callback")
+  if f_9697232565.isSome:
+    assert f_9697232565.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9697232565.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9697232587 = instance.getExport(context, "handle_channel_update")
-  if f_9697232587.isSome:
-    assert f_9697232587.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9697232587.get.of_field.func_field
-  else:
-    echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9697232588 = instance.getExport(context, "notify_task_complete")
-  if f_9697232588.isSome:
-    assert f_9697232588.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9697232588.get.of_field.func_field
-  else:
-    echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9697232589 = instance.getExport(context, "handle_move")
+  let f_9697232589 = instance.getExport(context, "handle_channel_update")
   if f_9697232589.isSome:
     assert f_9697232589.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9697232589.get.of_field.func_field
+    funcs.handleChannelUpdate = f_9697232589.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "handle_channel_update", "\'"
+  let f_9697232590 = instance.getExport(context, "notify_task_complete")
+  if f_9697232590.isSome:
+    assert f_9697232590.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9697232590.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "notify_task_complete", "\'"
+  let f_9697232591 = instance.getExport(context, "handle_move")
+  if f_9697232591.isSome:
+    assert f_9697232591.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9697232591.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
 
@@ -548,6 +557,12 @@ proc textEditorSetCursorScrollOffset(instance: ptr InstanceData;
                                      scrollOffset: float32): void
 proc textEditorGetVisibleLineCount(instance: ptr InstanceData;
                                    editor: TextEditor): int32
+proc textEditorCreateAnchors(instance: ptr InstanceData; editor: TextEditor;
+                             selections: sink seq[Selection]): seq[
+    (Anchor, Anchor)]
+proc textEditorResolveAnchors(instance: ptr InstanceData; editor: TextEditor;
+                              anchors: sink seq[(Anchor, Anchor)]): seq[
+    Selection]
 proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor;
                     selections: sink seq[Selection]; contents: sink seq[string];
                     inclusive: bool): seq[Selection]
@@ -2646,6 +2661,133 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         let res = textEditorGetVisibleLineCount(instance, editor)
         parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "create-anchors", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var editor: TextEditor
+        var selections: seq[Selection]
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
+          selections = newSeq[typeof(selections[0])](parameters[2].i32)
+          for i0 in 0 ..< selections.len:
+            selections[i0].first.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 0].addr)[], int32)
+            selections[i0].first.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 4].addr)[], int32)
+            selections[i0].last.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 8].addr)[], int32)
+            selections[i0].last.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 12].addr)[], int32)
+        let res = textEditorCreateAnchors(instance, editor, selections)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 28).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              cast[ptr uint16](memory[dataPtrWasm0 + i0 * 28 + 0].addr)[] = res[
+                  i0][0].timestamp.replicaId
+              cast[ptr uint32](memory[dataPtrWasm0 + i0 * 28 + 4].addr)[] = res[
+                  i0][0].timestamp.value
+              cast[ptr uint32](memory[dataPtrWasm0 + i0 * 28 + 8].addr)[] = res[
+                  i0][0].offset
+              cast[ptr int8](memory[dataPtrWasm0 + i0 * 28 + 12].addr)[] = cast[int8](res[
+                  i0][0].bias)
+              cast[ptr uint16](memory[dataPtrWasm0 + i0 * 28 + 14].addr)[] = res[
+                  i0][1].timestamp.replicaId
+              cast[ptr uint32](memory[dataPtrWasm0 + i0 * 28 + 16].addr)[] = res[
+                  i0][1].timestamp.value
+              cast[ptr uint32](memory[dataPtrWasm0 + i0 * 28 + 20].addr)[] = res[
+                  i0][1].offset
+              cast[ptr int8](memory[dataPtrWasm0 + i0 * 28 + 24].addr)[] = cast[int8](res[
+                  i0][1].bias)
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "resolve-anchors",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var editor: TextEditor
+        var anchors: seq[(Anchor, Anchor)]
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
+          anchors = newSeq[typeof(anchors[0])](parameters[2].i32)
+          for i0 in 0 ..< anchors.len:
+            anchors[i0][0].timestamp.replicaId = convert(
+                cast[ptr uint16](p0[i0 * 28 + 0].addr)[], uint16)
+            anchors[i0][0].timestamp.value = convert(
+                cast[ptr uint32](p0[i0 * 28 + 4].addr)[], uint32)
+            anchors[i0][0].offset = convert(
+                cast[ptr uint32](p0[i0 * 28 + 8].addr)[], uint32)
+            anchors[i0][0].bias = cast[Bias](cast[ptr int8](p0[i0 * 28 + 12].addr)[])
+            anchors[i0][1].timestamp.replicaId = convert(
+                cast[ptr uint16](p0[i0 * 28 + 14].addr)[], uint16)
+            anchors[i0][1].timestamp.value = convert(
+                cast[ptr uint32](p0[i0 * 28 + 16].addr)[], uint32)
+            anchors[i0][1].offset = convert(
+                cast[ptr uint32](p0[i0 * 28 + 20].addr)[], uint32)
+            anchors[i0][1].bias = cast[Bias](cast[ptr int8](p0[i0 * 28 + 24].addr)[])
+        let res = textEditorResolveAnchors(instance, editor, anchors)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 16).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 0].addr)[] = res[
+                  i0].first.line
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 4].addr)[] = res[
+                  i0].first.column
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 8].addr)[] = res[
+                  i0].last.line
+              cast[ptr int32](memory[dataPtrWasm0 + i0 * 16 + 12].addr)[] = res[
+                  i0].last.column
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
   block:
