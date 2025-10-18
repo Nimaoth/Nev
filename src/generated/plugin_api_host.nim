@@ -472,7 +472,8 @@ proc textEditorSaveCurrentCommandHistory(instance: ptr InstanceData;
     editor: TextEditor): void
 proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor;
-                              behaviour: Option[ScrollBehaviour]): void
+                              behaviour: Option[ScrollBehaviour];
+                              relativePosition: float32): void
 proc textEditorSetNextSnapBehaviour(instance: ptr InstanceData;
                                     editor: TextEditor;
                                     behaviour: ScrollSnapBehaviour): void
@@ -541,6 +542,12 @@ proc textEditorEvaluateExpressions(instance: ptr InstanceData;
                                    suffix: sink string; addSelectionIndex: bool): void
 proc textEditorIndent(instance: ptr InstanceData; editor: TextEditor;
                       delta: int32): void
+proc textEditorGetCommandCount(instance: ptr InstanceData; editor: TextEditor): int32
+proc textEditorSetCursorScrollOffset(instance: ptr InstanceData;
+                                     editor: TextEditor; cursor: Cursor;
+                                     scrollOffset: float32): void
+proc textEditorGetVisibleLineCount(instance: ptr InstanceData;
+                                   editor: TextEditor): int32
 proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor;
                     selections: sink seq[Selection]; contents: sink seq[string];
                     inclusive: bool): seq[Selection]
@@ -1548,18 +1555,21 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
       var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32], [])
+          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32, WasmValkind.F32],
+          [])
       linker.defineFuncUnchecked("nev:plugins/text-editor", "scroll-to-cursor",
                                  ty):
         var instance = cast[ptr InstanceData](store.getData())
         var editor: TextEditor
         var behaviour: Option[ScrollBehaviour]
+        var relativePosition: float32
         editor.id = convert(parameters[0].i64, uint64)
         if parameters[1].i32 != 0:
           var temp: ScrollBehaviour
           temp = cast[ScrollBehaviour](parameters[2].i32)
           behaviour = temp.some
-        textEditorScrollToCursor(instance, editor, behaviour)
+        relativePosition = convert(parameters[3].f32, float32)
+        textEditorScrollToCursor(instance, editor, behaviour, relativePosition)
     if e.isErr:
       return e
   block:
@@ -2592,6 +2602,50 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         editor.id = convert(parameters[0].i64, uint64)
         delta = convert(parameters[1].i32, int32)
         textEditorIndent(instance, editor, delta)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/text-editor", "get-command-count",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        let res = textEditorGetCommandCount(instance, editor)
+        parameters[0].i32 = cast[int32](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I64, WasmValkind.I32, WasmValkind.I32, WasmValkind.F32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "set-cursor-scroll-offset", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        var cursor: Cursor
+        var scrollOffset: float32
+        editor.id = convert(parameters[0].i64, uint64)
+        cursor.line = convert(parameters[1].i32, int32)
+        cursor.column = convert(parameters[2].i32, int32)
+        scrollOffset = convert(parameters[3].f32, float32)
+        textEditorSetCursorScrollOffset(instance, editor, cursor, scrollOffset)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "get-visible-line-count", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var editor: TextEditor
+        editor.id = convert(parameters[0].i64, uint64)
+        let res = textEditorGetVisibleLineCount(instance, editor)
+        parameters[0].i32 = cast[int32](res)
     if e.isErr:
       return e
   block:

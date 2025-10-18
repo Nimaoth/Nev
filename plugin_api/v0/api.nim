@@ -216,7 +216,7 @@ when pluginWorld == "plugin":
     return editor.applyMove(cursor.toSelection, move.ws, count, wrap, includeEol)[0]
 
   proc scrollToCursor*(editor: TextEditor) =
-    editor.scrollToCursor(ScrollBehaviour.none)
+    editor.scrollToCursor(ScrollBehaviour.none, 0.5)
 
   proc addCustomTextMove*(name: string, move: MoveHandler) =
     defineMove(name.ws, cast[uint32](move), 0)

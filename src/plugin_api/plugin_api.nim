@@ -612,11 +612,11 @@ proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor) =
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.hideCompletions()
 
-proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor; behaviour: Option[ScrollBehaviour]): void =
+proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor; behaviour: Option[ScrollBehaviour]; relativePosition: float32): void =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal))
+    editor.TextDocumentEditor.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal), relativePosition=relativePosition)
 
 proc textEditorSetNextSnapBehaviour(instance: ptr InstanceData; editor: TextEditor; behaviour: ScrollSnapBehaviour): void =
   if instance.host == nil:
@@ -745,6 +745,24 @@ proc textEditorIndent(instance: ptr InstanceData; editor: TextEditor; delta: int
     else:
       for i in 0..<(-delta):
         editor.TextDocumentEditor.unindent()
+
+proc textEditorGetCommandCount(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getCommandCount().int32
+
+proc textEditorGetVisibleLineCount(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.screenLineCount().int32
+
+proc textEditorSetCursorScrollOffset(instance: ptr InstanceData; editor: TextEditor; cursor: Cursor; scrollOffset: float32): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setCursorScrollOffset(cursor.toInternal, scrollOffset)
 
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))

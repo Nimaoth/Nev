@@ -1233,7 +1233,7 @@ proc numWrapLines*(self: TextDocumentEditor): int {.expose: "editor.text".} =
 proc wrapEndPoint*(self: TextDocumentEditor): WrapPoint =
   return self.displayMap.wrapMap.endWrapPoint
 
-proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
+proc screenLineCount*(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## Returns the number of lines that can be shown on the screen
   ## This value depends on the size of the view this editor is in and the font size
   # todo
@@ -2898,6 +2898,11 @@ proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float,
     cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   let displayPoint = self.displayMap.toDisplayPoint(self.getCursor(cursor).toPoint)
   self.scrollOffset.y = offset - displayPoint.row.float * self.platform.totalLineHeight
+  self.markDirty()
+
+proc setCursorScrollOffset*(self: TextDocumentEditor, cursor: Cursor, offset: float) =
+  let displayPoint = self.displayMap.toDisplayPoint(cursor.toPoint)
+  self.scrollOffset.y = offset * self.platform.totalLineHeight - displayPoint.row.float * self.platform.totalLineHeight
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 {.expose("editor.text").} =

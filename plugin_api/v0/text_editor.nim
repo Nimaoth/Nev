@@ -162,20 +162,23 @@ proc hideCompletions*(editor: TextEditor): void {.nodestroy.} =
   arg0 = editor.id
   textEditorHideCompletionsImported(arg0)
 
-proc textEditorScrollToCursorImported(a0: uint64; a1: int8; a2: int8): void {.
+proc textEditorScrollToCursorImported(a0: uint64; a1: int8; a2: int8;
+                                      a3: float32): void {.
     wasmimport("scroll-to-cursor", "nev:plugins/text-editor").}
-proc scrollToCursor*(editor: TextEditor; behaviour: Option[ScrollBehaviour]): void {.
-    nodestroy.} =
+proc scrollToCursor*(editor: TextEditor; behaviour: Option[ScrollBehaviour];
+                     relativePosition: float32): void {.nodestroy.} =
   ## todo
   var
     arg0: uint64
     arg1: int8
     arg2: int8
+    arg3: float32
   arg0 = editor.id
   arg1 = behaviour.isSome.int8
   if behaviour.isSome:
     arg2 = cast[int8](behaviour.get)
-  textEditorScrollToCursorImported(arg0, arg1, arg2)
+  arg3 = relativePosition
+  textEditorScrollToCursorImported(arg0, arg1, arg2, arg3)
 
 proc textEditorSetNextSnapBehaviourImported(a0: uint64; a1: int8): void {.
     wasmimport("set-next-snap-behaviour", "nev:plugins/text-editor").}
@@ -777,6 +780,41 @@ proc indent*(editor: TextEditor; delta: int32): void {.nodestroy.} =
   arg0 = editor.id
   arg1 = delta
   textEditorIndentImported(arg0, arg1)
+
+proc textEditorGetCommandCountImported(a0: uint64): int32 {.
+    wasmimport("get-command-count", "nev:plugins/text-editor").}
+proc getCommandCount*(editor: TextEditor): int32 {.nodestroy.} =
+  ## todo
+  var arg0: uint64
+  arg0 = editor.id
+  let res = textEditorGetCommandCountImported(arg0)
+  result = convert(res, int32)
+
+proc textEditorSetCursorScrollOffsetImported(a0: uint64; a1: int32; a2: int32;
+    a3: float32): void {.wasmimport("set-cursor-scroll-offset",
+                                    "nev:plugins/text-editor").}
+proc setCursorScrollOffset*(editor: TextEditor; cursor: Cursor;
+                            scrollOffset: float32): void {.nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: float32
+  arg0 = editor.id
+  arg1 = cursor.line
+  arg2 = cursor.column
+  arg3 = scrollOffset
+  textEditorSetCursorScrollOffsetImported(arg0, arg1, arg2, arg3)
+
+proc textEditorGetVisibleLineCountImported(a0: uint64): int32 {.
+    wasmimport("get-visible-line-count", "nev:plugins/text-editor").}
+proc getVisibleLineCount*(editor: TextEditor): int32 {.nodestroy.} =
+  ## Returns the number of lines that fit on the current screen size for this editor.
+  var arg0: uint64
+  arg0 = editor.id
+  let res = textEditorGetVisibleLineCountImported(arg0)
+  result = convert(res, int32)
 
 proc textEditorEditImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                             a4: int32; a5: bool; a6: int32): void {.

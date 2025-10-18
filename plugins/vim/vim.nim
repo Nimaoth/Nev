@@ -666,7 +666,7 @@ proc moveCursorPage(editor: TextEditor, direction: int, count: int = 1, center: 
   ## Direction 100 means 100% of window height downwards -100 is upwards, 50 would be 50%
   editor.setSelections editor.multiMove(editor.selections, ws"page", direction * max(count, 1), true, includeEol = editor.vimState.cursorIncludeEol)
   let nextScrollBehaviour = if center: CenterAlways.some else: ScrollBehaviour.none
-  editor.scrollToCursor(behaviour = nextScrollBehaviour)
+  editor.scrollToCursor(behaviour = nextScrollBehaviour, 0.5)
   editor.setNextSnapBehaviour(Never)
   if editor.vimState.selectLines:
     editor.selectLine()
@@ -682,7 +682,7 @@ proc moveCursorVisualPage(editor: TextEditor, direction: int, count: int = 1, ce
   # let defaultCenter = defaultScrollBehaviour in {CenterAlways, CenterOffscreen}
   # let nextScrollBehaviour = if center and defaultCenter: CenterAlways.some else: ScrollBehaviour.none
   let nextScrollBehaviour = ScrollBehaviour.none
-  editor.scrollToCursor(behaviour = nextScrollBehaviour)
+  editor.scrollToCursor(behaviour = nextScrollBehaviour, 0.5)
   editor.setNextSnapBehaviour(Never)
   if editor.vimState.selectLines:
     editor.selectLine()
@@ -935,36 +935,36 @@ proc moveToMatchingOrFileOffset(editor: TextEditor, count: int = 1) {.exposeActi
 #     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-# proc vimScrollLineToTopAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-top-and-move-line-start").} =
-#   if editor.getCommandCount != 0:
-#     editor.setSelection (editor.getCommandCount, 0).toSelection
-#   editor.moveFirst "line-no-indent"
-#   editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
+proc scrollLineToTopAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  if editor.getCommandCount != 0:
+    editor.setSelection (editor.getCommandCount.int, 0).toCursor.toSelection
+  editor.setSelections editor.multiMove(editor.selections, ws"line-no-indent", 1, wrap = false, includeEol = editor.vimState.cursorIncludeEol).mapIt(it.first.toSelection).stackWitList()
+  editor.setCursorScrollOffset editor.selections.last.last, getVimLineMargin()
 
-# proc vimScrollLineToTop(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-top").} =
-#   if editor.getCommandCount != 0:
-#     editor.setSelection (editor.getCommandCount, editor.selection.last.column).toSelection
-#   editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
+proc scrollLineToTop(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  if editor.getCommandCount != 0:
+    editor.setSelection (editor.getCommandCount, editor.selections.last.last.column).toSelection
+  editor.setCursorScrollOffset editor.selections.last.last, getVimLineMargin()
 
-# proc vimCenterLineAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-center-line-and-move-line-start").} =
-#   if editor.getCommandCount != 0:
-#     editor.setSelection (editor.getCommandCount, 0).toSelection
-#   editor.moveFirst "line-no-indent"
-#   editor.centerCursor()
+proc centerLineAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  if editor.getCommandCount != 0:
+    editor.setSelection (editor.getCommandCount.int, 0).toCursor.toSelection
+  editor.setSelections editor.multiMove(editor.selections, ws"line-no-indent", 1, wrap = false, includeEol = editor.vimState.cursorIncludeEol).mapIt(it.first.toSelection).stackWitList()
+  editor.scrollToCursor(ScrollBehaviour.CenterAlways.some, 0.5)
 
 proc centerLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
-  editor.scrollToCursor(ScrollBehaviour.CenterAlways.some)
+  editor.scrollToCursor(ScrollBehaviour.CenterAlways.some, 0.5)
 
-# proc vimScrollLineToBottomAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-bottom-and-move-line-start").} =
-#   if editor.getCommandCount != 0:
-#     editor.setSelection (editor.getCommandCount, 0).toSelection
-#   editor.moveFirst "line-no-indent"
-#   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
+proc scrollLineToBottomAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  if editor.getCommandCount != 0:
+    editor.setSelection (editor.getCommandCount.int, 0).toCursor.toSelection
+  editor.setSelections editor.multiMove(editor.selections, ws"line-no-indent", 1, wrap = false, includeEol = editor.vimState.cursorIncludeEol).mapIt(it.first.toSelection).stackWitList()
+  editor.setCursorScrollOffset editor.selections.last.last, (editor.getVisibleLineCount().float - getVimLineMargin())
 
-# proc scrollLineToBottom(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
-#   if editor.getCommandCount != 0:
-#     editor.setSelection (editor.getCommandCount, editor.selection.last.column).toSelection
-#   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
+proc scrollLineToBottom(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  if editor.getCommandCount != 0:
+    editor.setSelection (editor.getCommandCount, editor.selections.last.last.column).toSelection
+  editor.setCursorScrollOffset editor.selections.last.last, (editor.getVisibleLineCount().float - getVimLineMargin())
 
 proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorContext).} =
   # debugf"insertMode '{move}'"

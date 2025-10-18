@@ -248,7 +248,7 @@ interface text-editor {
   hide-completions: func(editor: text-editor);
 
   /// todo
-  scroll-to-cursor: func(editor: text-editor, behaviour: option<scroll-behaviour>);
+  scroll-to-cursor: func(editor: text-editor, behaviour: option<scroll-behaviour>, relative-position: f32);
   /// todo
   set-next-snap-behaviour: func(editor: text-editor, behaviour: scroll-snap-behaviour);
 
@@ -327,6 +327,15 @@ interface text-editor {
 
   /// todo
   indent: func(editor: text-editor, delta: s32);
+
+  /// todo
+  get-command-count: func(editor: text-editor) -> s32;
+
+  /// todo
+  set-cursor-scroll-offset: func(editor: text-editor, cursor: cursor, scroll-offset: f32);
+
+  /// Returns the number of lines that fit on the current screen size for this editor.
+  get-visible-line-count: func(editor: text-editor) -> s32;
 
   /// todo
   edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
