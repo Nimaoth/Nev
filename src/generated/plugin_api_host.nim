@@ -534,6 +534,11 @@ proc textEditorGetSettingRaw(instance: ptr InstanceData; editor: TextEditor;
                              name: sink string): string
 proc textEditorSetSettingRaw(instance: ptr InstanceData; editor: TextEditor;
                              name: sink string; value: sink string): void
+proc textEditorEvaluateExpressions(instance: ptr InstanceData;
+                                   editor: TextEditor;
+                                   selections: sink seq[Selection];
+                                   inclusive: bool; prefix: sink string;
+                                   suffix: sink string; addSelectionIndex: bool): void
 proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor;
                     selections: sink seq[Selection]; contents: sink seq[string];
                     inclusive: bool): seq[Selection]
@@ -2517,6 +2522,61 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           for i0 in 0 ..< value.len:
             value[i0] = p0[i0]
         textEditorSetSettingRaw(instance, editor, name, value)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/text-editor",
+                                 "evaluate-expressions", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var editor: TextEditor
+        var selections: seq[Selection]
+        var inclusive: bool
+        var prefix: string
+        var suffix: string
+        var addSelectionIndex: bool
+        editor.id = convert(parameters[0].i64, uint64)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[1].i32].addr)
+          selections = newSeq[typeof(selections[0])](parameters[2].i32)
+          for i0 in 0 ..< selections.len:
+            selections[i0].first.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 0].addr)[], int32)
+            selections[i0].first.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 4].addr)[], int32)
+            selections[i0].last.line = convert(
+                cast[ptr int32](p0[i0 * 16 + 8].addr)[], int32)
+            selections[i0].last.column = convert(
+                cast[ptr int32](p0[i0 * 16 + 12].addr)[], int32)
+        inclusive = parameters[3].i32.bool
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[4].i32].addr)
+          prefix = newString(parameters[5].i32)
+          for i0 in 0 ..< prefix.len:
+            prefix[i0] = p0[i0]
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[6].i32].addr)
+          suffix = newString(parameters[7].i32)
+          for i0 in 0 ..< suffix.len:
+            suffix[i0] = p0[i0]
+        addSelectionIndex = parameters[8].i32.bool
+        textEditorEvaluateExpressions(instance, editor, selections, inclusive,
+                                      prefix, suffix, addSelectionIndex)
     if e.isErr:
       return e
   block:

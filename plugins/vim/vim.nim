@@ -1437,40 +1437,41 @@ proc stopMacro(editor: TextEditor) {.exposeActive(editorContext).} =
 #   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #   editor.updateTargetColumn()
 
-# proc vimEvaluateSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-evaluate-selection").} =
-#   editor.addNextCheckpoint(ws"insert")
-#   editor.evaluateExpressions(editor.selections, true)
+proc evaluateSelection(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint(ws"insert")
+  editor.evaluateExpressions(editor.selections, true, prefix = ws"", suffix = ws"", addSelectionIndex = false)
 
-# proc vimIncrementSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-increment-selection").} =
-#   editor.addNextCheckpoint(ws"insert")
-#   editor.evaluateExpressions(editor.selections, true, suffix = "+1")
+proc incrementSelection(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint(ws"insert")
+  editor.evaluateExpressions(editor.selections, true, prefix = ws"", suffix = ws"+1", addSelectionIndex = false)
 
-# proc vimDecrementSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-decrement-selection").} =
-#   editor.addNextCheckpoint(ws"insert")
-#   editor.evaluateExpressions(editor.selections, true, suffix = "-1")
+proc decrementSelection(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint(ws"insert")
+  editor.evaluateExpressions(editor.selections, true, prefix = ws"", suffix = ws"-1", addSelectionIndex = false)
 
-# proc vimIncrementSelectionByIndex(editor: TextEditor) {.exposeActive(editorContext, "vim-increment-selection-by-index").} =
-#   editor.addNextCheckpoint(ws"insert")
-#   editor.evaluateExpressions(editor.selections, true, addSelectionIndex = true)
+proc incrementSelectionByIndex(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint(ws"insert")
+  editor.evaluateExpressions(editor.selections, true, prefix = ws"", suffix = ws"", addSelectionIndex = true)
 
-# proc vimIncrement(editor: TextEditor) {.exposeActive(editorContext, "vim-increment").} =
-#   editor.setSelections editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-#   editor.addNextCheckpoint(ws"insert")
-#   editor.evaluateExpressions(editor.selections, false, suffix = "+1")
-#   editor.setSelections editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+proc increment(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint(ws"insert")
+  editor.setSelections editor.multiMove(editor.selections, ws"number", 1, wrap = false, includeEol = true)
+  editor.evaluateExpressions(editor.selections, false, prefix = ws"", suffix = ws"+1", addSelectionIndex = false)
+  editor.setSelections editor.multiMove(editor.selections, ws"column", -1, wrap = false, includeEol = true).mapIt(it.last.toSelection).stackWitList()
 
-# proc vimDecrement(editor: TextEditor) {.exposeActive(editorContext, "vim-decrement").} =
-#   editor.setSelections editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-#   editor.addNextCheckpoint(ws"insert")
-#   editor.evaluateExpressions(editor.selections, false, suffix = "-1")
-#   editor.setSelections editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+proc decrement(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint(ws"insert")
+  editor.setSelections editor.multiMove(editor.selections, ws"number", 1, wrap = false, includeEol = true)
+  editor.evaluateExpressions(editor.selections, false, prefix = ws"", suffix = ws"-1", addSelectionIndex = false)
+  editor.setSelections editor.multiMove(editor.selections, ws"column", -1, wrap = false, includeEol = true).mapIt(it.last.toSelection).stackWitList()
 
-# proc vimIncrementByIndex(editor: TextEditor) {.exposeActive(editorContext, "vim-increment-by-index").} =
-#   editor.setSelections editor.selections.mapIt(editor.getSelectionForMove(it.last, "number"))
-#   editor.addNextCheckpoint(ws"insert")
-#   editor.evaluateExpressions(editor.selections, false, addSelectionIndex = true)
-#   editor.setSelections editor.selections.mapIt(editor.doMoveCursorColumn(it.last, -1).toSelection)
+proc incrementByIndex(editor: TextEditor) {.exposeActive(editorContext).} =
+  editor.addNextCheckpoint(ws"insert")
+  editor.setSelections editor.multiMove(editor.selections, ws"number", 1, wrap = false, includeEol = true)
+  editor.evaluateExpressions(editor.selections, false, prefix = ws"", suffix = ws"", addSelectionIndex = true)
+  editor.setSelections editor.multiMove(editor.selections, ws"column", -1, wrap = false, includeEol = true).mapIt(it.last.toSelection).stackWitList()
 
+  # let selections = mergeSelections(editor.selections, editor.multiMove(editor.selections, ws"column", 1, true, true)):
 proc replaceInputHandler(editor: TextEditor, input: string) {.exposeActive(editorContext).} =
   editor.vimReplace(input)
 

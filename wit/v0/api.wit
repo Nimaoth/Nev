@@ -323,6 +323,9 @@ interface text-editor {
   set-setting-raw: func(editor: text-editor, name: string, value: string);
 
   /// todo
+  evaluate-expressions: func(editor: text-editor, selections: list<selection>, inclusive: bool, prefix: string, suffix: string, add-selection-index: bool);
+
+  /// todo
   edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
 
   define-move: func(move: string, fun: u32, data: u32);

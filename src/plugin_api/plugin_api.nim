@@ -729,6 +729,12 @@ proc textEditorOpenSearchBar(instance: ptr InstanceData; editor: TextEditor; que
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.openSearchBar(query, scrollToPreview, selectResult)
 
+proc textEditorEvaluateExpressions(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; inclusive: bool; prefix: sink string; suffix: sink string; addSelectionIndex: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.evaluateExpressions(selections.mapIt(it.toInternal), inclusive, prefix, suffix, addSelectionIndex)
+
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
 

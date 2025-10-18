@@ -729,6 +729,44 @@ proc setSettingRaw*(editor: TextEditor; name: WitString; value: WitString): void
   arg4 = cast[int32](value.len)
   textEditorSetSettingRawImported(arg0, arg1, arg2, arg3, arg4)
 
+proc textEditorEvaluateExpressionsImported(a0: uint64; a1: int32; a2: int32;
+    a3: bool; a4: int32; a5: int32; a6: int32; a7: int32; a8: bool): void {.
+    wasmimport("evaluate-expressions", "nev:plugins/text-editor").}
+proc evaluateExpressions*(editor: TextEditor; selections: WitList[Selection];
+                          inclusive: bool; prefix: WitString; suffix: WitString;
+                          addSelectionIndex: bool): void {.nodestroy.} =
+  ## todo
+  var
+    arg0: uint64
+    arg1: int32
+    arg2: int32
+    arg3: bool
+    arg4: int32
+    arg5: int32
+    arg6: int32
+    arg7: int32
+    arg8: bool
+  arg0 = editor.id
+  if selections.len > 0:
+    arg1 = cast[int32](selections[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](selections.len)
+  arg3 = inclusive
+  if prefix.len > 0:
+    arg4 = cast[int32](prefix[0].addr)
+  else:
+    arg4 = 0.int32
+  arg5 = cast[int32](prefix.len)
+  if suffix.len > 0:
+    arg6 = cast[int32](suffix[0].addr)
+  else:
+    arg6 = 0.int32
+  arg7 = cast[int32](suffix.len)
+  arg8 = addSelectionIndex
+  textEditorEvaluateExpressionsImported(arg0, arg1, arg2, arg3, arg4, arg5,
+                                        arg6, arg7, arg8)
+
 proc textEditorEditImported(a0: uint64; a1: int32; a2: int32; a3: int32;
                             a4: int32; a5: bool; a6: int32): void {.
     wasmimport("edit", "nev:plugins/text-editor").}

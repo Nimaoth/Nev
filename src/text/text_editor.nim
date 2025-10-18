@@ -1365,7 +1365,7 @@ proc evaluateExpressionAsync(self: TextDocumentEditor, selections: Selections, i
       else:
         self.selections = selections
 
-proc evaluateExpressions(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.expose: "editor.text".} =
+proc evaluateExpressions*(self: TextDocumentEditor, selections: Selections, inclusiveEnd: bool = false, prefix: string = "", suffix: string = "", addSelectionIndex: bool = false) {.expose: "editor.text".} =
   asyncSpawn self.evaluateExpressionAsync(selections, inclusiveEnd, prefix, suffix, addSelectionIndex)
 
 proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int,
@@ -3121,6 +3121,47 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
     let count = getArg(0, int, 0)
     let wrap = getArg(1, bool, true)
     result = selections.mapIt(self.getNextFindResult(it.last, count, includeEol, wrap))
+
+  of "prev-change":
+    result = selections.mapIt(self.getPrevChange(it.last))
+
+  of "next-change":
+    result = selections.mapIt(self.getNextChange(it.last))
+
+  of "prev-diagnostic":
+    let severity = getArg(0, int, 0)
+    let count = getArg(1, int, 0)
+    let wrap = getArg(2, bool, true)
+    result = selections.mapIt(self.getPrevDiagnostic(it.last, severity, count, includeEol, wrap))
+
+  of "next-diagnostic":
+    let severity = getArg(0, int, 0)
+    let count = getArg(1, int, 0)
+    let wrap = getArg(2, bool, true)
+    result = selections.mapIt(self.getNextDiagnostic(it.last, severity, count, includeEol, wrap))
+
+  of "number":
+    result = selections.mapIt:
+      var r = it.last.toPoint...it.last.toPoint
+      var c = self.document.rope.cursorT(it.last.toPoint)
+      while c.currentChar in {'0'..'9'}:
+        c.seekNextRune()
+        r.b = c.position
+
+      if r.a.column > 0:
+        c = self.document.rope.cursorT(it.last.toPoint)
+        while c.position.column > 0:
+          c.seekPrevRune()
+          if c.currentChar == '-':
+            r.a = c.position
+            break
+
+          if c.currentChar notin {'0'..'9'}:
+            c.seekNextRune()
+            break
+          r.a = c.position
+
+      r.toSelection
 
   else:
     return self.moveDatabase.applyMove(self.displayMap, move, selections, count, includeEol)
