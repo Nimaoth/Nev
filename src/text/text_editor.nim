@@ -3045,26 +3045,31 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
 
   let cursorSelector = self.config.get(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 
+  var moveOriginal = move
   var move = move
   var args: JsonNode = nil
+  var argsString = ""
+  var hasArgs = false
   var parsedArgs = false
+  let argsStart = move.find(" ")
+  if argsStart > 0:
+    hasArgs = true
+    argsString = move[(argsStart + 1)..^1]
+    move = move[0..<argsStart]
 
   proc parseArgs(move: var string, args: var JsonNode) =
-    let argsStart = move.find(" ")
-    if argsStart > 0:
+    parsedArgs = true
+    if hasArgs:
       try:
         args = newJArray()
-        for a in newStringStream(move[(argsStart + 1)..^1]).parseJsonFragments():
+        for a in newStringStream(argsString).parseJsonFragments():
           args.add a
       except CatchableError as e:
         log lvlError, &"getSelectionsForMove: '{move}', Failed to parse args: {e.msg}"
 
-      move = move[0..<argsStart]
-
   template getArg(index: int, typ: untyped, default: untyped): untyped =
     block:
       if not parsedArgs:
-        parsedArgs = true
         parseArgs(move, args)
 
       if args != nil and index < args.len:
@@ -3114,7 +3119,8 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
 
   of "line-up", "line-down":
     let direction = if move == "line-down": 1 else: -1
-    return selections.mapIt(self.doMoveCursorLine(it.last, direction * max(count, 1), false, includeEol).toSelection(it, cursorSelector))
+    let count = if count == 0: 1 else: count
+    return selections.mapIt(self.doMoveCursorLine(it.last, direction * count, false, includeEol).toSelection(it, cursorSelector))
 
   of "column":
     result = selections.mapIt(self.doMoveCursorColumn(it.last, count, wrap = wrap, includeAfter = includeEol).toSelection(it, cursorSelector))
@@ -3178,7 +3184,7 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
         (self.doMoveCursorColumn(it.first, -count, wrap, includeEol), self.doMoveCursorColumn(it.last, count, wrap, includeEol))
 
   else:
-    return self.moveDatabase.applyMove(self.displayMap, move, selections, count, includeEol)
+    return self.moveDatabase.applyMove(self.displayMap, moveOriginal, selections, count, includeEol)
 
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
     count: int = 0, includeEol: bool = true): Selection {.expose("editor.text").} =

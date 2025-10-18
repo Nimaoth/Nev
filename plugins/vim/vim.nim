@@ -46,6 +46,9 @@ proc moveCursorColumn(editor: TextEditor, amount: int, wrap: bool = false, inclu
 proc moveCursorColumn(editor: TextEditor, selections: WitList[Selection], amount: int, wrap: bool = false, includeEol: bool = true): WitList[Selection] =
   editor.multiMove(selections, ws"column", 1, wrap, includeEol).mapIt(it.last.toSelection).stackWitList()
 
+proc moveCursorLine(editor: TextEditor, amount: int, includeEol: bool = true) =
+  editor.setSelections editor.multiMove(editor.selections, ws"line-down", amount, false, includeEol).mapIt(it.last.toSelection).stackWitList()
+
 proc splitCase(s: string): tuple[cas: IdentifierCase, parts: seq[string]] =
   if s == "":
     return (IdentifierCase.Camel, @[])
@@ -480,124 +483,8 @@ proc vimMotionParagraphOuter*(data: uint32, text: sink Rope, selections: openArr
   # if result.last.line + 1 < editor.lineCount:
   #   result = result or vimMotionParagraphInner(data, text, (result.last.line.int + 1, 0).toCursor, 1, includeEol)
 
-# proc vimMotionWordOuter(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl, raises: [].} =
-# # proc vimMotionWordOuter*(rope: sink Rope, cursor: Cursor, count: int): Selection =
-#   result = vimMotionWord(editor, cursor, count)
-#   if result.last.column < editor.lineLength(result.last.line) and editor.getChar(result.last) in Whitespace:
-#     result.last = editor.vimMotionWord(result.last, 1).last
-
-# proc vimMotionWordBigOuter*(editor: TextEditor, cursor: Cursor, count: int): Selection =
-#   result = vimMotionWordBig(editor, cursor, count)
-#   if result.last.column < editor.lineLength(result.last.line) and editor.getChar(result.last) in Whitespace:
-#     result.last = editor.vimMotionWordBig(result.last, 1).last
-
-# proc charAt*(editor: TextEditor, cursor: Cursor): char =
-#   let res = editor.getText(cursor.toSelection, inclusiveEnd=true)
-#   if res.len > 0:
-#     return res[0]
-#   else:
-#     return '\0'
-
-# proc vimMotionSurround*(data: uint32, text: Rope, selection: Selection, count: int, includeEol: bool, c0: char, c1: char, inside: bool): Selection =
-#   result = selection
-#   while true:
-#     let lastChar = text.charAt(result.last)
-#     let (startDepth, endDepth) = if lastChar == c0:
-#       (1, 0)
-#     elif lastChar == c1:
-#       (0, 1)
-#     else:
-#       (1, 1)
-
-#     # debugf"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}: try find around: {startDepth}, {endDepth}"
-#     if editor.findSurroundStart(result.first, count, c0, c1, startDepth).getSome(opening) and editor.findSurroundEnd(result.last, count, c0, c1, endDepth).getSome(closing):
-#       result = (opening, closing)
-#       # debugf"vimMotionSurround: found inside {result}"
-#       if inside:
-#         result.first = editor.doMoveCursorColumn(result.first, 1)
-#         result.last = editor.doMoveCursorColumn(result.last, -1)
-#       return
-
-#     # debugf"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}: try find ahead: {startDepth}, {endDepth}"
-#     if editor.findSurroundEnd(result.first, count, c0, c1, -1).getSome(opening) and editor.findSurroundEnd(opening, count, c0, c1, 0).getSome(closing):
-#       result = (opening, closing)
-#       # debugf"vimMotionSurround: found ahead {result}"
-#       if inside:
-#         result.first = editor.doMoveCursorColumn(result.first, 1)
-#         result.last = editor.doMoveCursorColumn(result.last, -1)
-#       return
-#     else:
-#       # debugf"vimMotionSurround: found nothing {result}"
-#       return
-
-# proc vimMotionSurround*(data: uint32, text: Rope, selections: openArray[Selection], count: int, includeEol: bool, c0: char, c1: char, inside: bool): seq[Selection] =
-#   debugf"vimMotionSurround: {selections}, {count}, {c0}, {c1}, {inside}"
-#   # result = selections.mapIt(vimMotionSurround(data, text, it.last.toSelection, count, includeEol, c0, c1, inside))
-#   # result =
-
-# proc vimMoveToMatching(editor: TextEditor) {.exposeActive(editorContext, "vim-move-to-matching").} =
-#   # todo: pass as parameter
-#   let which = if editor.mode == "vim-new.visual" or editor.mode == "vim-new.visual-line":
-#     sca.SelectionCursor.Last
-#   else:
-#     sca.SelectionCursor.Both
-
-#   editor.setSelections editor.selections.mapIt(block:
-#     let c = editor.charAt(it.last)
-#     let (open, close, last) = case c
-#       of '(': ('(', ')', true)
-#       of '{': ('{', '}', true)
-#       of '[': ('[', ']', true)
-#       of '<': ('<', '>', true)
-#       of ')': ('(', ')', false)
-#       of '}': ('{', '}', false)
-#       of ']': ('[', ']', false)
-#       of '>': ('<', '>', false)
-#       of '"': ('"', '"', true)
-#       of '\'': ('\'', '\'', true)
-#       else: return
-
-#     let selection = editor.vimMotionSurround(it.last, 0, open, close, false)
-
-#     if last:
-#       selection.last.toSelection(it, which)
-#     else:
-#       selection.first.toSelection(it, which)
-#   )
-
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
-
-# proc vimMotionSurroundBracesInner*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '{', '}', true)
-# proc vimMotionSurroundBracesOuter*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '{', '}', false)
-# proc vimMotionSurroundParensInner*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '(', ')', true)
-# proc vimMotionSurroundParensOuter*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '(', ')', false)
-# proc vimMotionSurroundBracketsInner*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '[', ']', true)
-# proc vimMotionSurroundBracketsOuter*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '[', ']', false)
-# proc vimMotionSurroundAngleInner*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '<', '>', true)
-# proc vimMotionSurroundAngleOuter*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '<', '>', false)
-# proc vimMotionSurroundDoubleQuotesInner*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '"', '"', true)
-# proc vimMotionSurroundDoubleQuotesOuter*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '"', '"', false)
-# proc vimMotionSurroundSingleQuotesInner*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '\'', '\'', true)
-# proc vimMotionSurroundSingleQuotesOuter*(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl.} = vimMotionSurround(data, text, selections, count, includeEol, '\'', '\'', false)
-
-# # todo
-# addCustomTextMove "vim-word-outer", vimMotionWordOuter
-# addCustomTextMove "vim-WORD-outer", vimMotionWordBigOuter
 addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
 addCustomTextMove "vim-paragraph-outer", vimMotionParagraphOuter
-# addCustomTextMove "vim-surround-{-inner", vimMotionSurroundBracesInner
-# addCustomTextMove "vim-surround-{-outer", vimMotionSurroundBracesOuter
-# addCustomTextMove "vim-surround-(-inner", vimMotionSurroundParensInner
-# addCustomTextMove "vim-surround-(-outer", vimMotionSurroundParensOuter
-# addCustomTextMove "vim-surround-[-inner", vimMotionSurroundBracketsInner
-# addCustomTextMove "vim-surround-[-outer", vimMotionSurroundBracketsOuter
-# addCustomTextMove "vim-surround-angle-inner", vimMotionSurroundAngleInner
-# addCustomTextMove "vim-surround-angle-outer", vimMotionSurroundAngleOuter
-# addCustomTextMove "vim-surround-\"-inner", vimMotionSurroundDoubleQuotesInner
-# addCustomTextMove "vim-surround-\"-outer", vimMotionSurroundDoubleQuotesOuter
-# addCustomTextMove "vim-surround-'-inner", vimMotionSurroundSingleQuotesInner
-# addCustomTextMove "vim-surround-'-outer", vimMotionSurroundSingleQuotesOuter
 
 iterator iterateTextObjects*(editor: TextEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
   var selection = editor.applyMove(cursor, move, 0)
@@ -632,21 +519,21 @@ iterator enumerateTextObjects*(editor: TextEditor, cursor: Cursor, move: string,
     yield (i, selection)
     inc i
 
-proc selectTextObject(editor: TextEditor, textObject: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext).} =
-  debugf"selectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
+proc selectTextObject(editor: TextEditor, textObject: string, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext).} =
+  debugf"selectTextObject({textObject}, {textObjectRange}, {count})"
 
   editor.setSelections editor.selections.mapIt(block:
       var res = it.last
       var resultSelection = it
       # debugf"-> {resultSelection}"
 
-      for i, selection in enumerateTextObjects(editor, res, textObject, backwards):
+      for i, selection in enumerateTextObjects(editor, res, textObject, false):
         debugf"{i}: {res} -> {selection}"
         resultSelection = resultSelection or selection
         if i == max(count, 1) - 1:
           break
 
-      # debugf"selectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
+      # debugf"selectTextObject({textObject}, {textObjectRange}, {count}): {resultSelection}"
       if it.isBackwards:
         resultSelection.reverse
       else:
@@ -656,8 +543,8 @@ proc selectTextObject(editor: TextEditor, textObject: string, backwards: bool = 
   editor.scrollToCursor()
   editor.updateTargetColumn()
 
-proc selectSurrounding(editor: TextEditor, textObject: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext).} =
-  debugf"selectSurrounding({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
+proc selectSurrounding(editor: TextEditor, textObject: string, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.exposeActive(editorContext).} =
+  debugf"selectSurrounding({textObject}, {textObjectRange}, {count})"
 
   let selections = editor.selections
   let newSelections = mergeSelections(selections, editor.multiMove(selections, ws(textObject), count, wrap = false, includeEol = editor.vimState.cursorIncludeEol)):
@@ -666,15 +553,6 @@ proc selectSurrounding(editor: TextEditor, textObject: string, backwards: bool =
     else:
       it2
   editor.setSelections newSelections
-
-  # editor.setSelections editor.selections.mapIt(block:
-  #     let resultSelection = editor.getSelectionForMove(it.last, textObject, count)
-  #     # debugf"selectSurrounding({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
-  #     if it.isBackwards:
-  #       resultSelection.reverse
-  #     else:
-  #       resultSelection
-  #   )
 
   editor.scrollToCursor()
   editor.updateTargetColumn()
@@ -854,28 +732,19 @@ proc moveDirection(editor: TextEditor, move: string, direction: int, count: int 
   if updateTargetColumn:
     editor.updateTargetColumn()
 
-# proc vimMoveToEndOfLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-end-of-line").} =
-#   # debugf"vimMoveToEndOfLine {count}"
-#   let count = max(1, count)
-#   if count > 1:
-#     editor.moveCursorLine(count - 1)
-#   editor.moveLast("vim-line")
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
+proc moveCursorLineFirstChar(editor: TextEditor, direction: int, count: int = 1) {.exposeActive(editorContext).} =
+  let count = if count == 0: 1 else: count
+  editor.moveCursorLine(direction * count)
+  editor.moveFirst "line-no-indent"
+  editor.updateTargetColumn()
 
-# proc vimMoveCursorLineFirstChar(editor: TextEditor, direction: int, count: int = 1) {.exposeActive(editorContext, "vim-move-cursor-line-first-char").} =
-#   editor.moveCursorLine(direction * max(count, 1))
-#   editor.moveFirst "line-no-indent"
-#   editor.updateTargetColumn()
-
-# proc vimMoveToStartOfLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-start-of-line").} =
-#   # debugf"vimMoveToStartOfLine {count}"
-#   let count = max(1, count)
-#   if count > 1:
-#     editor.moveCursorLine(count - 1)
-#   editor.moveFirst "line-no-indent"
-#   editor.scrollToCursor()
-#   editor.updateTargetColumn()
+proc moveToStartOfLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  let count = max(1, count)
+  if count > 1:
+    editor.moveCursorLine(count - 1)
+  editor.moveFirst "line-no-indent"
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
 
 proc paste(editor: TextEditor, pasteRight: bool = false, inclusiveEnd: bool = false, register: string = "") {.exposeActive(editorContext).} =
   # debugf"vimPaste {register}, lines: {yankedLines}, pasteRight: {pasteRight}"
@@ -1016,10 +885,49 @@ proc moveFileEnd(editor: TextEditor, count: int = 1) {.exposeActive(editorContex
   editor.scrollToCursor()
   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-# proc vimMoveToMatchingOrFileOffset(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-move-to-matching-or-file-offset").} =
-#   if count == 0:
-#     editor.vimMoveToMatching()
-#   else:
+proc moveToMatching(editor: TextEditor) {.exposeActive(editorContext).} =
+  # todo: pass as parameter
+  let mode = $editor.mode
+  let which = if mode == "vim-new.visual" or mode == "vim-new.visual-line":
+    sca.SelectionCursor.Last
+  else:
+    sca.SelectionCursor.Both
+
+  let content = editor.content
+
+  editor.setSelections editor.selections.mapIt(block:
+    let c = content.charAt(it.last)
+    let (open, close, last) = case c
+      of '(': ('(', ')', true)
+      of '{': ('{', '}', true)
+      of '[': ('[', ']', true)
+      of '<': ('<', '>', true)
+      of ')': ('(', ')', false)
+      of '}': ('{', '}', false)
+      of ']': ('[', ']', false)
+      of '>': ('<', '>', false)
+      of '"': ('"', '"', true)
+      of '\'': ('\'', '\'', true)
+      else: return
+
+    let selection = editor.applyMove(it, stackWitString(&"surround \"{open}\" \"{close}\" false"), 0, wrap=false, includeEol=true)[0]
+    # let selection = editor.vimMotionSurround(it.last, 0, open, close, false)
+
+    if last:
+      selection.last.toSelection(it, which)
+    else:
+      selection.first.toSelection(it, which)
+  ).stackWitList()
+
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+
+proc moveToMatchingOrFileOffset(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
+  if count == 0:
+    editor.moveToMatching()
+  else:
+    debugf"not implemented: moveToMatchingOrFileOffset {count}"
+    # todo
 #     let line = clamp((count * editor.lineCount) div 100, 0, editor.lineCount - 1)
 #     let which = getSetting[sca.SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
 #     editor.setSelection (line, 0).toSelection(editor.selection, which)
@@ -1053,7 +961,7 @@ proc centerLine(editor: TextEditor, count: int = 1) {.exposeActive(editorContext
 #   editor.moveFirst "line-no-indent"
 #   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
 
-# proc vimScrollLineToBottom(editor: TextEditor, count: int = 1) {.exposeActive(editorContext, "vim-scroll-line-to-bottom").} =
+# proc scrollLineToBottom(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
 #   if editor.getCommandCount != 0:
 #     editor.setSelection (editor.getCommandCount, editor.selection.last.column).toSelection
 #   editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
@@ -1483,7 +1391,6 @@ proc incrementByIndex(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.evaluateExpressions(editor.selections, false, prefix = ws"", suffix = ws"", addSelectionIndex = true)
   editor.setSelections editor.multiMove(editor.selections, ws"column", -1, wrap = false, includeEol = true).mapIt(it.last.toSelection).stackWitList()
 
-  # let selections = mergeSelections(editor.selections, editor.multiMove(editor.selections, ws"column", 1, true, true)):
 proc replaceInputHandler(editor: TextEditor, input: string) {.exposeActive(editorContext).} =
   editor.vimReplace(input)
 
