@@ -307,30 +307,6 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, select
         let r = c.runeAt(0)
         return selections.mapIt((it.first, rope.findNext(it.last, r)))
 
-    #   let str = move[8..^1]
-    #   let line = self.document.getLine cursor.line
-    #   result = cursor.toSelection
-    #   let index = line.suffix(cursor.column).find(str)
-    #   if index >= 0:
-    #     result.last = (cursor.line, index + 1 + cursor.column)
-    #   for _ in 1..<count:
-    #     let index = line.suffix(result.last.column).find(str)
-    #     if index >= 0:
-    #       result.last = (result.last.line, index + 1 + result.last.column)
-
-    # elif move.startsWith("move-before "):
-    #   # todo: use RopeCursor
-    #   let str = move[12..^1]
-    #   let line = self.document.getLine cursor.line
-    #   result = cursor.toSelection
-    #   let index = line.suffix(cursor.column + 1).find(str)
-    #   if index >= 0:
-    #     result.last = (cursor.line, index + cursor.column + 1)
-    #   for _ in 1..<count:
-    #     let index = line.suffix(result.last.column + 1).find(str)
-    #     if index >= 0:
-    #       result.last = (result.last.line, index + result.last.column + 1)
-
     else:
       log lvlError, &"Unknown move '{move}'"
       return @selections

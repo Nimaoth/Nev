@@ -1056,7 +1056,7 @@ proc insertMode(editor: TextEditor, move: string = "") {.exposeActive(editorCont
   # debugf"insertMode '{move}'"
   case move
   of "right":
-    editor.setSelections editor.selections.mapIt(editor.applyMove(it.last, "column", 1))
+    editor.setSelections editor.multiMove(editor.selections, ws"column", 1, wrap = false, includeEol = true)
   of "line-end":
     editor.setSelections editor.selections.mapIt(editor.applyMove(it.last, "line", 1).last.toSelection)
   of "line-no-indent":
@@ -1288,10 +1288,11 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
 #     editor.scrollToCursor()
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-# proc vimDeleteWordBack(editor: TextEditor) {.exposeActive(editorContext, "vim-delete-word-back").} =
-#   let selections = editor.applyMove(editor.selections, "vim-word", true, true, 1, which = sca.SelectionCursor.Last.some)
-#   editor.setSelections editor.delete(selections)
-#   editor.autoShowCompletions()
+proc deleteWordBack(editor: TextEditor) {.exposeActive(editorContext).} =
+  let wordSelections = editor.multiMove(editor.selections, ws"vim.word", 1, wrap = false, includeEol = true)
+  let selectionsToDelete = mergeSelections(wordSelections, editor.selections, (it1.first, it2.last).toSelection)
+  editor.setSelections editor.edit(selectionsToDelete.stackWitList(), @@[ws""], inclusive = false)
+  editor.autoShowCompletions()
 
 # proc vimDeleteLineBack(editor: TextEditor) {.exposeActive(editorContext, "vim-delete-line-back").} =
 #   let selections = editor.applyMove(editor.selections, "vim-line", true, true, 1, which = sca.SelectionCursor.Last.some)
@@ -1426,16 +1427,11 @@ proc stopMacro(editor: TextEditor) {.exposeActive(editorContext).} =
 #     editor.setNextSnapBehaviour(MinDistanceOffscreen)
 #     editor.updateTargetColumn()
 
-# proc vimShrinkSelection(editor: TextEditor) {.exposeActive(editorContext, "vim-shrink-selection").} =
-#   editor.setSelections editor.selections.mapIt(block:
-#     if it.first.line == it.last.line and abs(it.first.column - it.last.column) < 2:
-#       it
-#     else:
-#       (editor.doMoveCursorColumn(it.first, 1), editor.doMoveCursorColumn(it.last, -1))
-#   )
-#   editor.scrollToCursor()
-#   editor.setNextSnapBehaviour(MinDistanceOffscreen)
-#   editor.updateTargetColumn()
+proc growSelection(editor: TextEditor, amount: int = 1) {.exposeActive(editorContext).} =
+  editor.setSelections editor.multiMove(editor.selections, ws"grow", amount, wrap = true, includeEol = true)
+  editor.scrollToCursor()
+  editor.setNextSnapBehaviour(MinDistanceOffscreen)
+  editor.updateTargetColumn()
 
 proc evaluateSelection(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.addNextCheckpoint(ws"insert")

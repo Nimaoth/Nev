@@ -3047,27 +3047,34 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
 
   var move = move
   var args: JsonNode = nil
+  var parsedArgs = false
 
-  let argsStart = move.find(" ")
-  if argsStart > 0:
-    try:
-      args = newJArray()
-      for a in newStringStream(move[(argsStart + 1)..^1]).parseJsonFragments():
-        args.add a
-    except CatchableError as e:
-      log lvlError, &"getSelectionsForMove: '{move}', Failed to parse args: {e.msg}"
+  proc parseArgs(move: var string, args: var JsonNode) =
+    let argsStart = move.find(" ")
+    if argsStart > 0:
+      try:
+        args = newJArray()
+        for a in newStringStream(move[(argsStart + 1)..^1]).parseJsonFragments():
+          args.add a
+      except CatchableError as e:
+        log lvlError, &"getSelectionsForMove: '{move}', Failed to parse args: {e.msg}"
 
-    move = move[0..<argsStart]
+      move = move[0..<argsStart]
 
   template getArg(index: int, typ: untyped, default: untyped): untyped =
-    if args != nil and index < args.len:
-      try:
-        args[index].to(typ)
-      except CatchableError as e:
-        log lvlError, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
+    block:
+      if not parsedArgs:
+        parsedArgs = true
+        parseArgs(move, args)
+
+      if args != nil and index < args.len:
+        try:
+          args[index].to(typ)
+        except CatchableError as e:
+          log lvlError, "In move '" & move & "': Failed to convert argument " & $index & " to typ " & $typ & ": " & e.msg
+          default
+      else:
         default
-    else:
-      default
 
   case move
   of "surround":
@@ -3162,6 +3169,13 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
           r.a = c.position
 
       r.toSelection
+
+  of "grow":
+    return selections.mapIt:
+      if count < 0 and it.first.line == it.last.line and abs(it.first.column - it.last.column) < 2:
+        it
+      else:
+        (self.doMoveCursorColumn(it.first, -count, wrap, includeEol), self.doMoveCursorColumn(it.last, count, wrap, includeEol))
 
   else:
     return self.moveDatabase.applyMove(self.displayMap, move, selections, count, includeEol)
