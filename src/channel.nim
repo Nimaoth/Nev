@@ -1,4 +1,4 @@
-import std/[strformat, hashes, macros, genasts, atomics, locks, tables, options]
+import std/[hashes, macros, atomics, locks, tables, options]
 import misc/[event, custom_async, id, generational_seq, util]
 import nimsumtree/arc
 

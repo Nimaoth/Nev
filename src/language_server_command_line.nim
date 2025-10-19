@@ -1,4 +1,4 @@
-import std/[options, tables, sequtils, strutils]
+import std/[options, tables, strutils]
 import nimsumtree/rope
 import misc/[custom_logger, custom_async, util, response, rope_utils, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor

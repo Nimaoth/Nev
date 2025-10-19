@@ -129,47 +129,47 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9126807155 = instance.getExport(context, "init_plugin")
-  if f_9126807155.isSome:
-    assert f_9126807155.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9126807155.get.of_field.func_field
+  let f_9177138803 = instance.getExport(context, "init_plugin")
+  if f_9177138803.isSome:
+    assert f_9177138803.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9177138803.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9126807171 = instance.getExport(context, "handle_command")
-  if f_9126807171.isSome:
-    assert f_9126807171.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9126807171.get.of_field.func_field
+  let f_9177138819 = instance.getExport(context, "handle_command")
+  if f_9177138819.isSome:
+    assert f_9177138819.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9177138819.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9126807221 = instance.getExport(context, "handle_mode_changed")
-  if f_9126807221.isSome:
-    assert f_9126807221.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9126807221.get.of_field.func_field
+  let f_9177138869 = instance.getExport(context, "handle_mode_changed")
+  if f_9177138869.isSome:
+    assert f_9177138869.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9177138869.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9126807222 = instance.getExport(context, "handle_view_render_callback")
-  if f_9126807222.isSome:
-    assert f_9126807222.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9126807222.get.of_field.func_field
+  let f_9177138870 = instance.getExport(context, "handle_view_render_callback")
+  if f_9177138870.isSome:
+    assert f_9177138870.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9177138870.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9126807246 = instance.getExport(context, "handle_channel_update")
-  if f_9126807246.isSome:
-    assert f_9126807246.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9126807246.get.of_field.func_field
+  let f_9177138894 = instance.getExport(context, "handle_channel_update")
+  if f_9177138894.isSome:
+    assert f_9177138894.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9177138894.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9126807247 = instance.getExport(context, "notify_task_complete")
-  if f_9126807247.isSome:
-    assert f_9126807247.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9126807247.get.of_field.func_field
+  let f_9177138895 = instance.getExport(context, "notify_task_complete")
+  if f_9177138895.isSome:
+    assert f_9177138895.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9177138895.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9126807248 = instance.getExport(context, "handle_move")
-  if f_9126807248.isSome:
-    assert f_9126807248.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9126807248.get.of_field.func_field
+  let f_9177138896 = instance.getExport(context, "handle_move")
+  if f_9177138896.isSome:
+    assert f_9177138896.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9177138896.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
 
@@ -495,8 +495,6 @@ proc textEditorSetMode(instance: ptr InstanceData; editor: TextEditor;
 proc textEditorMode(instance: ptr InstanceData; editor: TextEditor): string
 proc textEditorModes(instance: ptr InstanceData; editor: TextEditor): seq[string]
 proc textEditorClearTabStops(instance: ptr InstanceData; editor: TextEditor): void
-proc textEditorSelectNextTabStop(instance: ptr InstanceData; editor: TextEditor): void
-proc textEditorSelectPrevTabStop(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorUndo(instance: ptr InstanceData; editor: TextEditor;
                     checkpoint: sink string): void
 proc textEditorRedo(instance: ptr InstanceData; editor: TextEditor;
@@ -1791,28 +1789,6 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         var editor: TextEditor
         editor.id = convert(parameters[0].i64, uint64)
         textEditorClearTabStops(instance, editor)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "select-next-tab-stop", ty):
-        var instance = cast[ptr InstanceData](store.getData())
-        var editor: TextEditor
-        editor.id = convert(parameters[0].i64, uint64)
-        textEditorSelectNextTabStop(instance, editor)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "select-prev-tab-stop", ty):
-        var instance = cast[ptr InstanceData](store.getData())
-        var editor: TextEditor
-        editor.id = convert(parameters[0].i64, uint64)
-        textEditorSelectPrevTabStop(instance, editor)
     if e.isErr:
       return e
   block:

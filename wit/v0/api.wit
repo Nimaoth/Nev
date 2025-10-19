@@ -284,10 +284,6 @@ interface text-editor {
   /// todo
   clear-tab-stops: func(editor: text-editor);
   /// todo
-  select-next-tab-stop: func(editor: text-editor);
-  /// todo
-  select-prev-tab-stop: func(editor: text-editor);
-  /// todo
   undo: func(editor: text-editor, checkpoint: string);
   /// todo
   redo: func(editor: text-editor, checkpoint: string);

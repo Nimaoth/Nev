@@ -458,18 +458,6 @@ proc textEditorClearTabStops(instance: ptr InstanceData; editor: TextEditor): vo
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     editor.TextDocumentEditor.clearTabStops()
 
-proc textEditorSelectNextTabStop(instance: ptr InstanceData; editor: TextEditor): void =
-  if instance.host == nil:
-    return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.selectNextTabStop()
-
-proc textEditorSelectPrevTabStop(instance: ptr InstanceData; editor: TextEditor): void =
-  if instance.host == nil:
-    return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.selectPrevTabStop()
-
 proc textEditorUndo(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
   if instance.host == nil:
     return

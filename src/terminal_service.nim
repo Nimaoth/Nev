@@ -1,15 +1,14 @@
-import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros, bitops, deques]
+import std/[os, streams, strutils, sequtils, strformat, typedthreads, tables, json, colors, hashes, base64, algorithm, sets, macros, deques]
 import vmath
 import chroma, pixie, pixie/fileformats/png
 import nimsumtree/[rope, arc]
-import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref, myjsonutils, render_command, embed_source, async_process]
+import misc/[custom_logger, util, custom_unicode, custom_async, event, timer, disposable_ref, myjsonutils, render_command, async_process]
 import dispatch_tables, config_provider, events, view, layout, service, platform_service, selector_popup, vfs_service, vfs, theme
 import scripting/expose
 import platform/[tui, platform]
 import finder/[finder, previewer]
 import vterm, input, input_api, register, command_service, channel
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
-import compilation_config
 
 when defined(enableLibssh):
   static:
@@ -994,7 +993,7 @@ proc handleProcessOutput(state: var TerminalThreadState, buffer: var string) {.r
 
         state.screen.flushDamage()
         state.dirty = true
-    except IOError as e:
+    except IOError:
       discard
   else:
     when defined(windows):
@@ -1560,8 +1559,8 @@ iterator parseKittyData(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [
       # kittyDebugf"Read file '{path}'"
       try:
         data = readFile(path)
-      except IOError as e:
-        kittyDebugf"Failed to read file '{path}': {e.msg}"
+      except IOError:
+        kittyDebugf"Failed to read file '{path}': {getCurrentExceptionMsg()}"
         sendErrResponse("EBADF"):
           discard
         return
@@ -1571,8 +1570,8 @@ iterator parseKittyData(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [
       try:
         data = readFile(path)
         removeFile(path)
-      except IOError as e:
-        kittyDebugf"Failed to read file '{path}': {e.msg}"
+      except IOError:
+        kittyDebugf"Failed to read file '{path}': {getCurrentExceptionMsg()}"
         sendErrResponse("EBADF"):
           discard
         return
@@ -2354,7 +2353,7 @@ when defined(enableLibssh):
     except CatchableError as e:
       log lvlError, &"Failed to create ssh connection: {e.msg}"
 
-proc createTerminal*(self: TerminalService, width: int, height: int, command: string, args: seq[string] = @[], autoRunCommand: string = "", createPty: bool = true, kittyPathPrefix: string = "", ssh: Option[SshOptions]): Terminal {.raises: [OSError, IOError, ResourceExhaustedError, TransportError, CancelledError].} =
+proc createTerminal*(self: TerminalService, width: int, height: int, command: string, args: seq[string] = @[], autoRunCommand: string = "", createPty: bool = true, kittyPathPrefix: string = "", ssh: Option[SshOptions]): Terminal {.raises: [IOError, OSError, ResourceExhaustedError].} =
   if ssh.isSome:
     var stdin = newInMemoryChannel()
     var stdout = newInMemoryChannel()

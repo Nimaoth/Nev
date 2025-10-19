@@ -310,16 +310,6 @@
         "sha1": "8bccb6b02295a85eab30aeb8c411927680ca9192"
       }
     },
-    "micros": {
-      "version": "0.1.16",
-      "vcsRevision": "4dfeac6a47ba8b6287081b048158981a07832063",
-      "url": "https://github.com/beef331/micros/",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "9452155bea9280923b9a5654037eb92513ec8e7c"
-      }
-    },
     "nimgen": {
       "version": "0.5.4",
       "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
@@ -430,18 +420,6 @@
       "dependencies": [],
       "checksums": {
         "sha1": "fa636c9852fbf196df05baa1c9a0c976f533150d"
-      }
-    },
-    "wasm3": {
-      "version": "0.1.17",
-      "vcsRevision": "e056b725ec1fad4e35e922d1602b41e970a06d3d",
-      "url": "https://github.com/Nimaoth/wasm3",
-      "downloadMethod": "git",
-      "dependencies": [
-        "micros"
-      ],
-      "checksums": {
-        "sha1": "fd5cc6b4e8dc6cb1f6f2fe45cbc50cc0adc5363e"
       }
     },
     "ws": {

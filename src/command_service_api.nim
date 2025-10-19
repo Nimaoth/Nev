@@ -172,7 +172,7 @@ proc selectPreviousCommandInHistory*(self: CommandService) {.expose("commands").
     self.currentHistoryEntry = 0
 
   editor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
-  editor.moveLast("file", Both)
+  editor.move("(file) (end)")
   if self.prefix != "":
     editor.clearOverlays(overlayIdPrefix)
     editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)
@@ -193,7 +193,7 @@ proc selectNextCommandInHistory*(self: CommandService) {.expose("commands").} =
     self.currentHistoryEntry = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory.high
 
   editor.document.content = self.languageServerCommandLine.LanguageServerCommandLine.commandHistory[self.currentHistoryEntry]
-  editor.moveLast("file", Both)
+  editor.move("(file) (end)")
   if self.prefix != "":
     editor.clearOverlays(overlayIdPrefix)
     editor.displayMap.overlay.addOverlay(point(0, 0)...point(0, 0), self.prefix, overlayIdPrefix, scope = "comment", bias = Bias.Left)

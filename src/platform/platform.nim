@@ -1,4 +1,4 @@
-import std/[atomics, locks]
+import std/[locks]
 import vmath, chroma
 import ui/node
 import misc/[event, timer]

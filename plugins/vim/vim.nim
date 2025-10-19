@@ -450,10 +450,12 @@ proc moveTo*(editor: TextEditor, target: string, before: bool, count: int = 1) {
   let key = parseTarget(target)
   var s = editor.getSelections
 
-  for _ in 0..<max(1, count):
-    s = editor.multiMove(s, stackWitString("move-to " & key), 1, true, true)
   if before:
-    s = editor.multiMove(s, ws"column", -1, true, true)
+    for _ in 0..<max(1, count):
+      s = editor.multiMove(s, stackWitString(&"(move-to '{key}') (column -1)"), 1, true, true)
+  else:
+    for _ in 0..<max(1, count):
+      s = editor.multiMove(s, stackWitString(&"(move-to '{key}')"), 1, true, true)
 
   editor.setSelections s
   editor.updateTargetColumn()

@@ -1332,7 +1332,7 @@ proc logs*(self: App, slot: string = "", focus: bool = true, scrollToBottom: boo
 
   if scrollToBottom and editor of TextDocumentEditor:
     let editor = editor.TextDocumentEditor
-    editor.moveLast("file")
+    editor.move("(file) (end)")
     editor.selection = editor.selection.last.toSelection
 
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
