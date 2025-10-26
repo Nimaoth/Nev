@@ -435,7 +435,7 @@ proc selectMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive
 proc deleteMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   editor.recordCurrentCommandInPeriodMacro()
   let oldSelections = @(editor.selections)
-  let res = editor.applyVimMove(move, "(join)", count)
+  let res = editor.applyVimMove(move, "(merge)", count)
   editor.deleteSelection(false, oldSelections=oldSelections.some)
   if res.updateTargetColumn:
     editor.updateTargetColumn()
@@ -443,13 +443,13 @@ proc deleteMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive
 proc changeMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   editor.recordCurrentCommandInPeriodMacro()
   let oldSelections = @(editor.selections)
-  let res = editor.applyVimMove(move, "(join)", count)
+  let res = editor.applyVimMove(move, "(merge)", count)
   editor.changeSelection(false, oldSelections=oldSelections.some)
   if res.updateTargetColumn:
     editor.updateTargetColumn()
 
 proc yankMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
-  discard editor.applyVimMove(move, "(join)", count)
+  discard editor.applyVimMove(move, "(merge)", count)
   editor.yankSelection()
 
 proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
