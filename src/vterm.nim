@@ -273,7 +273,7 @@ type
     VTERM_KEY_KP_EQUAL,
     VTERM_KEY_MAX
 
-  VTermAttrMask* = enum
+  VTermAttrMask* {.importc.} = enum
     VTERM_ATTR_BOLD_MASK = 1 shl 0, VTERM_ATTR_UNDERLINE_MASK = 1 shl 1,
     VTERM_ATTR_ITALIC_MASK = 1 shl 2, VTERM_ATTR_BLINK_MASK = 1 shl 3,
     VTERM_ATTR_REVERSE_MASK = 1 shl 4, VTERM_ATTR_STRIKE_MASK = 1 shl 5,
@@ -283,7 +283,7 @@ type
     VTERM_ATTR_DIM_MASK = 1 shl 12,
     VTERM_ALL_ATTRS_MASK = (1 shl 13) - 1
 
-  VTermSelectionMask* = enum
+  VTermSelectionMask* {.importc.} = enum
     VTERM_SELECTION_CLIPBOARD = (1 shl 0),
     VTERM_SELECTION_PRIMARY = (1 shl 1),
     VTERM_SELECTION_SECONDARY = (1 shl 2),
