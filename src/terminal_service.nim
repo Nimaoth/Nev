@@ -1923,7 +1923,7 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
   )
 
   var parserCallbacks = VTermStateFallbacks(
-    control: (proc(control: char; user: pointer): cint {.cdecl.} =
+    control: (proc(control: uint8; user: pointer): cint {.cdecl.} =
       # echo &"control '{control}'"
       return 1
     ),
@@ -1998,7 +1998,7 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
     sos: (proc(frag: VTermStringFragment; user: pointer): cint {.cdecl.} =
       return 1
     ),
-    reset: (proc (hard: int; user: pointer): cint {.cdecl.} =
+    reset: (proc (hard: cint; user: pointer): cint {.cdecl.} =
       let state = cast[ptr TerminalThreadState](user)
       # echo &"===================== reset: {hard}"
       if state.alternateScreen:

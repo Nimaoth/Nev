@@ -165,7 +165,7 @@ type
 
   VTermParserCallbacks* {.bycopy, importc.} = object
     text*: proc (bytes: cstring; len: csize_t; user: pointer): cint {.cdecl.}
-    control*: proc (control: char; user: pointer): cint {.cdecl.}
+    control*: proc (control: uint8; user: pointer): cint {.cdecl.}
     escape*: proc (bytes: cstring; len: csize_t; user: pointer): cint {.cdecl.}
     csi*: proc (leader: cstring; args: ptr clong; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.}
     osc*: proc (command: cint; frag: VTermStringFragment; user: pointer): cint {.cdecl.}
@@ -190,14 +190,14 @@ type
     sb_clear*: proc (user: pointer): cint {.cdecl.}
 
   VTermStateFallbacks* {.bycopy, importc.} = object
-    control*: proc (control: char; user: pointer): cint {.cdecl.}
+    control*: proc (control: uint8; user: pointer): cint {.cdecl.}
     csi*: proc (leader: cstring; args: ptr UncheckedArray[clong]; argcount: cint; intermed: cstring; command: char; user: pointer): cint {.cdecl.}
     osc*: proc (command: cint; frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     dcs*: proc (command: cstring; commandlen: csize_t; frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     apc*: proc (frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     pm*: proc (frag: VTermStringFragment; user: pointer): cint {.cdecl.}
     sos*: proc (frag: VTermStringFragment; user: pointer): cint {.cdecl.}
-    reset*: proc (hard: int; user: pointer): cint {.cdecl.}
+    reset*: proc (hard: cint; user: pointer): cint {.cdecl.}
 
   VTermScreenCallbacks* {.bycopy, importc.} = object
     damage*: proc (rect: VTermRect; user: pointer): cint {.cdecl.}
