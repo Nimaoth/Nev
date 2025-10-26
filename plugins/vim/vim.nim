@@ -256,17 +256,44 @@ proc visualLineMode(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.setMode "vim.visual-line"
   editor.selectLine()
 
-proc selectLast(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
-  let (action, arg) = move.parseAction
-  for i in 0..<max(count, 1):
-    discard editor.command(ws(action), ws(arg))
-  editor.setSelections editor.selections.mapIt(it.last.toSelection)
+proc applyVimMove(editor: TextEditor, move: string, suffix: string, count: int = 0): tuple[updateTargetColumn: bool] =
+  result.updateTargetColumn = true
+  if move.startsWith("("):
+    const targetColumnSuffix = "(dont-update-target-column)"
+    var adjustedMove = move
+    if adjustedMove.endsWith(targetColumnSuffix):
+      adjustedMove.removeSuffix(targetColumnSuffix)
+      result.updateTargetColumn = false
+    adjustedMove = adjustedMove & " " &  suffix
+    debugf"applyVimMove '{move}' -> '{adjustedMove}'"
+    for i in 0..<max(count, 1):
+      editor.setSelections editor.multiMove(editor.selections, adjustedMove.ws, count, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
+
+  else:
+    log lvlWarn, &"applyVimMove old '{move}'"
+    let (action, arg) = move.parseAction
+    for i in 0..<max(count, 1):
+      discard editor.command(action.ws, arg.ws)
+
+proc selectLast(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
+  let res = editor.applyVimMove(move, "(end)", count)
+  if not move.startsWith("("):
+    editor.setSelections editor.selections.mapIt(it.last.toSelection)
+
+  if res.updateTargetColumn:
+    editor.updateTargetColumn()
+  if editor.vimState.selectLines:
+    editor.selectLine()
+  editor.scrollToCursor()
   editor.vimState.deleteInclusiveEnd = true
 
 proc select(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
-  let (action, arg) = move.parseAction
-  for i in 0..<max(count, 1):
-    discard editor.command(ws(action), ws(arg))
+  let res = editor.applyVimMove(move, "(join)", count)
+  if res.updateTargetColumn:
+    editor.updateTargetColumn()
+  if editor.vimState.selectLines:
+    editor.selectLine()
+  editor.scrollToCursor()
 
 proc undo(editor: TextEditor, enterNormalModeBefore: bool) {.exposeActive(editorContext).} =
   if enterNormalModeBefore:
@@ -325,7 +352,6 @@ proc deleteSelection(editor: TextEditor, forceInclusiveEnd: bool, oldSelections:
   let inclusiveEnd = (not editor.vimState.selectLines) and (editor.vimState.deleteInclusiveEnd or forceInclusiveEnd)
   editor.setSelections editor.edit(selectionsToDelete, @@[ws""], inclusive = inclusiveEnd)
   editor.scrollToCursor()
-  editor.updateTargetColumn()
   editor.vimState.deleteInclusiveEnd = true
   editor.setMode "vim.normal"
 
@@ -338,7 +364,6 @@ proc changeSelection*(editor: TextEditor, forceInclusiveEnd: bool, oldSelections
   let inclusive = editor.vimState.deleteInclusiveEnd or forceInclusiveEnd
   editor.setSelections editor.edit(selectionsToDelete, @@[ws""], inclusive = inclusive)
   editor.scrollToCursor()
-  editor.updateTargetColumn()
   editor.vimState.deleteInclusiveEnd = true
   editor.setMode "vim.insert"
 
@@ -401,64 +426,31 @@ proc vimReplace(editor: TextEditor, input: string) {.exposeActive(editorContext)
   editor.setSelections editor.edit(editor.selections, @@texts, inclusive=true).mapIt(it.first.toSelection)
   editor.normalMode()
 
-proc selectMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
-  debugf"selectMove '{move}' {count}"
+proc selectMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     log lvlDebug, $editor.command(action.ws, arg.ws)
   editor.updateTargetColumn()
 
-proc deleteMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
-  debugf"vimDeleteMove '{move}' {count}"
-  let oldSelections = @(editor.selections)
-  let (action, arg) = move.parseAction
-  for i in 0..<max(count, 1):
-    discard editor.command(action.ws, arg.ws)
-  editor.deleteSelection(false, oldSelections=oldSelections.some)
+proc deleteMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   editor.recordCurrentCommandInPeriodMacro()
-
-proc changeMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
-  debugf"vimChangeMove '{move}' {count}"
   let oldSelections = @(editor.selections)
-  let (action, arg) = move.parseAction
-  for i in 0..<max(count, 1):
-    discard editor.command(action.ws, arg.ws)
+  let res = editor.applyVimMove(move, "(join)", count)
+  editor.deleteSelection(false, oldSelections=oldSelections.some)
+  if res.updateTargetColumn:
+    editor.updateTargetColumn()
+
+proc changeMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
+  editor.recordCurrentCommandInPeriodMacro()
+  let oldSelections = @(editor.selections)
+  let res = editor.applyVimMove(move, "(join)", count)
   editor.changeSelection(false, oldSelections=oldSelections.some)
+  if res.updateTargetColumn:
+    editor.updateTargetColumn()
 
-proc yankMove(editor: TextEditor, move: string, count: int = 1) {.exposeActive(editorContext).} =
-  debugf"vimYankMove '{move}' {count}"
-  let (action, arg) = move.parseAction
-  for i in 0..<max(count, 1):
-    discard editor.command(action.ws, arg.ws)
+proc yankMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
+  discard editor.applyVimMove(move, "(join)", count)
   editor.yankSelection()
-
-proc moveTo*(editor: TextEditor, target: string, before: bool, count: int = 1) {.exposeActive(editorContext).} =
-  debugf"vimMoveTo '{target}' {before} {count}"
-
-  proc parseTarget(target: string): string =
-    if target.len == 1:
-      return target
-
-    if target.parseFirstInput().getSome(res):
-      if res.inputCode.a == INPUT_SPACE:
-        return " "
-      elif res.inputCode.a <= int32.high:
-        return $Rune(res.inputCode.a)
-    else:
-      log lvlError, &" -> failed to parse key: {target}"
-
-  let key = parseTarget(target)
-  var s = editor.getSelections
-
-  if before:
-    for _ in 0..<max(1, count):
-      s = editor.multiMove(s, stackWitString(&"(move-to '{key}') (column -1)"), 1, true, true)
-  else:
-    for _ in 0..<max(1, count):
-      s = editor.multiMove(s, stackWitString(&"(move-to '{key}')"), 1, true, true)
-
-  editor.setSelections s
-  editor.updateTargetColumn()
 
 proc vimClamp*(editor: TextEditor, cursor: Cursor): Cursor =
   var lineLen = editor.lineLength(cursor.line)
@@ -654,8 +646,8 @@ proc deleteLeft*(editor: TextEditor) {.exposeActive(editorContext).} =
   yankedLines = editor.vimState.selectLines
   editor.copy(ws"", inclusiveEnd = false)
   editor.addNextCheckpoint ws"insert"
-  let selections = editor.multiMove(editor.getSelections, ws"column", -1, wrap = false, includeEol = true)
-  editor.setSelections editor.edit(selections, @@[ws""], inclusive=editor.vimState.cursorIncludeEol)
+  let selections = editor.multiMove(editor.getSelections, "(column -1) (join)")
+  editor.setSelections editor.edit(selections, @@[ws""], inclusive=false)
 
 proc deleteRight*(editor: TextEditor) {.exposeActive(editorContext).} =
   yankedLines = editor.vimState.selectLines
@@ -720,8 +712,27 @@ proc moveLast(editor: TextEditor, move: string, count: int = 1, wrap: bool = fal
   editor.scrollToCursor()
   editor.updateTargetColumn()
 
-proc moveDirection(editor: TextEditor, move: string, direction: int, count: int = 1, wrap: bool = false, updateTargetColumn: bool = true) {.exposeActive(editorContext).} =
+proc move(editor: TextEditor, move: string, direction: int = 1, wrap: bool = false) {.exposeActive(editorContext).} =
+  var move = move
+  if not move.startsWith("("):
+    move = "(" & move & ")"
   let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
+  if cursorSelector == sca.Last:
+    move.add " (join)"
+  editor.setSelections editor.multiMove(editor.selections, move.ws, direction, wrap, includeEol = editor.vimState.cursorIncludeEol)
+
+  if editor.vimState.selectLines:
+    editor.selectLine()
+  editor.scrollToCursor()
+  editor.updateTargetColumn()
+
+proc moveDirection(editor: TextEditor, move: string, direction: int, count: int = 1, wrap: bool = false, updateTargetColumn: bool = true) {.exposeActive(editorContext).} =
+  var move = move
+  if not move.startsWith("("):
+    move = "(" & move & ")"
+  let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
+  if cursorSelector == sca.Last:
+    move.add " (join)"
   editor.setSelections editor.multiMove(editor.selections, move.ws, direction * max(count, 1), wrap, includeEol = editor.vimState.cursorIncludeEol)
 
   if editor.vimState.selectLines:
@@ -884,56 +895,6 @@ proc moveFileEnd(editor: TextEditor, count: int = 1) {.exposeActive(editorContex
   editor.scrollToCursor()
   editor.setNextSnapBehaviour(MinDistanceOffscreen)
 
-proc moveToMatching(editor: TextEditor) {.exposeActive(editorContext).} =
-  # todo: pass as parameter
-  let mode = $editor.mode
-  let which = if mode == "vim.visual" or mode == "vim.visual-line":
-    sca.SelectionCursor.Last
-  else:
-    sca.SelectionCursor.Both
-
-  let content = editor.content
-
-  editor.setSelections editor.selections.mapIt(block:
-    let c = content.charAt(it.last)
-    let (open, close, last) = case c
-      of '(': ('(', ')', true)
-      of '{': ('{', '}', true)
-      of '[': ('[', ']', true)
-      of '<': ('<', '>', true)
-      of ')': ('(', ')', false)
-      of '}': ('{', '}', false)
-      of ']': ('[', ']', false)
-      of '>': ('<', '>', false)
-      of '"': ('"', '"', true)
-      of '\'': ('\'', '\'', true)
-      else: return
-
-    let selection = editor.applyMove(it, stackWitString(&"surround \"{open}\" \"{close}\" false"), 0, wrap=false, includeEol=true)[0]
-    # let selection = editor.vimMotionSurround(it.last, 0, open, close, false)
-
-    if last:
-      selection.last.toSelection(it, which)
-    else:
-      selection.first.toSelection(it, which)
-  ).stackWitList()
-
-  editor.scrollToCursor()
-  editor.updateTargetColumn()
-
-proc moveToMatchingOrFileOffset(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
-  if count == 0:
-    editor.moveToMatching()
-  else:
-    debugf"not implemented: moveToMatchingOrFileOffset {count}"
-    # todo
-#     let line = clamp((count * editor.lineCount) div 100, 0, editor.lineCount - 1)
-#     let which = getSetting[sca.SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
-#     editor.setSelection (line, 0).toSelection(editor.selection, which)
-#     editor.moveFirst "line-no-indent"
-#     editor.scrollToCursor()
-#     editor.setNextSnapBehaviour(MinDistanceOffscreen)
-
 proc scrollLineToTopAndMoveLineStart(editor: TextEditor, count: int = 1) {.exposeActive(editorContext).} =
   if editor.getCommandCount != 0:
     editor.setSelection (editor.getCommandCount.int, 0).toCursor.toSelection
@@ -1005,72 +966,6 @@ proc setSearchQueryFromSelection(editor: TextEditor) {.exposeActive(editorContex
   editor.setSelection editor.getSelection.first.toSelection
   editor.normalMode()
 
-proc nextSearchResult(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
-  let selections = editor.getSelections
-  let next = editor.multiMove(selections, ws"next-search-result", count, wrap = true, includeEol=false)
-  let newSelections = mergeSelections(selections, next):
-    (it1.first, it2.first).toSelection
-
-  editor.setSelections @@newSelections
-  editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  editor.updateTargetColumn()
-
-proc prevSearchResult(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
-  let selections = editor.getSelections
-  let prev = editor.multiMove(selections, ws"prev-search-result", count, wrap = true, includeEol=false)
-  let newSelections = mergeSelections(selections, prev):
-    (it1.first, it2.first).toSelection
-
-  editor.setSelections @@newSelections
-  editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  editor.updateTargetColumn()
-
-proc gotoNextChange(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
-  let selections = editor.getSelections
-  let next = editor.multiMove(selections, ws"next-change", count, wrap = true, includeEol=false)
-  let newSelections = mergeSelections(selections, next):
-    (it1.first, it2.first).toSelection
-
-  editor.setSelections @@newSelections
-  editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  editor.updateTargetColumn()
-
-proc gotoPrevChange(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
-  let selections = editor.getSelections
-  let prev = editor.multiMove(selections, ws"prev-change", count, wrap = true, includeEol=false)
-  let newSelections = mergeSelections(selections, prev):
-    (it1.first, it2.first).toSelection
-
-  editor.setSelections @@newSelections
-  editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  editor.updateTargetColumn()
-
-proc gotoNextDiagnostic(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
-  let selections = editor.getSelections
-  let next = editor.multiMove(selections, ws"next-diagnostic", count, wrap = true, includeEol=false)
-  let newSelections = mergeSelections(selections, next):
-    (it1.first, it2.first).toSelection
-
-  editor.setSelections @@newSelections
-  editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  editor.updateTargetColumn()
-
-proc gotoPrevDiagnostic(editor: TextEditor, count: int = 0) {.exposeActive(editorContext).} =
-  let selections = editor.getSelections
-  let prev = editor.multiMove(selections, ws"prev-diagnostic", count, wrap = true, includeEol=false)
-  let newSelections = mergeSelections(selections, prev):
-    (it1.first, it2.first).toSelection
-
-  editor.setSelections @@newSelections
-  editor.scrollToCursor()
-  editor.setNextSnapBehaviour(MinDistanceOffscreen)
-  editor.updateTargetColumn()
-
 proc openSearchBar(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.openSearchBar(ws"", scrollToPreview=true, selectResult=true)
 
@@ -1093,11 +988,10 @@ proc exitPopup() {.command.} =
 proc selectWordOrAddCursor(editor: TextEditor) {.exposeActive(editorContext).} =
   let selections = editor.selections
   if selections.len == 1:
-    var selection = editor.setSearchQueryFromMove(ws"word", 1, prefix=ws(r"\b"), suffix=ws(r"\b"))
-    selection.last.column -= 1
-    editor.setSelection selection
+    var selection = editor.setSearchQueryFromMove(ws"(word)", 1, prefix=ws(r"\b"), suffix=ws(r"\b"))
+    editor.setSelection editor.multiMove([selection], ws"(inclusive)").last
   else:
-    let next = editor.multiMove(@@[selections.last], ws"next-search-result", 0, wrap = true, includeEol=false).last
+    let next = editor.multiMove(@@[selections.last], ws"(next-search-result) (inclusive)", 0, wrap = true, includeEol=false).last
     let newSelections = @selections & next
     editor.setSelections @@newSelections
     editor.scrollToCursor()
@@ -1109,11 +1003,11 @@ proc selectWordOrAddCursor(editor: TextEditor) {.exposeActive(editorContext).} =
 proc moveLastSelectionToNextSearchResult(editor: TextEditor) {.exposeActive(editorContext).} =
   let selections = editor.selections
   if selections.len == 1:
-    var selection = editor.setSearchQueryFromMove(ws"word", 1, prefix=ws(r"\b"), suffix=ws(r"\b"))
-    selection.last.column -= 1
+    var selection = editor.setSearchQueryFromMove(ws"(word)", 1, prefix=ws(r"\b"), suffix=ws(r"\b"))
+    editor.setSelection editor.multiMove([selection], "(inclusive)").last
     editor.setSelection selection
   else:
-    let next = editor.multiMove(@@[selections.last], ws"next-search-result", 0, wrap = true, includeEol=false).last
+    let next = editor.multiMove(@@[selections.last], ws"(next-search-result) (inclusive)", 0, wrap = true, includeEol=false).last
     let newSelections = selections.toOpenArray[0..^2] & next
     editor.setSelections @@newSelections
     editor.scrollToCursor()
@@ -1134,7 +1028,7 @@ proc setSearchQueryOrAddCursor(editor: TextEditor) {.exposeActive(editorContext)
       if editor.setSearchQuery(selectedText.text, escapeRegex=true, prefix=ws"", suffix=ws""):
         return
 
-  let next = editor.multiMove(@@[selections.last], ws"next-search-result", 0, wrap = true, includeEol=false).last
+  let next = editor.multiMove(@@[selections.last], ws"(next-search-result) (inclusive)", 0, wrap = true, includeEol=false).last
   let newSelections = @selections & next
   editor.setSelections @@newSelections
   editor.scrollToCursor()

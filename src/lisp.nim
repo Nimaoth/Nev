@@ -669,10 +669,10 @@ proc parseLisp*(p: var LispParser; depth = 0, depthLimit = 1024): LispVal =
       raiseParseErr(p, "number too big")
     discard getTok(p)
   of tkTrue:
-    result = newNumber(1)
+    result = newBool(true)
     discard getTok(p)
   of tkFalse:
-    result = newNumber(0)
+    result = newBool(false)
     discard getTok(p)
   of tkNull:
     result = newNil()
@@ -757,6 +757,20 @@ proc parseLispValues*(str: string): seq[LispVal] =
   finally:
     p.close()
 
+proc isTruthy*(val: LispVal): bool =
+  case val.kind
+  of Nil: false
+  of Number: val.num != 0
+  of Bool: val.bol
+  of Symbol: true
+  of String: true
+  of List: true
+  of Array: true
+  of Map: true
+  of Func: true
+  of Lambda: true
+  of Macro: true
+
 proc eval*(expr: LispVal, env: var Env): LispVal {.raises: [LispError].}
 
 proc evalQuasiquote(expr: LispVal, env: var Env): LispVal =
@@ -835,9 +849,12 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
         return value
       of "set":
         let sym = expr.elems[1]
+        if sym.kind != Symbol:
+          raise newException(LispError, "not a symbol: '" & $sym & "'")
+
         let value = eval(expr.elems[2], env)
         if not env.set(sym.sym, value):
-          raise newException(LispError, "undefined symbol: '" & expr.sym & "'")
+          raise newException(LispError, "undefined symbol: '" & sym.sym & "'")
 
         return value
       of "eval":
@@ -857,23 +874,25 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
       of "quasiquote":
         return evalQuasiquote(expr.elems[1], env)
       of "if":
-        let cond = eval(expr.elems[1], env)
-        if cond.kind != Bool:
-          raise newException(LispError, "Condition must be a number")
-        if cond.bol:
-          return eval(expr.elems[2], env)
-        else:
-          return eval(expr.elems[3], env)
+        var i = 1
+        while i + 1 < expr.elems.len:
+          let cond = eval(expr.elems[i], env)
+          if cond.isTruthy:
+            return eval(expr.elems[i + 1], env)
+          i = i + 2
+        if i < expr.elems.len:
+          return eval(expr.elems[i], env)
+        return newNil()
       of "floor":
         let val = eval(expr.elems[1], env)
         if val.kind != Number:
-          raise newException(LispError, "floor takes a number")
+          raise newException(LispError, "floor takes a number, got " & $val)
         return newNumber(val.num.floor)
       of "repeat":
         let name = expr.elems[1].sym
         let count = eval(expr.elems[2], env)
         if count.kind != Number:
-          raise newException(LispError, "Count must be a number")
+          raise newException(LispError, "Count must be a number, got " & $count)
 
         var res = newList()
         for i in 0..<count.num.int:
@@ -1014,6 +1033,14 @@ proc baseEnv*(): Env =
     newNumber(args.foldl(a * b.num, 1.0)))
   result["/"] = newFunc("/", proc(args: seq[LispVal]): LispVal =
     newNumber(args[0].num / args[1].num))
+  result["or"] = newFunc("or", proc(args: seq[LispVal]): LispVal =
+    for a in args:
+      if a.isTruthy:
+        return a
+    if args.len > 0:
+      return args.last
+    return newNil()
+  )
   result["eq"] = newFunc("eq", proc(args: seq[LispVal]): LispVal =
     newBool(args[0].kind == args[1].kind and $args[0] == $args[1])) # todo: don't use $
   result[">"] = newFunc(">", proc(args: seq[LispVal]): LispVal =

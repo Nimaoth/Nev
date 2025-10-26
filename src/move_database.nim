@@ -16,6 +16,7 @@ type
   MoveDatabase* = ref object of Service
     moves: Table[string, MoveImpl]
     env: Env
+    debugMoves: bool
 
 func serviceName*(_: typedesc[MoveDatabase]): string = "MoveDatabase"
 
@@ -24,6 +25,9 @@ addBuiltinService(MoveDatabase)
 method init*(self: MoveDatabase): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   self.env = baseEnv()
   return ok()
+
+proc toggleDebugMoves*(self: MoveDatabase) =
+  self.debugMoves = not self.debugMoves
 
 proc vimMotionWord*(text: Rope, cursor: Cursor, inclusive: bool): Selection =
   const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
@@ -153,6 +157,90 @@ proc moveCursorColumn(text: Rope, cursor: Cursor, offset: int, wrap: bool = true
 
   return text.clampCursor(cursor, includeEol)
 
+proc findSurroundStart*(rope: Rope, cursor: Cursor, count: int, c0: char, c1: char, depth: int = 1): Option[Cursor] =
+  var depth = depth
+  var res = cursor
+
+  # todo: use RopeCursor
+  while res.line >= 0:
+    let line = rope.getLine(res.line)
+    res.column = min(res.column, line.len - 1)
+    while line.len > 0 and res.column >= 0:
+      let c = line.charAt(res.column)
+      # debugf"findSurroundStart: {res} -> {depth}, '{c}'"
+      if c == c1 and (depth < 1 or c0 != c1):
+        inc depth
+        if depth == 0:
+          return res.some
+      elif c == c0:
+        dec depth
+        if depth == 0:
+          return res.some
+      dec res.column
+
+    if res.line == 0:
+      return Cursor.none
+
+    res = (res.line - 1, rope.lineLen(res.line - 1) - 1)
+
+  return Cursor.none
+
+proc findSurroundEnd*(rope: Rope, cursor: Cursor, count: int, c0: char, c1: char, depth: int = 1): Option[Cursor] =
+  let lineCount = rope.lines
+  var depth = depth
+  var res = cursor
+
+  # todo: use RopeCursor
+  while res.line < lineCount:
+    let line = rope.getLine(res.line)
+    res.column = min(res.column, line.len - 1)
+    while line.len > 0 and res.column < line.len:
+      let c = line.charAt(res.column)
+      # echo &"findSurroundEnd: {res} -> {depth}, '{c}'"
+      if c == c0 and (depth < 1 or c0 != c1):
+        inc depth
+        if depth == 0:
+          return res.some
+      elif c == c1:
+        dec depth
+        if depth == 0:
+          return res.some
+      inc res.column
+
+    if res.line == lineCount - 1:
+      return Cursor.none
+
+    res = (res.line + 1, 0)
+
+  return Cursor.none
+
+proc getSurrounding*(rope: Rope, selection: Selection, count: int, c0: char, c1: char, inside: bool): Selection =
+  result = selection
+  while true:
+    let lastChar = rope.charAt(result.last.toPoint)
+    let (startDepth, endDepth) = if lastChar == c0:
+      (1, 0)
+    elif lastChar == c1:
+      (0, 1)
+    else:
+      (1, 1)
+
+    if rope.findSurroundStart(result.first, count, c0, c1, startDepth).getSome(opening) and rope.findSurroundEnd(result.last, count, c0, c1, endDepth).getSome(closing):
+      result = (opening, closing)
+      if inside:
+        result.first = rope.moveCursorColumn(result.first, 1)
+        result.last = rope.moveCursorColumn(result.last, -1)
+      return
+
+    if rope.findSurroundEnd(result.first, count, c0, c1, -1).getSome(opening) and rope.findSurroundEnd(opening, count, c0, c1, 0).getSome(closing):
+      result = (opening, closing)
+      if inside:
+        result.first = rope.moveCursorColumn(result.first, 1)
+        result.last = rope.moveCursorColumn(result.last, -1)
+      return
+    else:
+      return
+
 proc moveCursorVisualLine(displayMap: DisplayMap, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false, targetColumn: int): Cursor =
   let rope {.cursor.} = displayMap.buffer.visibleText
   let wrapPointOld = displayMap.toWrapPoint(cursor.toPoint)
@@ -198,6 +286,8 @@ proc moveCursorLine(text: Rope, displayMap: DisplayMap, cursor: Cursor, offset: 
 type MoveFunction* = proc(move: string, selections: openArray[Selection], count: int): seq[Selection] {.gcsafe, raises: [].}
 
 proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction, args: openArray[LispVal], env: Env): seq[Selection] =
+  if self.debugMoves:
+    debugf"applyMoveImpl '{move}' {args}, {env.env}"
 
   template getEnv(name: string, typ: untyped, default: untyped): untyped =
     block:
@@ -300,6 +390,9 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
   of "reverse":
     return selections.mapIt(it.reverse)
 
+  of "norm":
+    return selections.mapIt(it.normalized)
+
   of "word-line":
     return selections.mapIt:
       let cursor = it.last
@@ -322,34 +415,15 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
         res.last = (cursor.line + 1, 0)
       res
 
-  # of "number":
-  #   var r = cursor.toPoint...cursor.toPoint
-  #   var c = self.document.rope.cursorT(cursor.toPoint)
-  #   while c.currentChar in {'0'..'9'}:
-  #     c.seekNextRune()
-  #     r.b = c.position
-
-  #   if r.a.column > 0:
-  #     c = self.document.rope.cursorT(cursor.toPoint)
-  #     while c.position.column > 0:
-  #       c.seekPrevRune()
-  #       if c.currentChar == '-':
-  #         r.a = c.position
-  #         break
-
-  #       if c.currentChar notin {'0'..'9'}:
-  #         c.seekNextRune()
-  #         break
-  #       r.a = c.position
-
-  #   return r.toSelection
-
   # of "line-back":
   #   let first = if cursor.line > 0 and cursor.column == 0:
   #     (cursor.line - 1, self.document.lineLength(cursor.line - 1))
   #   else:
   #     (cursor.line, 0)
   #   result = (first, (cursor.line, self.document.lineLength(cursor.line)))
+
+  of "line-num":
+    return @[(getArg(0, int, 0), 0).toSelection]
 
   of "line":
     return selections.mapIt(block:
@@ -436,6 +510,9 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
     let dir = getArg(0, int, 1)
     return selections.mapIt(rope.moveCursorColumn(it.last, count * dir, wrap, includeEol).toSelection)
 
+  of "inclusive":
+    return selections.mapIt(if it.isEmpty: it else: (it.first, rope.moveCursorColumn(it.last, -1, false, true)))
+
   of "line-up", "line-down":
     let direction = if move == "line-down": 1 else: -1
     # return selections.mapIt((it.last, moveCursorLine(rope, displayMap, it.last, direction * count, targetColumn, false, includeEol)))
@@ -472,23 +549,37 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
 
       r.toSelection
 
-  # of "\"":
-  #   result = self.getSelectionInPair(cursor, '"')
-
-  # of "'":
-  #   result = self.getSelectionInPair(cursor, '\'')
-
-  # of "(", ")":
-  #   result = self.getSelectionInPairNested(cursor, '(', ')')
-
-  # of "{", "}":
-  #   result = self.getSelectionInPairNested(cursor, '{', '}')
-
-  # of "[", "]":
-  #   result = self.getSelectionInPairNested(cursor, '[', ']')
-
   of "target-column":
     return selections.mapIt(rope.clampCursor((it.last.line, targetColumn)).toSelection)
+
+  of "surround":
+    var c0 = getArg(0, string, "")
+    var c1 = getArg(1, string, "")
+    let inside = getArg(2, bool, false)
+    if c0.len > 0 and c1.len > 0:
+      result = selections.mapIt(rope.getSurrounding(it, count, c0[0], c1[0], inside))
+    elif c0.len > 0:
+      result = selections.mapIt(rope.getSurrounding(it, count, c0[0], c0[0], inside))
+    else:
+      result = selections.mapIt:
+        let c = rope.charAt(it.last.toPoint)
+        let (open, close, isOpen) = case c
+          of '(': ('(', ')', true)
+          of '{': ('{', '}', true)
+          of '[': ('[', ']', true)
+          of '<': ('<', '>', true)
+          of ')': ('(', ')', false)
+          of '}': ('{', '}', false)
+          of ']': ('[', ']', false)
+          of '>': ('<', '>', false)
+          of '"': ('"', '"', true)
+          of '\'': ('\'', '\'', true)
+          else: return
+        let selection = rope.getSurrounding(it, count, open, close, inside)
+        if isOpen:
+          selection
+        else:
+          selection.reverse
 
   of "move-to":
     let c = getArg(0, string, "")
@@ -506,13 +597,14 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
 proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, originalSelections: openArray[Selection], env: Env, fallback: MoveFunction): seq[Selection] =
   try:
     var env = env
-    # debugf"applyMoveLisp '{move}', {env.env}"
+    if self.debugMoves:
+      log lvlDebug, &"applyMoveLisp '{move}', {env.env}, {originalSelections}"
+
     let originalSelections = @originalSelections
     var lastSelections = originalSelections
     var selections = originalSelections
 
     var expr = move.parseLisp()
-    # debugf"lisp: {expr}"
 
     type Selector = enum OriginalStart, OriginalEnd, LastStart, LastEnd, CurrentStart, CurrentEnd
     proc parseSelector(val: LispVal, default: Selector): Selector =
@@ -549,15 +641,35 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
 
     var baseEnv = self.env.createChild()
     env.parent = baseEnv
+    var stack = newSeq[seq[Selection]]()
 
     baseEnv.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
       template impl(body: untyped): untyped =
         newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
           lastSelections = selections
           body
+          if self.debugMoves:
+            log lvlDebug, "move '", name, "' ", $lastSelections, " -> ", selections
         )
 
       case name
+      of "num-lines":
+        newNumber(displayMap.buffer.visibleText.lines)
+      of "num-bytes":
+        newNumber(displayMap.buffer.visibleText.bytes)
+      of "same?":
+        newBool(selections == originalSelections)
+      of "original":
+        impl:
+          selections = originalSelections
+      of "push":
+        newFunc(name, proc(args {.inject.}: seq[LispVal]): LispVal =
+          stack.add selections
+        )
+      of "pop":
+        impl:
+          if stack.len > 0:
+            selections = stack.pop()
       of "start", "first":
         impl:
           selections = selections.mapIt(it.first.toSelection)
@@ -574,8 +686,6 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
             parseSelector(args[1], CurrentEnd)
           else:
             CurrentEnd
-
-          # debugf"join {startSelector}, {endSelector}, {originalSelections}, {lastSelections}, {selections}"
 
           if selections.len > 0:
             for i in 0..<selections.len:

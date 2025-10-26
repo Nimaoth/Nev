@@ -8,7 +8,7 @@ import finder/[finder, previewer, file_previewer]
 import platform/[platform]
 import service, dispatch_tables, platform_service
 import selector_popup, vcs, layout, vfs, config_provider
-from scripting_api import SelectionCursor, ScrollSnapBehaviour
+from scripting_api import SelectionCursor, ScrollSnapBehaviour, toSelection
 
 logCategory "vcs_api"
 
@@ -230,7 +230,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   popup.addCustomCommand "prev-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    popup.previewEditor.selection = popup.previewEditor.getPrevChange(popup.previewEditor.selection.last)
+    popup.previewEditor.selection = popup.previewEditor.getPrevChange(popup.previewEditor.selection.first).last.toSelection
     popup.previewEditor.scrollToCursor(SelectionCursor.Last)
     popup.previewEditor.centerCursor()
     popup.previewEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)
@@ -239,7 +239,7 @@ proc chooseGitActiveFiles*(self: VCSService, all: bool = false) {.expose("vcs").
   popup.addCustomCommand "next-change", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil:
       return false
-    popup.previewEditor.selection = popup.previewEditor.getNextChange(popup.previewEditor.selection.last)
+    popup.previewEditor.selection = popup.previewEditor.getNextChange(popup.previewEditor.selection.first).last.toSelection
     popup.previewEditor.scrollToCursor(SelectionCursor.Last)
     popup.previewEditor.centerCursor()
     popup.previewEditor.setNextSnapBehaviour(ScrollSnapBehaviour.MinDistanceOffscreen)

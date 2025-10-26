@@ -272,22 +272,6 @@ proc clearTabStops*(editor: TextEditor): void {.nodestroy.} =
   arg0 = editor.id
   textEditorClearTabStopsImported(arg0)
 
-proc textEditorSelectNextTabStopImported(a0: uint64): void {.
-    wasmimport("select-next-tab-stop", "nev:plugins/text-editor").}
-proc selectNextTabStop*(editor: TextEditor): void {.nodestroy.} =
-  ## todo
-  var arg0: uint64
-  arg0 = editor.id
-  textEditorSelectNextTabStopImported(arg0)
-
-proc textEditorSelectPrevTabStopImported(a0: uint64): void {.
-    wasmimport("select-prev-tab-stop", "nev:plugins/text-editor").}
-proc selectPrevTabStop*(editor: TextEditor): void {.nodestroy.} =
-  ## todo
-  var arg0: uint64
-  arg0 = editor.id
-  textEditorSelectPrevTabStopImported(arg0)
-
 proc textEditorUndoImported(a0: uint64; a1: int32; a2: int32): void {.
     wasmimport("undo", "nev:plugins/text-editor").}
 proc undo*(editor: TextEditor; checkpoint: WitString): void {.nodestroy.} =

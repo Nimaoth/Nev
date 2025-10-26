@@ -38,6 +38,8 @@ proc `==`*(a, b: WitString): bool =
     return false
   return a.toOpenArray() == b.toOpenArray()
 
+template ws*(s: WitString): WitString = s
+
 ############################ exported functions ############################
 
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
@@ -220,6 +222,12 @@ when pluginWorld == "plugin":
 
   proc addCustomTextMove*(name: string, move: MoveHandler) =
     defineMove(name.ws, cast[uint32](move), 0)
+
+  proc multiMove*(editor: TextEditor, selections: WitList[Selection], move: WitString|string): WitList[Selection] =
+    editor.multiMove(selections, ws(move), 0, false, true)
+
+  proc multiMove*(editor: TextEditor, selections: openArray[Selection], move: WitString|string): WitList[Selection] =
+    editor.multiMove(@@selections, ws(move), 0, false, true)
 
 func toSelection*(cursor: Cursor, default: Selection, which: sca.SelectionCursor): Selection =
   case which

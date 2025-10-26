@@ -1490,65 +1490,6 @@ proc includeSelectionEnd*(self: TextDocumentEditor, res: Selection, includeAfter
     if not includeAfter:
       result = (res.first, self.doMoveCursorColumn(res.last, -1, wrap = false))
 
-proc findSurroundStart*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0: char, c1: char,
-    depth: int = 1): Option[Cursor] =
-  var depth = depth
-  var res = cursor
-
-  # todo: use RopeCursor
-  while res.line >= 0:
-    let line = editor.document.getLine(res.line)
-    res.column = min(res.column, line.len - 1)
-    while line.len > 0 and res.column >= 0:
-      let c = line.charAt(res.column)
-      # debugf"findSurroundStart: {res} -> {depth}, '{c}'"
-      if c == c1 and (depth < 1 or c0 != c1):
-        inc depth
-        if depth == 0:
-          return res.some
-      elif c == c0:
-        dec depth
-        if depth == 0:
-          return res.some
-      dec res.column
-
-    if res.line == 0:
-      return Cursor.none
-
-    res = (res.line - 1, editor.lineLength(res.line - 1) - 1)
-
-  return Cursor.none
-
-proc findSurroundEnd*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0: char, c1: char,
-    depth: int = 1): Option[Cursor] =
-  let lineCount = editor.lineCount
-  var depth = depth
-  var res = cursor
-
-  # todo: use RopeCursor
-  while res.line < lineCount:
-    let line = editor.document.getLine(res.line)
-    res.column = min(res.column, line.len - 1)
-    while line.len > 0 and res.column < line.len:
-      let c = line.charAt(res.column)
-      # echo &"findSurroundEnd: {res} -> {depth}, '{c}'"
-      if c == c0 and (depth < 1 or c0 != c1):
-        inc depth
-        if depth == 0:
-          return res.some
-      elif c == c1:
-        dec depth
-        if depth == 0:
-          return res.some
-      inc res.column
-
-    if res.line == lineCount - 1:
-      return Cursor.none
-
-    res = (res.line + 1, 0)
-
-  return Cursor.none
-
 proc toggleFlag*(self: TextDocumentEditor, key: string) {.expose("editor.text").} =
   try:
     let value = self.config.get(key, false)
@@ -1925,7 +1866,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
     texts.setLen(0)
     for s in selections.mitems:
-      let openLocation = self.findSurroundStart((s.first.line, s.first.column - 1),
+      let openLocation = self.document.rope.findSurroundStart((s.first.line, s.first.column - 1),
           0, open, close, 1).getOr:
         texts.add text
         continue
@@ -2350,7 +2291,7 @@ proc getNextChange*(self: TextDocumentEditor, cursor: Cursor): Selection =
 
   for mapping in self.diffChanges.get:
     if mapping.target.first > cursor.line:
-      return (mapping.target.first, 0).toSelection
+      return ((mapping.target.first, 0), (mapping.target.last, 0))
 
   return cursor.toSelection
 
@@ -2795,46 +2736,11 @@ proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): Optio
 proc findWordBoundary*(self: TextDocumentEditor, cursor: Cursor): Selection =
   self.document.findWordBoundary(cursor)
 
-proc getSelectionInPair*(self: TextDocumentEditor, cursor: Cursor, delimiter: char): Selection =
-  result = cursor.toSelection
-  # todo
-
-proc getSelectionInPairNested*(self: TextDocumentEditor, cursor: Cursor, open: char, close: char): Selection =
-  result = cursor.toSelection
-  # todo
-
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection =
   result = self.getSelectionForMove(selection.first, move, count) or
     self.getSelectionForMove(selection.last, move, count)
   if selection.isBackwards:
     result = result.reverse
-
-proc getSurrounding*(self: TextDocumentEditor, selection: Selection, count: int, c0: char, c1: char, inside: bool): Selection =
-  result = selection
-  while true:
-    let lastChar = self.getChar(result.last)
-    let (startDepth, endDepth) = if lastChar == c0:
-      (1, 0)
-    elif lastChar == c1:
-      (0, 1)
-    else:
-      (1, 1)
-
-    if self.findSurroundStart(result.first, count, c0, c1, startDepth).getSome(opening) and self.findSurroundEnd(result.last, count, c0, c1, endDepth).getSome(closing):
-      result = (opening, closing)
-      if inside:
-        result.first = self.doMoveCursorColumn(result.first, 1)
-        result.last = self.doMoveCursorColumn(result.last, -1)
-      return
-
-    if self.findSurroundEnd(result.first, count, c0, c1, -1).getSome(opening) and self.findSurroundEnd(opening, count, c0, c1, 0).getSome(closing):
-      result = (opening, closing)
-      if inside:
-        result.first = self.doMoveCursorColumn(result.first, 1)
-        result.last = self.doMoveCursorColumn(result.last, -1)
-      return
-    else:
-      return
 
 proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openArray[Selection], count: int): seq[Selection] =
   debugf"applyMoveFallback {move}"
@@ -2880,12 +2786,8 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
         default
 
   case move
-  of "surround":
-    let c0 = getArg(0, string, "(")
-    let c1 = getArg(1, string, ")")
-    let inside = getArg(2, bool, true)
-    if c0.len > 0 and c1.len > 0:
-      result = selections.mapIt(self.getSurrounding(it, count, c0[0], c1[0], inside))
+  of "word":
+    return selections.mapIt(self.findWordBoundary(it.last))
 
   of "page":
     let linesToMove = int(self.screenLineCount() * count div 100)
@@ -2988,165 +2890,41 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
 
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string,
     count: int = 0, includeEol: bool = true): Selection =
-  defer:
-    debugf"getSelectionForMove '{move}', {cursor} -> {result}"
-  case move
-  of "word":
-    result = self.findWordBoundary(cursor)
-    for _ in 1..<count:
-      result = result or self.findWordBoundary(result.last) or self.findWordBoundary(result.first)
-
-  of "number":
-    var r = cursor.toPoint...cursor.toPoint
-    var c = self.document.rope.cursorT(cursor.toPoint)
-    while c.currentChar in {'0'..'9'}:
-      c.seekNextRune()
-      r.b = c.position
-
-    if r.a.column > 0:
-      c = self.document.rope.cursorT(cursor.toPoint)
-      while c.position.column > 0:
-        c.seekPrevRune()
-        if c.currentChar == '-':
-          r.a = c.position
-          break
-
-        if c.currentChar notin {'0'..'9'}:
-          c.seekNextRune()
-          break
-        r.a = c.position
-
-    return r.toSelection
-
-  of "line-back":
-    let first = if cursor.line > 0 and cursor.column == 0:
-      (cursor.line - 1, self.document.lineLength(cursor.line - 1))
-    else:
-      (cursor.line, 0)
-    result = (first, (cursor.line, self.document.lineLength(cursor.line)))
-
-  of "line":
-    let lineLen = self.document.lineLength(cursor.line)
-    result = ((cursor.line, 0), (cursor.line, lineLen))
-    if not includeEol and result.last.column == lineLen:
-      result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
-
-  of "visual-line":
-    let lineLen = self.document.lineLength(cursor.line)
-    let wrapPoint = self.displayMap.toWrapPoint(cursor.toPoint)
-    let displayLineStart = wrapPoint(wrapPoint.row)
-    let displayLineEnd = wrapPoint(wrapPoint.row + 1)
-    result[0] = self.displayMap.toPoint(displayLineStart, Right).toCursor
-    result[1] = self.displayMap.toPoint(displayLineEnd, Right).toCursor
-    if result[1].column == 0:
-      result[1].line -= 1
-      result[1].column = self.document.lineLength(result[1].line)
-
-    if not includeEol:
-      if result.last.column == lineLen:
-        result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
-      elif result.last.column < self.document.lineLength(cursor.line): # This is the case if we're not in the last visual sub line
-        result.last = self.doMoveCursorColumn(result.last, -1, wrap = false)
-
-  of "line-next":
-    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
-    if result.last.line + 1 < self.document.numLines:
-      result.last = (result.last.line + 1, 0)
-    for _ in 1..<count:
-      result = result or (
-        (result.last.line, 0),
-        (result.last.line, self.document.lineLength(result.last.line))
-      )
-      if result.last.line + 1 < self.document.numLines:
-        result.last = (result.last.line + 1, 0)
-
-  of "line-prev":
-    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
-    if result.first.line > 0:
-      result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
-    for _ in 1..<count:
-      result = result or (Cursor (result.first.line, 0), result.first)
-      if result.first.line > 0:
-        result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
-
-  of "line-no-indent":
-    let indent = self.document.rope.indentBytes(cursor.line)
-    result = ((cursor.line, indent), (cursor.line, self.document.lineLength(cursor.line)))
-
-  of "file":
-    result.first = (0, 0)
-    let line = self.document.numLines - 1
-    result.last = (line, self.document.lineLength(line))
-
-  of "column":
-    result = self.doMoveCursorColumn(cursor, count, includeAfter = includeEol).toSelection
-
-  of "prev-find-result":
-    result = self.getPrevFindResult(cursor, count)
-
-  of "next-find-result":
-    result = self.getNextFindResult(cursor, count)
-
-  of "\"":
-    result = self.getSelectionInPair(cursor, '"')
-
-  of "'":
-    result = self.getSelectionInPair(cursor, '\'')
-
-  of "(", ")":
-    result = self.getSelectionInPairNested(cursor, '(', ')')
-
-  of "{", "}":
-    result = self.getSelectionInPairNested(cursor, '{', '}')
-
-  of "[", "]":
-    result = self.getSelectionInPairNested(cursor, '[', ']')
-
+  let selections = self.getSelectionsForMove([cursor.toSelection], move, count, includeEol)
+  if selections.len > 0:
+    return selections[0]
   else:
-    if move.startsWith("move-to "):
-      # todo: use RopeCursor
-      let str = move[8..^1]
-      let line = self.document.getLine cursor.line
-      result = cursor.toSelection
-      let index = line.suffix(cursor.column).find(str)
-      if index >= 0:
-        result.last = (cursor.line, index + 1 + cursor.column)
-      for _ in 1..<count:
-        let index = line.suffix(result.last.column).find(str)
-        if index >= 0:
-          result.last = (result.last.line, index + 1 + result.last.column)
+    return cursor.toSelection
+  # defer:
+  #   debugf"getSelectionForMove '{move}', {cursor} -> {result}"
+  # case move
 
-    elif move.startsWith("move-before "):
-      # todo: use RopeCursor
-      let str = move[12..^1]
-      let line = self.document.getLine cursor.line
-      result = cursor.toSelection
-      let index = line.suffix(cursor.column + 1).find(str)
-      if index >= 0:
-        result.last = (cursor.line, index + cursor.column + 1)
-      for _ in 1..<count:
-        let index = line.suffix(result.last.column + 1).find(str)
-        if index >= 0:
-          result.last = (result.last.line, index + result.last.column + 1)
-    else:
-      result = cursor.toSelection
+  # of "line-back":
+  #   let first = if cursor.line > 0 and cursor.column == 0:
+  #     (cursor.line - 1, self.document.lineLength(cursor.line - 1))
+  #   else:
+  #     (cursor.line, 0)
+  #   result = (first, (cursor.line, self.document.lineLength(cursor.line)))
 
-      let cursorJson = self.plugins.invokeAnyCallback("editor.text.custom-move", %*{
-        "editor": self.id.EditorId,
-        "move": move,
-        "cursor": cursor.toJson,
-        "count": count,
-      })
+  # else:
+    # result = cursor.toSelection
 
-      if cursorJson.isNil:
-        log(lvlError, fmt"editor.text.custom-move returned nil")
-        return result
+    # let cursorJson = self.plugins.invokeAnyCallback("editor.text.custom-move", %*{
+    #   "editor": self.id.EditorId,
+    #   "move": move,
+    #   "cursor": cursor.toJson,
+    #   "count": count,
+    # })
 
-      result = cursorJson.jsonTo(Selection).catch:
-        log(lvlError, fmt"Failed to parse selection from custom move '{move}': {cursorJson}")
-        return cursor.toSelection
+    # if cursorJson.isNil:
+    #   log(lvlError, fmt"editor.text.custom-move returned nil")
+    #   return result
 
-      return result
+    # result = cursorJson.jsonTo(Selection).catch:
+    #   log(lvlError, fmt"Failed to parse selection from custom move '{move}': {cursorJson}")
+    #   return cursor.toSelection
+
+    # return result
 
 proc mapAllOrLast[T](self: openArray[T], all: bool, p: proc(v: T): T {.gcsafe, raises: [].}): seq[T] =
   if all:
@@ -3207,6 +2985,7 @@ proc getSearchQuery*(self: TextDocumentEditor): string =
   return self.searchQuery
 
 proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false, prefix: string = "", suffix: string = ""): bool {.expose("editor.text").} =
+  debugf"setSearchQuery '{query}'"
 
   let query = if escapeRegex:
     query.escapeRegex
@@ -3265,12 +3044,14 @@ proc openSearchBar*(self: TextDocumentEditor, query: string = "", scrollToPrevie
       if scrollToPreview:
         self.scrollToCursor(s.last)
 
-proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string,
-    count: int = 0, prefix: string = "", suffix: string = ""): Selection =
+proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0, prefix: string = "", suffix: string = ""): Selection =
   let selection = self.getSelectionForMove(self.selection.last, move, count)
   let searchText = self.document.contentString(selection)
   discard self.setSearchQuery(searchText, escapeRegex=true, prefix, suffix)
   return selection
+
+proc toggleDebugMoves*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.moveDatabase.toggleDebugMoves()
 
 proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
