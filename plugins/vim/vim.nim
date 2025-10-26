@@ -265,7 +265,7 @@ proc applyVimMove(editor: TextEditor, move: string, suffix: string, count: int =
       adjustedMove.removeSuffix(targetColumnSuffix)
       result.updateTargetColumn = false
     adjustedMove = adjustedMove & " " &  suffix
-    debugf"applyVimMove '{move}' -> '{adjustedMove}'"
+    # debugf"applyVimMove '{move}' -> '{adjustedMove}'"
     for i in 0..<max(count, 1):
       editor.setSelections editor.multiMove(editor.selections, adjustedMove.ws, count, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
 
@@ -427,10 +427,10 @@ proc vimReplace(editor: TextEditor, input: string) {.exposeActive(editorContext)
   editor.normalMode()
 
 proc selectMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
-  let (action, arg) = move.parseAction
-  for i in 0..<max(count, 1):
-    log lvlDebug, $editor.command(action.ws, arg.ws)
-  editor.updateTargetColumn()
+  let res = editor.applyVimMove(move, "(merge)", count)
+  if res.updateTargetColumn:
+    editor.updateTargetColumn()
+  editor.scrollToCursor()
 
 proc deleteMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   editor.recordCurrentCommandInPeriodMacro()
@@ -477,8 +477,8 @@ proc vimMotionParagraphOuter*(data: uint32, text: sink Rope, selections: openArr
   # if result.last.line + 1 < editor.lineCount:
   #   result = result or vimMotionParagraphInner(data, text, (result.last.line.int + 1, 0).toCursor, 1, includeEol)
 
-addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
-addCustomTextMove "vim-paragraph-outer", vimMotionParagraphOuter
+addCustomTextMove "vim.paragraph-inner", vimMotionParagraphInner
+addCustomTextMove "vim.paragraph-outer", vimMotionParagraphOuter
 
 iterator iterateTextObjects*(editor: TextEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
   var selection = editor.applyMove(cursor, move, 0)
@@ -626,7 +626,7 @@ proc moveParagraph(editor: TextEditor, backwards: bool, count: int = 1) {.expose
   editor.setSelections editor.selections.mapIt(block:
       var res = it.last
       for k in 0..<max(1, count):
-        for i, selection in enumerateTextObjects(editor, res, "vim-paragraph-inner", backwards):
+        for i, selection in enumerateTextObjects(editor, res, "vim.paragraph-inner", backwards):
           if i == 0: continue
           let cursor = if backwards: selection.last else: selection.first
           if editor.lineLength(cursor.line) == 0:

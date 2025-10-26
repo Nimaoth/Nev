@@ -215,6 +215,8 @@ proc findSurroundEnd*(rope: Rope, cursor: Cursor, count: int, c0: char, c1: char
   return Cursor.none
 
 proc getSurrounding*(rope: Rope, selection: Selection, count: int, c0: char, c1: char, inside: bool): Selection =
+  if selection.isBackwards:
+    return rope.getSurrounding(selection.reverse, count, c0, c1, inside).reverse
   result = selection
   while true:
     let lastChar = rope.charAt(result.last.toPoint)
@@ -676,6 +678,29 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
       of "end", "last":
         impl:
           selections = selections.mapIt(it.last.toSelection)
+      of "merge":
+        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+          if selections.len > 0:
+            for i in 0..<min(originalSelections.len, selections.len):
+              if originalSelections[i].isBackwards:
+                if selections[i].isBackwards:
+                  let start = max(originalSelections[i].first, selections[i].first)
+                  let endd = min(originalSelections[i].last, selections[i].last)
+                  selections[i] = (start, endd)
+                else:
+                  let start = max(originalSelections[i].first, selections[i].last)
+                  let endd = min(originalSelections[i].last, selections[i].first)
+                  selections[i] = (start, endd)
+              else:
+                if selections[i].isBackwards:
+                  let start = min(originalSelections[i].first, selections[i].last)
+                  let endd = max(originalSelections[i].last, selections[i].first)
+                  selections[i] = (start, endd)
+                else:
+                  let start = min(originalSelections[i].first, selections[i].first)
+                  let endd = max(originalSelections[i].last, selections[i].last)
+                  selections[i] = (start, endd)
+        )
       of "join":
         newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
           let startSelector = if args.len > 0:
@@ -715,4 +740,5 @@ proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, select
   return self.applyMoveLisp(displayMap, "(" & move & ")", selections, env, fallback)
 
 proc registerMove*(self: MoveDatabase, move: string, impl: MoveImpl) =
+  log lvlInfo, &"Register custom move '{move}'"
   self.moves[move] = impl
