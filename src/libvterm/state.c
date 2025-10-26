@@ -270,7 +270,7 @@ static void set_lineinfo(VTermState *state, int row, int force, int dwl, int dhl
     state->lineinfo[row] = info;
 }
 
-static int on_text(const char bytes[], size_t len, void *user)
+static int on_text(char bytes[], size_t len, void *user)
 {
   VTermState *state = user;
 
@@ -589,7 +589,7 @@ static void savecursor(VTermState *state, int save)
   }
 }
 
-static int on_escape(const char *bytes, size_t len, void *user)
+static int on_escape(char *bytes, size_t len, void *user)
 {
   VTermState *state = user;
 
@@ -928,7 +928,7 @@ static void request_version_string(VTermState *state)
       VTERM_VERSION_MAJOR, VTERM_VERSION_MINOR);
 }
 
-static int on_csi(const char *leader, const long args[], int argcount, const char *intermed, char command, void *user)
+static int on_csi(char *leader, long args[], int argcount, char *intermed, char command, void *user)
 {
   VTermState *state = user;
   int leader_byte = 0;
@@ -1913,7 +1913,7 @@ static void request_status_string(VTermState *state, VTermStringFragment frag)
   vterm_push_output_sprintf_str(state->vt, C1_DCS, true, "0$r");
 }
 
-static int on_dcs(const char *command, size_t commandlen, VTermStringFragment frag, void *user)
+static int on_dcs(char *command, size_t commandlen, VTermStringFragment frag, void *user)
 {
   VTermState *state = user;
 
