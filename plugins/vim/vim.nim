@@ -270,7 +270,7 @@ proc applyVimMove(editor: TextEditor, move: string, suffix: string, count: int =
       editor.setSelections editor.multiMove(editor.selections, adjustedMove.ws, count, wrap=false, includeEol=editor.vimState.cursorIncludeEol)
 
   else:
-    log lvlWarn, &"applyVimMove old '{move}'"
+    # log lvlWarn, &"applyVimMove old '{move}'"
     let (action, arg) = move.parseAction
     for i in 0..<max(count, 1):
       discard editor.command(action.ws, arg.ws)
@@ -427,6 +427,7 @@ proc vimReplace(editor: TextEditor, input: string) {.exposeActive(editorContext)
   editor.normalMode()
 
 proc selectMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
+  # debugf"selectMove {move}"
   let res = editor.applyVimMove(move, "(merge)", count)
   if res.updateTargetColumn:
     editor.updateTargetColumn()
@@ -486,7 +487,7 @@ iterator iterateTextObjects*(editor: TextEditor, cursor: Cursor, move: string, b
   yield selection
   while true:
     let lastSelection = selection
-    if not backwards and selection.last.column == editor.lineLength(selection.last.line):
+    if not backwards and selection.last.column >= editor.lineLength(selection.last.line) - 1:
       if selection.last.line == editor.lineCount - 1:
         break
       selection = (selection.last.line.int + 1, 0).toSelection
@@ -589,7 +590,7 @@ proc applyMove(editor: TextEditor, selections: openArray[Selection], move: strin
   ## `count` How often to apply the move
   ## `which` How to assemble the final selection from the input and the move. If not set uses `editor.text.cursor.movement`
 
-  debugf"moveSelectionEnd '{move}' {count} {backwards} {allowEmpty}"
+  # debugf"applyMove '{move}' {count} {backwards} {allowEmpty}"
   let text = editor.content
   let which = which.get(getSetting[sca.SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both))
   return selections.mapIt(block:
@@ -726,14 +727,14 @@ proc move(editor: TextEditor, move: string, direction: int = 1, wrap: bool = fal
   editor.scrollToCursor()
   editor.updateTargetColumn()
 
-proc moveDirection(editor: TextEditor, move: string, direction: int, count: int = 1, wrap: bool = false, updateTargetColumn: bool = true) {.exposeActive(editorContext).} =
+proc moveDirection(editor: TextEditor, move: string, direction: int) {.exposeActive(editorContext).} =
   var move = move
   if not move.startsWith("("):
     move = "(" & move & ")"
   let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
   if cursorSelector == sca.Last:
     move.add " (join)"
-  editor.setSelections editor.multiMove(editor.selections, move.ws, direction * max(count, 1), wrap, includeEol = editor.vimState.cursorIncludeEol)
+  editor.setSelections editor.multiMove(editor.selections, move.ws, direction, wrap, includeEol = editor.vimState.cursorIncludeEol)
 
   if editor.vimState.selectLines:
     editor.selectLine()

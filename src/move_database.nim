@@ -157,7 +157,7 @@ proc moveCursorColumn(text: Rope, cursor: Cursor, offset: int, wrap: bool = true
 
   return text.clampCursor(cursor, includeEol)
 
-proc findSurroundStart*(rope: Rope, cursor: Cursor, count: int, c0: char, c1: char, depth: int = 1): Option[Cursor] =
+proc findSurroundStart*(rope: Rope, cursor: Cursor, c0: char, c1: char, depth: int = 1): Option[Cursor] =
   var depth = depth
   var res = cursor
 
@@ -185,7 +185,7 @@ proc findSurroundStart*(rope: Rope, cursor: Cursor, count: int, c0: char, c1: ch
 
   return Cursor.none
 
-proc findSurroundEnd*(rope: Rope, cursor: Cursor, count: int, c0: char, c1: char, depth: int = 1): Option[Cursor] =
+proc findSurroundEnd*(rope: Rope, cursor: Cursor, c0: char, c1: char, depth: int = 1): Option[Cursor] =
   let lineCount = rope.lines
   var depth = depth
   var res = cursor
@@ -214,9 +214,9 @@ proc findSurroundEnd*(rope: Rope, cursor: Cursor, count: int, c0: char, c1: char
 
   return Cursor.none
 
-proc getSurrounding*(rope: Rope, selection: Selection, count: int, c0: char, c1: char, inside: bool): Selection =
+proc getSurrounding*(rope: Rope, selection: Selection, c0: char, c1: char, inside: bool): Selection =
   if selection.isBackwards:
-    return rope.getSurrounding(selection.reverse, count, c0, c1, inside).reverse
+    return rope.getSurrounding(selection.reverse, c0, c1, inside).reverse
   result = selection
   while true:
     let lastChar = rope.charAt(result.last.toPoint)
@@ -227,14 +227,14 @@ proc getSurrounding*(rope: Rope, selection: Selection, count: int, c0: char, c1:
     else:
       (1, 1)
 
-    if rope.findSurroundStart(result.first, count, c0, c1, startDepth).getSome(opening) and rope.findSurroundEnd(result.last, count, c0, c1, endDepth).getSome(closing):
+    if rope.findSurroundStart(result.first, c0, c1, startDepth).getSome(opening) and rope.findSurroundEnd(result.last, c0, c1, endDepth).getSome(closing):
       result = (opening, closing)
       if inside:
         result.first = rope.moveCursorColumn(result.first, 1)
         result.last = rope.moveCursorColumn(result.last, -1)
       return
 
-    if rope.findSurroundEnd(result.first, count, c0, c1, -1).getSome(opening) and rope.findSurroundEnd(opening, count, c0, c1, 0).getSome(closing):
+    if rope.findSurroundEnd(result.first, c0, c1, -1).getSome(opening) and rope.findSurroundEnd(opening, c0, c1, 0).getSome(closing):
       result = (opening, closing)
       if inside:
         result.first = rope.moveCursorColumn(result.first, 1)
@@ -287,6 +287,20 @@ proc moveCursorLine(text: Rope, displayMap: DisplayMap, cursor: Cursor, offset: 
 
 type MoveFunction* = proc(move: string, selections: openArray[Selection], count: int): seq[Selection] {.gcsafe, raises: [].}
 
+proc getCount(env: Env): int =
+  let val = env["count"]
+  if val != nil:
+    case val.kind
+    of Number:
+      if val.num.int == 0:
+        return 1
+      else:
+        return val.num.int
+    else:
+      log lvlError, "Can't convert env.count (" & $val & ") to type int"
+
+  return 1
+
 proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction, args: openArray[LispVal], env: Env): seq[Selection] =
   if self.debugMoves:
     debugf"applyMoveImpl '{move}' {args}, {env.env}"
@@ -314,20 +328,7 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
       else:
         default
 
-  var count = block:
-    let val = env["count"]
-    if val != nil:
-      case val.kind
-      of Number:
-        if val.num.int == 0:
-          1
-        else:
-          val.num.int
-      else:
-        log lvlError, "In move '" & move & "': Can't convert env.count (" & $val & ") to type int"
-        1
-    else:
-      1
+  var count = env.getCount()
   assert count != 0
 
   let targetColumn = getEnv("target-column", int, 0)
@@ -342,52 +343,34 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
 
   case move
   of "vim.word":
-    result = selections.mapIt(vimMotionWord(rope, it.last, true))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionWord(rope, s.last, true) or vimMotionWord(rope, s.first, true)
-
-  of "vim.word-ex":
     result = selections.mapIt(vimMotionWord(rope, it.last, false))
     for _ in 1..<count:
       for s in result.mitems:
         s = s or vimMotionWord(rope, s.last, false) or vimMotionWord(rope, s.first, false)
 
   of "vim.word-back":
-    result = selections.mapIt(vimMotionWordBack(rope, it.last, true))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionWordBack(rope, s.first, true)
-
-  of "vim.word-back-ex":
     result = selections.mapIt(vimMotionWordBack(rope, it.last, false))
     for _ in 1..<count:
       for s in result.mitems:
         s = s or vimMotionWordBack(rope, s.first, false)
 
   of "vim.WORD":
-    result = selections.mapIt(vimMotionWordBig(rope, it.last, true))
-    for _ in 1..<count:
-      for s in result.mitems:
-        s = s or vimMotionWordBig(rope, s.last, true) or vimMotionWordBig(rope, s.first, true)
-
-  of "vim.WORD-ex":
     result = selections.mapIt(vimMotionWordBig(rope, it.last, false))
     for _ in 1..<count:
       for s in result.mitems:
         s = s or vimMotionWordBig(rope, s.last, false) or vimMotionWordBig(rope, s.first, false)
 
   of "vim.word-inner":
-    result = selections.mapIt(vimMotionWord(rope, it.last, true))
+    result = selections.mapIt(vimMotionWord(rope, it.last, false))
     for _ in 1..<count:
       for s in result.mitems:
-        s = s or vimMotionWord(rope, s.last, true) or vimMotionWord(rope, s.first, true)
+        s = s or vimMotionWord(rope, s.last, false) or vimMotionWord(rope, s.first, false)
 
   of "vim.WORD-inner":
-    result = selections.mapIt(vimMotionWordBig(rope, it.last, true))
+    result = selections.mapIt(vimMotionWordBig(rope, it.last, false))
     for _ in 1..<count:
       for s in result.mitems:
-        s = s or vimMotionWordBig(rope, s.last, true) or vimMotionWordBig(rope, s.first, true)
+        s = s or vimMotionWordBig(rope, s.last, false) or vimMotionWordBig(rope, s.first, false)
 
   of "reverse":
     return selections.mapIt(it.reverse)
@@ -559,9 +542,9 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
     var c1 = getArg(1, string, "")
     let inside = getArg(2, bool, false)
     if c0.len > 0 and c1.len > 0:
-      result = selections.mapIt(rope.getSurrounding(it, count, c0[0], c1[0], inside))
+      result = selections.mapIt(rope.getSurrounding(it, c0[0], c1[0], inside))
     elif c0.len > 0:
-      result = selections.mapIt(rope.getSurrounding(it, count, c0[0], c0[0], inside))
+      result = selections.mapIt(rope.getSurrounding(it, c0[0], c0[0], inside))
     else:
       result = selections.mapIt:
         let c = rope.charAt(it.last.toPoint)
@@ -577,7 +560,7 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
           of '"': ('"', '"', true)
           of '\'': ('\'', '\'', true)
           else: return
-        let selection = rope.getSurrounding(it, count, open, close, inside)
+        let selection = rope.getSurrounding(it, open, close, inside)
         if isOpen:
           selection
         else:
@@ -678,6 +661,15 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
       of "end", "last":
         impl:
           selections = selections.mapIt(it.last.toSelection)
+      of "count*":
+        newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
+          if args.len == 0 or args[0].kind != Number:
+            return newNil()
+          var count = env.getCount()
+          assert count != 0
+          env["count"] = newNumber(count.float * args[0].num)
+          return newNil()
+        )
       of "merge":
         newFunc(name, false, proc(args {.inject.}: seq[LispVal]): LispVal =
           if selections.len > 0:

@@ -1866,8 +1866,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
     texts.setLen(0)
     for s in selections.mitems:
-      let openLocation = self.document.rope.findSurroundStart((s.first.line, s.first.column - 1),
-          0, open, close, 1).getOr:
+      let openLocation = self.document.rope.findSurroundStart((s.first.line, s.first.column - 1), open, close, 1).getOr:
         texts.add text
         continue
 
