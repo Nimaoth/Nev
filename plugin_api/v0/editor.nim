@@ -12,12 +12,15 @@ import
 import
   types
 
-proc editorActiveEditorImported(a0: int32): void {.
+proc editorActiveEditorImported(a0: uint8; a1: int32): void {.
     wasmimport("active-editor", "nev:plugins/editor").}
-proc activeEditor*(): Option[Editor] {.nodestroy.} =
+proc activeEditor*(options: ActiveEditorFlags): Option[Editor] {.nodestroy.} =
   ## Returns a handle for the currently active text editor.
-  var retArea: array[16, uint8]
-  editorActiveEditorImported(cast[int32](retArea[0].addr))
+  var
+    retArea: array[16, uint8]
+    arg0: uint8
+  arg0 = cast[uint8](options)
+  editorActiveEditorImported(arg0, cast[int32](retArea[0].addr))
   if cast[ptr int64](retArea[0].addr)[] != 0:
     var temp: Editor
     temp.id = convert(cast[ptr uint64](retArea[8].addr)[], uint64)

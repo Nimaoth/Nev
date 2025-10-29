@@ -354,7 +354,7 @@ void vterm_set_utf8(VTerm *vt, int is_utf8);
 size_t vterm_input_write(VTerm *vt, const char *bytes, size_t len);
 
 /* Setting output callback will override the buffer logic */
-typedef void VTermOutputCallback(const char *s, size_t len, void *user);
+typedef void VTermOutputCallback(char *s, size_t len, void *user);
 void vterm_output_set_callback(VTerm *vt, VTermOutputCallback *func, void *user);
 
 /* These buffer functions only work if output callback is NOT set
@@ -402,12 +402,12 @@ int vterm_get_mouse_flags(VTerm *vt);
 #define CSI_ARG_COUNT(a)      (CSI_ARG(a) == CSI_ARG_MISSING || CSI_ARG(a) == 0 ? 1 : CSI_ARG(a))
 
 typedef struct {
-  int (*text)(const char *bytes, size_t len, void *user);
+  int (*text)(char *bytes, size_t len, void *user);
   int (*control)(unsigned char control, void *user);
-  int (*escape)(const char *bytes, size_t len, void *user);
-  int (*csi)(const char *leader, const long args[], int argcount, const char *intermed, char command, void *user);
+  int (*escape)(char *bytes, size_t len, void *user);
+  int (*csi)(char *leader, long args[], int argcount, char *intermed, char command, void *user);
   int (*osc)(int command, VTermStringFragment frag, void *user);
-  int (*dcs)(const char *command, size_t commandlen, VTermStringFragment frag, void *user);
+  int (*dcs)(char *command, size_t commandlen, VTermStringFragment frag, void *user);
   int (*apc)(VTermStringFragment frag, void *user);
   int (*pm)(VTermStringFragment frag, void *user);
   int (*sos)(VTermStringFragment frag, void *user);
@@ -437,15 +437,15 @@ typedef struct {
   int (*settermprop)(VTermProp prop, VTermValue *val, void *user);
   int (*bell)(void *user);
   int (*resize)(int rows, int cols, VTermStateFields *fields, void *user);
-  int (*setlineinfo)(int row, const VTermLineInfo *newinfo, const VTermLineInfo *oldinfo, void *user);
+  int (*setlineinfo)(int row, VTermLineInfo *newinfo, VTermLineInfo *oldinfo, void *user);
   int (*sb_clear)(void *user);
 } VTermStateCallbacks;
 
 typedef struct {
   int (*control)(unsigned char control, void *user);
-  int (*csi)(const char *leader, const long args[], int argcount, const char *intermed, char command, void *user);
+  int (*csi)(char *leader, long args[], int argcount, char *intermed, char command, void *user);
   int (*osc)(int command, VTermStringFragment frag, void *user);
-  int (*dcs)(const char *command, size_t commandlen, VTermStringFragment frag, void *user);
+  int (*dcs)(char *command, size_t commandlen, VTermStringFragment frag, void *user);
   int (*apc)(VTermStringFragment frag, void *user);
   int (*pm)(VTermStringFragment frag, void *user);
   int (*sos)(VTermStringFragment frag, void *user);
@@ -545,7 +545,7 @@ typedef struct {
   int (*settermprop)(VTermProp prop, VTermValue *val, void *user);
   int (*bell)(void *user);
   int (*resize)(int rows, int cols, void *user);
-  int (*sb_pushline)(int cols, const VTermScreenCell *cells, void *user);
+  int (*sb_pushline)(int cols, VTermScreenCell *cells, void *user);
   int (*sb_popline)(int cols, VTermScreenCell *cells, void *user);
   int (*sb_clear)(void* user);
 } VTermScreenCallbacks;

@@ -1,13 +1,26 @@
-import std/[options]
+import std/[options, macros]
 import misc/[util, custom_async, custom_logger]
 
 logCategory "clipboard"
 
 import compilation_config
 
-when enableSystemClipboard:
+when enableWindyClipboard:
+  import windy
   static:
-    echo "Building with system clipboard"
+    hint("Building with windy clipboard")
+
+  proc setSystemClipboardText*(str: string) =
+    {.gcsafe.}:
+      setClipboardString(str)
+
+  proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
+    {.gcsafe.}:
+      return getClipboardString().some
+
+elif enableSystemClipboard:
+  static:
+    hint("Building with system clipboard")
   import nimclipboard/libclipboard
   import system/ansi_c
 

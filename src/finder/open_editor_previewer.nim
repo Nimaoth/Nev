@@ -38,7 +38,7 @@ method previewItem*(self: OpenEditorPreviewer, item: FinderItem, editor: Documen
 
   let editor = editor.TextDocumentEditor
 
-  let editorToPreview = self.editors.getEditorForId(editorId).getOr:
+  let editorToPreview = self.editors.getEditorForId(editorId.EditorIdNew).getOr:
     return
 
   if not (editorToPreview of TextDocumentEditor):
