@@ -1064,7 +1064,7 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
 
 proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
   ## Line is 0-based
-  if self.editors.getEditorForId(editorId).getSome(editor) and editor of TextDocumentEditor:
+  if self.editors.getEditorForId(editorId.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let path = editor.TextDocumentEditor.document.filename
     if not self.breakpoints.contains(path):
       self.breakpoints[path] = @[]
@@ -1085,7 +1085,7 @@ proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose
 
 proc toggleBreakpoint*(self: Debugger) {.expose("debugger").} =
   if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    self.toggleBreakpointAt(view.editor.id, view.editor.TextDocumentEditor.selection.last.line)
+    self.toggleBreakpointAt(view.editor.id.EditorId, view.editor.TextDocumentEditor.selection.last.line)
 
 proc removeBreakpoint*(self: Debugger, path: string, line: int) {.expose("debugger").} =
   ## Line is 1-based

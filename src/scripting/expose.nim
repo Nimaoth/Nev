@@ -8,8 +8,6 @@ const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (refer
 const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to list of tuples of name and wrapper
 const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
-const exposedFunctions* = CacheTable"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
-const wasmImportedFunctions* = CacheTable"WasmImportedFunctions"
 
 template varargs*() {.pragma.}
 
@@ -19,14 +17,6 @@ macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
 
 macro addInjector*(name: untyped, function: typed) =
   injectors[$name] = function
-
-macro addWasmImportedFunction*(moduleName: static string, name: untyped, thisSide: untyped, wasmSide: untyped) =
-  let n = nnkStmtList.newTree(name, thisSide, wasmSide)
-  for name, _ in wasmImportedFunctions:
-    if name == moduleName:
-      wasmImportedFunctions[name].add n
-      return
-  wasmImportedFunctions[moduleName] = nnkStmtList.newTree(n)
 
 macro addFunction(name: untyped, original: typed, wrapper: typed, moduleName: static string, docs: typed) =
   ## Registers the nim function `name` in the module `moduleName`. `script` is a symbol referring
@@ -39,13 +29,9 @@ macro addFunction(name: untyped, original: typed, wrapper: typed, moduleName: st
       return
   functions[moduleName] = nnkStmtList.newTree(n)
 
-macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: static int) =
-  let val = nnkStmtList.newTree(name, newLit($lineNumber))
-  for list, _ in exposedFunctions:
-    if list == moduleName:
-      exposedFunctions[list].add val
-      return
-  exposedFunctions[moduleName] = nnkStmtList.newTree(val)
+macro printDispatchStats*() =
+  for moduleName, functions in functions:
+    echo &"module '{moduleName}': {functions.len} functions"
 
 proc generateUniqueName*(moduleName: string, def: NimNode): string =
   result = moduleName
@@ -77,17 +63,8 @@ proc removePragmas(node: var NimNode) =
       param[0] = name
 
 macro expose*(moduleName: static string, def: untyped): untyped =
-  # echo moduleName, "::", def.name.repr
   if not exposeScriptingApi:
     return def
-
-  defer:
-    discard
-    # echo result.repr
-    # echo "===================================================================="
-
-  # echo def.repr
-  # echo def.treeRepr
 
   var def = def
 
@@ -116,39 +93,16 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       if pureFunctionNameStr == entry[0].repr:
         suffix.add("2")
 
-  # defer:
-  #   if pureFunctionNameStr == "setMove":
-  #     echo def.treeRepr
-  #     echo result.repr
-
   # The wrapper function which takes JSON arguments and returns JSON and internally calls the Nim function
   let jsonWrapperFunctionName = ident(uniqueName & "_json")
 
   # The script function is a wrapper around impl which translates some argument types
-  # and inserts some arguments automatically using injectors. This function will be called from the NimScript.
+  # and inserts some arguments automatically using injectors. This function will be called from the json wrapper.
   # This function has a unique name, otherwise we can't call it from nimscript
   let scriptFunctionSym = ident(uniqueName & "_impl")
   var scriptFunction = def.copy
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
   var callImplFromScriptFunction = nnkCall.newTree(functionName)
-
-  # Wrapper function for the script function which is inserted into NimScript.
-  # This has the same name as the original function and is used to get function overloading back
-  var scriptFunctionWrapper = def.copy
-  scriptFunctionWrapper[0] = nnkPostfix.newTree(ident"*", pureFunctionName)
-  var callScriptFuncFromScriptFuncWrapper = nnkCall.newTree(scriptFunctionSym)
-
-  # Wrapper function for wasm code in the nim wasm wrapper library
-  let jsonStringWrapperFunctionName = ident(uniqueName & "_wasm")
-  var jsonStringWrapperFunctionWasm = def.copy
-  jsonStringWrapperFunctionWasm[0] = nnkPostfix.newTree(ident"*", pureFunctionName)
-  var callJsonStringWrapperFunctionWasmArr = ident"argsJson"
-  var callJsonStringWrapperFunctionWasmRes = ident"res"
-  var callJsonStringWrapperFunctionWasm = genAst(f=jsonStringWrapperFunctionName, res=callJsonStringWrapperFunctionWasmRes, argsJson=callJsonStringWrapperFunctionWasmArr,
-      argsJsonString="argsJsonString".ident):
-    var argsJson = newJArray()
-    let argsJsonString = $argsJson
-    let res {.used.} = f(argsJsonString.cstring)
 
   var callScriptFuncFromJson = nnkCall.newTree(scriptFunctionSym)
 
@@ -167,7 +121,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   # Argument of the JSON wrapper which calls the script function. Defined here so we can use it in the loop.
   let jsonArg = nskParam.genSym
 
-  # Go through each parameter in reverse, fill out the args in `callImplFromScriptFunction`, `callScriptFuncFromScriptFuncWrapper`
+  # Go through each parameter in reverse, fill out the args in `callImplFromScriptFunction`
   # and `callScriptFuncFromJson`
   for k in 1..argCount:
     let i = argCount - k
@@ -184,8 +138,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       if source == mappedArgumentType.repr:
         mappedArgumentType = target
         scriptFunction[3][i + 1][1] = target
-        scriptFunctionWrapper[3][i + 1][1] = target
-        jsonStringWrapperFunctionWasm[3][i + 1][1] = target
         break
 
     # The argument for the call to scriptFunction in the wrapper
@@ -253,8 +205,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       if mappedArgumentType.repr == typeName:
         wasInjected = true
         scriptFunction[3].del(i + 1)
-        scriptFunctionWrapper[3].del(i + 1)
-        jsonStringWrapperFunctionWasm[3].del(i + 1)
         callFromScriptArg = quote do:
           block:
             let r = `function`()
@@ -265,110 +215,42 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
     if not wasInjected:
       callScriptFuncFromJson.insert(1, resWrapper)
-      callScriptFuncFromScriptFuncWrapper.insert(1, scriptFunctionWrapper.argName(i))
-
-      let callJsonStringWrapperFunctionWasmArg = genAst(argsJson=callJsonStringWrapperFunctionWasmArr, arg = jsonStringWrapperFunctionWasm.argName(i)):
-        argsJson.add arg.toJson()
-
-      callJsonStringWrapperFunctionWasm.insert(1, callJsonStringWrapperFunctionWasmArg)
 
     callImplFromScriptFunction.insert(1, callFromScriptArg)
 
   scriptFunction[6] = quote do:
     `callImplFromScriptFunction`
 
-  var scriptFunctionWrapperBody = nnkStmtList.newTree()
-  if documentation.isSome:
-    scriptFunctionWrapperBody.add documentation.get
-  for n in runnableExampls:
-    scriptFunctionWrapperBody.add n
-  scriptFunctionWrapperBody.add callScriptFuncFromScriptFuncWrapper
-  scriptFunctionWrapper[6] = scriptFunctionWrapperBody
-
-  let scriptFunctionWrapperRepr = scriptFunctionWrapper.repr
-  let lineNumber = def.lineInfoObj.line
-
-  if returnType.isSome:
-    let returnNode = genAst(res=callJsonStringWrapperFunctionWasmRes):
-      try:
-        result = parseJson($res).jsonTo(typeof(result))
-      except CatchableError:
-        raiseAssert(getCurrentExceptionMsg())
-    callJsonStringWrapperFunctionWasm.add returnNode
-
-  jsonStringWrapperFunctionWasm[6] = callJsonStringWrapperFunctionWasm
-
   let jsonWrapperFunction = createJsonWrapper(scriptFunction, jsonWrapperFunctionName)
 
   # todo: why do we remove pragmas again?
   removePragmas(def)
   removePragmas(scriptFunction)
-  removePragmas(scriptFunctionWrapper)
-  removePragmas(jsonStringWrapperFunctionWasm)
 
   jsonWrapperFunction.addPragma(ident"gcsafe")
   scriptFunction.addPragma(ident"gcsafe")
   def.addPragma(ident"gcsafe")
-  jsonStringWrapperFunctionWasm.addPragma(ident"gcsafe")
 
   scriptFunction.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree()))
   def.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree()))
-  jsonStringWrapperFunctionWasm.addPragma(nnkExprColonExpr.newTree(ident"raises", nnkBracket.newTree()))
 
   result = quote do:
     `def`
 
     `scriptFunction`
 
-    static:
-        # This causes the function wrapper to be emitted in a file, so it can be imported in configs
-        addScriptWrapper(`scriptFunctionWrapperRepr`, `moduleName`, `lineNumber`)
-
   if not def.hasCustomPragma("nojsonwrapper"):
-    let jsonStringWrapperFunctionReturnValue = genSym(nskVar, functionName.strVal & "WasmReturnValue")
-    let arg = ident"arg"
-
     result.add jsonWrapperFunction
-
-    result.add quote do:
-      var `jsonStringWrapperFunctionReturnValue`: string = ""
-      proc `jsonStringWrapperFunctionName`*(arg: cstring): cstring {.exportc, used, gcsafe, raises: [].} =
-        try:
-          let argJson = parseJson($arg)
-          let res = `jsonWrapperFunctionName`(argJson)
-          {.gcsafe.}:
-            if res.isNil:
-              `jsonStringWrapperFunctionReturnValue` = ""
-            else:
-              `jsonStringWrapperFunctionReturnValue` = $res
-            return `jsonStringWrapperFunctionReturnValue`.cstring
-        except CatchableError:
-          let name = `pureFunctionNameStr`
-          {.push warning[BareExcept]:off.}
-          try:
-            logging.log lvlError, "Failed to run function " & name & &": Invalid arguments: {getCurrentExceptionMsg()}\n{getStackTrace()}"
-          except Exception:
-            discard
-          {.pop.}
-          return "null"
-
-      static:
-        addWasmImportedFunction(`moduleName`, `jsonStringWrapperFunctionName`, `jsonStringWrapperFunctionWasm`):
-          proc `jsonStringWrapperFunctionName`(`arg`: cstring): cstring {.importc.}
 
   result.add quote do:
     static:
       # This makes the function dispatchable
       addFunction(`pureFunctionName`, `signature`, `jsonWrapperFunctionName`, `moduleName`, `documentationStr`)
 
-  # echo result[result.len - 1].repr
+  # echo "==========================="
+  # echo result.repr
 
 macro genDispatchTable*(moduleName: static string): untyped =
-  defer:
-    discard
-    # echo result.repr
-    # echo result.treeRepr
-
   var funcs = genSym(nskVar, "functionList")
 
   let blk = nnkStmtList.newTree()
@@ -443,40 +325,3 @@ macro genDispatcher*(moduleName: static string): untyped =
   return quote do:
     proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] {.gcsafe, raises: [JsonCallError].} =
       result = `switch`
-
-proc generateScriptingApiPerModule*() {.compileTime.} =
-  var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"
-
-  for moduleName, list in exposedFunctions:
-    var script_api_content_wasm = """
-import std/[json, options]
-import scripting_api, misc/myjsonutils
-
-## This file is auto generated, don't modify.
-
-"""
-
-    for m, list in wasmImportedFunctions:
-      if moduleName != m:
-        continue
-      for f in list:
-        script_api_content_wasm.add f[2].repr
-        script_api_content_wasm.add "\n"
-        script_api_content_wasm.add f[1].repr
-        script_api_content_wasm.add "\n"
-
-    let file_name = moduleName.replace(".", "_")
-
-    echo fmt"Writing scripting/{file_name}_api_wasm.nim"
-    writeFile(fmt"scripting/{file_name}_api_wasm.nim", script_api_content_wasm)
-
-    imports_content.add fmt"import {file_name}_api_wasm" & "\n"
-    imports_content.add fmt"export {file_name}_api_wasm" & "\n"
-
-  when enableAst:
-    imports_content.add "\nconst enableAst* = true\n"
-  else:
-    imports_content.add "\nconst enableAst* = false\n"
-
-  echo fmt"Writing scripting/plugin_api.nim"
-  writeFile(fmt"scripting/plugin_api.nim", imports_content)

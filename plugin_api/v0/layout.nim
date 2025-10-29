@@ -62,3 +62,16 @@ proc focus*(slot: WitString): void {.nodestroy.} =
     arg0 = 0.int32
   arg1 = cast[int32](slot.len)
   layoutFocusImported(arg0, arg1)
+
+proc layoutCloseActiveViewImported(a0: bool; a1: bool): void {.
+    wasmimport("close-active-view", "nev:plugins/layout").}
+proc closeActiveView*(closeOpenPopup: bool; restoreHidden: bool): void {.
+    nodestroy.} =
+  ## Close the active view. If 'close-open-popup' is set and a popup is open then the popup will be closed.
+  ## If 'restore-hidden' is true then the view will be replaced by a hidden view, otherwise the slot will be removed from the layout..
+  var
+    arg0: bool
+    arg1: bool
+  arg0 = closeOpenPopup
+  arg1 = restoreHidden
+  layoutCloseActiveViewImported(arg0, arg1)

@@ -41,6 +41,8 @@ type
     framebufferId: GLuint
     framebuffer: Texture
 
+    textures: Table[string, Texture]
+
     typefaces: Table[string, Typeface]
     glyphCache: LruCache[(Rune, UINodeFlags), string]
     asciiGlyphCache: array[128, string]

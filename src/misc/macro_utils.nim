@@ -81,7 +81,7 @@ proc argHasPragma*(def: NimNode, arg: int, pragma: string): bool =
 proc isVarargs*(def: NimNode, arg: int): bool = def.argHasPragma(arg, "varargs")
 proc argType*(def: NimNode, arg: int): NimNode = def[3][arg + 1][1]
 proc argDefaultValue*(def: NimNode, arg: int): Option[NimNode] =
-  if def[3][arg + 1][2].kind != nnkEMpty:
+  if def[3][arg + 1][2].kind != nnkEmpty:
     return def[3][arg + 1][2].some
   return NimNode.none
 

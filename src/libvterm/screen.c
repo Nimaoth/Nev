@@ -805,7 +805,7 @@ static int resize(int new_rows, int new_cols, VTermStateFields *fields, void *us
   return 1;
 }
 
-static int setlineinfo(int row, const VTermLineInfo *newinfo, const VTermLineInfo *oldinfo, void *user)
+static int setlineinfo(int row, VTermLineInfo *newinfo, VTermLineInfo *oldinfo, void *user)
 {
   VTermScreen *screen = user;
 
