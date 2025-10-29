@@ -2,7 +2,7 @@ import std/[strutils, tables, options]
 import nimsumtree/rope
 import scripting/[expose]
 import misc/[custom_logger, custom_async, util, rope_utils, array_set]
-import clipboard, service, dispatch_tables, command_service
+import clipboard, service, dispatch_tables
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -97,7 +97,7 @@ proc getRegisterAsync*(self: Registers, register: string, res: ptr Register): Fu
 
   return false
 
-proc recordCommand*(self: Registers, command: string, args: string, registers: openArray[string] = []) =
+proc recordCommand*(self: Registers, command: string, registers: openArray[string] = []) =
   if self.bIsReplayingCommands:
     return
 
@@ -107,7 +107,7 @@ proc recordCommand*(self: Registers, command: string, args: string, registers: o
         self.registers[register] = Register(kind: RegisterKind.Text, text: "")
       if self.registers[register].text.len > 0:
         self.registers[register].text.add "\n"
-      self.registers[register].text.add command & " " & args
+      self.registers[register].text.add command
 
   if registers.len > 0:
     iterate(registers)
@@ -161,23 +161,5 @@ proc isReplayingKeys*(self: Registers): bool {.expose("registers").} =
 
 proc isRecordingCommands*(self: Registers, registry: string): bool {.expose("registers").} =
   self.recordingCommands.contains(registry)
-
-proc replayCommands*(self: Registers, register: string) {.expose("registers").} =
-  if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
-    log lvlError, fmt"No commands recorded in register '{register}'"
-    return
-
-  if self.bIsReplayingCommands:
-    log lvlError, fmt"replayCommands '{register}': Already replaying commands"
-    return
-
-  log lvlInfo, &"replayCommands '{register}':\n{self.registers[register].text}"
-  self.bIsReplayingCommands = true
-  defer:
-    self.bIsReplayingCommands = false
-
-  let commandService = self.services.getService(CommandService).get
-  for command in self.registers[register].text.splitLines:
-    discard commandService.handleCommand(command)
 
 addGlobalDispatchTable "registers", genDispatchTable("registers")

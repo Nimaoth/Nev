@@ -339,6 +339,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
     let eventTimer = startTimer()
     gAsyncFrameTimer = startTimer()
     let eventCounter = plat.processEvents()
+    app.services.tick()
     let eventTime = eventTimer.elapsed.ms
 
     if eventCounter > 0:

@@ -927,11 +927,6 @@ proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
 
   self.mCursorBeforeTransaction = self.selection
 
-  if self.app.invokeCallback(self.getContextWithMode("editor.model.input-handler"), input.newJString):
-    self.document.finishTransaction()
-    self.markDirty()
-    return Handled
-
   if self.insertTextAtCursor(input):
     self.document.finishTransaction()
     self.markDirty()

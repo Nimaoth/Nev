@@ -142,12 +142,12 @@ To bind `<LEADER>m` in Vim Normal mode and `<C-m>` in VSCode mode to maximize th
         ":": ["command-line"]
     },
     "vim.normal": {
-        "a": ["vim-insert-mode", "right"],
-        "i": ["vim-insert-mode"]
+        "a": ["vim.insert-mode", "right"],
+        "i": ["vim.insert-mode"]
     },
     "vim.insert": {
-        "<C-w>": ["vim-delete-word-back"],
-        "<C-u>": ["vim-delete-line-back"]
+        "<C-w>": ["vim.delete-word-back"],
+        "<C-u>": ["vim.delete-line-back"]
     },
     "vim.selector": {
         // selector global keybindings
@@ -334,8 +334,8 @@ Submodes are used to compose complex keybindings using reusable parts (like Vim-
   },
 
   "vim#text_object": {
-    "<?-count>iw": ["vim-select-text-object", "vim-word-inner", false, true, "<#text_object.count>"],
-    "<?-count>i{": ["vim-select-surrounding", "vim-surround-{-inner", false, true, "<#text_object.count>"]
+    "<?-count>iw": ["(count* <#text_object.count>) (vim.word-inner) (inclusive)"],
+    "i{": ["(surround \"{\" \"}\" true)"],
   }
 }
 ```
@@ -350,14 +350,14 @@ Submodes are used to compose complex keybindings using reusable parts (like Vim-
 
 ```json
 "vim.normal": {
-  "<?-count>d<text_object>": ["vim-delete-move <text_object> <#count>"],
-  "<?-count>c<text_object>": ["vim-change-move <text_object> <#count>"]
+  "<?-count>d<text_object>": ["vim.delete-move <text_object> <#count>"],
+  "<?-count>c<text_object>": ["vim.change-move <text_object> <#count>"]
 }
 ```
 
 This results in bindings like:
 
-* `3d2iw` → `vim-delete-move "vim-select-text-object \"vim-word-inner\" false true 2" 3`
+* `3d2iw` → `vim.delete-move "(count* 2) (vim.word-inner) (inclusive)" 3`
 
 ---
 

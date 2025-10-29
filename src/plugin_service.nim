@@ -95,10 +95,8 @@ type
 
   PluginService* = ref object of Service
     pluginSystems*: seq[PluginSystem]
-    callbacks*: Table[string, int]
     currentPluginSystem*: Option[PluginSystem] = PluginSystem.none
 
-    scriptActions: Table[string, ScriptAction]
     events: EventHandlerService
     vfs: VFS
     commands*: CommandService
@@ -120,9 +118,6 @@ method deinit*(self: PluginSystem) {.base.} = discard
 method reload*(self: PluginSystem): Future[void] {.base.} = discard
 
 method postInitialize*(self: PluginSystem): bool {.base.} = discard
-method handleCallback*(self: PluginSystem, id: int, arg: JsonNode): bool {.base.} = discard
-method handleAnyCallback*(self: PluginSystem, id: int, arg: JsonNode): JsonNode {.base.} = discard
-method handleScriptAction*(self: PluginSystem, name: string, args: JsonNode): JsonNode {.base.} = discard
 method getCurrentContext*(self: PluginSystem): string {.base.} = ""
 method tryLoadPlugin*(self: PluginSystem, plugin: Plugin): Future[bool] {.base, async: (raises: [IOError]).} = false
 method unloadPlugin*(self: PluginSystem, plugin: Plugin): Future[void] {.base, async: (raises: []).} = discard
@@ -406,60 +401,6 @@ template withPluginSystem*(self: PluginService, pluginSystem: untyped, body: unt
       self.currentPluginSystem = oldScriptContext
     body
 
-proc invokeCallback*(self: PluginService, context: string, args: JsonNode): bool =
-  try:
-    if not self.callbacks.contains(context):
-      return false
-    let id = self.callbacks[context]
-
-    for sc in self.pluginSystems:
-      withPluginSystem self, sc:
-        if sc.handleCallback(id, args):
-          return true
-    return false
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleCallback {context}: {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-    return false
-
-proc invokeAnyCallback*(self: PluginService, context: string, args: JsonNode): JsonNode =
-  if self.callbacks.contains(context):
-    try:
-      let id = self.callbacks[context]
-
-      for sc in self.pluginSystems:
-        withPluginSystem self, sc:
-          let res = sc.handleAnyCallback(id, args)
-          if res.isNotNil:
-            return res
-      return nil
-    except CatchableError:
-      log(lvlError, fmt"Failed to run script handleAnyCallback {context}: {getCurrentExceptionMsg()}")
-      log(lvlError, getCurrentException().getStackTrace())
-      return nil
-
-  else:
-    try:
-      for sc in self.pluginSystems:
-        withPluginSystem self, sc:
-          let res = sc.handleScriptAction(context, args)
-          if res.isNotNil:
-            return res
-      return nil
-    except CatchableError:
-      log(lvlError, fmt"Failed to run script handleScriptAction {context}: {getCurrentExceptionMsg()}")
-      log(lvlError, getCurrentException().getStackTrace())
-      return nil
-
-proc clearScriptActionsFor*(self: PluginService, pluginSystem: PluginSystem) =
-  var keysToRemove: seq[string]
-  for (key, value) in self.scriptActions.pairs:
-    if value.pluginSystem == pluginSystem:
-      keysToRemove.add key
-
-  for key in keysToRemove:
-    self.scriptActions.del key
-
 proc getPluginService(): Option[PluginService] =
   {.gcsafe.}:
     if gServices.isNil: return PluginService.none
@@ -486,67 +427,5 @@ proc bindKeys*(self: PluginService, context: string, subContext: string, keys: s
 
   self.events.getEventHandlerConfig(context).addCommand(subContext, keys, command, source)
   self.events.invalidateCommandToKeysMap()
-
-proc callScriptAction*(self: PluginService, context: string, args: JsonNode): JsonNode {.expose("plugins").} =
-  if not self.scriptActions.contains(context):
-    log lvlError, fmt"Unknown script action '{context}'"
-    return nil
-  let action = self.scriptActions[context]
-  try:
-    withPluginSystem self, action.pluginSystem:
-      return action.pluginSystem.handleScriptAction(context, args)
-    log lvlError, fmt"No script context for action '{context}'"
-    return nil
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script action {context}: {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
-    return nil
-
-proc addScriptAction*(self: PluginService, name: string, docs: string = "",
-    params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "", active: bool = false,
-    context: string = "script", override: bool = false)
-    {.expose("plugins").} =
-  # todo: replace all usages of this with the new plugin system
-
-  if not override and self.scriptActions.contains(name):
-    log lvlError, fmt"Duplicate script action {name}"
-    return
-
-  if self.currentPluginSystem.isNone:
-    log lvlError, fmt"addScriptAction({name}) should only be called from a script"
-    return
-
-  self.scriptActions[name] = ScriptAction(name: name, pluginSystem: self.currentPluginSystem.get)
-
-  proc dispatch(arg: JsonNode): JsonNode =
-    return self.callScriptAction(name, arg)
-
-  let signature = "(" & params.mapIt(it[0] & ": " & it[1]).join(", ") & ")" & returnType
-  {.gcsafe.}:
-    if active:
-      # todo: use commands for this instead
-      extendActiveDispatchTable context, ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
-    else:
-      let id = self.commands.registerCommand(command_service.Command(
-        name: name,
-        parameters: params.mapIt((it.name, it.typ)),
-        returnType: returnType,
-        description: docs,
-        execute: (proc(args: string): string =
-          try:
-            var argsJson = newJArray()
-            try:
-              for a in newStringStream(args).parseJsonFragments():
-                argsJson.add a
-            except CatchableError as e:
-              log(lvlError, fmt"Failed to parse arguments '{args}': {e.msg}")
-
-            let resJson = self.callScriptAction(name, argsJson)
-            return $resJson
-          except CatchableError as e:
-            log lvlError, &"Failed to execute command '{name}': {e.msg}"
-            return ""
-        )
-      ))
 
 addGlobalDispatchTable "plugins", genDispatchTable("plugins")

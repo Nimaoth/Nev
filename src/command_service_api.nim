@@ -5,7 +5,7 @@ import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, asy
 import scripting/[expose]
 import platform/[platform]
 import events, vfs, layout
-import dispatch_tables, config_provider, service, platform_service
+import dispatch_tables, config_provider, service, platform_service, register
 import language_server_command_line
 
 import command_service
@@ -264,5 +264,22 @@ proc runShellCommand*(self: CommandService, options: RunShellCommandOptions = Ru
   self.commandHandler = proc(command: Option[string]): Option[string] =
     if command.getSome(command):
       asyncSpawn self.runProcessAndShowResultAsync(command, options)
+
+proc replayCommands*(self: CommandService, register: string) {.expose("commands").} =
+  if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
+    log lvlError, fmt"No commands recorded in register '{register}'"
+    return
+
+  if self.registers.bIsReplayingCommands:
+    log lvlError, fmt"replayCommands '{register}': Already replaying commands"
+    return
+
+  log lvlInfo, &"replayCommands '{register}':\n{self.registers.registers[register].text}"
+  self.registers.bIsReplayingCommands = true
+  defer:
+    self.registers.bIsReplayingCommands = false
+
+  for command in self.registers.registers[register].text.splitLines:
+    discard self.handleCommand(command)
 
 addGlobalDispatchTable "commands", genDispatchTable("commands")

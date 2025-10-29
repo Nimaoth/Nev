@@ -129,47 +129,47 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9177138803 = instance.getExport(context, "init_plugin")
-  if f_9177138803.isSome:
-    assert f_9177138803.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9177138803.get.of_field.func_field
+  let f_9277802095 = instance.getExport(context, "init_plugin")
+  if f_9277802095.isSome:
+    assert f_9277802095.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9277802095.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9177138819 = instance.getExport(context, "handle_command")
-  if f_9177138819.isSome:
-    assert f_9177138819.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9177138819.get.of_field.func_field
+  let f_9277802111 = instance.getExport(context, "handle_command")
+  if f_9277802111.isSome:
+    assert f_9277802111.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9277802111.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9177138869 = instance.getExport(context, "handle_mode_changed")
-  if f_9177138869.isSome:
-    assert f_9177138869.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9177138869.get.of_field.func_field
+  let f_9277802161 = instance.getExport(context, "handle_mode_changed")
+  if f_9277802161.isSome:
+    assert f_9277802161.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9277802161.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9177138870 = instance.getExport(context, "handle_view_render_callback")
-  if f_9177138870.isSome:
-    assert f_9177138870.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9177138870.get.of_field.func_field
+  let f_9277802162 = instance.getExport(context, "handle_view_render_callback")
+  if f_9277802162.isSome:
+    assert f_9277802162.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9277802162.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9177138894 = instance.getExport(context, "handle_channel_update")
-  if f_9177138894.isSome:
-    assert f_9177138894.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9177138894.get.of_field.func_field
+  let f_9277802186 = instance.getExport(context, "handle_channel_update")
+  if f_9277802186.isSome:
+    assert f_9277802186.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9277802186.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9177138895 = instance.getExport(context, "notify_task_complete")
-  if f_9177138895.isSome:
-    assert f_9177138895.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9177138895.get.of_field.func_field
+  let f_9277802187 = instance.getExport(context, "notify_task_complete")
+  if f_9277802187.isSome:
+    assert f_9277802187.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9277802187.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9177138896 = instance.getExport(context, "handle_move")
-  if f_9177138896.isSome:
-    assert f_9177138896.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9177138896.get.of_field.func_field
+  let f_9277802188 = instance.getExport(context, "handle_move")
+  if f_9277802188.isSome:
+    assert f_9277802188.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9277802188.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
 
@@ -421,261 +421,264 @@ proc handleMove*(funcs: ExportedFuncs; fun: uint32; data: uint32; text: uint32;
                                        int32)
   return wasmtime.ok(retVal)
 
-proc coreApiVersion(instance: ptr InstanceData): int32
-proc coreGetTime(instance: ptr InstanceData): float64
-proc coreGetPlatform(instance: ptr InstanceData): Platform
-proc coreIsMainThread(instance: ptr InstanceData): bool
-proc coreGetArguments(instance: ptr InstanceData): string
-proc coreSpawnBackground(instance: ptr InstanceData; args: sink string;
-                         executor: BackgroundExecutor): void
-proc coreFinishBackground(instance: ptr InstanceData): void
-proc commandsDefineCommand(instance: ptr InstanceData; name: sink string;
-                           active: bool; docs: sink string;
-                           params: sink seq[(string, string)];
-                           returntype: sink string; context: sink string;
-                           fun: uint32; data: uint32): void
-proc commandsRunCommand(instance: ptr InstanceData; name: sink string;
-                        arguments: sink string): Result[string, CommandError]
-proc commandsExitCommandLine(instance: ptr InstanceData): void
-proc settingsGetSettingRaw(instance: ptr InstanceData; name: sink string): string
-proc settingsSetSettingRaw(instance: ptr InstanceData; name: sink string;
-                           value: sink string): void
-proc typesNewRope(instance: ptr InstanceData; content: sink string): RopeResource
-proc typesClone(instance: ptr InstanceData; self: var RopeResource): RopeResource
-proc typesBytes(instance: ptr InstanceData; self: var RopeResource): int64
-proc typesRunes(instance: ptr InstanceData; self: var RopeResource): int64
-proc typesLines(instance: ptr InstanceData; self: var RopeResource): int64
-proc typesText(instance: ptr InstanceData; self: var RopeResource): string
-proc typesSlice(instance: ptr InstanceData; self: var RopeResource; a: int64;
-                b: int64; inclusive: bool): RopeResource
-proc typesSliceSelection(instance: ptr InstanceData; self: var RopeResource;
-                         s: Selection; inclusive: bool): RopeResource
-proc typesFind(instance: ptr InstanceData; self: var RopeResource;
-               sub: sink string; start: int64): Option[int64]
-proc typesSlicePoints(instance: ptr InstanceData; self: var RopeResource;
-                      a: Cursor; b: Cursor): RopeResource
-proc typesLineLength(instance: ptr InstanceData; self: var RopeResource;
-                     line: int64): int64
-proc typesRuneAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune
-proc typesByteAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8
-proc editorActiveEditor(instance: ptr InstanceData; options: ActiveEditorFlags): Option[
+proc coreApiVersion*(instance: ptr InstanceData): int32
+proc coreGetTime*(instance: ptr InstanceData): float64
+proc coreGetPlatform*(instance: ptr InstanceData): Platform
+proc coreIsMainThread*(instance: ptr InstanceData): bool
+proc coreGetArguments*(instance: ptr InstanceData): string
+proc coreSpawnBackground*(instance: ptr InstanceData; args: sink string;
+                          executor: BackgroundExecutor): void
+proc coreFinishBackground*(instance: ptr InstanceData): void
+proc commandsDefineCommand*(instance: ptr InstanceData; name: sink string;
+                            active: bool; docs: sink string;
+                            params: sink seq[(string, string)];
+                            returntype: sink string; context: sink string;
+                            fun: uint32; data: uint32): void
+proc commandsRunCommand*(instance: ptr InstanceData; name: sink string;
+                         arguments: sink string): Result[string, CommandError]
+proc commandsExitCommandLine*(instance: ptr InstanceData): void
+proc settingsGetSettingRaw*(instance: ptr InstanceData; name: sink string): string
+proc settingsSetSettingRaw*(instance: ptr InstanceData; name: sink string;
+                            value: sink string): void
+proc typesNewRope*(instance: ptr InstanceData; content: sink string): RopeResource
+proc typesClone*(instance: ptr InstanceData; self: var RopeResource): RopeResource
+proc typesBytes*(instance: ptr InstanceData; self: var RopeResource): int64
+proc typesRunes*(instance: ptr InstanceData; self: var RopeResource): int64
+proc typesLines*(instance: ptr InstanceData; self: var RopeResource): int64
+proc typesText*(instance: ptr InstanceData; self: var RopeResource): string
+proc typesSlice*(instance: ptr InstanceData; self: var RopeResource; a: int64;
+                 b: int64; inclusive: bool): RopeResource
+proc typesSliceSelection*(instance: ptr InstanceData; self: var RopeResource;
+                          s: Selection; inclusive: bool): RopeResource
+proc typesFind*(instance: ptr InstanceData; self: var RopeResource;
+                sub: sink string; start: int64): Option[int64]
+proc typesSlicePoints*(instance: ptr InstanceData; self: var RopeResource;
+                       a: Cursor; b: Cursor): RopeResource
+proc typesLineLength*(instance: ptr InstanceData; self: var RopeResource;
+                      line: int64): int64
+proc typesRuneAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune
+proc typesByteAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8
+proc editorActiveEditor*(instance: ptr InstanceData; options: ActiveEditorFlags): Option[
     Editor]
-proc editorGetDocument(instance: ptr InstanceData; editor: Editor): Option[
+proc editorGetDocument*(instance: ptr InstanceData; editor: Editor): Option[
     Document]
-proc textEditorActiveTextEditor(instance: ptr InstanceData;
-                                options: ActiveEditorFlags): Option[TextEditor]
-proc textEditorGetDocument(instance: ptr InstanceData; editor: TextEditor): Option[
+proc textEditorActiveTextEditor*(instance: ptr InstanceData;
+                                 options: ActiveEditorFlags): Option[TextEditor]
+proc textEditorGetDocument*(instance: ptr InstanceData; editor: TextEditor): Option[
     TextDocument]
-proc textEditorAsTextEditor(instance: ptr InstanceData; editor: Editor): Option[
+proc textEditorAsTextEditor*(instance: ptr InstanceData; editor: Editor): Option[
     TextEditor]
-proc textEditorAsTextDocument(instance: ptr InstanceData; document: Document): Option[
+proc textEditorAsTextDocument*(instance: ptr InstanceData; document: Document): Option[
     TextDocument]
-proc textEditorCommand(instance: ptr InstanceData; editor: TextEditor;
-                       name: sink string; arguments: sink string): Result[
+proc textEditorCommand*(instance: ptr InstanceData; editor: TextEditor;
+                        name: sink string; arguments: sink string): Result[
     string, CommandError]
-proc textEditorRecordCurrentCommand(instance: ptr InstanceData;
-                                    editor: TextEditor;
-                                    registers: sink seq[string]): void
-proc textEditorClearCurrentCommandHistory(instance: ptr InstanceData;
+proc textEditorRecordCurrentCommand*(instance: ptr InstanceData;
+                                     editor: TextEditor;
+                                     registers: sink seq[string]): void
+proc textEditorClearCurrentCommandHistory*(instance: ptr InstanceData;
     editor: TextEditor; retainLast: bool): void
-proc textEditorSaveCurrentCommandHistory(instance: ptr InstanceData;
+proc textEditorSaveCurrentCommandHistory*(instance: ptr InstanceData;
     editor: TextEditor): void
-proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor): void
-proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor;
-                              behaviour: Option[ScrollBehaviour];
-                              relativePosition: float32): void
-proc textEditorSetNextSnapBehaviour(instance: ptr InstanceData;
-                                    editor: TextEditor;
-                                    behaviour: ScrollSnapBehaviour): void
-proc textEditorUpdateTargetColumn(instance: ptr InstanceData; editor: TextEditor): void
-proc textEditorGetUsage(instance: ptr InstanceData; editor: TextEditor): string
-proc textEditorGetRevision(instance: ptr InstanceData; editor: TextEditor): int32
-proc textEditorSetMode(instance: ptr InstanceData; editor: TextEditor;
-                       mode: sink string; exclusive: bool): void
-proc textEditorMode(instance: ptr InstanceData; editor: TextEditor): string
-proc textEditorModes(instance: ptr InstanceData; editor: TextEditor): seq[string]
-proc textEditorClearTabStops(instance: ptr InstanceData; editor: TextEditor): void
-proc textEditorUndo(instance: ptr InstanceData; editor: TextEditor;
-                    checkpoint: sink string): void
-proc textEditorRedo(instance: ptr InstanceData; editor: TextEditor;
-                    checkpoint: sink string): void
-proc textEditorAddNextCheckpoint(instance: ptr InstanceData; editor: TextEditor;
-                                 checkpoint: sink string): void
-proc textEditorCopy(instance: ptr InstanceData; editor: TextEditor;
-                    register: sink string; inclusiveEnd: bool): void
-proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor;
-                     selections: sink seq[Selection]; register: sink string;
-                     inclusiveEnd: bool): void
-proc textEditorAutoShowCompletions(instance: ptr InstanceData;
+proc textEditorHideCompletions*(instance: ptr InstanceData; editor: TextEditor): void
+proc textEditorScrollToCursor*(instance: ptr InstanceData; editor: TextEditor;
+                               behaviour: Option[ScrollBehaviour];
+                               relativePosition: float32): void
+proc textEditorSetNextSnapBehaviour*(instance: ptr InstanceData;
+                                     editor: TextEditor;
+                                     behaviour: ScrollSnapBehaviour): void
+proc textEditorUpdateTargetColumn*(instance: ptr InstanceData;
                                    editor: TextEditor): void
-proc textEditorToggleLineComment(instance: ptr InstanceData; editor: TextEditor): void
-proc textEditorInsertText(instance: ptr InstanceData; editor: TextEditor;
-                          text: sink string; autoIndent: bool): void
-proc textEditorOpenSearchBar(instance: ptr InstanceData; editor: TextEditor;
-                             query: sink string; scrollToPreview: bool;
-                             selectResult: bool): void
-proc textEditorSetSearchQueryFromMove(instance: ptr InstanceData;
-                                      editor: TextEditor; move: sink string;
-                                      count: int32; prefix: sink string;
-                                      suffix: sink string): Selection
-proc textEditorSetSearchQuery(instance: ptr InstanceData; editor: TextEditor;
-                              query: sink string; escapeRegex: bool;
-                              prefix: sink string; suffix: sink string): bool
-proc textEditorGetSearchQuery(instance: ptr InstanceData; editor: TextEditor): string
-proc textEditorApplyMove(instance: ptr InstanceData; editor: TextEditor;
-                         selection: Selection; move: sink string; count: int32;
-                         wrap: bool; includeEol: bool): seq[Selection]
-proc textEditorMultiMove(instance: ptr InstanceData; editor: TextEditor;
-                         selections: sink seq[Selection]; move: sink string;
-                         count: int32; wrap: bool; includeEol: bool): seq[
+proc textEditorGetUsage*(instance: ptr InstanceData; editor: TextEditor): string
+proc textEditorGetRevision*(instance: ptr InstanceData; editor: TextEditor): int32
+proc textEditorSetMode*(instance: ptr InstanceData; editor: TextEditor;
+                        mode: sink string; exclusive: bool): void
+proc textEditorMode*(instance: ptr InstanceData; editor: TextEditor): string
+proc textEditorModes*(instance: ptr InstanceData; editor: TextEditor): seq[
+    string]
+proc textEditorClearTabStops*(instance: ptr InstanceData; editor: TextEditor): void
+proc textEditorUndo*(instance: ptr InstanceData; editor: TextEditor;
+                     checkpoint: sink string): void
+proc textEditorRedo*(instance: ptr InstanceData; editor: TextEditor;
+                     checkpoint: sink string): void
+proc textEditorAddNextCheckpoint*(instance: ptr InstanceData;
+                                  editor: TextEditor; checkpoint: sink string): void
+proc textEditorCopy*(instance: ptr InstanceData; editor: TextEditor;
+                     register: sink string; inclusiveEnd: bool): void
+proc textEditorPaste*(instance: ptr InstanceData; editor: TextEditor;
+                      selections: sink seq[Selection]; register: sink string;
+                      inclusiveEnd: bool): void
+proc textEditorAutoShowCompletions*(instance: ptr InstanceData;
+                                    editor: TextEditor): void
+proc textEditorToggleLineComment*(instance: ptr InstanceData; editor: TextEditor): void
+proc textEditorInsertText*(instance: ptr InstanceData; editor: TextEditor;
+                           text: sink string; autoIndent: bool): void
+proc textEditorOpenSearchBar*(instance: ptr InstanceData; editor: TextEditor;
+                              query: sink string; scrollToPreview: bool;
+                              selectResult: bool): void
+proc textEditorSetSearchQueryFromMove*(instance: ptr InstanceData;
+                                       editor: TextEditor; move: sink string;
+                                       count: int32; prefix: sink string;
+                                       suffix: sink string): Selection
+proc textEditorSetSearchQuery*(instance: ptr InstanceData; editor: TextEditor;
+                               query: sink string; escapeRegex: bool;
+                               prefix: sink string; suffix: sink string): bool
+proc textEditorGetSearchQuery*(instance: ptr InstanceData; editor: TextEditor): string
+proc textEditorApplyMove*(instance: ptr InstanceData; editor: TextEditor;
+                          selection: Selection; move: sink string; count: int32;
+                          wrap: bool; includeEol: bool): seq[Selection]
+proc textEditorMultiMove*(instance: ptr InstanceData; editor: TextEditor;
+                          selections: sink seq[Selection]; move: sink string;
+                          count: int32; wrap: bool; includeEol: bool): seq[
     Selection]
-proc textEditorSetSelection(instance: ptr InstanceData; editor: TextEditor;
-                            s: Selection): void
-proc textEditorSetSelections(instance: ptr InstanceData; editor: TextEditor;
-                             s: sink seq[Selection]): void
-proc textEditorGetSelection(instance: ptr InstanceData; editor: TextEditor): Selection
-proc textEditorGetSelections(instance: ptr InstanceData; editor: TextEditor): seq[
+proc textEditorSetSelection*(instance: ptr InstanceData; editor: TextEditor;
+                             s: Selection): void
+proc textEditorSetSelections*(instance: ptr InstanceData; editor: TextEditor;
+                              s: sink seq[Selection]): void
+proc textEditorGetSelection*(instance: ptr InstanceData; editor: TextEditor): Selection
+proc textEditorGetSelections*(instance: ptr InstanceData; editor: TextEditor): seq[
     Selection]
-proc textEditorLineLength(instance: ptr InstanceData; editor: TextEditor;
-                          line: int32): int32
-proc textEditorAddModeChangedHandler(instance: ptr InstanceData; fun: uint32): int32
-proc textEditorGetSettingRaw(instance: ptr InstanceData; editor: TextEditor;
-                             name: sink string): string
-proc textEditorSetSettingRaw(instance: ptr InstanceData; editor: TextEditor;
-                             name: sink string; value: sink string): void
-proc textEditorEvaluateExpressions(instance: ptr InstanceData;
-                                   editor: TextEditor;
-                                   selections: sink seq[Selection];
-                                   inclusive: bool; prefix: sink string;
-                                   suffix: sink string; addSelectionIndex: bool): void
-proc textEditorIndent(instance: ptr InstanceData; editor: TextEditor;
-                      delta: int32): void
-proc textEditorGetCommandCount(instance: ptr InstanceData; editor: TextEditor): int32
-proc textEditorSetCursorScrollOffset(instance: ptr InstanceData;
-                                     editor: TextEditor; cursor: Cursor;
-                                     scrollOffset: float32): void
-proc textEditorGetVisibleLineCount(instance: ptr InstanceData;
-                                   editor: TextEditor): int32
-proc textEditorCreateAnchors(instance: ptr InstanceData; editor: TextEditor;
-                             selections: sink seq[Selection]): seq[
+proc textEditorLineLength*(instance: ptr InstanceData; editor: TextEditor;
+                           line: int32): int32
+proc textEditorAddModeChangedHandler*(instance: ptr InstanceData; fun: uint32): int32
+proc textEditorGetSettingRaw*(instance: ptr InstanceData; editor: TextEditor;
+                              name: sink string): string
+proc textEditorSetSettingRaw*(instance: ptr InstanceData; editor: TextEditor;
+                              name: sink string; value: sink string): void
+proc textEditorEvaluateExpressions*(instance: ptr InstanceData;
+                                    editor: TextEditor;
+                                    selections: sink seq[Selection];
+                                    inclusive: bool; prefix: sink string;
+                                    suffix: sink string; addSelectionIndex: bool): void
+proc textEditorIndent*(instance: ptr InstanceData; editor: TextEditor;
+                       delta: int32): void
+proc textEditorGetCommandCount*(instance: ptr InstanceData; editor: TextEditor): int32
+proc textEditorSetCursorScrollOffset*(instance: ptr InstanceData;
+                                      editor: TextEditor; cursor: Cursor;
+                                      scrollOffset: float32): void
+proc textEditorGetVisibleLineCount*(instance: ptr InstanceData;
+                                    editor: TextEditor): int32
+proc textEditorCreateAnchors*(instance: ptr InstanceData; editor: TextEditor;
+                              selections: sink seq[Selection]): seq[
     (Anchor, Anchor)]
-proc textEditorResolveAnchors(instance: ptr InstanceData; editor: TextEditor;
-                              anchors: sink seq[(Anchor, Anchor)]): seq[
+proc textEditorResolveAnchors*(instance: ptr InstanceData; editor: TextEditor;
+                               anchors: sink seq[(Anchor, Anchor)]): seq[
     Selection]
-proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor;
-                    selections: sink seq[Selection]; contents: sink seq[string];
-                    inclusive: bool): seq[Selection]
-proc textEditorDefineMove(instance: ptr InstanceData; move: sink string;
-                          fun: uint32; data: uint32): void
-proc textEditorContent(instance: ptr InstanceData; editor: TextEditor): RopeResource
-proc textDocumentContent(instance: ptr InstanceData; document: TextDocument): RopeResource
-proc layoutShow(instance: ptr InstanceData; v: View; slot: sink string;
-                focus: bool; addToHistory: bool): void
-proc layoutClose(instance: ptr InstanceData; v: View; keepHidden: bool;
-                 restoreHidden: bool): void
-proc layoutFocus(instance: ptr InstanceData; slot: sink string): void
-proc layoutCloseActiveView(instance: ptr InstanceData; closeOpenPopup: bool;
-                           restoreHidden: bool): void
-proc renderNewRenderView(instance: ptr InstanceData): RenderViewResource
-proc renderRenderViewFromUserId(instance: ptr InstanceData; id: sink string): Option[
+proc textEditorEdit*(instance: ptr InstanceData; editor: TextEditor;
+                     selections: sink seq[Selection];
+                     contents: sink seq[string]; inclusive: bool): seq[Selection]
+proc textEditorDefineMove*(instance: ptr InstanceData; move: sink string;
+                           fun: uint32; data: uint32): void
+proc textEditorContent*(instance: ptr InstanceData; editor: TextEditor): RopeResource
+proc textDocumentContent*(instance: ptr InstanceData; document: TextDocument): RopeResource
+proc layoutShow*(instance: ptr InstanceData; v: View; slot: sink string;
+                 focus: bool; addToHistory: bool): void
+proc layoutClose*(instance: ptr InstanceData; v: View; keepHidden: bool;
+                  restoreHidden: bool): void
+proc layoutFocus*(instance: ptr InstanceData; slot: sink string): void
+proc layoutCloseActiveView*(instance: ptr InstanceData; closeOpenPopup: bool;
+                            restoreHidden: bool): void
+proc renderNewRenderView*(instance: ptr InstanceData): RenderViewResource
+proc renderRenderViewFromUserId*(instance: ptr InstanceData; id: sink string): Option[
     RenderViewResource]
-proc renderRenderViewFromView(instance: ptr InstanceData; v: View): Option[
+proc renderRenderViewFromView*(instance: ptr InstanceData; v: View): Option[
     RenderViewResource]
-proc renderView(instance: ptr InstanceData; self: var RenderViewResource): View
-proc renderId(instance: ptr InstanceData; self: var RenderViewResource): int32
-proc renderSize(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
-proc renderKeyDown(instance: ptr InstanceData; self: var RenderViewResource;
-                   key: int64): bool
-proc renderMousePos(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
-proc renderMouseDown(instance: ptr InstanceData; self: var RenderViewResource;
-                     button: int64): bool
-proc renderScrollDelta(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
-proc renderSetRenderInterval(instance: ptr InstanceData;
-                             self: var RenderViewResource; ms: int32): void
-proc renderSetRenderCommandsRaw(instance: ptr InstanceData;
-                                self: var RenderViewResource; buffer: uint32;
-                                len: uint32): void
-proc renderSetRenderCommands(instance: ptr InstanceData;
-                             self: var RenderViewResource; data: sink seq[uint8]): void
-proc renderSetRenderWhenInactive(instance: ptr InstanceData;
+proc renderView*(instance: ptr InstanceData; self: var RenderViewResource): View
+proc renderId*(instance: ptr InstanceData; self: var RenderViewResource): int32
+proc renderSize*(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
+proc renderKeyDown*(instance: ptr InstanceData; self: var RenderViewResource;
+                    key: int64): bool
+proc renderMousePos*(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
+proc renderMouseDown*(instance: ptr InstanceData; self: var RenderViewResource;
+                      button: int64): bool
+proc renderScrollDelta*(instance: ptr InstanceData; self: var RenderViewResource): Vec2f
+proc renderSetRenderInterval*(instance: ptr InstanceData;
+                              self: var RenderViewResource; ms: int32): void
+proc renderSetRenderCommandsRaw*(instance: ptr InstanceData;
+                                 self: var RenderViewResource; buffer: uint32;
+                                 len: uint32): void
+proc renderSetRenderCommands*(instance: ptr InstanceData;
+                              self: var RenderViewResource;
+                              data: sink seq[uint8]): void
+proc renderSetRenderWhenInactive*(instance: ptr InstanceData;
+                                  self: var RenderViewResource; enabled: bool): void
+proc renderSetPreventThrottling*(instance: ptr InstanceData;
                                  self: var RenderViewResource; enabled: bool): void
-proc renderSetPreventThrottling(instance: ptr InstanceData;
-                                self: var RenderViewResource; enabled: bool): void
-proc renderSetUserId(instance: ptr InstanceData; self: var RenderViewResource;
-                     id: sink string): void
-proc renderGetUserId(instance: ptr InstanceData; self: var RenderViewResource): string
-proc renderMarkDirty(instance: ptr InstanceData; self: var RenderViewResource): void
-proc renderSetRenderCallback(instance: ptr InstanceData;
-                             self: var RenderViewResource; fun: uint32;
-                             data: uint32): void
-proc renderSetModes(instance: ptr InstanceData; self: var RenderViewResource;
-                    modes: sink seq[string]): void
-proc renderAddMode(instance: ptr InstanceData; self: var RenderViewResource;
-                   mode: sink string): void
-proc renderRemoveMode(instance: ptr InstanceData; self: var RenderViewResource;
-                      mode: sink string): void
-proc vfsReadSync(instance: ptr InstanceData; path: sink string;
-                 readFlags: ReadFlags): Result[string, VfsError]
-proc vfsReadRopeSync(instance: ptr InstanceData; path: sink string;
-                     readFlags: ReadFlags): Result[RopeResource, VfsError]
-proc vfsWriteSync(instance: ptr InstanceData; path: sink string;
-                  content: sink string): Result[bool, VfsError]
-proc vfsWriteRopeSync(instance: ptr InstanceData; path: sink string;
-                      rope: sink RopeResource): Result[bool, VfsError]
-proc vfsLocalize(instance: ptr InstanceData; path: sink string): string
-proc channelCanRead(instance: ptr InstanceData; self: var ReadChannelResource): bool
-proc channelAtEnd(instance: ptr InstanceData; self: var ReadChannelResource): bool
-proc channelPeek(instance: ptr InstanceData; self: var ReadChannelResource): int32
-proc channelFlushRead(instance: ptr InstanceData; self: var ReadChannelResource): int32
-proc channelReadString(instance: ptr InstanceData;
-                       self: var ReadChannelResource; num: int32): string
-proc channelReadBytes(instance: ptr InstanceData; self: var ReadChannelResource;
-                      num: int32): seq[uint8]
-proc channelReadAllString(instance: ptr InstanceData;
-                          self: var ReadChannelResource): string
-proc channelReadAllBytes(instance: ptr InstanceData;
-                         self: var ReadChannelResource): seq[uint8]
-proc channelListen(instance: ptr InstanceData; self: var ReadChannelResource;
-                   fun: uint32; data: uint32): void
-proc channelWaitRead(instance: ptr InstanceData; self: var ReadChannelResource;
-                     task: uint64; num: int32): bool
-proc channelReadChannelOpen(instance: ptr InstanceData; path: sink string): Option[
+proc renderSetUserId*(instance: ptr InstanceData; self: var RenderViewResource;
+                      id: sink string): void
+proc renderGetUserId*(instance: ptr InstanceData; self: var RenderViewResource): string
+proc renderMarkDirty*(instance: ptr InstanceData; self: var RenderViewResource): void
+proc renderSetRenderCallback*(instance: ptr InstanceData;
+                              self: var RenderViewResource; fun: uint32;
+                              data: uint32): void
+proc renderSetModes*(instance: ptr InstanceData; self: var RenderViewResource;
+                     modes: sink seq[string]): void
+proc renderAddMode*(instance: ptr InstanceData; self: var RenderViewResource;
+                    mode: sink string): void
+proc renderRemoveMode*(instance: ptr InstanceData; self: var RenderViewResource;
+                       mode: sink string): void
+proc vfsReadSync*(instance: ptr InstanceData; path: sink string;
+                  readFlags: ReadFlags): Result[string, VfsError]
+proc vfsReadRopeSync*(instance: ptr InstanceData; path: sink string;
+                      readFlags: ReadFlags): Result[RopeResource, VfsError]
+proc vfsWriteSync*(instance: ptr InstanceData; path: sink string;
+                   content: sink string): Result[bool, VfsError]
+proc vfsWriteRopeSync*(instance: ptr InstanceData; path: sink string;
+                       rope: sink RopeResource): Result[bool, VfsError]
+proc vfsLocalize*(instance: ptr InstanceData; path: sink string): string
+proc channelCanRead*(instance: ptr InstanceData; self: var ReadChannelResource): bool
+proc channelAtEnd*(instance: ptr InstanceData; self: var ReadChannelResource): bool
+proc channelPeek*(instance: ptr InstanceData; self: var ReadChannelResource): int32
+proc channelFlushRead*(instance: ptr InstanceData; self: var ReadChannelResource): int32
+proc channelReadString*(instance: ptr InstanceData;
+                        self: var ReadChannelResource; num: int32): string
+proc channelReadBytes*(instance: ptr InstanceData;
+                       self: var ReadChannelResource; num: int32): seq[uint8]
+proc channelReadAllString*(instance: ptr InstanceData;
+                           self: var ReadChannelResource): string
+proc channelReadAllBytes*(instance: ptr InstanceData;
+                          self: var ReadChannelResource): seq[uint8]
+proc channelListen*(instance: ptr InstanceData; self: var ReadChannelResource;
+                    fun: uint32; data: uint32): void
+proc channelWaitRead*(instance: ptr InstanceData; self: var ReadChannelResource;
+                      task: uint64; num: int32): bool
+proc channelReadChannelOpen*(instance: ptr InstanceData; path: sink string): Option[
     ReadChannelResource]
-proc channelReadChannelMount(instance: ptr InstanceData;
-                             channel: sink ReadChannelResource;
-                             path: sink string; unique: bool): string
-proc channelClose(instance: ptr InstanceData; self: var WriteChannelResource): void
-proc channelCanWrite(instance: ptr InstanceData; self: var WriteChannelResource): bool
-proc channelWriteString(instance: ptr InstanceData;
-                        self: var WriteChannelResource; data: sink string): void
-proc channelWriteBytes(instance: ptr InstanceData;
-                       self: var WriteChannelResource; data: sink seq[uint8]): void
-proc channelWriteChannelOpen(instance: ptr InstanceData; path: sink string): Option[
-    WriteChannelResource]
-proc channelWriteChannelMount(instance: ptr InstanceData;
-                              channel: sink WriteChannelResource;
+proc channelReadChannelMount*(instance: ptr InstanceData;
+                              channel: sink ReadChannelResource;
                               path: sink string; unique: bool): string
-proc channelNewInMemoryChannel(instance: ptr InstanceData): (
+proc channelClose*(instance: ptr InstanceData; self: var WriteChannelResource): void
+proc channelCanWrite*(instance: ptr InstanceData; self: var WriteChannelResource): bool
+proc channelWriteString*(instance: ptr InstanceData;
+                         self: var WriteChannelResource; data: sink string): void
+proc channelWriteBytes*(instance: ptr InstanceData;
+                        self: var WriteChannelResource; data: sink seq[uint8]): void
+proc channelWriteChannelOpen*(instance: ptr InstanceData; path: sink string): Option[
+    WriteChannelResource]
+proc channelWriteChannelMount*(instance: ptr InstanceData;
+                               channel: sink WriteChannelResource;
+                               path: sink string; unique: bool): string
+proc channelNewInMemoryChannel*(instance: ptr InstanceData): (
     ReadChannelResource, WriteChannelResource)
-proc channelCreateTerminal(instance: ptr InstanceData;
-                           stdin: sink WriteChannelResource;
-                           stdout: sink ReadChannelResource; group: sink string): void
-proc processProcessStart(instance: ptr InstanceData; name: sink string;
-                         args: sink seq[string]): ProcessResource
-proc processStderr(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource
-proc processStdout(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource
-proc processStdin(instance: ptr InstanceData; self: var ProcessResource): WriteChannelResource
-proc registersIsReplayingCommands(instance: ptr InstanceData): bool
-proc registersIsRecordingCommands(instance: ptr InstanceData;
-                                  register: sink string): bool
-proc registersSetRegisterText(instance: ptr InstanceData; text: sink string;
-                              register: sink string): void
-proc registersGetRegisterText(instance: ptr InstanceData; register: sink string): string
-proc registersStartRecordingCommands(instance: ptr InstanceData;
+proc channelCreateTerminal*(instance: ptr InstanceData;
+                            stdin: sink WriteChannelResource;
+                            stdout: sink ReadChannelResource; group: sink string): void
+proc processProcessStart*(instance: ptr InstanceData; name: sink string;
+                          args: sink seq[string]): ProcessResource
+proc processStderr*(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource
+proc processStdout*(instance: ptr InstanceData; self: var ProcessResource): ReadChannelResource
+proc processStdin*(instance: ptr InstanceData; self: var ProcessResource): WriteChannelResource
+proc registersIsReplayingCommands*(instance: ptr InstanceData): bool
+proc registersIsRecordingCommands*(instance: ptr InstanceData;
+                                   register: sink string): bool
+proc registersSetRegisterText*(instance: ptr InstanceData; text: sink string;
+                               register: sink string): void
+proc registersGetRegisterText*(instance: ptr InstanceData; register: sink string): string
+proc registersStartRecordingCommands*(instance: ptr InstanceData;
+                                      register: sink string): void
+proc registersStopRecordingCommands*(instance: ptr InstanceData;
                                      register: sink string): void
-proc registersStopRecordingCommands(instance: ptr InstanceData;
-                                    register: sink string): void
-proc registersReplayCommands(instance: ptr InstanceData; register: sink string): void
+proc registersReplayCommands*(instance: ptr InstanceData; register: sink string): void
 proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:

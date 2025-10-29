@@ -1263,9 +1263,6 @@ proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.plugins.invokeAnyCallback(action, args).isNotNil:
-      return Handled
-
     # debugf"dispatch {action}, {args}"
     if dispatch(action, args).isSome:
       return Handled
