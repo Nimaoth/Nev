@@ -259,14 +259,20 @@ func runeIndex*(self: RopeSlice, offset: int): RuneIndex =
   ## Convert byte offset to rune index
   return self.convert(offset, Count).RuneIndex
 
-proc getEnclosing*(text: RopeSlice, column: int, predicate: proc(c: char): bool {.gcsafe, raises: [].}): (int, int) =
+proc getEnclosing*(text: RopeSlice, column: int, inclusive: bool, predicate: proc(c: char): bool {.gcsafe, raises: [].}): (int, int) =
   var cf = text.cursor(column)
   var cb = cf.clone()
-  while cf.offset < text.len - 1:
+  while cf.offset < text.len:
     cf.seekNextRune()
-    if not predicate(cf.currentChar()):
-      cf.seekPrevRune()
+    if cf.atEnd:
+      if inclusive:
+        cf.seekPrevRune()
       break
+    if not predicate(cf.currentChar()):
+      if inclusive:
+        cf.seekPrevRune()
+      break
+
   while cb.offset > 0:
     cb.seekPrevRune()
     if not predicate(cb.currentChar()):

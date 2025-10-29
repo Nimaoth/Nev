@@ -1,0 +1,13 @@
+{
+	"name": "Vim Motions",
+	"version": "0.0.1",
+	"authors": ["Nimaoth"],
+	"repository": "https://github.com/Nimaoth/Nev/plugins/vim",
+	"wasm": "vim.m.wasm",
+	// "wasm": "vim.wat",
+	"autoLoad": true,
+	"commands": {
+		"test-command-1": {},
+	},
+	"permissions": {},
+}

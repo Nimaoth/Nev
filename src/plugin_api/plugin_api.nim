@@ -1,13 +1,13 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, pathnorm, locks, tables]
 import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils]
-import nimsumtree/[rope, sumtree, arc]
+import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout
 import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
-import config_provider, command_service
-import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service
+import config_provider, command_service, command_service_api
+import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 from scripting_api as sca import nil
 
@@ -50,6 +50,7 @@ type
     settings*: ConfigStore
     vfsService*: VFSService
     vfs*: VFS
+    moves*: MoveDatabase
     timer*: Timer
 
   InstanceData = object of InstanceDataWasi
@@ -159,6 +160,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
   self.host.settings = services.getService(ConfigService).get.runtime
   self.host.vfsService = services.getService(VFSService).get
   self.host.vfs = self.host.vfsService.vfs
+  self.host.moves = services.getService(MoveDatabase).get
   self.host.timer = startTimer()
 
   self.engine = engine
@@ -347,24 +349,57 @@ var threadPool = newPluginThreadPool[InstanceDataImpl](10, runInstanceThread)
 
 ###################################### Conversion functions #####################################
 
-proc toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
-proc toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
+converter toPoint(c: Cursor): Point = point(c.line.int, c.column.int)
+converter toInternal(c: Cursor): sca.Cursor = (c.line.int, c.column.int)
+converter toInternal(c: Selection): sca.Selection = (c.first.toInternal, c.last.toInternal)
+converter toInternal(c: Lamport): clock.Lamport = clock.Lamport(replicaId: clock.ReplicaId(c.replicaId), value: clock.SeqNumber(c.value))
+converter toInternal(c: Bias): sumtree.Bias =
+  case c
+  of Left: sumtree.Left
+  of Right: sumtree.Right
+converter toInternal(c: Anchor): buffer.Anchor = buffer.Anchor(timestamp: c.timestamp, offset: c.offset.int, bias: c.bias)
+converter toInternal(c: (Anchor, Anchor)): (buffer.Anchor, buffer.Anchor) = (c[0].toInternal, c[1].toInternal)
+converter toInternal(c: ScrollBehaviour): sca.ScrollBehaviour =
+  case c
+  of CenterAlways: sca.CenterAlways
+  of CenterOffscreen: sca.CenterOffscreen
+  of CenterMargin: sca.CenterMargin
+  of ScrollToMargin: sca.ScrollToMargin
+  of TopOfScreen: sca.TopOfScreen
 
-proc toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
-proc toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+converter toInternal(c: ScrollSnapBehaviour): sca.ScrollSnapBehaviour =
+  case c
+  of Never: sca.Never
+  of Always: sca.Always
+  of MinDistanceOffscreen: sca.MinDistanceOffscreen
+  of MinDistanceCenter: sca.MinDistanceCenter
 
-proc toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
+converter toWasm(c: sca.Cursor): Cursor = Cursor(line: c.line.int32, column: c.column.int32)
+converter toWasm(c: sca.Selection): Selection = Selection(first: c.first.toWasm, last: c.last.toWasm)
+converter toWasm(c: clock.Lamport): Lamport = Lamport(replicaId: c.replicaId.uint16, value: c.value.uint32)
+converter toWasm(c: sumtree.Bias): Bias =
+  case c
+  of sumtree.Left: Left
+  of sumtree.Right: Right
+converter toWasm(c: buffer.Anchor): Anchor = Anchor(timestamp: c.timestamp, offset: c.offset.uint32, bias: c.bias)
+converter toWasm(c: (buffer.Anchor, buffer.Anchor)): (Anchor, Anchor) = (c[0].toWasm, c[1].toWasm)
+
+converter toInternal(flags: ReadFlags): set[vfs.ReadFlag] =
   result = {}
   if ReadFlag.Binary in flags:
     result.incl vfs.ReadFlag.Binary
 
 ###################################### API implementations #####################################
 
-proc editorActiveEditor(instance: ptr InstanceData): Option[Editor] =
+proc editorActiveEditor(instance: ptr InstanceData, options: ActiveEditorFlags): Option[Editor] =
   if instance.host == nil:
     return
+  if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode():
+    return Editor(id: instance.host.commands.commandLineEditor.id.uint64).some
+  if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor):
+    return Editor(id: editor.id.uint64).some
   if instance.host.layout.tryGetCurrentEditorView().getSome(view):
-    return Editor(id: view.editor.DocumentEditor.idNew.uint64).some
+    return Editor(id: view.editor.DocumentEditor.id.uint64).some
   return Editor.none
 
 proc editorGetDocument(instance: ptr InstanceData; editor: Editor): Option[Document] =
@@ -376,11 +411,16 @@ proc editorGetDocument(instance: ptr InstanceData; editor: Editor): Option[Docum
       return Document(id: document.id.uint64).some
   return Document.none
 
-proc textEditorActiveTextEditor(instance: ptr InstanceData): Option[TextEditor] =
+proc textEditorActiveTextEditor(instance: ptr InstanceData, options: ActiveEditorFlags): Option[TextEditor] =
   if instance.host == nil:
     return
+  if ActiveEditorFlag.IncludeCommandLine in options and instance.host.commands.commandLineMode() and instance.host.commands.commandLineEditor of TextDocumentEditor:
+    let editor = instance.host.commands.commandLineEditor
+    return TextEditor(id: instance.host.commands.commandLineEditor.id.uint64).some
+  if ActiveEditorFlag.IncludePopups in options and instance.host.layout.popups.len > 0 and instance.host.layout.popups.last.getActiveEditor().getSome(editor) and editor of TextDocumentEditor:
+    return TextEditor(id: editor.id.uint64).some
   if instance.host.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
-    return TextEditor(id: view.editor.TextDocumentEditor.idNew.uint64).some
+    return TextEditor(id: view.editor.TextDocumentEditor.id.uint64).some
   return TextEditor.none
 
 proc textEditorGetDocument(instance: ptr InstanceData; editor: TextEditor): Option[TextDocument] =
@@ -396,7 +436,7 @@ proc textEditorAsTextEditor(instance: ptr InstanceData; editor: Editor): Option[
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    return TextEditor(id: editor.TextDocumentEditor.idNew.uint64).some
+    return TextEditor(id: editor.TextDocumentEditor.id.uint64).some
   return TextEditor.none
 
 proc textEditorAsTextDocument(instance: ptr InstanceData; document: Document): Option[TextDocument] =
@@ -406,12 +446,82 @@ proc textEditorAsTextDocument(instance: ptr InstanceData; document: Document): O
     return TextDocument(id: text_document.TextDocument(document).id.uint64).some
   return TextDocument.none
 
+proc textEditorLineLength(instance: ptr InstanceData; editor: TextEditor; line: int32): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.lineLength(line.int).int32
+
+proc textEditorClearTabStops(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.clearTabStops()
+
+proc textEditorUndo(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.undo(checkpoint)
+
+proc textEditorRedo(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.redo(checkpoint)
+
+proc textEditorAddNextCheckpoint(instance: ptr InstanceData; editor: TextEditor, checkpoint: sink string): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.addNextCheckpoint(checkpoint)
+
+proc textEditorCopy(instance: ptr InstanceData; editor: TextEditor, register: sink string, inclusiveEnd: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.copy(register, inclusiveEnd)
+
+proc textEditorPaste(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection], register: sink string, inclusiveEnd: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    asyncSpawn editor.TextDocumentEditor.pasteAsync(selections.mapIt(it.toInternal), register, inclusiveEnd)
+
+proc textEditorAutoShowCompletions(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.autoShowCompletions()
+
+proc textEditorApplyMove(instance: ptr InstanceData; editor: TextEditor; selection: Selection; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    return textEditor.getSelectionsForMove(@[selection.toInternal], move, count, includeEol, wrap).mapIt(it.toWasm)
+
+proc textEditorMultiMove(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; move: sink string; count: int32; wrap: bool; includeEol: bool): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    return textEditor.getSelectionsForMove(selections.mapIt(it.toInternal), move, count, includeEol, wrap).mapIt(it.toWasm)
+
 proc textEditorSetSelection(instance: ptr InstanceData; editor: TextEditor; s: Selection): void =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let textEditor = editor.TextDocumentEditor
     textEditor.selection = ((s.first.line.int, s.first.column.int), (s.last.line.int, s.last.column.int))
+
+proc textEditorSetSelections(instance: ptr InstanceData; editor: TextEditor; s: sink seq[Selection]): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    if s.len > 0:
+      textEditor.selections = s.mapIt(it.toInternal)
 
 proc textEditorGetSelection(instance: ptr InstanceData; editor: TextEditor): Selection =
   if instance.host == nil:
@@ -423,14 +533,40 @@ proc textEditorGetSelection(instance: ptr InstanceData; editor: TextEditor): Sel
   else:
     Selection(first: Cursor(line: 1, column: 2), last: Cursor(line: 6, column: 9))
 
-proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string]): seq[Selection] =
+proc textEditorGetSelections(instance: ptr InstanceData; editor: TextEditor): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    let s = textEditor.selection
+    return editor.TextDocumentEditor.selections.mapIt(it.toWasm)
+
+proc textEditorEdit(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; contents: sink seq[string], inclusive: bool): seq[Selection] =
   if instance.host == nil:
     return
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let selections = selections.mapIt(it.toInternal)
-    let res = editor.TextDocumentEditor.edit(selections, contents)
+    let res = editor.TextDocumentEditor.edit(selections, contents, inclusiveEnd = inclusive)
     return res.mapIt(it.toWasm)
   return selections
+
+proc textEditorDefineMove(instance: ptr InstanceData; move: sink string; fun: uint32; data: uint32): void =
+  if instance.host == nil:
+    return
+
+  proc moveImpl(rope: Rope, move: string, selections: openArray[sca.Selection], count: int, includeEol: bool): seq[sca.Selection] {.gcsafe, raises: [].} =
+    var self: ptr ProcessResource
+    var ropeRes = RopeResource(rope: rope.slice().suffix(Point()))
+    let index = instance.resources.resourceNew(instance.store.context, ropeRes)
+    if index.isOk:
+      let res = instance.funcs.handleMove(fun, data, index.val.uint32, selections.mapIt(it.toWasm), count.int32, includeEol)
+      if res.isErr:
+        log lvlError, "Failed to call handleMove: " & res.err.msg
+      else:
+        return res.val.mapIt(it.toInternal)
+    return @[]
+
+  instance.host.moves.registerMove(move, moveImpl)
 
 proc textEditor_addModeChangedHandler(instance: ptr InstanceData, fun: uint32): int32 =
   if instance.host == nil:
@@ -443,6 +579,60 @@ proc textEditor_addModeChangedHandler(instance: ptr InstanceData, fun: uint32): 
         log lvlError, "Failed to call handleModeChanged: " & res.err.msg
   return 0
 
+proc textEditorSetMode(instance: ptr InstanceData; editor: TextEditor, mode: sink string, exclusive: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setMode(mode, exclusive)
+
+proc textEditorMode(instance: ptr InstanceData; editor: TextEditor): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.mode()
+
+proc textEditorModes(instance: ptr InstanceData; editor: TextEditor): seq[string] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.modes()
+
+proc textEditorClearCurrentCommandHistory(instance: ptr InstanceData; editor: TextEditor, retainLast: bool) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.clearCurrentCommandHistory(retainLast)
+
+proc textEditorSaveCurrentCommandHistory(instance: ptr InstanceData; editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.saveCurrentCommandHistory()
+
+proc textEditorHideCompletions(instance: ptr InstanceData; editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.hideCompletions()
+
+proc textEditorScrollToCursor(instance: ptr InstanceData; editor: TextEditor; behaviour: Option[ScrollBehaviour]; relativePosition: float32): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.scrollToCursor(sca.SelectionCursor.Last, scrollBehaviour = behaviour.mapIt(it.toInternal), relativePosition=relativePosition)
+
+proc textEditorSetNextSnapBehaviour(instance: ptr InstanceData; editor: TextEditor; behaviour: ScrollSnapBehaviour): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setNextSnapBehaviour(behaviour.toInternal)
+
+proc textEditorUpdateTargetColumn(instance: ptr InstanceData; editor: TextEditor): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.updateTargetColumn()
+
 proc textEditorCommand(instance: ptr InstanceData; editor: TextEditor, name: sink string, arguments: sink string): Result[string, CommandError] =
   if instance.host == nil:
     return
@@ -453,6 +643,24 @@ proc textEditorCommand(instance: ptr InstanceData; editor: TextEditor, name: sin
     if editor.handleAction(name, arguments, true).getSome(res):
       return results.ok($res)
   result.err(CommandError.NotFound)
+
+proc textEditorRecordCurrentCommand(instance: ptr InstanceData; editor: TextEditor; registers: sink seq[string]): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.recordCurrentCommand(registers)
+
+proc textEditorGetUsage(instance: ptr InstanceData; editor: TextEditor): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getUsage()
+
+proc textEditorGetRevision(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getRevision().int32
 
 proc textEditorContent(instance: ptr InstanceData; editor: TextEditor): RopeResource =
   if instance.host == nil:
@@ -470,6 +678,106 @@ proc textDocumentContent(instance: ptr InstanceData; document: TextDocument): Ro
     let textDocument = text_document.TextDocument(document)
     return RopeResource(rope: textDocument.rope.clone().slice().suffix(Point()))
   return RopeResource(rope: createRope("").slice().suffix(Point()))
+
+proc textEditorGetSettingRaw(instance: ptr InstanceData, editor: TextEditor, name: sink string): string =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return $editor.TextDocumentEditor.config.get(name, newJexNull())
+
+proc textEditorSetSettingRaw(instance: ptr InstanceData, editor: TextEditor, name: sink string, value: sink string) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    try:
+      # todo: permissions
+      editor.TextDocumentEditor.config.set(name, parseJsonex(value))
+    except CatchableError as e:
+      log lvlError, "set-setting-raw: Failed to set setting '{name}' to {value}: {e.msg}"
+
+proc textEditorSetSearchQueryFromMove(instance: ptr InstanceData, editor: TextEditor, move: sink string, count: int32, prefix: sink string, suffix: sink string): Selection =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.setSearchQueryFromMove(move, count, prefix, suffix)
+
+proc textEditorSetSearchQuery(instance: ptr InstanceData, editor: TextEditor, query: sink string, escapeRegex: bool, prefix: sink string, suffix: sink string): bool =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.setSearchQuery(query, escapeRegex, prefix, suffix)
+
+proc textEditorGetSearchQuery(instance: ptr InstanceData, editor: TextEditor): string =
+  if instance.host == nil:
+    return ""
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getSearchQuery()
+  return ""
+
+proc textEditorToggleLineComment(instance: ptr InstanceData, editor: TextEditor) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.toggleLineComment()
+
+proc textEditorInsertText(instance: ptr InstanceData, editor: TextEditor, text: sink string, autoIndent: bool) =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.insertText(text, autoIndent)
+
+proc textEditorOpenSearchBar(instance: ptr InstanceData; editor: TextEditor; query: sink string; scrollToPreview: bool; selectResult: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.openSearchBar(query, scrollToPreview, selectResult)
+
+proc textEditorEvaluateExpressions(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]; inclusive: bool; prefix: sink string; suffix: sink string; addSelectionIndex: bool): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.evaluateExpressions(selections.mapIt(it.toInternal), inclusive, prefix, suffix, addSelectionIndex)
+
+proc textEditorIndent(instance: ptr InstanceData; editor: TextEditor; delta: int32): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    if delta >= 0:
+      for i in 0..<delta:
+        editor.TextDocumentEditor.indent()
+    else:
+      for i in 0..<(-delta):
+        editor.TextDocumentEditor.unindent()
+
+proc textEditorGetCommandCount(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.getCommandCount().int32
+
+proc textEditorGetVisibleLineCount(instance: ptr InstanceData; editor: TextEditor): int32 =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.screenLineCount().int32
+
+proc textEditorSetCursorScrollOffset(instance: ptr InstanceData; editor: TextEditor; cursor: Cursor; scrollOffset: float32): void =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.setCursorScrollOffset(cursor.toInternal, scrollOffset)
+
+proc textEditorCreateAnchors(instance: ptr InstanceData; editor: TextEditor; selections: sink seq[Selection]): seq[(Anchor, Anchor)] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.createAnchors(selections.mapIt(it.toInternal)).mapIt(it.toWasm)
+
+proc textEditorResolveAnchors(instance: ptr InstanceData; editor: TextEditor; anchors: sink seq[(Anchor, Anchor)]): seq[Selection] =
+  if instance.host == nil:
+    return
+  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    return editor.TextDocumentEditor.resolveAnchors(anchors.mapIt(it.toInternal)).mapIt(it.toWasm)
 
 proc typesNewRope(instance: ptr InstanceData, content: sink string): RopeResource =
   return RopeResource(rope: createRope(content).slice().suffix(Point()))
@@ -489,14 +797,38 @@ proc typesRunes(instance: ptr InstanceData, self: var RopeResource): int64 =
 proc typesLines(instance: ptr InstanceData, self: var RopeResource): int64 =
   return self.rope.lines.int64
 
-proc typesSlice(instance: ptr InstanceData, self: var RopeResource, a: int64, b: int64): RopeResource =
-  let a = min(a, b).clamp(0, self.rope.len)
-  let b = max(a, b).clamp(0, self.rope.len)
+proc typesSlice(instance: ptr InstanceData, self: var RopeResource, a: int64, b: int64, inclusive: bool): RopeResource =
+  let a = min(a.int, b.int).clamp(0, self.rope.len)
+  var b = max(a.int, b.int).clamp(0, self.rope.len)
+  if inclusive:
+    b = self.rope.clip(b + 1, Bias.Right)
   return RopeResource(rope: self.rope[a.int...b.int].suffix(Point()))
+
+proc typesSliceSelection(instance: ptr InstanceData, self: var RopeResource, s: Selection, inclusive: bool): RopeResource =
+  let a = min(s.first.toPoint, s.last.toPoint).clamp(point(0, 0), self.rope.summary.lines)
+  var b = max(s.first.toPoint, s.last.toPoint).clamp(point(0, 0), self.rope.summary.lines)
+  if inclusive:
+    b = self.rope.clip(b + point(0, 1), Bias.Right)
+  return RopeResource(rope: self.rope[a...b].suffix(Point()))
 
 proc typesSlicePoints(instance: ptr InstanceData, self: var RopeResource, a: Cursor, b: Cursor): RopeResource =
   let range = Point(row: a.line.uint32, column: a.column.uint32)...Point(row: a.line.uint32, column: a.column.uint32)
   return RopeResource(rope: self.rope[range])
+
+proc typesLineLength(instance: ptr InstanceData, self: var RopeResource, line: int64): int64 =
+  return self.rope.lineRange(line).len
+
+proc typesFind(instance: ptr InstanceData, self: var RopeResource, sub: sink string, start: int64): Option[int64] =
+  let i = self.rope.find(sub, start).int64
+  if i >= 0:
+    return i.some
+  return int64.none
+
+proc typesRuneAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): Rune =
+  return self.rope.runeAt(a.toInternal.toPoint)
+
+proc typesByteAt(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8 =
+  return self.rope.charAt(a.toInternal.toPoint).uint8
 
 proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
   if permissions.disallowAll.get(false):
@@ -627,6 +959,41 @@ proc coreSpawnBackground(instance: ptr InstanceData, args: sink string, executor
 proc coreFinishBackground(instance: ptr InstanceData) =
   instance.destroyRequested = true
 
+proc registersIsReplayingCommands(instance: ptr InstanceData): bool =
+  if instance.host == nil:
+    return false
+  return instance.host.registers.isReplayingCommands()
+
+proc registersIsRecordingCommands(instance: ptr InstanceData; register: sink string): bool =
+  if instance.host == nil:
+    return false
+  return instance.host.registers.isRecordingCommands(register)
+
+proc registersSetRegisterText(instance: ptr InstanceData; text: sink string; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.setRegisterText(text, register)
+
+proc registersGetRegisterText(instance: ptr InstanceData; register: sink string): string =
+  if instance.host == nil:
+    return
+  return instance.host.registers.getRegisterText(register)
+
+proc registersStartRecordingCommands(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.startRecordingCommands(register)
+
+proc registersStopRecordingCommands(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.stopRecordingCommands(register)
+
+proc registersReplayCommands(instance: ptr InstanceData; register: sink string): void =
+  if instance.host == nil:
+    return
+  instance.host.registers.replayCommands(register)
+
 proc commandsDefineCommand(instance: ptr InstanceData, name: sink string, active: bool, docs: sink string,
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
   if instance.host == nil:
@@ -644,7 +1011,10 @@ proc commandsDefineCommand(instance: ptr InstanceData, name: sink string, active
       return res
     ),
   )
-  instance.commands.add(instance.host.commands.registerCommand(command, override = true))
+  if active:
+    instance.commands.add(instance.host.commands.registerActiveCommand(command, override = true))
+  else:
+    instance.commands.add(instance.host.commands.registerCommand(command, override = true))
 
 proc commandsRunCommand(instance: ptr InstanceData, name: sink string, arguments: sink string): Result[string, CommandError] =
   if instance.host == nil:
@@ -655,6 +1025,11 @@ proc commandsRunCommand(instance: ptr InstanceData, name: sink string, arguments
   if instance.host.commands.handleCommand(name & " " & arguments).getSome(res):
     return results.ok(res)
   result.err(CommandError.NotFound)
+
+proc commandsExitCommandLine(instance: ptr InstanceData) =
+  if instance.host == nil:
+    return
+  instance.host.commands.exitCommandLine()
 
 proc settingsGetSettingRaw(instance: ptr InstanceData, name: sink string): string =
   return $instance.host.settings.get(name, JsonNodeEx)
@@ -679,6 +1054,9 @@ proc layoutClose(instance: ptr InstanceData; v: View, keepHidden: bool, restoreH
 
 proc layoutFocus(instance: ptr InstanceData, slot: sink string) =
   instance.host.layout.focusView(slot.ensureMove)
+
+proc layoutCloseActiveView(instance: ptr InstanceData; closeOpenPopup: bool; restoreHidden: bool): void =
+  instance.host.layout.closeActiveView(closeOpenPopup, restoreHidden)
 
 proc renderRenderViewFromUserId(instance: ptr InstanceData; id: sink string): Option[RenderViewResource] =
   if renderViewFromUserId(instance.host.layout, id).getSome(view):

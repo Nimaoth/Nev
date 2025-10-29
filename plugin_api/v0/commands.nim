@@ -100,3 +100,9 @@ proc runCommand*(name: WitString; arguments: WitString): Result[WitString,
     var tempErr: CommandError
     tempErr = cast[CommandError](cast[ptr int32](retArea[4].addr)[])
     result = results.Result[WitString, CommandError].err(tempErr)
+
+proc commandsExitCommandLineImported(): void {.
+    wasmimport("exit-command-line", "nev:plugins/commands").}
+proc exitCommandLine*(): void {.nodestroy.} =
+  ## Close the command line.
+  commandsExitCommandLineImported()

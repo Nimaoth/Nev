@@ -1,0 +1,2 @@
+import "./regex"
+export regex

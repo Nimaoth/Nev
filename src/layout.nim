@@ -687,7 +687,7 @@ proc showView*(self: LayoutService, viewId: int32, slot: string = "", focus: boo
 
 proc showEditor*(self: LayoutService, editorId: EditorId, slot: string = "", focus: bool = true) {.expose("layout").} =
   ## Make the given editor visible
-  let editor = self.editors.getEditorForId(editorId).getOr:
+  let editor = self.editors.getEditorForId(editorId.EditorIdNew).getOr:
     log lvlError, &"No editor with id {editorId} exists"
     return
 
@@ -715,7 +715,7 @@ proc getOrOpenEditor*(self: LayoutService, path: string): Option[EditorId] {.exp
     return EditorId.none
 
   if self.editors.createEditorForDocument(document).getSome(editor):
-    return editor.id.some
+    return editor.id.EditorId.some
 
   return EditorId.none
 
@@ -732,7 +732,7 @@ proc tryOpenExisting*(self: LayoutService, path: string, appFile: bool = false, 
 proc tryOpenExisting*(self: LayoutService, editor: EditorId, addToHistory = true, slot: string = ""): Option[DocumentEditor] =
   # debugf"tryOpenExisting '{editor}'"
   for i, view in self.allViews:
-    if view of EditorView and view.EditorView.editor.id == editor:
+    if view of EditorView and view.EditorView.editor.id == editor.EditorIdNew:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.showView(view, slot = slot)
       return view.EditorView.editor.some

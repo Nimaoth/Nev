@@ -19,9 +19,9 @@
         "editor.text.handle-inputs": true,
         "vim.insert.handle-inputs": true,
         "vim.replace.handle-inputs": true,
-        "vim.replace.input-handler-command": "vim-replace-input-handler",
+        "vim.replace.input-handler-command": "vim.replace-input-handler",
         "vim.insert-register.handle-inputs": true,
-        "vim.insert-register.input-handler-command": "vim-insert-register-input-handler",
+        "vim.insert-register.input-handler-command": "vim.insert-register-input-handler",
 
         "editor.text.temp.choose-cursor.handle-actions": true,
         "editor.text.temp.choose-cursor.handle-inputs": true,
@@ -38,7 +38,7 @@
         "terminal.insert.handle-keys": true,
     },
 
-    "text.mode-changed-handler-command": "vim-mode-changed-handler",
+    "text.mode-changed-handler-command": "vim.mode-changed-handler",
     "text.inclusive-selection": false,
 
     "editor.text.cursor.movement.": "last",
