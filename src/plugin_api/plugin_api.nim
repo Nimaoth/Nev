@@ -992,7 +992,7 @@ proc registersStopRecordingCommands(instance: ptr InstanceData; register: sink s
 proc registersReplayCommands(instance: ptr InstanceData; register: sink string): void =
   if instance.host == nil:
     return
-  instance.host.registers.replayCommands(register)
+  instance.host.commands.replayCommands(register)
 
 proc commandsDefineCommand(instance: ptr InstanceData, name: sink string, active: bool, docs: sink string,
                        params: sink seq[(string, string)], returnType: sink string, context: sink string; fun: uint32; data: uint32): void =
