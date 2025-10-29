@@ -370,10 +370,6 @@ method handleAction*(self: SelectorPopup, action: string, arg: string): Option[J
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    let res1 = self.plugins.invokeAnyCallback(action, args)
-    if res1.isNotNil:
-      return res1.some
-
     let res2 = dispatch(action, args)
     if res2.isSome:
       return res2

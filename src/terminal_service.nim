@@ -3153,9 +3153,6 @@ genDispatcher("terminal")
 addGlobalDispatchTable "terminal", genDispatchTable("terminal")
 
 proc handleActionInternal(self: TerminalService, view: TerminalView, action: string, args: JsonNode): Option[string] =
-  # if self.plugins.invokeAnyCallback(action, args).isNotNil:
-  #   return Handled
-
   try:
     if dispatch(action, args).getSome(res):
       return ($res).some

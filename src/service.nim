@@ -29,6 +29,7 @@ var gServices*: Services
 
 method init*(self: Service): Future[Result[void, ref CatchableError]] {.base, async: (raises: []).} = discard
 method deinit*(self: Service) {.base.} = discard
+method tick*(self: Service) {.base.} = discard
 
 proc waitForServices*(self: Services) =
   while true:
@@ -47,6 +48,10 @@ proc waitForServices*(self: Services) =
 
 proc deinit*(self: Services) =
   discard
+
+proc tick*(self: Services) =
+  for s in self.running.values:
+    s.tick()
 
 proc getService*(self: Services, name: string, state: Option[ServiceState] = ServiceState.none): Option[Service] =
   if state.get(Running) == Running:

@@ -45,8 +45,6 @@ proc restoreSession*(self: SessionService, sessionData: JsonNode) =
   self.hasSession = true
   self.onSessionRestored.invoke(self)
 
-  discard self.plugins.invokeAnyCallback("after-restore-session", newJArray())
-
 proc addSaveHandler*(self: SessionService, key: string,
     save: proc(): JsonNode {.gcsafe, raises: [].},
     load: proc(data: JsonNode) {.gcsafe, raises: [].}) =

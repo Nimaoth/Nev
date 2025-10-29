@@ -1,9 +1,9 @@
 import std/[options, strformat, tables, sugar, sequtils, json, streams, strutils, hashes]
-import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils]
+import misc/[util, custom_logger, custom_async, custom_unicode, myjsonutils, jsonex, parsejsonex, timer]
 import text/language/[language_server_base]
 import document_editor, events
-import config_provider, service, dispatch_tables
-import nimsumtree/rope
+import config_provider, service, dispatch_tables, input_api
+import nimsumtree/rope, register
 
 logCategory "commands"
 
@@ -40,6 +40,7 @@ type
     languageServerCommandLine*: LanguageServer
     defaultCommandHandler*: CommandHandler
     commandHandler*: CommandHandler
+    registers*: Registers
 
     currentHistoryEntry*: int = 0
     eventHandler*: EventHandler
@@ -54,12 +55,15 @@ type
     activeCommands*: Table[string, Command]
     idToCommand*: Table[CommandId, string]
 
+    commandsThisFrame: int
+    dontRecord: bool = false
+
 proc all*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(true), disallowAll: some(true))
 proc none*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(false), disallowAll: some(none))
 
 func serviceName*(_: typedesc[CommandService]): string = "CommandService"
 
-addBuiltinService(CommandService)
+addBuiltinService(CommandService, Registers)
 
 proc registerCommand*(self: CommandService, command: sink Command, override: bool = false): CommandId
 
@@ -69,6 +73,7 @@ proc `$`(a: CommandId): string {.borrow.}
 
 method init*(self: CommandService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"CommandService.init"
+  self.registers = self.services.getService(Registers).get
   self.fallbackConfig = ConfigStore.new("CommandService", "settings://CommandService")
   self.shellCommandOutput = Rope.new("")
 
@@ -99,6 +104,9 @@ method init*(self: CommandService): Future[Result[void, ref CatchableError]] {.a
           ))
 
   return ok()
+
+method tick*(self: CommandService) =
+  self.commandsThisFrame = 0
 
 proc config*(self: CommandService): ConfigStore =
   if self.services.getService(ConfigService).getSome(configs):
@@ -159,25 +167,163 @@ proc registerCommand*(self: CommandService, command: sink Command, override: boo
   return id
 
 proc addPrefixCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) =
-  self.scopedCommandHandlers[prefix] = handler
-
-proc addScopedCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) =
   self.prefixCommandHandlers.add((prefix, handler))
 
-proc executeCommand*(self: CommandService, command: string): Option[string] =
+proc addScopedCommandHandler*(self: CommandService, prefix: string, handler: proc(command: string): Option[string] {.gcsafe, raises: [].}) =
+  self.scopedCommandHandlers[prefix] = handler
+
+proc executeCommand*(self: CommandService, command: string, record: bool = true): Option[string]
+
+iterator parseJsonFragmentsAndSubstituteArgs*(s: Stream, args: seq[JsonNodeEx], index: var int): JsonNodeEx =
+  var p: JsonexParser
+  try:
+    p.open(s, "")
+    discard getTok(p) # read first token
+    while p.tok != tkEof:
+      if p.tok == tkError and p.buf[p.bufpos - 1] == '@':
+        if p.bufpos < p.buf.len and p.buf[p.bufpos] == '@':
+          inc p.bufpos
+          for arg in args:
+            yield arg
+
+        else:
+          var numStr = ""
+          while p.buf[p.bufpos] in {'0'..'9'}:
+            numStr.add p.buf[p.bufpos]
+            inc p.bufpos
+
+          if numStr == "":
+            while index < args.len:
+              yield args[index]
+              inc index
+
+          else:
+            index = parseInt(numStr)
+            if index < args.len:
+              yield args[index]
+              inc index
+
+        discard getTok(p) # read next token
+      else:
+        yield p.parseJsonex(false, false)
+  except:
+    discard
+  finally:
+    try:
+      p.close()
+    except:
+      discard
+
+proc handleAlias(self: CommandService, action: string, arg: string, alias: JsonNode): Option[string] =
+  var args = newSeq[JsonNodeEx]()
+  try:
+    for a in newStringStream(arg).parseJsonexFragments():
+      args.add a
+
+  except CatchableError:
+    log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+
+  if alias.kind == JString:
+    let (action, arg) = alias.getStr.parseAction
+    var aliasArgs = newJexArray()
+    try:
+      var argIndex = 0
+      for a in newStringStream(arg).parseJsonFragmentsAndSubstituteArgs(args, argIndex):
+        aliasArgs.add a
+
+    except:
+      log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+
+    return self.executeCommand(action & " " & aliasArgs.mapIt($it).join(" "), record=false)
+
+  elif alias.kind == JArray:
+    var argIndex = 0
+    for command in alias:
+      if command.kind == JString:
+        let (action, arg) = command.getStr.parseAction
+        var aliasArgs = newJexArray()
+        try:
+          for a in newStringStream(arg).parseJsonFragmentsAndSubstituteArgs(args, argIndex):
+            aliasArgs.add a
+
+        except:
+          log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+        result = self.executeCommand(action & " " & aliasArgs.mapIt($it).join(" "), record=false)
+
+    return
+
+  else:
+    log lvlError, &"Failed to run alias '{action}': invalid configuration. Expected string | string[], got '{alias}'"
+    return string.none
+
+proc executeCommand*(self: CommandService, command: string, record: bool = true): Option[string] =
+  var doRecord = record
+  if self.dontRecord:
+    doRecord = false
+
+  let oldDontRecord = self.dontRecord
+  if not record:
+    self.dontRecord = true
+  defer:
+    if not record:
+      self.dontRecord = oldDontRecord
+
+  let t = startTimer()
+  if not self.registers.bIsReplayingCommands:
+    log lvlInfo, &"[executeCommand] '{command}'"
+  defer:
+    if not self.registers.bIsReplayingCommands:
+      let elapsed = t.elapsed
+      log lvlInfo, &"[executeCommand] '{command}' took {elapsed.ms} ms -> {result}"
+
+  if not self.registers.bIsReplayingCommands and doRecord:
+    self.registers.recordCommand(command)
+
+  if self.commandsThisFrame > self.config.get("max-commands-per-frame", 1000):
+    log lvlError, &""
+    return string.none
+
+  self.commandsThisFrame.inc()
+  debugf"executeCommand '{command}' ({self.commandsThisFrame})"
   for handler in self.prefixCommandHandlers:
     if command.startsWith(handler.prefix):
-      return handler.execute(command[handler.prefix.len..^1])
+      debugf"executeCommand '{command}' handled by prefix handler '{handler.prefix}'"
+      return handler.execute(command)
 
   let i = command.find('.')
-  let (prefix, command) = if i <= 0:
+  let (prefix, rawCommand) = if i <= 0:
     ("", command)
   else:
     (command[0..<i], command[(i + 1)..^1])
 
   if prefix in self.scopedCommandHandlers:
+    debugf"executeCommand '{rawCommand}' handled by scoped handler '{prefix}'"
     let handler = self.scopedCommandHandlers[prefix]
-    return handler(command)
+    return handler(rawCommand)
+
+  var (action, arg) = command.parseAction
+  if arg.startsWith("\\"):
+    arg = $newJString(arg[1..^1])
+
+  let alias = self.config.get("alias." & action, newJNull())
+  if alias != nil and alias.kind != JNull:
+    return self.handleAlias(action, arg, alias)
+
+  if self.commands.contains(action):
+    debugf"executeCommand '{rawCommand}' handled by explicit command '{action}'"
+    try:
+      return self.commands[action].execute(arg).some
+    except Exception as e:
+      log lvlError, &"Failed to run command '{command}': {e.msg}"
+      return string.none
+
+  try:
+    if self.defaultCommandHandler.isNotNil:
+      debugf"executeCommand '{command}' handled by default handler"
+      return self.defaultCommandHandler(command.some)
+  except Exception as e:
+    log lvlError, &"Failed to run command '{command}': {e.msg}"
+    return string.none
 
   return string.none
 
@@ -192,10 +338,7 @@ proc handleCommand*(self: CommandService, command: string): Option[string] =
   try:
     if self.commandHandler.isNotNil:
       return self.commandHandler(command.some)
-    if self.defaultCommandHandler.isNotNil:
-      return self.defaultCommandHandler(command.some)
-    log lvlError, &"Unhandled command 'command'"
-    return string.none
+    return self.executeCommand(command)
   except Exception as e:
     log lvlError, &"Failed to run command '{command}': {e.msg}"
     return string.none

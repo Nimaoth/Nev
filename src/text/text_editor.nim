@@ -2905,26 +2905,6 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
   #     (cursor.line, 0)
   #   result = (first, (cursor.line, self.document.lineLength(cursor.line)))
 
-  # else:
-    # result = cursor.toSelection
-
-    # let cursorJson = self.plugins.invokeAnyCallback("editor.text.custom-move", %*{
-    #   "editor": self.id.EditorId,
-    #   "move": move,
-    #   "cursor": cursor.toJson,
-    #   "count": count,
-    # })
-
-    # if cursorJson.isNil:
-    #   log(lvlError, fmt"editor.text.custom-move returned nil")
-    #   return result
-
-    # result = cursorJson.jsonTo(Selection).catch:
-    #   log(lvlError, fmt"Failed to parse selection from custom move '{move}': {cursorJson}")
-    #   return cursor.toSelection
-
-    # return result
-
 proc mapAllOrLast[T](self: openArray[T], all: bool, p: proc(v: T): T {.gcsafe, raises: [].}): seq[T] =
   if all:
     result = self.map p
@@ -3663,7 +3643,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   # repeating always inserts what was completed when recording.
   if self.bIsRecordingCurrentCommand:
     completion.origin = runeCursor.some
-    self.registers.recordCommand("." & "apply-completion", $completion.toJson)
+    self.registers.recordCommand(".apply-completion " & $completion.toJson)
 
 proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {.async.} =
   if self.hideHoverTask.isNotNil:
@@ -4283,18 +4263,6 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
       log lvlError, &"Failed to execute command '{action} {args}': {e.msg}"
       return newJNull().some
 
-  block:
-    let res = self.plugins.invokeAnyCallback(action, args)
-    if res.isNotNil:
-      dec self.commandCount
-      while self.commandCount > 0:
-        if self.plugins.invokeAnyCallback(action, args).isNil:
-          break
-        dec self.commandCount
-      self.commandCount = self.commandCountRestore
-      self.commandCountRestore = 0
-      return res.some
-
   try:
     # debugf"dispatch {action}, {args}"
     if dispatch(action, args).getSome(res):
@@ -4329,11 +4297,11 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string, reco
     ].toHashSet
 
     if record and action notin noRecordActions:
-      self.registers.recordCommand("." & action, arg)
+      self.registers.recordCommand("." & action & " " & arg)
 
     defer:
       if record and self.recordCurrentCommandRegisters.len > 0:
-        self.registers.recordCommand("." & action, arg, self.recordCurrentCommandRegisters)
+        self.registers.recordCommand("." & action & " " & arg, self.recordCurrentCommandRegisters)
       self.recordCurrentCommandRegisters.setLen(0)
 
     var args = newJArray()
@@ -4364,11 +4332,7 @@ proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventRe
       self.currentCommandHistory.commands.add Command(isInput: true, command: input)
 
     if record:
-      self.registers.recordCommand(".insert-text", $input.newJString)
-
-    # echo "handleInput '", input, "'"
-    if self.plugins.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
-      return Handled
+      self.registers.recordCommand(".insert-text " & $input.newJString)
 
     self.insertText(input)
   except:

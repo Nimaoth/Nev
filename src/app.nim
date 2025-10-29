@@ -89,7 +89,7 @@ type
     insertInputTask: DelayedTask
     delayedInputs: seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]
 
-    services: Services
+    services*: Services
     config*: ConfigService
     session*: SessionService
     events*: EventHandlerService
@@ -155,7 +155,6 @@ proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previe
 proc closeUnusedDocuments*(self: App)
 proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0))
 proc currentEventHandlers*(self: App): seq[EventHandler]
-proc scriptRunAction*(action: string, arg: string): JsonNode
 proc defaultHandleCommand*(self: App, command: string): Option[string]
 proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.}
 proc runLateCommandsFromAppOptions(self: App)
@@ -176,8 +175,6 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
-
-proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode]
 
 import text/[text_editor, text_document]
 import text/language/debugger
@@ -216,14 +213,13 @@ proc runConfigCommands(self: App, key: string) =
 
   for command in startupCommands:
     if command.kind == JString:
-      let (action, arg) = command.getStr.parseAction
-      log lvlInfo, &"[runConfigCommands: {key}] {action} {arg}"
-      discard self.handleAction(action, arg, record=false)
+      log lvlInfo, &"[runConfigCommands: {key}] {command.getStr}"
+      discard self.commands.executeCommand(command.getStr, record=false)
     if command.kind == JArray:
       let action = command[0].getStr
       let arg = command.elems[1..^1].mapIt($it).join(" ")
       log lvlInfo, &"[runConfigCommands: {key}] {action} {arg}"
-      discard self.handleAction(action, arg, record=false)
+      discard self.commands.executeCommand(action & " " & arg, record=false)
 
 proc initScripting(self: App, options: AppOptions) {.async.} =
   self.runConfigCommands("wasm-plugin-post-load-commands")
@@ -773,15 +769,13 @@ proc applyFontSettings(self: App) =
 proc runEarlyCommandsFromAppOptions(self: App) =
   log lvlInfo, &"Run early commands provided through command line"
   for command in self.appOptions.earlyCommands:
-    let (action, args) = command.parseAction
-    let res = self.handleAction(action, args, record=false)
+    let res = self.commands.executeCommand(command, record=false)
     log lvlInfo, &"'{command}' -> {res}"
 
 proc runLateCommandsFromAppOptions(self: App) =
   log lvlInfo, &"Run late commands provided through command line"
   for command in self.appOptions.lateCommands:
-    let (action, args) = command.parseAction
-    let res = self.handleAction(action, args, record=false)
+    let res = self.commands.executeCommand(command, record=false)
     log lvlInfo, &"'{command}' -> {res}"
 
 proc getEventHandler(self: App, context: string): EventHandler =
@@ -789,7 +783,7 @@ proc getEventHandler(self: App, context: string): EventHandler =
     var eventHandler: EventHandler
     assignEventHandler(eventHandler, self.events.getEventHandlerConfig(context)):
       onAction:
-        if self.handleAction(action, arg, record=true).isSome:
+        if self.commands.executeCommand(action & " " & arg, record=true).isSome:
           Handled
         else:
           Ignored
@@ -896,12 +890,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       self.defaultHandleCommand(command.get)
     else:
       string.none
-
-  self.commands.addScopedCommandHandler "", proc(command: string): Option[string] =
-    var (action, arg) = command.parseAction
-    if self.handleAction(action, arg, record=true).getSome(res):
-      return ($res).some
-    return string.none
 
   let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
@@ -1151,23 +1139,10 @@ proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
 
   self.setLocationList(items, selector.previewer.clone())
 
-proc getBackend*(self: App): Backend {.expose("editor").} =
-  return self.backend
-
-proc getHostOs*(self: App): string {.expose("editor").} =
-  when defined(linux):
-    return "linux"
-  elif defined(windows):
-    return "windows"
-  else:
-    return "unknown"
-
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 
 proc saveAppState*(self: App) {.expose("editor").} =
-  discard self.plugins.invokeAnyCallback("before-save-app-state", newJArray())
-
   var state = EditorState()
 
   if self.backend == api.Backend.Terminal:
@@ -1274,31 +1249,6 @@ proc help*(self: App, about: string = "") {.expose("editor").} =
   textDocument.load()
   discard self.layout.createAndAddView(textDocument)
 
-proc loadWorkspaceFileImpl(self: App, path: string, callback: string) {.async: (raises: []).} =
-  let path = self.workspace.getAbsolutePath(path)
-  try:
-    let content = await self.vfs.read(path)
-    discard self.plugins.callScriptAction(callback, content.some.toJson)
-  except FileNotFoundError:
-    discard self.plugins.callScriptAction(callback, string.none.toJson)
-  except IOError as e:
-    log lvlError, &"Failed to load workspace file: {e.msg}"
-    discard self.plugins.callScriptAction(callback, string.none.toJson)
-
-proc loadWorkspaceFile*(self: App, path: string, callback: string) {.expose("editor").} =
-  asyncSpawn self.loadWorkspaceFileImpl(path, callback)
-
-proc writeWorkspaceFileImpl(self: App, path: string, content: string) {.async: (raises: []).} =
-  let path = self.workspace.getAbsolutePath(path)
-  log lvlInfo, &"[writeWorkspaceFile] {path}"
-  try:
-    await self.vfs.write(path, content)
-  except IOError as e:
-    log lvlError, &"Failed to load workspace file: {e.msg}"
-
-proc writeWorkspaceFile*(self: App, path: string, content: string) {.expose("editor").} =
-  asyncSpawn self.writeWorkspaceFileImpl(path, content)
-
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
   log lvlInfo, fmt"current font size: {self.platform.fontSize}"
@@ -1308,15 +1258,6 @@ proc changeLineDistance*(self: App, amount: float32) {.expose("editor").} =
   self.platform.lineDistance = self.platform.lineDistance + amount.float
   log lvlInfo, fmt"current line distance: {self.platform.lineDistance}"
   self.platform.requestRender(true)
-
-proc platformTotalLineHeight*(self: App): float32 {.expose("editor").} =
-  return self.platform.totalLineHeight
-
-proc platformLineHeight*(self: App): float32 {.expose("editor").} =
-  return self.platform.lineHeight
-
-proc platformLineDistance*(self: App): float32 {.expose("editor").} =
-  return self.platform.lineDistance
 
 proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
@@ -1356,17 +1297,6 @@ proc closeUnusedDocuments*(self: App) =
     # Only close one document on each iteration so we don't create spikes
     break
 
-proc defaultHandleCommand*(self: App, command: string): Option[string] =
-  var (action, arg) = command.parseAction
-
-  if arg.startsWith("\\"):
-    arg = $newJString(arg[1..^1])
-
-  let res = self.handleAction(action, arg, record=true)
-  if res.getSome(res) and res.kind != JNull:
-    return res.pretty.some
-  return string.none
-
 proc writeFile*(self: App, path: string = "", appFile: bool = false) {.expose("editor").} =
   defer:
     self.platform.requestRender()
@@ -1390,17 +1320,6 @@ proc loadFile*(self: App, path: string = "") {.expose("editor").} =
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
-proc loadWorkspaceFile*(self: App, path: string) =
-  if self.layout.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
-    defer:
-      self.platform.requestRender()
-    try:
-      view.document.load(path)
-      view.editor.handleDocumentChanged()
-    except CatchableError:
-      log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
-      log(lvlError, getCurrentException().getStackTrace())
-
 proc loadTheme*(self: App, name: string, force: bool = false) {.expose("editor").} =
   asyncSpawn self.setTheme(fmt"app://themes/{name}.json", force)
 
@@ -1416,7 +1335,7 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
 
     var customCommand = ""
     var customArgsRaw = newSeq[JsonNodeEx]()
-    if self.getBackend() == Terminal and self.generalSettings.openSession.useMultiplexer.get():
+    if self.backend == Terminal and self.generalSettings.openSession.useMultiplexer.get():
       let multiplexers = self.config.runtime.get("editor.open-session", newJexObject())
       if multiplexers != nil and multiplexers.kind == JObject:
         try:
@@ -1591,7 +1510,7 @@ proc crash*(self: App, message: string = "") {.expose("editor").} =
 proc crash2*(self: App) {.expose("editor").} =
   ## This command will cause the editor to crash by accessing a nil reference.
   var app: App = nil
-  echo app.handleAction("crash", "", true)
+  echo self.commands.executeCommand("crash")
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isVfsPath:
@@ -2793,7 +2712,7 @@ proc setMode*(self: App, mode: string) {.expose("editor").} =
     let config = self.getModeConfig(mode)
     assignEventHandler(self.modeEventHandler, config):
       onAction:
-        if self.handleAction(action, arg, record=true).isSome:
+        if self.commands.executeCommand(action & " " & arg, record=true).isSome:
           Handled
         else:
           Ignored
@@ -2802,10 +2721,10 @@ proc setMode*(self: App, mode: string) {.expose("editor").} =
 
   self.currentMode = mode
 
-proc mode*(self: App): string {.expose("editor").} =
+proc mode*(self: App): string =
   return self.currentMode
 
-proc getContextWithMode(self: App, context: string): string {.expose("editor").} =
+proc getContextWithMode(self: App, context: string): string =
   return context & "." & $self.currentMode
 
 proc baseEventHandlers(self: App): seq[EventHandler] =
@@ -2826,7 +2745,7 @@ proc baseEventHandlers(self: App): seq[EventHandler] =
       var eventHandler: EventHandler
       assignEventHandler(eventHandler, self.events.getEventHandlerConfig(mode)):
         onAction:
-          if self.handleAction(action, arg, record=true).isSome:
+          if self.commands.executeCommand(action & " " & arg, record=true).isSome:
             Handled
           else:
             Ignored
@@ -3046,26 +2965,11 @@ proc handleDropFile*(self: App, path, content: string) =
   let document = newTextDocument(self.services, path, content)
   discard self.layout.createAndAddView(document)
 
-proc scriptRunAction*(action: string, arg: string): JsonNode {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return newJNull()
-    if gEditor.handleAction(action, arg, record=false).getSome(res):
-      return res
-    return newJNull()
-
-proc scriptLog*(message: string) {.expose("editor").} =
-  logNoCategory lvlInfo, fmt"[script] {message}"
-
 proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
   self.platform.builder.animationSpeedModifier *= factor
   log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
 
-proc registerPluginSourceCode*(self: App, path: string, content: string) {.expose("editor").} =
-  if self.plugins.currentPluginSystem.getSome(pluginSystem):
-    asyncSpawn self.vfs.write(pluginSystem.getCurrentContext() & path, content)
-
-proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) {.expose("editor").} =
+proc addCommandScript*(self: App, context: string, subContext: string, keys: string, action: string, arg: string = "", description: string = "", source: tuple[filename: string, line: int, column: int] = ("", 0, 0)) =
   let command = if arg.len == 0: action else: action & " " & arg
 
   let context = if context.endsWith("."):
@@ -3091,31 +2995,7 @@ proc addCommandScript*(self: App, context: string, subContext: string, keys: str
   self.events.getEventHandlerConfig(baseContext).addCommand(subContext, keys, command, source)
   self.events.invalidateCommandToKeysMap()
 
-proc getActivePopup*(): EditorId {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return EditorId(-1)
-    if gEditor.layout.popups.len > 0:
-      return gEditor.layout.popups[gEditor.layout.popups.high].id
-
-  return EditorId(-1)
-
 # todo: move to layout
-proc getActiveEditor*(): EditorId {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return EditorId(-1)
-    if gEditor.commands.commandLineMode:
-      return gEditor.commands.commandLineEditor.id.EditorId
-
-    if gEditor.layout.popups.len > 0 and gEditor.layout.popups[gEditor.layout.popups.high].getActiveEditor().getSome(editor):
-      return editor.id.EditorId
-
-    if gEditor.layout.tryGetCurrentView().getSome(view) and view.getActiveEditor().getSome(editor):
-      return editor.id.EditorId
-
-  return EditorId(-1)
-
 proc getActiveEditor*(self: App): Option[DocumentEditor] =
   if self.commands.commandLineMode:
     return self.commands.commandLineEditor.some
@@ -3132,48 +3012,6 @@ proc getActiveEditor*(self: App): Option[DocumentEditor] =
 proc logRootNode*(self: App) {.expose("editor").} =
   let str = self.platform.builder.root.dump(true)
   debug "logRootNode: ", str
-
-proc scriptIsSelectorPopup*(editorId: EditorId): bool {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return false
-    if gEditor.layout.getPopupForId(editorId).getSome(popup):
-      return popup of SelectorPopup
-  return false
-
-proc scriptIsTextEditor*(editorId: EditorId): bool {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return false
-    if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
-      return editor of TextDocumentEditor
-  return false
-
-proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return false
-    when enableAst:
-      if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
-        return editor of ModelDocumentEditor
-  return false
-
-proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return
-    defer:
-      gEditor.platform.requestRender()
-    if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
-      discard editor.handleAction(action, arg, record=false)
-    elif gEditor.layout.getPopupForId(editorId.EditorId).getSome(popup):
-      discard popup.handleAction(action, arg)
-
-proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
-  {.gcsafe.}:
-    if gEditor.isNil:
-      return
-    gEditor.plugins.callbacks[path] = id
 
 proc replayKeys*(self: App, register: string) {.expose("editor").} =
   if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
@@ -3213,7 +3051,7 @@ proc all*(self: App, args {.varargs.}: JsonNode) {.expose("editor").} =
       for command in args.elems:
         let (command, args) = command.toJsonEx.parseCommand()
         if command.len > 0:
-          discard self.handleAction(command, args, record=false)
+          discard self.commands.executeCommand(command & " " & args)
     except CatchableError:
       log lvlError, &"Failed to run all commands {args}: {getCurrentExceptionMsg()}"
 
@@ -3242,8 +3080,6 @@ proc printStatistics*(self: App) {.expose("editor").} =
       result.add &"Event Handlers: {self.events.eventHandlerConfigs.len}\n"
         # events.eventHandlerConfigs: Table[string, EventHandlerConfig]
 
-      result.add &"Callbacks: {self.plugins.callbacks.len}\n"
-
       result.add &"Input History: {self.inputHistory}\n"
       # result.add &"Editor History: {self.layout.editorHistory}\n"
 
@@ -3271,115 +3107,13 @@ proc printStatistics*(self: App) {.expose("editor").} =
 genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
 
-iterator parseJsonFragmentsAndSubstituteArgs*(s: Stream, args: seq[JsonNodeEx], index: var int): JsonNodeEx =
-  var p: JsonexParser
-  try:
-    p.open(s, "")
-    discard getTok(p) # read first token
-    while p.tok != tkEof:
-      if p.tok == tkError and p.buf[p.bufpos - 1] == '@':
-        if p.bufpos < p.buf.len and p.buf[p.bufpos] == '@':
-          inc p.bufpos
-          for arg in args:
-            yield arg
+proc defaultHandleCommand*(self: App, command: string): Option[string] =
+  var (action, arg) = command.parseAction
 
-        else:
-          var numStr = ""
-          while p.buf[p.bufpos] in {'0'..'9'}:
-            numStr.add p.buf[p.bufpos]
-            inc p.bufpos
-
-          if numStr == "":
-            while index < args.len:
-              yield args[index]
-              inc index
-
-          else:
-            index = parseInt(numStr)
-            if index < args.len:
-              yield args[index]
-              inc index
-
-        discard getTok(p) # read next token
-      else:
-        yield p.parseJsonex(false, false)
-  except:
-    discard
-  finally:
-    try:
-      p.close()
-    except:
-      discard
-
-proc handleAlias(self: App, action: string, arg: string, alias: JsonNode): Option[JsonNode] =
-  var args = newSeq[JsonNodeEx]()
-  try:
-    for a in newStringStream(arg).parseJsonexFragments():
-      args.add a
-
-  except CatchableError:
-    log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
-
-  if alias.kind == JString:
-    let (action, arg) = alias.getStr.parseAction
-    var aliasArgs = newJexArray()
-    try:
-      var argIndex = 0
-      for a in newStringStream(arg).parseJsonFragmentsAndSubstituteArgs(args, argIndex):
-        aliasArgs.add a
-
-    except:
-      log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
-
-    return self.handleAction(action, aliasArgs.mapIt($it).join(" "), record=false)
-
-  elif alias.kind == JArray:
-    var argIndex = 0
-    for command in alias:
-      if command.kind == JString:
-        let (action, arg) = command.getStr.parseAction
-        var aliasArgs = newJexArray()
-        try:
-          for a in newStringStream(arg).parseJsonFragmentsAndSubstituteArgs(args, argIndex):
-            aliasArgs.add a
-
-        except:
-          log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
-        result = self.handleAction(action, aliasArgs.mapIt($it).join(" "), record=false)
-
-    return
-
-  else:
-    log lvlError, &"Failed to run alias '{action}': invalid configuration. Expected string | string[], got '{alias}'"
-    return JsonNode.none
-
-proc handleAction(self: App, action: string, arg: string, record: bool): Option[JsonNode] =
-  let t = startTimer()
-  if not self.registers.bIsReplayingCommands:
-    log lvlInfo, &"[handleCommand] '{action} {arg}'"
-  defer:
-    if not self.registers.bIsReplayingCommands:
-      let elapsed = t.elapsed
-      log lvlInfo, &"[handleCommand] '{action} {arg}' took {elapsed.ms} ms -> {result}"
+  if arg.startsWith("\\"):
+    arg = $newJString(arg[1..^1])
 
   try:
-    if record:
-      self.registers.recordCommand(action, arg)
-
-    let alias = self.config.runtime.get("alias." & action, newJNull())
-    if alias != nil and alias.kind != JNull:
-      return self.handleAlias(action, arg, alias)
-
-    if self.commands.commands.contains(action):
-      try:
-        let res = self.commands.commands[action].execute(arg)
-        if res == "":
-          return newJNull().some
-        return res.parseJson().some
-      except CatchableError as e:
-        log lvlError, &"Failed to execute command '{action} {arg}': {e.msg}"
-        return newJNull().some
-
     var args = newJArray()
     try:
       for a in newStringStream(arg).parseJsonFragments():
@@ -3390,43 +3124,37 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
 
     if action.startsWith("."): # active action
       if self.getActiveEditor().getSome(editor):
-        return editor.handleAction(action[1..^1], arg, record=false)
+        debugf"[defaultHandleCommand] '{command}' handled by active editor"
+        return editor.handleAction(action[1..^1], arg, record=false).mapIt($it)
 
       log lvlError, fmt"No active editor"
-      return JsonNode.none
+      return string.none
 
     if action.startsWith("^"): # active popup action
       if self.layout.popups.len > 0:
-        return self.layout.popups[^1].handleAction(action[1..^1], arg)
+        debugf"[defaultHandleCommand] '{command}' handled by active popup"
+        return self.layout.popups[^1].handleAction(action[1..^1], arg).mapIt($it)
 
       log lvlError, fmt"No popup"
-      return JsonNode.none
+      return string.none
 
     {.gcsafe.}:
       for t in globalDispatchTables.mitems:
         t.functions.withValue(action, f):
           try:
+            debugf"[defaultHandleCommand] '{command}' handled by global dispatch"
             let res = f[].dispatch(args)
             if res.isNil:
               continue
 
-            return res.some
+            return ($res).some
           except JsonCallError as e:
             log lvlError, &"Failed to dispatch '{action} {args}' in {t.namespace}: {e.msg}"
 
     try:
-      for sc in self.plugins.pluginSystems:
-        withPluginSystem self.plugins, sc:
-          let res = sc.handleScriptAction(action, args)
-          if res.isNotNil:
-            return res.some
-    except CatchableError:
-      log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")
-      log(lvlError, getCurrentException().getStackTrace())
-
-    try:
-      result = dispatch(action, args)
+      result = dispatch(action, args).mapIt($it)
       if result.isSome:
+        debugf"[defaultHandleCommand] '{command}' handled by app dispatch"
         return
     except CatchableError:
       log(lvlError, fmt"Failed to dispatch command '{action} {arg}': {getCurrentExceptionMsg()}")
@@ -3436,4 +3164,4 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
     discard
 
   log lvlError, fmt"Unknown command '{action}'"
-  return JsonNode.none
+  return string.none
