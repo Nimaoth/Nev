@@ -20,7 +20,6 @@ import misc/async_process
 when enableAst:
   import ast/[model, project]
 
-import scripting/[scripting_wasm]
 import plugin_system_wasm
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
@@ -108,7 +107,6 @@ type
     disableLogFrameTime*: bool = true
     logBuffer = ""
 
-    wasmScriptContext*: ScriptContextWasm
     pluginSystemWasm*: PluginSystemWasm
     initializeCalled: bool
 
@@ -228,26 +226,6 @@ proc runConfigCommands(self: App, key: string) =
       discard self.handleAction(action, arg, record=false)
 
 proc initScripting(self: App, options: AppOptions) {.async.} =
-  if not options.disableOldWasmPlugins:
-    try:
-      log(lvlInfo, fmt"load wasm configs")
-      self.wasmScriptContext = new ScriptContextWasm
-      self.plugins.pluginSystems.add self.wasmScriptContext
-      self.wasmScriptContext.moduleVfs = VFS()
-      self.wasmScriptContext.vfs = self.vfs
-      self.vfs.mount("plugs://", self.wasmScriptContext.moduleVfs)
-
-      withPluginSystem self.plugins, self.wasmScriptContext:
-        let t1 = startTimer()
-        await self.wasmScriptContext.init("app://config", self.vfs)
-        log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
-
-        let t2 = startTimer()
-        discard self.wasmScriptContext.postInitialize()
-        log(lvlInfo, fmt"post init wasm configs ({t2.elapsed.ms}ms)")
-    except CatchableError:
-      log lvlError, &"Failed to load wasm configs: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
   self.runConfigCommands("wasm-plugin-post-load-commands")
   self.runConfigCommands("plugin-post-load-commands")
 
@@ -1087,9 +1065,6 @@ proc shutdown*(self: App) =
   for document in self.editors.documents:
     document.deinit()
 
-  if self.wasmScriptContext.isNotNil:
-    self.wasmScriptContext.deinit()
-
   {.gcsafe.}:
     gAppInterface = nil
   self[] = AppObject()
@@ -1350,14 +1325,14 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
 proc logs*(self: App, slot: string = "", focus: bool = true, scrollToBottom: bool = false) {.expose("editor").} =
   let editors = self.editors.getEditorsForDocument(self.logDocument)
   let editor = if editors.len > 0:
-    self.layout.showEditor(editors[0].id, slot = slot, focus = focus)
+    self.layout.showEditor(editors[0].id.EditorId, slot = slot, focus = focus)
     editors[0]
   else:
     self.layout.createAndAddView(self.logDocument).get
 
   if scrollToBottom and editor of TextDocumentEditor:
     let editor = editor.TextDocumentEditor
-    editor.moveLast("file")
+    editor.move("(file) (end)")
     editor.selection = editor.selection.last.toSelection
 
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
@@ -2089,7 +2064,7 @@ proc chooseOpen*(self: App, preview: bool = true, scaleX: float = 0.8, scaleY: f
     let item = popup.getSelectedItem().getOr:
       return true
 
-    let editorId = item.data.parseInt.EditorId.catch:
+    let editorId = item.data.parseInt.EditorIdNew.catch:
       log lvlError, fmt"Failed to parse editor id from data '{item}'"
       return true
 
@@ -2765,30 +2740,6 @@ proc exploreCurrentFileDirectory*(self: App) {.expose("editor").} =
   if self.layout.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
     self.exploreFiles(view.document.filename.splitPath.head)
 
-# todo: move to scripting_base
-proc reloadPluginAsync*(self: App) {.async.} =
-  if self.wasmScriptContext.isNotNil:
-    log lvlInfo, "Reload wasm plugins"
-    try:
-      self.plugins.clearScriptActionsFor(self.wasmScriptContext)
-
-      let t1 = startTimer()
-      withPluginSystem self.plugins, self.wasmScriptContext:
-        await self.wasmScriptContext.reload()
-      log(lvlInfo, fmt"Reload wasm plugins ({t1.elapsed.ms}ms)")
-
-      withPluginSystem self.plugins, self.wasmScriptContext:
-        let t2 = startTimer()
-        discard self.wasmScriptContext.postInitialize()
-        log(lvlInfo, fmt"Post init wasm plugins ({t2.elapsed.ms}ms)")
-
-      log lvlInfo, &"Successfully reloaded wasm plugins"
-    except CatchableError:
-      log lvlError, &"Failed to reload wasm plugins: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
-    self.runConfigCommands("wasm-plugin-post-reload-commands")
-    self.runConfigCommands("plugin-post-reload-commands")
-
 proc reloadConfigAsync*(self: App) {.async.} =
   await self.loadConfigFrom(appConfigDir, "app")
   if not self.appOptions.skipUserSettings:
@@ -2804,7 +2755,7 @@ proc reloadConfig*(self: App, clearOptions: bool = false) {.expose("editor").} =
 
 proc reloadPlugin*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload current plugin"
-  asyncSpawn self.reloadPluginAsync()
+  # todo: delete
 
 proc reloadTheme*(self: App) {.expose("editor").} =
   log lvlInfo, &"Reload theme"
@@ -3155,13 +3106,13 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
     if gEditor.isNil:
       return EditorId(-1)
     if gEditor.commands.commandLineMode:
-      return gEditor.commands.commandLineEditor.id
+      return gEditor.commands.commandLineEditor.id.EditorId
 
     if gEditor.layout.popups.len > 0 and gEditor.layout.popups[gEditor.layout.popups.high].getActiveEditor().getSome(editor):
-      return editor.id
+      return editor.id.EditorId
 
     if gEditor.layout.tryGetCurrentView().getSome(view) and view.getActiveEditor().getSome(editor):
-      return editor.id
+      return editor.id.EditorId
 
   return EditorId(-1)
 
@@ -3194,7 +3145,7 @@ proc scriptIsTextEditor*(editorId: EditorId): bool {.expose("editor").} =
   {.gcsafe.}:
     if gEditor.isNil:
       return false
-    if gEditor.editors.getEditorForId(editorId).getSome(editor):
+    if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
       return editor of TextDocumentEditor
   return false
 
@@ -3203,7 +3154,7 @@ proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
     if gEditor.isNil:
       return false
     when enableAst:
-      if gEditor.editors.getEditorForId(editorId).getSome(editor):
+      if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
         return editor of ModelDocumentEditor
   return false
 
@@ -3213,9 +3164,9 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expo
       return
     defer:
       gEditor.platform.requestRender()
-    if gEditor.editors.getEditorForId(editorId).getSome(editor):
+    if gEditor.editors.getEditorForId(editorId.EditorIdNew).getSome(editor):
       discard editor.handleAction(action, arg, record=false)
-    elif gEditor.layout.getPopupForId(editorId).getSome(popup):
+    elif gEditor.layout.getPopupForId(editorId.EditorId).getSome(popup):
       discard popup.handleAction(action, arg)
 
 proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
@@ -3223,24 +3174,6 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
     if gEditor.isNil:
       return
     gEditor.plugins.callbacks[path] = id
-
-proc replayCommands*(self: App, register: string) {.expose("editor").} =
-  if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
-    log lvlError, fmt"No commands recorded in register '{register}'"
-    return
-
-  if self.registers.bIsReplayingCommands:
-    log lvlError, fmt"replayCommands '{register}': Already replaying commands"
-    return
-
-  log lvlInfo, &"replayCommands '{register}':\n{self.registers.registers[register].text}"
-  self.registers.bIsReplayingCommands = true
-  defer:
-    self.registers.bIsReplayingCommands = false
-
-  for command in self.registers.registers[register].text.splitLines:
-    let (action, arg) = parseAction(command)
-    discard self.handleAction(action, arg, record=false)
 
 proc replayKeys*(self: App, register: string) {.expose("editor").} =
   if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:
@@ -3504,6 +3437,3 @@ proc handleAction(self: App, action: string, arg: string, record: bool): Option[
 
   log lvlError, fmt"Unknown command '{action}'"
   return JsonNode.none
-
-template generatePluginBindings*(): untyped =
-  createEditorWasmImportConstructor()

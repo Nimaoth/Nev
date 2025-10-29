@@ -1,4 +1,4 @@
-import std/[sequtils, options]
+import std/[options]
 
 type GenerationalSeq*[T; K] = object
   ## Even generation means empty slot, odd means it's filled

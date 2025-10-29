@@ -205,9 +205,13 @@ proc getTextRangeTreesitter(payload: pointer; byteIndex: uint32; position: ts.TS
 proc parseCallback*(self: TSParser, oldTree: TSTree, text: GetTextCallback): TSTree =
   let input = TSInput(
     payload: text.addr,
-    read: cast[typeof(TSInput().read)](getTextRangeTreesitter),
+    # read: cast[typeof(TSInput().read)](getTextRangeTreesitter),
     encoding: TSInputEncoding.TSInputEncodingUTF8
   )
+
+  # Ugly hack, but on windows it complains about incompatible function pointer type because nim maps cstring to "char*"
+  # instead of "const char*"
+  {.emit: [input, ".read = (void*)(", getTextRangeTreesitter, ");"].}
 
   let oldTreeImpl = if oldTree.isNotNil:
     oldTree.impl

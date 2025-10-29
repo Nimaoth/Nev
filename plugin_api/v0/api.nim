@@ -4,6 +4,9 @@ export wit_types, wit_runtime
 import async
 export async
 
+# todo: remove this eventually
+from "../../src/scripting_api.nim" as sca import nil
+
 const pluginWorld {.strdefine.} = "plugin"
 
 when defined(witRebuild):
@@ -28,10 +31,20 @@ proc emscripten_stack_init() {.importc.}
 
 proc NimMain() {.importc.}
 
+######### todo: move these to wit_types
+
+proc `==`*(a, b: WitString): bool =
+  if a.len != b.len:
+    return false
+  return a.toOpenArray() == b.toOpenArray()
+
+template ws*(s: WitString): WitString = s
+
 ############################ exported functions ############################
 
 type CommandHandler = proc(data: uint32, args: WitString): WitString {.cdecl.}
 type ChannelUpdateHandler = proc(data: uint32, closed: bool): ChannelListenResponse {.cdecl, raises: [].}
+type MoveHandler = proc(data: uint32, text: sink Rope, selections: openArray[Selection], count: int, includeEol: bool): seq[Selection] {.cdecl, raises: [].}
 
 proc initPlugin() =
   emscripten_stack_init()
@@ -70,6 +83,11 @@ proc notifyTasksComplete(tasks: WitList[tuple[task: uint64, canceled: bool]]) =
   for (task, canceled) in tasks:
     notifyTaskComplete(task, canceled)
 
+proc handleMove(fun: uint32; data: uint32; text: uint32; selections: WitList[Selection]; count: int32; eol: bool): WitList[Selection] =
+  var text = Rope(handle: text.int32 + 1)
+  let fun = cast[MoveHandler](fun)
+  return stackWitList(fun(data, text.ensureMove, selections.toOpenArray(), count.int, eol))
+
 ############################ nice wrappers around the raw api ############################
 
 proc wl*[T](): WitList[T] = WitList[T].default()
@@ -87,6 +105,95 @@ when pluginWorld == "plugin":
     except:
       return def
 
+  proc getSetting*(editor: TextEditor, name: string, T: typedesc): T =
+    try:
+      return getSettingRaw(editor, name).parseJson().jsonTo(T)
+    except:
+      return T.default
+
+  proc getSetting*[T](editor: TextEditor, name: string, def: T): T =
+    try:
+      return ($getSettingRaw(editor, ws(name))).parseJson().jsonTo(T)
+    except:
+      return def
+
+  proc setSetting*[T](name: string, value: T) =
+    try:
+      setSettingRaw(name.ws, stackWitString($value.toJson))
+    except:
+      discard
+
+  proc setSetting*[T](editor: TextEditor, name: string, value: T) =
+    try:
+      editor.setSettingRaw(name.ws, stackWitString($value.toJson))
+    except:
+      discard
+
+  func `$`*(cursor: Cursor): string =
+    return $cursor.line & ":" & $cursor.column
+
+  func `$`*(selection: Selection): string =
+    return $selection.first & "-" & $selection.last
+
+  func `<`*(a: Cursor, b: Cursor): bool =
+    ## Returns true if the cursor `a` comes before `b`
+    if a.line < b.line:
+      return true
+    elif a.line == b.line and a.column < b.column:
+      return true
+    else:
+      return false
+
+  func `<=`*(a: Cursor, b: Cursor): bool =
+    return a == b or a < b
+
+  func min*(a: Cursor, b: Cursor): Cursor =
+    if a < b:
+      return a
+    return b
+
+  func max*(a: Cursor, b: Cursor): Cursor =
+    if a >= b:
+      return a
+    return b
+
+  func isBackwards*(selection: Selection): bool =
+    ## Returns true if the first cursor of the selection is after the second cursor
+    return selection.first > selection.last
+
+  func normalized*(selection: Selection): Selection =
+    ## Returns the normalized selection, i.e. where first < last.
+    ## Switches first and last if backwards.
+    if selection.isBackwards:
+      return Selection(first: selection.last, last: selection.first)
+    else:
+      return selection
+
+  func `in`*(a: Cursor, b: Selection): bool =
+    ## Returns true if the cursor is contained within the selection
+    let b = b.normalized
+    return a >= b.first and a <= b.last
+
+  func reverse*(selection: Selection): Selection = Selection(first: selection.last, last: selection.first)
+
+  func isEmpty*(selection: Selection): bool = selection.first == selection.last
+  func allEmpty*(selections: openArray[Selection]): bool = selections.allIt(it.isEmpty)
+
+  func contains*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor <= selection.last)
+  func contains*(selection: Selection, other: Selection): bool = (other.first >= selection.first and other.last <= selection.last)
+
+  func contains*(self: openArray[Selection], cursor: Cursor): bool = self.`any` (s) => s.contains(cursor)
+  func contains*(self: openArray[Selection], other: Selection): bool = self.`any` (s) => s.contains(other)
+
+  func `or`*(a: Selection, b: Selection): Selection =
+    let an = a.normalized
+    let bn = b.normalized
+    return Selection(first: min(an.first, bn.first), last: max(an.last, bn.last))
+
+  converter toCursor*(c: (int, int)): Cursor = Cursor(line: c[0].int32, column: c[1].int32)
+  converter toCursor*(c: (int32, int32)): Cursor = Cursor(line: c[0], column: c[1])
+  converter toSelection*(c: tuple[line, column: int]): Selection = Selection(first: c.toCursor, last: c.toCursor)
+  converter toSelection*(c: tuple[first, last: Cursor]): Selection = Selection(first: c.first, last: c.last)
   proc toSelection*(c: Cursor): Selection = Selection(first: c, last: c)
 
   proc defineCommand*(name: WitString; active: bool; docs: WitString; params: WitList[(WitString, WitString)]; returntype: WitString; context: WitString; data: uint32; handler: CommandHandler) =
@@ -94,6 +201,46 @@ when pluginWorld == "plugin":
 
   proc addModeChangedHandler*(fun: proc(old: WitString, new: WitString) {.cdecl.}) =
     discard addModeChangedHandler(cast[uint32](fun))
+
+  proc selections*(editor: TextEditor): WitList[Selection] =
+    return editor.getSelections()
+
+  proc setSelections*(editor: TextEditor, s: openArray[Selection]) =
+    editor.setSelections(@@s)
+
+  proc lineCount*(editor: TextEditor): int =
+    editor.content.lines.int
+
+  proc setMode*(editor: TextEditor, mode: string) =
+    editor.setMode(ws(mode), exclusive = true)
+
+  proc applyMove*(editor: TextEditor, cursor: Cursor, move: string, count: int = 1, wrap: bool = true, includeEol: bool = true): Selection =
+    return editor.applyMove(cursor.toSelection, move.ws, count, wrap, includeEol)[0]
+
+  proc scrollToCursor*(editor: TextEditor) =
+    editor.scrollToCursor(ScrollBehaviour.none, 0.5)
+
+  proc addCustomTextMove*(name: string, move: MoveHandler) =
+    defineMove(name.ws, cast[uint32](move), 0)
+
+  proc multiMove*(editor: TextEditor, selections: WitList[Selection], move: WitString|string): WitList[Selection] =
+    editor.multiMove(selections, ws(move), 0, false, true)
+
+  proc multiMove*(editor: TextEditor, selections: openArray[Selection], move: WitString|string): WitList[Selection] =
+    editor.multiMove(@@selections, ws(move), 0, false, true)
+
+func toSelection*(cursor: Cursor, default: Selection, which: sca.SelectionCursor): Selection =
+  case which
+  of sca.SelectionCursor.Config: return default
+  of sca.SelectionCursor.Both: return (cursor, cursor).toSelection
+  of sca.SelectionCursor.First: return (cursor, default.last).toSelection
+  of sca.SelectionCursor.Last: return (default.first, cursor).toSelection
+  of sca.SelectionCursor.LastToFirst: return (default.last, cursor).toSelection
+
+proc charAt*(rope: Rope, cursor: Cursor): char = rope.byteAt(cursor).char
+proc slice*(rope: Rope, a: Natural, b: Natural): Rope = rope.slice(a.int64, b.int64, inclusive = false)
+proc `[]`*(rope: Rope, a: Natural, b: Natural): Rope = rope.slice(a.int64, b.int64, inclusive = false)
+proc `[]`*(rope: Rope, s: Selection): Rope = rope.sliceSelection(s, inclusive = false)
 
 proc asEditor*(editor: TextEditor): Editor = Editor(id: editor.id)
 proc asDocument*(document: TextDocument): Document = Document(id: document.id)

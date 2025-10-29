@@ -24,6 +24,27 @@ interface types {
     size: vec2f,
   }
 
+  flags active-editor-flags {
+    include-command-line,
+    include-popups,
+  }
+
+  record lamport {
+    replica-id: u16,
+    value: u32,
+  }
+
+  enum bias {
+    left,
+    right,
+  }
+
+  record anchor {
+    timestamp: lamport,
+    offset: u32,
+    bias: bias,
+  }
+
   /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   /// can be used to efficiently access any document content or share a string with another plugin.
   /// Ropes are reference counted internally, and this resource also affects that reference count.
@@ -39,15 +60,24 @@ interface types {
     lines: func() -> s64;
     /// Returns the text of the rope as a string. This is expensive for large ropes.
     text: func() -> string;
-    /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is exclusive.
+    /// Returns a slice of the rope from 'a' to 'b'. 'a' and 'b' are byte indices, 'b' is inclusive if `inclusive` is true.
     /// This operation is cheap because it doesn't create a copy of the text.
-    slice: func(a: s64, b: s64) -> rope;
+    slice: func(a: s64, b: s64, inclusive: bool) -> rope;
+    /// Returns a slice of the rope from the given selection. 's.last' is inclusive if `inclusive` is true.
+    /// This operation is cheap because it doesn't create a copy of the text.
+    slice-selection: func(s: selection, inclusive: bool) -> rope;
+    /// Find the byte index of the sub string 'sub', starting the search at 'start'. The returned index is relative to the start of the rope, not 'start'.
+    find: func(sub: string, start: s64) -> option<s64>;
     /// Returns a slice of the rope from 'a' to 'b'. The column of 'b' is exclusive. Columns are in bytes.
     /// This operation is cheap because it doesn't create a copy of the text.
     slice-points: func(a: cursor, b: cursor) -> rope;
+    /// Return the length in bytes of the given line (0 based).
+    line-length: func(line: s64) -> s64;
     // /// Returns a slice of the rope from line 'a' to 'b'. 'b' is inclusive.
     // /// This operation is cheap because it doesn't create a copy of the text.
     // slice-lines: func(a: s64, b: s64) -> rope;
+    rune-at: func(a: cursor) -> char;
+    byte-at: func(a: cursor) -> u8;
   }
 
   /// Non-owning handle to an editor.
@@ -185,19 +215,34 @@ interface vfs {
 }
 
 interface editor {
-  use types.{editor, document};
+  use types.{editor, document, active-editor-flags};
   /// Returns a handle for the currently active text editor.
-  active-editor: func() -> option<editor>;
+  active-editor: func(options: active-editor-flags) -> option<editor>;
   /// Returns the document the given editor is currently editing.
   get-document: func(editor: editor) -> option<document>;
 }
 
 interface text-editor {
-  use types.{editor, document, text-editor, text-document, cursor, selection, rope};
+  use types.{editor, document, text-editor, text-document, cursor, selection, rope, active-editor-flags, anchor};
   use commands.{command-error};
 
+  enum scroll-behaviour {
+    center-always,
+    center-offscreen,
+    center-margin,
+    scroll-to-margin,
+    top-of-screen,
+  }
+
+  enum scroll-snap-behaviour {
+    never,
+    always,
+    min-distance-offscreen,
+    min-distance-center,
+  }
+
   /// Returns a handle for the currently active text editor.
-  active-text-editor: func() -> option<text-editor>;
+  active-text-editor: func(options: active-editor-flags) -> option<text-editor>;
   /// Returns the text document the given editor is currently editing.
   get-document: func(editor: text-editor) -> option<text-document>;
   /// Try to cast the given editor handle to a text editor handle.
@@ -208,20 +253,135 @@ interface text-editor {
   /// Run the given command on the given text editor. This requires 'command' permissions.
   command: func(editor: text-editor, name: string, arguments: string) -> result<string, command-error>;
 
+  /// todo
+  record-current-command: func(editor: text-editor, registers: list<string>);
+  /// todo
+  clear-current-command-history: func(editor: text-editor, retain-last: bool);
+  /// todo
+  save-current-command-history: func(editor: text-editor);
+
+  /// todo
+  hide-completions: func(editor: text-editor);
+
+  /// todo
+  scroll-to-cursor: func(editor: text-editor, behaviour: option<scroll-behaviour>, relative-position: f32);
+  /// todo
+  set-next-snap-behaviour: func(editor: text-editor, behaviour: scroll-snap-behaviour);
+
+  /// todo
+  update-target-column: func(editor: text-editor);
+
+  /// todo
+  get-usage: func(editor: text-editor) -> string;
+  /// todo
+  get-revision: func(editor: text-editor) -> s32;
+  /// todo
+  set-mode: func(editor: text-editor, mode: string, exclusive: bool);
+  /// todo
+  mode: func(editor: text-editor) -> string;
+  /// todo
+  modes: func(editor: text-editor) -> list<string>;
+  /// todo
+  clear-tab-stops: func(editor: text-editor);
+  /// todo
+  undo: func(editor: text-editor, checkpoint: string);
+  /// todo
+  redo: func(editor: text-editor, checkpoint: string);
+  /// todo
+  add-next-checkpoint: func(editor: text-editor, checkpoint: string);
+  /// todo
+  copy: func(editor: text-editor, register: string, inclusive-end: bool);
+  /// todo
+  paste: func(editor: text-editor, selections: list<selection>, register: string, inclusive-end: bool);
+  /// todo
+  auto-show-completions: func(editor: text-editor);
+  /// todo
+  toggle-line-comment: func(editor: text-editor);
+  /// todo
+  insert-text: func(editor: text-editor, text: string, auto-indent: bool);
+  /// todo
+  open-search-bar: func(editor: text-editor, query: string, scroll-to-preview: bool, select-result: bool);
+
+  /// Set the search query by applying the given move to the current selection.
+  /// 'prefix' and 'suffix' are appended to the string after escaping.
+  set-search-query-from-move: func(editor: text-editor, move: string, count: s32, prefix: string, suffix: string) -> selection;
+  /// Set the search query to 'query'. If 'escape-regex' is true the the 'query' string is escaped so special characters
+  /// are searched for literally. 'prefix' and 'suffix' are appended to the string after escaping.
+  set-search-query: func(editor: text-editor, query: string, escape-regex: bool, prefix: string, suffix: string) -> bool;
+  /// Returns the current search query.
+  get-search-query: func(editor: text-editor) -> string;
+
+  /// todo
+  apply-move: func(editor: text-editor, selection: selection, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+  multi-move: func(editor: text-editor, selections: list<selection>, move: string, count: s32, wrap: bool, include-eol: bool) -> list<selection>;
+
   /// Sets the given selection as the only selection for the given editor.
   set-selection: func(editor: text-editor, s: selection);
+  /// Sets the selections for the given editor.
+  set-selections: func(editor: text-editor, s: list<selection>);
   /// Returns the last selection of the given editor.
   get-selection: func(editor: text-editor) -> selection;
+  /// Returns the selections of the given editor.
+  get-selections: func(editor: text-editor) -> list<selection>;
+  /// Return the length of the given line (0 based)
+  line-length: func(editor: text-editor, line: s32) -> s32;
   /// Add a callback which will be called whenever any editor changes mode.
   add-mode-changed-handler: func(fun: u32) -> s32;
 
-  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>) -> list<selection>;
+  /// Returns the value of the setting with the given path, encoded as JSON.
+  get-setting-raw: func(editor: text-editor, name: string) -> string;
+
+  /// Set the value of the setting with the given path. The value must be encoded as JSON.
+  set-setting-raw: func(editor: text-editor, name: string, value: string);
+
+  /// todo
+  evaluate-expressions: func(editor: text-editor, selections: list<selection>, inclusive: bool, prefix: string, suffix: string, add-selection-index: bool);
+
+  /// todo
+  indent: func(editor: text-editor, delta: s32);
+
+  /// todo
+  get-command-count: func(editor: text-editor) -> s32;
+
+  /// todo
+  set-cursor-scroll-offset: func(editor: text-editor, cursor: cursor, scroll-offset: f32);
+
+  /// Returns the number of lines that fit on the current screen size for this editor.
+  get-visible-line-count: func(editor: text-editor) -> s32;
+
+  /// todo
+  create-anchors: func(editor: text-editor, selections: list<selection>) -> list<tuple<anchor, anchor>>;
+
+  /// todo
+  resolve-anchors: func(editor: text-editor, anchors: list<tuple<anchor, anchor>>) -> list<selection>;
+
+  /// todo
+  edit: func(editor: text-editor, selections: list<selection>, contents: list<string>, inclusive: bool) -> list<selection>;
+
+  define-move: func(move: string, fun: u32, data: u32);
 
   /// Returns the rope containing the current content of the text editors document.
   /// This rope is not automatically kept up to date when the document changes, but
   /// represents the content at the point in time this is called instead. Keeping ropes
   /// around should not have significant memory overhead because ropes share data under the hood.
   content: func(editor: text-editor) -> rope;
+}
+
+interface registers {
+  /// todo
+  is-replaying-commands: func() -> bool;
+  /// todo
+  is-recording-commands: func(register: string) -> bool;
+  /// todo
+  set-register-text: func(text: string, register: string);
+  /// todo
+  get-register-text: func(register: string) -> string;
+  /// todo
+  start-recording-commands: func(register: string);
+  /// todo
+  stop-recording-commands: func(register: string);
+  /// todo
+  replay-commands: func(register: string);
 }
 
 interface text-document {
@@ -248,6 +408,9 @@ interface layout {
   close: func(v: view, keep-hidden: bool, restore-hidden: bool);
   /// Set focus to the view in the given slot.
   focus: func(slot: string);
+  /// Close the active view. If 'close-open-popup' is set and a popup is open then the popup will be closed.
+  /// If 'restore-hidden' is true then the view will be replaced by a hidden view, otherwise the slot will be removed from the layout..
+  close-active-view: func(close-open-popup: bool, restore-hidden: bool);
 }
 
 interface render {
@@ -355,6 +518,9 @@ interface commands {
 
   /// Run the given command. This requires 'command' permissions.
   run-command: func(name: string, arguments: string) -> result<string, command-error>;
+
+  /// Close the command line.
+  exit-command-line: func();
 }
 
 interface settings {
@@ -368,12 +534,14 @@ interface settings {
 interface guest {
   use render.{view};
   use channel.{channel-listen-response};
+  use types.{rope, selection};
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
   handle-view-render-callback: func(id: s32, fun: u32, data: u32);
   handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
   notify-task-complete: func(task: u64, canceled: bool);
+  handle-move: func(fun: u32, data: u32, text: u32, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
 }
 
 /// APIs which can safely be used on a background thread
@@ -400,6 +568,7 @@ world plugin {
   import vfs;
   import channel;
   import process;
+  import registers;
 
   export guest;
 }

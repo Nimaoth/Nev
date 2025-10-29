@@ -10,9 +10,11 @@ export input_api
 logCategory "input"
 
 type
+  CaptureFlags = enum None, Char, Any
   Transition = object
     state: int
     capture: string
+    captureFlags: CaptureFlags
     functionIndices: BitSet
     function: string
 
@@ -48,6 +50,7 @@ type
     Left, Middle, Right, DoubleClick, TripleClick, Unknown
 
 proc inputToString*(input: int64, modifiers: Modifiers = {}): string
+proc inputToCharString*(input: int64, modifiers: Modifiers = {}): string
 
 let capturePattern = re"<(.*?)>"
 proc fillCaptures(dfa: CommandDFA, state: CommandState, args: string): string =
@@ -122,7 +125,13 @@ proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: 
       var newState = state
       newState.current = transition.state
       newState.functionIndices.bitSetIntersect transition.functionIndices
-      newState.captures.mgetOrPut(transition.capture, "").add(inputToString(currentInput, mods))
+      let captureText = case transition.captureFlags
+      of None, Any:
+        inputToString(currentInput, mods)
+      of Char:
+        inputToCharString(currentInput, mods)
+
+      newState.captures.mgetOrPut(transition.capture, "").add(captureText)
 
       if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
         result.add newState
@@ -292,7 +301,25 @@ proc inputToString*(inputs: Slice[int64], modifiers: Modifiers = {}): string =
 
   if special: result.add ">"
 
-proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, inputCodes: Slice[int64], mods: Modifiers, functionIndex: int, capture: string): bool =
+proc inputToCharString*(input: int64, modifiers: Modifiers = {}): string =
+  if modifiers != {} and modifiers != {Shift}:
+    return inputToString(input, modifiers)
+  case input
+  of INPUT_SPACE:
+    return " "
+  of INPUT_ENTER:
+    return "\n"
+  of INPUT_TAB:
+    return "\t"
+  else:
+    if input <= 0:
+      return inputToString(input, modifiers)
+    else:
+      result = $input.Rune
+      if Shift in modifiers:
+        result = result.toUpper
+
+proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, inputCodes: Slice[int64], mods: Modifiers, functionIndex: int, capture: string, captureFlags: CaptureFlags): bool =
   if not (inputCodes in dfa.states[currentState].transitions):
     dfa.states[currentState].transitions[inputCodes] = DFAInput()
   if mods in dfa.states[currentState].transitions[inputCodes].next:
@@ -304,14 +331,15 @@ proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, inputCod
 
     assert current.state == nextState
     assert current.capture == capture
+    assert current.captureFlags == captureFlags
     dfa.states[currentState].transitions[inputCodes].next[mods].functionIndices.bitSetIncl functionIndex
     return true
   else:
     # echo &"link states {currentState} -> {nextState}, {inputToString(inputCodes, mods)}, {functionIndex}, {capture}"
-    dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: nextState, functionIndices: [functionIndex].toBitSet, capture: capture)
+    dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: nextState, functionIndices: [functionIndex].toBitSet, capture: capture, captureFlags: captureFlags)
     return true
 
-proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, functionIndex: int, capture: string, function: string) =
+proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, functionIndex: int, capture: string, captureFlags: CaptureFlags, function: string) =
   for transition in dfa.states[currentState].epsilonTransitions.mitems:
     if transition.state == nextState:
       # echo &"link states {currentState} -> {nextState}, {functionIndex}, {capture}, {transition.function} -> {function}"
@@ -320,9 +348,9 @@ proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, function
       transition.functionIndices.bitSetIncl functionIndex
       return
 
-  dfa.states[currentState].epsilonTransitions.add Transition(state: nextState, functionIndices: [functionIndex].toBitSet, capture: capture, function: function)
+  dfa.states[currentState].epsilonTransitions.add Transition(state: nextState, functionIndices: [functionIndex].toBitSet, capture: capture, captureFlags: captureFlags, function: function)
 
-proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCodes: Slice[int64], mods: Modifiers, persistent: bool, loop: bool, capture: string, functionIndex: int): Option[int] =
+proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCodes: Slice[int64], mods: Modifiers, persistent: bool, loop: bool, capture: string, captureFlags: CaptureFlags, functionIndex: int): Option[int] =
   let nextState = if loop:
     currentState
   elif inputCodes in dfa.states[currentState].transitions:
@@ -331,7 +359,7 @@ proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCodes: Sli
     else:
       dfa.states.add DFAState()
       # echo &"init states {currentState} -> {dfa.states.len-1}, {inputToString(inputCodes, mods)}, {functionIndex}, {capture}"
-      dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: dfa.states.len - 1, functionIndices: [functionIndex].toBitSet, capture: capture)
+      dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: dfa.states.len - 1, functionIndices: [functionIndex].toBitSet, capture: capture, captureFlags: captureFlags)
       dfa.states.len - 1
   else:
     dfa.states.add DFAState()
@@ -340,7 +368,7 @@ proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCodes: Sli
   dfa.states[nextState].persistent = persistent
   # echo &"update state {nextState}, {dfa.states[nextState].capture} -> {capture}"
   dfa.states[nextState].capture = capture
-  if not linkStates(dfa, currentState, nextState, inputCodes, mods, functionIndex, capture):
+  if not linkStates(dfa, currentState, nextState, inputCodes, mods, functionIndex, capture, captureFlags):
     return int.none
   return nextState.some
 
@@ -376,6 +404,7 @@ proc handleNextInput(
     leaders: Table[string, seq[(int64, Modifiers)]],
     functionIndex: int,
     capture = "",
+    captureFlags = CaptureFlags.None,
     depth = 0,
     subGraphCounts = newTable[string, int](),
   ): seq[int] =
@@ -408,37 +437,38 @@ proc handleNextInput(
     subGraphCounts[inputName] = subGraphCount + 1
 
     let subCapture = if capture.len > 0: capture & "." & inputName else: inputName
+    let subCaptureFlags = CaptureFlags.None
 
     # echo "| ".repeat(depth) & &"sub graph {inputName}, {subGraphCounts[]}"
     let subGraphKey = (inputName, capture, subGraphCount)
     if dfa.subGraphStates.contains(subGraphKey):
       # echo "| ".repeat(depth) & &"sub graph {inputName} found -> {dfa.subGraphStates[subGraphKey]}"
       let (nextStartState, nextEndState) = dfa.subGraphStates[subGraphKey]
-      dfa.linkStates(currentState, nextStartState, functionIndex, capture, "")
+      dfa.linkStates(currentState, nextStartState, functionIndex, capture, captureFlags, "")
       fillTransitionFunctionIndicesRec(dfa, nextStartState, [functionIndex].toBitSet, nextEndState)
-      result = handleNextInput(dfa, commands, input, function, nextIndex, nextEndState, defaultState, leaders, functionIndex, capture, depth + 1, subGraphCounts)
+      result = handleNextInput(dfa, commands, input, function, nextIndex, nextEndState, defaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts)
       if Optional in flags:
-        dfa.linkStates(currentState, nextEndState, functionIndex, capture, "")
+        dfa.linkStates(currentState, nextEndState, functionIndex, capture, captureFlags, "")
       return
 
     dfa.states.add DFAState()
     let subState = dfa.states.len - 1
     dfa.states.add DFAState()
     let endState = dfa.states.len - 1
-    dfa.linkStates(currentState, subState, functionIndex, capture, "")
+    dfa.linkStates(currentState, subState, functionIndex, capture, captureFlags, "")
 
     for command in commands[inputName].pairs:
       let (subInput, function) = command
       # echo "| ".repeat(depth) & &"subInput: {subInput}, function: {function}"
-      let nextEndStates = handleNextInput(dfa, commands, subInput.toRunes, function, index = 0, currentState = subState, defaultState = defaultState, leaders = leaders, functionIndex, subCapture, depth + 1, subGraphCounts[].neww)
+      let nextEndStates = handleNextInput(dfa, commands, subInput.toRunes, function, index = 0, currentState = subState, defaultState = defaultState, leaders = leaders, functionIndex, subCapture, subCaptureFlags, depth + 1, subGraphCounts[].neww)
       # echo "| ".repeat(depth) & &"-> endStates: {nextEndStates}"
       for es in nextEndStates:
-        dfa.linkStates(es, endState, functionIndex, subCapture, function)
+        dfa.linkStates(es, endState, functionIndex, subCapture, subCaptureFlags, function)
 
-    result = handleNextInput(dfa, commands, input, function, nextIndex, endState, defaultState, leaders, functionIndex, capture, depth + 1, subGraphCounts)
+    result = handleNextInput(dfa, commands, input, function, nextIndex, endState, defaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts)
 
     if Optional in flags:
-      dfa.linkStates(currentState, endState, functionIndex, capture, "")
+      dfa.linkStates(currentState, endState, functionIndex, capture, captureFlags, "")
 
     dfa.subGraphStates[subGraphKey] = (subState, endState)
     return
@@ -461,27 +491,33 @@ proc handleNextInput(
   for key in keys:
     let nextState = if inputName == "CHAR" or inputName == "ANY":
       let subCapture = if capture.len > 0: capture & "." & inputName else: inputName
-      let nextState = createOrUpdateState(dfa, currentState, key.inputCodes, key.mods, persistent, Loop in flags, subCapture, functionIndex).getOr:
+      var subCaptureFlags: CaptureFlags = None
+      if inputName == "CHAR":
+        subCaptureFlags = Char
+      elif inputName == "ANY":
+        subCaptureFlags = Any
+
+      let nextState = createOrUpdateState(dfa, currentState, key.inputCodes, key.mods, persistent, Loop in flags, subCapture, subCaptureFlags, functionIndex).getOr:
         log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
         continue
       # echo "| ".repeat(depth) & &"create next state {nextState}, {key.inputCodes}, {key.mods}, current state {currentState}"
 
       if inputName == "CHAR":
-        discard linkStates(dfa, currentState, nextState, key.inputCodes, {Shift}, functionIndex, subCapture)
-        discard linkStates(dfa, currentState, nextState, key.inputCodes, {}, functionIndex, subCapture)
+        discard linkStates(dfa, currentState, nextState, key.inputCodes, {Shift}, functionIndex, subCapture, subCaptureFlags)
+        discard linkStates(dfa, currentState, nextState, key.inputCodes, {}, functionIndex, subCapture, subCaptureFlags)
 
-      if inputName == "ANY":
+      elif inputName == "ANY":
         for modsInt in 0..pow(2.float32, Modifier.high.ord.float32).int:
           var mods: Modifiers = {}
           for i in 0..<Modifier.high.ord:
             if (modsInt and (1 shl i)) != 0:
               mods.incl i.Modifier
-          discard linkStates(dfa, currentState, nextState, key.inputCodes, mods, functionIndex, subCapture)
+          discard linkStates(dfa, currentState, nextState, key.inputCodes, mods, functionIndex, subCapture, subCaptureFlags)
 
       nextState
 
     else:
-      let nextState = createOrUpdateState(dfa, currentState, key.inputCodes, key.mods, persistent, Loop in flags, capture, functionIndex).getOr:
+      let nextState = createOrUpdateState(dfa, currentState, key.inputCodes, key.mods, persistent, Loop in flags, capture, captureFlags, functionIndex).getOr:
         log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
         continue
 
@@ -495,16 +531,16 @@ proc handleNextInput(
         let bIsLower = rune.isLower
         if not bIsLower:
           # echo "| ".repeat(depth) & &"    link state {currentState} to {nextState} for {rune.toLower} and {rune.toUpper}"
-          if not linkStates(dfa, currentState, nextState, rune.toLower.int64..rune2.toLower.int64, key.mods + {Shift}, functionIndex, capture):
+          if not linkStates(dfa, currentState, nextState, rune.toLower.int64..rune2.toLower.int64, key.mods + {Shift}, functionIndex, capture, captureFlags):
             log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
-          if not linkStates(dfa, currentState, nextState, key.inputCodes, key.mods + {Shift}, functionIndex, capture):
+          if not linkStates(dfa, currentState, nextState, key.inputCodes, key.mods + {Shift}, functionIndex, capture, captureFlags):
             log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
 
         if bIsLower and Shift in key.mods:
           # echo "| ".repeat(depth) & &"    link state {currentState} to {nextState} for {rune.toLower} and {rune.toUpper}"
-          if not linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods - {Shift}, functionIndex, capture):
+          if not linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods - {Shift}, functionIndex, capture, captureFlags):
             log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
-          if not linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods, functionIndex, capture):
+          if not linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods, functionIndex, capture, captureFlags):
             log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
 
       nextState
@@ -512,7 +548,7 @@ proc handleNextInput(
     dfa.postfixStates[(suffix, capture)] = nextState
 
     let nextDefaultState = if persistent: nextState else: defaultState
-    result.add handleNextInput(dfa, commands, input, function, nextIndex, nextState, nextDefaultState, leaders, functionIndex, capture, depth + 1, subGraphCounts)
+    result.add handleNextInput(dfa, commands, input, function, nextIndex, nextState, nextDefaultState, leaders, functionIndex, capture, captureFlags, depth + 1, subGraphCounts)
 
 # proc fillTransitionFunctionIndices*(dfa: var CommandDFA) =
 #   proc fillTransitionFunctionIndicesRec(dfa: var CommandDFA, state: int, functionIndices: BitSet) =

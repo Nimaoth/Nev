@@ -217,7 +217,7 @@ defineCommand(ws"test-command-5",
   context = ws"",
   data = 0):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    if activeTextEditor().getSome(editor):
+    if activeTextEditor({}).getSome(editor):
       let s = editor.getSelection
       echo editor.id
       echo "========== ", s
@@ -275,7 +275,7 @@ defineCommand(ws"test-start-process",
   context = ws"",
   data = 0):
   proc(data: uint32, args: WitString): WitString {.cdecl.} =
-    if activeTextEditor().getSome(editor):
+    if activeTextEditor({}).getSome(editor):
       var p = processStart(ws"powershell", @@[ws"-Command", ws"ls", ws"plugins"])
       let stdout = p.stdout()
 
@@ -286,7 +286,7 @@ defineCommand(ws"test-start-process",
         if stdout.atEnd:
           if buffer.endsWith("\0"):
             buffer.setLen(buffer.len - 1)
-          let selections = editor.edit(@@[editor.getSelection], @@[ws(buffer.replace("\r", ""))])
+          let selections = editor.edit(@@[editor.getSelection], @@[ws(buffer.replace("\r", ""))], false)
           if selections.len > 0:
             editor.setSelection(selections[0].last.toSelection)
           return Stop
