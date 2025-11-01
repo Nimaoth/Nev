@@ -63,10 +63,10 @@ proc getService*(self: Services, name: string, state: Option[ServiceState] = Ser
   Service.none
 
 proc initService(self: Services, name: string) {.async.} =
-  log lvlInfo, &"initService {name}"
+  # log lvlInfo, &"initService {name}"
   let service = self.registered[name]
   let res = await service.init()
-  log lvlInfo, &"initService {name} done"
+  # log lvlInfo, &"initService {name} done"
   if res.isOk:
     self.running[name] = service
     service.state = Running
@@ -88,7 +88,7 @@ proc initService(self: Services, name: string) {.async.} =
     service.state = Failed
 
 proc addService*(self: Services, name: string, service: Service, dependencies: seq[string] = @[]) =
-  log lvlInfo, &"addService {name}, dependencies: {dependencies}"
+  # log lvlInfo, &"addService {name}, dependencies: {dependencies}"
   service.services = self
   self.registered[name] = service
   service.state = Registered
@@ -102,7 +102,7 @@ proc addService*(self: Services, name: string, service: Service, dependencies: s
   if dependencies.len == 0:
     asyncSpawn self.initService(name)
   else:
-    log lvlInfo, &"addService {name}, remaining dependencies: {dependencies}"
+    # log lvlInfo, &"addService {name}, remaining dependencies: {dependencies}"
     self.dependencies[name] = dependencies
 
 proc getService*(self: Services, T: typedesc, state: Option[ServiceState] = ServiceState.none): Option[T] {.gcsafe, raises: [].} =

@@ -41,6 +41,7 @@ proc addLanguageServer*(self: LanguageServerList, languageServer: LanguageServer
 
   self.languageServers.add(languageServer)
   self.languageServers.sort((a, b) => cmp(configPriority(b), configPriority(a)))
+  self.updateRefetchWorkspaceSymbolsOnQueryChange()
   return true
 
 proc removeLanguageServer*(self: LanguageServerList, languageServer: LanguageServer): bool =
@@ -48,6 +49,7 @@ proc removeLanguageServer*(self: LanguageServerList, languageServer: LanguageSer
   if index != -1:
     self.languageServers.removeShift(index)
     return true
+  self.updateRefetchWorkspaceSymbolsOnQueryChange()
   return false
 
 template merge(self: LanguageServerList, T: untyped, subCall: untyped, name: untyped): untyped =

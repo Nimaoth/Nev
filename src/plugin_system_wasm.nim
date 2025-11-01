@@ -1,6 +1,6 @@
-import std/[macros, genasts, json, strutils, strformat, os]
+import std/[macros, genasts, json, strutils, strformat, os, tables]
 import misc/[custom_logger, custom_async, util, binary_encoder]
-import document_editor, vfs, service
+import document_editor, vfs, vfs_service, service
 import nimsumtree/[rope, sumtree, arc]
 import layout
 import text/[text_editor, text_document]
@@ -21,7 +21,6 @@ logCategory "plugins-v2"
 type
   PluginSystemWasm* = ref object of PluginSystem
     engine: ptr WasmEngineT
-    moduleVfs*: VFS
     vfs*: VFS
     services*: Services
 
@@ -56,8 +55,11 @@ proc initWasm(self: PluginSystemWasm) =
   when enableOldPluginVersions:
     self.initPluginApi[:v1.PluginApi](self.v1)
 
-method init*(self: PluginSystemWasm, path: string, vfs: VFS): Future[void] {.async.} =
-  self.vfs = vfs
+proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
+  let self = new PluginSystemWasm
+  self.services = services
+  self.vfs = services.getService(VFSService).get.vfs
+
   self.initWasm()
 
 method deinit*(self: PluginSystemWasm) = discard

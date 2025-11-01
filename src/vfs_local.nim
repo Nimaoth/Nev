@@ -1,6 +1,6 @@
-import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm]
+import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm, tables]
 import nimsumtree/[rope, static_array]
-import misc/[custom_async, custom_logger, util, timer, regex, id]
+import misc/[custom_async, custom_logger, util, timer, regex, id, regex]
 import vfs
 import fsnotify
 
@@ -13,9 +13,13 @@ when defined(windows):
 logCategory "vfs-local"
 
 type
+  CachedFile = object
+    fut: Future[string]
+
   VFSLocal* = ref object of VFS
     watcher: Watcher
     updateRate: int
+    cache: Table[string, CachedFile]
 
 proc process(self: VFSLocal) {.async.}
 
@@ -25,6 +29,26 @@ proc new*(_: typedesc[VFSLocal]): VFSLocal =
   result.updateRate = 200
 
   asyncSpawn result.process()
+
+proc cacheFile*(self: VFSLocal, path: string) =
+  self.cache[path] = CachedFile(fut: self.readImpl(path, {ReadFlag.Binary}))
+
+proc cacheDir*(self: VFSLocal, path: string, ignore: Globs) =
+  try:
+    for (kind, name) in walkDir(path, relative=true):
+      case kind
+      of pcFile:
+        let filePath = path // name
+        if ignore.ignorePath(filePath):
+          continue
+        self.cacheFile(filePath)
+      # of pcLinkToFile:
+      #   directoryListing.files.add name
+      else:
+        discard
+
+  except OSError:
+    discard
 
 proc process(self: VFSLocal) {.async.} =
   while true:
@@ -70,11 +94,46 @@ proc loadFileThread(args: tuple[path: string, data: ptr string, invalidUtf8Error
     args.data[] = getCurrentExceptionMsg()
     return false
 
+proc writeFileThread(args: tuple[path: string, data: string]): (bool, string) =
+  try:
+    let dir = args.path.splitPath.head
+    if not dirExists(dir):
+      createDir(dir)
+    writeFile(args.path, args.data)
+    return (true, "")
+  except:
+    return (false, getCurrentExceptionMsg())
+
+proc writeRopeThread(args: tuple[path: string, data: sink RopeSlice[int]]): (bool, string) =
+  try:
+    let dir = args.path.splitPath.head
+    if not dirExists(dir):
+      createDir(dir)
+
+    let s = openFileStream(args.path, fmWrite, 64 * 1024)
+    defer:
+      s.close()
+
+    for chunk in args.data.iterateChunks:
+      s.writeData(chunk.startPtr, chunk.chars.len)
+    return (true, "")
+  except:
+    return (false, getCurrentExceptionMsg())
+
 method name*(self: VFSLocal): string = &"VFSLocal({self.prefix})"
 
 method readImpl*(self: VFSLocal, path: string, flags: set[ReadFlag]): Future[string] {.async: (raises: [IOError]).} =
   if not path.isAbsolute:
     raise newException(IOError, &"Path not absolute '{path}'")
+  if self.cache.contains(path):
+    let fut = self.cache[path].fut
+    self.cache.del(path)
+    try:
+      return await fut
+    except:
+      raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
+
+
   if not fileExists(path):
     raise newException(FileNotFoundError, &"Not found '{path}'")
 
@@ -182,13 +241,9 @@ method writeImpl*(self: VFSLocal, path: string, content: string): Future[void] {
 
   try:
     logScope lvlInfo, &"[saveFile] '{path}'"
-    # todo: reimplement async
-    let dir = path.splitPath.head
-    createDir(dir)
-    writeFile(path, content)
-    # var file = openAsync(path, fmWrite)
-    # await file.write(content)
-    # file.close()
+    let (ok, err) = await spawnAsync(writeFileThread, (path, content))
+    if not ok:
+      raise newException(IOError, err)
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 
@@ -197,24 +252,11 @@ method writeImpl*(self: VFSLocal, path: string, content: sink RopeSlice[int]): F
     raise newException(IOError, &"Path not absolute '{path}'")
 
   try:
-    logScope lvlInfo, &"[saveFile] '{path}'"
-    # todo: reimplement async
-    let dir = path.splitPath.head
-    if not dirExists(dir):
-      logScope lvlInfo, &"[saveFile] Create directory '{dir}'"
-      createDir(dir)
+    logScope lvlInfo, &"[saveFile (rope)] '{path}'"
+    let (ok, err) = await spawnAsync(writeRopeThread, (path, content))
+    if not ok:
+      raise newException(IOError, err)
 
-    let s = openFileStream(path, fmWrite, 1024)
-    defer:
-      s.close()
-
-    # var file = openAsync(path, fmWrite)
-    var t = startTimer()
-    for chunk in content.iterateChunks:
-      s.writeData(chunk.startPtr, chunk.chars.len)
-      if t.elapsed.ms > 5:
-        await sleepAsync(10.milliseconds)
-        t = startTimer()
   except:
     raise newException(IOError, getCurrentExceptionMsg(), getCurrentException())
 

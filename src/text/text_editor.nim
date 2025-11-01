@@ -486,6 +486,9 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
 
 import workspace_edit
 
+proc debug*(self: TextDocumentEditor): string =
+  return &"TE({self.id}, '{self.usage}', '{self.getFileName()}')"
+
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor =
   self.document.clampCursor(cursor, includeAfter)
 

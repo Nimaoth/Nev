@@ -77,6 +77,7 @@ reserveTextureImpl = proc(): TextureId {.gcsafe, raises: [].} =
     return gTextures.add(nil)
 
 method init*(self: GuiPlatform, options: AppOptions) =
+  log lvlInfo, "Init GUI platform"
   try:
     self.glyphCache = newLruCache[(Rune, UINodeFlags), string](5000, true)
     self.window = newWindow(appName.capitalizeAscii, ivec2(2000, 1000), vsync=true)
@@ -86,6 +87,7 @@ method init*(self: GuiPlatform, options: AppOptions) =
     self.vsync = true
 
     try:
+      log lvlInfo, "Read icon"
       let icon = readImage("res/icon.png")
       self.window.icon = icon
     except:
@@ -828,9 +830,10 @@ proc handleRenderCommand(platform: GuiPlatform, renderCommands: ptr RenderComman
   of RenderCommandKind.TextRaw:
     # todo: don't copy string data
     var text = newStringOfCap(command.len)
-    text.setLen(command.len)
-    copyMem(text[0].addr, command.data, command.len)
-    platform.drawText(text, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, spaceColor, command.flags, command.underlineColor, space)
+    if command.len > 0:
+      text.setLen(command.len)
+      copyMem(text[0].addr, command.data, command.len)
+      platform.drawText(text, command.bounds.xy + nodePos, command.bounds + nodePos, command.color, spaceColor, command.flags, command.underlineColor, space)
 
   of RenderCommandKind.Text:
     # todo: don't copy string data

@@ -85,6 +85,7 @@ type
     lastBounds*: Rect
     closeRequested*: bool
     appOptions: AppOptions
+    firstRenderDone*: bool
 
     insertInputTask: DelayedTask
     delayedInputs: seq[tuple[handle: EventHandler, input: int64, modifiers: Modifiers]]
@@ -221,26 +222,6 @@ proc runConfigCommands(self: App, key: string) =
       log lvlInfo, &"[runConfigCommands: {key}] {action} {arg}"
       discard self.commands.executeCommand(action & " " & arg, record=false)
 
-proc initScripting(self: App, options: AppOptions) {.async.} =
-  self.runConfigCommands("wasm-plugin-post-load-commands")
-  self.runConfigCommands("plugin-post-load-commands")
-
-  try:
-    self.pluginSystemWasm = new PluginSystemWasm
-    self.plugins.pluginSystems.add self.pluginSystemWasm
-    self.pluginSystemWasm.services = self.services
-    self.pluginSystemWasm.moduleVfs = VFS()
-    self.pluginSystemWasm.vfs = self.vfs
-    self.vfs.mount("plugs://", self.pluginSystemWasm.moduleVfs)
-    await self.pluginSystemWasm.init("app://config", self.vfs)
-  except CatchableError:
-    log lvlError, &"Failed to load wasm components: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-
-  if not options.disableWasmPlugins:
-    self.plugins.loadPlugins()
-
-  log lvlInfo, &"Finished loading plugins"
-
 proc setupDefaultKeybindings(self: App) =
   log lvlInfo, fmt"Applying default builtin keybindings"
 
@@ -343,7 +324,7 @@ proc addSessionToRecentSessions(self: App, session: string) {.async.} =
 proc loadSession*(self: App) {.async: (raises: []).} =
   try:
     if self.generalSettings.keepSessionHistory.get():
-      await self.addSessionToRecentSessions(self.sessionFile)
+      asyncSpawn self.addSessionToRecentSessions(self.sessionFile)
 
     let stateJson = self.vfs.read(self.sessionFile).await.parseJson
     var state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
@@ -628,6 +609,7 @@ proc loadConfigFileFrom(self: App, context: string, path: string):
   return string.none
 
 proc loadConfigFrom*(self: App, root: string, name: string, changedFiles: seq[string] = @[]) {.async.} =
+  log lvlInfo, &"Load settings and keybindings from '{root}' as '{name}'"
   await allFutures(
     self.loadSettingsFrom(root, changedFiles, name, loadConfigFileFrom),
     self.loadKeybindings(root, loadConfigFileFrom, changedFiles)
@@ -795,7 +777,25 @@ proc getEventHandler(self: App, context: string): EventHandler =
 
   return self.eventHandlers[context]
 
-proc newApp*(backend: api.Backend, platform: Platform, services: Services, options = AppOptions()): Future[App] {.async.} =
+proc loadAppAndUserSettings(self: App) {.async: (raises: []).} =
+  try:
+    log lvlInfo, &"Load app and user settings"
+    self.config.groups.add(appConfigDir)
+    await self.loadConfigFrom(appConfigDir, "app")
+    self.config.groups.add(homeConfigDir)
+    await self.loadConfigFrom(homeConfigDir, "home")
+
+    self.config.groups.add("extra-settings")
+    let extraSettings = self.config.runtime.get("extra-settings", newSeq[string]())
+    await self.loadSettings("extra-settings", extraSettings, @[], "extra-settings", loadConfigFileFrom)
+
+    log lvlInfo, &"Finished loading app and user settings"
+  except CatchableError as e:
+    log lvlError, &"Failed to load app and user settings: {e.msg}"
+
+proc setupSessionAndWorkspace*(self: App) {.async.}
+
+proc newApp*(backend: api.Backend, platform: Platform, services: Services, options = AppOptions()): App =
   var self = App()
 
   {.gcsafe.}:
@@ -845,32 +845,27 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.fallbackFonts.add "app://fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
   self.fallbackFonts.add "app://fonts/NotoEmoji/NotoEmoji.otf"
 
-  self.setupDefaultKeybindings()
-
-  self.applySettingsFromAppOptions()
-
-  self.config.groups.add(appConfigDir)
-  await self.loadConfigFrom(appConfigDir, "app")
-  self.config.groups.add(homeConfigDir)
-  await self.loadConfigFrom(homeConfigDir, "home")
-  log lvlInfo, &"Finished loading app and user settings"
-
-  self.config.groups.add("extra-settings")
-  let extraSettings = self.config.runtime.get("extra-settings", newSeq[string]())
-  await self.loadSettings("extra-settings", extraSettings, @[], "extra-settings", loadConfigFileFrom)
+  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
+  EditorSettings.new(self.logDocument.TextDocument.config).saveInSession.set(false)
+  self.layout.pinnedDocuments.incl(self.logDocument)
 
   self.uiSettings = UiSettings.new(self.config.runtime)
   self.generalSettings = GeneralSettings.new(self.config.runtime)
 
-  self.platform.setVsync(self.uiSettings.vsync.get)
-
-  self.applyFontSettings()
-
+  self.setupDefaultKeybindings()
+  self.applySettingsFromAppOptions()
   self.themes.setTheme(defaultTheme())
+  self.runEarlyCommandsFromAppOptions()
 
-  self.logDocument = newTextDocument(self.services, "log", load=false, createLanguageServer=false, language="log".some)
-  EditorSettings.new(self.logDocument.TextDocument.config).saveInSession.set(false)
-  self.layout.pinnedDocuments.incl(self.logDocument)
+  # Load settings files
+  waitFor self.loadAppAndUserSettings()
+
+  self.applySettingsFromAppOptions()
+  self.runConfigCommands("startup-commands")
+
+  self.platform.setVsync(self.uiSettings.vsync.get)
+  self.applyFontSettings()
+  asyncSpawn self.setTheme(self.uiSettings.theme.get())
 
   self.commands.languageServerCommandLine = self.services.getService(LanguageServerCommandLineService).get.languageServer
   let commandLineTextDocument = newTextDocument(self.services, "ed://.command-line", language="command-line".some, load=false)
@@ -891,6 +886,9 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     else:
       string.none
 
+  self.pluginSystemWasm = newPluginSystemWasm(self.services)
+  self.plugins.pluginSystems.add self.pluginSystemWasm
+
   let closeUnusedDocumentsTimerS = self.generalSettings.closeUnusedDocumentsTimer.get()
   self.closeUnusedDocumentsTask = startDelayed(closeUnusedDocumentsTimerS * 1000, repeat=true):
     self.closeUnusedDocuments()
@@ -899,11 +897,6 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
   self.showNextPossibleInputsTask = startDelayedPaused(showNextPossibleInputsDelay, repeat=false):
     self.showNextPossibleInputs = self.nextPossibleInputs.len > 0
     self.platform.requestRender()
-
-  self.runEarlyCommandsFromAppOptions()
-  self.runConfigCommands("startup-commands")
-
-  await self.setTheme(self.uiSettings.theme.get())
 
   if self.generalSettings.watchTheme.get():
     discard self.vfs.watch("app://themes", proc(events: seq[PathEvent]) =
@@ -939,10 +932,28 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
     if key == "" or key == "ui" or key == "ui.vsync":
       self.platform.setVsync(self.uiSettings.vsync.get)
 
-  if not options.dontRestoreConfig:
-    if options.sessionOverride.getSome(session):
+  # if self.runtime.get("command-server.port", Port.none).getSome(port):
+  #   asyncSpawn self.listenForConnection(port)
+
+  # todo
+  # asyncSpawn self.listenForIpc(0)
+  # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
+
+  self.runLateCommandsFromAppOptions()
+
+  try:
+    waitFor self.setupSessionAndWorkspace()
+  except CatchableError:
+    discard
+
+  return self
+
+proc setupSessionAndWorkspace*(self: App) {.async.} =
+  log lvlInfo, &"Setup session and workspace"
+  if not self.appOptions.dontRestoreConfig:
+    if self.appOptions.sessionOverride.getSome(session):
       self.sessionFile = os.absolutePath(session).normalizePathUnix
-    elif options.fileToOpen.getSome(file):
+    elif self.appOptions.fileToOpen.getSome(file):
       let path = os.absolutePath(file).normalizePathUnix
       if self.vfs.getFileKind(path).await.getSome(kind):
         case kind
@@ -955,7 +966,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
           if fileExists(path // defaultSessionName):
             self.sessionFile = path // defaultSessionName
 
-    elif options.restoreLastSession:
+    elif self.appOptions.restoreLastSession:
       let lastSessions = await self.getRecentSessions()
       if lastSessions.len == 0:
         log lvlError, &"Failed to restore last session: No last session found."
@@ -966,7 +977,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       self.sessionFile = os.absolutePath(defaultSessionName).normalizePathUnix
 
     if self.sessionFile != "":
-      asyncSpawn self.loadSession()
+      await self.loadSession()
     else:
       log lvlInfo, &"Don't restore session file."
 
@@ -1017,19 +1028,12 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       except CatchableError as e:
         log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
-  # if self.runtime.get("command-server.port", Port.none).getSome(port):
-  #   asyncSpawn self.listenForConnection(port)
+proc loadPlugins*(self: App) {.async.} =
+  while not self.firstRenderDone:
+    await sleepAsync(1.milliseconds)
 
-  # todo
-  # asyncSpawn self.listenForIpc(0)
-  # asyncSpawn self.listenForIpc(os.getCurrentProcessId())
-
-  asyncSpawn self.initScripting(self.appOptions)
-  self.runLateCommandsFromAppOptions()
-
-  log lvlInfo, &"Finished creating app"
-
-  return self
+  if not self.appOptions.disableWasmPlugins:
+    self.plugins.loadPlugins()
 
 proc saveAppState*(self: App)
 proc printStatistics*(self: App)
@@ -1565,6 +1569,13 @@ method setQuery*(self: WorkspaceFilesDataSource, query: string) =
   self.workspace.recomputeFileCache()
 
   self.onWorkspaceFileCacheUpdatedHandle = some(self.workspace.onCachedFilesUpdated.subscribe () => self.handleCachedFilesUpdated())
+
+proc recomputeWorkspaceCache*(self: App) {.expose("editor").} =
+  self.workspace.recomputeFileCache()
+
+proc reloadWorkspaceIgnore*(self: App) {.expose("editor").} =
+  self.workspace.loadDefaultIgnoreFile()
+  self.workspace.recomputeFileCache()
 
 proc browseKeybinds*(self: App, preview: bool = true, scaleX: float = 0.9, scaleY: float = 0.8, previewScale: float = 0.4) {.expose("editor").} =
   defer:
@@ -3107,6 +3118,9 @@ proc printStatistics*(self: App) {.expose("editor").} =
 genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
 
+proc toStringResult(res: Option[JsonNode]): Option[string] =
+  return res.flatmapIt(if it == nil or it.kind == JNull: string.none else: some($it))
+
 proc defaultHandleCommand*(self: App, command: string): Option[string] =
   var (action, arg) = command.parseAction
 
@@ -3125,7 +3139,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
     if action.startsWith("."): # active action
       if self.getActiveEditor().getSome(editor):
         debugf"[defaultHandleCommand] '{command}' handled by active editor"
-        return editor.handleAction(action[1..^1], arg, record=false).mapIt($it)
+        return editor.handleAction(action[1..^1], arg, record=false).toStringResult()
 
       log lvlError, fmt"No active editor"
       return string.none
@@ -3133,7 +3147,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
     if action.startsWith("^"): # active popup action
       if self.layout.popups.len > 0:
         debugf"[defaultHandleCommand] '{command}' handled by active popup"
-        return self.layout.popups[^1].handleAction(action[1..^1], arg).mapIt($it)
+        return self.layout.popups[^1].handleAction(action[1..^1], arg).toStringResult()
 
       log lvlError, fmt"No popup"
       return string.none
@@ -3152,7 +3166,7 @@ proc defaultHandleCommand*(self: App, command: string): Option[string] =
             log lvlError, &"Failed to dispatch '{action} {args}' in {t.namespace}: {e.msg}"
 
     try:
-      result = dispatch(action, args).mapIt($it)
+      result = dispatch(action, args).toStringResult()
       if result.isSome:
         debugf"[defaultHandleCommand] '{command}' handled by app dispatch"
         return

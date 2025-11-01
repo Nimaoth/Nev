@@ -17,3 +17,8 @@ type AppOptions* = object
   noPty*: bool
   noUI*: bool
   kittyKeyboardFlags*: string
+
+var gAppOptions*: AppOptions = AppOptions()
+
+proc getAppOptions*(): AppOptions =
+  return ({.gcsafe.}: gAppOptions)

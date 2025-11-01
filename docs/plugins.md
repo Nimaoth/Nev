@@ -40,7 +40,7 @@ Here is an example of a manifest:
     "repository": "https://github.com/abc/xyz",
     "wasm": "plugin.m.wasm",  // You can also use .wat files (wasm in text format)
     "autoLoad": false,        // Set to true to load the plugin automatically when opening the editor
-    "commands": {             // Declare which commands are exported by the
+    "commands": {             // Declare which commands are exported by the plugin
         "test-command-1": {},
         "test-command-2": {
             "parameters": [{"name": "a", "type": "string"}],
@@ -48,7 +48,7 @@ Here is an example of a manifest:
             "description": "Does something",
         }
     },
-    "permissions": {          // Default permissions. Can be overriden
+    "permissions": {          // Default permissions. Can be overriden by user who installs the plugin.
         "filesystem": {
             "disallowAll": false,
             "allow": ["ws0://"],

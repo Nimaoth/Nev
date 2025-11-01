@@ -1,8 +1,8 @@
 import std/[tables, options, json, os]
 import results
-import misc/[custom_async, custom_logger, myjsonutils, util]
+import misc/[custom_async, custom_logger, myjsonutils, util, regex]
 import scripting/expose
-import service, dispatch_tables, vfs, vfs_local, vfs_config, config_provider
+import service, dispatch_tables, vfs, vfs_local, vfs_config, config_provider, app_options
 import fsnotify
 
 export vfs
@@ -15,8 +15,10 @@ logCategory "vfs-service"
 type
   VFSService* = ref object of Service
     vfs*: VFS
+    localVfs*: VFSLocal
 
 func serviceName*(_: typedesc[VFSService]): string = "VFSService"
+proc localizePath*(self: VFSService, path: string): string
 
 addBuiltinService(VFSService, ConfigService)
 
@@ -24,6 +26,7 @@ method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async
   log lvlInfo, &"VFSService.init"
 
   let localVfs = VFSLocal.new()
+  self.localVfs = localVfs
 
   self.vfs = VFS()
   self.vfs.mount("", VFS())
@@ -36,11 +39,28 @@ method init*(self: VFSService): Future[Result[void, ref CatchableError]] {.async
   self.vfs.mount("plugs://", VFSNull())
   self.vfs.mount("ws://", VFS())
 
+  var ignore = parseGlobs """
+*
+!*.json
+"""
+
+  localVfs.cacheDir(self.localizePath("app://config"), ignore)
+
   let homeDir = getHomeDir().normalizePathUnix.catch:
     log lvlError, &"Failed to get home directory: {getCurrentExceptionMsg()}"
     ""
   if homeDir != "":
     self.vfs.mount("home://", VFSLink(target: localVfs, targetPrefix: homeDir & "/"))
+    localVfs.cacheDir(self.localizePath("home://.nev"), ignore)
+
+  try:
+    if getAppOptions().fileToOpen.getSome(file):
+      let path = os.absolutePath(file).normalizeNativePath
+      localVfs.cacheFile(path)
+      localVfs.cacheFile(path // ".nev-session")
+    localVfs.cacheFile(getCurrentDir().normalizeNativePath // ".nev-session")
+  except CatchableError as e:
+    log lvlError, &"Failed to cache some files: {e.msg}"
 
   return ok()
 
