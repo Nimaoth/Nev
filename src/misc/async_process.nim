@@ -1,5 +1,5 @@
-import std/[json, strutils, tables, os, osproc, streams, options, macros]
-import custom_logger, custom_async, util, timer, channel, event, generational_seq
+import std/[json, strutils, tables, osproc, streams, options, macros]
+import custom_logger, custom_async, util, channel, generational_seq
 import nimsumtree/arc
 
 {.push warning[Deprecated]:off.}
@@ -23,9 +23,9 @@ type OwnedChannel*[T] = object
   name: string
   channel: Channel[T]
 
-proc `=destroy`*[T](c: var OwnedChannel[T]) =
+proc `=destroy`*[T](c {.byref.}: OwnedChannel[T]) =
   if c.init:
-    c.channel.close()
+    c.channel.addr[].close()
 
 proc open*[T](c: var OwnedChannel[T], name: string) =
   c.channel.open()
@@ -181,7 +181,7 @@ proc readInput(chan: Arc[OwnedChannel[Option[ProcessObj]]], serverDiedNotificati
     # stream.close()
 
 proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseChannel]): NoExceptionDestroy =
-  var buffer: seq[string]
+  var buffer = newString(100 * 1024)
   while true:
     var process = Process.new
     if chan.getMutUnsafe.channel.recv.getSome(chan):
@@ -192,7 +192,6 @@ proc writeOutput(chan: Arc[OwnedChannel[Option[ProcessObj]]], stdin: Arc[BaseCha
     let stream = process.inputStream()
     process.inStream = nil
 
-    var buffer = newString(100 * 1024)
     while not stdin.atEnd:
       try:
         let read = stdin.read(buffer.toOpenArrayByte(0, buffer.high))

@@ -1,16 +1,18 @@
-import std/[macros, genasts, json, strutils, strformat, os, tables]
+import std/[macros, genasts, strutils, strformat, os, tables]
 import misc/[custom_logger, custom_async, util, binary_encoder]
 import document_editor, vfs, vfs_service, service
 import nimsumtree/[rope, sumtree, arc]
 import layout
 import text/[text_editor, text_document]
-import config_provider, compilation_config
+import config_provider, compilation_config, command_service
 import plugin_service, wasm_engine
+import lisp
 
 import wasmtime
 import plugin_api/plugin_api_base
 
 from plugin_api/plugin_api as v0 import nil
+from plugin_api/plugin_api_dynamic import nil
 when enableOldPluginVersions:
   from plugin_api/plugin_api_1 as v1 import nil
 
@@ -27,6 +29,9 @@ type
     v0: PluginApiBase
     when enableOldPluginVersions:
       v1: PluginApiBase
+
+    env: Env
+    currentNamedArgs: LispVal
 
   WasmPluginInstance* = ref object of PluginInstanceBase
     moduleInstance: WasmModuleInstance
@@ -61,6 +66,43 @@ proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
   self.vfs = services.getService(VFSService).get.vfs
 
   self.initWasm()
+
+  self.env = baseEnv()
+  self.env.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
+    self.currentNamedArgs = newMap()
+    newFunc(name, proc(args: seq[LispVal]): LispVal =
+      try:
+        if self.currentNamedArgs == nil:
+          self.currentNamedArgs = newMap()
+        debugf"dynamic dispatch '{name}' with {args} and {self.currentNamedArgs}"
+        return self.dispatchDynamic(name, newList(args), self.currentNamedArgs)
+      finally:
+        self.currentNamedArgs = nil
+    )
+  self.env["with"] = newFunc("with", false, proc(args: seq[LispVal]): LispVal {.raises: [LispError].} =
+    if self.currentNamedArgs == nil:
+      log lvlError, &"Lisp error: 'with' only valid as argument to plugin api"
+      return nil
+    if args.len != 2 or args[0].kind != Symbol:
+      log lvlError, &"Lisp error: 'with' expects two arguments, the first must be a symbol"
+      return nil
+    debugf"add named arg '{args[0].sym}' = {args[1]}"
+    self.currentNamedArgs.fields[args[0].sym] = args[1].eval(self.env)
+    return nil
+  )
+
+  self.services.getService(CommandService).get.addPrefixCommandHandler "(", proc(command: string): Option[string] =
+    try:
+      debugf"lisp handler: '{command}'"
+      var expr = command.parseLisp()
+      let res = expr.eval(self.env)
+      if res != nil:
+        return some($res)
+    except CatchableError as e:
+      log lvlError, &"Failed to dispatch API command '{command}': {e.msg}"
+    return string.none
+
+  return self
 
 method deinit*(self: PluginSystemWasm) = discard
 
@@ -140,6 +182,8 @@ method unloadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[void] {.asy
   plugin.instance = nil
   plugin.pluginSystem = nil
 
+method dispatchDynamic*(self: PluginSystemWasm, name: string, args: LispVal, namedArgs: LispVal): LispVal =
+  self.v0.dispatchDynamic(name, args, namedArgs)
 
 # call function using function table
     # let functionTableExport = wasmModule.get.instance.getExport(ctx, "__indirect_function_table")

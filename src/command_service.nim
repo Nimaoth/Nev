@@ -125,8 +125,13 @@ proc unregisterCommand*(self: CommandService, command: string) =
 
 proc unregisterCommand*(self: CommandService, id: CommandId) =
   if self.idToCommand.contains(id):
-    self.commands.del(self.idToCommand[id])
+    let name = self.idToCommand[id]
     self.idToCommand.del(id)
+
+    if self.commands[name].id != id:
+      # Command was reassigned, don't delete the new command.
+      return
+    self.commands.del(name)
 
 proc registerActiveCommand*(self: CommandService, command: sink Command, override: bool = false): CommandId =
   if command.name == "":

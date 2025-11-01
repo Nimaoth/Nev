@@ -1,5 +1,4 @@
 import std/[json, strutils, sequtils, tables, options, macros, genasts, macrocache, typetraits, sugar]
-from std/logging import nil
 import fusion/matching
 import misc/[util, custom_logger, macro_utils, wrap]
 import compilation_config, dispatch_tables
@@ -30,8 +29,10 @@ macro addFunction(name: untyped, original: typed, wrapper: typed, moduleName: st
   functions[moduleName] = nnkStmtList.newTree(n)
 
 macro printDispatchStats*() =
-  for moduleName, functions in functions:
-    echo &"module '{moduleName}': {functions.len} functions"
+  when defined(debugPrintDispatchStats):
+    for moduleName, functions in functions:
+      echo &"module '{moduleName}': {functions.len} functions"
+  return nnkStmtList.newTree()
 
 proc generateUniqueName*(moduleName: string, def: NimNode): string =
   result = moduleName
@@ -72,7 +73,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
-  let returnType = def.returnType
   let documentation = def.getDocumentation()
   let documentationStr = documentation.map((it) => it.strVal).get("").newLit
   let signature = nnkProcDef.newTree(newEmptyNode(), newEMptyNode(), newEmptyNode(), def[3], newEmptyNode(), newEmptyNode(), newEmptyNode())

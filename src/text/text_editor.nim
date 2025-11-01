@@ -1421,14 +1421,6 @@ proc doMoveCursorVisualLine(self: TextDocumentEditor, cursor: Cursor, offset: in
   return self.clampCursor(newCursor, includeAfter)
 
 # todo: remove
-proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool, includeAfter: bool): Cursor =
-  return (cursor.line, 0)
-
-# todo: remove
-proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool, includeAfter: bool): Cursor =
-  return (cursor.line, self.document.rope.lastValidIndex cursor.line)
-
-# todo: remove
 proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool, includeAfter: bool): Cursor =
   return (cursor.line, self.document.lineLength(cursor.line) div 2)
 
@@ -2747,11 +2739,9 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
 proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openArray[Selection], count: int): seq[Selection] =
   debugf"applyMoveFallback {move}"
   let includeEol = true
-  let wrap = false
 
   let cursorSelector = self.config.get(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
 
-  var moveOriginal = move
   var move = move
   var args: JsonNode = nil
   var argsString = ""
@@ -2858,7 +2848,6 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
         break
 
   else:
-    # return self.moveDatabase.applyMove(self.displayMap, moveOriginal, selections, count, self.targetColumn, includeEol, self.moveFallbacks)
     log lvlError, &"Unknown move '{move}'"
     return @selections
 
@@ -2933,8 +2922,6 @@ proc deleteMove*(self: TextDocumentEditor, move: string, updateTargetColumn: boo
   ## Deletes text based on the current selections.
   ##
   ## `move` specifies which move should be applied to each selection.
-  let count = self.config.get("text.move-count", 0)
-
   let selections = self.getSelectionsForMove(self.selections, move, 1, true, true, options)
   self.selections = self.document.edit(selections, self.selections, [""])
   self.scrollToCursor(Last)

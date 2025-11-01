@@ -264,19 +264,18 @@ when enableGui:
 
 # Do this after every import
 # Don't remove those imports, they are needed by generatePluginBindings
+{.push warning[UnusedImport]:off.}
 when enableAst:
   import ast/model_document
 import text/text_editor
-import text/language/lsp_client
 import text/language/debugger
 import plugin_service
-import vcs/vcs_api
-import selector_popup, collab, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, command_service_api, toast, terminal_service
+import selector_popup, layout, document_editor, session, events, register, selector_popup_builder_impl, vfs_service, toast, terminal_service
 import language_server_paths
 import language_server_regex
-import plugin_api/[process]
 import scripting/expose
 import config_provider
+{.pop.}
 
 defineSetAllDefaultSettings()
 
@@ -301,10 +300,6 @@ of Gui:
     plat.backend = Gui
   else:
     echo "[error] GUI backend not available in this build"
-    quit(1)
-
-else:
-    echo "[error] This should not happen"
     quit(1)
 
 import ui/node

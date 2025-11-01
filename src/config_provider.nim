@@ -43,8 +43,6 @@ type
     revision*: int
     key*: string
 
-  ConfigStoreLayer = tuple[revision: int, kind: ConfigLayerKind, store: ConfigStore]
-
   SettingGroupDescription* = object
     settings*: seq[int]
 
@@ -708,7 +706,6 @@ proc getImpl(self: ConfigStore, key: string): JsonNodeEx =
   return res
 
 proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
-  var layers: seq[ConfigStoreLayer] = @[]
   result = self.getImpl(key)
   if self.prefix != "":
     let override = self.getImpl(self.prefix & "." & key)
@@ -716,7 +713,6 @@ proc getValue*(self: ConfigStore, key: string): JsonNodeEx =
       result.extendJson(override)
 
 proc get*(self: ConfigStore, key: string): JsonNodeEx =
-  var layers: seq[ConfigStoreLayer] = @[]
   result = self.getImpl(key)
   if self.prefix != "":
     let override = self.getImpl(self.prefix & "." & key)

@@ -714,12 +714,6 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
         impl:
           selections = self.applyMoveImpl(displayMap, name, selections, fallback, args, env)
 
-    template define(name: string, body: untyped): untyped =
-      baseEnv[name] = newFunc(name, proc(args: seq[LispVal]): LispVal =
-        lastSelections = selections
-        selections = body
-      )
-
     discard expr.eval(env)
     return selections
   except CatchableError as e:

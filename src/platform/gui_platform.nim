@@ -1,4 +1,4 @@
-import std/[tables, strutils, options, sets, os, strformat, sugar, locks]
+import std/[tables, strutils, options, sets, os, strformat, locks]
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 import misc/[custom_logger, util, event, id, rect_utils, custom_async, timer, generational_seq]
 import ui/node
@@ -744,30 +744,6 @@ proc drawText(platform: GuiPlatform, text: string, pos: Vec2, bounds: Rect, colo
     discard
 
 proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.Arrangement, indices: RenderCommandArrangement, pos: Vec2, bounds: Rect, color: Color, spaceColor: Color, flags: UINodeFlags, underlineColor: Color = color(1, 1, 1), spaceRune: Rune = ' '.Rune) =
-  let wrap = TextWrap in flags
-  let wrapBounds = if flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
-    vec2(bounds.w, bounds.h)
-  else:
-    vec2(0, 0)
-
-  let hAlign = if TextAlignHorizontalLeft in flags:
-    HorizontalAlignment.LeftAlign
-  elif TextAlignHorizontalCenter in flags:
-    HorizontalAlignment.CenterAlign
-  elif TextAlignHorizontalRight in flags:
-    HorizontalAlignment.RightAlign
-  else:
-    HorizontalAlignment.LeftAlign
-
-  let vAlign = if TextAlignVerticalTop in flags:
-    VerticalAlignment.TopAlign
-  elif TextAlignVerticalCenter in flags:
-    VerticalAlignment.MiddleAlign
-  elif TextAlignVerticalBottom in flags:
-    VerticalAlignment.BottomAlign
-  else:
-    VerticalAlignment.TopAlign
-
   let textFlags = flags * &{TextItalic, TextBold}
 
   proc tintRune(r: Rune): bool =
@@ -775,7 +751,6 @@ proc drawText(platform: GuiPlatform, text: string, arrangement: render_command.A
 
   # todo: convert typeset to not use strings to avoid copying
   try:
-    let font = platform.getFont(platform.ctx.fontSize, flags)
     let typeface = platform.getTypeface(flags)
     let fontScale = platform.ctx.fontSize / typeface.scale
     let solidPaint = ({.cast(gcsafe).}: solidPaint)

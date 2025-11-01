@@ -25,7 +25,7 @@ proc split[K](genIndex: K): tuple[generation, index: uint32] =
   return ((genIndex.uint64 shr 32).uint32, genIndex.uint32)
 
 proc del*[T; K](self: var GenerationalSeq[T, K], key: K) =
-  let (generation, index) = key.split()
+  let (_, index) = key.split()
   if index.int in 0..self.data.high:
     let data = self.data[index].addr
     if (data[].generation and 0x1) == 1:
@@ -35,7 +35,7 @@ proc del*[T; K](self: var GenerationalSeq[T, K], key: K) =
       dec self.len
 
 proc set*[T; K](self: var GenerationalSeq[T, K], key: K, val: sink T) =
-  let (generation, index) = key.split()
+  let (_, index) = key.split()
   if index.int in 0..self.data.high:
     let data = self.data[index].addr
     if (data[].generation and 0x1) == 1:

@@ -554,14 +554,6 @@ proc parseNumber(my: var LispParser) =
       inc(pos)
   my.bufpos = pos
 
-proc parseName(my: var LispParser) =
-  var pos = my.bufpos
-  if my.buf[pos] in IdentStartChars:
-    while my.buf[pos] in IdentChars:
-      add(my.a, my.buf[pos])
-      inc(pos)
-  my.bufpos = pos
-
 proc getTok(my: var LispParser): TokKind =
   setLen(my.a, 0)
   skip(my) # skip whitespace, comments
@@ -1004,13 +996,21 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
       return eval(expanded, env)  # evaluate expanded result
     of Func:
       if fun.evalArgs:
-        let args = expr.elems[1..^1].mapIt(eval(it, env))
+        var args = newSeqOfCap[LispVal](expr.elems.len)
+        for i in 1..expr.elems.high:
+          let v = eval(expr.elems[i], env)
+          if v != nil:
+            args.add v
         return fun.fn(args)
       else:
         let args = expr.elems[1..^1]
         return fun.fn(args)
     of Lambda:
-      let args = expr.elems[1..^1].mapIt(eval(it, env))
+      var args = newSeqOfCap[LispVal](expr.elems.len)
+      for i in 1..expr.elems.high:
+        let v = eval(expr.elems[i], env)
+        if v != nil:
+          args.add v
       var newEnv = fun.env.createChild()
       for i in 0..<fun.params.len:
         newEnv[fun.params[i]] = args[i]

@@ -23,7 +23,7 @@ proc runProcessImpl(self: PluginService, process: string, args: seq[string], wor
     workspace.path
 
   try:
-    let (output, err) = await runProcessAsyncOutput(process, args, workingDir=workingDir, eval=eval)
+    discard await runProcessAsyncOutput(process, args, workingDir=workingDir, eval=eval)
     log lvlDebug, &"runProcess '{process} {args.join($' ')}' in '{workingDir}'"
 
   except CatchableError as e:

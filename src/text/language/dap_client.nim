@@ -498,7 +498,7 @@ proc cancelAllOf*(client: DAPClient, command: string) =
     for (id, future) in futures:
       future.complete canceled[JsonNode]()
 
-proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
+proc logProcessDebugOutput*(process: AsyncProcess) {.async.} =
   while process.isAlive:
     let line = await process.recvErrorLine
     if logServerDebug:

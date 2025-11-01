@@ -1,5 +1,5 @@
 import std/hashes
-import misc/[util, id]
+import misc/[util]
 import vfs
 
 type DocumentId* = distinct uint64

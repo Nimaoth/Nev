@@ -499,35 +499,35 @@ proc updateThread(self: ptr WrapMapSnapshot, input: ptr InputMapSnapshot, wrapWi
   self[].update(input[].clone(), wrapWidth, wrappedIndent)
 
 # todo
-proc computeEdits(old: WrapMapSnapshot, new: WrapMapSnapshot, edits: Patch[InputPoint]): Patch[WrapPoint] =
-  var oldCursor = old.map.initCursor(WrapMapChunkSummary)
-  var newCursor = new.map.initCursor(WrapMapChunkSummary)
-  for edit in edits.edits:
-    var edit = edit
-    edit.old.a.column = 0
-    edit.old.b += inputPoint(1, 0)
-    edit.new.a.column = 0
-    edit.new.b += inputPoint(1, 0)
+# proc computeEdits(old: WrapMapSnapshot, new: WrapMapSnapshot, edits: Patch[InputPoint]): Patch[WrapPoint] =
+#   var oldCursor = old.map.initCursor(WrapMapChunkSummary)
+#   var newCursor = new.map.initCursor(WrapMapChunkSummary)
+#   for edit in edits.edits:
+#     var edit = edit
+#     edit.old.a.column = 0
+#     edit.old.b += inputPoint(1, 0)
+#     edit.new.a.column = 0
+#     edit.new.b += inputPoint(1, 0)
 
-    discard oldCursor.seek(edit.old.a.WrapMapChunkSrc, Bias.Right, ())
-    var oldStart = oldCursor.startPos.dst
-    oldStart += (edit.old.a - oldCursor.startPos.src).toWrapPoint
+#     discard oldCursor.seek(edit.old.a.WrapMapChunkSrc, Bias.Right, ())
+#     var oldStart = oldCursor.startPos.dst
+#     oldStart += (edit.old.a - oldCursor.startPos.src).toWrapPoint
 
-    discard oldCursor.seek(edit.old.b.WrapMapChunkSrc, Bias.Right, ())
-    var oldEnd = oldCursor.startPos.dst
-    oldEnd += (edit.old.b - oldCursor.startPos.src).toWrapPoint
+#     discard oldCursor.seek(edit.old.b.WrapMapChunkSrc, Bias.Right, ())
+#     var oldEnd = oldCursor.startPos.dst
+#     oldEnd += (edit.old.b - oldCursor.startPos.src).toWrapPoint
 
-    discard newCursor.seek(edit.new.a.WrapMapChunkSrc, Bias.Right, ())
-    var newStart = newCursor.startPos.dst
-    newStart += (edit.new.a - newCursor.startPos.src).toWrapPoint
+#     discard newCursor.seek(edit.new.a.WrapMapChunkSrc, Bias.Right, ())
+#     var newStart = newCursor.startPos.dst
+#     newStart += (edit.new.a - newCursor.startPos.src).toWrapPoint
 
-    discard newCursor.seek(edit.new.b.WrapMapChunkSrc, Bias.Right, ())
-    var newEnd = newCursor.startPos.dst
-    newEnd += (edit.new.b - newCursor.startPos.src).toWrapPoint
+#     discard newCursor.seek(edit.new.b.WrapMapChunkSrc, Bias.Right, ())
+#     var newEnd = newCursor.startPos.dst
+#     newEnd += (edit.new.b - newCursor.startPos.src).toWrapPoint
 
-    result.add initEdit(oldStart...oldEnd, newStart...newEnd)
+#     result.add initEdit(oldStart...oldEnd, newStart...newEnd)
 
-  # echo &"computeEdits {edits}\n  A: {old}\n  B: {new}\n  -> {result}"
+#   # echo &"computeEdits {edits}\n  A: {old}\n  B: {new}\n  -> {result}"
 
 proc updateAsync(self: WrapMap) {.async.} =
   if self.updatingAsync: return

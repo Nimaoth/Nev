@@ -757,7 +757,7 @@ proc serialize(state: var TerminalThreadState, data: KittyEncodingData, csiTrail
   buffer.add csiTrailer
   state.sendOutputBuffered(buffer)
 
-proc encodeLegacyFunctionalKeyWithMods(state: var TerminalThreadState, event: InputEvent): bool =
+proc encodeLegacyFunctionalKeyWithMods*(state: var TerminalThreadState, event: InputEvent): bool =
   var prefix = ""
   if Alt in event.modifiers:
     prefix = "\x1b"
@@ -863,8 +863,8 @@ proc encodeKittyKey(state: var TerminalThreadState, event: InputEvent) =
     mods = mods or 0x8
 
   data.encodedMods = $(mods + 1)
-  let simpleEncodingOk = not data.addActions and not data.addAlternates and not data.addText
   # todo
+  # let simpleEncodingOk = not data.addActions and not data.addAlternates and not data.addText
   # if simpleEncodingOk:
   #   if not data.hasMods:
   #     state.vterm.uniChar(' '.uint32, modifiers.toVtermModifiers)
@@ -1372,7 +1372,6 @@ proc deleteVisiblePlacements(s: var KittyState, deleteImageWhenUnused: bool) =
     s.deletePlacement(ids[0], ids[1], deleteImageWhenUnused)
 
 iterator parseKittyData(s: ptr TerminalThreadState) {.closure, gcsafe, raises: [].} =
-  let t = startTimer()
   var i = 1
   var suppressOk = false
   var suppressFailure = false
@@ -1887,6 +1886,9 @@ proc terminalThread(s: TerminalThreadState) {.thread, nimcall.} =
       while state.scrollbackBuffer.len >= state.scrollbackLines:
         state.scrollbackBuffer.popFirst()
       state.scrollbackBuffer.addLast(line)
+      if state.scrollY != 0:
+        inc state.scrollY
+        state.scrollY = state.scrollY.clamp(0, state.scrollbackBuffer.len)
       return 0 # return value is ignored
     ),
     sb_popline: (proc(cols: cint; cells: ptr UncheckedArray[VTermScreenCell]; user: pointer): cint {.cdecl.} =
@@ -2219,6 +2221,7 @@ when defined(enableLibssh):
     from winlean import nil
     import chronos/transports/stream
 
+  {.push hint[XCannotRaiseY]:off.}
   proc authPublicKey*(session: Session; username, privKey: string, pubKey = "", passphrase = ""): int {.raises: [IOError].} =
     let privKey = expandTilde(privKey)
     var pubKey = pubKey
@@ -2235,6 +2238,7 @@ when defined(enableLibssh):
         break
 
     result = 0
+  {.pop.}
 
   proc createSshSession(self: TerminalService, terminal: Terminal, stdin: Arc[BaseChannel], stdout: Arc[BaseChannel], command: string, args: seq[string] = @[], options: SshOptions): Future[void] {.async: (raises: []).} =
     try:

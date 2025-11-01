@@ -12,7 +12,8 @@ declareSettings LspMergeSettings, "lsp-merge":
   declare timeout, int, 10000
 
 type
-  MergeStrategy = enum First, All, FirstThenTimeout, AnyThenTimeout
+  # todo
+  MergeStrategy* = enum First, All, FirstThenTimeout, AnyThenTimeout
   LanguageServerList* = ref object of LanguageServer
     config: ConfigStore
     mergeConfig: LspMergeSettings

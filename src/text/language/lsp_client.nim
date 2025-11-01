@@ -237,9 +237,9 @@ proc newLSPClient*(info: Option[ws.WorkspaceInfo], userOptions: JsonNode, server
 # proc waitInitialized*(client: LSPCLient): Future[bool] = client.initializedFuture.future
 
 method close(connection: LSPConnection) {.base, gcsafe.} = discard
-method recvLine(connection: LSPConnection): Future[string] {.base, gcsafe, raises: [IOError].} = discard
-method recv(connection: LSPConnection, length: int): Future[string] {.base, gcsafe, raises: [IOError].} = discard
-method send(connection: LSPConnection, data: string): Future[void] {.base, gcsafe, raises: [IOError].} = discard
+method recvLine(connection: LSPConnection): Future[string] {.base, gcsafe, raises: [IOError].} = raise newException(IOError, "not implemented")
+method recv(connection: LSPConnection, length: int): Future[string] {.base, gcsafe, raises: [IOError].} = raise newException(IOError, "not implemented")
+method send(connection: LSPConnection, data: string): Future[void] {.base, gcsafe, raises: [IOError].} = raise newException(IOError, "not implemented")
 
 type LSPConnectionAsyncProcess = ref object of LSPConnection
   process: AsyncProcess
@@ -660,10 +660,11 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
 
   return res
 
-proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args: seq[string]): Future[Option[tuple[port, processId: int]]] {.async.} =
-  debugf"tryGetPortFromLanguagesServer {url}, {port}, {exePath}, {args}"
-  discard
-  return
+# todo
+# proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args: seq[string]): Future[Option[tuple[port, processId: int]]] {.async.} =
+#   debugf"tryGetPortFromLanguagesServer {url}, {port}, {exePath}, {args}"
+#   discard
+#   return
   # try:
   #   let body = $ %*{
   #     "path": exePath,

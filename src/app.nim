@@ -1,6 +1,6 @@
 import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, parsejsonex, generational_seq]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, generational_seq]
 import ui/node
 import scripting/[expose]
 import platform/[platform]
@@ -1370,11 +1370,11 @@ proc loadSessionAsync(self: App, session: string, close: bool) {.async.} =
             customArgs.add args
 
       log lvlInfo, &"Open session using '{customCommand} {customArgs}'"
-      let process = startProcess(customCommand, args = customArgs, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
+      discard startProcess(customCommand, args = customArgs, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
 
     else:
       log lvlInfo, &"Open session using '{exe} {args}'"
-      let process = startProcess(exe, args = args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
+      discard startProcess(exe, args = args, workingDir = workingDir, options = {poDontInheritHandles, poUsePath})
     if close:
       self.quit()
   except:
@@ -1514,7 +1514,7 @@ proc crash*(self: App, message: string = "") {.expose("editor").} =
 proc crash2*(self: App) {.expose("editor").} =
   ## This command will cause the editor to crash by accessing a nil reference.
   var app: App = nil
-  echo self.commands.executeCommand("crash")
+  echo app.commands.executeCommand("crash")
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isVfsPath:
