@@ -1,4 +1,4 @@
-import std/[strutils]
+import std/[strutils, os]
 from glob/regexer import globToRegexString
 
 {.push gcsafe.}
@@ -261,6 +261,15 @@ proc excludePath*(globs: Globs, path: string): bool =
     return false
   except GlobbyError:
     return false
+
+proc ignorePath*(ignore: Globs, path: string): bool =
+  ## Combines exclude and include
+  if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
+    if ignore.includePath(path) or ignore.includePath(path.extractFilename):
+      return false
+
+    return true
+  return false
 
 when isMainModule:
   import std/[strformat]

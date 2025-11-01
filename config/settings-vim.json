@@ -6,11 +6,11 @@
     "editor.command-line-result-mode-low": "vim.command-line-result-low",
     "terminal.base-mode": "terminal",
     "terminal.default-mode": "normal",
-    "text.modes": ["vim"],
+    "text.modes": ["vim", "vim.normal"],
     "text.default-mode": "vim.normal",
     "text.completion-mode": "vim.completion",
 
-    "lang.command-line.text.modes": ["vim"],
+    "lang.command-line.text.modes": ["vim", "vim.normal"],
     "lang.command-line.text.default-mode": "vim.insert",
     "lang.selector-popup-search-bar.text.modes": ["vim"],
     "lang.selector-popup-search-bar.text.default-mode": "vim.insert",

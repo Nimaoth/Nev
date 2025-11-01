@@ -71,6 +71,11 @@ proc `==`(a, b: CommandId): bool {.borrow.}
 proc hash(a: CommandId): Hash {.borrow.}
 proc `$`(a: CommandId): string {.borrow.}
 
+proc toStringResult(node: JsonNode): string =
+  if node != nil and node.kind != JNull:
+      return $node
+  return ""
+
 method init*(self: CommandService): Future[Result[void, ref CatchableError]] {.async: (raises: []).} =
   log lvlInfo, &"CommandService.init"
   self.registers = self.services.getService(Registers).get
@@ -95,8 +100,7 @@ method init*(self: CommandService): Future[Result[void, ref CatchableError]] {.a
                 except CatchableError as e:
                   log(lvlError, fmt"Failed to parse arguments '{args}': {e.msg}")
 
-                let resJson = value.dispatch(argsJson)
-                return $resJson
+                return value.dispatch(argsJson).toStringResult()
               except CatchableError as e:
                 log lvlError, &"Failed to execute command '{value.name}': {e.msg}"
                 return ""
@@ -284,10 +288,8 @@ proc executeCommand*(self: CommandService, command: string, record: bool = true)
     return string.none
 
   self.commandsThisFrame.inc()
-  debugf"executeCommand '{command}' ({self.commandsThisFrame})"
   for handler in self.prefixCommandHandlers:
     if command.startsWith(handler.prefix):
-      debugf"executeCommand '{command}' handled by prefix handler '{handler.prefix}'"
       return handler.execute(command)
 
   let i = command.find('.')
@@ -297,7 +299,6 @@ proc executeCommand*(self: CommandService, command: string, record: bool = true)
     (command[0..<i], command[(i + 1)..^1])
 
   if prefix in self.scopedCommandHandlers:
-    debugf"executeCommand '{rawCommand}' handled by scoped handler '{prefix}'"
     let handler = self.scopedCommandHandlers[prefix]
     return handler(rawCommand)
 
@@ -310,7 +311,6 @@ proc executeCommand*(self: CommandService, command: string, record: bool = true)
     return self.handleAlias(action, arg, alias)
 
   if self.commands.contains(action):
-    debugf"executeCommand '{rawCommand}' handled by explicit command '{action}'"
     try:
       return self.commands[action].execute(arg).some
     except Exception as e:
@@ -319,7 +319,6 @@ proc executeCommand*(self: CommandService, command: string, record: bool = true)
 
   try:
     if self.defaultCommandHandler.isNotNil:
-      debugf"executeCommand '{command}' handled by default handler"
       return self.defaultCommandHandler(command.some)
   except Exception as e:
     log lvlError, &"Failed to run command '{command}': {e.msg}"

@@ -53,14 +53,6 @@ proc ignorePath*(workspace: Workspace, path: string): bool =
     return true
   return false
 
-proc ignorePath*(ignore: Globs, path: string): bool =
-  if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
-    if ignore.includePath(path) or ignore.includePath(path.extractFilename):
-      return false
-
-    return true
-  return false
-
 proc settings*(self: Workspace): JsonNode =
   try:
     result = newJObject()
@@ -230,7 +222,7 @@ proc loadIgnoreFile(self: Workspace, path: string): Option[Globs] =
   except:
     return Globs.none
 
-proc loadDefaultIgnoreFile(self: Workspace) =
+proc loadDefaultIgnoreFile*(self: Workspace) =
   if self.loadIgnoreFile(&".{appName}-ignore").getSome(ignore):
     self.ignore = ignore
     log lvlInfo, &"Using ignore file '.{appName}-ignore' for workspace {self.name}"
@@ -239,6 +231,9 @@ proc loadDefaultIgnoreFile(self: Workspace) =
     log lvlInfo, &"Using ignore file '.gitignore' for workspace {self.name}"
   else:
     log lvlInfo, &"No ignore file for workspace {self.name}"
+
+  # todo: make this configurable
+  self.ignore.original.add ".git"
 
 proc info*(self: Workspace): WorkspaceInfo =
   let additionalPaths = self.additionalPaths.mapIt((it.absolutePath, it.some))
@@ -281,9 +276,6 @@ proc addWorkspaceFolder*(self: Workspace, path: string, recomputeFileCache: bool
   if self.path.len == 0:
     self.path = path
     self.loadDefaultIgnoreFile()
-
-    # todo: make this configurable
-    self.ignore.original.add ".git"
   else:
     self.additionalPaths.add path
 

@@ -48,7 +48,6 @@ else: Backend.none
 var logToFile = false
 var logToConsole = true
 var disableLogging = false
-var opts = AppOptions()
 
 const helpText = &"""
     nev [options] [file]
@@ -89,7 +88,7 @@ block: ## Parse command line options
   for kind, key, val in optParser.getopt():
     case kind
     of cmdArgument:
-      opts.fileToOpen = key.some
+      gAppOptions.fileToOpen = key.some
 
     of cmdLongOption, cmdShortOption:
       case key
@@ -112,13 +111,13 @@ block: ## Parse command line options
           quit(1)
 
       of "setting", "p":
-        opts.settings.add val
+        gAppOptions.settings.add val
 
       of "early-command", "r":
-        opts.earlyCommands.add val
+        gAppOptions.earlyCommands.add val
 
       of "late-command", "R":
-        opts.lateCommands.add val
+        gAppOptions.lateCommands.add val
 
       of "log-to-file", "f":
         logToFile = val.parseBool.catch(true)
@@ -130,31 +129,31 @@ block: ## Parse command line options
         disableLogging = true
 
       of "no-nimscript", "n":
-        opts.disableNimScriptPlugins = true
+        gAppOptions.disableNimScriptPlugins = true
 
       of "no-wasm", "w":
-        opts.disableWasmPlugins = true
+        gAppOptions.disableWasmPlugins = true
 
       of "no-wasm-old", "W":
-        opts.disableOldWasmPlugins = true
+        gAppOptions.disableOldWasmPlugins = true
 
       of "no-config", "c":
-        opts.dontRestoreConfig = true
+        gAppOptions.dontRestoreConfig = true
 
       of "clean":
-        opts.dontRestoreConfig = true
-        opts.disableNimScriptPlugins = true
-        opts.disableWasmPlugins = true
-        opts.disableOldWasmPlugins = true
+        gAppOptions.dontRestoreConfig = true
+        gAppOptions.disableNimScriptPlugins = true
+        gAppOptions.disableWasmPlugins = true
+        gAppOptions.disableOldWasmPlugins = true
 
       of "skip-user":
-        opts.skipUserSettings = true
+        gAppOptions.skipUserSettings = true
 
       of "no-attach":
         attach = false.some
 
       of "restore-session", "e":
-        opts.restoreLastSession = true
+        gAppOptions.restoreLastSession = true
 
       of "attach":
         attach = true.some
@@ -163,19 +162,19 @@ block: ## Parse command line options
           quit(1)
 
       of "session", "s":
-        opts.sessionOverride = val.some
+        gAppOptions.sessionOverride = val.some
 
       of "nopty":
-        opts.noPty = true
+        gAppOptions.noPty = true
 
       of "noui":
-        opts.noUI = true
+        gAppOptions.noUI = true
 
       of "kittykey":
-        opts.kittyKeyboardFlags = val
+        gAppOptions.kittyKeyboardFlags = val
 
       of "monitor":
-        opts.monitor = val.parseInt.some.catch:
+        gAppOptions.monitor = val.parseInt.some.catch:
           echo "Expected integer for monitor: --monitor:1"
           quit(1)
 
@@ -190,10 +189,10 @@ block: ## Parse command line options
 
   # if attach.getSome(attach):
   #   if attach:
-  #     tryAttach(opts, attachProcessId)
+  #     tryAttach(gAppOptions, attachProcessId)
   # else:
   #   if not stdout.isatty() or ownsConsole():
-  #     tryAttach(opts, 0)
+  #     tryAttach(gAppOptions, 0)
 
 if backend.isNone:
   echo "Error: No backend selected"
@@ -216,7 +215,7 @@ import app, platform_service
 
 # import asynctools/asyncipc
 
-# proc tryAttach(opts: AppOptions, processId: int) =
+# proc tryAttach(gAppOptions: AppOptions, processId: int) =
 #   if processId == 0:
 #     # todo: find process by name
 #     # return
@@ -239,16 +238,16 @@ import app, platform_service
 
 #   # todo: instead of sending -p:... etc, translate the settings to set-option command syntax,
 #   # pass the commands through as is and traslate fileToOpen to corresponding command.
-#   for setting in opts.settings:
+#   for setting in gAppOptions.settings:
 #     send("-p:" & setting)
 
-#   for command in opts.earlyCommands:
+#   for command in gAppOptions.earlyCommands:
 #     send("-r:" & command)
 
-#   for command in opts.lateCommands:
+#   for command in gAppOptions.lateCommands:
 #     send("-R:" & command)
 
-#   if opts.fileToOpen.getSome(file):
+#   if gAppOptions.fileToOpen.getSome(file):
 #     send(file)
 
 #   quit(0)
@@ -391,6 +390,7 @@ proc run(app: App, plat: Platform, backend: Backend, appOptions: AppOptions) =
 
     if frameIndex == 0:
       log lvlInfo, "First render done"
+    app.firstRenderDone = true
 
     {.gcsafe.}:
       logger.flush()
@@ -453,13 +453,15 @@ gServices = Services()
 gServices.addBuiltinServices()
 
 plat.vfs = gServices.getService(VFSService).get.vfs
-plat.init(opts)
+plat.init(gAppOptions)
 gServices.getService(PlatformService).get.setPlatform(plat)
 gServices.waitForServices()
 
 proc main() =
-  let app = waitFor newApp(backend.get, plat, gServices, opts)
-  run(app, plat, backend.get, opts)
+  let app = newApp(backend.get, plat, gServices, gAppOptions)
+  log lvlInfo, &"Finished creating app"
+  asyncSpawn app.loadPlugins()
+  run(app, plat, backend.get, gAppOptions)
 
   try:
     log lvlInfo, "Shutting down editor"

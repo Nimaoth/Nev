@@ -537,14 +537,6 @@ proc mount*(self: VFS, prefix: string, vfs: VFS) =
   vfs.prefix = prefix
   self.mounts.add (prefix, vfs)
 
-proc ignorePath*(ignore: Globs, path: string): bool =
-  if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
-    if ignore.includePath(path) or ignore.includePath(path.extractFilename):
-      return false
-
-    return true
-  return false
-
 proc getDirectoryListingRec*(vfs: VFS, ignore: Globs, path: string): Future[seq[string]] {.async.} =
   var resultItems: seq[string]
 

@@ -97,7 +97,7 @@ proc readLine*(self: Arc[BaseChannel]): Future[string] {.async: (raises: [IOErro
   while true:
     discard self.flushRead()
     var nl = self.peek('\n'.uint8.some)
-    if nl == -1:
+    if nl < 0:
       if not self.isOpen:
         nl = self.peek() - 1
         break
@@ -144,9 +144,12 @@ proc close(self: ptr InMemoryChannel) {.gcsafe, raises: [].} =
 proc isOpen(self: ptr InMemoryChannel): bool = self.isOpen
 proc peek(self: ptr InMemoryChannel, to: Option[uint8] = uint8.none): int =
   if to.getSome(to):
-    self.data.find(to, self.dataStart) - self.dataStart
+    result = self.data.find(to, self.dataStart)
+    if result != -1:
+      result = result - self.dataStart
   else:
-    self.data.len - self.dataStart
+    result = self.data.len - self.dataStart
+    assert result >= 0
 
 proc write(self: ptr InMemoryChannel, data: openArray[uint8]) =
   if data.len > 0:
@@ -174,7 +177,8 @@ proc flushRead(self: ptr InMemoryChannel): int =
       dealloc(data.data)
   except ValueError as e:
     echo "Failed to read memory channel: ", e.msg
-  return self.data.len - self.dataStart
+  result = self.data.len - self.dataStart
+  assert result >= 0
 
 proc read(self: ptr InMemoryChannel, res: var openArray[uint8]): int =
   discard self.flushRead()

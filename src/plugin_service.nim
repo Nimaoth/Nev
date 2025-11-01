@@ -1,7 +1,8 @@
 import std/[macros, macrocache, json, strutils, tables, options, sequtils, os, sugar, streams]
 import misc/[custom_logger, custom_async, util, myjsonutils, event]
 import scripting/expose
-import compilation_config, service, vfs_service, vfs, dispatch_tables, events, config_provider, command_service
+import compilation_config, service, vfs_service, vfs, vfs_local, dispatch_tables, events, config_provider, command_service
+import lisp
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -108,12 +109,13 @@ type
     pathToPlugin*: Table[string, Plugin]
     idToPlugin*: Table[string, Plugin]
 
+    autoLoadPlugins: bool = false
+
     pluginSettings*: PluginSettings
 
     isHandlingVFSEvents: bool
     vfsEvents: seq[VFSEvent]
 
-method init*(self: PluginSystem, path: string, vfs: VFS): Future[void] {.base.} = discard
 method deinit*(self: PluginSystem) {.base.} = discard
 method reload*(self: PluginSystem): Future[void] {.base.} = discard
 
@@ -121,6 +123,7 @@ method postInitialize*(self: PluginSystem): bool {.base.} = discard
 method getCurrentContext*(self: PluginSystem): string {.base.} = ""
 method tryLoadPlugin*(self: PluginSystem, plugin: Plugin): Future[bool] {.base, async: (raises: [IOError]).} = false
 method unloadPlugin*(self: PluginSystem, plugin: Plugin): Future[void] {.base, async: (raises: []).} = discard
+method dispatchDynamic*(self: PluginSystem, name: string, args: LispVal, namedArgs: LispVal): LispVal {.base.} = newNil()
 
 method setPermissions*(self: PluginInstanceBase, permissions: PluginPermissions) {.base.} = discard
 
@@ -215,6 +218,7 @@ proc reloadPlugin*(self: PluginService, path: string) {.async.} =
       return
 
 proc loadPlugins*(self: PluginService) =
+  self.autoLoadPlugins = true
   for p in self.plugins:
     if not p.manifest.autoLoad:
       continue
@@ -283,10 +287,16 @@ proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
   self.idToPlugin[plugin.manifest.id] = plugin
   self.registerPluginCommands(plugin)
 
+  if plugin.manifest.autoLoad:
+    self.services.getService(VFSService).get.localVfs.cacheFile(self.vfs.localize(plugin.manifest.wasm))
+
   # todo: maybe this should be just subscribed once when the service starts and then loop over all loaded plugins
   discard self.settings.onConfigChanged.subscribe proc(key: string) =
     if key == "" or key == "permissions" or key.startsWith("permissions"):
       self.updatePermissions(plugin)
+
+  if self.autoLoadPlugins:
+    asyncSpawn self.loadPlugin(plugin)
 
 proc addManifestFromFile(self: PluginService, pluginFolder: PluginDirectory, file: string) {.async.} =
   if file.endsWith(".m.wasm"):

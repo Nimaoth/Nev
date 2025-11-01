@@ -178,6 +178,20 @@ template mapIt*[T](self: Option[T], op: untyped): untyped =
     else:
       OutType.none
 
+template flatmapIt*[T](self: Option[T], op: untyped): untyped =
+  type OutType = typeof((
+    block:
+      var it {.inject.}: typeof(self.get, typeOfProc);
+      op.get
+    ), typeOfProc)
+  block:
+    evalOnceAs(self2, self, compiles((let _ = self)))
+    if self2.isSome:
+      let it {.inject.} = self2.get
+      op
+    else:
+      OutType.none
+
 template applyIt*[T, E](self: Result[T, E], op: untyped, opErr: untyped): untyped =
   block:
     evalOnceAs(self2, self, compiles((let _ = self)))
