@@ -666,7 +666,7 @@ proc showView*(self: LayoutService, view: View, slot: string = "", focus: bool =
       var p = self.layout.parentLayout(child)
       while p != nil:
         if not p.isVisible(child):
-          let activated = self.layout.tryActivateView proc(v: View): bool =
+          discard self.layout.tryActivateView proc(v: View): bool =
             return v == child
         child = p
         p = self.layout.parentLayout(child)
@@ -980,7 +980,6 @@ proc openNextView*(self: LayoutService) {.expose("layout").} =
     break
 
 proc openLastView*(self: LayoutService) {.expose("layout").} =
-  var res = self.allViews
   for i in countdown(self.allViews.high, 0):
     let view = self.allViews[i]
     if not self.layout.contains(view):

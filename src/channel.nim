@@ -245,10 +245,10 @@ proc newInMemoryChannel*(): Arc[BaseChannel] =
     closeImpl: (proc(self: ptr BaseChannel) {.gcsafe, raises: [].} = close(cast[ptr InMemoryChannel](self))),
     isOpenImpl: proc(self: ptr BaseChannel): bool {.gcsafe, raises: [].} = isOpen(cast[ptr InMemoryChannel](self)),
     peekImpl: proc(self: ptr BaseChannel, to: Option[uint8]): int {.gcsafe, raises: [].} = peek(cast[ptr InMemoryChannel](self), to),
-    writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr InMemoryChannel](self), data),
-    writeSinkImpl: proc(self: ptr BaseChannel, data: sink seq[uint8]) {.gcsafe, raises: [IOError].} = write(cast[ptr InMemoryChannel](self), data.ensureMove),
-    readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [IOError].} = read(cast[ptr InMemoryChannel](self), res),
-    flushReadImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [IOError].} = flushRead(cast[ptr InMemoryChannel](self)),
+    writeImpl: proc(self: ptr BaseChannel, data: openArray[uint8]) {.gcsafe, raises: [].} = write(cast[ptr InMemoryChannel](self), data),
+    writeSinkImpl: proc(self: ptr BaseChannel, data: sink seq[uint8]) {.gcsafe, raises: [].} = write(cast[ptr InMemoryChannel](self), data.ensureMove),
+    readImpl: proc(self: ptr BaseChannel, res: var openArray[uint8]): int {.gcsafe, raises: [].} = read(cast[ptr InMemoryChannel](self), res),
+    flushReadImpl: proc(self: ptr BaseChannel): int {.gcsafe, raises: [].} = flushRead(cast[ptr InMemoryChannel](self)),
     listenImpl: proc(self: Arc[BaseChannel], cb: ChannelListener): ListenId {.gcsafe, raises: [].} = listenInMemoryChannel(self.cloneAs(InMemoryChannel), cb),
   )
   return cast[ptr Arc[BaseChannel]](res.addr)[].clone()

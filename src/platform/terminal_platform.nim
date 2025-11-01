@@ -1,4 +1,4 @@
-import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate, typedthreads, parseutils, envvars]
+import std/[strformat, terminal, typetraits, enumutils, strutils, sets, enumerate, typedthreads, parseutils]
 import std/colors as stdcolors
 import vmath
 import chroma as chroma
@@ -10,6 +10,7 @@ when defined(windows):
   import winlean
 else:
   from posix import read
+  import std/envvars
 
 export platform
 
@@ -29,8 +30,11 @@ const
   MouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{ENABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{ENABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{ENABLE}"
   DisableMouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{DISABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{DISABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{DISABLE}"
 
-  XtermColor    = "xterm-color"
-  Xterm256Color = "xterm-256color"
+when defined(linux):
+  const
+    XtermColor    = "xterm-color"
+    Xterm256Color = "xterm-256color"
+
 
 type
   TerminalPlatform* = ref object of Platform
@@ -202,16 +206,8 @@ proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int] {.gcsafe.
   return (1, 1)
 
 proc getTerminalSize(self: TerminalPlatform): IVec2 =
-  when defined(linux):
-    return ivec2(terminalWidth().int32, terminalHeight().int32)
   if self.noPty:
     return self.gridSize
-    try:
-      stdout.write("\e[18t") # request grid size
-      stdout.write("\e[15t") # request cell pixel size
-      stdout.flushFile()
-    except IOError:
-      discard
   else:
     return ivec2(terminalWidth().int32, terminalHeight().int32)
 
@@ -230,11 +226,6 @@ proc threadFunc(state: ptr ThreadState) {.thread.} =
     var str = stdin.readChar()
     chan.send(str)
     discard stdinEvent.fireSync()
-
-proc waitForStdin(self: TerminalPlatform) {.async.} =
-  while true:
-    discard self.processEvents()
-    await stdinEvent.wait()
 
 method init*(self: TerminalPlatform, options: AppOptions) =
   try:
@@ -316,8 +307,6 @@ method init*(self: TerminalPlatform, options: AppOptions) =
         thread.createThread(threadFunc, state.addr)
       except CatchableError:
         discard
-
-      # asyncSpawn self.waitForStdin()
 
     self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
       result.x = text.len.float
@@ -439,78 +428,6 @@ proc popMask(self: TerminalPlatform) =
   assert self.masks.len > 0
   discard self.masks.pop()
 
-proc toInput(key: tui.Key, modifiers: var Modifiers): int64 =
-  return case key
-  of tui.Key.Enter: INPUT_ENTER
-  of tui.Key.Escape: INPUT_ESCAPE
-  of tui.Key.Backspace: INPUT_BACKSPACE
-  of tui.Key.Space: INPUT_SPACE
-  of tui.Key.Delete: INPUT_DELETE
-  of tui.Key.Tab: INPUT_TAB
-  of tui.Key.Left: INPUT_LEFT
-  of tui.Key.Right: INPUT_RIGHT
-  of tui.Key.Up: INPUT_UP
-  of tui.Key.Down: INPUT_DOWN
-  of tui.Key.Home: INPUT_HOME
-  of tui.Key.End: INPUT_END
-  of tui.Key.PageUp: INPUT_PAGE_UP
-  of tui.Key.PageDown: INPUT_PAGE_DOWN
-  of tui.Key.A..tui.Key.Z: ord(key) - ord(tui.Key.A) + ord('a')
-  of tui.Key.ShiftA..tui.Key.ShiftZ:
-    modifiers.incl Modifier.Shift
-    ord(key) - ord(tui.Key.ShiftA) + ord('A')
-  of tui.Key.CtrlA..tui.Key.CtrlH, tui.Key.CtrlJ..tui.Key.CtrlL, tui.Key.CtrlN..tui.Key.CtrlZ:
-    modifiers.incl Modifier.Control
-    ord(key) - ord(tui.Key.CtrlA) + ord('a')
-  of tui.Key.Zero..tui.Key.Nine: ord(key) - ord(tui.Key.Zero) + ord('0')
-  of tui.Key.F1..tui.Key.F12: INPUT_F1 - (ord(key) - ord(tui.Key.F1))
-
-  of tui.Key.ExclamationMark : '!'.int64
-  of tui.Key.DoubleQuote     : '"'.int64
-  of tui.Key.Hash            : '#'.int64
-  of tui.Key.Dollar          : '$'.int64
-  of tui.Key.Percent         : '%'.int64
-  of tui.Key.Ampersand       : '&'.int64
-  of tui.Key.SingleQuote     : '\''.int64
-  of tui.Key.LeftParen       : '('.int64
-  of tui.Key.RightParen      : ')'.int64
-  of tui.Key.Asterisk        : '*'.int64
-  of tui.Key.Plus            : '+'.int64
-  of tui.Key.Comma           : ','.int64
-  of tui.Key.Minus           : '-'.int64
-  of tui.Key.Dot             : '.'.int64
-  of tui.Key.Slash           : '/'.int64
-
-  of Colon        : ':'.int64
-  of Semicolon    : ';'.int64
-  of LessThan     : '<'.int64
-  of Equals       : '='.int64
-  of GreaterThan  : '>'.int64
-  of QuestionMark : '?'.int64
-  of At           : '@'.int64
-
-  of LeftBracket  : '['.int64
-  of Backslash    : '\\'.int64
-  of RightBracket : ']'.int64
-  of Caret        : '^'.int64
-  of Underscore   : '_'.int64
-  of GraveAccent  : '`'.int64
-
-  of LeftBrace  : '{'.int64
-  of Pipe       : '|'.int64
-  of RightBrace : '}'.int64
-  of Tilde      : '~'.int64
-
-
-  # of Numpad0..Numpad9: ord(key) - ord(Numpad0) + ord('0')
-  # of NumpadAdd: ord '+'
-  # of NumpadSubtract: ord '-'
-  # of NumpadMultiply: ord '*'
-  # of NumpadDivide: ord '/'
-  else:
-    log lvlError, fmt"Unknown input {key}"
-    0
-
 method setVsync*(self: TerminalPlatform, enabled: bool) {.gcsafe, raises: [].} = discard
 
 method getFontInfo*(self: TerminalPlatform, fontSize: float, flags: UINodeFlags): FontInfo {.gcsafe, raises: [].} =
@@ -521,13 +438,6 @@ method getFontInfo*(self: TerminalPlatform, fontSize: float, flags: UINodeFlags)
     scale: 1,
     advance: proc(rune: Rune): float = 1
   )
-
-proc setCursorPos(x: int, y: int) =
-  stdout.write "\e["
-  stdout.write $(y + 1)
-  stdout.write ";"
-  stdout.write $(x + 1)
-  stdout.write "f"
 
 method processEvents*(self: TerminalPlatform): int {.gcsafe.} =
   try:

@@ -22,8 +22,6 @@ method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[Overla
   self.editor.createUI(builder, app)
 
 method createUI*(self: RenderView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
-  let dirty = self.dirty
-
   builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
     onClickAny btn:
       self.layout.tryActivateView(self)

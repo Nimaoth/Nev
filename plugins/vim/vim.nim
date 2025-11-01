@@ -90,16 +90,6 @@ proc joinCase(parts: seq[string], cas: IdentifierCase): string =
   of IdentifierCase.ScreamingSnake:
     parts.mapIt(custom_unicode.toUpper(it)).join("_")
 
-proc cycleCase(s: string): string =
-  if s.len == 0:
-    return s
-  let (cas, parts) = s.splitCase()
-  let nextCase = if cas == IdentifierCase.high:
-    IdentifierCase.low
-  else:
-    cas.succ
-  return parts.joinCase(nextCase)
-
 proc exposeImpl*(context: NimNode, name: string, fun: NimNode, active: bool): NimNode =
   # defer:
   #   echo result.repr

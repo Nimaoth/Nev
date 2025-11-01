@@ -2,7 +2,7 @@ import std/[strformat, tables, sets]
 import misc/[custom_logger, util, delayed_task, timer, render_command]
 import view, service
 import platform/platform
-import platform_service, layout, config_provider, events, command_service
+import platform_service, layout, events, command_service
 
 {.push gcsafe, raises: [].}
 
@@ -173,7 +173,4 @@ proc handleAction(self: RenderView, action: string, arg: string): Option[string]
     return res
 
 proc handleInput(self: RenderView, text: string) =
-  discard
-
-proc handleKey(self: RenderView, input: int64, modifiers: Modifiers) =
   discard

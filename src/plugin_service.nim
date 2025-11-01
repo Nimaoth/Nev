@@ -1,7 +1,7 @@
-import std/[macros, macrocache, json, strutils, tables, options, sequtils, os, sugar, streams]
+import std/[macros, json, strutils, tables, options, os, sugar]
 import misc/[custom_logger, custom_async, util, myjsonutils, event]
 import scripting/expose
-import compilation_config, service, vfs_service, vfs, vfs_local, dispatch_tables, events, config_provider, command_service
+import service, vfs_service, vfs, vfs_local, dispatch_tables, events, config_provider, command_service
 import lisp
 
 {.push gcsafe.}
@@ -32,10 +32,6 @@ declareSettings PluginSettings, "plugins":
 
 type
   PluginSystem* = ref object of RootObj
-
-  ScriptAction = object
-    name: string
-    pluginSystem: PluginSystem
 
   PluginCommandDescription* = object
     parameters*: seq[tuple[name: string, `type`: string]]
@@ -83,6 +79,7 @@ type
     settings*: ConfigStore
     permissions*: PluginPermissions
     loadOnCommand*: bool = true
+    registeredLoadCommands: Table[string, CommandId]
 
   PluginDirectory* = ref object
     path*: string
@@ -182,6 +179,10 @@ proc unloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
   if plugin.state != PluginState.Loaded:
     return
 
+  for id in plugin.registeredLoadCommands.values:
+    self.commands.unregisterCommand(id)
+  plugin.registeredLoadCommands.clear()
+
   if plugin.pluginSystem != nil:
     log lvlInfo, &"Unload plugin {plugin.desc}"
     await plugin.pluginSystem.unloadPlugin(plugin)
@@ -266,6 +267,7 @@ proc registerPluginCommands(self: PluginService, plugin: Plugin) =
               assert false
         )
       ), override = true)
+      plugin.registeredLoadCommands[name] = id
 
 proc createPlugin(self: PluginService, manifest: sink PluginManifest) =
   log lvlInfo, &"Register plugin {manifest}"
@@ -345,7 +347,7 @@ proc handleVFSEvents(self: PluginService) {.async.} =
     of FileEventAction.Modify:
       let fullPath = e.pluginFolder.path // e.path
       let isDir = self.vfs.getFileKind(fullPath).await
-      let (container, item) = e.path.splitPath
+      let (container, _) = e.path.splitPath
       if isDir.getSome(isDir):
         let pluginPathRelative = if container == "":
           e.path

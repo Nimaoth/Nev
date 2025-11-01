@@ -85,7 +85,6 @@
       (let newSelections [])
 
       ; find max column
-      (let max-column 0)
       (repeat i (len selections) (do
         (let s (selection.normalize (. selections i)))
         (let startLine (. s 'first 'line))
@@ -100,7 +99,6 @@
               column: 0,
             },
           }))
-        ;(set max-column (max max-column (. selections i 'last 'column)))
         ))
 
       (echo newSelections)

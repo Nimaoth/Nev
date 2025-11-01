@@ -1,5 +1,5 @@
 
-import std/[macros, strutils, os, strformat, tables]
+import std/[macros, strformat, tables]
 import misc/[custom_async, util]
 import nimsumtree/[arc]
 
@@ -52,7 +52,9 @@ proc newPluginThreadPool*[T](num: int, handler: proc(instance: sink Arc[T]) {.ni
         channel: result.channel,
         handler: handler,
       )
+      {.push warning[BareExcept]:off.}
       thread.getMutUnsafe.createThread(workerThread, state)
+      {.pop.}
       result.threads.add(thread)
   except ResourceExhaustedError as e:
     echo &"Failed to create plugin thread pool: {e.msg}"

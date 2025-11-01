@@ -1,5 +1,5 @@
 
-import std/[strformat, options, strutils]
+import std/[strformat, strutils]
 import misc/[custom_unicode, timer]
 import input, input_api
 
@@ -152,7 +152,7 @@ iterator handleCsi(vt: var TerminalInputParser; command: char): InputEvent =
   let leader = if vt.csi.leaderlen > 0: vt.csi.leader[0] else: '\0'
   let args = vt.csi.args
   let argcount =  vt.csi.argi
-  let intermed = if vt.intermedlen > 0: vt.intermed[0].addr else: nil
+  # let intermed = if vt.intermedlen > 0: vt.intermed[0].addr else: nil
   # stdout.write &"CSI {leader}{intermed} {args.toOpenArray(0, argcount - 1)} {command}\r\n"
 
   proc parseModsAndAction(vt: TerminalInputParser): (Modifiers, InputAction) =
@@ -236,8 +236,9 @@ iterator handleCsi(vt: var TerminalInputParser; command: char): InputEvent =
     yieldKey INPUT_LEFT
   of 'E':
     # todo: KP_BEGIN (keypad begin?)
-    let (mods, action) = vt.parseModsAndAction()
+    # let (mods, action) = vt.parseModsAndAction()
     # yieldKey INPUT_LEFT
+    discard
   of 'F':
     let (mods, action) = vt.parseModsAndAction()
     yieldKey INPUT_END
@@ -325,8 +326,9 @@ iterator handleCsi(vt: var TerminalInputParser; command: char): InputEvent =
       else:
         yield mouseButtonEvent(mouseButton, modifiers, action, col, row)
     else:
-      stdout.write &"CSI {leader}{intermed} {args.toOpenArray(0, argcount - 1)} {command}\r\n"
-      stdout.write &"got {argcount} args\r\n"
+      discard
+      # stdout.write &"CSI {leader}{intermed} {args.toOpenArray(0, argcount - 1)} {command}\r\n"
+      # stdout.write &"got {argcount} args\r\n"
   else:
     discard
 
@@ -578,7 +580,6 @@ iterator parseInput*(vt: var TerminalInputParser, text: openArray[char]): InputE
         var
           k = i
           n = i + vt.utf8Remaining # beginning of next character
-          result: Rune
         while k < text.len:
           let c = text[k]
           if c.int <= 127:

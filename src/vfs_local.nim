@@ -1,6 +1,6 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm, tables]
 import nimsumtree/[rope, static_array]
-import misc/[custom_async, custom_logger, util, timer, regex, id, regex]
+import misc/[custom_async, custom_logger, util, timer, regex, id]
 import vfs
 import fsnotify
 

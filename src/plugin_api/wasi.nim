@@ -1,4 +1,4 @@
-import std/[macros, strutils, os, strformat]
+import std/[macros, strutils, strformat]
 import misc/[custom_logger, util, macro_utils]
 import nimsumtree/arc
 import channel
@@ -447,7 +447,7 @@ proc definePluginWasi*(linker: ptr LinkerT, getMemory: GetMemoryImpl): WasmtimeR
     if clockId != Realtime:
       log lvlWarn, &"clock_time_get: clock {clockId} not implemented"
 
-    let precision = cast[WasiTimestamp](parameters[1].i64)
+    # let precision = cast[WasiTimestamp](parameters[1].i64)
     let retPtr = parameters[2].i32.WasmPtr
     if retPtr.int != 0:
       # let time = 123456000000000

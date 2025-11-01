@@ -18,10 +18,12 @@
 include "system/inclrtl"
 
 import
-  std/[strutils, os, strtabs, streams, cpuinfo, streamwrapper,
+  std/[os, strtabs, streams, cpuinfo, streamwrapper,
   private/since]
 
 export quoteShell, quoteShellWindows, quoteShellPosix
+
+{.push hint[XCannotRaiseY]:off.}
 
 when defined(windows):
   import std/winlean
@@ -740,9 +742,9 @@ when defined(windows) and not defined(useNimRtl):
     if e.str != nil: dealloc(e.str)
     if success == 0:
       if poInteractive in result.options: close(result)
-      const errInvalidParameter = 87.int
-      const errFileNotFound = 2.int
-      if lastError.int in {errInvalidParameter, errFileNotFound}:
+      const errInvalidParameter = 87.uint16
+      const errFileNotFound = 2.uint16
+      if lastError.int in 0..uint16.high.int and lastError.uint16 in {errInvalidParameter, errFileNotFound}:
         raiseOSError(lastError,
               "Requested command not found: '" & command & "'. OS error:")
       else:
@@ -883,24 +885,6 @@ when defined(windows) and not defined(useNimRtl):
       else:
         result = -1
       discard closeHandle(process)
-
-  proc select(readfds: var seq[Process], timeout = 500): int =
-    assert readfds.len <= MAXIMUM_WAIT_OBJECTS
-    var rfds: WOHandleArray
-    for i in 0..readfds.len()-1:
-      rfds[i] = readfds[i].outHandle #fProcessHandle
-
-    var ret = waitForMultipleObjects(readfds.len.int32,
-                                     addr(rfds), 0'i32, timeout.int32)
-    case ret
-    of WAIT_TIMEOUT:
-      return 0
-    of WAIT_FAILED:
-      raiseOSError(osLastError())
-    else:
-      var i = ret - WAIT_OBJECT_0
-      readfds.del(i)
-      return 1
 
   proc hasData*(p: Process): bool =
     var x: int32
@@ -1585,3 +1569,5 @@ proc execCmdEx*(command: string, options: set[ProcessOption] = {
 when defined(windows):
   proc osProcessHandle*(p: Process): Handle =
     return p.fProcessHandle
+
+{.pop.}
