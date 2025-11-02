@@ -9,6 +9,7 @@ const enableSystemClipboard* {.booldefine.}: bool = false
 const enableAst* {.booldefine.}: bool = false
 const enableOldPluginVersions* {.booldefine.}: bool = false
 const enableLibssh* {.booldefine.}: bool = false
+const enableDynamicPluginApi* {.booldefine.}: bool = false
 const copyWasmtimeDll* {.booldefine.}: bool = true
 const appName* {.strdefine.}: string = "nev"
 
