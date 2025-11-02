@@ -410,6 +410,46 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
   of "line-num":
     return @[(getArg(0, int, 0), 0).toSelection]
 
+  of "remove-empty":
+    result = newSeqOfCap[Selection](selections.len)
+    for s in selections:
+      if not s.isEmpty:
+        result.add s
+
+  of "align", "align-right":
+    var maxColumn = 0
+    for s in selections:
+      maxColumn = max(maxColumn, s.last.column)
+    return selections.mapIt((it.last.line, min(rope.lineRange(it.last.line, includeEol).len, maxColumn)).toSelection)
+
+  of "align-left":
+    var minColumn = int.high
+    for s in selections:
+      minColumn = min(minColumn, s.last.column)
+    return selections.mapIt((it.last.line, minColumn).toSelection)
+
+  of "split":
+    var total = 0
+    for s in selections:
+      total += (s.last.line - s.first.line).abs + 1
+    result = newSeqOfCap[Selection](total)
+    for s in selections:
+      if s.first.line == s.last.line:
+        result.add s
+      elif s.isBackwards:
+        result.add ((s.first.line, 0), s.first)
+        for line in countdown(s.first.line - 1, s.last.line + 1):
+          result.add ((line, 0), (line, rope.lineLen(line)))
+        result.add (s.last, (s.last.line, rope.lineLen(s.last.line)))
+      else:
+        result.add (s.first, (s.first.line, rope.lineLen(s.first.line)))
+        for line in (s.first.line + 1)..(s.last.line - 1):
+          result.add ((line, 0), (line, rope.lineLen(line)))
+        result.add ((s.last.line, 0), s.last)
+
+  of "line-start":
+    return selections.mapIt((it.last.line, 0).toSelection)
+
   of "line":
     return selections.mapIt(block:
       let lineLen = rope.lineLen(it.last.line)

@@ -133,24 +133,21 @@ when defined(windows):
 
 else:  # OS X & Linux
   import posix, tables, termios
-  import strutils, strformat
+  import strutils
+
+  proc kbhit*(): cint =
+    var tv: Timeval
+    tv.tv_sec = Time(0)
+    tv.tv_usec = 0
+
+    var fds: TFdSet
+    FD_ZERO(fds)
+    FD_SET(STDIN_FILENO, fds)
+    discard select(STDIN_FILENO+1, fds.addr, nil, nil, tv.addr)
+    return FD_ISSET(STDIN_FILENO, fds)
 
   proc consoleInit*()
   proc consoleDeinit*()
-
-  # Mouse
-  # https://de.wikipedia.org/wiki/ANSI-Escapesequenz
-  # https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Extended-coordinates
-  const
-    CSI = 0x1B.chr & 0x5B.chr
-    SET_BTN_EVENT_MOUSE = "1002"
-    SET_ANY_EVENT_MOUSE = "1003"
-    SET_SGR_EXT_MODE_MOUSE = "1006"
-    # SET_URXVT_EXT_MODE_MOUSE = "1015"
-    ENABLE = "h"
-    DISABLE = "l"
-    MouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{ENABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{ENABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{ENABLE}"
-    DisableMouseTrackAny = fmt"{CSI}?{SET_BTN_EVENT_MOUSE}{DISABLE}{CSI}?{SET_ANY_EVENT_MOUSE}{DISABLE}{CSI}?{SET_SGR_EXT_MODE_MOUSE}{DISABLE}"
 
   # Adapted from:
   # https://ftp.gnu.org/old-gnu/Manuals/glibc-2.2.3/html_chapter/libc_24.html#SEC499
@@ -200,11 +197,6 @@ else:  # OS X & Linux
 
   proc consoleDeinit() =
     nonblock(false)
-
-when defined(posix):
-  const
-    XtermColor    = "xterm-color"
-    Xterm256Color = "xterm-256color"
 
 proc checkInit() =
   if not gIllwillInitialised:
@@ -474,10 +466,11 @@ proc setTrueBackgroundColor*(color: Color) =
   ## Sets the terminal's background true color.
   stdout.write(ansiBackgroundColorCode(color))
 
-const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
-const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
-const ENABLE_LINE_INPUT = 0x0002
-const ENABLE_ECHO_INPUT = 0x0004
+when defined(windows):
+  const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+  const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
+  const ENABLE_LINE_INPUT = 0x0002
+  const ENABLE_ECHO_INPUT = 0x0004
 
 proc enableVirtualTerminalInput*() =
   ## Enables true color.

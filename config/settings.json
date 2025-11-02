@@ -967,5 +967,12 @@
         "explore-app-config": ["explore-files \"app://config\""],
         "explore-workspace-config": ["explore-files \"ws0://.nev\""],
         "explore-help": ["explore-files \"app://docs\""],
-    }
+    },
+
+    "plugin.vim.permissions": {
+        "commands": {
+            "allowAll": true,
+        },
+    },
+
 }

@@ -508,7 +508,9 @@ proc selection*(self: TextDocumentEditor): Selection =
 
 proc `selections=`*(self: TextDocumentEditor, selections: Selections, addToHistory: Option[bool] = bool.none) =
   let selections = self.clampAndMergeSelections(selections)
-  assert selections.len > 0, "[selections=] Empty selections"
+  if selections.len == 0:
+    log lvlWarn, "Trying to set empty selections, not allowed"
+    return
 
   if not self.dontRecordSelectionHistory:
     let addToHistory = addToHistory.get(self.selectionHistory.len == 0 or

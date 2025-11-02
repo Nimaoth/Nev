@@ -503,6 +503,8 @@
         "<C-g>o": ["move", "(reverse)"],
         "<C-l>": ["move", "(next-tab-stop)"],
         "<C-v>": ["move", "(prev-tab-stop)"],
+        "gu": ["move", "(align)", true, {"include-eol": false}],
+        "gb": ["move", "(remove-empty)"],
 
         // copy/paste
         "p": ["vim.paste", true, false, "vim.default-register"],
@@ -650,6 +652,8 @@
         // vcs
         "<LEADER>gy": ["stage-selected", true],
         "<LEADER>gr": ["revert-selected", true],
+
+        "gs": ["move", "(split)"],
     },
 
     "vim.visual-line": {
@@ -677,6 +681,7 @@
         // vcs
         "<LEADER>gy": ["stage-selected", true],
         "<LEADER>gr": ["revert-selected", true],
+        "gs": ["move", "(split)"]
     },
 
     "vim.replace": {
