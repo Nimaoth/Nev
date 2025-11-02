@@ -724,13 +724,11 @@ proc moveDirection(editor: TextEditor, move: string, direction: int) {.exposeAct
   let cursorSelector = editor.getSetting(editor.getContextWithMode("editor.text.cursor.movement"), sca.SelectionCursor.Both)
   if cursorSelector == sca.Last:
     move.add " (join)"
-  editor.setSelections editor.multiMove(editor.selections, move.ws, direction, wrap, includeEol = editor.vimState.cursorIncludeEol)
+  editor.setSelections editor.multiMove(editor.selections, move.ws, direction, false, includeEol = editor.vimState.cursorIncludeEol)
 
   if editor.vimState.selectLines:
     editor.selectLine()
   editor.scrollToCursor()
-  if updateTargetColumn:
-    editor.updateTargetColumn()
 
 proc moveCursorLineFirstChar(editor: TextEditor, direction: int, count: int = 1) {.exposeActive(editorContext).} =
   let count = if count == 0: 1 else: count
@@ -945,7 +943,7 @@ proc insertLineAbove(editor: TextEditor, move: string = "") {.exposeActive(edito
   editor.setSelections editor.multiMove(editor.getSelections, ws"line", 0, wrap=false, includeEol=true).mapIt(it.first.toSelection)
   editor.addNextCheckpoint ws"insert"
   editor.insertText ws("\n"), autoIndent=false
-  editor.moveDirection("line-up", 1, 1, false, false)
+  editor.moveDirection("line-up", 1)
   editor.setMode "vim.insert"
 
 proc setSearchQueryFromWord(editor: TextEditor) {.exposeActive(editorContext).} =
