@@ -29,6 +29,7 @@ when defined(windows):
   import std/winlean
 else:
   import std/posix
+  import std/strutils
 
 when defined(linux) and defined(useClone):
   import std/linux

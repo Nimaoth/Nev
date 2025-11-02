@@ -57,11 +57,6 @@ else:
   proc login_tty*(fd: cint): cint {.importc, header: "<utmp.h>", sideEffect.}
   proc eventfd(count: cuint, flags: cint): cint {.cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
 
-  const platformHeaders = """#include <sys/select.h>
-                             #include <sys/time.h>
-                             #include <sys/types.h>
-                             #include <unistd.h>"""
-
   var EFD_NONBLOCK {.importc: "EFD_NONBLOCK", header: "<sys/eventfd.h>".}: cint
   var TIOCSWINSZ {.importc: "TIOCSWINSZ", header: "<termios.h>".}: culong
 
