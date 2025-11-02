@@ -6,7 +6,7 @@ import layout
 import text/[text_editor, text_document]
 import render_view, view
 import platform/platform, platform_service
-import config_provider, command_service, command_service_api
+import config_provider, command_service, command_service_api, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 import lisp
@@ -1314,11 +1314,16 @@ type ReadChannel* = ReadChannelResource
 type WriteChannel* = WriteChannelResource
 type Process* = ProcessResource
 
-import plugin_api_dynamic
+when enableDynamicPluginApi:
+  import plugin_api_dynamic
 
-method dispatchDynamic*(self: PluginApi, name: string, args: LispVal, namedArgs: LispVal): LispVal =
-  try:
-    return dispatchDynamic(self.dynamicInstanceData.get().addr, name, args, namedArgs)
-  except CatchableError as e:
-    log lvlError, &"Failed to dispatchDynamic '{name}' {args}: {e.msg}"
-    return newNil()
+  method dispatchDynamic*(self: PluginApi, name: string, args: LispVal, namedArgs: LispVal): LispVal =
+    try:
+      if args != nil and args.kind notin {LispValKind.List, Array}:
+        raise newException(ValueError, &"'args' must be nil or a list/array")
+      if namedArgs != nil and namedArgs.kind != LispValKind.Map:
+        raise newException(ValueError, &"'namedArgs' must be nil or a list/array")
+      return dispatchDynamic(self.dynamicInstanceData.get().addr, name, args, namedArgs)
+    except CatchableError as e:
+      log lvlError, &"Failed to dispatchDynamic '{name}' {args}: {e.msg}"
+      return newNil()
