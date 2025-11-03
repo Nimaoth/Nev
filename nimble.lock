@@ -310,6 +310,16 @@
         "sha1": "8bccb6b02295a85eab30aeb8c411927680ca9192"
       }
     },
+    "malebolgia": {
+      "version": "1.3.2",
+      "vcsRevision": "ab17bef08e8e84fabc33e0b039b324438e1ce27b",
+      "url": "https://github.com/Araq/malebolgia",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "5259d27784981c9146c823157d06fbba0bcf6d99"
+      }
+    },
     "nimgen": {
       "version": "0.5.4",
       "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",

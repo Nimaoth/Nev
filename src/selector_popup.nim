@@ -41,6 +41,7 @@ type
     eventHandlers: Table[string,  EventHandler]
 
     viewMarkedDirtyHandle: Id
+    configChangedHandle: Id
 
     scale*: Vec2
     previewScale*: float = 0.5
@@ -61,6 +62,9 @@ type
 
     scope*: string
     title*: string
+
+    cachedFinderItems*: seq[FinderItem]
+    cachedScrollOffset*: int
 
 proc getSearchString*(self: SelectorPopup): string {.gcsafe, raises: [].}
 proc closed*(self: SelectorPopup): bool {.gcsafe, raises: [].}
@@ -88,9 +92,9 @@ proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: s
       self.finder.queries[1]
     else:
       self.finder.queries[0]
-    discard matchFuzzySublime(query, text, result, true, config)
+    discard matchFuzzy(query, text, result, true, config)
   else:
-    discard matchFuzzySublime(pattern, text, result, true, config)
+    discard matchFuzzy(pattern, text, result, true, config)
   self.completionMatchPositions[i] = result
 
 method initImpl*(self: SelectorPopup) {.gcsafe, raises: [].} =
@@ -98,6 +102,9 @@ method initImpl*(self: SelectorPopup) {.gcsafe, raises: [].} =
 
 method deinit*(self: SelectorPopup) {.gcsafe, raises: [].} =
   logScope lvlInfo, &"[deinit] Destroying selector popup"
+
+  let config = self.services.getService(ConfigService).get.runtime
+  config.onConfigChanged.unsubscribe(self.configChangedHandle)
 
   if self.finder.isNotNil:
     self.finder.deinit()
@@ -480,5 +487,12 @@ proc newSelectorPopup*(services: Services, scopeName = string.none, finder = Fin
     popup.finder = finder
     discard popup.finder.onItemsChanged.subscribe () => popup.handleItemsUpdated()
     popup.finder.setQuery("")
+
+  let config = services.getService(ConfigService).get.runtime
+  popup.configChangedHandle = config.onConfigChanged.subscribe proc(key: string) =
+    if popup.finder.isNil:
+      return
+    if key == "" or key == "finder" or key == "finder.scoring":
+      popup.finder.setQuery(popup.getSearchString())
 
   return popup

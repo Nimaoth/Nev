@@ -1,6 +1,6 @@
 import std/[algorithm, sequtils, strformat, strutils, tables, options, os, json, macros, sugar, streams, osproc, envvars]
 import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
-  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, generational_seq]
+  array_set, delayed_task, disposable_ref, regex, custom_unicode, jsonex, generational_seq, fuzzy_matching]
 import ui/node
 import scripting/[expose]
 import platform/[platform]
@@ -795,6 +795,49 @@ proc loadAppAndUserSettings(self: App) {.async: (raises: []).} =
 
 proc setupSessionAndWorkspace*(self: App) {.async.}
 
+proc setupConfigChangeHandlers(self: App) =
+  discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
+    if key == "" or key == "ui" or key == "ui.theme":
+      self.reloadThemeFromConfig = true
+    if key == "" or key == "ui" or key.startsWith("ui.font-family"):
+      self.applyFontSettings()
+    if key == "" or key == "ui" or key == "ui.vsync":
+      self.platform.setVsync(self.uiSettings.vsync.get)
+
+    if key == "" or key == "finder" or key == "finder.scoring":
+      finderFuzzyMatchConfig.stateScores[StartMatch] =
+         self.config.runtime.get("finder.scoring.start-match", finderFuzzyMatchConfig.stateScores[StartMatch])
+      finderFuzzyMatchConfig.stateScores[LeadingCharDiff] =
+         self.config.runtime.get("finder.scoring.leading-char-diff", finderFuzzyMatchConfig.stateScores[LeadingCharDiff])
+      finderFuzzyMatchConfig.stateScores[CharDiff] =
+         self.config.runtime.get("finder.scoring.char-diff", finderFuzzyMatchConfig.stateScores[CharDiff])
+      finderFuzzyMatchConfig.stateScores[CharMatch] =
+         self.config.runtime.get("finder.scoring.char-match", finderFuzzyMatchConfig.stateScores[CharMatch])
+      finderFuzzyMatchConfig.stateScores[ConsecutiveMatch] =
+         self.config.runtime.get("finder.scoring.consecutive-match", finderFuzzyMatchConfig.stateScores[ConsecutiveMatch])
+      finderFuzzyMatchConfig.stateScores[LeadingCharMatch] =
+         self.config.runtime.get("finder.scoring.leading-char-match", finderFuzzyMatchConfig.stateScores[LeadingCharMatch])
+      finderFuzzyMatchConfig.stateScores[WordBoundryMatch] =
+         self.config.runtime.get("finder.scoring.word-boundry-match", finderFuzzyMatchConfig.stateScores[WordBoundryMatch])
+      finderFuzzyMatchConfig.stateScores[PatternOversize] =
+         self.config.runtime.get("finder.scoring.pattern-oversize", finderFuzzyMatchConfig.stateScores[PatternOversize])
+      finderFuzzyMatchConfig.stateScores[MatchPercentage] =
+         self.config.runtime.get("finder.scoring.match-percentage", finderFuzzyMatchConfig.stateScores[MatchPercentage])
+      finderFuzzyMatchConfig.stateScores[CaseMismatch] =
+         self.config.runtime.get("finder.scoring.case-mismatch", finderFuzzyMatchConfig.stateScores[CaseMismatch])
+      finderFuzzyMatchConfig.stateScores[UpperCaseMatch] =
+         self.config.runtime.get("finder.scoring.upper-case-match", finderFuzzyMatchConfig.stateScores[UpperCaseMatch])
+      finderFuzzyMatchConfig.matchPercentagePower =
+         self.config.runtime.get("finder.scoring.match-percentage-power", finderFuzzyMatchConfig.matchPercentagePower)
+      # finderFuzzyMatchConfig.ignoredChars =
+      #    self.config.runtime.get("finder.scoring.ignored-chars", finderFuzzyMatchConfig.ignoredChars)
+      finderFuzzyMatchConfig.maxRecursionLevel =
+         self.config.runtime.get("finder.scoring.max-recursion-level", finderFuzzyMatchConfig.maxRecursionLevel)
+      finderFuzzyMatchConfig.timeoutMs =
+         self.config.runtime.get("finder.scoring.timeout-ms", finderFuzzyMatchConfig.timeoutMs)
+      finderFuzzyMatchConfig.useDiff =
+         self.config.runtime.get("finder.scoring.use-diff", finderFuzzyMatchConfig.useDiff)
+
 proc newApp*(backend: api.Backend, platform: Platform, services: Services, options = AppOptions()): App =
   var self = App()
 
@@ -924,13 +967,7 @@ proc newApp*(backend: api.Backend, platform: Platform, services: Services, optio
       asyncSpawn self.loadConfigFrom(homeConfigDir, "home", changedFiles)
     )
 
-  discard self.config.runtime.onConfigChanged.subscribe proc(key: string) =
-    if key == "" or key == "ui" or key == "ui.theme":
-      self.reloadThemeFromConfig = true
-    if key == "" or key == "ui" or key.startsWith("ui.font-family"):
-      self.applyFontSettings()
-    if key == "" or key == "ui" or key == "ui.vsync":
-      self.platform.setVsync(self.uiSettings.vsync.get)
+  self.setupConfigChangeHandlers()
 
   # if self.runtime.get("command-server.port", Port.none).getSome(port):
   #   asyncSpawn self.listenForConnection(port)
@@ -1123,25 +1160,25 @@ proc enableDebugPrintAsyncAwaitStackTrace*(self: App, enable: bool) {.expose("ed
   when defined(debugAsyncAwaitMacro):
     debugPrintAsyncAwaitStackTrace = enable
 
-proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
-  if self.layout.popups.len == 0:
-    return
+# proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
+#   if self.layout.popups.len == 0:
+#     return
 
-  let popup = self.layout.popups[self.layout.popups.high]
-  if not (popup of SelectorPopup):
-    log lvlError, &"Not a selector popup"
-    return
+#   let popup = self.layout.popups[self.layout.popups.high]
+#   if not (popup of SelectorPopup):
+#     log lvlError, &"Not a selector popup"
+#     return
 
-  let selector = popup.SelectorPopup
-  if selector.textEditor.isNil or selector.finder.isNil or selector.finder.filteredItems.isNone:
-    return
+#   let selector = popup.SelectorPopup
+#   if selector.textEditor.isNil or selector.finder.isNil or selector.finder.filteredItems.isNone:
+#     return
 
-  let list = selector.finder.filteredItems.get
-  var items = newSeqOfCap[FinderItem](list.len)
-  for i in 0..<list.len:
-    items.add list[i]
+#   let list = selector.finder.filteredItems.get
+#   var items = newSeqOfCap[FinderItem](list.len)
+#   for i in 0..<list.len:
+#     items.add list[i]
 
-  self.setLocationList(items, selector.previewer.clone())
+#   self.setLocationList(items, selector.previewer.clone())
 
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
@@ -1542,19 +1579,8 @@ proc newWorkspaceFilesDataSource(workspace: Workspace): WorkspaceFilesDataSource
   result.workspace = workspace
 
 proc handleCachedFilesUpdated(self: WorkspaceFilesDataSource) =
-  var list = newItemList(self.workspace.cachedFiles.len)
-
-  for i in 0..self.workspace.cachedFiles.high:
-    let path = self.workspace.cachedFiles[i]
-    let (root, relPath) = self.workspace.getRelativePathAndWorkspaceSync(path).get(("", path))
-    let (dir, name) = relPath.splitPath
-    list[i] = FinderItem(
-      displayName: name,
-      details: @[root // dir],
-      data: path,
-    )
-
-  self.onItemsChanged.invoke list
+  if self.workspace.cachedFiles.isSome:
+    self.onItemsChanged.invoke(self.workspace.cachedFiles.get)
 
 method close*(self: WorkspaceFilesDataSource) =
   if self.onWorkspaceFileCacheUpdatedHandle.getSome(handle):
@@ -3119,7 +3145,7 @@ genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
 
 proc toStringResult(res: Option[JsonNode]): Option[string] =
-  return res.flatmapIt(if it == nil or it.kind == JNull: string.none else: some($it))
+  return res.flatmapIt(if it == nil: string.none elif it.kind == JNull: "".some else: some($it))
 
 proc defaultHandleCommand*(self: App, command: string): Option[string] =
   var (action, arg) = command.parseAction

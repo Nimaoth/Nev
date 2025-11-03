@@ -101,11 +101,12 @@ type
     len: int
 
   Operation[T] = object
-    old: Range[int]
-    items: seq[T]
+    old*: Range[int]
+    new*: Range[int]
+    items*: seq[T]
 
   Diff[T] = object
-    ops: seq[Operation[T]]
+    ops*: seq[Operation[T]]
 
   RopeEdit*[T] = tuple
     old: Range[T]
@@ -116,8 +117,10 @@ type
     edits*: seq[RopeEdit[T]]
 
   SeqCursor[T] = object
-    data: seq[T]
+    data: ptr UncheckedArray[T]
+    dataLen: int
     index: int
+    eq: proc(a, b: T): bool {.gcsafe, raises: [].}
 
   RuneCursor = object
     data: ptr UncheckedArray[char]
@@ -127,12 +130,16 @@ type
   RopeCursorWrapper = object
     cursor: RopeSliceCursor[int, int]
 
-proc len(c: SeqCursor): int = c.data.len
+proc len(c: SeqCursor): int = c.dataLen
 proc current[T](c: SeqCursor[T]): lent T = c.data[c.index]
 proc next[T](c: var SeqCursor[T]) = inc(c.index)
 proc prev[T](c: var SeqCursor[T]) = dec(c.index)
 proc seek[T](c: var SeqCursor[T], index: int) = c.index = index
-proc slice[T](c: SeqCursor[T], first: int, last: int): seq[T] = c.data[first..<last]
+proc slice[T](c: SeqCursor[T], first: int, last: int): seq[T] = @(c.data.toOpenArray(first, last - 1))
+proc compare[T](self: SeqCursor[T], a, b: T): bool =
+  if self.eq != nil:
+    return self.eq(a, b)
+  return a == b
 
 proc len(c: RuneCursor): int = c.len
 proc current[T](c: RuneCursor): lent T = c.data.toOpenArray(0, c.len - 1).runeAt(c.index)
@@ -140,6 +147,9 @@ proc next[T](c: var RuneCursor) = c.index = c.data.toOpenArray(0, c.len - 1).nex
 proc prev[T](c: var RuneCursor) = c.index = c.data.toOpenArray(0, c.len - 1).runeStart(c.index - 1)
 proc seek[T](c: var RuneCursor, index: int) = c.index = index
 # proc slice[T](c: RuneCursor, first: int, last: int): seq[T] = c.data[first..<last]
+proc compare[T](self: RuneCursor, a, b: T): bool =
+  return a == b
+
 
 proc `=copy`*(a: var RopeCursorWrapper, b: RopeCursorWrapper) {.error.}
 proc `=dup`*(a: RopeCursorWrapper): RopeCursorWrapper {.error.}
@@ -154,6 +164,8 @@ proc seek(c: var RopeCursorWrapper, index: int) =
     c.cursor.resetCursor()
   c.cursor.seekForward(index)
 proc slice(c: RopeCursorWrapper, first, last: int): RopeSlice[int] = c.cursor.ropeSlice.slice(first...last)
+proc compare[T](self: RopeCursorWrapper, a, b: T): bool =
+  return a == b
 
 proc clone*[T](diff: RopeDiff[T]): RopeDiff[T] =
   result.edits.setLen(diff.edits.len)
@@ -201,7 +213,7 @@ proc sms[T, C1, C2](dataA: var DiffData[T, C1], lowerA, upperA: int, dataB: var 
       if x < upperA and y < upperB:
         dataA.data.seek(x)
         dataB.data.seek(y)
-        while x < upperA and y < upperB and dataA.data.current() == dataB.data.current():
+        while x < upperA and y < upperB and dataA.data.compare(dataA.data.current(), dataB.data.current()):
           inc x
           inc y
           dataA.data.next()
@@ -238,7 +250,7 @@ proc sms[T, C1, C2](dataA: var DiffData[T, C1], lowerA, upperA: int, dataB: var 
       if x > lowerA and y > lowerB:
         dataA.data.seek(x - 1)
         dataB.data.seek(y - 1)
-        while x > lowerA and y > lowerB and dataA.data.current() == dataB.data.current():
+        while x > lowerA and y > lowerB and dataA.data.compare(dataA.data.current(), dataB.data.current()):
           # echo x, ", ", y, ", ", lowerA, ", ", lowerB
           dec x
           dec y
@@ -271,7 +283,7 @@ proc lcs[T, C1, C2](dataA: var DiffData[T, C1], lowerA, upperA: int, dataB: var 
   if lowerA < upperA and lowerB < upperB:
     dataA.data.seek(lowerA)
     dataB.data.seek(lowerB)
-    while lowerA < upperA and lowerB < upperB and dataA.data.current() == dataB.data.current():
+    while lowerA < upperA and lowerB < upperB and dataA.data.compare(dataA.data.current(), dataB.data.current()):
       inc lowerA
       inc lowerB
       dataA.data.next()
@@ -285,7 +297,7 @@ proc lcs[T, C1, C2](dataA: var DiffData[T, C1], lowerA, upperA: int, dataB: var 
   if lowerA < upperA and lowerB < upperB:
     dataA.data.seek(upperA - 1)
     dataB.data.seek(upperB - 1)
-    while lowerA < upperA and lowerB < upperB and dataA.data.current() == dataB.data.current():
+    while lowerA < upperA and lowerB < upperB and dataA.data.compare(dataA.data.current(), dataB.data.current()):
       dec upperA
       dec upperB
       if lowerA == upperA or lowerB == upperB:
@@ -318,9 +330,15 @@ proc lcs[T, C1, C2](dataA: var DiffData[T, C1], lowerA, upperA: int, dataB: var 
 
     lcs(dataA, x, upperA, dataB, y, upperB, downVector, upVector, cancel, enableCancel)
 
-proc diff*[T](a, b: openArray[T]): Diff[T] =
-  var dataA = initDiffData[T, SeqCursor[T]](SeqCursor[T](data: @a))
-  var dataB = initDiffData[T, SeqCursor[T]](SeqCursor[T](data: @b))
+template data[T](a: openArray[T]): ptr UncheckedArray[T] =
+  if a.len > 0:
+    cast[ptr UncheckedArray[T]](a[0].addr)
+  else:
+    nil
+
+proc diff*[T](a, b: openArray[T], eq: proc(a, b: T): bool {.gcsafe, raises: [].} = nil): Diff[T] =
+  var dataA = initDiffData[T, SeqCursor[T]](SeqCursor[T](data: a.data, dataLen: a.len, eq: eq))
+  var dataB = initDiffData[T, SeqCursor[T]](SeqCursor[T](data: b.data, dataLen: b.len, eq: eq))
   let max = a.len + b.len + 1
   var downVector = newSeq[int](max * 2 + 2)
   var upVector = newSeq[int](max * 2 + 2)

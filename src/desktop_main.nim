@@ -275,6 +275,7 @@ import language_server_paths
 import language_server_regex
 import scripting/expose
 import config_provider
+import vcs/vcs_api
 {.pop.}
 
 defineSetAllDefaultSettings()

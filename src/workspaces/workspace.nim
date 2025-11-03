@@ -1,6 +1,8 @@
 import std/[json, options, os, strutils, sequtils]
+import malebolgia
 import misc/[custom_async, id, util, regex, custom_logger, event, timer, async_process]
 import vfs, vfs_service, service, compilation_config
+import finder/finder
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -16,6 +18,12 @@ type
     files*: seq[string]
     folders*: seq[string]
 
+  Directory = object
+    name: string
+    totalFiles: int
+    children: seq[Directory]
+    files: seq[string]
+
   SearchResult* = object
     path*: string
     line*: int
@@ -28,7 +36,8 @@ type
     additionalPaths*: seq[string]
     id*: Id
     ignore*: Globs
-    cachedFiles*: seq[string]
+    cachedFiles*: Option[ItemList]
+
     onCachedFilesUpdated*: Event[void]
     onWorkspaceFolderAdded*: Event[string]
     onWorkspaceFolderRemoved*: Event[string]
@@ -63,35 +72,75 @@ proc settings*(self: Workspace): JsonNode =
 
 proc clearDirectoryCache*(self: Workspace) = discard
 
-proc collectFiles(dir: string, ignore: Globs, files: var seq[string]) =
-  if ignore.ignorePath(dir):
-    return
-
+proc scanDirectoryImpl(path: string, ignore: ptr Globs): Directory {.gcsafe, raises: [].} =
   try:
-    for (kind, path) in walkDir(dir, relative=false):
-      let pathNorm = path.normalizePathUnix
-      case kind
-      of pcFile:
-        if ignore.ignorePath(pathNorm):
-          continue
+    result.name = path
+    var m = createMaster()
+    for kind, filePath in walkDir(path, relative = true):
+      if ignore[].ignorePath(path & "/" & filePath):
+        continue
 
-        files.add pathNorm
-      of pcDir:
-        collectFiles(pathNorm, ignore, files)
-      else:
-        discard
+      if kind == pcFile:
+        result.files.add(filePath)
+        result.totalFiles += 1
+      elif kind == pcDir:
 
-  except OSError:
+        result.children.add(Directory(name: filePath))
+
+    m.awaitAll:
+      for i in 0..result.children.high:
+        m.spawn scanDirectoryImpl(path & "/" & result.children[i].name, ignore) -> result.children[i]
+
+    for c in result.children:
+      result.totalFiles += c.totalFiles
+  except CatchableError:
     discard
 
+proc scanDirectory*(path: string, ignore: ptr Globs): Directory =
+  return scanDirectoryImpl(path, ignore)
+
+proc collectFiles(dir: Directory, files: var openArray[FinderItem], startIndex: int) =
+  # for f in dir.files:
+  #   files.add dir.name & "/" & f
+  # for i in 0..self.workspace.cachedFiles.high:
+  for i, fileName in dir.files:
+    let path = dir.name & "/" & fileName
+    # if absolutePath.startsWith(self.path):
+    #   return ("ws0://", absolutePath.relativePath(self.path, '/').normalizePathUnix).some
+    # let (root, relPath) = self.workspace.getRelativePathAndWorkspaceSync(path).get(("", path))
+    # let (dir, name) = relPath.splitPath
+    files[startIndex + i] = FinderItem(
+      displayName: fileName,
+      details: @[dir.name],
+      data: path,
+    )
+
+  var startIndex = startIndex + dir.files.len
+  for c in dir.children:
+    c.collectFiles(files, startIndex)
+    startIndex += c.totalFiles
+
 proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
-    tuple[files: seq[string], time: float] =
+    tuple[files: ItemList, time: float] =
   try:
     let t = startTimer()
 
-    for path in args.roots:
-      collectFiles(path, args.ignore, result.files)
+    var m = createMaster()
+    var dirs = newSeq[Directory](args.roots.len)
+    m.awaitAll:
+      for i in 0..args.roots.high:
+        m.spawn scanDirectory(args.roots[i], args.ignore.addr) -> dirs[i]
 
+    var totalFiles = 0
+    for d in dirs:
+      totalFiles += d.totalFiles
+    var files = newSeq[FinderItem](totalFiles)
+    var startIndex = 0
+    for d in dirs:
+      d.collectFiles(files, startIndex)
+      startIndex += d.totalFiles
+
+    result.files = newItemList(files.ensureMove)
     result.time = t.elapsed.ms
   except:
     discard
@@ -109,13 +158,15 @@ proc recomputeFileCacheAsync(self: Workspace): Future[void] {.async.} =
     let res = spawnAsync(collectFilesThread, args).await
     log lvlInfo, fmt"[recomputeFileCacheAsync] Found {res.files.len} files in {res.time}ms"
 
-    self.cachedFiles = res.files
+    self.cachedFiles = res.files.some
     self.onCachedFilesUpdated.invoke()
   except CancelledError:
     discard
 
 proc recomputeFileCache*(self: Workspace) =
+  logScope lvlInfo, &"recomputeFileCache"
   asyncSpawn self.recomputeFileCacheAsync()
+
 
 proc getWorkspacePath*(self: Workspace): string =
   try:

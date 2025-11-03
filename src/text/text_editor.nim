@@ -3195,7 +3195,7 @@ proc updateCompletionMatches(self: TextDocumentEditor, completionIndex: int): Fu
   let label = self.completions[index].item.label
 
   var matches = newSeqOfCap[int](filterText.len)
-  discard matchFuzzySublime(filterText, label, matches, true, defaultCompletionMatchingConfig)
+  discard matchFuzzy(filterText, label, matches, true, defaultCompletionMatchingConfig)
 
   self.completionMatchPositions[index] = matches
   if self.showCompletions:

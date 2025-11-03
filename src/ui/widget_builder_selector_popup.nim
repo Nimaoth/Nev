@@ -21,8 +21,9 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
     seq[OverlayFunction] =
 
   let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  let highlightColor = app.themes.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
   let name = item.displayName
-  let matchIndices = self.getCompletionMatches(i, self.getSearchString(), name, defaultPathMatchingConfig)
+  let matchIndices = self.getCompletionMatches(i, self.getSearchString(), name, defaultCompletionMatchingConfig)
 
   builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}):
     discard builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
@@ -63,6 +64,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
     absolute(scale.x * builder.currentParent.boundsActual.w),
     absolute(scale.y * builder.currentParent.boundsActual.h))
 
+  let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let backgroundColor = app.themes.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
   let selectionColor = app.themes.theme.color("list.activeSelectionBackground",
     color(0.8, 0.8, 0.8)).withAlpha(1)
@@ -98,38 +100,46 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder, app)
 
-          if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
+            builder.panel(&{FillX, FillY, LayoutHorizontalReverse}):
+              if self.finder.isNotNil and self.finder.filteredItems.getSome(items):
+                let text = &"{items.filteredLen}/{items.len}"
+                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0))
+              if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.locked:
+                builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = "...", textColor = textColor, pivot = vec2(1, 0))
 
-            let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-            let highlightColor = textColor.lighten(0.15)
+          if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.filteredLen > 0:
+            let highlightColor = app.themes.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
             let detailColor = textColor.darken(0.2)
 
             var rows: seq[seq[UINode]] = @[]
-
             builder.panel(&{FillX, LayoutVertical} + yFlag):
-              let nextKeyHeight = whichKeyHeight.float * builder.textHeight
-              let maxLineCount = max(floor((bounds.h - nextKeyHeight) / totalLineHeight).int - 1, 1)
-              let targetNumRenderedItems = min(maxLineCount, items.filteredLen)
-              var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
+              if not items.locked:
+                let nextKeyHeight = whichKeyHeight.float * builder.textHeight
+                let maxLineCount = max(floor((bounds.h - nextKeyHeight) / totalLineHeight).int - 1, 1)
+                let targetNumRenderedItems = min(maxLineCount, items.filteredLen)
+                var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
 
-              if self.selected < self.scrollOffset:
-                self.scrollOffset = self.selected
-                lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
+                if self.selected < self.scrollOffset:
+                  self.scrollOffset = self.selected
+                  lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
 
-              if self.selected > lastRenderedIndex:
-                self.scrollOffset = max(self.selected - targetNumRenderedItems + 1, 0)
-                lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
+                if self.selected > lastRenderedIndex:
+                  self.scrollOffset = max(self.selected - targetNumRenderedItems + 1, 0)
+                  lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.filteredLen - 1)
 
-              assert self.scrollOffset >= 0
-              assert self.scrollOffset < items.filteredLen
+                assert self.scrollOffset >= 0
+                assert self.scrollOffset < items.filteredLen
 
-              assert lastRenderedIndex >= 0
-              assert lastRenderedIndex < items.filteredLen
+                assert lastRenderedIndex >= 0
+                assert lastRenderedIndex < items.filteredLen
 
-              var widgetIndex = 0
-              for completionIndex in self.scrollOffset..lastRenderedIndex:
-                defer: inc widgetIndex
+                self.cachedFinderItems.setLen(0)
+                for completionIndex in self.scrollOffset..lastRenderedIndex:
+                  self.cachedFinderItems.add items[completionIndex]
+                self.cachedScrollOffset = self.scrollOffset
 
+              for i, item in self.cachedFinderItems:
+                let completionIndex = self.cachedScrollOffset + i
                 let fillBackgroundFlag = if completionIndex == self.selected:
                   &{FillBackground}
                 else:
@@ -145,13 +155,13 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
 
                   let name = item.displayName
                   let matchIndices = self.getCompletionMatches(
-                    completionIndex, self.getSearchString(), name, defaultPathMatchingConfig)
+                    completionIndex, self.getSearchString(), name, defaultCompletionMatchingConfig)
 
                   var row: seq[UINode] = @[]
 
                   builder.panel(&{FillX, SizeToContentY}):
                     if app.config.runtime.get("ui.selector.show-score", false):
-                      row.add builder.createTextWithMaxWidth($item.score, maxColumnWidth, "...", detailColor, &{TextItalic})
+                      row.add builder.createTextWithMaxWidth($(item.score * 100), maxColumnWidth, "...", detailColor, &{TextItalic})
 
                     row.add builder.highlightedText(name, matchIndices, textColor,
                       highlightColor, maxDisplayNameWidth)

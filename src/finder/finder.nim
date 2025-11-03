@@ -1,7 +1,11 @@
 import std/[algorithm, sugar, strutils]
 import misc/[regex, timer, fuzzy_matching, util, custom_async, event, id, custom_logger]
+import malebolgia
+import nimsumtree/arc
 
 logCategory "finder"
+
+var finderFuzzyMatchConfig* = FuzzyMatchConfig(ignoredChars: {' '})
 
 type
   FinderItem* = object
@@ -14,11 +18,13 @@ type
     filtered*: bool
 
 type
-  ItemList* = object
-    len: int = 0
-    cap: int = 0
+  ItemListData* = object
     filtered*: int = 0
-    data: ptr UncheckedArray[FinderItem] = nil
+    locked*: bool
+    items*: seq[FinderItem]
+
+  ItemList* = object
+    data: Arc[ItemListData]
 
 type
   DataSource* = ref object of RootObj
@@ -46,123 +52,66 @@ type
 method close*(self: DataSource) {.base, gcsafe, raises: [].} = discard
 method setQuery*(self: DataSource, query: string) {.base, gcsafe, raises: [].} = discard
 
-var allocated = 0
-
 proc cmp*(a, b: FinderItem): int = cmp(a.score, b.score)
 proc `<`*(a, b: FinderItem): bool = a.score < b.score
 
 var itemListPool = newSeq[ItemList]()
 proc newItemList*(len: int): ItemList {.gcsafe, raises: [].} =
-  {.gcsafe.}:
-    if itemListPool.len > 0:
-      result = itemListPool.pop
-      if result.cap < len:
-        result.data = cast[ptr UncheckedArray[FinderItem]](
-          realloc0(result.data.pointer, sizeof(FinderItem) * result.cap, sizeof(FinderItem) * len))
-        result.cap = len
+  return ItemList(data: Arc[ItemListData].new(ItemListData(items: newSeq[FinderItem](len))))
 
-      result.len = len
-      return
+proc newItemList*(items: sink seq[FinderItem]): ItemList =
+  return ItemList(data: Arc[ItemListData].new(ItemListData(items: items.ensureMove)))
 
-  result = ItemList(len: len, cap: len)
-  if len > 0:
-    result.data = cast[ptr UncheckedArray[FinderItem]](alloc0(sizeof(FinderItem) * len))
+func high*(list: ItemList): int = list.data.get.items.high
+func len*(list: ItemList): int = list.data.get.items.len
+func filteredLen*(list: ItemList): int = list.len - list.data.get.filtered
+proc locked*(list: ItemList): bool = list.data.get.locked
+proc filtered*(list: ItemList): int = list.data.get.filtered
 
-  allocated += len
-
-func high*(list: ItemList): int = list.len - 1
-func len*(list: ItemList): int = list.len
-func filteredLen*(list: ItemList): int = list.len - list.filtered
-
-proc free*(list: ItemList) =
-  if not list.data.isNil:
-    allocated -= list.len
-
-    for i in 0..<list.len:
-      `=destroy`(list.data[i])
-    dealloc(list.data)
-
-proc pool*(list: ItemList) {.gcsafe.} =
-  {.gcsafe.}:
-    if itemListPool.len > 5:
-      list.free()
-
-    else:
-      var list = list
-      if list.cap > 0:
-        for i in 0..<list.len:
-          list.data[i] = FinderItem()
-
-      list.len = 0
-      list.filtered = 0
-      {.gcsafe.}:
-        itemListPool.add list
+proc mdata*(list: var ItemList): var ItemListData =
+  return list.data.getMut
 
 proc setLen*(list: var ItemList, newLen: int) =
   assert newLen >= 0
   assert newLen <= list.len
-  list.len = newLen
-
-proc clone*(list: ItemList): ItemList =
-  result = newItemList(list.len)
-  for i in 0..<list.len:
-    result.data[i] = list.data[i]
+  list.data.getMut.items.setLen(newLen)
 
 proc `[]=`*(list: var ItemList, i: int, item: sink FinderItem) =
   assert i >= 0
   assert i < list.len
-  list.data[i] = item
+  list.data.getMut.items[i] = item.ensureMove
 
 proc `[]`*(list: ItemList, i: int): lent FinderItem =
   assert i >= 0
   assert i < list.len
-  list.data[i]
+  list.data.get.items[i]
 
 proc `[]`*(list: var ItemList, i: int): var FinderItem =
   assert i >= 0
   assert i < list.len
-  list.data[i]
+  list.data.getMut.items[i]
 
 template items*(list: ItemList): openArray[FinderItem] =
   # assert not list.data.isNil
-  toOpenArray(list.data, 0, list.len - 1)
+  list.data.get.items
 
-proc reverse*(list: ItemList) =
-  var x = 0
-  var y = list.len - 1
-  while x < y:
-    swap(list.data[x], list.data[y])
-    dec(y)
-    inc(x)
-
-func sort*(list: ItemList, cmp: proc (x, y: FinderItem): int {.closure.},
+func sort(list: var ItemList, cmp: proc (x, y: FinderItem): int {.closure.},
            order = SortOrder.Descending) {.effectsOf: cmp.} =
-  var list = list
-  toOpenArray(list.data, 0, list.len - 1).sort(cmp, order)
+  list.data.getMutUnsafe.items.sort(cmp, order)
 
-proc sort*(list: ItemList, order = SortOrder.Descending) =
-  var list = list
-  toOpenArray(list.data, 0, list.len - 1).sort(order)
-
-proc newItemList*(items: seq[FinderItem]): ItemList =
-  result = newItemList(items.len)
-  for i, item in items:
-    result[i] = item
+proc sort(list: var ItemList, order = SortOrder.Descending) =
+  list.data.getMutUnsafe.items.sort(order)
 
 proc deinit*(finder: Finder) {.gcsafe, raises: [].} =
   if finder.source.isNotNil:
     finder.source.close()
   finder.source = nil
-  if finder.filteredItems.getSome(list):
-    list.pool()
   finder.filteredItems = ItemList.none
 
 proc `=destroy`*(finder: typeof(Finder()[])) =
   if finder.source.isNotNil:
     finder.source.close()
   `=destroy`(finder.queries)
-  if finder.filteredItems.getSome(list):
-    list.pool()
 
 proc handleItemsChanged(self: Finder, list: ItemList) {.gcsafe, raises: [].}
 
@@ -183,14 +132,47 @@ type FilterAndSortResult = object
   totalTime: float
   filtered: int
 
-proc filterAndSortItemsThread(args: tuple[queries: seq[string], list: ItemList, sort: bool, minScore: float, skipFirstQuery: bool]): FilterAndSortResult {.gcsafe.} =
+proc parallelForChunk[T, C](items: ptr UncheckedArray[T], first: int, last: int, ctx: C, cb: proc(index: int, item: var T, ctx: C) {.nimcall, gcsafe, raises: [].}) =
+  for i in first..<last:
+    cb(i, items[i], ctx)
+
+proc parallelFor[T, C](items: openArray[T], chunkSize: int, ctx: C, cb: proc(index: int, item: var T, ctx: C) {.nimcall, gcsafe, raises: [].}) =
+  var numChunks = items.len div chunkSize
+  if numChunks * chunkSize < items.len:
+    inc numChunks
+  var m = createMaster()
+  m.awaitAll:
+    var start = 0
+    while start < items.len:
+      let len = min(chunkSize, items.len - start)
+      m.spawn parallelForChunk[T, C](cast[ptr UncheckedArray[T]](items[0].addr), start, start + len, ctx, cb)
+      start += chunkSize
+
+type FilterAndSortArgs = tuple[queries: seq[string], list: ItemList, sort: bool, minScore: float, skipFirstQuery: bool]
+
+proc applyFuzzyFilter(index: int, item: var FinderItem, ctx: tuple[firstQueryIndex: int, queryIndex: int, args: ptr FilterAndSortArgs]) {.nimcall.} =
+  if item.filtered:
+    return
+  if ctx.queryIndex == ctx.firstQueryIndex:
+    if item.filterText.len > 0:
+      item.score = matchFuzzy(ctx.args.queries[ctx.queryIndex], item.filterText, finderFuzzyMatchConfig).score.float
+    else:
+      item.score = matchFuzzy(ctx.args.queries[ctx.queryIndex], item.displayName, finderFuzzyMatchConfig).score.float
+  else:
+    let detailIndex = (ctx.queryIndex - 1) - ctx.firstQueryIndex
+    if detailIndex in 0..item.details.high:
+      item.score = matchFuzzy(ctx.args.queries[ctx.queryIndex], item.details[detailIndex], finderFuzzyMatchConfig).score.float
+    else:
+      item.score = matchFuzzy(ctx.args.queries[ctx.queryIndex], "", finderFuzzyMatchConfig).score.float
+
+proc filterAndSortItemsThread(args: FilterAndSortArgs): FilterAndSortResult {.gcsafe.} =
   try:
     var list = args.list
     let scoreTimer = startTimer()
     if list.len > 0:
       result.filtered = 0
 
-      for i, item in list.items.mpairs:
+      for i, item in list.data.getMutUnsafe.items.mpairs:
         item.filtered = false
         if item.originalIndex.isNone:
           item.originalIndex = i.some
@@ -203,26 +185,16 @@ proc filterAndSortItemsThread(args: tuple[queries: seq[string], list: ItemList, 
       while queryIndex < args.queries.len:
         var minScore = float.high
         var maxScore = float.low
-        for i, item in list.items.mpairs:
+
+        parallelFor list.data.getMutUnsafe.items, 512, (firstQueryIndex, queryIndex, args.addr), applyFuzzyFilter
+
+        for i, item in list.data.getMutUnsafe.items.mpairs:
           if item.filtered:
             continue
-          let filterText = if queryIndex == firstQueryIndex:
-            if item.filterText.len > 0:
-              item.filterText
-            else:
-              item.displayName
-          else:
-            let detailIndex = (queryIndex - 1) - firstQueryIndex
-            if detailIndex in 0..item.details.high:
-              item.details[detailIndex]
-            else:
-              ""
-
-          item.score = matchFuzzySublime(args.queries[queryIndex], filterText, defaultCompletionMatchingConfig).score.float
           maxScore = max(maxScore, item.score)
           minScore = min(minScore, item.score)
 
-        for item in list.items.mitems:
+        for i, item in list.data.getMutUnsafe.items.mpairs:
           if item.filtered:
             continue
           if item.score > 0:
@@ -257,10 +229,21 @@ proc filterAndSortItemsThread(args: tuple[queries: seq[string], list: ItemList, 
   except:
     discard
 
-proc filterAndSortItems(self: Finder, list: ItemList): Future[void] {.async.} =
+proc filterAndSortItems(self: Finder, items: sink ItemList): Future[void] {.async.} =
   assert self.queries.len > 0
 
   let versions = (query: self.queryVersion, items: self.itemsVersion)
+
+  while items.data.getMutUnsafe.locked:
+    await sleepAsync(5.milliseconds)
+
+  if self.queryVersion != versions.query:
+    # Query was updated after spawning this filter and sort, so discard the result
+    return
+
+  items.data.getMutUnsafe.locked = true
+  defer:
+    items.data.getMutUnsafe.locked = false
 
   if versions == self.lastTriggeredFilterVersions:
     # already triggered a filter and search for current query and items
@@ -268,27 +251,20 @@ proc filterAndSortItems(self: Finder, list: ItemList): Future[void] {.async.} =
 
   self.lastTriggeredFilterVersions = versions
 
-  # todo: filter and sort on main thread if amount < threshold
-  var filterResult = spawnAsync(filterAndSortItemsThread, (self.queries, list, self.sort, self.minScore, self.skipFirstQuery)).await
+  var filterResult = spawnAsync(filterAndSortItemsThread, (self.queries, items, self.sort, self.minScore, self.skipFirstQuery)).await
 
   # debugf"[filterAndSortItems] -> {versions}, {filterResult.scoreTime}ms, {filterResult.sortTime}ms, {filterResult.totalTime}ms"
 
   if self.itemsVersion != versions.items:
     # Items were updated after spawning this filter and sort, so discard the result
-    list.pool()
     return
 
-  if self.filteredItems.getSome(list):
-    list.pool()
-
-  var list = list
-  list.filtered = filterResult.filtered
-  self.filteredItems = list.some
+  items.data.getMutUnsafe.filtered = filterResult.filtered
+  self.filteredItems = items.some
   self.onItemsChanged.invoke()
 
 proc handleItemsChanged(self: Finder, list: ItemList) =
   if self.source.isNil:
-    list.pool()
     return
 
   inc self.itemsVersion
@@ -296,8 +272,6 @@ proc handleItemsChanged(self: Finder, list: ItemList) =
   if self.filterAndSort and self.queries.len > 0:
     asyncSpawn self.filterAndSortItems(list)
   else:
-    if self.filteredItems.getSome(list):
-      list.pool()
     self.filteredItems = list.some
     self.onItemsChanged.invoke()
 
@@ -313,11 +287,11 @@ proc setQuery*(self: Finder, query: string) =
       for i in 0..<mlist.len:
         mlist[i].filtered = false
       mlist.sort((a, b) => -cmp(a.originalIndex.get(0), b.originalIndex.get(0)), Descending)
-      self.filteredItems.get.filtered = 0
+      self.filteredItems.get.data.getMut.filtered = 0
       self.onItemsChanged.invoke()
 
     else:
-      asyncSpawn self.filterAndSortItems(list.clone())
+      asyncSpawn self.filterAndSortItems(list)
 
 type
   StaticDataSource* = ref object of DataSource
@@ -409,3 +383,6 @@ proc retrigger*(self: AsyncCallbackDataSource) {.gcsafe, raises: [].} =
 proc retrigger*(self: SyncDataSource) {.gcsafe, raises: [].} =
   self.wasQueried = false
   self.setQuery("")
+
+proc data*(list: ItemList): lent ItemListData =
+  return list.data.get
