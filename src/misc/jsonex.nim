@@ -1310,6 +1310,9 @@ proc fromJsonEx*[T](a: var T, b: JsonNodeEx, opt = Joptions()) {.raises: [ValueE
     of JInt: a = T(b.getBiggestInt())
     of JString: a = parseEnum[T](b.getStr())
     else: checkJson false, $($T, " ", b)
+  elif T is char:
+    if b.kind == JString and b.str.len > 0:
+      a = b.str[0]
   elif T is uint|uint64: a = T(to(b, uint64))
   elif T is Ordinal: a = cast[T](to(b, int))
   elif T is pointer: a = cast[pointer](to(b, int))
