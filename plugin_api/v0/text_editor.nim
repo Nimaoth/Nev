@@ -134,26 +134,6 @@ proc recordCurrentCommand*(editor: TextEditor; registers: WitList[WitString]): v
   arg2 = cast[int32](registers.len)
   textEditorRecordCurrentCommandImported(arg0, arg1, arg2)
 
-proc textEditorClearCurrentCommandHistoryImported(a0: uint64; a1: bool): void {.
-    wasmimport("clear-current-command-history", "nev:plugins/text-editor").}
-proc clearCurrentCommandHistory*(editor: TextEditor; retainLast: bool): void {.
-    nodestroy.} =
-  ## todo
-  var
-    arg0: uint64
-    arg1: bool
-  arg0 = editor.id
-  arg1 = retainLast
-  textEditorClearCurrentCommandHistoryImported(arg0, arg1)
-
-proc textEditorSaveCurrentCommandHistoryImported(a0: uint64): void {.
-    wasmimport("save-current-command-history", "nev:plugins/text-editor").}
-proc saveCurrentCommandHistory*(editor: TextEditor): void {.nodestroy.} =
-  ## todo
-  var arg0: uint64
-  arg0 = editor.id
-  textEditorSaveCurrentCommandHistoryImported(arg0)
-
 proc textEditorHideCompletionsImported(a0: uint64): void {.
     wasmimport("hide-completions", "nev:plugins/text-editor").}
 proc hideCompletions*(editor: TextEditor): void {.nodestroy.} =

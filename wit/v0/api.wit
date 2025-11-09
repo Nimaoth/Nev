@@ -255,10 +255,6 @@ interface text-editor {
 
   /// todo
   record-current-command: func(editor: text-editor, registers: list<string>);
-  /// todo
-  clear-current-command-history: func(editor: text-editor, retain-last: bool);
-  /// todo
-  save-current-command-history: func(editor: text-editor);
 
   /// todo
   hide-completions: func(editor: text-editor);

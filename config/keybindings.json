@@ -554,7 +554,7 @@
         "~": ["vim.toggle-case", true],
         "\\>\\>": ["vim.indent"],
         "\\<\\<": ["vim.unindent"],
-        "s": ["all", [".set-mode", "vim.visual"], [".vim.change-selection", true]],
+        "s": ["vim.change-move", "()"],
         "J": ["vim.join-lines", true],
         "gJ": ["vim.join-lines", false],
 

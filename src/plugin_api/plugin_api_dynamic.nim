@@ -70,12 +70,6 @@ proc textEditorCommand*(instance: ptr InstanceData, args: LispVal, namedArgs: Li
 proc textEditorRecordCurrentCommand*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   instance.textEditorRecordCurrentCommand(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "registers", seq[string]), )
   return newNil()
-proc textEditorClearCurrentCommandHistory*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorClearCurrentCommandHistory(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), getArg(args, namedArgs, 1, "retain-last", bool), )
-  return newNil()
-proc textEditorSaveCurrentCommandHistory*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
-  instance.textEditorSaveCurrentCommandHistory(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
-  return newNil()
 proc textEditorHideCompletions*(instance: ptr InstanceData, args: LispVal, namedArgs: LispVal): LispVal =
   instance.textEditorHideCompletions(getArg(args, namedArgs, 0, "editor", plugin_api.TextEditor), )
   return newNil()
@@ -251,8 +245,6 @@ proc dispatchDynamic*(instance: ptr InstanceData, name: string, args: LispVal, n
   of "text-editor.as-text-document": textEditorAsTextDocument(instance, args, namedArgs)
   of "text-editor.command": textEditorCommand(instance, args, namedArgs)
   of "text-editor.record-current-command": textEditorRecordCurrentCommand(instance, args, namedArgs)
-  of "text-editor.clear-current-command-history": textEditorClearCurrentCommandHistory(instance, args, namedArgs)
-  of "text-editor.save-current-command-history": textEditorSaveCurrentCommandHistory(instance, args, namedArgs)
   of "text-editor.hide-completions": textEditorHideCompletions(instance, args, namedArgs)
   of "text-editor.scroll-to-cursor": textEditorScrollToCursor(instance, args, namedArgs)
   of "text-editor.set-next-snap-behaviour": textEditorSetNextSnapBehaviour(instance, args, namedArgs)

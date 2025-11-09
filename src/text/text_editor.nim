@@ -43,13 +43,6 @@ const overlayIdInlayHint* = 14
 const overlayIdChooseCursor* = 15
 
 type
-  Command = object
-    isInput: bool
-    command: string
-    args: JsonNode
-  CommandHistory = object
-    commands: seq[Command]
-
   ColorType* = enum Hex = "hex", Float1 = "float1", Float255 = "float255"
 
   ScrollToChangeOnReload* {.pure.} = enum First = "first", Last = "last"
@@ -319,9 +312,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   completionEventHandler: EventHandler
   commandCount*: int
   commandCountRestore*: int
-  currentCommandHistory: CommandHistory
-  savedCommandHistory: CommandHistory
-  bIsRunningSavedCommands: bool
   recordCurrentCommandRegisters: seq[string] # List of registers the current command should be recorded into.
   bIsRecordingCurrentCommand: bool = false # True while running a command which is being recorded
 
@@ -425,8 +415,6 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Styled Text Overrides: {self.styledTextOverrides.len}\n"
   result.add &"Custom Highlights: {self.customHighlights.len}\n"
   result.add &"Inlay Hints: {self.inlayHints.len}\n"
-  result.add &"Current Command History: {self.currentCommandHistory.commands.len}\n"
-  result.add &"Saved Command History: {self.savedCommandHistory.commands.len}\n"
   result.add &"Overlay map: {st.stats(self.displayMap.overlay.snapshot.map)}\n"
   result.add &"Wrap map: {st.stats(self.displayMap.diffMap.snapshot.map)}\n"
   result.add &"Diff map: {st.stats(self.displayMap.wrapMap.snapshot.map)}\n"
@@ -3988,41 +3976,6 @@ proc setFileReadOnlyAsync*(self: TextDocumentEditor, readOnly: bool) {.async.} =
 proc setFileReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
   asyncSpawn self.setFileReadOnlyAsync(readOnly)
 
-proc isRunningSavedCommands*(self: TextDocumentEditor): bool =
-  self.bIsRunningSavedCommands
-
-proc runSavedCommands*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.bIsRunningSavedCommands:
-    return
-  self.bIsRunningSavedCommands = true
-  defer:
-    self.bIsRunningSavedCommands = false
-
-  var commandHistory = self.savedCommandHistory
-  for command in commandHistory.commands.mitems:
-    let isRecursive = command.command == "run-saved-commands" or command.command == "runSavedCommands"
-    if not command.isInput and isRecursive:
-      continue
-
-    if command.isInput:
-      discard self.handleInput(command.command, record=false)
-    else:
-      discard self.handleActionInternal(command.command, command.args)
-
-  self.savedCommandHistory = commandHistory
-
-proc clearCurrentCommandHistory*(self: TextDocumentEditor, retainLast: bool = false) =
-  if retainLast and self.currentCommandHistory.commands.len > 0:
-    let last = self.currentCommandHistory.commands[self.currentCommandHistory.commands.high]
-    self.currentCommandHistory.commands.setLen 0
-    self.currentCommandHistory.commands.add last
-  else:
-    self.currentCommandHistory.commands.setLen 0
-
-proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
-  self.savedCommandHistory = self.currentCommandHistory
-  self.currentCommandHistory.commands.setLen 0
-
 proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
   let wordRunes {.cursor.} = self.document.settings.completionWordChars.get()
   let rope {.cursor.} = self.document.rope
@@ -4274,55 +4227,56 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   return JsonNode.none
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
-  # debugf "handleAction '{action}', '{arg}'"
+  debugf "handleAction '{action}', '{arg}', record = {record}"
 
   try:
-    let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
-    defer:
-      self.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
+    var doRecord = record
+    if self.commands.dontRecord:
+      doRecord = false
 
-    self.bIsRecordingCurrentCommand = record
+    let oldDontRecord = self.commands.dontRecord
+    if record:
+      self.commands.dontRecord = true
+    defer:
+      if record:
+        self.commands.dontRecord = oldDontRecord
 
     let noRecordActions = [
       "apply-selected-completion",
       "applySelectedCompletion",
     ].toHashSet
 
-    if record and action notin noRecordActions:
-      self.registers.recordCommand("." & action & " " & arg)
+    let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
+    self.bIsRecordingCurrentCommand = doRecord
 
     defer:
-      if record and self.recordCurrentCommandRegisters.len > 0:
+      self.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
+
+    defer:
+      if self.recordCurrentCommandRegisters.len > 0:
         self.registers.recordCommand("." & action & " " & arg, self.recordCurrentCommandRegisters)
       self.recordCurrentCommandRegisters.setLen(0)
 
+    if doRecord and action notin noRecordActions:
+      self.registers.recordCommand("." & action & " " & arg)
+
     var args = newJArray()
-    try:
-      for a in newStringStream(arg).parseJsonFragments():
-        args.add a
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
 
-      if not self.isRunningSavedCommands:
-        self.currentCommandHistory.commands.add Command(command: action, args: args)
+    result = self.handleActionInternal(action, args)
+    if result.isSome:
+      return
 
-      result = self.handleActionInternal(action, args)
-      if result.isNone:
-        let res = self.commands.executeCommand(action & " " & arg)
-        if res.isSome:
-          return newJString(res.get).some
-
-      if result.isNone:
-        log lvlError, fmt"Unknown command '{action}'"
-    except CatchableError:
-      log(lvlError, fmt"handleCommand: '{action}', Failed to parse args: '{arg}'")
-      return JsonNode.none
-  except:
-    discard
+    let res = self.commands.executeCommand(action & " " & arg, record = false)
+    if res.isSome:
+      return newJString(res.get).some
+  except CatchableError:
+    log(lvlError, fmt"handleCommand: '{action}', Failed to parse args: '{arg}'")
+  return JsonNode.none
 
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse =
   try:
-    if not self.isRunningSavedCommands:
-      self.currentCommandHistory.commands.add Command(isInput: true, command: input)
-
     if record:
       self.registers.recordCommand(".insert-text " & $input.newJString)
 
