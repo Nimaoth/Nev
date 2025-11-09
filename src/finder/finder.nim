@@ -5,7 +5,7 @@ import nimsumtree/arc
 
 logCategory "finder"
 
-var finderFuzzyMatchConfig* = FuzzyMatchConfig(ignoredChars: {' '})
+var finderFuzzyMatchConfig* = FuzzyMatchConfig(ignoredChars: {' '}, useDiff: true)
 
 type
   FinderItem* = object

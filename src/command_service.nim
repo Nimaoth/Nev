@@ -56,7 +56,7 @@ type
     idToCommand*: Table[CommandId, string]
 
     commandsThisFrame: int
-    dontRecord: bool = false
+    dontRecord*: bool = false
 
 proc all*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(true), disallowAll: some(true))
 proc none*(_: typedesc[CommandPermissions]) = CommandPermissions(allowAll: some(false), disallowAll: some(none))
@@ -271,10 +271,10 @@ proc executeCommand*(self: CommandService, command: string, record: bool = true)
     doRecord = false
 
   let oldDontRecord = self.dontRecord
-  if not record:
+  if record:
     self.dontRecord = true
   defer:
-    if not record:
+    if record:
       self.dontRecord = oldDontRecord
 
   let t = startTimer()

@@ -129,47 +129,47 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9277802093 = instance.getExport(context, "init_plugin")
-  if f_9277802093.isSome:
-    assert f_9277802093.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9277802093.get.of_field.func_field
+  let f_9378465390 = instance.getExport(context, "init_plugin")
+  if f_9378465390.isSome:
+    assert f_9378465390.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9378465390.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9277802109 = instance.getExport(context, "handle_command")
-  if f_9277802109.isSome:
-    assert f_9277802109.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9277802109.get.of_field.func_field
+  let f_9378465406 = instance.getExport(context, "handle_command")
+  if f_9378465406.isSome:
+    assert f_9378465406.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9378465406.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9277802159 = instance.getExport(context, "handle_mode_changed")
-  if f_9277802159.isSome:
-    assert f_9277802159.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9277802159.get.of_field.func_field
+  let f_9378465456 = instance.getExport(context, "handle_mode_changed")
+  if f_9378465456.isSome:
+    assert f_9378465456.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9378465456.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9277802160 = instance.getExport(context, "handle_view_render_callback")
-  if f_9277802160.isSome:
-    assert f_9277802160.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9277802160.get.of_field.func_field
+  let f_9378465457 = instance.getExport(context, "handle_view_render_callback")
+  if f_9378465457.isSome:
+    assert f_9378465457.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9378465457.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9277802184 = instance.getExport(context, "handle_channel_update")
-  if f_9277802184.isSome:
-    assert f_9277802184.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9277802184.get.of_field.func_field
+  let f_9378465481 = instance.getExport(context, "handle_channel_update")
+  if f_9378465481.isSome:
+    assert f_9378465481.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9378465481.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9277802185 = instance.getExport(context, "notify_task_complete")
-  if f_9277802185.isSome:
-    assert f_9277802185.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9277802185.get.of_field.func_field
+  let f_9378465482 = instance.getExport(context, "notify_task_complete")
+  if f_9378465482.isSome:
+    assert f_9378465482.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9378465482.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9277802186 = instance.getExport(context, "handle_move")
-  if f_9277802186.isSome:
-    assert f_9277802186.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9277802186.get.of_field.func_field
+  let f_9378465483 = instance.getExport(context, "handle_move")
+  if f_9378465483.isSome:
+    assert f_9378465483.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9378465483.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
 
@@ -476,10 +476,6 @@ proc textEditorCommand*(instance: ptr InstanceData; editor: TextEditor;
 proc textEditorRecordCurrentCommand*(instance: ptr InstanceData;
                                      editor: TextEditor;
                                      registers: sink seq[string]): void
-proc textEditorClearCurrentCommandHistory*(instance: ptr InstanceData;
-    editor: TextEditor; retainLast: bool): void
-proc textEditorSaveCurrentCommandHistory*(instance: ptr InstanceData;
-    editor: TextEditor): void
 proc textEditorHideCompletions*(instance: ptr InstanceData; editor: TextEditor): void
 proc textEditorScrollToCursor*(instance: ptr InstanceData; editor: TextEditor;
                                behaviour: Option[ScrollBehaviour];
@@ -1541,31 +1537,6 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
               for i1 in 0 ..< registers[i0].len:
                 registers[i0][i1] = p1[i1]
         textEditorRecordCurrentCommand(instance, editor, registers)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype(
-          [WasmValkind.I64, WasmValkind.I32], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "clear-current-command-history", ty):
-        var instance = cast[ptr InstanceData](store.getData())
-        var editor: TextEditor
-        var retainLast: bool
-        editor.id = convert(parameters[0].i64, uint64)
-        retainLast = parameters[1].i32.bool
-        textEditorClearCurrentCommandHistory(instance, editor, retainLast)
-    if e.isErr:
-      return e
-  block:
-    let e = block:
-      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64], [])
-      linker.defineFuncUnchecked("nev:plugins/text-editor",
-                                 "save-current-command-history", ty):
-        var instance = cast[ptr InstanceData](store.getData())
-        var editor: TextEditor
-        editor.id = convert(parameters[0].i64, uint64)
-        textEditorSaveCurrentCommandHistory(instance, editor)
     if e.isErr:
       return e
   block:

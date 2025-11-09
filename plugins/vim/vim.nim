@@ -424,20 +424,20 @@ proc selectMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive
   editor.scrollToCursor()
 
 proc deleteMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
-  editor.recordCurrentCommandInPeriodMacro()
   let oldSelections = @(editor.selections)
   let res = editor.applyVimMove(move, "(merge)", count)
   editor.deleteSelection(false, oldSelections=oldSelections.some)
   if res.updateTargetColumn:
     editor.updateTargetColumn()
+  editor.recordCurrentCommandInPeriodMacro()
 
 proc changeMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
-  editor.recordCurrentCommandInPeriodMacro()
   let oldSelections = @(editor.selections)
   let res = editor.applyVimMove(move, "(merge)", count)
   editor.changeSelection(false, oldSelections=oldSelections.some)
   if res.updateTargetColumn:
     editor.updateTargetColumn()
+  editor.recordCurrentCommandInPeriodMacro()
 
 proc yankMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   discard editor.applyVimMove(move, "(merge)", count)
@@ -1327,8 +1327,6 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
     if oldMode == "vim.normal" and newMode in recordModes:
       editor.startRecordingCurrentCommandInPeriodMacro()
 
-    editor.clearCurrentCommandHistory(retainLast=true)
-
   editor.vimState.selectLines = newMode == "vim.visual-line"
   editor.vimState.cursorIncludeEol = newMode == "vim.insert"
   editor.vimState.currentUndoCheckpoint = if newMode == "vim.insert": "word" else: "insert"
@@ -1337,7 +1335,6 @@ proc modeChangedHandler(editor: TextEditor, oldModes: seq[string], newModes: seq
   of "vim.normal":
     editor.setSetting "text.inclusive-selection", false
     editor.setSelections editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
-    editor.saveCurrentCommandHistory()
     editor.hideCompletions()
 
   of "vim.insert":

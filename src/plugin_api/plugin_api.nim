@@ -611,18 +611,6 @@ proc textEditorModes*(instance: ptr InstanceData; editor: TextEditor): seq[strin
   if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     return editor.TextDocumentEditor.modes()
 
-proc textEditorClearCurrentCommandHistory*(instance: ptr InstanceData; editor: TextEditor, retainLast: bool) =
-  if instance.host == nil:
-    return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.clearCurrentCommandHistory(retainLast)
-
-proc textEditorSaveCurrentCommandHistory*(instance: ptr InstanceData; editor: TextEditor) =
-  if instance.host == nil:
-    return
-  if instance.host.editors.getEditor(editor.id.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.saveCurrentCommandHistory()
-
 proc textEditorHideCompletions*(instance: ptr InstanceData; editor: TextEditor) =
   if instance.host == nil:
     return
