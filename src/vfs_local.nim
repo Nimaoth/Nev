@@ -1,5 +1,6 @@
 import std/[os, options, unicode, strutils, streams, atomics, sequtils, pathnorm, tables]
 import nimsumtree/[rope, static_array]
+import malebolgia
 import misc/[custom_async, custom_logger, util, timer, regex, id]
 import vfs
 import fsnotify
@@ -15,6 +16,12 @@ logCategory "vfs-local"
 type
   CachedFile = object
     fut: Future[string]
+
+  Directory* = object
+    path*: string
+    totalFiles*: int
+    children*: seq[Directory]
+    files*: seq[string]
 
   VFSLocal* = ref object of VFS
     watcher: Watcher
@@ -411,3 +418,199 @@ method findFilesImpl*(self: VFSLocal, root: string, filenameRegex: string, maxRe
   except Exception as e:
     log lvlError, &"Failed to find files in {self.name}/{root}: {e.msg}"
   return res
+
+
+when defined(windows):
+  import winlean
+  const
+    UNI_REPLACEMENT_CHAR = Utf16Char(0xFFFD'i16)
+    UNI_MAX_BMP = 0x0000FFFF
+    UNI_MAX_UTF16 = 0x0010FFFF
+    # UNI_MAX_UTF32 = 0x7FFFFFFF
+    # UNI_MAX_LEGAL_UTF32 = 0x0010FFFF
+
+    halfShift = 10
+    halfBase = 0x0010000
+    halfMask = 0x3FF
+
+    UNI_SUR_HIGH_START = 0xD800
+    UNI_SUR_HIGH_END = 0xDBFF
+    UNI_SUR_LOW_START = 0xDC00
+    UNI_SUR_LOW_END = 0xDFFF
+    UNI_REPL = 0xFFFD
+
+  proc skipFindData(f: winlean.WIN32_FIND_DATA): bool {.inline.} =
+    # Note - takes advantage of null delimiter in the cstring
+    const dot = ord('.')
+    result = f.cFileName[0].int == dot and (f.cFileName[1].int == 0 or
+             f.cFileName[1].int == dot and f.cFileName[2].int == 0)
+
+  template getFilename*(f: untyped): untyped =
+    $cast[WideCString](addr(f.cFileName[0]))
+
+  iterator toWideChars(str: openArray[char]): Utf16Char =
+    var d = 0
+    for r in str.runes:
+      let ch = r.int
+      if ch <= UNI_MAX_BMP:
+        if ch >= UNI_SUR_HIGH_START and ch <= UNI_SUR_LOW_END:
+          yield UNI_REPLACEMENT_CHAR
+        else:
+          yield cast[Utf16Char](uint16(ch))
+      elif ch > UNI_MAX_UTF16:
+        yield UNI_REPLACEMENT_CHAR
+      else:
+        let ch = ch - halfBase
+        yield cast[Utf16Char](uint16((ch shr halfShift) + UNI_SUR_HIGH_START))
+        inc d
+        yield cast[Utf16Char](uint16((ch and halfMask) + UNI_SUR_LOW_START))
+      inc d
+
+    template ones(n: untyped): untyped = ((1 shl n)-1)
+    iterator `$`(w: WideCString, estimate: int, replacement: int = 0xFFFD): char =
+      var i = 0
+      while w[i].int16 != 0'i16:
+        var ch = ord(w[i])
+        inc i
+        if ch >= UNI_SUR_HIGH_START and ch <= UNI_SUR_HIGH_END:
+          # If the 16 bits following the high surrogate are in the source buffer...
+          let ch2 = ord(w[i])
+
+          # If it's a low surrogate, convert to UTF32:
+          if ch2 >= UNI_SUR_LOW_START and ch2 <= UNI_SUR_LOW_END:
+            ch = (((ch and halfMask) shl halfShift) + (ch2 and halfMask)) + halfBase
+            inc i
+          else:
+            #invalid UTF-16
+            ch = replacement
+        elif ch >= UNI_SUR_LOW_START and ch <= UNI_SUR_LOW_END:
+          #invalid UTF-16
+          ch = replacement
+
+        if ch < 0x80:
+          yield chr(ch)
+        elif ch < 0x800:
+          yield chr((ch shr 6) or 0xc0)
+          yield chr((ch and 0x3f) or 0x80)
+        elif ch < 0x10000:
+          yield chr((ch shr 12) or 0xe0)
+          yield chr(((ch shr 6) and 0x3f) or 0x80)
+          yield chr((ch and 0x3f) or 0x80)
+        elif ch <= 0x10FFFF:
+          yield chr((ch shr 18) or 0xf0)
+          yield chr(((ch shr 12) and 0x3f) or 0x80)
+          yield chr(((ch shr 6) and 0x3f) or 0x80)
+          yield chr((ch and 0x3f) or 0x80)
+        else:
+          # replacement char(in case user give very large number):
+          yield chr(0xFFFD shr 12 or 0b1110_0000)
+          yield chr(0xFFFD shr 6 and ones(6) or 0b10_0000_00)
+          yield chr(0xFFFD and ones(6) or 0b10_0000_00)
+else:
+  import std/posix
+  import std/private/oscommon
+
+iterator walkDirCustom(dir: string, relative = false, checkDir = false, skipSpecial = false): tuple[kind: PathComponent, path: string] {.tags: [ReadDirEffect], raises: [OSError].} =
+  when defined(windows):
+    var buffer = initArray(Utf16Char, 300)
+    for c in dir.toWideChars:
+      buffer.add c
+    for c in "/*".toWideChars:
+      buffer.add c
+    var f: winlean.WIN32_FIND_DATA
+    var h = findFirstFileW(buffer.toOpenArray().data, f)
+    if h == -1:
+      if checkDir:
+        raiseOSError(osLastError(), dir)
+    else:
+      defer: findClose(h)
+      while true:
+        var k = pcFile
+        if not skipFindData(f):
+          if (f.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY) != 0'i32:
+            k = pcDir
+          if (f.dwFileAttributes and FILE_ATTRIBUTE_REPARSE_POINT) != 0'i32:
+            k = succ(k)
+          var filename = cast[WideCString](addr(f.cFileName[0]))
+          yield (k, $filename)
+        if findNextFileW(h, f) == 0'i32:
+          let errCode = getLastError()
+          if errCode == winlean.ERROR_NO_MORE_FILES: break
+          else: raiseOSError(errCode.OSErrorCode)
+  else:
+    var d = opendir(dir.cstring)
+    if d == nil:
+      if checkDir:
+        raiseOSError(osLastError(), dir)
+    else:
+      defer: discard closedir(d)
+      while true:
+        var x = readdir(d)
+        if x == nil: break
+        var y = $cast[cstring](addr x.d_name)
+        if y != "." and y != "..":
+          var s: Stat
+          let path = dir / y
+          var k = pcFile
+
+          template resolveSymlink() =
+            var isSpecial: bool
+            (k, isSpecial) = getSymlinkFileKind(path)
+            if skipSpecial and isSpecial: continue
+
+          template kSetGeneric() =  # pure Posix component `k` resolution
+            if lstat(path.cstring, s) < 0'i32: continue  # don't yield
+            elif S_ISDIR(s.st_mode):
+              k = pcDir
+            elif S_ISLNK(s.st_mode):
+              resolveSymlink()
+            elif skipSpecial and not S_ISREG(s.st_mode): continue
+
+          when defined(linux) or defined(macosx) or
+               defined(bsd) or defined(genode) or defined(nintendoswitch):
+            case x.d_type
+            of DT_DIR: k = pcDir
+            of DT_LNK:
+              resolveSymlink()
+            of DT_UNKNOWN:
+              kSetGeneric()
+            else: # DT_REG or special "files" like FIFOs
+              if skipSpecial and x.d_type != DT_REG: continue
+              else: discard # leave it as pcFile
+          else:  # assuming that field `d_type` is not present
+            kSetGeneric()
+
+          yield (k, y)
+
+proc scanDirectoryImpl(ignore: ptr Globs, res: ptr Directory) {.gcsafe, raises: [].} =
+  try:
+    # echo "scan '", res.name, "'"
+    var m = createMaster()
+    for kind, fileName in walkDirCustom(res.path, relative = true):
+      if ignore[].ignorePath(res.path.toOpenArray(), fileName):
+        continue
+
+      if kind == pcFile:
+        res.files.add(fileName)
+        res.totalFiles += 1
+      elif kind == pcDir:
+
+        var path = newStringOfCap(res.path.len + fileName.len + 1)
+        path.add res.path
+        path.add "/"
+        path.add fileName
+        res.children.add(Directory(path: path.ensureMove))
+
+    m.awaitAll:
+      for i in 0..res.children.high:
+        m.spawn scanDirectoryImpl(ignore, res.children[i].addr)
+
+    for c in res.children:
+      res.totalFiles += c.totalFiles
+  except CatchableError:
+    discard
+
+proc scanDirectory*(path: string, ignore: ptr Globs): Directory =
+  result.path = path
+  scanDirectoryImpl(ignore, result.addr)
+
