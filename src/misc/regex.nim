@@ -1,5 +1,7 @@
-import std/[strutils, os]
+import std/[strutils, os, unicode]
 from glob/regexer import globToRegexString
+import nimsumtree/static_array
+import util
 
 {.push gcsafe.}
 
@@ -48,11 +50,11 @@ proc add*[T](tree: GlobTree[T], path: string, data: T) =
     data: data
   ))
 
-proc globMatchOne(path, glob: var string, pathStart = 0, globStart = 0): bool =
+proc globMatchOne(path, glob: openArray[char], pathStart = 0, globStart = 0): bool =
   ## Match a single entry string to glob.
 
-  proc error(glob: var string) =
-    raise newException(GlobbyError, "Invalid glob: `" & glob & "`")
+  proc error(glob: openArray[char]) =
+    raise newException(GlobbyError, "Invalid glob: `" & $glob & "`")
 
   var
     i = pathStart
@@ -104,9 +106,7 @@ proc globMatchOne(path, glob: var string, pathStart = 0, globStart = 0): bool =
   if i == path.len and j == glob.len:
     return true
 
-proc globMatch(
-  pathParts, globParts: var seq[string], pathStart = 0, globStart = 0
-): bool =
+proc globMatch*(pathParts, globParts: openArray[string]|openArray[StringView], pathStart = 0, globStart = 0): bool =
   ## Match a seq string to a seq glob pattern.
   var
     i = pathStart
@@ -123,7 +123,7 @@ proc globMatch(
           return true
       return false
     else:
-      if not globMatchOne(pathParts[i], globParts[j]):
+      if not globMatchOne(pathParts[i].toOpenArray(0, pathParts[i].high), globParts[j].toOpenArray(0, globParts[j].high)):
         return false
     inc i
     inc j
@@ -172,12 +172,44 @@ iterator paths*[T](tree: GlobTree[T]): string =
   for entry in tree.data:
     yield entry.path
 
-proc globMatch*(path, glob: string): bool =
+proc splitInto[C](str: openArray[char], c: char, res: var Array[StringView, C]): bool =
+  var last = 0
+  var i = str.find(c)
+  while i != -1:
+    if res.len >= C:
+      return false
+    res.add(str.toOpenArray(last, i - 1).sv)
+    last = i + 1
+    i = str.find(c, last)
+
+  if last < str.len:
+    if res.len >= C:
+      return false
+    res.add(str.toOpenArray(last, str.high).sv)
+
+  return true
+
+proc globMatch*(path, glob: openArray[char]): bool =
   ## Match a path to a glob pattern.
-  var
-    paths = path.split('/')
-    globs = glob.split('/').globSimplify()
-  globMatch(paths, globs)
+  var pathParts = initArray(StringView, 32)
+  var globParts = initArray(StringView, 32)
+  if path.splitInto('/', pathParts) and glob.splitInto('/', globParts):
+    globMatch(pathParts.toOpenArray(), globParts.toOpenArray())
+  else:
+    var
+      paths = path.split('/'.Rune)
+      globs = glob.split('/'.Rune)
+    globMatch(paths.toOpenArray(0, paths.high), globs.toOpenArray(0, globs.high))
+
+proc globMatch*(pathParts: openArray[StringView], glob: openArray[char]): bool =
+  ## Match a path to a glob pattern.
+  var globParts = initArray(StringView, 32)
+  if glob.splitInto('/', globParts):
+    globMatch(pathParts, globParts.toOpenArray())
+  else:
+    var
+      globs = glob.split('/'.Rune)
+    globMatch(pathParts, globs.toOpenArray(0, globs.high))
 
 proc escapeRegex*(s: string): string =
   ## escapes `s` so that it is matched verbatim when used as a regular
@@ -243,7 +275,7 @@ proc parseGlobs*(globs: string): Globs =
     else:
       result.original.add lineStripped
 
-proc includePath*(globs: Globs, path: string): bool =
+proc includePath*(globs: Globs, path: openArray[char]): bool =
   try:
     for negatedPattern in globs.negatedPatterns:
       if path.globMatch(negatedPattern):
@@ -252,7 +284,7 @@ proc includePath*(globs: Globs, path: string): bool =
   except GlobbyError:
     return false
 
-proc excludePath*(globs: Globs, path: string): bool =
+proc excludePath*(globs: Globs, path: openArray[char]): bool =
   try:
     for pattern in globs.original:
       if path.globMatch(pattern):
@@ -262,10 +294,50 @@ proc excludePath*(globs: Globs, path: string): bool =
   except GlobbyError:
     return false
 
+proc includePath*(globs: Globs, path: openArray[char], name: openArray[char]): bool =
+  const capacity = 32
+  var pathParts = initArray(StringView, capacity)
+  if path.splitInto('/', pathParts) and pathParts.len < capacity:
+    pathParts.add(name.sv)
+    try:
+      for negatedPattern in globs.negatedPatterns:
+        if pathParts.toOpenArray().globMatch(negatedPattern):
+          return true
+      return false
+    except GlobbyError:
+      return false
+  else:
+    return true # todo
+
+proc excludePath*(globs: Globs, path: openArray[char], name: openArray[char]): bool =
+  const capacity = 32
+  var pathParts = initArray(StringView, capacity)
+  if path.splitInto('/', pathParts) and pathParts.len < capacity:
+    pathParts.add(name.sv)
+    try:
+      for pattern in globs.original:
+        if pathParts.toOpenArray().globMatch(pattern):
+          return true
+
+      return false
+    except GlobbyError:
+      return false
+  else:
+    return true # todo
+
 proc ignorePath*(ignore: Globs, path: string): bool =
   ## Combines exclude and include
   if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
     if ignore.includePath(path) or ignore.includePath(path.extractFilename):
+      return false
+
+    return true
+  return false
+
+proc ignorePath*(ignore: Globs, path: openArray[char], name: openArray[char]): bool =
+  ## Combines exclude and include
+  if ignore.excludePath(path, name) or ignore.excludePath(name):
+    if ignore.includePath(path, name) or ignore.includePath(name):
       return false
 
     return true

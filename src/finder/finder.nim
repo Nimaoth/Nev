@@ -136,7 +136,7 @@ proc parallelForChunk[T, C](items: ptr UncheckedArray[T], first: int, last: int,
   for i in first..<last:
     cb(i, items[i], ctx)
 
-proc parallelFor[T, C](items: openArray[T], chunkSize: int, ctx: C, cb: proc(index: int, item: var T, ctx: C) {.nimcall, gcsafe, raises: [].}) =
+proc parallelFor*[T, C](items: openArray[T], chunkSize: int, ctx: C, cb: proc(index: int, item: var T, ctx: C) {.nimcall, gcsafe, raises: [].}) =
   var numChunks = items.len div chunkSize
   if numChunks * chunkSize < items.len:
     inc numChunks

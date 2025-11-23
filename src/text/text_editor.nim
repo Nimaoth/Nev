@@ -4227,7 +4227,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   return JsonNode.none
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): Option[JsonNode] =
-  debugf "handleAction '{action}', '{arg}', record = {record}"
+  # debugf "handleAction '{action}', '{arg}', record = {record}"
 
   try:
     var doRecord = record

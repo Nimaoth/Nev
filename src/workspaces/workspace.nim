@@ -1,8 +1,9 @@
-import std/[json, options, os, strutils, sequtils]
+import std/[json, options, os, strutils, sequtils, unicode]
 import malebolgia
 import misc/[custom_async, id, util, regex, custom_logger, event, timer, async_process]
-import vfs, vfs_service, service, compilation_config
+import vfs, vfs_service, vfs_local, service, compilation_config
 import finder/finder
+import nimsumtree/static_array
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -17,12 +18,6 @@ type
   DirectoryListing* = object
     files*: seq[string]
     folders*: seq[string]
-
-  Directory = object
-    name: string
-    totalFiles: int
-    children: seq[Directory]
-    files: seq[string]
 
   SearchResult* = object
     path*: string
@@ -72,47 +67,13 @@ proc settings*(self: Workspace): JsonNode =
 
 proc clearDirectoryCache*(self: Workspace) = discard
 
-proc scanDirectoryImpl(path: string, ignore: ptr Globs): Directory {.gcsafe, raises: [].} =
-  try:
-    result.name = path
-    var m = createMaster()
-    for kind, filePath in walkDir(path, relative = true):
-      if ignore[].ignorePath(path & "/" & filePath):
-        continue
-
-      if kind == pcFile:
-        result.files.add(filePath)
-        result.totalFiles += 1
-      elif kind == pcDir:
-
-        result.children.add(Directory(name: filePath))
-
-    m.awaitAll:
-      for i in 0..result.children.high:
-        m.spawn scanDirectoryImpl(path & "/" & result.children[i].name, ignore) -> result.children[i]
-
-    for c in result.children:
-      result.totalFiles += c.totalFiles
-  except CatchableError:
-    discard
-
-proc scanDirectory*(path: string, ignore: ptr Globs): Directory =
-  return scanDirectoryImpl(path, ignore)
-
-proc collectFiles(dir: Directory, files: var openArray[FinderItem], startIndex: int) =
-  # for f in dir.files:
-  #   files.add dir.name & "/" & f
-  # for i in 0..self.workspace.cachedFiles.high:
+proc collectFiles(dir: vfs_local.Directory, files: var openArray[FinderItem], startIndex: int) =
   for i, fileName in dir.files:
-    let path = dir.name & "/" & fileName
-    # if absolutePath.startsWith(self.path):
-    #   return ("ws0://", absolutePath.relativePath(self.path, '/').normalizePathUnix).some
-    # let (root, relPath) = self.workspace.getRelativePathAndWorkspaceSync(path).get(("", path))
-    # let (dir, name) = relPath.splitPath
+    var path = dir.path & "/" & fileName
     files[startIndex + i] = FinderItem(
       displayName: fileName,
-      details: @[dir.name],
-      data: path,
+      details: @[dir.path],
+      data: path.ensureMove,
     )
 
   var startIndex = startIndex + dir.files.len
@@ -126,7 +87,7 @@ proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
     let t = startTimer()
 
     var m = createMaster()
-    var dirs = newSeq[Directory](args.roots.len)
+    var dirs = newSeq[vfs_local.Directory](args.roots.len)
     m.awaitAll:
       for i in 0..args.roots.high:
         m.spawn scanDirectory(args.roots[i], args.ignore.addr) -> dirs[i]

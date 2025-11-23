@@ -395,3 +395,30 @@ template boolLock*(l): untyped =
   l = true
   defer:
     l = false
+
+proc data*[T](a: openArray[T]): ptr UncheckedArray[T] =
+  if a.len > 0:
+    cast[ptr UncheckedArray[T]](a[0].addr)
+  else:
+    nil
+
+type StringView* = object
+  data*: ptr UncheckedArray[char]
+  len*: int
+
+converter toStringView*(s: openArray[char]): StringView {.inline.} = StringView(data: s.data, len: s.len)
+proc sv*(s: openArray[char]): StringView {.inline.} = StringView(data: s.data, len: s.len)
+proc sv*(s: string): StringView {.inline.} = StringView(data: s.toOpenArray(0, s.high).data, len: s.len)
+proc high*(s: StringView): int {.inline.} = s.len - 1
+template toOpenArray*(s: StringView): openArray[char] = s.data.toOpenArray(0, s.len - 1)
+template toOpenArray*(s: StringView, low: int, high: int): openArray[char] = s.data.toOpenArray(low, high)
+proc `[]`*(s: StringView, index: int): char {.inline.} = s.toOpenArray[index]
+proc `[]=`*(s: var StringView, index: int, value: char) {.inline.} = s.toOpenArray[index] = value
+
+proc `$`*(s: StringView): string =
+  result = newString(s.len)
+  if s.len > 0:
+    copyMem(result[0].addr, s.data[0].addr, s.len)
+
+proc `==`*(a: StringView, b: openArray[char]): bool {.inline.} = a.len == b.len and equalMem(a.data, b.data, a.len)
+proc `==`*(a: string, b: openArray[char]): bool {.inline.} = a.len == b.len and equalMem(a.data, b.data, a.len)
