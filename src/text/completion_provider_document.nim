@@ -118,7 +118,7 @@ proc refilterCompletions(self: CompletionProviderDocument) {.async.} =
     for word in self.wordCache:
       defer: inc i
 
-      let score = matchFuzzySublime(self.currentFilterText, word, defaultCompletionMatchingConfig).score.float
+      let score = matchFuzzy(self.currentFilterText, word, defaultCompletionMatchingConfig).score.float
       if score >= 0:
         self.filteredCompletions.add Completion(
           item: CompletionItem(
