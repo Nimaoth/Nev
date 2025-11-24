@@ -52,7 +52,7 @@ proc refilterCompletions(self: CompletionProviderSnippet) =
   self.filteredCompletions.setLen 0
   for item in self.unfilteredCompletions:
     let text = item.filterText.get(item.label)
-    let score = matchFuzzySublime(self.currentFilterText, text, config).score.float
+    let score = matchFuzzy(self.currentFilterText, text, config).score.float
 
     if score < 0:
       continue

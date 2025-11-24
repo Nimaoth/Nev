@@ -26,7 +26,7 @@ proc refilterCompletions(self: CompletionProviderLsp) =
   self.filteredCompletions.setLen 0
   for item in self.unfilteredCompletions:
     let text = item.filterText.get(item.label)
-    let score = matchFuzzySublime(self.currentFilterText, text, defaultCompletionMatchingConfig).score.float
+    let score = matchFuzzy(self.currentFilterText, text, defaultCompletionMatchingConfig).score.float
 
     if timer.elapsed.ms > 2:
       break
