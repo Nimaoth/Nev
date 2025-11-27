@@ -438,6 +438,8 @@ proc changeMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive
   if res.updateTargetColumn:
     editor.updateTargetColumn()
   editor.recordCurrentCommandInPeriodMacro()
+  if not isReplayingCommands():
+    editor.recordCurrentCommand(WitList[WitString]())
 
 proc yankMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   discard editor.applyVimMove(move, "(merge)", count)

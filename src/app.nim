@@ -2812,7 +2812,7 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
   elif self.layout.popups.len > 0:
     result.add self.layout.popups[self.layout.popups.high].getEventHandlers()
   elif self.layout.tryGetCurrentView().getSome(view):
-      result.add view.getEventHandlers(initTable[string, EventHandler]())
+    result.add view.getEventHandlers(initTable[string, EventHandler](0))
 
   if not self.modeEventHandler.isNil and modeOnTop:
     result.add self.modeEventHandler
@@ -2956,7 +2956,9 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   self.updateNextPossibleInputs()
 
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
-  discard
+  var mods = modifiers
+  mods.incl Modifier.Release
+  self.handleKeyPress(input, mods)
 
 proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleRune {inputToString(input, modifiers)}"

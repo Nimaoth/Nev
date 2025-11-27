@@ -242,27 +242,28 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
     handler.config = inConfig
     handler.dfaInternal = inConfig.buildDFA()
     # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
+    var weakHandler {.cursor.} = handler
 
     template onAction(actionBody: untyped): untyped {.used.} =
       handler.handleAction = proc(action: string, arg: string): EventResponse {.gcsafe, raises: [].} =
-        if handler.config.handleActions:
+        if weakHandler.config.handleActions:
           let action {.inject, used.} = action
           let arg {.inject, used.} = arg
           let response = actionBody
-          if handler.config.consumeAllActions:
+          if weakHandler.config.consumeAllActions:
             return Handled
           return response
-        elif handler.config.consumeAllActions:
+        elif weakHandler.config.consumeAllActions:
           return Handled
         else:
           return Ignored
 
     template onInput(inputBody: untyped): untyped {.used.} =
       handler.handleInput = proc(input: string): EventResponse {.gcsafe, raises: [].} =
-        if handler.config.handleInputs:
-          let inputHandlerAction = handler.config.inputHandlerAction()
+        if weakHandler.config.handleInputs:
+          let inputHandlerAction = weakHandler.config.inputHandlerAction()
           if inputHandlerAction != "":
-            return handler.handleAction(inputHandlerAction, $newJString(input))
+            return weakHandler.handleAction(inputHandlerAction, $newJString(input))
           else:
             let input {.inject, used.} = input
             return inputBody
@@ -281,7 +282,7 @@ template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, hand
 
     template onKey(onKeyBody: untyped): untyped {.used.} =
       handler.handleKey = proc(i: int64, m: Modifiers): EventResponse {.gcsafe, raises: [].} =
-        if handler.config.handleKeys:
+        if weakHandler.config.handleKeys:
           let input {.inject, used.} = i
           let mods {.inject, used.} = m
           return onKeyBody
@@ -320,7 +321,10 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
     # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
     # (ctrl, alt, win) then it doesn't produce input
     let prevStates = handler.states
-    handler.states = handler.dfa.stepAll(handler.states, input, modifiers)
+    let newStates = handler.dfa.stepAll(handler.states, input, modifiers)
+    if not newStates.inProgress and Release in modifiers:
+      return Ignored
+    handler.states = newStates
 
     if debugEventHandlers:
       debugf"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}, {handleUnknownAsInput}, {allowHandlingEvent}\n  {prevStates}\n  -> {handler.states}, inProgress: {handler.inProgress}, anyTerminal: {handler.states.anyIt(handler.dfa.isTerminal(it.current))}"
