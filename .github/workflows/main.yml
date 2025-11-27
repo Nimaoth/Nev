@@ -49,7 +49,7 @@ jobs:
 
       - uses: iffy/install-nim@v5
         with:
-          version: binary:2.2.6
+          version: nightly:https://github.com/nim-lang/nightlies/releases/tag/2025-10-31-version-2-2-ab00c56904e3126ad826bb520d243513a139436a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -134,7 +134,7 @@ jobs:
 
       - uses: iffy/install-nim@v5
         with:
-          version: binary:2.2.6
+          version: nightly:https://github.com/nim-lang/nightlies/releases/tag/2025-10-31-version-2-2-ab00c56904e3126ad826bb520d243513a139436a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -218,7 +218,7 @@ jobs:
 
       - uses: iffy/install-nim@v5
         with:
-          version: binary:2.2.6
+          version: nightly:https://github.com/nim-lang/nightlies/releases/tag/2025-10-31-version-2-2-ab00c56904e3126ad826bb520d243513a139436a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
