@@ -49,7 +49,7 @@ jobs:
 
       - uses: iffy/install-nim@v5
         with:
-          version: binary:2.2.6
+          version: nightly:https://github.com/nim-lang/nightlies/releases/tag/2025-10-31-version-2-2-ab00c56904e3126ad826bb520d243513a139436a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -93,7 +93,7 @@ jobs:
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       # linux builds
-      - run: nimble buildWasmModule
+      - run: nimble buildWasmModule --disablevalidation
       - run: nim c --out:nev -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached=${{steps.cache-nimble.outputs.cache-hit}} src/desktop_main.nim
       # - run: nim c --out:nevc -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached=${{steps.cache-nimble.outputs.cache-hit}} --cc:clang --passC:-Wno-incompatible-function-pointer-types --passL:-ladvapi32.lib -d:enableSystemClipboard=false src/desktop_main.nim
       - run: nim c --out:nevg -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached=${{steps.cache-nimble.outputs.cache-hit}} src/desktop_main.nim
@@ -134,7 +134,7 @@ jobs:
 
       - uses: iffy/install-nim@v5
         with:
-          version: binary:2.2.6
+          version: nightly:https://github.com/nim-lang/nightlies/releases/tag/2025-10-31-version-2-2-ab00c56904e3126ad826bb520d243513a139436a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -169,7 +169,7 @@ jobs:
       - run: Invoke-WebRequest -Uri "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile "./rcedit-x64.exe"
 
       # windows builds
-      - run: ./emsdk/emsdk.ps1 activate 4.0.10; nimble buildWasmModule
+      - run: ./emsdk/emsdk.ps1 activate 4.0.10; nimble buildWasmModule --disablevalidation
       - run: nim c --out:nev.exe -D:enableGui=false -D:enableTerminal=true --app:console -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached=${{steps.cache-nimble.outputs.cache-hit}} src/desktop_main.nim
       - run: nim c --out:nevg.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached=${{steps.cache-nimble.outputs.cache-hit}} src/desktop_main.nim
       - run: nim c --out:nevc.exe -D:enableGui=true -D:enableTerminal=false --app:gui -D:forceLogToFile --passC:-std=gnu11 -d:exposeScriptingApi -D:isCI -D:isCINimbleCached=${{steps.cache-nimble.outputs.cache-hit}} --cc:clang --passC:-Wno-incompatible-function-pointer-types "--passL:-ladvapi32.lib -luser32.lib" -d:enableSystemClipboard=false src/desktop_main.nim
@@ -218,7 +218,7 @@ jobs:
 
       - uses: iffy/install-nim@v5
         with:
-          version: binary:2.2.6
+          version: nightly:https://github.com/nim-lang/nightlies/releases/tag/2025-10-31-version-2-2-ab00c56904e3126ad826bb520d243513a139436a
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
