@@ -1,6 +1,5 @@
 # import std/[strutils, macros, genasts, sequtils, sets, algorithm, jsonutils]
 import std/[strformat, json, jsonutils, strutils, tables, macros, genasts, streams, sequtils, sets, os, terminal, colors, algorithm, unicode]
-import results
 import util, custom_unicode, myjsonutils, id, wrap, sugar, custom_regex
 # import input_api
 import api
