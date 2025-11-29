@@ -81,8 +81,9 @@ proc getRegisterAsync*(self: Registers, register: string, res: ptr Register): Fu
     if text.isSome:
       if text.get.len > 1024:
         var rope: Rope
-        if createRopeAsync(text.get.addr, rope.addr).await.getSome(errorIndex):
-          log lvlWarn, &"Large clipboard contains invalid utf8 at index {errorIndex}, can't use rope"
+        let errorIndex = createRopeAsync(text.get.addr, rope.addr).await
+        if errorIndex.isSome:
+          log lvlWarn, &"Large clipboard contains invalid utf8 at index {errorIndex.get}, can't use rope"
           res[] = Register(kind: RegisterKind.Text, text: text.get.move)
         else:
           res[] = Register(kind: RegisterKind.Rope, rope: rope.move)

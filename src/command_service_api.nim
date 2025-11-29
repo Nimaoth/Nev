@@ -261,9 +261,10 @@ proc runShellCommand*(self: CommandService, options: RunShellCommandOptions = Ru
   log lvlInfo, &"runShellCommand '{options}'"
 
   self.commandLine(options.initialValue, prefix = options.prompt)
+  let weakSelf {.cursor.} = self
   self.commandHandler = proc(command: Option[string]): Option[string] =
     if command.getSome(command):
-      asyncSpawn self.runProcessAndShowResultAsync(command, options)
+      asyncSpawn weakSelf.runProcessAndShowResultAsync(command, options)
 
 proc replayCommands*(self: CommandService, register: string) {.expose("commands").} =
   if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:

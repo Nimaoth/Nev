@@ -2,7 +2,7 @@ import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, 
 import fusion/matching
 import chroma, vmath
 import misc/[util, id, custom_unicode, array_set, rect_utils, custom_logger, render_command]
-import input
+import input, theme
 
 export util, id, input, chroma, vmath, rect_utils
 export render_command
@@ -96,6 +96,7 @@ type
   UINodeBuilder* = ref object
     nodes: seq[UINode]
     namedNodes: Table[Id, UINode]
+    theme*: Theme
 
     textWidthImpl*: proc(node: UINode): float32 {.gcsafe, raises: [].}
     textWidthStringImpl*: proc(text: string): float32 {.gcsafe, raises: [].}

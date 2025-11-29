@@ -282,9 +282,10 @@ proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
         backgroundColor = headerColor):
       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Output")
 
-    debugger.outputEditor.createUI(builder, app)
+    debugger.outputEditor.createUI(builder)
 
-method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: DebuggerView, builder: UINodeBuilder): seq[OverlayFunction] =
+  let app = ({.gcsafe.}: gEditor)
   let dirty = self.dirty
   self.resetDirty()
 

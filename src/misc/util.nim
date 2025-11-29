@@ -32,10 +32,10 @@ macro evalOnceAs(expAlias, exp: untyped,
       body = val, procType = nnkTemplateDef))
 
 template getSome*[T](opt: Option[T], injected: untyped): bool =
-  ((let o = opt; o.isSome())) and ((let injected {.inject, cursor.} = o.get(); true))
+  ((let o = opt; o.isSome())) and ((let injected {.inject.} = o.get(); true))
 
 template getSome*[T](opt: Opt[T], injected: untyped): bool =
-  ((let o = opt; o.isOk())) and ((let injected {.inject, cursor.} = o.get(); true))
+  ((let o = opt; o.isOk())) and ((let injected {.inject.} = o.get(); true))
 
 template isNotNil*(v: untyped): untyped = not v.isNil
 
@@ -209,15 +209,17 @@ template applyIt*[T, E](self: Result[T, E], op: untyped): untyped =
       template it: untyped {.inject.} = self2.unsafeValue
       op
 
-template findIt*(self: untyped, op: untyped): untyped =
-  block:
-    var index = -1
-    for i in 0..self.high:
-      let it {.cursor, inject.} = self[i]
-      if op:
-        index = i
-        break
-    index
+
+when (NimMajor, NimMinor, NimPatch) < (2, 2, 6):
+  template findIt*(self: untyped, op: untyped): untyped =
+    block:
+      var index = -1
+      for i in 0..self.high:
+        let it {.cursor, inject.} = self[i]
+        if op:
+          index = i
+          break
+      index
 
 template findItOpt*(self: untyped, op: untyped): untyped =
   block:

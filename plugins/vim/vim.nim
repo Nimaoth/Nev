@@ -1,6 +1,5 @@
 # import std/[strutils, macros, genasts, sequtils, sets, algorithm, jsonutils]
 import std/[strformat, json, jsonutils, strutils, tables, macros, genasts, streams, sequtils, sets, os, terminal, colors, algorithm, unicode]
-import results
 import util, custom_unicode, myjsonutils, id, wrap, sugar, custom_regex
 # import input_api
 import api
@@ -438,6 +437,8 @@ proc changeMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive
   if res.updateTargetColumn:
     editor.updateTargetColumn()
   editor.recordCurrentCommandInPeriodMacro()
+  if not isReplayingCommands():
+    editor.recordCurrentCommand(WitList[WitString]())
 
 proc yankMove(editor: TextEditor, move: string, count: int = 0) {.exposeActive(editorContext).} =
   discard editor.applyVimMove(move, "(merge)", count)

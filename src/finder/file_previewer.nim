@@ -126,16 +126,19 @@ proc loadAsync(self: FilePreviewer): Future[void] {.async.} =
     logScope lvlInfo, &"[loadAsync] Show preview using temp document for '{path}'"
     var content = Rope.new()
 
-    var fileKind = if self.currentIsFile.getSome(isFile):
+    var fileKind = FileKind.File
+    if self.currentIsFile.getSome(isFile):
       if isFile:
-        FileKind.File
+        fileKind = FileKind.File
       else:
-        FileKind.Directory
-    elif self.vfs.getFileKind(path).await.getSome(kind):
-      kind
+        fileKind = FileKind.Directory
     else:
-      log lvlError, &"Unknown file or directory '{path}'"
-      return
+      let kind = self.vfs.getFileKind(path).await
+      if kind.isSome:
+        fileKind = kind.get
+      else:
+        log lvlError, &"Unknown file or directory '{path}'"
+        return
 
     case fileKind
     of FileKind.File:

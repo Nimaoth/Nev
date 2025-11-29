@@ -35,6 +35,7 @@ type
     Shift
     Alt
     Super
+    Release
   Modifiers* = set[Modifier]
 
   InputFlag* = enum
@@ -141,6 +142,7 @@ proc parseNextInput*(input: openArray[Rune], index: int, leaders = initTable[str
             of 'C': current.mods = current.mods + {Modifier.Control}
             of 'S': current.mods = current.mods + {Modifier.Shift}
             of 'A': current.mods = current.mods + {Modifier.Alt}
+            of '^': current.mods = current.mods + {Modifier.Release}
             of '*': result.persistent = true
             of 'o': result.flags.incl Loop
             of '?': result.flags.incl Optional

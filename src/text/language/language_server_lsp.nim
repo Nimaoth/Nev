@@ -74,8 +74,9 @@ proc updateLanguageServersForDocument(self: LanguageServerLspService, doc: TextD
 
       let lspConfig = config.jsonTo(LspConfig, Joptions(allowExtraKeys: true, allowMissingKeys: false))
       if languageId in lspConfig.languages or "*" in lspConfig.languages:
-        if self.getOrCreateLanguageServerLSP(name).await.getSome(ls):
-          languageServers.add(ls)
+        let ls = self.getOrCreateLanguageServerLSP(name).await
+        if ls.isSome:
+          languageServers.add(ls.get)
     except:
       discard
 

@@ -200,9 +200,10 @@ proc setTheme*(self: App, path: string, force: bool = false) {.async: (raises: [
   if not force and self.themes.theme.isNotNil and self.themes.theme.path == path:
     return
   self.reloadThemeFromConfig = false
-  if theme.loadFromFile(self.vfs, path).await.getSome(theme):
+  let theme = theme.loadFromFile(self.vfs, path).await
+  if theme.isSome:
     log(lvlInfo, fmt"Loaded theme {path}")
-    self.themes.setTheme(theme)
+    self.themes.setTheme(theme.get)
   else:
     log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender(redrawEverything=true)
@@ -376,9 +377,9 @@ proc loadSession*(self: App) {.async: (raises: []).} =
     if self.appOptions.fileToOpen.getSome(filePath):
       try:
         let path = os.absolutePath(filePath).normalizePathUnix
-        if self.vfs.getFileKind(path).await.getSome(kind):
-          if kind == FileKind.File:
-            discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+        let kind = self.vfs.getFileKind(path).await
+        if kind.isSome and kind.get == FileKind.File:
+          discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
       except CatchableError as e:
         log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
@@ -992,8 +993,9 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
       self.sessionFile = os.absolutePath(session).normalizePathUnix
     elif self.appOptions.fileToOpen.getSome(file):
       let path = os.absolutePath(file).normalizePathUnix
-      if self.vfs.getFileKind(path).await.getSome(kind):
-        case kind
+      let kind = self.vfs.getFileKind(path).await
+      if kind.isSome:
+        case kind.get
         of FileKind.File:
           # Don't restore a session when opening a specific file.
           discard
@@ -1035,9 +1037,9 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
       if self.appOptions.fileToOpen.getSome(filePath):
         try:
           let path = os.absolutePath(filePath).normalizePathUnix
-          if self.vfs.getFileKind(path).await.getSome(kind):
-            if kind == FileKind.File:
-              discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+          let kind = self.vfs.getFileKind(path).await
+          if kind.isSome and kind.get == FileKind.File:
+            discard self.layout.openFile(path)
         except CatchableError as e:
           log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
@@ -1059,9 +1061,9 @@ proc setupSessionAndWorkspace*(self: App) {.async.} =
     if self.appOptions.fileToOpen.getSome(filePath):
       try:
         let path = os.absolutePath(filePath).normalizePathUnix
-        if self.vfs.getFileKind(path).await.getSome(kind):
-          if kind == FileKind.File:
-            discard self.layout.openFile(os.absolutePath(filePath).normalizePathUnix)
+        let kind = self.vfs.getFileKind(path).await
+        if kind.isSome and kind.get == FileKind.File:
+          discard self.layout.openFile(path)
       except CatchableError as e:
         log lvlError, &"Failed to open file '{filePath}': {e.msg}"
 
@@ -2810,7 +2812,7 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
   elif self.layout.popups.len > 0:
     result.add self.layout.popups[self.layout.popups.high].getEventHandlers()
   elif self.layout.tryGetCurrentView().getSome(view):
-      result.add view.getEventHandlers(initTable[string, EventHandler]())
+    result.add view.getEventHandlers(initTable[string, EventHandler](0))
 
   if not self.modeEventHandler.isNil and modeOnTop:
     result.add self.modeEventHandler
@@ -2954,7 +2956,9 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   self.updateNextPossibleInputs()
 
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
-  discard
+  var mods = modifiers
+  mods.incl Modifier.Release
+  self.handleKeyPress(input, mods)
 
 proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleRune {inputToString(input, modifiers)}"
@@ -3048,7 +3052,7 @@ proc getActiveEditor*(self: App): Option[DocumentEditor] =
 # todo move to layout
 proc logRootNode*(self: App) {.expose("editor").} =
   let str = self.platform.builder.root.dump(true)
-  debug "logRootNode: ", str
+  debugf"logRootNode: {str}"
 
 proc replayKeys*(self: App, register: string) {.expose("editor").} =
   if not self.registers.registers.contains(register) or self.registers.registers[register].kind != RegisterKind.Text:

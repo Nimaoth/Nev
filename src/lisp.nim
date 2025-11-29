@@ -118,6 +118,9 @@ proc newMacro*(params: seq[string], body: LispVal, env: Env): LispVal =
 proc createChild*(env: Env): Env =
   result = Env(parent: env)
 
+proc clear*(env: Env) =
+  env.env.clear()
+
 proc `[]`*(env: Env, key: string): LispVal =
   env.env.withValue(key, value):
     return value[]

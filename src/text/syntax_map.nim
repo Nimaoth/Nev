@@ -38,11 +38,11 @@ type
 
 type
   StyledChunkUnderline* = object
-    color*: string
+    color*: string # todo: dont use string to avoid allocation on copying
 
   StyledChunk* = object
     chunk*: RopeChunk
-    scope*: string
+    scope*: string # todo: dont use string to avoid allocation on copying
     drawWhitespace*: bool = true
     underline*: Option[StyledChunkUnderline]
 

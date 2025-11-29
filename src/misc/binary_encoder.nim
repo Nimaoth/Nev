@@ -72,7 +72,7 @@ proc write*[T](self: var BinaryEncoder, arr: openArray[T]) =
   if arr.len > 0:
     let startIndex = self.buffer.len
     self.buffer.setLen(startIndex + arr.len * sizeof(T))
-    copyMem(self.buffer[startIndex].addr, arr[0].addr, arr.len * sizeof(T))
+    copyMem(self.buffer[startIndex].addr, arr.data, arr.len * sizeof(T))
 
 type
   BinaryDecoder* = object

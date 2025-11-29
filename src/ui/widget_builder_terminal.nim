@@ -24,9 +24,9 @@ proc toRgbaFast*(c: Color): ColorRGBA {.inline.} =
   result.b = (c.b * 255 + 0.5).uint8
   result.a = (c.a * 255 + 0.5).uint8
 
-method createUI*(self: TerminalPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: TerminalPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
   if self.view != nil:
-    result.add self.view.createUI(builder, app)
+    result.add self.view.createUI(builder)
 
 proc drawImages(self: TerminalView, builder: UINodeBuilder, renderCommands: var RenderCommands, zRange: Slice[int]) =
   buildCommands(renderCommands):
@@ -55,7 +55,8 @@ proc drawImages(self: TerminalView, builder: UINodeBuilder, renderCommands: var 
       # echo &"render image {s.textureId.int} {bounds}, cell size: {builder.charWidth}x{builder.lineHeight}"
       drawImage(bounds, s.textureId)
 
-method createUI*(self: TerminalView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: TerminalView, builder: UINodeBuilder): seq[OverlayFunction] =
+  let app = ({.gcsafe.}: gEditor)
   let dirty = self.dirty
   self.resetDirty()
 

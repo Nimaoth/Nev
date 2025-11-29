@@ -1097,7 +1097,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.currentCenterCursor = centerPoint
     self.currentCenterCursorRelativeYPos = (chunk.bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
 
-method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayFunction] =
+  let app = ({.gcsafe.}: gEditor)
   self.preRender(builder.currentParent.bounds)
 
   let dirty = self.dirty

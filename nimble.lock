@@ -348,12 +348,12 @@
     },
     "nimsumtree": {
       "version": "0.5.6",
-      "vcsRevision": "2a6e442a7fd3ad58975810ff266ddf2887b5d78c",
+      "vcsRevision": "ee2d92bde86ce87b32bc46db18bfcf91ab84193d",
       "url": "https://github.com/Nimaoth/nimsumtree",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "3a62d7ebfac045adeda6cadfc883b8b96ff58a89"
+        "sha1": "24bd7034d55792091dda85ed051633e4b1262615"
       }
     },
     "nimtreesitter": {

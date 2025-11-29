@@ -741,22 +741,26 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # todo: this awaits, check if still current request afterwards
   # todo: allow specifying queries in home and workspace config
   let highlightQueryPath = &"app://languages/{treesitterLanguageName}/queries/highlights.scm"
-  if language.get.queryFile(self.vfs, "highlight", highlightQueryPath).await.getSome(query):
+  let highlightQuery = language.get.queryFile(self.vfs, "highlight", highlightQueryPath).await
+  if highlightQuery.isSome:
     if prevLanguageId != self.languageId:
       return
 
-    self.highlightQuery = query
+    self.highlightQuery = highlightQuery.get
 
   if not self.isInitialized:
     return
 
   let errorQueryPath = &"app://languages/{treesitterLanguageName}/queries/errors.scm"
-  if language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await.getSome(query):
+  var errorQuery = language.get.queryFile(self.vfs, "error", errorQueryPath, cacheOnFail = false).await
+  if errorQuery.isSome:
     if prevLanguageId != self.languageId:
       return
-    self.errorQuery = query
-  elif language.get.query("error", "(ERROR) @error").await.getSome(query):
-    self.errorQuery = query
+    self.errorQuery = errorQuery.get
+  else:
+    errorQuery = language.get.query("error", "(ERROR) @error").await
+    if errorQuery.isSome:
+      self.errorQuery = errorQuery.get
 
   if not self.isInitialized:
     return
@@ -1581,12 +1585,15 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   let numPatchesBefore = self.buffer.patches.len
 
   var lastUndo: UndoOperation
-  while self.buffer.undo().getSome(undo):
-    self.onOperation.invoke (self, undo.op)
-    lastUndo = undo.op.undo
-    if untilCheckpoint.len == 0 or (undo.transactionId in self.checkpoints and
-        (untilCheckpoint in self.checkpoints[undo.transactionId] or
-        "" in self.checkpoints[undo.transactionId])):
+  while true:
+    let undoOp = self.buffer.undo()
+    if undoOp.isNone:
+      break
+    self.onOperation.invoke (self, undoOp.get.op)
+    lastUndo = undoOp.get.op.undo
+    if untilCheckpoint.len == 0 or (undoOp.get.transactionId in self.checkpoints and
+        (untilCheckpoint in self.checkpoints[undoOp.get.transactionId] or
+        "" in self.checkpoints[undoOp.get.transactionId])):
       break
 
   for editId in lastUndo.counts.keys:
@@ -1613,9 +1620,10 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   let numPatchesBefore = self.buffer.patches.len
 
   var lastRedo: UndoOperation
-  while self.buffer.redo().getSome(redo):
-    self.onOperation.invoke (self, redo.op)
-    lastRedo = redo.op.undo
+  while true:
+    let redoOp = self.buffer.redo()
+    self.onOperation.invoke (self, redoOp.get.op)
+    lastRedo = redoOp.get.op.undo
     if untilCheckpoint.len == 0 or self.buffer.history.redoStack.len == 0:
       break
 

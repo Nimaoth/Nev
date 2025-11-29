@@ -1,6 +1,6 @@
 import std/[strutils, os, unicode]
 from glob/regexer import globToRegexString
-import nimsumtree/static_array
+import static_array
 import util
 
 {.push gcsafe.}

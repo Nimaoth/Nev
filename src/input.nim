@@ -116,7 +116,7 @@ proc stepEmpty(dfa: CommandDFA, state: CommandState): seq[CommandState] =
     result.incl dfa.stepEmpty(newState)
 
 proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, result: var seq[CommandState]) =
-  for transition in dfa.states[state.current].transitions.pairs:
+  for transition in dfa.states[state.current].transitions.mpairs:
     if currentInput in transition[0]:
       if not transition[1].next.contains(mods):
         continue
@@ -261,6 +261,7 @@ proc inputToString*(input: int64, modifiers: Modifiers = {}): string =
   if Shift in modifiers: result.add "S"
   if Alt in modifiers: result.add "A"
   if Super in modifiers: result.add "M"
+  if Release in modifiers: result.add "^"
   if modifiers != {}: result.add "-"
 
   if input > 0 and input <= int32.high:
@@ -278,6 +279,7 @@ proc inputToString*(inputs: Slice[int64], modifiers: Modifiers = {}): string =
   if Shift in modifiers: result.add "S"
   if Alt in modifiers: result.add "A"
   if Super in modifiers: result.add "M"
+  if Release in modifiers: result.add "^"
   if modifiers != {}: result.add "-"
 
   if inputs.a == 1 and inputs.b == int32.high.int64:
