@@ -1,4 +1,4 @@
-import std/[macros, strutils, os, strformat, sequtils, json, sets, tables]
+import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics]
 import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils]
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
@@ -10,6 +10,7 @@ import config_provider, command_service, command_service_api, compilation_config
 import plugin_service, document_editor, vfs, vfs_service, channel, register, terminal_service, move_database, popup
 import wasmtime, wit_host_module, plugin_api_base, wasi, plugin_thread_pool
 import lisp
+import audio
 from scripting_api as sca import nil
 
 {.push gcsafe, raises: [].}
@@ -135,6 +136,8 @@ include generated/plugin_api_host
 type
   InstanceDataImpl = object of InstanceData
     funcs: ExportedFuncs
+    isAudioThread: bool
+    audioInstances: seq[Arc[InstanceDataImpl]]
 
   WasmModuleInstanceImpl* = ref object of WasmModuleInstance
     instance*: Arc[InstanceDataImpl]
@@ -307,6 +310,9 @@ method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
 
   for commandId in instanceData.get.commands:
     self.host.commands.unregisterCommand(commandId)
+
+  for audioInstance in instanceData.get.audioInstances:
+    audioInstance.getMutUnsafe.destroyRequested.store(true)
 
   instanceData.getMutUnsafe.resources.dropResources(instanceData.get.store.context, callDestroy = true)
   instanceData.get.store.delete()
@@ -1279,6 +1285,36 @@ proc channelWriteChannelMount*(instance: ptr InstanceData; channel: sink WriteCh
 proc channelNewInMemoryChannel*(instance: ptr InstanceData): (ReadChannelResource, WriteChannelResource) =
   var c = newInMemoryChannel()
   return (ReadChannelResource(channel: c), WriteChannelResource(channel: c))
+
+######################### Audio
+
+proc audioNextAudioSample*(instance: ptr InstanceData): int64 =
+  return getNextAudioSample()
+
+proc audioAddAudioCallback*(instance: ptr InstanceData; fun: uint32; data: uint32): void =
+  let instance = cast[ptr InstanceDataImpl](instance)
+  if instance.isAudioThread:
+    return
+
+  let newInstance = cloneInstance(instance)
+  newInstance.getMutUnsafe.host = nil
+  newInstance.getMutUnsafe.isAudioThread = true
+
+  addAudioCallback proc(buffer: var openArray[int16], index: int, channelInfo: ChannelInfo): bool =
+    if newInstance.getMutUnsafe.destroyRequested.load():
+      return false
+
+    let args = AudioArgs(bufferLen: buffer.len, index: index, sampleRate: channelInfo.sampleRate)
+    let wasmBufferAddr = newInstance.getMutUnsafe.funcs.handleAudioCallback(fun, data, args).okOr(err):
+      echo &"wasm audio callback error: {err}"
+      return false
+    let wasmBuffer = cast[ptr UncheckedArray[int16]](newInstance.getMutUnsafe.funcs.mem.getRawPtr(wasmBufferAddr.WasmPtr))
+    if wasmBuffer != nil:
+      copyMem(buffer[0].addr, wasmBuffer, buffer.len * sizeof(buffer[0]))
+
+    return true
+
+  instance.audioInstances.add newInstance
 
 ######################### Process
 

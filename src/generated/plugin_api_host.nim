@@ -83,6 +83,10 @@ type
     Never = "never", Always = "always",
     MinDistanceOffscreen = "min-distance-offscreen",
     MinDistanceCenter = "min-distance-center"
+  AudioArgs* = object
+    bufferLen*: int64
+    index*: int64
+    sampleRate*: int64
 when not declared(RopeResource):
   {.error: "Missing resource type definition for " & "RopeResource" &
       ". Define the type before the importWit statement.".}
@@ -114,6 +118,7 @@ type
     handleChannelUpdate*: FuncT
     notifyTaskComplete*: FuncT
     handleMove*: FuncT
+    handleAudioCallback*: FuncT
     savePluginState*: FuncT
     loadPluginState*: FuncT
 proc mem(funcs: ExportedFuncs): WasmMemory =
@@ -131,49 +136,55 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9378465390 = instance.getExport(context, "init_plugin")
-  if f_9378465390.isSome:
-    assert f_9378465390.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9378465390.get.of_field.func_field
+  let f_9462351483 = instance.getExport(context, "init_plugin")
+  if f_9462351483.isSome:
+    assert f_9462351483.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9462351483.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9378465406 = instance.getExport(context, "handle_command")
-  if f_9378465406.isSome:
-    assert f_9378465406.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9378465406.get.of_field.func_field
+  let f_9462351499 = instance.getExport(context, "handle_command")
+  if f_9462351499.isSome:
+    assert f_9462351499.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9462351499.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9378465456 = instance.getExport(context, "handle_mode_changed")
-  if f_9378465456.isSome:
-    assert f_9378465456.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9378465456.get.of_field.func_field
+  let f_9462351549 = instance.getExport(context, "handle_mode_changed")
+  if f_9462351549.isSome:
+    assert f_9462351549.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9462351549.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9378465457 = instance.getExport(context, "handle_view_render_callback")
-  if f_9378465457.isSome:
-    assert f_9378465457.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9378465457.get.of_field.func_field
+  let f_9462351550 = instance.getExport(context, "handle_view_render_callback")
+  if f_9462351550.isSome:
+    assert f_9462351550.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9462351550.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9378465481 = instance.getExport(context, "handle_channel_update")
-  if f_9378465481.isSome:
-    assert f_9378465481.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9378465481.get.of_field.func_field
+  let f_9462351574 = instance.getExport(context, "handle_channel_update")
+  if f_9462351574.isSome:
+    assert f_9462351574.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9462351574.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9378465482 = instance.getExport(context, "notify_task_complete")
-  if f_9378465482.isSome:
-    assert f_9378465482.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9378465482.get.of_field.func_field
+  let f_9462351575 = instance.getExport(context, "notify_task_complete")
+  if f_9462351575.isSome:
+    assert f_9462351575.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9462351575.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9378465483 = instance.getExport(context, "handle_move")
-  if f_9378465483.isSome:
-    assert f_9378465483.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9378465483.get.of_field.func_field
+  let f_9462351576 = instance.getExport(context, "handle_move")
+  if f_9462351576.isSome:
+    assert f_9462351576.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9462351576.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
+  let f_9462351588 = instance.getExport(context, "handle_audio_callback")
+  if f_9462351588.isSome:
+    assert f_9462351588.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleAudioCallback = f_9462351588.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "handle_audio_callback", "\'"
   let f_9462351589 = instance.getExport(context, "save_plugin_state")
   if f_9462351589.isSome:
     assert f_9462351589.get.kind == WASMTIME_EXTERN_FUNC
@@ -205,7 +216,7 @@ proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-  
+
 proc handleCommand*(funcs: ExportedFuncs; fun: uint32; data: uint32;
                     arguments: string): WasmtimeResult[string] =
   var args: array[max(1, 4), ValT]
@@ -301,7 +312,7 @@ proc handleModeChanged*(funcs: ExportedFuncs; fun: uint32; old: string;
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-  
+
 proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
                                data: uint32): WasmtimeResult[void] =
   var args: array[max(1, 3), ValT]
@@ -323,7 +334,7 @@ proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-  
+
 proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32;
                           closed: bool): WasmtimeResult[ChannelListenResponse] =
   var args: array[max(1, 3), ValT]
@@ -369,7 +380,7 @@ proc notifyTaskComplete*(funcs: ExportedFuncs; task: uint64; canceled: bool): Wa
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-  
+
 proc handleMove*(funcs: ExportedFuncs; fun: uint32; data: uint32; text: uint32;
                  selections: seq[Selection]; count: int32; eol: bool): WasmtimeResult[
     seq[Selection]] =
@@ -435,6 +446,32 @@ proc handleMove*(funcs: ExportedFuncs; fun: uint32; data: uint32; text: uint32;
                                        int32)
   return wasmtime.ok(retVal)
 
+proc handleAudioCallback*(funcs: ExportedFuncs; fun: uint32; data: uint32;
+                          info: AudioArgs): WasmtimeResult[uint32] =
+  var args: array[max(1, 5), ValT]
+  var results: array[max(1, 1), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  args[0] = toWasmVal(fun)
+  args[1] = toWasmVal(data)
+  args[2] = toWasmVal(info.bufferLen)
+  args[3] = toWasmVal(info.index)
+  args[4] = toWasmVal(info.sampleRate)
+  let res = funcs.handleAudioCallback.addr.call(funcs.mContext,
+      args.toOpenArray(0, 5 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
+      uint32)
+  if trap != nil:
+    return trap.toResult(uint32)
+  if res.isErr:
+    return res.toResult(uint32)
+  var retVal: uint32
+  retVal = convert(results[0].to(uint32), uint32)
+  return wasmtime.ok(retVal)
 
 proc savePluginState*(funcs: ExportedFuncs): WasmtimeResult[seq[uint8]] =
   var args: array[max(1, 0), ValT]
@@ -497,7 +534,7 @@ proc loadPluginState*(funcs: ExportedFuncs; state: seq[uint8]): WasmtimeResult[
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-  
+
 proc coreApiVersion*(instance: ptr InstanceData): int32
 proc coreGetTime*(instance: ptr InstanceData): float64
 proc coreGetPlatform*(instance: ptr InstanceData): Platform
@@ -752,6 +789,9 @@ proc registersStartRecordingCommands*(instance: ptr InstanceData;
 proc registersStopRecordingCommands*(instance: ptr InstanceData;
                                      register: sink string): void
 proc registersReplayCommands*(instance: ptr InstanceData; register: sink string): void
+proc audioAddAudioCallback*(instance: ptr InstanceData; fun: uint32;
+                            data: uint32): void
+proc audioNextAudioSample*(instance: ptr InstanceData): int64
 proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
   block:
     let e = block:
@@ -4591,5 +4631,27 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           for i0 in 0 ..< register.len:
             register[i0] = p0[i0]
         registersReplayCommands(instance, register)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/audio", "add-audio-callback", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var fun: uint32
+        var data: uint32
+        fun = convert(parameters[0].i32, uint32)
+        data = convert(parameters[1].i32, uint32)
+        audioAddAudioCallback(instance, fun, data)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([], [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/audio", "next-audio-sample", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        let res = audioNextAudioSample(instance)
+        parameters[0].i64 = cast[int64](res)
     if e.isErr:
       return e

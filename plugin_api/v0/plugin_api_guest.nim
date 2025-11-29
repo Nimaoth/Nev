@@ -22,10 +22,22 @@ export
   vfs
 
 import
+  channel
+
+export
+  channel
+
+import
   types
 
 export
   types
+
+import
+  layout
+
+export
+  layout
 
 import
   registers
@@ -34,40 +46,16 @@ export
   registers
 
 import
+  audio
+
+export
+  audio
+
+import
   text_document
 
 export
   text_document
-
-import
-  settings
-
-export
-  settings
-
-import
-  text_editor
-
-export
-  text_editor
-
-import
-  commands
-
-export
-  commands
-
-import
-  channel
-
-export
-  channel
-
-import
-  layout
-
-export
-  layout
 
 import
   render
@@ -86,6 +74,24 @@ import
 
 export
   process
+
+import
+  settings
+
+export
+  settings
+
+import
+  text_editor
+
+export
+  text_editor
+
+import
+  commands
+
+export
+  commands
 
 proc initPlugin(): void
 proc initPluginExported(): void {.wasmexport("init-plugin", "nev:plugins/guest").} =
@@ -184,6 +190,21 @@ proc handleMoveExported(a0: uint32; a1: uint32; a2: uint32; a3: int32;
     cast[ptr int32](handleMoveRetArea[0].addr)[] = 0.int32
   cast[ptr int32](handleMoveRetArea[4].addr)[] = cast[int32](res.len)
   cast[int32](handleMoveRetArea[0].addr)
+
+proc handleAudioCallback(fun: uint32; data: uint32; info: AudioArgs): uint32
+proc handleAudioCallbackExported(a0: uint32; a1: uint32; a2: int64; a3: int64;
+                                 a4: int64): uint32 {.
+    wasmexport("handle-audio-callback", "nev:plugins/guest").} =
+  var
+    fun: uint32
+    data: uint32
+    info: AudioArgs
+  fun = convert(a0, uint32)
+  data = convert(a1, uint32)
+  info.bufferLen = convert(a2, int64)
+  info.index = convert(a3, int64)
+  info.sampleRate = convert(a4, int64)
+  cast[uint32](handleAudioCallback(fun, data, info))
 
 proc savePluginState(): WitList[uint8]
 var savePluginStateRetArea: array[8, uint8]
