@@ -519,6 +519,18 @@ interface commands {
   exit-command-line: func();
 }
 
+interface audio {
+    record audio-args {
+      buffer-len: s64,
+      index: s64,
+      sample-rate: s64,
+    }
+
+    /// todo
+    add-audio-callback: func(fun: u32, data: u32);
+    next-audio-sample: func() -> s64;
+}
+
 interface settings {
   /// Returns the value of the setting with the given path, encoded as JSON.
   get-setting-raw: func(name: string) -> string;
@@ -531,6 +543,8 @@ interface guest {
   use render.{view};
   use channel.{channel-listen-response};
   use types.{rope, selection};
+  use audio.{audio-args};
+
   init-plugin: func();
   handle-command: func(fun: u32, data: u32, arguments: string) -> string;
   handle-mode-changed: func(fun: u32, old: string, new: string);
@@ -538,6 +552,7 @@ interface guest {
   handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
   notify-task-complete: func(task: u64, canceled: bool);
   handle-move: func(fun: u32, data: u32, text: u32, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
+  handle-audio-callback: func(fun: u32, data: u32, info: audio-args) -> u32;
   save-plugin-state: func() -> list<u8>;
   load-plugin-state: func(state: list<u8>);
 }
@@ -567,6 +582,7 @@ world plugin {
   import channel;
   import process;
   import registers;
+  import audio;
 
   export guest;
 }

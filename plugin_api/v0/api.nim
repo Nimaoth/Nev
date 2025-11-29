@@ -58,6 +58,10 @@ proc handleViewRenderCallback(id: int32; fun: uint32; data: uint32): void =
   let fun = cast[proc(id: int32, data: uint32) {.cdecl.}](fun)
   fun(id, data)
 
+proc handleAudioCallback(fun: uint32; data: uint32, info: AudioArgs): uint32 =
+  let fun = cast[proc(data: uint32, info: AudioArgs): ptr UncheckedArray[int16] {.cdecl.}](fun)
+  return cast[uint32](fun(data, info))
+
 proc handleCommand(fun: uint32, data: uint32; arguments: WitString): WitString =
   let fun = cast[CommandHandler](fun)
   return fun(data, arguments)

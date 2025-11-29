@@ -1,0 +1,19 @@
+{
+	"name": "Audioex",
+	"version": "0.0.1",
+	"authors": ["Nimaoth"],
+	"repository": "https://github.com/Nimaoth/Nev/plugins/audioex",
+	"wasm": "audioex.m.wasm",
+	"autoLoad": false,
+	"autoReload": true,
+	"commands": {
+		"test-audio": {},
+		"stop-audio": {},
+		"toggle-muted": {},
+		"send-audio-event": {},
+		"eval-audio-file": {},
+	},
+	"permissions": {
+		"time": true,
+	}
+}
