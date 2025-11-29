@@ -114,6 +114,8 @@ type
     handleChannelUpdate*: FuncT
     notifyTaskComplete*: FuncT
     handleMove*: FuncT
+    savePluginState*: FuncT
+    loadPluginState*: FuncT
 proc mem(funcs: ExportedFuncs): WasmMemory =
   if funcs.mMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
     return initWasmMemory(funcs.mMemory.get.of_field.sharedmemory)
@@ -172,6 +174,18 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
     funcs.handleMove = f_9378465483.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
+  let f_9462351589 = instance.getExport(context, "save_plugin_state")
+  if f_9462351589.isSome:
+    assert f_9462351589.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.savePluginState = f_9462351589.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "save_plugin_state", "\'"
+  let f_9462351590 = instance.getExport(context, "load_plugin_state")
+  if f_9462351590.isSome:
+    assert f_9462351590.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.loadPluginState = f_9462351590.get.of_field.func_field
+  else:
+    echo "Failed to find exported function \'", "load_plugin_state", "\'"
 
 proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
   var args: array[max(1, 0), ValT]
@@ -421,6 +435,69 @@ proc handleMove*(funcs: ExportedFuncs; fun: uint32; data: uint32; text: uint32;
                                        int32)
   return wasmtime.ok(retVal)
 
+
+proc savePluginState*(funcs: ExportedFuncs): WasmtimeResult[seq[uint8]] =
+  var args: array[max(1, 0), ValT]
+  var results: array[max(1, 1), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  let res = funcs.savePluginState.addr.call(funcs.mContext,
+      args.toOpenArray(0, 0 - 1), results.toOpenArray(0, 1 - 1), trap.addr).toResult(
+      seq[uint8])
+  if trap != nil:
+    return trap.toResult(seq[uint8])
+  if res.isErr:
+    return res.toResult(seq[uint8])
+  var retVal: seq[uint8]
+  let retArea: ptr UncheckedArray[uint8] = memory.getRawPtr(
+      results[0].to(WasmPtr))
+  block:
+    let p0 = cast[ptr UncheckedArray[uint8]](memory.getRawPtr(
+        cast[ptr int32](retArea[0].addr)[].WasmPtr))
+    retVal = newSeq[typeof(retVal[0])](cast[ptr int32](retArea[4].addr)[])
+    for i0 in 0 ..< retVal.len:
+      retVal[i0] = convert(cast[ptr uint8](p0[i0 * 1 + 0].addr)[], uint8)
+  return wasmtime.ok(retVal)
+
+proc loadPluginState*(funcs: ExportedFuncs; state: seq[uint8]): WasmtimeResult[
+    void] =
+  var args: array[max(1, 2), ValT]
+  var results: array[max(1, 0), ValT]
+  var trap: ptr WasmTrapT = nil
+  var memory = funcs.mem
+  let savePoint = stackSave(funcs.mStackSave.get.of_field.func_field,
+                            funcs.mContext)
+  defer:
+    discard stackRestore(funcs.mStackRestore.get.of_field.func_field,
+                         funcs.mContext, savePoint.val)
+  var dataPtrWasm0: WasmPtr
+  if state.len > 0:
+    dataPtrWasm0 = block:
+      let temp = stackAlloc(funcs.mStackAlloc.get.of_field.func_field,
+                            funcs.mContext, (state.len * 1).int32, 4)
+      if temp.isErr:
+        return temp.toResult(void)
+      temp.val
+    args[0] = toWasmVal(cast[int32](dataPtrWasm0))
+    block:
+      for i0 in 0 ..< state.len:
+        cast[ptr uint8](memory[dataPtrWasm0 + i0 * 1 + 0].addr)[] = state[i0]
+  else:
+    args[0] = toWasmVal(0.int32)
+  args[1] = toWasmVal(cast[int32](state.len))
+  let res = funcs.loadPluginState.addr.call(funcs.mContext,
+      args.toOpenArray(0, 2 - 1), results.toOpenArray(0, 0 - 1), trap.addr).toResult(
+      void)
+  if trap != nil:
+    return trap.toResult(void)
+  if res.isErr:
+    return res.toResult(void)
+  
 proc coreApiVersion*(instance: ptr InstanceData): int32
 proc coreGetTime*(instance: ptr InstanceData): float64
 proc coreGetPlatform*(instance: ptr InstanceData): Platform

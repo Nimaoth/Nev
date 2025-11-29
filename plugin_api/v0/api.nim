@@ -27,9 +27,9 @@ includePluginApi()
 proc emscripten_notify_memory_growth*(a: int32) {.exportc.} =
   echo "emscripten_notify_memory_growth"
 
-proc emscripten_stack_init() {.importc.}
+proc emscripten_stack_init*() {.importc.}
 
-proc NimMain() {.importc.}
+proc NimMain*() {.importc.}
 
 ######### todo: move these to wit_types
 
@@ -65,6 +65,24 @@ proc handleCommand(fun: uint32, data: uint32; arguments: WitString): WitString =
 proc handleChannelUpdate(fun: uint32, data: uint32, closed: bool): ChannelListenResponse =
   let fun = cast[ChannelUpdateHandler](fun)
   fun(data, closed)
+
+var savePluginStateImpl: proc(): WitList[uint8]
+var loadPluginStateImpl: proc(state: WitList[uint8])
+
+proc setPluginSaveCallback*(cb: proc(): WitList[uint8]) =
+  savePluginStateImpl = cb
+
+proc setPluginLoadCallback*(cb: proc(state: WitList[uint8])) =
+  loadPluginStateImpl = cb
+
+proc savePluginState(): WitList[uint8] =
+  if savePluginStateImpl != nil:
+    return savePluginStateImpl()
+  return WitList[uint8]()
+
+proc loadPluginState(state: WitList[uint8]) =
+  if loadPluginStateImpl != nil:
+    loadPluginStateImpl(state)
 
 type TaskId = distinct uint64
 type TaskWrapper = object

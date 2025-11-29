@@ -857,6 +857,8 @@
         "args": ["cli", "split-pane", "--right", "--", ["exe"] , ["args"], "--terminal"],
     },
 
+    "ui.scroll-speed": 100,
+
     "ui.layout.default": "vim",
     "ui.layout.vertical-temp": {
         "kind": "vertical",

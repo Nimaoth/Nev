@@ -184,3 +184,22 @@ proc handleMoveExported(a0: uint32; a1: uint32; a2: uint32; a3: int32;
     cast[ptr int32](handleMoveRetArea[0].addr)[] = 0.int32
   cast[ptr int32](handleMoveRetArea[4].addr)[] = cast[int32](res.len)
   cast[int32](handleMoveRetArea[0].addr)
+
+proc savePluginState(): WitList[uint8]
+var savePluginStateRetArea: array[8, uint8]
+proc savePluginStateExported(): int32 {.wasmexport("save-plugin-state",
+    "nev:plugins/guest").} =
+  let res = savePluginState()
+  if res.len > 0:
+    cast[ptr int32](savePluginStateRetArea[0].addr)[] = cast[int32](res[0].addr)
+  else:
+    cast[ptr int32](savePluginStateRetArea[0].addr)[] = 0.int32
+  cast[ptr int32](savePluginStateRetArea[4].addr)[] = cast[int32](res.len)
+  cast[int32](savePluginStateRetArea[0].addr)
+
+proc loadPluginState(state: WitList[uint8]): void
+proc loadPluginStateExported(a0: int32; a1: int32): void {.
+    wasmexport("load-plugin-state", "nev:plugins/guest").} =
+  var state: WitList[uint8]
+  state = wl(cast[ptr typeof(state[0])](a0), a1)
+  loadPluginState(state)
