@@ -1,5 +1,4 @@
 import std/[macros, options]
-import clone
 
 type
   Array*[T; C: static int] = object
@@ -125,7 +124,7 @@ template toOpenArray*[T; C: static int](arr: Array[T, C]): openArray[T] =
 template toOpenArray*[T; C: static int](arr: Array[T, C], first, last: int): openArray[T] =
   arr.data.toOpenArray(first, last)
 
-proc clone*[T: Clone; C: static int](arr: Array[T, C]): Array[T, C] {.noinit, nodestroy.} =
+proc clone*[T; C: static int](arr: Array[T, C]): Array[T, C] {.noinit, nodestroy.} =
   result.len = arr.len
   for i in 0..<arr.len.int:
     result.data[i] = arr.data[i].clone()
