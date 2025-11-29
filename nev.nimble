@@ -39,7 +39,7 @@ requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy#bfc8665"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.21"
 requires "https://github.com/Nimaoth/nimwasmtime#86b36c9"
-requires "https://github.com/Nimaoth/nimsumtree#2a6e442"
+requires "https://github.com/Nimaoth/nimsumtree#ee2d92b"
 requires "https://github.com/Nimaoth/zippy >= 0.10.17"
 requires "libssh2 >= 0.1.9"
 requires "ssh2 >= 0.1.9"
@@ -178,7 +178,7 @@ task buildNimConfigWasmAll, "Compile the nim script config file to wasm":
 proc buildPlugin(name: string) =
   withDir &"plugins/{name}":
     exec &"nimble setup"
-    exec &"nim c -d:release --skipParentCfg --passL:\"-o {name}.m.wasm\" {getCommandLineParams()} {name}.nim"
+    exec &"nim c -d:release --disablevalidation --skipParentCfg --passL:\"-o {name}.m.wasm\" {getCommandLineParams()} {name}.nim"
     # exec &"nim c -d:release --skipParentCfg -d:pluginWorld=plugin-thread-safe --passL:\"-o {name}_thread.m.wasm\" {getCommandLineParams()} {name}_thread.nim"
 
 task buildWasmModule, "":

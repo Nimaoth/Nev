@@ -435,10 +435,9 @@ proc parseResponse(client: DAPClient): Future[JsonNode] {.async.} =
       return newJNull()
 
     let contentLength = headers["Content-Length"].parseInt
-    # let data = await client.socket.recv(contentLength)
     let data = await client.connection.recv(contentLength)
     if logVerbose:
-      debug "[recv] ", data[0..min(data.high, 500)]
+      debugf"[recv] {data[0..min(data.high, 500)]}"
     return parseJson(data)
 
   except CatchableError:

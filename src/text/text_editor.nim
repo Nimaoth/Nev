@@ -4098,14 +4098,16 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   config.addCommand("", "<ESCAPE>", "setMode \"\"")
 
+  let weakSelf {.cursor.} = self
+
   self.eventHandlerOverrides[mode] = proc(config: EventHandlerConfig): EventHandler =
     assignEventHandler(result, config):
       onAction:
-        self.displayMap.overlay.clear(overlayIdChooseCursor)
-        self.document.notifyTextChanged()
-        self.markDirty()
-        self.removeMode(mode)
-        if self.handleAction(action, arg, record=true).isSome:
+        weakSelf.displayMap.overlay.clear(overlayIdChooseCursor)
+        weakSelf.document.notifyTextChanged()
+        weakSelf.markDirty()
+        weakSelf.removeMode(mode)
+        if weakSelf.handleAction(action, arg, record=true).isSome:
           Handled
         else:
           Ignored
@@ -4118,8 +4120,8 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
         updateStyledTextOverrides()
 
       onCanceled:
-        self.displayMap.overlay.clear(overlayIdChooseCursor)
-        self.removeMode(mode)
+        weakSelf.displayMap.overlay.clear(overlayIdChooseCursor)
+        weakSelf.removeMode(mode)
 
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
@@ -4584,6 +4586,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
 
 proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEditor =
   var self = createTextEditorInstance()
+  let s {.cursor.} = self
   self.services = services
   self.platform = self.services.getService(PlatformService).get.platform
   self.configService = services.getService(ConfigService).get
@@ -4599,22 +4602,23 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
   self.commands = self.services.getService(CommandService).get
   self.displayMap = DisplayMap.new()
   self.diffDisplayMap = DisplayMap.new()
-  discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
-  discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => self.handleWrapMapUpdated(args[0], args[1])
-  discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
-  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => self.handleDisplayMapUpdated(args[0])
+  discard self.displayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => s.handleWrapMapUpdated(args[0], args[1])
+  discard self.diffDisplayMap.wrapMap.onUpdated.subscribe (args: (WrapMap, WrapMapSnapshot)) => s.handleWrapMapUpdated(args[0], args[1])
+  discard self.displayMap.onUpdated.subscribe (args: (DisplayMap,)) => s.handleDisplayMapUpdated(args[0])
+  discard self.diffDisplayMap.onUpdated.subscribe (args: (DisplayMap,)) => s.handleDisplayMapUpdated(args[0])
 
   self.config = self.configService.addStore("editor/" & $self.id, &"settings://editor/{self.id}")
   discard self.config.onConfigChanged.subscribe proc(key: string) =
     # Keep this simple and cheap, this is called often
-    self.configChanged = true
-    self.markDirty()
+    s.configChanged = true
+    s.markDirty()
 
   self.uiSettings = UiSettings.new(self.config)
   self.debugSettings = DebugSettings.new(self.config)
   self.settings = TextEditorSettings.new(self.config)
 
-  self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int): seq[Selection] = self.applyMoveFallback(move, selections, count)
+  self.moveFallbacks = proc(move: string, selections: openArray[Selection], count: int): seq[Selection] =
+    s.applyMoveFallback(move, selections, count)
 
   self.setDocument(document)
 
@@ -4622,7 +4626,7 @@ proc newTextEditor*(document: TextDocument, services: Services): TextDocumentEdi
 
   self.editors.registerEditor(self)
 
-  self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = self.handleFocusChanged(focused)
+  self.onFocusChangedHandle = self.platform.onFocusChanged.subscribe proc(focused: bool) = s.handleFocusChanged(focused)
 
   self.setDefaultMode()
 

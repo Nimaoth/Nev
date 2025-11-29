@@ -3,9 +3,10 @@ import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
 import platform/platform
+import ui/[widget_builders_base]
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger, widget_builder_terminal, widget_library]
-import app, document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
+import document_editor, theme, compilation_config, view, layout, config_provider, command_service, toast
 import text/text_editor
 import render_view
 
@@ -17,11 +18,11 @@ when enableAst:
 
 logCategory "widget_builder"
 
-method createUI*(self: EditorView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: EditorView, builder: UINodeBuilder): seq[OverlayFunction] =
   self.resetDirty()
-  self.editor.createUI(builder, app)
+  self.editor.createUI(builder)
 
-method createUI*(self: RenderView, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: RenderView, builder: UINodeBuilder): seq[OverlayFunction] =
   builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = color(0, 0, 0)):
     onClickAny btn:
       self.layout.tryActivateView(self)
@@ -34,7 +35,7 @@ method createUI*(self: RenderView, builder: UINodeBuilder, app: App): seq[Overla
 
   self.resetDirty()
 
-method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: HorizontalLayout, builder: UINodeBuilder): seq[OverlayFunction] =
   self.resetDirty()
 
   if self.children.len == 0:
@@ -43,7 +44,7 @@ method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[
 
   if self.maximize:
     builder.panel(&{FillX, FillY}):
-      result.add self.children[self.activeIndex].createUI(builder, app)
+      result.add self.children[self.activeIndex].createUI(builder)
     return
 
   var rects = newSeq[Rect]()
@@ -65,11 +66,11 @@ method createUI*(self: HorizontalLayout, builder: UINodeBuilder, app: App): seq[
       let xwyh = rects[i].xwyh * builder.currentParent.bounds.wh
       let bounds = rect(xy, xwyh - xy)
       builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-        result.add c.createUI(builder, app)
+        result.add c.createUI(builder)
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
-method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: VerticalLayout, builder: UINodeBuilder): seq[OverlayFunction] =
   self.resetDirty()
 
   if self.children.len == 0:
@@ -78,7 +79,7 @@ method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[Ov
 
   if self.maximize:
     builder.panel(&{FillX, FillY}):
-      result.add self.children[self.activeIndex].createUI(builder, app)
+      result.add self.children[self.activeIndex].createUI(builder)
     return
 
   var rects = newSeq[Rect]()
@@ -100,11 +101,11 @@ method createUI*(self: VerticalLayout, builder: UINodeBuilder, app: App): seq[Ov
       let xwyh = rects[i].xwyh * builder.currentParent.bounds.wh
       let bounds = rect(xy, xwyh - xy)
       builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-        result.add c.createUI(builder, app)
+        result.add c.createUI(builder)
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
-method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: AlternatingLayout, builder: UINodeBuilder): seq[OverlayFunction] =
   self.resetDirty()
   if self.children.len == 0:
     builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
@@ -112,7 +113,7 @@ method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq
 
   if self.maximize:
     builder.panel(&{FillX, FillY}):
-      result.add self.children[self.activeIndex].createUI(builder, app)
+      result.add self.children[self.activeIndex].createUI(builder)
     return
 
   var rects = newSeq[Rect]()
@@ -137,15 +138,18 @@ method createUI*(self: AlternatingLayout, builder: UINodeBuilder, app: App): seq
       let xwyh = rects[i].xwyh * builder.currentParent.bounds.wh
       let bounds = rect(xy, xwyh - xy)
       builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-        result.add c.createUI(builder, app)
+        result.add c.createUI(builder)
     else:
       builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
-method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+import app
+method createUI*(self: TabLayout, builder: UINodeBuilder): seq[OverlayFunction] =
+  let app = ({.gcsafe.}: gEditor)
+
   self.resetDirty()
-  let activeTabColor = app.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
-  let inactiveTabColor = app.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
-  let textColor = app.themes.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  let activeTabColor = builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
+  let inactiveTabColor = builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   let width = app.uiSettings.tabHeaderWidth.get()
   let hideTabBarWhenSingle = app.uiSettings.hideTabBarWhenSingle.get()
@@ -170,7 +174,7 @@ method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[Overlay
             capture i:
               onClickAny btn:
                 self.activeIndex = i
-                app.requestRender()
+                # app.requestRender() # todo
 
             let leaf = c.activeLeafView()
             let desc = if leaf != nil:
@@ -188,11 +192,11 @@ method createUI*(self: TabLayout, builder: UINodeBuilder, app: App): seq[Overlay
 
     builder.panel(&{FillX, FillY}):
       if index in 0..self.children.high:
-        result.add self.children[index].createUI(builder, app)
+        result.add self.children[index].createUI(builder)
       else:
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
-method createUI*(self: CenterLayout, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: CenterLayout, builder: UINodeBuilder): seq[OverlayFunction] =
   self.resetDirty()
 
   var rects: array[5, Rect]
@@ -214,7 +218,7 @@ method createUI*(self: CenterLayout, builder: UINodeBuilder, app: App): seq[Over
       let xwyh = rects[i].xwyh * builder.currentParent.bounds.wh
       let bounds = rect(xy, xwyh - xy)
       builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-        result.add c.createUI(builder, app)
+        result.add c.createUI(builder)
 
   if self.center == nil:
     let xy = remaining.xy * builder.currentParent.bounds.wh
@@ -224,6 +228,7 @@ method createUI*(self: CenterLayout, builder: UINodeBuilder, app: App): seq[Over
 
 proc updateWidgetTree*(self: App, frameIndex: int) =
   # self.platform.builder.buildUINodes()
+  self.platform.builder.theme = self.themes.theme
 
   var headerColor = if self.commands.commandLineMode: self.themes.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.themes.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
@@ -307,7 +312,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           builder.pushMaxBounds(rootBounds.wh * vec2(0.75, 0.5))
           defer:
             builder.popMaxBounds()
-          overlays.add self.commands.commandLineEditor.createUI(builder, self)
+          overlays.add self.commands.commandLineEditor.createUI(builder)
 
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
         mainBounds = currentNode.bounds
@@ -318,16 +323,16 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
             let view = self.layout.layout.activeLeafView()
             if view != nil:
-              overlays.add view.createUI(builder, self)
+              overlays.add view.createUI(builder)
             else:
               builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
         else:
-          overlays.add self.layout.layout.createUI(builder, self)
+          overlays.add self.layout.layout.createUI(builder)
 
     # popups
     for i, popup in self.layout.popups:
-      overlays.add popup.createUI(builder, self)
+      overlays.add popup.createUI(builder)
 
     let textColor = self.themes.theme.color("editor.foreground", color(0.882, 0.784, 0.784))
     let paddingX = builder.charWidth

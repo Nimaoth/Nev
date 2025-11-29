@@ -327,7 +327,7 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
     # let data = await client.socket.recv(contentLength)
     let data = await client.connection.recv(contentLength)
     if logVerbose:
-      debug "[recv] ", data[0..min(data.high, 500)]
+      debugf"[recv] {data[0..min(data.high, 500)]}"
     return parseJson(data)
 
   except CatchableError:
@@ -344,7 +344,7 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
 
   if logVerbose:
     let str = $params
-    debug "[sendRPC] ", meth, ": ", str[0..min(str.high, 500)]
+    debugf"[sendRPC] {meth}: {str[0..min(str.high, 500)]}"
 
   if not client.isInitialized and meth != "initialize":
     log(lvlInfo, fmt"[sendRPC] client not initialized, add to pending ({meth})")
@@ -377,7 +377,7 @@ proc sendResult(client: LSPClient, id: int, res: JsonNode) {.async, gcsafe.} =
   let data = $request
 
   if logVerbose:
-    debug "[sendResult] ", data[0..min(data.high, 500)]
+    debugf"[sendResult] {data[0..min(data.high, 500)]}"
 
   let header = createHeader(data.len)
   let msg = header & data
@@ -651,7 +651,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
 
   for req in client.pendingRequests:
     if logVerbose:
-      debug "[initialize] sending pending request", req[0..min(req.high, 500)]
+      debugf"[initialize] sending pending request {req[0..min(req.high, 500)]}"
     let header = createHeader(req.len)
     try:
       await client.connection.send(header & req)

@@ -23,7 +23,7 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
   let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let highlightColor = app.themes.theme.color("editor.foreground.highlight", textColor.lighten(0.18))
   let name = item.displayName
-  let matchIndices = self.getCompletionMatches(i, self.getSearchString(), name, defaultCompletionMatchingConfig)
+  let matchIndices = self.getCompletionMatches(i, self.getSearchString(), name, finderFuzzyMatchConfig)
 
   builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}):
     discard builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
@@ -33,19 +33,20 @@ proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBui
       builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = $item.details,
         textColor = textColor.darken(0.2))
 
-method createUI*(self: FilePreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: FilePreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
   if self.editor.isNotNil:
-    result.add self.editor.createUI(builder, app)
+    result.add self.editor.createUI(builder)
 
-method createUI*(self: OpenEditorPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: OpenEditorPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
   if self.editor.isNotNil:
-    result.add self.editor.createUI(builder, app)
+    result.add self.editor.createUI(builder)
 
-method createUI*(self: DataPreviewer, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: DataPreviewer, builder: UINodeBuilder): seq[OverlayFunction] =
   if self.editor.isNotNil:
-    result.add self.editor.createUI(builder, app)
+    result.add self.editor.createUI(builder)
 
-method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[OverlayFunction] =
+method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFunction] =
+  let app = ({.gcsafe.}: gEditor)
   # let dirty = self.dirty
   self.resetDirty()
 
@@ -98,7 +99,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
               x = leftBounds.w * 0.5)
 
           builder.panel(&{FillX, SizeToContentY}):
-            result.add self.textEditor.createUI(builder, app)
+            result.add self.textEditor.createUI(builder)
 
             builder.panel(&{FillX, FillY, LayoutHorizontalReverse}):
               if self.finder.isNotNil and self.finder.filteredItems.getSome(items):
@@ -154,8 +155,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
                   let item {.cursor.} = items[completionIndex]
 
                   let name = item.displayName
-                  let matchIndices = self.getCompletionMatches(
-                    completionIndex, self.getSearchString(), name, defaultCompletionMatchingConfig)
+                  let matchIndices = self.getCompletionMatches(completionIndex, self.getSearchString(), name, finderFuzzyMatchConfig)
 
                   var row: seq[UINode] = @[]
 
@@ -163,13 +163,11 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
                     if app.config.runtime.get("ui.selector.show-score", false):
                       row.add builder.createTextWithMaxWidth($(item.score * 100), maxColumnWidth, "...", detailColor, &{TextItalic})
 
-                    row.add builder.highlightedText(name, matchIndices, textColor,
-                      highlightColor, maxDisplayNameWidth)
+                    row.add builder.highlightedText(name, matchIndices, textColor, highlightColor, maxDisplayNameWidth)
 
                     if item.details.len > 0:
                       for detail in item.details:
-                        row.add builder.createTextWithMaxWidth(detail, maxColumnWidth, "...",
-                          detailColor, &{TextItalic})
+                        row.add builder.createTextWithMaxWidth(detail, maxColumnWidth, "...", detailColor, &{TextItalic})
 
                   rows.add row
 
@@ -203,9 +201,9 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[Ove
             self.previewEditor.active = self.focusPreview
 
             if self.previewView != nil:
-              result.add self.previewView.createUI(builder, app)
+              result.add self.previewView.createUI(builder)
             elif self.previewer.isSome:
-              result.add self.previewer.get.get.createUI(builder, app)
+              result.add self.previewer.get.get.createUI(builder)
 
     if sizeToContentY:
       currentNode.h = currentNode.last.h

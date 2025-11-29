@@ -620,8 +620,10 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
     return @selections
 
 proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, originalSelections: openArray[Selection], env: Env, fallback: MoveFunction): seq[Selection] =
+  var env = env
+  var baseEnv = self.env.createChild()
+  env.parent = baseEnv
   try:
-    var env = env
     if self.debugMoves:
       log lvlDebug, &"applyMoveLisp '{move}', {env.env}, {originalSelections}"
 
@@ -664,8 +666,6 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
       of CurrentEnd:
         if i in 0..<selections.len: selections[i].last else: default
 
-    var baseEnv = self.env.createChild()
-    env.parent = baseEnv
     var stack = newSeq[seq[Selection]]()
 
     baseEnv.onUndefinedSymbol = proc(_: Env, name: string): LispVal =
@@ -759,6 +759,9 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
   except CatchableError as e:
     log lvlError, &"Failed to apply move '{move}': {e.msg}"
     return @originalSelections
+  finally:
+    env.clear()
+    baseEnv.clear()
 
 proc applyMove*(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction = nil, env: Env = Env()): seq[Selection] =
   if move.startsWith("("):

@@ -10,8 +10,8 @@ import misc/[custom_unicode]
 {.compile: "./libvterm/unicode.c".}
 {.compile: "./libvterm/vterm.c".}
 
-{.passC: "-Ilibvterm".}
-{.push header: "./libvterm/vterm.h".}
+{.passC: "-Isrc/libvterm".}
+{.push header: "vterm.h".}
 
 # {.compile: "./vterm/encoding.c".}
 # {.compile: "./vterm/keyboard.c".}
