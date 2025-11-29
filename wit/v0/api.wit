@@ -538,6 +538,8 @@ interface guest {
   handle-channel-update: func(fun: u32, data: u32, closed: bool) -> channel-listen-response;
   notify-task-complete: func(task: u64, canceled: bool);
   handle-move: func(fun: u32, data: u32, text: u32, selections: list<selection>, count: s32, eol: bool) -> list<selection>;
+  save-plugin-state: func() -> list<u8>;
+  load-plugin-state: func(state: list<u8>);
 }
 
 /// APIs which can safely be used on a background thread

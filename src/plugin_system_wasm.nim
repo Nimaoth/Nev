@@ -106,7 +106,11 @@ proc newPluginSystemWasm*(services: Services): PluginSystemWasm =
 
 method deinit*(self: PluginSystemWasm) = discard
 
-method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[bool] {.async: (raises: [IOError]).} =
+method savePluginState*(self: PluginSystemWasm, plugin: Plugin): seq[uint8] =
+  let instance = plugin.instance.WasmPluginInstance
+  return instance.api.savePluginState(instance.moduleInstance)
+
+method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.async: (raises: [IOError]).} =
   log lvlInfo, &"tryLoadPlugin {plugin.desc}"
   if not plugin.manifest.wasm.endsWith(".m.wasm") and not plugin.manifest.wasm.endsWith(".wat"):
     log lvlInfo, &"Don't load plugin {plugin.desc}, no wasm file specified"
@@ -163,7 +167,7 @@ method tryLoadPlugin*(self: PluginSystemWasm, plugin: Plugin): Future[bool] {.as
       plugin.state = PluginState.Failed
       return false
 
-  let moduleInstance = api.createModule(module, plugin)
+  let moduleInstance = api.createModule(module, plugin, state)
   if moduleInstance == nil:
     log lvlError, &"Failed to instantiate wasm module"
     plugin.state = PluginState.Failed

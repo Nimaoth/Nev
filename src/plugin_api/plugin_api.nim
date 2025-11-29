@@ -67,7 +67,7 @@ type
     commands: seq[CommandId]
     namespace: string
     args: string
-    destroyRequested: bool
+    destroyRequested: Atomic[bool]
     timer*: Timer
 
 proc getMemoryFor(instance: ptr InstanceData, caller: ptr CallerT): Option[ExternT] =
@@ -222,7 +222,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
 method setPermissions*(instance: WasmModuleInstanceImpl, permissions: PluginPermissions) =
   instance.instance.getMut.permissions = permissions
 
-method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): WasmModuleInstance =
+method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin, state: seq[uint8]): WasmModuleInstance =
   var instanceData = Arc[InstanceDataImpl].new()
   instanceData.getMut.isMainThread = true
   instanceData.getMut.store = self.engine.newStore(instanceData.get.addr, nil)
@@ -284,6 +284,12 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
     self.instances.removeShift(instance)
     return
 
+  if state.len > 0:
+    instanceData.get.funcs.loadPluginState(state).okOr(err):
+      log lvlError, "Failed to call load-plugin-state: " & err.msg
+      self.instances.removeShift(instance)
+      return
+
   let options = sca.CreateTerminalOptions(
     group: plugin.manifest.id,
   )
@@ -291,6 +297,9 @@ method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): Wasm
   self.host.layout.registerView(view)
 
   return instance
+
+method savePluginState*(self: PluginApi, instance: WasmModuleInstance): seq[uint8] =
+  return instance.WasmModuleInstanceImpl.instance.get.funcs.savePluginState().okOr(@[])
 
 method destroyInstance*(self: PluginApi, instance: WasmModuleInstance) =
   let instance = instance.WasmModuleInstanceImpl
@@ -356,7 +365,7 @@ proc runInstanceThread(instance: sink Arc[InstanceDataImpl]) =
   instance.get.funcs.initPlugin().okOr(_):
     return
 
-  while not instance.get.destroyRequested:
+  while not instance.getMutUnsafe.destroyRequested.load():
     poll(2000)
 
   instance.getMutUnsafe.resources.dropResources(instance.get.store.context, callDestroy = true)
@@ -907,11 +916,9 @@ proc vfsLocalize*(instance: ptr InstanceData, path: sink string): string =
   return instance.host.vfs.localize(path)
 
 proc coreGetTime*(instance: ptr InstanceData): float64 =
-  if instance.host == nil:
-    return
   if not instance.permissions.time:
     return 0
-  return instance.host.timer.elapsed.ms
+  return instance.timer.elapsed.ms
 
 proc coreGetPlatform*(instance: ptr InstanceData): Platform =
   if instance.host == nil:
@@ -961,7 +968,7 @@ proc coreSpawnBackground*(instance: ptr InstanceData, args: sink string, executo
       threadPool.addTask(newInstance)
 
 proc coreFinishBackground*(instance: ptr InstanceData) =
-  instance.destroyRequested = true
+  instance.destroyRequested.store(true)
 
 proc registersIsReplayingCommands*(instance: ptr InstanceData): bool =
   if instance.host == nil:

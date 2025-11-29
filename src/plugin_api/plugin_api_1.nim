@@ -136,7 +136,7 @@ method init*(self: PluginApi, services: Services, engine: ptr WasmEngineT) =
 method setPermissions*(instance: WasmModuleInstanceImpl, permissions: PluginPermissions) =
   instance.instance.getMut.permissions = permissions
 
-method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin): WasmModuleInstance =
+method createModule*(self: PluginApi, module: ptr ModuleT, plugin: Plugin, state: seq[uint8]): WasmModuleInstance =
   var wasmModule = Arc[InstanceData].new()
   wasmModule.getMut.store = self.engine.newStore(wasmModule.get.addr, nil)
   wasmModule.getMut.permissions = plugin.permissions

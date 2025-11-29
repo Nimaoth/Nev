@@ -45,6 +45,7 @@ type
     authors*: seq[string]
     repository*: string
     autoLoad*: bool
+    autoReload*: bool = false
     apiVersion*: int = -1
     wasm*: string
     permissions*: JsonNode
@@ -118,9 +119,10 @@ method reload*(self: PluginSystem): Future[void] {.base.} = discard
 
 method postInitialize*(self: PluginSystem): bool {.base.} = discard
 method getCurrentContext*(self: PluginSystem): string {.base.} = ""
-method tryLoadPlugin*(self: PluginSystem, plugin: Plugin): Future[bool] {.base, async: (raises: [IOError]).} = false
+method tryLoadPlugin*(self: PluginSystem, plugin: Plugin, state: seq[uint8] = @[]): Future[bool] {.base, async: (raises: [IOError]).} = false
 method unloadPlugin*(self: PluginSystem, plugin: Plugin): Future[void] {.base, async: (raises: []).} = discard
 method dispatchDynamic*(self: PluginSystem, name: string, args: LispVal, namedArgs: LispVal): LispVal {.base.} = newNil()
+method savePluginState*(self: PluginSystem, plugin: Plugin): seq[uint8] {.base.} = @[]
 
 method setPermissions*(self: PluginInstanceBase, permissions: PluginPermissions) {.base.} = discard
 
@@ -155,7 +157,7 @@ proc updatePermissions(self: PluginService, plugin: Plugin) =
   except CatchableError as e:
     log lvlError, &"Failed to parse permissions for {plugin.desc}: {e.msg}"
 
-proc loadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
+proc loadPlugin*(self: PluginService, plugin: Plugin, state: seq[uint8] = @[]) {.async.} =
   if plugin.state notin {PluginState.Unloaded, PluginState.Failed}:
     return
 
@@ -164,7 +166,7 @@ proc loadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
   self.updatePermissions(plugin)
   for ps in self.pluginSystems:
     try:
-      if ps.tryLoadPlugin(plugin).await:
+      if ps.tryLoadPlugin(plugin, state).await:
         plugin.state = Loaded
         plugin.dirty = false
         return
@@ -197,8 +199,14 @@ proc unloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
 proc reloadPlugin*(self: PluginService, plugin: Plugin) {.async.} =
   if plugin.state == PluginState.Disabled:
     return
+
+  var state = newSeq[uint8]()
+  if plugin.state == PluginState.Loaded and plugin.pluginSystem != nil:
+    log lvlInfo, &"Save plugin state {plugin.desc}"
+    state = plugin.pluginSystem.savePluginState(plugin)
+
   await self.unloadPlugin(plugin)
-  await self.loadPlugin(plugin)
+  await self.loadPlugin(plugin, state)
 
 proc unloadPlugin*(self: PluginService, path: string) {.async.} =
   for p in self.plugins:
@@ -356,8 +364,10 @@ proc handleVFSEvents(self: PluginService) {.async.} =
         let pluginPath = e.pluginFolder.path // pluginPathRelative
 
         if self.getPlugin(pluginPath).getSome(existingPlugin):
-          log lvlInfo, "Changed existing plugin"
+          log lvlInfo, &"Plugin file '{fullPath}' changed"
           existingPlugin.dirty = true
+          if existingPlugin.manifest.autoReload and isDir == FileKind.Directory:
+            asyncSpawn self.reloadPlugin(existingPlugin)
         else:
           log lvlInfo, "New plugin ", pluginPath
           if container != "" or isDir == FileKind.Directory:
