@@ -256,6 +256,8 @@ type
     state: seq[ParserState]
     filename: string
     rawStringLiterals: bool
+    tokenStart: int
+    lastTokenEnd: int
 
   LispKindError* = object of ValueError ## raised by the `to` macro if the
                                         ## Lisp kind is incorrect.
@@ -558,8 +560,10 @@ proc parseNumber(my: var LispParser) =
   my.bufpos = pos
 
 proc getTok(my: var LispParser): TokKind =
+  my.lastTokenEnd = my.bufpos
   setLen(my.a, 0)
   skip(my) # skip whitespace, comments
+  my.tokenStart = my.bufpos
   case my.buf[my.bufpos]
   of '-':
     if my.buf[my.bufpos + 1] != ' ':
@@ -639,6 +643,15 @@ proc parseLisp*(p: var LispParser; depth = 0, depthLimit = 1024): LispVal =
   of tkSymbol:
     result = newSymbol(move p.a)
     discard getTok(p)
+    if p.tok == tkBracketLe and p.lastTokenEnd == p.tokenStart:
+      let child = parseLisp(p, depth + 1)
+      result = newList(@[result, child])
+    elif p.tok == tkParenLe and p.lastTokenEnd == p.tokenStart:
+      let child = parseLisp(p, depth + 1)
+      result = newList(@[result, child])
+    elif p.tok == tkCurlyLe and p.lastTokenEnd == p.tokenStart:
+      let child = parseLisp(p, depth + 1)
+      result = newList(@[result, child])
   of tkBacktick:
     discard getTok(p)
     result = newList(@[newSymbol("quasiquote"), parseLisp(p, depth + 1)])
@@ -695,8 +708,7 @@ proc parseLisp*(p: var LispParser; depth = 0, depthLimit = 1024): LispVal =
     discard getTok(p)
     while p.tok != tkBracketRi:
       result.elems.add(parseLisp(p, depth+1))
-      if p.tok != tkComma: break
-      discard getTok(p)
+      if p.tok == tkComma: eat(p, tkComma)
     eat(p, tkBracketRi)
   of tkParenLe:
     if depth > depthLimit:
@@ -705,7 +717,6 @@ proc parseLisp*(p: var LispParser; depth = 0, depthLimit = 1024): LispVal =
     discard getTok(p)
     while p.tok != tkParenRi:
       result.elems.add(parseLisp(p, depth+1))
-      if p.tok == tkParenRi: break
     eat(p, tkParenRi)
   else:
     raiseParseErr(p, "{")
@@ -811,7 +822,7 @@ proc eval(expr: LispVal, env: var Env): LispVal {.raises: [LispError].} =
   of Nil, Number, Bool, String, Func, Lambda, Macro:
     return expr
   of Symbol:
-    if expr.sym.startsWith("'"):
+    if expr.sym.startsWith("$"):
       return newSymbol(expr.sym[1..^1])
     result = env[expr.sym]
     if result == nil:
