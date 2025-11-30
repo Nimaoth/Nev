@@ -69,8 +69,7 @@ proc audioThread(s: int) {.thread, nimcall.} =
     let sample = nextAudioSample.load()
     nextAudioSample.store(sample + chunkSamples)
 
-    for b in buffer.mitems:
-      b = 0
+    zeroMem(buffer[0].addr, buffer.len * sizeof(int16))
 
     var i = 0
     while i < callbacks.len:
@@ -129,6 +128,7 @@ proc audioThread(s: int) {.thread, nimcall.} =
       generateSamples(buffer2, sample, callbacks)
       waveOutWrite(waveOutHandle, header2.addr, sizeof(header2).UINT)
       header2.dwFlags = header2.dwFlags and (not WHDR_DONE)
+      continue
 
     # if (header3.dwFlags and WHDR_DONE) != 0:
     #   generateSamples(buffer3, sample, callbacks)
