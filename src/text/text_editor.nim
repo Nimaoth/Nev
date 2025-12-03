@@ -2574,7 +2574,7 @@ proc stageFile*(self: TextDocumentEditor) {.expose("editor.text").} =
 proc format*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncSpawn self.document.format(runOnTempFile = true)
 
-proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
+proc checkoutFileAsync*(self: TextDocumentEditor, saveAfterwards: bool = false) {.async.} =
   if self.document.isNil:
     return
 
@@ -2590,10 +2590,11 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
   log lvlInfo, &"Checkout result: {res}"
 
   self.document.setReadOnly(self.vfs.getFileAttributes(path).await.mapIt(not it.writable).get(false))
+  self.document.save()
   self.markDirty()
 
-proc checkoutFile*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncSpawn self.checkoutFileAsync()
+proc checkoutFile*(self: TextDocumentEditor, saveAfterwards: bool = false) {.expose("editor.text").} =
+  asyncSpawn self.checkoutFileAsync(saveAfterwards)
 
 # todo
 proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true,

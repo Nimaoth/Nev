@@ -104,7 +104,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
         let dirtyMarker = if isDirty: "*" else: ""
 
         let modeText = if inMode.len == 0: "-" else: inMode
-        let (directory, filename) = inDocument.filename.splitPath
+        let (directory, filename) = inDocument.localizedPath.splitPath
         let text = (" $# - $#$# - $# " % [modeText, dirtyMarker, filename, directory]).catch("")
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = inTextColor, text = text)
 
