@@ -38,6 +38,9 @@ type
     timestamp*: Lamport
     offset*: uint32
     bias*: Bias
+  ## Shared reference to a byte buffer. The data is stored in the editor, not in the plugin, so shared buffers
+  ## can be used to efficiently share data with another plugin or another thread.
+  ## Buffers are reference counted internally, and this resource also affects that reference count.
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.
@@ -87,6 +90,9 @@ type
     bufferLen*: int64
     index*: int64
     sampleRate*: int64
+when not declared(SharedBufferResource):
+  {.error: "Missing resource type definition for " & "SharedBufferResource" &
+      ". Define the type before the importWit statement.".}
 when not declared(RopeResource):
   {.error: "Missing resource type definition for " & "RopeResource" &
       ". Define the type before the importWit statement.".}
@@ -136,65 +142,65 @@ proc collectExports*(funcs: var ExportedFuncs; instance: InstanceT;
   funcs.mStackAlloc = instance.getExport(context, "mem_stack_alloc")
   funcs.mStackSave = instance.getExport(context, "mem_stack_save")
   funcs.mStackRestore = instance.getExport(context, "mem_stack_restore")
-  let f_9462351483 = instance.getExport(context, "init_plugin")
-  if f_9462351483.isSome:
-    assert f_9462351483.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.initPlugin = f_9462351483.get.of_field.func_field
+  let f_9462351555 = instance.getExport(context, "init_plugin")
+  if f_9462351555.isSome:
+    assert f_9462351555.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.initPlugin = f_9462351555.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "init_plugin", "\'"
-  let f_9462351499 = instance.getExport(context, "handle_command")
-  if f_9462351499.isSome:
-    assert f_9462351499.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleCommand = f_9462351499.get.of_field.func_field
+  let f_9462351571 = instance.getExport(context, "handle_command")
+  if f_9462351571.isSome:
+    assert f_9462351571.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleCommand = f_9462351571.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_command", "\'"
-  let f_9462351549 = instance.getExport(context, "handle_mode_changed")
-  if f_9462351549.isSome:
-    assert f_9462351549.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleModeChanged = f_9462351549.get.of_field.func_field
+  let f_9462351621 = instance.getExport(context, "handle_mode_changed")
+  if f_9462351621.isSome:
+    assert f_9462351621.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleModeChanged = f_9462351621.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_mode_changed", "\'"
-  let f_9462351550 = instance.getExport(context, "handle_view_render_callback")
-  if f_9462351550.isSome:
-    assert f_9462351550.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleViewRenderCallback = f_9462351550.get.of_field.func_field
+  let f_9462351622 = instance.getExport(context, "handle_view_render_callback")
+  if f_9462351622.isSome:
+    assert f_9462351622.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleViewRenderCallback = f_9462351622.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_view_render_callback",
          "\'"
-  let f_9462351574 = instance.getExport(context, "handle_channel_update")
-  if f_9462351574.isSome:
-    assert f_9462351574.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleChannelUpdate = f_9462351574.get.of_field.func_field
+  let f_9462351646 = instance.getExport(context, "handle_channel_update")
+  if f_9462351646.isSome:
+    assert f_9462351646.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleChannelUpdate = f_9462351646.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_channel_update", "\'"
-  let f_9462351575 = instance.getExport(context, "notify_task_complete")
-  if f_9462351575.isSome:
-    assert f_9462351575.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.notifyTaskComplete = f_9462351575.get.of_field.func_field
+  let f_9462351647 = instance.getExport(context, "notify_task_complete")
+  if f_9462351647.isSome:
+    assert f_9462351647.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.notifyTaskComplete = f_9462351647.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "notify_task_complete", "\'"
-  let f_9462351576 = instance.getExport(context, "handle_move")
-  if f_9462351576.isSome:
-    assert f_9462351576.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleMove = f_9462351576.get.of_field.func_field
+  let f_9462351648 = instance.getExport(context, "handle_move")
+  if f_9462351648.isSome:
+    assert f_9462351648.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleMove = f_9462351648.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_move", "\'"
-  let f_9462351588 = instance.getExport(context, "handle_audio_callback")
-  if f_9462351588.isSome:
-    assert f_9462351588.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.handleAudioCallback = f_9462351588.get.of_field.func_field
+  let f_9462351660 = instance.getExport(context, "handle_audio_callback")
+  if f_9462351660.isSome:
+    assert f_9462351660.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.handleAudioCallback = f_9462351660.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "handle_audio_callback", "\'"
-  let f_9462351589 = instance.getExport(context, "save_plugin_state")
-  if f_9462351589.isSome:
-    assert f_9462351589.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.savePluginState = f_9462351589.get.of_field.func_field
+  let f_9462351661 = instance.getExport(context, "save_plugin_state")
+  if f_9462351661.isSome:
+    assert f_9462351661.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.savePluginState = f_9462351661.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "save_plugin_state", "\'"
-  let f_9462351590 = instance.getExport(context, "load_plugin_state")
-  if f_9462351590.isSome:
-    assert f_9462351590.get.kind == WASMTIME_EXTERN_FUNC
-    funcs.loadPluginState = f_9462351590.get.of_field.func_field
+  let f_9462351662 = instance.getExport(context, "load_plugin_state")
+  if f_9462351662.isSome:
+    assert f_9462351662.get.kind == WASMTIME_EXTERN_FUNC
+    funcs.loadPluginState = f_9462351662.get.of_field.func_field
   else:
     echo "Failed to find exported function \'", "load_plugin_state", "\'"
 
@@ -216,7 +222,7 @@ proc initPlugin*(funcs: ExportedFuncs): WasmtimeResult[void] =
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-
+  
 proc handleCommand*(funcs: ExportedFuncs; fun: uint32; data: uint32;
                     arguments: string): WasmtimeResult[string] =
   var args: array[max(1, 4), ValT]
@@ -312,7 +318,7 @@ proc handleModeChanged*(funcs: ExportedFuncs; fun: uint32; old: string;
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-
+  
 proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
                                data: uint32): WasmtimeResult[void] =
   var args: array[max(1, 3), ValT]
@@ -334,7 +340,7 @@ proc handleViewRenderCallback*(funcs: ExportedFuncs; id: int32; fun: uint32;
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-
+  
 proc handleChannelUpdate*(funcs: ExportedFuncs; fun: uint32; data: uint32;
                           closed: bool): WasmtimeResult[ChannelListenResponse] =
   var args: array[max(1, 3), ValT]
@@ -380,7 +386,7 @@ proc notifyTaskComplete*(funcs: ExportedFuncs; task: uint64; canceled: bool): Wa
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-
+  
 proc handleMove*(funcs: ExportedFuncs; fun: uint32; data: uint32; text: uint32;
                  selections: seq[Selection]; count: int32; eol: bool): WasmtimeResult[
     seq[Selection]] =
@@ -534,7 +540,7 @@ proc loadPluginState*(funcs: ExportedFuncs; state: seq[uint8]): WasmtimeResult[
     return trap.toResult(void)
   if res.isErr:
     return res.toResult(void)
-
+  
 proc coreApiVersion*(instance: ptr InstanceData): int32
 proc coreGetTime*(instance: ptr InstanceData): float64
 proc coreGetPlatform*(instance: ptr InstanceData): Platform
@@ -554,6 +560,20 @@ proc commandsExitCommandLine*(instance: ptr InstanceData): void
 proc settingsGetSettingRaw*(instance: ptr InstanceData; name: sink string): string
 proc settingsSetSettingRaw*(instance: ptr InstanceData; name: sink string;
                             value: sink string): void
+proc typesNewSharedBuffer*(instance: ptr InstanceData; size: int64): SharedBufferResource
+proc typesCloneRef*(instance: ptr InstanceData; self: var SharedBufferResource): SharedBufferResource
+proc typesLen*(instance: ptr InstanceData; self: var SharedBufferResource): int64
+proc typesWrite*(instance: ptr InstanceData; self: var SharedBufferResource;
+                 index: int64; data: sink seq[uint8]): void
+proc typesReadInto*(instance: ptr InstanceData; self: var SharedBufferResource;
+                    index: int64; dst: uint32; len: int32): void
+proc typesRead*(instance: ptr InstanceData; self: var SharedBufferResource;
+                index: int64; len: int32): seq[uint8]
+proc typesSharedBufferOpen*(instance: ptr InstanceData; path: sink string): Option[
+    SharedBufferResource]
+proc typesSharedBufferMount*(instance: ptr InstanceData;
+                             buffer: sink SharedBufferResource;
+                             path: sink string; unique: bool): string
 proc typesNewRope*(instance: ptr InstanceData; content: sink string): RopeResource
 proc typesClone*(instance: ptr InstanceData; self: var RopeResource): RopeResource
 proc typesBytes*(instance: ptr InstanceData; self: var RopeResource): int64
@@ -731,6 +751,8 @@ proc vfsReadSync*(instance: ptr InstanceData; path: sink string;
                   readFlags: ReadFlags): Result[string, VfsError]
 proc vfsReadRopeSync*(instance: ptr InstanceData; path: sink string;
                       readFlags: ReadFlags): Result[RopeResource, VfsError]
+proc vfsReadBufferSync*(instance: ptr InstanceData; path: sink string): Result[
+    SharedBufferResource, VfsError]
 proc vfsWriteSync*(instance: ptr InstanceData; path: sink string;
                    content: sink string): Result[bool, VfsError]
 proc vfsWriteRopeSync*(instance: ptr InstanceData; path: sink string;
@@ -792,7 +814,18 @@ proc registersReplayCommands*(instance: ptr InstanceData; register: sink string)
 proc audioAddAudioCallback*(instance: ptr InstanceData; fun: uint32;
                             data: uint32): void
 proc audioNextAudioSample*(instance: ptr InstanceData): int64
+proc audioSetBufferSize*(instance: ptr InstanceData; size: int32): void
+proc audioEnableTripleBuffering*(instance: ptr InstanceData; enabled: bool): void
 proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
+  block:
+    let e = block:
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[resource-drop]shared-buffer",
+                                 newFunctype([WasmValkind.I32], [])):
+        var instance = cast[ptr InstanceData](store.getData())
+        instance.resources.resourceDrop(parameters[0].i32, callDestroy = true)
+    if e.isErr:
+      return e
   block:
     let e = block:
       linker.defineFuncUnchecked("nev:plugins/types", "[resource-drop]rope",
@@ -1141,6 +1174,225 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
           for i0 in 0 ..< value.len:
             value[i0] = p0[i0]
         settingsSetSettingRaw(instance, name, value)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I64],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[constructor]shared-buffer", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var size: int64
+        size = convert(parameters[0].i64, int64)
+        let res = typesNewSharedBuffer(instance, size)
+        parameters[0].i32 = ?instance.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I32])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.clone-ref", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr SharedBufferResource
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        let res = typesCloneRef(instance, self[])
+        parameters[0].i32 = ?instance.resources.resourceNew(store, res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32],
+          [WasmValkind.I64])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.len", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr SharedBufferResource
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        let res = typesLen(instance, self[])
+        parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.write", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var self: ptr SharedBufferResource
+        var index: int64
+        var data: seq[uint8]
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        index = convert(parameters[1].i64, int64)
+        block:
+          let p0 = cast[ptr UncheckedArray[uint8]](memory[parameters[2].i32].addr)
+          data = newSeq[typeof(data[0])](parameters[3].i32)
+          for i0 in 0 ..< data.len:
+            data[i0] = convert(cast[ptr uint8](p0[i0 * 1 + 0].addr)[], uint8)
+        typesWrite(instance, self[], index, data)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.read-into", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var self: ptr SharedBufferResource
+        var index: int64
+        var dst: uint32
+        var len: int32
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        index = convert(parameters[1].i64, int64)
+        dst = convert(parameters[2].i32, uint32)
+        len = convert(parameters[3].i32, int32)
+        typesReadInto(instance, self[], index, dst, len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I64, WasmValkind.I32, WasmValkind.I32],
+          [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[method]shared-buffer.read", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var self: ptr SharedBufferResource
+        var index: int64
+        var len: int32
+        self = ?instance.resources.resourceHostData(parameters[0].i32,
+            SharedBufferResource)
+        index = convert(parameters[1].i64, int64)
+        len = convert(parameters[2].i32, int32)
+        let res = typesRead(instance, self[], index, len)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              cast[ptr uint8](memory[dataPtrWasm0 + i0 * 1 + 0].addr)[] = res[i0]
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[static]shared-buffer.open", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var path: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        let res = typesSharedBufferOpen(instance, path)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isSome.int32
+        if res.isSome:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?instance.resources.resourceNew(
+              store, res.get)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
+          WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/types",
+                                 "[static]shared-buffer.mount", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        let stackAllocFunc = caller.getExport("mem_stack_alloc").get.of_field.func_field
+        var buffer: SharedBufferResource
+        var path: string
+        var unique: bool
+        block:
+          let resPtr = ?instance.resources.resourceHostData(
+              parameters[0].i32, SharedBufferResource)
+          copyMem(buffer.addr, resPtr, sizeof(typeof(buffer)))
+          ?instance.resources.resourceDrop(parameters[0].i32,
+              callDestroy = false)
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[1].i32].addr)
+          path = newString(parameters[2].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        unique = parameters[3].i32.bool
+        let res = typesSharedBufferMount(instance, buffer, path, unique)
+        let retArea = parameters[^1].i32
+        if res.len > 0:
+          let dataPtrWasm0 = int32(?stackAlloc(stackAllocFunc, store,
+              (res.len * 1).int32, 4))
+          cast[ptr int32](memory[retArea + 0].addr)[] = cast[int32](dataPtrWasm0)
+          block:
+            for i0 in 0 ..< res.len:
+              memory[dataPtrWasm0 + i0] = cast[uint8](res[i0])
+        else:
+          cast[ptr int32](memory[retArea + 0].addr)[] = 0.int32
+        cast[ptr int32](memory[retArea + 4].addr)[] = cast[int32](res.len)
     if e.isErr:
       return e
   block:
@@ -3673,6 +3925,40 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
       return e
   block:
     let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype(
+          [WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/vfs", "read-buffer-sync", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var mainMemory = caller.getExport("memory")
+        if mainMemory.isNone:
+          mainMemory = instance.getMemoryFor(caller)
+        var memory: ptr UncheckedArray[uint8] = nil
+        if mainMemory.get.kind == WASMTIME_EXTERN_SHAREDMEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](data(
+              mainMemory.get.of_field.sharedmemory))
+        elif mainMemory.get.kind == WASMTIME_EXTERN_MEMORY:
+          memory = cast[ptr UncheckedArray[uint8]](store.data(
+              mainMemory.get.of_field.memory.addr))
+        else:
+          assert false
+        var path: string
+        block:
+          let p0 = cast[ptr UncheckedArray[char]](memory[parameters[0].i32].addr)
+          path = newString(parameters[1].i32)
+          for i0 in 0 ..< path.len:
+            path[i0] = p0[i0]
+        let res = vfsReadBufferSync(instance, path)
+        let retArea = parameters[^1].i32
+        cast[ptr int32](memory[retArea + 0].addr)[] = res.isErr.int32
+        if res.isOk:
+          cast[ptr int32](memory[retArea + 4].addr)[] = ?instance.resources.resourceNew(
+              store, res.value)
+        else:
+          cast[ptr int8](memory[retArea + 4].addr)[] = cast[int8](res.error)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
       var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32, WasmValkind.I32,
           WasmValkind.I32, WasmValkind.I32, WasmValkind.I32], [])
       linker.defineFuncUnchecked("nev:plugins/vfs", "write-sync", ty):
@@ -4653,5 +4939,26 @@ proc defineComponent*(linker: ptr LinkerT): WasmtimeResult[void] =
         var instance = cast[ptr InstanceData](store.getData())
         let res = audioNextAudioSample(instance)
         parameters[0].i64 = cast[int64](res)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/audio", "set-buffer-size", ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var size: int32
+        size = convert(parameters[0].i32, int32)
+        audioSetBufferSize(instance, size)
+    if e.isErr:
+      return e
+  block:
+    let e = block:
+      var ty: ptr WasmFunctypeT = newFunctype([WasmValkind.I32], [])
+      linker.defineFuncUnchecked("nev:plugins/audio", "enable-triple-buffering",
+                                 ty):
+        var instance = cast[ptr InstanceData](store.getData())
+        var enabled: bool
+        enabled = parameters[0].i32.bool
+        audioEnableTripleBuffering(instance, enabled)
     if e.isErr:
       return e

@@ -45,6 +45,21 @@ interface types {
     bias: bias,
   }
 
+  /// Shared reference to a byte buffer. The data is stored in the editor, not in the plugin, so shared buffers
+  /// can be used to efficiently share data with another plugin or another thread.
+  /// Buffers are reference counted internally, and this resource also affects that reference count.
+  resource shared-buffer {
+    constructor(size: s64);
+    clone-ref: func() -> shared-buffer;
+    len: func() -> s64;
+    write: func(index: s64, data: list<u8>);
+    read-into: func(index: s64, dst: u32, len: s32);
+    read: func(index: s64, len: s32) -> list<u8>;
+
+    open: static func(path: string) -> option<shared-buffer>;
+    mount: static func(buffer: shared-buffer, path: string, unique: bool) -> string;
+  }
+
   /// Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   /// can be used to efficiently access any document content or share a string with another plugin.
   /// Ropes are reference counted internally, and this resource also affects that reference count.
@@ -181,7 +196,7 @@ interface process {
 }
 
 interface vfs {
-  use types.{rope};
+  use types.{rope, shared-buffer};
   use commands.{command-error};
 
   enum vfs-error {
@@ -201,6 +216,9 @@ interface vfs {
   /// By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
   /// Paths are virtual paths for the virtual file system.
   read-rope-sync: func(path: string, read-flags: read-flags) -> result<rope, vfs-error>;
+  /// Read the given file synchronously. Requires 'filesystemRead' permissions.
+  /// Paths are virtual paths for the virtual file system.
+  read-buffer-sync: func(path: string) -> result<shared-buffer, vfs-error>;
   /// Write the given file synchronously. Requires 'filesystemWrite' permissions.
   /// Paths are virtual paths for the virtual file system.
   write-sync: func(path: string, content: string) -> result<bool, vfs-error>;
@@ -529,6 +547,8 @@ interface audio {
     /// todo
     add-audio-callback: func(fun: u32, data: u32);
     next-audio-sample: func() -> s64;
+    set-buffer-size: func(size: s32);
+    enable-triple-buffering: func(enabled: bool);
 }
 
 interface settings {

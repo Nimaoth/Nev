@@ -15,10 +15,10 @@ const sampleRate = 48000
 const bitsPerSample = 16
 const numChannels = 1
 
-const chunkSamples = sampleRate div 1000 * 50
-var buffer1: array[chunkSamples, int16]
-var buffer2: array[chunkSamples, int16]
-var buffer3: array[chunkSamples, int16]
+const chunkSamplesMax = sampleRate div 1000 * 150
+var buffer1: array[chunkSamplesMax, int16]
+var buffer2: array[chunkSamplesMax, int16]
+var buffer3: array[chunkSamplesMax, int16]
 
 var audioCallbackChannel: Channel[AudioCallbackData]
 audioCallbackChannel.open()
@@ -28,6 +28,16 @@ var currentAudioSample: Atomic[int64]
 var nextAudioSample: Atomic[int64]
 var currentAudioTime: Atomic[float]
 var currentSampleRate: Atomic[int64]
+var audioBufferSize: Atomic[int]
+var audioTrippleBuffer: Atomic[bool]
+var localAudioBufferSize = sampleRate div 1000 * 30
+audioBufferSize.store(localAudioBufferSize)
+
+proc setAudioBufferSize*(size: int) =
+  audioBufferSize.store(size)
+
+proc setEnableTripleBuffering*(enabled: bool) =
+  audioTrippleBuffer.store(enabled)
 
 proc addAudioCallback*(cb: AudioCallback) =
   type Data = object
@@ -44,11 +54,32 @@ proc addAudioCallback*(cb: AudioCallback) =
 proc getNextAudioSample*(): int64 =
   var sample = (audioTimer.elapsed.float64 * currentSampleRate.load().float64).int64
   # echo &"getNextAudioSample {currentAudioSample.load}, {nextAudioSample.load}, {currentAudioTime} -> {sample}"
-  if sample < nextAudioSample.load():
-    sample = nextAudioSample.load()
+  # if sample < nextAudioSample.load():
+  sample = nextAudioSample.load()
   return sample
 
+proc AvSetMmThreadCharacteristicsA*(TaskName: LPCSTR, TaskIndex: LPDWORD): HANDLE {.winapi, stdcall, dynlib: "Avrt", importc.}
+proc AvRevertMmThreadCharacteristics*(handle: HANDLE) {.winapi, stdcall, dynlib: "Avrt", importc.}
+
 proc audioThread(s: int) {.thread, nimcall.} =
+  var taskIndex: DWORD = 0
+  let hMMCSS =  AvSetMmThreadCharacteristicsA("Pro Audio".cstring, taskIndex.addr)
+  if hMMCSS == 0:
+    echo "==========================="
+    echo "Failed to set audio thread as 'Pro Audio' task"
+    discard SetThreadPriority(GetCurrentThreadId(), THREAD_PRIORITY_TIME_CRITICAL)
+
+  defer:
+    if hMMCSS != 0:
+      AvRevertMmThreadCharacteristics(hMMCSS)
+
+  let audioOutEvent = CreateEvent(nil, FALSE, FALSE, nil)
+  if audioOutEvent == 0:
+    echo "=========================== Failed to create audio event"
+    return
+  defer:
+    CloseHandle(audioOutEvent)
+
   var waveOutHandle = HWAVEOUT.default
   var format = WAVEFORMATEX(
     wFormatTag: WAVE_FORMAT_PCM,
@@ -59,7 +90,7 @@ proc audioThread(s: int) {.thread, nimcall.} =
     wBitsPerSample: bitsPerSample,
     cbSize: 0,
   )
-  if waveOutOpen(waveOutHandle.addr, WAVE_MAPPER, format.addr, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR:
+  if waveOutOpen(waveOutHandle.addr, WAVE_MAPPER, format.addr, cast[DWORD_PTR](audioOutEvent), 0, CALLBACK_EVENT) != MMSYSERR_NOERROR:
     echo "Failed to open wave output"
     return
 
@@ -67,7 +98,7 @@ proc audioThread(s: int) {.thread, nimcall.} =
   var sample = 0
   proc generateSamples(buffer: var openArray[int16], sample: var int, callbacks: var seq[AudioCallbackData]) {.gcsafe.} =
     let sample = nextAudioSample.load()
-    nextAudioSample.store(sample + chunkSamples)
+    nextAudioSample.store(sample + buffer.len)
 
     zeroMem(buffer[0].addr, buffer.len * sizeof(int16))
 
@@ -83,27 +114,29 @@ proc audioThread(s: int) {.thread, nimcall.} =
 
   audioTimer = startTimer()
   currentSampleRate.store(sampleRate)
-  currentAudioSample.store(-chunkSamples)
+  currentAudioSample.store(-localAudioBufferSize)
   nextAudioSample.store(0)
   currentAudioTime.store(audioTimer.elapsed.float)
 
-  generateSamples(buffer1, sample, callbacks)
-  generateSamples(buffer2, sample, callbacks)
-  # generateSamples(buffer3, sample, callbacks)
+  assert localAudioBufferSize <= buffer1.len
+
+  generateSamples(buffer1.toOpenArray(0, localAudioBufferSize - 1), sample, callbacks)
+  generateSamples(buffer2.toOpenArray(0, localAudioBufferSize - 1), sample, callbacks)
+  # generateSamples(buffer3.toOpenArray(0, localAudioBufferSize - 1), sample, callbacks)
 
   var header1 = WAVEHDR(
     lpData: cast[LPSTR](buffer1[0].addr),
-    dwBufferLength: DWORD(buffer1.len * bitsPerSample / 8),
+    dwBufferLength: DWORD(localAudioBufferSize * bitsPerSample div 8),
   )
 
   var header2 = WAVEHDR(
     lpData: cast[LPSTR](buffer2[0].addr),
-    dwBufferLength: DWORD(buffer2.len * bitsPerSample / 8),
+    dwBufferLength: DWORD(localAudioBufferSize * bitsPerSample div 8),
   )
 
   var header3 = WAVEHDR(
     lpData: cast[LPSTR](buffer3[0].addr),
-    dwBufferLength: DWORD(buffer3.len * bitsPerSample / 8),
+    dwBufferLength: DWORD(localAudioBufferSize * bitsPerSample div 8),
   )
 
   waveOutPrepareHeader(waveOutHandle, header1.addr, sizeof(header1).UINT)
@@ -112,30 +145,46 @@ proc audioThread(s: int) {.thread, nimcall.} =
 
   waveOutWrite(waveOutHandle, header1.addr, sizeof(header1).UINT)
   waveOutWrite(waveOutHandle, header2.addr, sizeof(header2).UINT)
-  # waveOutWrite(waveOutHandle, header3.addr, sizeof(header3).UINT)
+  waveOutWrite(waveOutHandle, header3.addr, sizeof(header3).UINT)
+
 
   while true:
     let (ok, cb) = audioCallbackChannel.tryRecv()
     if ok:
       callbacks.add cb
 
+    if WaitForSingleObject(audioOutEvent, INFINITE) != WAIT_OBJECT_0:
+      break
+
+    localAudioBufferSize = min(audioBufferSize.load(), buffer1.len)
+    let dwBufferLength = DWORD(localAudioBufferSize * bitsPerSample div 8)
+
     if (header1.dwFlags and WHDR_DONE) != 0:
-      generateSamples(buffer1, sample, callbacks)
+      if header1.dwBufferLength != dwBufferLength:
+        waveOutUnprepareHeader(waveOutHandle, header1.addr, sizeof(header1).UINT)
+        header1.dwBufferLength = dwBufferLength
+        waveOutPrepareHeader(waveOutHandle, header1.addr, sizeof(header1).UINT)
+      generateSamples(buffer1.toOpenArray(0, localAudioBufferSize - 1), sample, callbacks)
       waveOutWrite(waveOutHandle, header1.addr, sizeof(header1).UINT)
       header1.dwFlags = header1.dwFlags and (not WHDR_DONE)
 
     if (header2.dwFlags and WHDR_DONE) != 0:
-      generateSamples(buffer2, sample, callbacks)
+      if header2.dwBufferLength != dwBufferLength:
+        waveOutUnprepareHeader(waveOutHandle, header2.addr, sizeof(header2).UINT)
+        header2.dwBufferLength = dwBufferLength
+        waveOutPrepareHeader(waveOutHandle, header2.addr, sizeof(header2).UINT)
+      generateSamples(buffer2.toOpenArray(0, localAudioBufferSize - 1), sample, callbacks)
       waveOutWrite(waveOutHandle, header2.addr, sizeof(header2).UINT)
       header2.dwFlags = header2.dwFlags and (not WHDR_DONE)
-      continue
 
-    # if (header3.dwFlags and WHDR_DONE) != 0:
-    #   generateSamples(buffer3, sample, callbacks)
-    #   waveOutWrite(waveOutHandle, header3.addr, sizeof(header3).UINT)
-    #   header3.dwFlags = header3.dwFlags and (not WHDR_DONE)
-
-    Sleep(1)
+    if audioTrippleBuffer.load() and (header3.dwFlags and WHDR_DONE) != 0:
+      if header3.dwBufferLength != dwBufferLength:
+        waveOutUnprepareHeader(waveOutHandle, header3.addr, sizeof(header3).UINT)
+        header3.dwBufferLength = dwBufferLength
+        waveOutPrepareHeader(waveOutHandle, header3.addr, sizeof(header3).UINT)
+      generateSamples(buffer3, sample, callbacks)
+      waveOutWrite(waveOutHandle, header3.addr, sizeof(header3).UINT)
+      header3.dwFlags = header3.dwFlags and (not WHDR_DONE)
 
   waveOutUnprepareHeader(waveOutHandle, header1.addr, sizeof(header1).UINT)
   waveOutUnprepareHeader(waveOutHandle, header2.addr, sizeof(header2).UINT)

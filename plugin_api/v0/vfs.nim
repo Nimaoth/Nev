@@ -78,6 +78,32 @@ proc readRopeSync*(path: WitString; readFlags: ReadFlags): Result[Rope, VfsError
     tempErr = cast[VfsError](cast[ptr int32](retArea[4].addr)[])
     result = results.Result[Rope, VfsError].err(tempErr)
 
+proc vfsReadBufferSyncImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("read-buffer-sync", "nev:plugins/vfs").}
+proc readBufferSync*(path: WitString): Result[SharedBuffer, VfsError] {.
+    nodestroy.} =
+  ## Read the given file synchronously. Requires 'filesystemRead' permissions.
+  ## By default files are checked to be valid UTF-8 when loading. To skip this check pass the 'binary' flag.
+  ## Paths are virtual paths for the virtual file system.
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+    arg1: int32
+  if path.len > 0:
+    arg0 = cast[int32](path[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](path.len)
+  vfsReadBufferSyncImported(arg0, arg1, cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] == 0:
+    var tempOk: SharedBuffer
+    tempOk.handle = cast[ptr int32](retArea[4].addr)[] + 1
+    result = results.Result[SharedBuffer, VfsError].ok(tempOk)
+  else:
+    var tempErr: VfsError
+    tempErr = cast[VfsError](cast[ptr int32](retArea[4].addr)[])
+    result = results.Result[SharedBuffer, VfsError].err(tempErr)
+
 proc vfsWriteSyncImported(a0: int32; a1: int32; a2: int32; a3: int32; a4: int32): void {.
     wasmimport("write-sync", "nev:plugins/vfs").}
 proc writeSync*(path: WitString; content: WitString): Result[bool, VfsError] {.

@@ -1,9 +1,10 @@
-import std/[strformat, json, jsonutils, strutils, math, unicode, macros, random]
+import std/[strformat, json, jsonutils, strutils, math, unicode, macros, random, base64, tables]
 import results
 import util, render_command, binary_encoder
 import "../../src/lisp"
 import api
 import clay
+import wav
 
 var views: seq[RenderView] = @[]
 var renderCommandEncoder: BinaryEncoder
@@ -14,6 +15,67 @@ const ScaleRoom = 0.28
 const OffsetRoom = 0.7
 const ScaleDamp = 0.4
 const OffsetDamp = 0.1
+
+type SharedAudioBuffer* = ref object
+  len: int
+  buffer: SharedBuffer
+
+proc new*(_: typedesc[SharedAudioBuffer], samples: int): SharedAudioBuffer =
+  result = SharedAudioBuffer(buffer: newSharedBuffer(samples * sizeof(float32)), len: samples)
+
+proc mount*(self: SharedAudioBuffer, path: string, unique: bool = true): string =
+  var b = SharedBuffer()
+  swap(b, self.buffer)
+  return $b.sharedBufferMount(path.ws, unique = unique)
+
+proc open*(_: typedesc[SharedAudioBuffer], path: string): Option[SharedAudioBuffer] =
+  var buffer = sharedBufferOpen(path.ws)
+  if not buffer.isSome:
+    return SharedAudioBuffer.none
+  let bufferLen = buffer.get.len
+  if bufferLen mod 4 != 0:
+    log lvlError, &"Audio buffer len is not a multiple of 4"
+    return SharedAudioBuffer.none
+  var b = buffer.take
+  return SharedAudioBuffer(buffer: b, len: bufferLen.int div 4).some
+
+proc read*(buffer: SharedAudioBuffer, index: int, dst: openArray[float32]) =
+  if dst.len > 0:
+    echo &"===================000 read {index} into {dst.len}"
+    buffer.buffer.readInto(index, cast[uint32](dst[0].addr), dst.len * sizeof(dst[0]))
+
+proc write*(buffer: SharedAudioBuffer, index: int, src: openArray[float32]) =
+  if src.len > 0:
+    buffer.buffer.write(index, wl(cast[ptr UncheckedArray[uint8]](src[0].addr), src.len * sizeof(src[0])))
+
+var gwav: WavInfo
+
+proc loadWavFile(path: string): SharedAudioBuffer =
+  let res = readSync(path.ws, {Binary})
+  if not res.isOk:
+    let err = res.error
+    log lvlError, &"Failed to load wav file {path}: {err}"
+    return SharedAudioBuffer()
+
+  var wav = parseWavFromMemory(res.get.toOpenArray.toOpenArrayByte(0, res.get.len - 1))
+  if wav.sampleRate != 48_000:
+    for channel in wav.samples.mitems:
+      channel = resampleLinear(channel, wav.sampleRate, 48_000)
+    wav.sampleRate = 48_000
+
+  for channel in wav.samples.mitems:
+    var m = 0.0
+    for s in channel:
+      m = max(m, abs(s))
+    log lvlWarn, &"Max sample: {m}"
+    # for s in channel:
+    #   max = max(max, abs(s))
+
+  let buf = SharedAudioBuffer.new(wav.samples[0].len)
+  buf.write(0, wav.samples[0])
+
+  gwav = wav
+  return buf
 
 converter toWitString(s: string): WitString = ws(s)
 var target = 50
@@ -36,7 +98,7 @@ clay.setDebugModeEnabled(false)
 proc toggleClayDebugMode() =
   clay.setDebugModeEnabled(not clay.isDebugModeEnabled())
 
-proc getNotePitch(note: string): float =
+proc getNotePitch(note: string): float32 =
   let (b, octave) = if note[^1] in {'1'..'9'}: (note[0..^2], note[^1].int - '1'.int) else: (note, 3)
   case b
   of "C":
@@ -81,12 +143,12 @@ proc getNotePitch(note: string): float =
 type
   KeyState = object
     key: int
-    frequency: float
+    frequency: float32
     startTime: int64
     releaseTime: int64
 
   AudioFeedback = object
-    dt: float
+    dt: float64
     activeSounds: int
     totalSounds: int
     alignOffset: int
@@ -96,50 +158,52 @@ type
   Pitch = object
     case kind: PitchKind
     of Frequency:
-      freq: float
+      freq: float32
     of Note:
       name: string
 
   CombFilter = object
-    buffer: seq[float]
+    buffer: seq[float32]
     index: int
-    dampingTarget: float
-    feedback: float
-    damping: float
+    dampingTarget: float32
+    feedback: float32
+    damping: float32
 
   AllPassFilter = object
-    buffer: seq[float]
+    buffer: seq[float32]
     index: int
-    feedback: float
+    feedback: float32
 
   SchroederReverb = object
     combs: seq[CombFilter]
     allpasses: seq[AllPassFilter]
-    dry: float
-    wet: float
+    dry: float32
+    wet: float32
 
   FreeVerb = object
     combs: seq[CombFilter]
     allpasses: seq[AllPassFilter]
-    dry: float
-    wet: float
-    damping: float
-    size: float
+    dry: float32
+    wet: float32
+    damping: float32
+    size: float32
 
   WaveKind = enum Sin, Saw, Square, Noise, Triangle, Pulse
-  SoundKind = enum Synth
+  SoundKind = enum Synth, Sample
   Sound = object
     case kind: SoundKind
     of Synth:
-      layers: array[8, tuple[freqMul: float, gain: float, wave: WaveKind, arg1: float]]
+      layers: array[8, tuple[freqMul: float32, gain: float32, wave: WaveKind, arg1: float32]]
+    of Sample:
+      name: string
 
   SoundState = object
-    gain: float
+    gain: float32
     # pitch: Pitch
-    freq: float
+    freq: float32
     startTime: int64
     releaseTime: int64
-    adsr: tuple[attack, decay, sustainVolume, release: float]
+    adsr: tuple[attack, decay, sustainVolume, release: float32]
 
   ModifierKind {.pure.} = enum Gain, Adsr, Pitch, Timing
   ModifierState = object
@@ -147,9 +211,9 @@ type
     releaseTime: int64
     case kind: ModifierKind
     of ModifierKind.Gain, ModifierKind.Pitch, ModifierKind.Timing:
-      floatValue: float
+      floatValue: float32
     of ModifierKind.Adsr:
-      adsr: tuple[attack, decay, sustainVolume, release: float]
+      adsr: tuple[attack, decay, sustainVolume, release: float32]
 
   Track = object
     name: string
@@ -157,13 +221,17 @@ type
     sounds: seq[SoundState]
     mods: seq[ModifierState]
     sound: Sound
-    adsr: tuple[attack, decay, sustainVolume, release: float]
-    gain: float
+    adsr: tuple[attack, decay, sustainVolume, release: float32]
+    gain: float32
+
+  AudioFile = object
+    buffer: SharedAudioBuffer
+    samples: seq[float32]
 
   State = object
     runningAudio: bool
     info: AudioArgs
-    volume: float
+    volume: float32
     muted: bool
     audioThread: bool
     keys: seq[KeyState]
@@ -181,8 +249,9 @@ type
     reverb: FreeVerb
     scheduleStart: int64
     scheduleLen: int64
-    scheduleNoteLen: float
+    scheduleNoteLen: float32
     scheduleModStack: seq[ModifierState]
+    files: Table[string, AudioFile]
 
 type
   AudioEventKind = enum
@@ -192,6 +261,7 @@ type
     Command = "command"
     Press = "press"
     Release = "release"
+    File = "file"
 
   AudioEvent = object
     timestamp: int64
@@ -199,7 +269,7 @@ type
     of SetState:
       setState: tuple[state: State]
     of ChangeVolume:
-      changeVolume: tuple[change: float]
+      changeVolume: tuple[change: float32]
     of ToggleMute:
       discard
     of Command:
@@ -208,14 +278,16 @@ type
       press: tuple[key: int, note: string]
     of Release:
       release: tuple[key: int]
+    of File:
+      file: tuple[name: string, path: string]
 
-proc initCombFilter(bufferSize: int, feedback: float, damping: float = 0): CombFilter =
-  CombFilter(buffer: newSeq[float](bufferSize), feedback: feedback, damping: damping)
+proc initCombFilter(bufferSize: int, feedback: float32, damping: float32 = 0): CombFilter =
+  CombFilter(buffer: newSeq[float32](bufferSize), feedback: feedback, damping: damping)
 
-proc initAllPassFilter(bufferSize: int, feedback: float): AllPassFilter =
-  AllPassFilter(buffer: newSeq[float](bufferSize), feedback: feedback)
+proc initAllPassFilter(bufferSize: int, feedback: float32): AllPassFilter =
+  AllPassFilter(buffer: newSeq[float32](bufferSize), feedback: feedback)
 
-proc initFreeVerb(damping: float, size: float): FreeVerb =
+proc initFreeVerb(damping: float32, size: float32): FreeVerb =
   FreeVerb(
     combs: @[
       initCombFilter(1217, size, damping),
@@ -239,14 +311,14 @@ proc initFreeVerb(damping: float, size: float): FreeVerb =
     size: size,
   )
 
-proc setDampingAndSize(reverb: var FreeVerb, damping: float, size: float) =
+proc setDampingAndSize(reverb: var FreeVerb, damping: float32, size: float32) =
   reverb.damping = damping
   reverb.size = size
   for comb in reverb.combs.mitems:
     comb.feedback = size
     comb.damping = damping
 
-proc process(filter: var CombFilter, input: float): float =
+proc process(filter: var CombFilter, input: float32): float32 =
   let output = filter.buffer[filter.index]
   filter.dampingTarget = (output * (1.0 - filter.damping)) + (filter.dampingTarget * filter.damping)
   filter.buffer[filter.index] = input + filter.dampingTarget * min(filter.feedback, 1)
@@ -255,7 +327,7 @@ proc process(filter: var CombFilter, input: float): float =
     filter.index = 0
   return output
 
-proc process(filter: var AllPassFilter, input: float): float =
+proc process(filter: var AllPassFilter, input: float32): float32 =
   let bufOut = filter.buffer[filter.index]
   let output = -input + bufOut
   filter.buffer[filter.index] = input + bufOut * min(filter.feedback, 1)
@@ -264,7 +336,7 @@ proc process(filter: var AllPassFilter, input: float): float =
     filter.index = 0
   return output
 
-proc process(reverb: var SchroederReverb, x: float): float =
+proc process(reverb: var SchroederReverb, x: float32): float32 =
   var sum = 0.0
   for comb in reverb.combs.mitems:
     sum += comb.process(x)
@@ -275,7 +347,7 @@ proc process(reverb: var SchroederReverb, x: float): float =
 
   return x * reverb.dry + ap * reverb.wet
 
-proc process(reverb: var FreeVerb, input: float): float =
+proc process(reverb: var FreeVerb, input: float32): float32 =
   let inputScaled = input * FixedGain
   var acc = 0.0
   for comb in reverb.combs.mitems:
@@ -286,29 +358,29 @@ proc process(reverb: var FreeVerb, input: float): float =
 
   return input * reverb.dry + acc * reverb.wet
 
-proc differenceAtOffset[T](a, b: openArray[T], offset: int): float64 =
+proc differenceAtOffset[T](a, b: openArray[T], offset: int): float32 =
   if offset >= a.len or offset >= b.len:
-    echo "offset > len"
-    return float64.high
-  var error: float64 = 0.0
+    # echo "offset > len"
+    return float32.high
+  var error: float32 = 0.0
   let startA = if offset > 0: offset else: 0
   let startB = if offset > 0: 0 else: -offset
   let n = min(a.len - startA, b.len - startB)
   for i in 0..<n:
     if startA + i notin 0..<a.len:
-      echo "out of bounds a ", startA, ", ", i, ", ", a.len
+      # echo "out of bounds a ", startA, ", ", i, ", ", a.len
       continue
     if startA + i notin 0..<a.len:
-      echo "out of bounds b ", startB, ", ", i, ", ", b.len
+      # echo "out of bounds b ", startB, ", ", i, ", ", b.len
       continue
-    error += abs(a[startA + i].float64 - b[startB + i].float64)
+    error += abs(a[startA + i].float32 - b[startB + i].float32)
   return error
 
 proc alignOffset[T](a, b: openArray[T]): int =
   let maxShiftLeft = b.len - a.len
   let maxShiftRight = 0
   result = 0
-  var bestError = float64.high
+  var bestError = float32.high
   var i = -maxShiftLeft
   while i <= maxShiftRight:
     let error = differenceAtOffset(a, b, i)
@@ -326,12 +398,12 @@ proc alignOffset[T](a, b: openArray[T]): int =
 macro generateSineLookupTable(samples: static int): untyped =
   var res = nnkBracket.newTree()
   for i in 0..<samples:
-    res.add newLit(sin(i.float / samples.float * 2 * PI))
+    res.add newLit(sin(i.float32 / samples.float32 * 2 * PI))
   return res
 
 const sineLookupTable = generateSineLookupTable(2048)
 
-proc sin(time, freq: float): float =
+proc sin(time, freq: float32): float32 =
   let index = (time * freq * sineLookupTable.len).int
   return sineLookupTable[index and (sineLookupTable.len - 1)]
 
@@ -339,27 +411,27 @@ proc sin(time, freq: float): float =
 #   var res = nnkBracket.newTree()
 #   return res
 
-var noiseLookupTable: array[2048, float]
+var noiseLookupTable: array[2048, float32]
 for n in noiseLookupTable.mitems:
   n = rand(2.0) - 1.0
 
-proc noise(time, freq: float): float =
-  let index = (time * freq * noiseLookupTable.len.float).int
+proc noise(time, freq: float32): float32 =
+  let index = (time * freq * noiseLookupTable.len.float32).int
   return noiseLookupTable[index and (noiseLookupTable.len - 1)]
 
-proc saw(time, freq: float): float =
+proc saw(time, freq: float32): float32 =
   return fract(time * freq) * 2 - 1
 
-proc square(time, freq: float): float =
+proc square(time, freq: float32): float32 =
   return round(fract(time * freq)) * 2 - 1
 
-proc triangle(time, freq: float): float =
+proc triangle(time, freq: float32): float32 =
   return abs(fract(time * freq) - 0.5) * 4 - 1
 
-proc pulse(time, freq: float, width: float): float =
+proc pulse(time, freq: float32, width: float32): float32 =
   return if fract(time * freq) < width: 1 else: -1
 
-proc adsr(time, attack, decay, sustain, sustainVolume, release: float): float =
+proc adsr(time, attack, decay, sustain, sustainVolume, release: float32): float32 =
   let sustain = max(sustain - attack - decay, 0)
   var time = time
   if time < 0:
@@ -369,7 +441,7 @@ proc adsr(time, attack, decay, sustain, sustainVolume, release: float): float =
   time -= attack
   if time <= decay:
     let alpha = time / decay
-    return lerp(1.float, sustainVolume, alpha)
+    return lerp(1.float32, sustainVolume, alpha)
   time -= decay
   if time <= sustain:
     return sustainVolume
@@ -386,7 +458,7 @@ proc modify(state: State, sound: var SoundState, modifier: ModifierState) =
   of Pitch:
     sound.freq *= modifier.floatValue
   of Timing:
-    let sampleOffset = (modifier.floatValue * state.sampleRate.float).int64
+    let sampleOffset = (modifier.floatValue.float32 * state.sampleRate.float64).int64
     sound.startTime += sampleOffset
     if sound.releaseTime != int64.high:
       sound.releaseTime += sampleOffset
@@ -405,6 +477,9 @@ proc scheduleMod(state: var State, track: var Track, modifier: ModifierState) =
 
 proc scheduleTrack(state: var State, track: var Track) =
   # log lvlDebug, &"scheduleTrack {track}"
+  # for f in state.files.keys:
+  #   log lvlInfo, &"file {f}"
+  #   echo track
 
   var pstate = state.addr
   var ptrack = track.addr
@@ -448,7 +523,7 @@ proc scheduleTrack(state: var State, track: var Track) =
     of "gain":
       impl:
         if args.len > 0:
-          let value = args[0].eval(env).toJson.jsonTo(float)
+          let value = args[0].eval(env).toJson.jsonTo(float32)
           pstate[].scheduleMod(ptrack[], ModifierState(
             kind: ModifierKind.Gain,
             startTime: pstate.scheduleStart,
@@ -478,16 +553,24 @@ proc scheduleTrack(state: var State, track: var Track) =
           else:
             continue
 
-          let freqMul = a.elems[1].eval(env).toJson.jsonTo(float)
-          let gain = a.elems[2].eval(env).toJson.jsonTo(float)
-          let arg1 = if a.elems.len > 3: a.elems[3].eval(env).toJson.jsonTo(float) else: 0
+          let freqMul = a.elems[1].eval(env).toJson.jsonTo(float32)
+          let gain = a.elems[2].eval(env).toJson.jsonTo(float32)
+          let arg1 = if a.elems.len > 3: a.elems[3].eval(env).toJson.jsonTo(float32) else: 0
           sound.layers[i] = (freqMul, gain, wave, arg1)
+        ptrack.sound = sound
+
+    of "sample":
+      impl:
+        var sound = Sound(kind: Sample)
+        if args.len > 0:
+          let name = args[0].eval(env).toJson.jsonTo(string)
+          sound.name = name
         ptrack.sound = sound
 
     of "pitch":
       impl:
         if args.len > 0:
-          let value = args[0].eval(env).toJson.jsonTo(float)
+          let value = args[0].eval(env).toJson.jsonTo(float32)
           pstate[].scheduleMod(ptrack[], ModifierState(
             kind: ModifierKind.Pitch,
             startTime: pstate.scheduleStart,
@@ -498,7 +581,7 @@ proc scheduleTrack(state: var State, track: var Track) =
     of "t+":
       impl:
         if args.len >= 2:
-          let value = args[0].eval(env).toJson.jsonTo(float)
+          let value = args[0].eval(env).toJson.jsonTo(float32)
           try:
             pstate[].scheduleModStack.add ModifierState(
               kind: ModifierKind.Timing,
@@ -511,7 +594,7 @@ proc scheduleTrack(state: var State, track: var Track) =
     of "timing":
       impl:
         if args.len > 0:
-          let value = args[0].eval(env).toJson.jsonTo(float)
+          let value = args[0].eval(env).toJson.jsonTo(float32)
           pstate[].scheduleMod(ptrack[], ModifierState(
             kind: ModifierKind.Timing,
             startTime: pstate.scheduleStart,
@@ -522,10 +605,10 @@ proc scheduleTrack(state: var State, track: var Track) =
     of "adsr":
       impl:
         if args.len >= 4:
-          let attack = args[0].eval(env).toJson.jsonTo(float)
-          let decay = args[1].eval(env).toJson.jsonTo(float)
-          let sustainVolume = args[2].eval(env).toJson.jsonTo(float)
-          let release = args[3].eval(env).toJson.jsonTo(float)
+          let attack = args[0].eval(env).toJson.jsonTo(float32)
+          let decay = args[1].eval(env).toJson.jsonTo(float32)
+          let sustainVolume = args[2].eval(env).toJson.jsonTo(float32)
+          let release = args[3].eval(env).toJson.jsonTo(float32)
           pstate[].scheduleMod(ptrack[], ModifierState(
             kind: ModifierKind.Adsr,
             startTime: pstate.scheduleStart,
@@ -556,7 +639,7 @@ proc scheduleTrack(state: var State, track: var Track) =
         if args.len >= 2:
           let scheduleNoteLen = pstate.scheduleNoteLen
           try:
-            pstate.scheduleNoteLen = args[0].eval(env).toJson.jsonTo(float)
+            pstate.scheduleNoteLen = args[0].eval(env).toJson.jsonTo(float32)
             discard args[1].eval(env)
           except CatchableError as e:
             raise newException(LispError, e.msg, e)
@@ -566,8 +649,8 @@ proc scheduleTrack(state: var State, track: var Track) =
     of "rand":
       impl:
         if args.len >= 2:
-          let min = args[0].eval(env).toJson.jsonTo(float)
-          let max = args[1].eval(env).toJson.jsonTo(float)
+          let min = args[0].eval(env).toJson.jsonTo(float32)
+          let max = args[1].eval(env).toJson.jsonTo(float32)
           return newNumber(min + rand(max - min))
         return newNumber(1)
 
@@ -588,7 +671,7 @@ proc scheduleTrack(state: var State, track: var Track) =
           gain: 1,
           freq: frequency,
           startTime: pstate.scheduleStart,
-          releaseTime: pstate.scheduleStart + (pstate.scheduleNoteLen * pstate.scheduleLen.float).int64,
+          releaseTime: pstate.scheduleStart + (pstate.scheduleNoteLen * pstate.scheduleLen.float32).int64,
           adsr: (0.01, 0.05, 0.8, 0.1),
         ))
         return newNil()
@@ -700,12 +783,12 @@ proc runScript(state: var State) =
           var damping = OffsetDamp + ScaleDamp * 0.5
           var size = OffsetRoom + ScaleRoom * 0.5
           if args.len > 2:
-            damping = args[2].toJson.jsonTo(float)
+            damping = args[2].toJson.jsonTo(float32)
           if args.len > 3:
-            size = args[3].toJson.jsonTo(float)
+            size = args[3].toJson.jsonTo(float32)
           pstate.reverb.setDampingAndSize(damping, size)
-          pstate.reverb.dry = args[0].toJson.jsonTo(float)
-          pstate.reverb.wet = args[1].toJson.jsonTo(float)
+          pstate.reverb.dry = args[0].toJson.jsonTo(float32)
+          pstate.reverb.wet = args[1].toJson.jsonTo(float32)
         except CatchableError as e:
           log lvlError, &"Failed to update reverb: {e.msg}"
         return newNil()
@@ -726,9 +809,11 @@ proc handleAudioEvent(state: var State, eventStr: string, log: bool = false) =
   case event.kind
   of SetState:
     let nextBarSample = state.nextBarSample
+    let files = state.files
     state = event.setState.state
     state.keys.setLen(0)
     state.nextBarSample = nextBarSample
+    state.files = files
     if state.script != "":
       state.runScript()
     if log:
@@ -749,6 +834,10 @@ proc handleAudioEvent(state: var State, eventStr: string, log: bool = false) =
       for key in state.keys.mitems:
         if key.key == event.press.key and event.timestamp < key.releaseTime:
           return
+      # let sampleAlign = state.samplesPerBar div 24
+      # let timeInBar = event.timestamp - (state.nextBarSample - state.samplesPerBar)
+      # let timeInBarAligned = (round(timeInBar.float64 / sampleAlign.float64) * sampleAlign.float64).int64
+      # let time = timeInBarAligned + (state.nextBarSample - state.samplesPerBar)
       state.keys.add(KeyState(
         key: event.press.key,
         frequency: getNotePitch(event.press.note),
@@ -760,6 +849,30 @@ proc handleAudioEvent(state: var State, eventStr: string, log: bool = false) =
       for key in state.keys.mitems:
         if key.key == event.release.key and key.releaseTime == int64.high:
           key.releaseTime = event.timestamp
+  of File:
+    log lvlDebug, &"open shared buffer '{event.file.path}'"
+    let buffer = SharedAudioBuffer.open(event.file.path)
+    if buffer.isSome:
+      log lvlDebug, &"Receive audio file {event.file.name} with {buffer.get.len} samples"
+      var samples = newSeq[float32](buffer.get.len)
+      buffer.get.read(0, samples)
+      echo samples[0..100]
+      var m = 0.0
+      for s in samples:
+        m = max(m, abs(s))
+      log lvlDebug, &"Receive audio file {event.file.name} with {samples.len} samples, max: {m}"
+      state.files[event.file.name] = AudioFile(samples: samples.ensureMove)
+
+    # let decoded = base64.decode(event.file.samples)
+    # if decoded.len > 0:
+    #   let len = decoded.len div 4
+    #   var samples = newSeq[float32](len)
+    #   copyMem(samples[0].addr, decoded[0].addr, decoded.len)
+    #   var m = 0.0
+    #   for s in samples:
+    #     m = max(m, abs(s))
+    #   log lvlDebug, &"Receive audio file {event.file.name} with {samples.len} samples, max: {m}"
+      # state.files[event.file.name] = AudioFile(samples: samples.ensureMove)
 
 proc handleAudioEvents(state: var State, events: openArray[char], log: bool = false) =
   for line in events.toOpenArray().split('\n'.Rune):
@@ -780,7 +893,7 @@ var state = State(
   reverb: initFreeVerb(0, 0.91),
 )
 
-var buffer = newSeq[float]()
+var buffer = newSeq[float32]()
 var discreteBuffer = newSeq[int16]()
 var discreteBufferDownSampled = newSeq[int16]()
 var startIndex: int64 = -1
@@ -821,32 +934,131 @@ proc readAudioFeedback(): Option[WitList[uint8]] =
 
   return WitList[uint8].none
 
-proc generateSynth(track: Track, sound: SoundState, time: float, t: int64, sampleTime: float): float =
-  var sample = 0.0
+func uncheckedArray*[T](self: openArray[T]): ptr UncheckedArray[T] =
+  cast[ptr UncheckedArray[T]](self.data)
 
-  let vol = adsr(time = (t - sound.startTime).float * sampleTime, attack = sound.adsr.attack, decay = sound.adsr.decay, sustain = (sound.releaseTime - sound.startTime).float * sampleTime, sustainVolume = sound.adsr.sustainVolume, release = sound.adsr.release)
+template generateSamples(tempBuffer: untyped, body: untyped): untyped =
+  let dt {.inject.} = 1.0 / state.info.sampleRate.float64
+  var currentTimeSeconds {.inject.} = startIndex.float64 * dt
+  var currentSampleIndex {.inject.} = startIndex
+  for i in 0..<bufferLen:
+    let sample {.inject.} = tempBuffer[i].addr
+    body
+    currentTimeSeconds += dt
+    currentSampleIndex += 1
+
+proc generateSin(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
+  let dt = 1.0 / state.info.sampleRate.float64
+  var currentTimeSeconds = startIndex.float64 * dt
+  var currentSampleIndex = startIndex
+  for i in 0..<bufferLen:
+    let sample = tempBuffer[i].addr
+    sample[] += sin(currentTimeSeconds, freq) * gain
+    currentTimeSeconds += dt
+    currentSampleIndex += 1
+
+proc generateSaw(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
+  let dt = 1.0 / state.info.sampleRate.float64
+  var currentTimeSeconds = startIndex.float64 * dt
+  var currentSampleIndex = startIndex
+  for i in 0..<bufferLen:
+    let sample = tempBuffer[i].addr
+    sample[] += saw(currentTimeSeconds, freq) * gain
+    currentTimeSeconds += dt
+    currentSampleIndex += 1
+
+proc generateSquare(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
+  let dt = 1.0 / state.info.sampleRate.float64
+  var currentTimeSeconds = startIndex.float64 * dt
+  var currentSampleIndex = startIndex
+  for i in 0..<bufferLen:
+    let sample = tempBuffer[i].addr
+    sample[] += square(currentTimeSeconds, freq) * gain
+    currentTimeSeconds += dt
+    currentSampleIndex += 1
+
+proc generatePulse(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, width: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
+  let dt = 1.0 / state.info.sampleRate.float64
+  var currentTimeSeconds = startIndex.float64 * dt
+  var currentSampleIndex = startIndex
+  for i in 0..<bufferLen:
+    let sample = tempBuffer[i].addr
+    sample[] += pulse(currentTimeSeconds, freq, width) * gain
+    currentTimeSeconds += dt
+    currentSampleIndex += 1
+
+proc generateTriangle(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
+  let dt = 1.0 / state.info.sampleRate.float64
+  var currentTimeSeconds = startIndex.float64 * dt
+  var currentSampleIndex = startIndex
+  for i in 0..<bufferLen:
+    let sample = tempBuffer[i].addr
+    sample[] += triangle(currentTimeSeconds, freq) * gain
+    currentTimeSeconds += dt
+    currentSampleIndex += 1
+
+proc generateAdsr(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
+  let dt = 1.0 / state.info.sampleRate.float64
+  var currentTimeSeconds = startIndex.float64 * dt
+  var currentSampleIndex = startIndex
+  for i in 0..<bufferLen:
+    let sample = tempBuffer[i].addr
+    sample[] *= adsr(time = (currentSampleIndex - sound.startTime).float64 * dt, attack = sound.adsr.attack, decay = sound.adsr.decay, sustain = (sound.releaseTime - sound.startTime).float64 * dt, sustainVolume = sound.adsr.sustainVolume, release = sound.adsr.release) * gain
+    currentTimeSeconds += dt
+    currentSampleIndex += 1
+
+var tempBuffer: array[10_000, float32]
+proc generateSound(state: var State, track: var Track, sound: var SoundState, buffer: ptr UncheckedArray[float32], bufferLen: int64) =
+
+  let releaseTime = if sound.releaseTime == int64.high: sound.releaseTime else: sound.releaseTime + (state.info.sampleRate.float64 * (sound.adsr.release + 0.5)).int64
+  let startIndex = max(sound.startTime - state.info.index, 0).int
+  let endIndex = min(releaseTime - state.info.index, bufferLen).int
+  if endIndex <= startIndex:
+    return
+  let startSample = max(sound.startTime, state.info.index)
+
+  let samplesToGenerate = endIndex - startIndex
+  zeroMem(tempBuffer[0].addr, samplesToGenerate * sizeof(tempBuffer[0]))
+
+  let dt {.inject.} = 1.0 / state.info.sampleRate.float64
+  let currentTimeSeconds = startIndex.float64 * dt
+
   case track.sound.kind
   of Synth:
-    # sample += sin(time, sound.freq)
     for l in track.sound.layers:
       if l.gain == 0 or l.freqMul == 0:
         break
       case l.wave
       of Sin:
-        sample += sin(time, sound.freq * l.freqMul) * l.gain
+        state.generateSin(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       of Saw:
-        sample += saw(time, sound.freq * l.freqMul) * l.gain
+        state.generateSaw(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       of Square:
-        sample += square(time, sound.freq * l.freqMul) * l.gain
-      of Noise:
-        sample += noise(time, sound.freq * l.freqMul) * l.gain
+        state.generateSquare(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+      # of Noise:
+      #   state.generateSaw(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       of Triangle:
-        sample += triangle(time, sound.freq * l.freqMul) * l.gain
+        state.generateTriangle(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       of Pulse:
-        sample += pulse(time, sound.freq * l.freqMul, l.arg1) * l.gain
+        state.generatePulse(track, sound, startSample, sound.freq * l.freqMul, l.arg1, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+      else:
+        discard
+    state.generateAdsr(track, sound, startSample, 1, sound.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+  of Sample:
+    if state.files.contains(track.sound.name):
+      let file = state.files[track.sound.name].addr
+      let fileStartIndex = max(startSample - sound.startTime, 0)
+      let fileEndIndex = min(releaseTime - sound.startTime, file.samples.len)
+      if fileStartIndex < fileEndIndex:
+        let samplesToCopy = fileEndIndex - fileStartIndex
+        copyMem(tempBuffer[0].addr, file.samples[fileStartIndex].addr, min(samplesToGenerate, samplesToCopy) * sizeof(float32))
+    # else:
+      # sample += sin(time, 880) * 1
+  else:
+    discard
 
-  sample = sample * vol * sound.gain
-  return sample
+  for i in 0..<samplesToGenerate:
+    buffer[startIndex + i] += tempBuffer[i]
 
 var audioThreadInitialized = false
 var lastFeedback = AudioFeedback()
@@ -888,12 +1100,12 @@ proc generateAudio(data: uint32, info: AudioArgs): ptr UncheckedArray[int16] {.c
   buffer.setLen(info.bufferLen)
   discreteBuffer.setLen(info.bufferLen)
 
-  let sampleTime = 1.0 / info.sampleRate.float
+  let sampleTime = 1.0 / info.sampleRate.float64
 
   let index = info.index
 
   # for key in state.keys:
-  #   echo &"key {key} -> {key.startTime - index}, {(index - key.startTime).float * sampleTime}, {(index + buffer.len - key.startTime).float * sampleTime}"
+  #   echo &"key {key} -> {key.startTime - index}, {(index - key.startTime).float64 * sampleTime}, {(index + buffer.len - key.startTime).float64 * sampleTime}"
 
   state.scheduleTracks()
 
@@ -905,10 +1117,10 @@ proc generateAudio(data: uint32, info: AudioArgs): ptr UncheckedArray[int16] {.c
   for track in state.tracks.mitems:
     var k = 0
     while k < track.sounds.len:
-      let sound {.cursor.} = track.sounds[k]
+      let sound = track.sounds[k].addr
       inc totalSounds
 
-      let endTime = if sound.releaseTime == int64.high: sound.releaseTime else: sound.releaseTime + (info.sampleRate.float * (sound.adsr.release + 0.5)).int64
+      let endTime = if sound.releaseTime == int64.high: sound.releaseTime else: sound.releaseTime + (info.sampleRate.float64 * (sound.adsr.release + 0.5)).int64
       if sound.startTime > info.index + buffer.len:
         # Sound doesn't start yet
         inc k
@@ -920,17 +1132,7 @@ proc generateAudio(data: uint32, info: AudioArgs): ptr UncheckedArray[int16] {.c
 
       inc soundsPlayed
 
-      let dt = 1 / info.sampleRate.float
-      var i = max(sound.startTime - info.index, 0)
-      var t = max(sound.startTime, info.index)
-      var time = t.float / info.sampleRate.float
-      while i < buffer.len and t < endTime:
-        let sample = generateSynth(track, sound, time, t, sampleTime)
-
-        buffer[i] += sample
-        inc i
-        inc t
-        time += dt
+      state.generateSound(track, sound[], cast[ptr UncheckedArray[float32]](buffer[0].addr), buffer.len)
 
       inc k
 
@@ -953,7 +1155,7 @@ proc generateAudio(data: uint32, info: AudioArgs): ptr UncheckedArray[int16] {.c
 
       inc soundsPlayed
 
-      let sound = SoundState(
+      var sound = SoundState(
         gain: 1,
         freq: key.frequency,
         startTime: key.startTime,
@@ -961,22 +1163,23 @@ proc generateAudio(data: uint32, info: AudioArgs): ptr UncheckedArray[int16] {.c
         adsr: if state.tracks.len > 0: state.tracks[0].adsr else: (0.01, 0.2, 0.8, 0.1),
       )
 
-      let dt = 1 / info.sampleRate.float
-      var i = max(sound.startTime - info.index, 0)
-      var t = max(sound.startTime, info.index)
-      var time = t.float / info.sampleRate.float
-      while i < buffer.len and t < endTime:
-        var sample = 0.0
-        if state.tracks.len > 0:
-          sample = generateSynth(state.tracks[0], sound, time, t, sampleTime)
-        else:
-          let vol = adsr(time = (t - sound.startTime).float * sampleTime, attack = 0.01, decay = 0.2, sustain = (sound.releaseTime - sound.startTime).float * sampleTime, sustainVolume = 0.8, release = 0.1)
-          sample += sin(time, sound.freq) * vol * 0.8
+      state.generateSound(state.tracks[0], sound, cast[ptr UncheckedArray[float32]](buffer[0].addr), buffer.len)
+      # let dt = 1 / info.sampleRate.float64
+      # var i = max(sound.startTime - info.index, 0)
+      # var t = max(sound.startTime, info.index)
+      # var time = t.float64 / info.sampleRate.float64
+      # while i < buffer.len and t < endTime:
+      #   var sample = 0.0
+      #   if state.tracks.len > 0:
+      #     sample = state.generateSynth(state.tracks[0], sound, time, t, sampleTime)
+      #   else:
+      #     let vol = adsr(time = (t - sound.startTime).float64 * sampleTime, attack = 0.01, decay = 0.2, sustain = (sound.releaseTime - sound.startTime).float64 * sampleTime, sustainVolume = 0.8, release = 0.1)
+      #     sample += sin(time, sound.freq) * vol * 0.8
 
-        buffer[i] += sample
-        inc i
-        inc t
-        time += dt
+      #   buffer[i] += sample
+      #   inc i
+      #   inc t
+      #   time += dt
 
       inc k
 
@@ -989,10 +1192,10 @@ proc generateAudio(data: uint32, info: AudioArgs): ptr UncheckedArray[int16] {.c
   let downsampleFactor = 2
   discreteBufferDownSampled.setLen(discreteBuffer.len div downsampleFactor)
   for i in 0..discreteBufferDownSampled.high:
-    var sample: float = 0
+    var sample: float32 = 0
     for k in (i * downsampleFactor)..<(i * downsampleFactor + downsampleFactor):
-      sample += discreteBuffer[k].float
-    sample /= downsampleFactor.float
+      sample += discreteBuffer[k].float32
+    sample /= downsampleFactor.float32
     discreteBufferDownSampled[i] = sample.int16
 
   lastFeedback.activeSounds = soundsPlayed
@@ -1007,6 +1210,13 @@ proc generateAudio(data: uint32, info: AudioArgs): ptr UncheckedArray[int16] {.c
       discreteBuffer[i] = 0
   return cast[ptr UncheckedArray[int16]](discreteBuffer[0].addr)
 
+proc sendAudioFile(name: string, file: SharedAudioBuffer) =
+  let path = file.mount(&"audioex-buffer-{name}", unique = true)
+  if audioEventWriter.isSome and file.len > 0:
+    log lvlInfo, &"sendAudioFile '{name}', {file.len} samples -> '{path}'"
+    # var encoded = base64.encode(cast[ptr UncheckedArray[uint8]](file.samples[0][0].addr).toOpenArray(0, file.samples[0].len * 4 - 1))
+    audioEventWriter.get.writeString($AudioEvent(kind: File, file: (name, path)).toJson & "\n")
+
 proc openCustomView(show: bool)
 proc addAudioCallback() =
   var (reader1, writer1) = newInMemoryChannel()
@@ -1019,6 +1229,11 @@ proc addAudioCallback() =
   state.runningAudio = true
   addAudioCallback(cast[uint32](generateAudio), 0)
   openCustomView(show = true)
+
+  # loadWavFile("audio-samples://Drums/")
+  sendAudioFile("bd1", loadWavFile("D:/Music/SamplePacks/Drums/Kick/Analogue - Fat 01 Kick.wav"))
+  sendAudioFile("sd1", loadWavFile("D:/Music/SamplePacks/Drums/Snare/Analogue - Med 03 Snare.wav"))
+  sendAudioFile("hh1", loadWavFile("D:/Music/SamplePacks/Drums/Hats/Analogue - Med 06 CH.wav"))
 
 proc stopAudio() =
   state.runningAudio = false
@@ -1161,14 +1376,26 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
     renderCommandEncoder.buffer.setLen(0)
     renderCommandEncoder.encodeClayRenderCommands(clayRenderCommands)
 
+    if gwav.samples.len > 0:
+      buildCommands(renderCommandEncoder):
+        for x in 0..gwav.samples[0].high:
+          let t = x.float32 / 200
+          # let vol = adsr(time = t, attack = 0.2, decay = 0.4, sustain = 1, sustainVolume = 0.8, release = 0.3)
+          let vol = (gwav.samples[0][min(gwav.samples[0].high, x * 40)]).float32
+          let y = 1000.0 - vol * 300
+          let h = 1000.0 - y
+          fillRect(rect(x.float32 * 1, y, 1, h), color(0.5, 0.5, 0.5))
+          if x > 1000:
+            break
+
     buildCommands(renderCommandEncoder):
       for x in 0..lastFeedback.samples.high:
-        let t = x.float / 200
+        let t = x.float32 / 200
         # let vol = adsr(time = t, attack = 0.2, decay = 0.4, sustain = 1, sustainVolume = 0.8, release = 0.3)
-        let vol = (lastFeedback.samples[x]).float / 8550.0
+        let vol = (lastFeedback.samples[x]).float32 / 8550.0
         let y = 500.0 - vol * 500
         let h = 500.0 - y
-        fillRect(rect(x.float * 3, y, 3, h), color(0.5, 0.5, 0.5))
+        fillRect(rect(x.float32 * 3, y, 3, h), color(0.5, 0.5, 0.5))
 
     view.setRenderCommands(@@(renderCommandEncoder.buffer.toOpenArray(0, renderCommandEncoder.buffer.high)))
 
@@ -1280,4 +1507,46 @@ defineCommand(ws"send-audio-event",
         audioEventWriter.get.writeString($j & "\n")
     except CatchableError as e:
       log lvlError, &"[guest] err: {e.msg}"
+    return ws""
+
+var bufferSize = 25
+var tripleBuffer = false
+
+defineCommand(ws"toggle-triple-buffering",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    tripleBuffer = not tripleBuffer
+    log lvlInfo, &"Enable triple audio buffering {tripleBuffer}"
+    audio.enableTripleBuffering(tripleBuffer)
+    return ws""
+
+defineCommand(ws"increase-buffer-size",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    bufferSize += 1
+    log lvlInfo, &"Set audio buffer size {bufferSize} ms"
+    audio.setBufferSize(bufferSize * 48000 div 1000)
+    return ws""
+
+defineCommand(ws"decrease-buffer-size",
+  active = false,
+  docs = ws"",
+  params = wl[(WitString, WitString)](nil, 0),
+  returnType = ws"",
+  context = ws"",
+  data = 123):
+  proc(data: uint32, args: WitString): WitString {.cdecl.} =
+    bufferSize -= 1
+    log lvlInfo, &"Set audio buffer size {bufferSize} ms"
+    audio.setBufferSize(bufferSize * 48000 div 1000)
     return ws""
