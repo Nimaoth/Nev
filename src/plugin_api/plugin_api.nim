@@ -1,5 +1,5 @@
 import std/[macros, strutils, os, strformat, sequtils, json, sets, tables, atomics]
-import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils]
+import misc/[custom_logger, custom_async, util, event, jsonex, timer, myjsonutils, render_command, binary_encoder, async_process, rope_utils, shared_buffer]
 import nimsumtree/[rope, sumtree, arc, clock, buffer]
 import service
 import layout
@@ -21,6 +21,9 @@ const apiVersion: int32 = 0
 
 type RopeResource = object
   rope: RopeSlice[Point]
+
+type SharedBufferResource = object
+  buffer: SharedBuffer
 
 type RenderViewResource = object
   setRender: bool = false
@@ -125,6 +128,7 @@ when defined(witRebuild):
     mapName "read-channel", ReadChannelResource
     mapName "write-channel", WriteChannelResource
     mapName "process", ProcessResource
+    mapName "shared-buffer", SharedBufferResource
 
 else:
   static: hint("Using cached plugin_api.wit (plugin_api_host.nim)")
@@ -847,6 +851,46 @@ proc typesRuneAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor)
 proc typesByteAt*(instance: ptr InstanceData; self: var RopeResource; a: Cursor): uint8 =
   return self.rope.charAt(a.toInternal.toPoint).uint8
 
+proc typesNewSharedBuffer*(instance: ptr InstanceData, size: int64): SharedBufferResource =
+  return SharedBufferResource(buffer: SharedBuffer.new(size))
+
+proc typesCloneRef*(instance: ptr InstanceData; self: var SharedBufferResource): SharedBufferResource =
+  return self
+
+proc typesLen*(instance: ptr InstanceData; self: var SharedBufferResource): int64 =
+  if self.buffer.isNil:
+    return 0
+  return self.buffer.len
+
+proc typesWrite*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; data: sink seq[uint8]): void =
+  if self.buffer.isNil or index + data.len > self.buffer.len:
+    log lvlError, &"Buffer write out of bounds: {index}..<{index + data.len} notin 0..<{self.buffer.len}"
+    return
+  self.buffer.write(index, data)
+
+proc typesReadInto*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; dst: uint32; len: int32): void =
+  if self.buffer.isNil or len <= 0 or index + len > self.buffer.len:
+    log lvlError, &"Buffer read out of bounds: {index}..<{index + len} notin 0..<{self.buffer.len}"
+    return
+  discard instance.funcs.mem[(dst.int + len.int - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
+  let wasmBuffer = instance.funcs.mem.getRawPtr(dst.WasmPtr)
+  if wasmBuffer != nil:
+    self.buffer.readInto(index, wasmBuffer.toOpenArray(0, len - 1))
+
+proc typesRead*(instance: ptr InstanceData; self: var SharedBufferResource; index: int64; len: int32): seq[uint8] =
+  if self.buffer.isNil or len <= 0 or index + len > self.buffer.len:
+    return @[]
+  result = newSeq[uint8](len)
+  self.buffer.readInto(0, result)
+
+proc typesSharedBufferOpen*(instance: ptr InstanceData; path: sink string): Option[SharedBufferResource] =
+  let buff = openGlobalBuffer(path)
+  if buff.isSome:
+    return SharedBufferResource(buffer: buff.get).some
+
+proc typesSharedBufferMount*(instance: ptr InstanceData; buffer: sink SharedBufferResource; path: sink string; unique: bool): string =
+  mountGlobalBuffer(path, buffer.buffer, unique)
+
 proc isAllowed*(permissions: FilesystemPermissions, path: string, vfs: VFS): bool =
   if permissions.disallowAll.get(false):
     return false
@@ -884,6 +928,25 @@ proc vfsReadRopeSync*(instance: ptr InstanceData, path: sink string, readFlags: 
     var rope: Rope = Rope.new()
     waitFor instance.host.vfs.readRope(normalizedPath, rope.addr)
     return results.ok(RopeResource(rope: rope.slice().suffix(Point())))
+  except IOError as e:
+    log lvlWarn, &"Failed to read file for plugin: {e.msg}"
+    result.err(VfsError.NotFound)
+
+proc vfsReadBufferSync*(instance: ptr InstanceData, path: sink string): Result[SharedBufferResource, VfsError] =
+  if instance.host == nil:
+    return
+  try:
+    let normalizedPath = instance.host.vfs.normalize(path)
+    if not instance.permissions.filesystemRead.isAllowed(normalizedPath, instance.host.vfs):
+      result.err(VfsError.NotAllowed)
+      return
+    # todo: avoid the extra allocation for data here, either by adding an api returning shared buffer to vfs,
+    # or something else
+    let data = waitFor instance.host.vfs.read(normalizedPath, {ReadFlag.Binary})
+    var res = SharedBuffer.new(data.len)
+    if data.len > 0:
+      res.write(0, data.toOpenArrayByte(0, data.high))
+    return results.ok(SharedBufferResource(buffer: res))
   except IOError as e:
     log lvlWarn, &"Failed to read file for plugin: {e.msg}"
     result.err(VfsError.NotFound)
@@ -1291,6 +1354,12 @@ proc channelNewInMemoryChannel*(instance: ptr InstanceData): (ReadChannelResourc
 proc audioNextAudioSample*(instance: ptr InstanceData): int64 =
   return getNextAudioSample()
 
+proc audioSetBufferSize*(instance: ptr InstanceData, size: int32) =
+  setAudioBufferSize(size.int)
+
+proc audioEnableTripleBuffering*(instance: ptr InstanceData, enabled: bool) =
+  setEnableTripleBuffering(enabled)
+
 proc audioAddAudioCallback*(instance: ptr InstanceData; fun: uint32; data: uint32): void =
   let instance = cast[ptr InstanceDataImpl](instance)
   if instance.isAudioThread:
@@ -1308,9 +1377,11 @@ proc audioAddAudioCallback*(instance: ptr InstanceData; fun: uint32; data: uint3
     let wasmBufferAddr = newInstance.getMutUnsafe.funcs.handleAudioCallback(fun, data, args).okOr(err):
       echo &"wasm audio callback error: {err}"
       return false
+    let byteSize = buffer.len * sizeof(buffer[0])
+    discard newInstance.getMutUnsafe.funcs.mem[(wasmBufferAddr.int + byteSize - 1).WasmPtr] # crash if out of bounds. todo: replace this with bounds check
     let wasmBuffer = cast[ptr UncheckedArray[int16]](newInstance.getMutUnsafe.funcs.mem.getRawPtr(wasmBufferAddr.WasmPtr))
     if wasmBuffer != nil:
-      copyMem(buffer[0].addr, wasmBuffer, buffer.len * sizeof(buffer[0]))
+      copyMem(buffer[0].addr, wasmBuffer, byteSize)
 
     return true
 

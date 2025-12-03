@@ -30,3 +30,17 @@ proc audioNextAudioSampleImported(): int64 {.
 proc nextAudioSample*(): int64 {.nodestroy.} =
   let res = audioNextAudioSampleImported()
   result = convert(res, int64)
+
+proc audioSetBufferSizeImported(a0: int32): void {.
+    wasmimport("set-buffer-size", "nev:plugins/audio").}
+proc setBufferSize*(size: int32): void {.nodestroy.} =
+  var arg0: int32
+  arg0 = size
+  audioSetBufferSizeImported(arg0)
+
+proc audioEnableTripleBufferingImported(a0: bool): void {.
+    wasmimport("enable-triple-buffering", "nev:plugins/audio").}
+proc enableTripleBuffering*(enabled: bool): void {.nodestroy.} =
+  var arg0: bool
+  arg0 = enabled
+  audioEnableTripleBufferingImported(arg0)

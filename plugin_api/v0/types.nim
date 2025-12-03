@@ -38,6 +38,11 @@ type
     timestamp*: Lamport
     offset*: uint32
     bias*: Bias
+  ## Shared reference to a byte buffer. The data is stored in the editor, not in the plugin, so shared buffers
+  ## can be used to efficiently share data with another plugin or another thread.
+  ## Buffers are reference counted internally, and this resource also affects that reference count.
+  SharedBuffer* = object
+    handle*: int32
   ## Shared reference to a rope. The rope data is stored in the editor, not in the plugin, so ropes
   ## can be used to efficiently access any document content or share a string with another plugin.
   ## Ropes are reference counted internally, and this resource also affects that reference count.
@@ -57,12 +62,133 @@ type
     id*: uint64
   Task* = object
     id*: uint64
+proc typesSharedBufferDrop(a: int32): void {.
+    wasmimport("[resource-drop]shared-buffer", "nev:plugins/types").}
+proc `=copy`*(a: var SharedBuffer; b: SharedBuffer) {.error.}
+proc `=destroy`*(a: SharedBuffer) =
+  if a.handle != 0:
+    typesSharedBufferDrop(a.handle - 1)
+
 proc typesRopeDrop(a: int32): void {.wasmimport("[resource-drop]rope",
     "nev:plugins/types").}
 proc `=copy`*(a: var Rope; b: Rope) {.error.}
 proc `=destroy`*(a: Rope) =
   if a.handle != 0:
     typesRopeDrop(a.handle - 1)
+
+proc typesNewSharedBufferImported(a0: int64): int32 {.
+    wasmimport("[constructor]shared-buffer", "nev:plugins/types").}
+proc newSharedBuffer*(size: int64): SharedBuffer {.nodestroy.} =
+  var arg0: int64
+  arg0 = size
+  let res = typesNewSharedBufferImported(arg0)
+  result.handle = res + 1
+
+proc typesCloneRefImported(a0: int32): int32 {.
+    wasmimport("[method]shared-buffer.clone-ref", "nev:plugins/types").}
+proc cloneRef*(self: SharedBuffer): SharedBuffer {.nodestroy.} =
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = typesCloneRefImported(arg0)
+  result.handle = res + 1
+
+proc typesLenImported(a0: int32): int64 {.
+    wasmimport("[method]shared-buffer.len", "nev:plugins/types").}
+proc len*(self: SharedBuffer): int64 {.nodestroy.} =
+  var arg0: int32
+  arg0 = cast[int32](self.handle - 1)
+  let res = typesLenImported(arg0)
+  result = convert(res, int64)
+
+proc typesWriteImported(a0: int32; a1: int64; a2: int32; a3: int32): void {.
+    wasmimport("[method]shared-buffer.write", "nev:plugins/types").}
+proc write*(self: SharedBuffer; index: int64; data: WitList[uint8]): void {.
+    nodestroy.} =
+  var
+    arg0: int32
+    arg1: int64
+    arg2: int32
+    arg3: int32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = index
+  if data.len > 0:
+    arg2 = cast[int32](data[0].addr)
+  else:
+    arg2 = 0.int32
+  arg3 = cast[int32](data.len)
+  typesWriteImported(arg0, arg1, arg2, arg3)
+
+proc typesReadIntoImported(a0: int32; a1: int64; a2: uint32; a3: int32): void {.
+    wasmimport("[method]shared-buffer.read-into", "nev:plugins/types").}
+proc readInto*(self: SharedBuffer; index: int64; dst: uint32; len: int32): void {.
+    nodestroy.} =
+  var
+    arg0: int32
+    arg1: int64
+    arg2: uint32
+    arg3: int32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = index
+  arg2 = dst
+  arg3 = len
+  typesReadIntoImported(arg0, arg1, arg2, arg3)
+
+proc typesReadImported(a0: int32; a1: int64; a2: int32; a3: int32): void {.
+    wasmimport("[method]shared-buffer.read", "nev:plugins/types").}
+proc read*(self: SharedBuffer; index: int64; len: int32): WitList[uint8] {.
+    nodestroy.} =
+  var
+    retArea: array[24, uint8]
+    arg0: int32
+    arg1: int64
+    arg2: int32
+  arg0 = cast[int32](self.handle - 1)
+  arg1 = index
+  arg2 = len
+  typesReadImported(arg0, arg1, arg2, cast[int32](retArea[0].addr))
+  result = wl(cast[ptr typeof(result[0])](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
+
+proc typesSharedBufferOpenImported(a0: int32; a1: int32; a2: int32): void {.
+    wasmimport("[static]shared-buffer.open", "nev:plugins/types").}
+proc sharedBufferOpen*(path: WitString): Option[SharedBuffer] {.nodestroy.} =
+  var
+    retArea: array[8, uint8]
+    arg0: int32
+    arg1: int32
+  if path.len > 0:
+    arg0 = cast[int32](path[0].addr)
+  else:
+    arg0 = 0.int32
+  arg1 = cast[int32](path.len)
+  typesSharedBufferOpenImported(arg0, arg1, cast[int32](retArea[0].addr))
+  if cast[ptr int32](retArea[0].addr)[] != 0:
+    var temp: SharedBuffer
+    temp.handle = cast[ptr int32](retArea[4].addr)[] + 1
+    result = temp.some
+
+proc typesSharedBufferMountImported(a0: int32; a1: int32; a2: int32; a3: bool;
+                                    a4: int32): void {.
+    wasmimport("[static]shared-buffer.mount", "nev:plugins/types").}
+proc sharedBufferMount*(buffer: sink SharedBuffer; path: WitString; unique: bool): WitString {.
+    nodestroy.} =
+  var
+    retArea: array[16, uint8]
+    arg0: int32
+    arg1: int32
+    arg2: int32
+    arg3: bool
+  arg0 = cast[int32](buffer.handle - 1)
+  if path.len > 0:
+    arg1 = cast[int32](path[0].addr)
+  else:
+    arg1 = 0.int32
+  arg2 = cast[int32](path.len)
+  arg3 = unique
+  typesSharedBufferMountImported(arg0, arg1, arg2, arg3,
+                                 cast[int32](retArea[0].addr))
+  result = ws(cast[ptr char](cast[ptr int32](retArea[0].addr)[]),
+              cast[ptr int32](retArea[4].addr)[])
 
 proc typesNewRopeImported(a0: int32; a1: int32): int32 {.
     wasmimport("[constructor]rope", "nev:plugins/types").}
