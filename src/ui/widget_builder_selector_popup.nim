@@ -67,6 +67,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
 
   let textColor = app.themes.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let backgroundColor = app.themes.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
+  let borderColor = app.themes.theme.color("panel.border", backgroundColor.lighten(0.2))
   let selectionColor = app.themes.theme.color("list.activeSelectionBackground",
     color(0.8, 0.8, 0.8)).withAlpha(1)
   let titleBackgroundColor = app.themes.theme.color(@["selector.title.background", "panel.background"], color(0.1, 0.1, 0.1)).withAlpha(1)
@@ -79,8 +80,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
   var whichKeyHeight = app.config.runtime.get("ui.selector-popup.which-key-height", 5)
   whichKeyHeight = (nextPossibleInputs.len + 1) div 2
 
-  builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h,
-      backgroundColor = backgroundColor, userId = self.userId.newPrimaryId):
+  builder.panel(&{FillBackground, DrawBorder}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h,
+      backgroundColor = backgroundColor, borderColor = borderColor, userId = self.userId.newPrimaryId):
 
     builder.panel(&{FillX, MaskContent, OverlappingChildren} + yFlag): #, userId = id):
       let totalLineHeight = app.platform.totalLineHeight
