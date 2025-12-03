@@ -1146,7 +1146,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
           onRight:
             proc cursorString(cursor: Cursor): string =
               if self.document != nil and self.document.isInitialized:
-                $cursor.line & ":" & $cursor.column & ":" & $self.document.buffer.visibleText.runeIndexInLine(cursor)
+                $cursor.line & ":" & $cursor.column
               else:
                 ""
             let readOnlyText = if self.document.readOnly: "-readonly- " else: ""
@@ -1167,8 +1167,9 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
             if currentRuneHexText.len == 0:
               currentRuneHexText = "0"
 
-            let text = fmt"{self.customHeader} | {readOnlyText}{stagedText}{diffText}{self.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
-            builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
+            let text = fmt"{self.customHeader} | {readOnlyText}{stagedText}{diffText} '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))}"
+            builder.panel(&{SizeToContentX, SizeToContentY, DrawText, FillBackground},
+              pivot = vec2(1, 0), textColor = textColor, text = text, backgroundColor = headerColor)
 
         let lineNumberWidth = self.lineNumberWidth()
         builder.panel(sizeFlags + &{FillBackground, MaskContent}, backgroundColor = backgroundColor):
