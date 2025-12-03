@@ -31,6 +31,8 @@ logCategory "main"
 when defined(windows):
   import winim/lean
 
+  discard SetThreadPriority(GetCurrentThreadId(), THREAD_PRIORITY_HIGHEST)
+
 proc ownsConsole*(): bool =
   when defined(windows):
     let consoleWnd = GetConsoleWindow()
