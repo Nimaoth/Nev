@@ -1622,6 +1622,8 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   var lastRedo: UndoOperation
   while true:
     let redoOp = self.buffer.redo()
+    if redoOp.isNone:
+      break
     self.onOperation.invoke (self, redoOp.get.op)
     lastRedo = redoOp.get.op.undo
     if untilCheckpoint.len == 0 or self.buffer.history.redoStack.len == 0:
