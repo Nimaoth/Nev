@@ -301,7 +301,7 @@ proc getCount(env: Env): int =
 
   return 1
 
-proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], fallback: MoveFunction, args: openArray[LispVal], env: Env): seq[Selection] =
+proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, selections: openArray[Selection], originalSelections: openArray[Selection], fallback: MoveFunction, args: openArray[LispVal], env: Env): seq[Selection] =
   if self.debugMoves:
     debugf"applyMoveImpl '{move}' {args}, {env.env}"
 
@@ -377,6 +377,12 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
 
   of "norm":
     return selections.mapIt(it.normalized)
+
+  of "overlapping":
+    let c = originalSelections.last.last
+    for s in selections:
+      if s.contains(c):
+        result.add s
 
   of "word-line":
     return selections.mapIt:
@@ -760,7 +766,7 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
         )
       else:
         impl:
-          selections = self.applyMoveImpl(displayMap, name, selections, fallback, args, env)
+          selections = self.applyMoveImpl(displayMap, name, selections, originalSelections, fallback, args, env)
 
     discard expr.eval(env)
     return selections
