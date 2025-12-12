@@ -92,6 +92,9 @@ For examples and default values see [here](../config/settings.json)
 | `text.search-regexes.workspace-symbols` | regex \| null | null | Regex to use when using the workspace-symbols feature. |
 | `text.search-regexes.workspace-symbols-by-kind` | { [key: string]: regex } \| null | null | Regex to use when using the workspace-symbols feature. Keys are LSP symbol kinds, values are the corresponding regex. |
 | `text.search-workspace-regex-max-results` | int | 50000 | Maximum number of results to display for regex based workspace symbol search. |
+| `text.signature-help-move` | string | "(ts 'call.inner') (grow -1) (last)" | Which move to use to find the beginning of the argument list when showing signature help. |
+| `text.signature-help-trigger-chars` | (string \| string[])[] | ["("] | Which characters trigger signature help when inserted. |
+| `text.signature-help-trigger-on-edit-in-args` | bool | true | Trigger signature help when editing inside an argument list, as defined by 'signature-help-move' |
 | `text.signs.max-width` | int \| null | 2 | If `show` is `auto` then this is the max width of the sign column, if `show` is `yes` then this is the exact width. |
 | `text.signs.show` | "auto" \| "yes" \| "no" \| "number" | "number" | Defines how the sign column is displayed. - auto: Signs are next to line numbers, width is based on amount of signs in a line. - yes: Signs are next to line numbers and sign column is always visible. Width is defined in `max-width` - no: Don't show the sign column - number: Show signs instead of the line number, no extra sign column. |
 | `text.single-click-command` | string | "" | Command to run after single clicking on some text. |

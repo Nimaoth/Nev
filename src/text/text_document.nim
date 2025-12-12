@@ -229,6 +229,7 @@ type
     tsLanguage: TSLanguage
     currentTree: TSTree
     highlightQuery*: TSQuery
+    textObjectsQuery*: TSQuery
     errorQuery: TSQuery
 
     languageServerList*: LanguageServerList
@@ -714,6 +715,7 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
   # logScope lvlInfo, &"loadTreesitterLanguage '{self.filename}'"
 
   self.highlightQuery = nil
+  self.textObjectsQuery = nil
   self.errorQuery = nil
   self.currentContentFailedToParse = false
   self.tsLanguage = nil
@@ -747,6 +749,14 @@ proc loadTreesitterLanguage(self: TextDocument): Future[void] {.async.} =
       return
 
     self.highlightQuery = highlightQuery.get
+
+  let textObjectsQueryPath = &"app://languages/{treesitterLanguageName}/queries/textobjects.scm"
+  let textObjectsQuery = language.get.queryFile(self.vfs, "textobjects", textObjectsQueryPath).await
+  if textObjectsQuery.isSome:
+    if prevLanguageId != self.languageId:
+      return
+
+    self.textObjectsQuery = textObjectsQuery.get
 
   if not self.isInitialized:
     return
@@ -832,6 +842,7 @@ method deinit*(self: TextDocument) =
   if self.currentTree.isNotNil:
     self.currentTree.delete()
   self.highlightQuery = nil
+  self.textObjectsQuery = nil
   self.errorQuery = nil
 
   if self.languageServerList.isNotNil:

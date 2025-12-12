@@ -518,6 +518,26 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor):
 
   return string.none
 
+method getSignatureHelp*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+
+  if self.serverCapabilities.signatureHelpProvider.isNone:
+    return success[seq[lsp_types.SignatureHelpResponse]](@[])
+
+  let localizedPath = self.vfs.localize(filename)
+  let response = await self.client.getSignatureHelp(localizedPath, location.line, location.column)
+  if response.isError:
+    log(lvlWarn, &"[{self.name}] Error in getSignatureHelp('{filename}', {location}): {response.error}")
+    return response.to(seq[lsp_types.SignatureHelpResponse])
+
+  if response.isCanceled:
+    # log(lvlInfo, &"[{self.name}] Canceled inlay hints ({response.id}) for '{filename}':{selection} ")
+    return response.to(seq[lsp_types.SignatureHelpResponse])
+
+  let parsedResponse = response.result
+  var res = newSeq[lsp_types.SignatureHelpResponse](1)
+  res[0] = parsedResponse
+  return success[seq[lsp_types.SignatureHelpResponse]](res)
+
 method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Selection):
     Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
 

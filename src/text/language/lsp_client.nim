@@ -97,6 +97,7 @@ type
     GetReferences
     GetSwitchSourceHeader
     GetHover
+    GetSignatureHelp
     GetInlayHint
     GetDocumentSymbol
     GetSymbol
@@ -123,6 +124,7 @@ type
     of GetReferences: getReferences*: Response[ReferenceResponse]
     of GetSwitchSourceHeader: getSwitchSourceHeader*: Response[string]
     of GetHover: getHover*: Response[DocumentHoverResponse]
+    of GetSignatureHelp: getSignatureHelp*: Response[SignatureHelpResponse]
     of GetInlayHint: getInlayHint*: Response[InlayHintResponse]
     of GetDocumentSymbol: getDocumentSymbol*: Response[DocumentSymbolResponse]
     of GetSymbol: getSymbol*: Response[WorkspaceSymbolResponse]
@@ -162,6 +164,7 @@ type
     activeReferencesRequests: Table[int, tuple[meth: string, future: Future[Response[ReferenceResponse]]]] # Main thread
     activeSwitchSourceHeaderRequests: Table[int, tuple[meth: string, future: Future[Response[string]]]] # Main thread
     activeHoverRequests: Table[int, tuple[meth: string, future: Future[Response[DocumentHoverResponse]]]] # Main thread
+    activeSignatureHelpRequests: Table[int, tuple[meth: string, future: Future[Response[SignatureHelpResponse]]]] # Main thread
     activeInlayHintsRequests: Table[int, tuple[meth: string, future: Future[Response[InlayHintResponse]]]] # Main thread
     activeSymbolsRequests: Table[int, tuple[meth: string, future: Future[Response[DocumentSymbolResponse]]]] # Main thread
     activeWorkspaceSymbolsRequests: Table[int, tuple[meth: string, future: Future[Response[WorkspaceSymbolResponse]]]] # Main thread
@@ -276,6 +279,7 @@ proc deinitThread(client: LSPClient) =
   client.activeReferencesRequests.clear()
   client.activeSwitchSourceHeaderRequests.clear()
   client.activeHoverRequests.clear()
+  client.activeSignatureHelpRequests.clear()
   client.activeInlayHintsRequests.clear()
   client.activeSymbolsRequests.clear()
   client.activeWorkspaceSymbolsRequests.clear()
@@ -474,6 +478,7 @@ proc handleResponses*(client: LSPClient) {.async, gcsafe.} =
     of GetReferences: dispatch(client.activeReferencesRequests, response.getReferences)
     of GetSwitchSourceHeader: dispatch(client.activeSwitchSourceHeaderRequests, response.getSwitchSourceHeader)
     of GetHover: dispatch(client.activeHoverRequests, response.getHover)
+    of GetSignatureHelp: dispatch(client.activeSignatureHelpRequests, response.getSignatureHelp)
     of GetInlayHint: dispatch(client.activeInlayHintsRequests, response.getInlayHint)
     of GetDocumentSymbol: dispatch(client.activeSymbolsRequests, response.getDocumentSymbol)
     of GetSymbol: dispatch(client.activeWorkspaceSymbolsRequests, response.getSymbol)
@@ -524,6 +529,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     of "textDocument/references": cancel(client.activeReferencesRequests, ReferenceResponse)
     of "textDocument/switchSourceHeader": cancel(client.activeSwitchSourceHeaderRequests, string)
     of "textDocument/hover": cancel(client.activeHoverRequests, DocumentHoverResponse)
+    of "textDocument/signatureHelp": cancel(client.activeSignatureHelpRequests, SignatureHelpResponse)
     of "textDocument/inlayHint": cancel(client.activeInlayHintsRequests, InlayHintResponse)
     of "textDocument/documentSymbol": cancel(client.activeSymbolsRequests, DocumentSymbolResponse)
     of "workspace/symbol": cancel(client.activeWorkspaceSymbolsRequests, WorkspaceSymbolResponse)
@@ -603,6 +609,8 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async, gcsafe.}
         },
         "rename": %*{
           "linkSupport": true,
+        },
+        "signatureHelp": %*{
         },
         "documentSymbol": %*{},
         "inlayHint": %*{},
@@ -885,6 +893,19 @@ proc getHover*(client: LSPClient, filename: string, line: int, column: int): Fut
 
   return await client.sendRequest(client.activeHoverRequests.addr, "textDocument/hover", params)
 
+proc getSignatureHelp*(client: LSPClient, filename: string, line: int, column: int): Future[Response[SignatureHelpResponse]] {.async.} =
+  client.cancelAllOf("textDocument/signatureHelp")
+
+  let params = SignatureHelpParams(
+    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
+    position: Position(
+      line: line,
+      character: column
+    )
+  ).toJson
+
+  return await client.sendRequest(client.activeSignatureHelpRequests.addr, "textDocument/signatureHelp", params)
+
 proc getInlayHints*(client: LSPClient, filename: string, selection: ((int, int), (int, int))): Future[Response[InlayHintResponse]] {.async.} =
   client.cancelAllOf("textDocument/inlayHint")
 
@@ -1110,6 +1131,8 @@ proc runAsync*(client: LSPClient) {.async, gcsafe.} =
               id: id, kind: GetSwitchSourceHeader, getSwitchSourceHeader: parsedResponse.to(string)))
           of "textDocument/hover": await client.responseChannel.send(LSPClientResponse(
               id: id, kind: GetHover, getHover: parsedResponse.to(DocumentHoverResponse)))
+          of "textDocument/signatureHelp": await client.responseChannel.send(LSPClientResponse(
+              id: id, kind: GetSignatureHelp, getSignatureHelp: parsedResponse.to(SignatureHelpResponse)))
           of "textDocument/inlayHint": await client.responseChannel.send(LSPClientResponse(
               id: id, kind: GetInlayHint, getInlayHint: parsedResponse.to(InlayHintResponse)))
           of "textDocument/documentSymbol": await client.responseChannel.send(LSPClientResponse(

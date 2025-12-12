@@ -324,6 +324,9 @@
         "<?-count>aW": ["(count* <#text_object.count>) (vim.WORD-inner) (inclusive)"],
         "ip": ["(vim.paragraph-inner) (inclusive)"],
         "ap": ["(vim.paragraph-outer) (inclusive)"],
+        "ia": ["(ts 'call.inner') (last) (grow -1) (inclusive)"],
+        "aa": ["(ts 'call.inner') (last) (inclusive)"],
+        "ic": ["(ts 'call.outer') (last) (inclusive)"],
 
         "i{": ["(surround \"{\" \"}\" true)"],
         "a{": ["(surround \"{\" \"}\" false)"],
@@ -570,7 +573,8 @@
         "ga": ["select-code-action"],
         "gR": ["rename"],
         "K": ["show-hover-for-current"],
-        "H": ["show-diagnostics-for-current"],
+        "H": ["show-signature-help"],
+        // "H": ["show-diagnostics-for-current"],
 
         // scroll
         "z<ENTER>": ["vim.scroll-line-to-top-and-move-line-start"],
@@ -597,6 +601,7 @@
         "<C-t>": ["vim.indent"],
         "<C-d>": ["vim.unindent"],
         "<C-r>": ["set-mode", "vim.insert-register"],
+        "<C-k>": ["show-signature-help"],
     },
 
     "vim.visual": {

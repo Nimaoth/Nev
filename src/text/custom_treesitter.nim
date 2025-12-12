@@ -712,3 +712,79 @@ proc tsFree(a1: pointer) {.stdcall.} =
 
 proc enableTreesitterMemoryTracking*() =
   tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)
+
+iterator query*(query: TSQuery, tree: TSTree, selection: Selection): tuple[node: TSNode, capture: string] =
+  let range = tsRange(tsPoint(selection.first.line, selection.first.column), tsPoint(selection.last.line, selection.last.column))
+  var matches: seq[TSQueryMatch] = query.matches(tree.root, range)
+
+  var requiresSort = false
+
+  for match in matches:
+    let predicates = query.predicatesForPattern(match.pattern)
+    for capture in match.captures:
+      let node = capture.node
+      var matches = true
+
+      for predicate in predicates:
+        if not matches:
+          break
+
+        for operand in predicate.operands:
+          if operand.name != capture.name:
+            matches = false
+            break
+
+      #     case predicate.operator
+      #     of "match?":
+      #       if not regexes[].contains(operand.`type`):
+      #         try:
+      #           regexes[][operand.`type`] = re(operand.`type`)
+      #         except RegexError:
+      #           matches = false
+      #           break
+      #       let regex {.cursor.} = regexes[][operand.`type`]
+
+      #       let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+      #       if nodeText.matchLen(regex, 0) != nodeText.len:
+      #         matches = false
+      #         break
+
+      #     of "not-match?":
+      #       if not regexes[].contains(operand.`type`):
+      #         try:
+      #           regexes[][operand.`type`] = re(operand.`type`)
+      #         except RegexError:
+      #           matches = false
+      #           break
+      #       let regex {.cursor.} = regexes[][operand.`type`]
+
+      #       let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+      #       if nodeText.matchLen(regex, 0) == nodeText.len:
+      #         matches = false
+      #         break
+
+      #     of "eq?":
+      #       # @todo: second arg can be capture aswell
+      #       let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+      #       if nodeText != operand.`type`:
+      #         matches = false
+      #         break
+
+      #     of "not-eq?":
+      #       # @todo: second arg can be capture aswell
+      #       let nodeText = self.contentString(nodeRange, byteRange, maxPredicateCheckLen)
+      #       if nodeText == operand.`type`:
+      #         matches = false
+      #         break
+
+      #     # of "any-of?":
+      #     #   # todo
+      #     #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+
+      #     else:
+      #       discard
+
+      if not matches:
+        continue
+
+      yield (node, capture.name)

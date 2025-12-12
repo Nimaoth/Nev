@@ -621,6 +621,27 @@ type
     textDocument*: TextDocumentIdentifier
     position*: Position
 
+  SignatureHelpParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    context: Option[JsonNode]
+
+  ParameterInformation* = object
+    label*: JsonNode
+    documentation*: Option[JsonNode]
+
+  SignatureInformation* = object
+    label*: string
+    documentation*: Option[JsonNode]
+    parameters*: seq[ParameterInformation]
+    activeParameter*: Option[int]
+
+  SignatureHelpResponse* = object
+    signatures*: seq[SignatureInformation]
+    activeSignature*: Option[int]
+    activeParameter*: Option[int]
+
   DocumentHoverResponse* = object
     contents*: HoverContentVariant
     range*: Option[Range]
