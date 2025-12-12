@@ -22,10 +22,22 @@ export
   vfs
 
 import
+  channel
+
+export
+  channel
+
+import
   types
 
 export
   types
+
+import
+  layout
+
+export
+  layout
 
 import
   registers
@@ -38,36 +50,6 @@ import
 
 export
   text_document
-
-import
-  settings
-
-export
-  settings
-
-import
-  text_editor
-
-export
-  text_editor
-
-import
-  commands
-
-export
-  commands
-
-import
-  channel
-
-export
-  channel
-
-import
-  layout
-
-export
-  layout
 
 import
   render
@@ -86,6 +68,24 @@ import
 
 export
   process
+
+import
+  settings
+
+export
+  settings
+
+import
+  text_editor
+
+export
+  text_editor
+
+import
+  commands
+
+export
+  commands
 
 proc initPlugin(): void
 proc initPluginExported(): void {.wasmexport("init-plugin", "nev:plugins/guest").} =

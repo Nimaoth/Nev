@@ -213,10 +213,13 @@ proc updateBreakpointsForFile(self: Debugger, path: string) =
         let resolved = b.anchor.summaryOpt(Point, editor.document.buffer.snapshot)
         if resolved.isSome:
           b.breakpoint.line = resolved.get.row.int + 1
+          b.anchor = editor.document.buffer.snapshot.anchorAfter(point(resolved.get.row.int, 0))
 
   if self.layout.tryOpenExisting(path).getSome(editor) and editor of TextDocumentEditor:
     self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
 
+proc flushBreakpointsForFile(self: Debugger, path: string) =
+  self.updateBreakpointsForFile(path)
   if self.client.getSome(client):
     if self.breakpointsEnabled:
       var bs: seq[SourceBreakpoint]
@@ -730,12 +733,15 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
 
 proc expandVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
+    log lvlError, &"Failed to expand scope, no scope"
     return
 
   let ids = self.currentVariablesContext().getOr:
+    log lvlError, &"Failed to expand scope, no ids"
     return
 
   if scopes[].scopes.len == 0 or self.variables.len == 0:
+    log lvlError, &"Failed to expand scope, no scopes or variables"
     return
 
   self.clampCurrentCursor()
@@ -746,6 +752,8 @@ proc expandVariable*(self: Debugger) {.expose("debugger").} =
       if va.variablesReference != 0.VariablesReference:
         self.collapsedVariables.excl ids & va.variablesReference
         asyncSpawn self.updateVariables(va.variablesReference, 0)
+    else:
+      log lvlError, &"Failed to find variable {ids & v.varRef}"
 
   else:
     self.collapsedVariables.excl ids & scopes[].scopes[self.variablesCursor.scope].variablesReference
@@ -794,6 +802,7 @@ proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   self.threads.setLen 0
   self.stackTraces.clear()
   self.variables.clear()
+  self.platform.requestRender()
 
 proc stopDebugSessionDelayedAsync*(self: Debugger) {.async.} =
   let oldClient = self.client.getOr:
@@ -906,6 +915,7 @@ proc updateVariables(self: Debugger, variablesReference: VariablesReference, max
   if self.client.getSome(client):
     let variables = await client.variables(variablesReference)
     if variables.isError:
+      log lvlError, &"Failed to get variables {variablesReference}: {variables}"
       return
 
     self.variables[ids & variablesReference] = variables.result
@@ -1199,11 +1209,23 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
     discard editor.addSign(idNone(), breakpoint.breakpoint.line - 1, sign,
       group = "breakpoints", color = color, width = 2)
 
+proc flushBreakpointsForFileDelayedAsync(self: Debugger, path: string, delay: int) {.async.} =
+  try:
+    await sleepAsync(delay.milliseconds)
+  except CatchableError:
+    discard
+  self.flushBreakpointsForFile(path)
+
+proc flushBreakpointsForFileDelayed(self: Debugger, path: string, delay: int) =
+  asyncSpawn self.flushBreakpointsForFileDelayedAsync(path, delay)
+
 proc listenToEditorChanges*(self: Debugger, editorId: EditorId) =
   if self.editors.getEditorForId(editorId.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let path = editor.TextDocumentEditor.document.filename
     if path notin self.editorCallbacks:
-      let id = editor.TextDocumentEditor.document.textChanged.subscribe proc(doc: TextDocument) =
+      let id = editor.TextDocumentEditor.document.onSaved.subscribe proc() =
+        self.flushBreakpointsForFileDelayed(path, 1000)
+      let id2 = editor.TextDocumentEditor.document.textChanged.subscribe proc(doc: TextDocument) =
         self.updateBreakpointsForFile(path)
       self.editorCallbacks[path] = (editor.TextDocumentEditor, editor.TextDocumentEditor.document, id)
 
@@ -1221,7 +1243,7 @@ proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose
       if breakpoint.breakpoint.line == line + 1:
         # Breakpoint already exists, remove
         self.breakpoints[path].removeSwap(i)
-        self.updateBreakpointsForFile(path)
+        self.flushBreakpointsForFile(path)
         return
 
     self.breakpoints[path].add BreakpointInfo(
@@ -1230,7 +1252,7 @@ proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose
       anchor: snapshot.anchorAfter(point(line, 0))
     )
 
-    self.updateBreakpointsForFile(path)
+    self.flushBreakpointsForFile(path)
 
 proc toggleBreakpoint*(self: Debugger) {.expose("debugger").} =
   if self.layout.tryGetCurrentEditorView().getSome(view) and view.editor of TextDocumentEditor:
@@ -1246,7 +1268,7 @@ proc removeBreakpoint*(self: Debugger, path: string, line: int) {.expose("debugg
     if breakpoint.breakpoint.line == line:
       self.breakpoints[path].removeSwap(i)
 
-      self.updateBreakpointsForFile(path)
+      self.flushBreakpointsForFile(path)
       return
 
 proc toggleBreakpointEnabled*(self: Debugger, path: string, line: int) {.expose("debugger").} =
@@ -1259,7 +1281,7 @@ proc toggleBreakpointEnabled*(self: Debugger, path: string, line: int) {.expose(
     if breakpoint.breakpoint.line == line:
       breakpoint.enabled = not breakpoint.enabled
 
-      self.updateBreakpointsForFile(path)
+      self.flushBreakpointsForFile(path)
       return
 
 proc toggleAllBreakpointsEnabled*(self: Debugger) {.expose("debugger").} =
@@ -1277,7 +1299,7 @@ proc toggleAllBreakpointsEnabled*(self: Debugger) {.expose("debugger").} =
       b.enabled = not anyEnabled
 
   for path in self.breakpoints.keys:
-    self.updateBreakpointsForFile(path)
+    self.flushBreakpointsForFile(path)
 
 proc toggleBreakpointsEnabled*(self: Debugger) {.expose("debugger").} =
   log lvlInfo, "toggleBreakpointsEnabled"
@@ -1285,7 +1307,7 @@ proc toggleBreakpointsEnabled*(self: Debugger) {.expose("debugger").} =
   self.breakpointsEnabled = not self.breakpointsEnabled
 
   for path in self.breakpoints.keys:
-    self.updateBreakpointsForFile(path)
+    self.flushBreakpointsForFile(path)
 
 type
   BreakpointPreviewer* = ref object of Previewer

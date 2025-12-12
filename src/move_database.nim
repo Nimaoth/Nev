@@ -16,7 +16,7 @@ type
   MoveDatabase* = ref object of Service
     moves: Table[string, MoveImpl]
     env: Env
-    debugMoves: bool
+    debugMoves*: bool
 
 func serviceName*(_: typedesc[MoveDatabase]): string = "MoveDatabase"
 
@@ -285,7 +285,7 @@ proc moveCursorLine(text: Rope, displayMap: DisplayMap, cursor: Cursor, offset: 
     cursor.column = displayMap.toPoint(wrapPoint(wrapPoint.row.int, targetColumn)).column.int
   return text.clampCursor(cursor, includeEol)
 
-type MoveFunction* = proc(move: string, selections: openArray[Selection], count: int): seq[Selection] {.gcsafe, raises: [].}
+type MoveFunction* = proc(move: string, selections: openArray[Selection], count: int, args: openArray[LispVal], env: Env): seq[Selection] {.gcsafe, raises: [].}
 
 proc getCount(env: Env): int =
   let val = env["count"]
@@ -615,7 +615,7 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
 
   else:
     if fallback != nil:
-      return fallback(move, selections, count)
+      return fallback(move, selections, count, args, env)
     log lvlError, &"Unknown move '{move}'"
     return @selections
 
@@ -695,10 +695,18 @@ proc applyMoveLisp(self: MoveDatabase, displayMap: DisplayMap, move: string, ori
         impl:
           if stack.len > 0:
             selections = stack.pop()
-      of "start", "first":
+      of "first":
+        impl:
+          if selections.len > 0:
+            selections = @[selections[0]]
+      of "last":
+        impl:
+          if selections.len > 0:
+            selections = @[selections[^1]]
+      of "start":
         impl:
           selections = selections.mapIt(it.first.toSelection)
-      of "end", "last":
+      of "end":
         impl:
           selections = selections.mapIt(it.last.toSelection)
       of "count*":

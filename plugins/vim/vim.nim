@@ -237,6 +237,7 @@ proc selectLine(editor: TextEditor) {.exposeActive(editorContext).} =
 proc normalMode(editor: TextEditor) {.exposeActive(editorContext).} =
   ## Exit to normal mode and clear things
   if $editor.mode == "vim.normal":
+    discard editor.command(ws"hide-signature-help", ws"")
     editor.setSelection editor.getSelection.last.toSelection
     editor.clearTabStops()
   editor.setMode("vim.normal")

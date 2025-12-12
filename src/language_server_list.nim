@@ -156,6 +156,9 @@ method getWorkspaceSymbols*(self: LanguageServerList, filename: string, query: s
 method getHover*(self: LanguageServerList, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   return self.mergeOption(string, ls.getHover(filename, location), "getHover")
 
+method getSignatureHelp*(self: LanguageServerList, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.async.} =
+  return self.mergeResponse(lsp_types.SignatureHelpResponse, ls.getSignatureHelp(filename, location), "getSignatureHelp")
+
 method getInlayHints*(self: LanguageServerList, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.async.} =
   return self.mergeResponse(language_server_base.InlayHint, ls.getInlayHints(filename, selection), "getInlayHints")
 

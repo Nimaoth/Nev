@@ -122,6 +122,7 @@ method getCompletions*(self: LanguageServer, filename: string, location: Cursor)
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
 method getWorkspaceSymbols*(self: LanguageServer, filename: string, query: string): Future[seq[Symbol]] {.base, gcsafe, raises: [].} = seq[Symbol].default.toFuture
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base, gcsafe, raises: [].} = Option[string].default.toFuture
+method getSignatureHelp*(self: LanguageServer, filename: string, location: Cursor): Future[Response[seq[lsp_types.SignatureHelpResponse]]] {.base, gcsafe, raises: [].} = Response[seq[lsp_types.SignatureHelpResponse]].default.toFuture
 method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[Response[seq[language_server_base.InlayHint]]] {.base, gcsafe, raises: [].} = seq[language_server_base.InlayHint].default.success.toFuture
 method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[lsp_types.Diagnostic]]] {.base, gcsafe, raises: [].} = seq[lsp_types.Diagnostic].default.success.toFuture
 method getCompletionTriggerChars*(self: LanguageServer): set[char] {.base, gcsafe, raises: [].} = {}
