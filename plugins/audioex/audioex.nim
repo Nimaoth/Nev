@@ -16,6 +16,9 @@ const OffsetRoom = 0.7
 const ScaleDamp = 0.4
 const OffsetDamp = 0.1
 
+var bufferSize = 25
+var tripleBuffer = false
+
 type SharedAudioBuffer* = ref object
   len: int
   buffer: SharedBuffer
@@ -152,7 +155,7 @@ type
     activeSounds: int
     totalSounds: int
     alignOffset: int
-    samples: array[666, int16]
+    samples: array[500, int16]
 
   PitchKind = enum Frequency, Note
   Pitch = object
@@ -403,7 +406,7 @@ macro generateSineLookupTable(samples: static int): untyped =
 
 const sineLookupTable = generateSineLookupTable(2048)
 
-proc sin(time, freq: float32): float32 =
+proc sin(time, freq: float64): float32 =
   let index = (time * freq * sineLookupTable.len).int
   return sineLookupTable[index and (sineLookupTable.len - 1)]
 
@@ -415,23 +418,23 @@ var noiseLookupTable: array[2048, float32]
 for n in noiseLookupTable.mitems:
   n = rand(2.0) - 1.0
 
-proc noise(time, freq: float32): float32 =
-  let index = (time * freq * noiseLookupTable.len.float32).int
+proc noise(time, freq: float64): float32 =
+  let index = (time * freq * noiseLookupTable.len.float64).int
   return noiseLookupTable[index and (noiseLookupTable.len - 1)]
 
-proc saw(time, freq: float32): float32 =
+proc saw(time, freq: float64): float32 =
   return fract(time * freq) * 2 - 1
 
-proc square(time, freq: float32): float32 =
+proc square(time, freq: float64): float32 =
   return round(fract(time * freq)) * 2 - 1
 
-proc triangle(time, freq: float32): float32 =
+proc triangle(time, freq: float64): float32 =
   return abs(fract(time * freq) - 0.5) * 4 - 1
 
-proc pulse(time, freq: float32, width: float32): float32 =
+proc pulse(time, freq: float64, width: float64): float32 =
   return if fract(time * freq) < width: 1 else: -1
 
-proc adsr(time, attack, decay, sustain, sustainVolume, release: float32): float32 =
+proc adsr(time, attack, decay, sustain, sustainVolume, release: float64): float32 =
   let sustain = max(sustain - attack - decay, 0)
   var time = time
   if time < 0:
@@ -940,62 +943,50 @@ func uncheckedArray*[T](self: openArray[T]): ptr UncheckedArray[T] =
 template generateSamples(tempBuffer: untyped, body: untyped): untyped =
   let dt {.inject.} = 1.0 / state.info.sampleRate.float64
   var currentTimeSeconds {.inject.} = startIndex.float64 * dt
-  var currentSampleIndex {.inject.} = startIndex
   for i in 0..<bufferLen:
     let sample {.inject.} = tempBuffer[i].addr
     body
     currentTimeSeconds += dt
-    currentSampleIndex += 1
 
 proc generateSin(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
   let dt = 1.0 / state.info.sampleRate.float64
   var currentTimeSeconds = startIndex.float64 * dt
-  var currentSampleIndex = startIndex
   for i in 0..<bufferLen:
     let sample = tempBuffer[i].addr
     sample[] += sin(currentTimeSeconds, freq) * gain
     currentTimeSeconds += dt
-    currentSampleIndex += 1
 
 proc generateSaw(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
   let dt = 1.0 / state.info.sampleRate.float64
   var currentTimeSeconds = startIndex.float64 * dt
-  var currentSampleIndex = startIndex
   for i in 0..<bufferLen:
     let sample = tempBuffer[i].addr
     sample[] += saw(currentTimeSeconds, freq) * gain
     currentTimeSeconds += dt
-    currentSampleIndex += 1
 
 proc generateSquare(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
   let dt = 1.0 / state.info.sampleRate.float64
   var currentTimeSeconds = startIndex.float64 * dt
-  var currentSampleIndex = startIndex
   for i in 0..<bufferLen:
     let sample = tempBuffer[i].addr
     sample[] += square(currentTimeSeconds, freq) * gain
     currentTimeSeconds += dt
-    currentSampleIndex += 1
 
 proc generatePulse(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, width: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
   let dt = 1.0 / state.info.sampleRate.float64
   var currentTimeSeconds = startIndex.float64 * dt
-  var currentSampleIndex = startIndex
   for i in 0..<bufferLen:
     let sample = tempBuffer[i].addr
     sample[] += pulse(currentTimeSeconds, freq, width) * gain
     currentTimeSeconds += dt
-    currentSampleIndex += 1
 
 proc generateTriangle(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
   let dt = 1.0 / state.info.sampleRate.float64
   var currentTimeSeconds = startIndex.float64 * dt
-  var currentSampleIndex = startIndex
   for i in 0..<bufferLen:
     let sample = tempBuffer[i].addr
     sample[] += triangle(currentTimeSeconds, freq) * gain
     currentTimeSeconds += dt
-    currentSampleIndex += 1
 
 proc generateAdsr(state: var State, track: var Track, sound: var SoundState, startIndex: int64, freq: float32, gain: float32, tempBuffer: ptr UncheckedArray[float32], bufferLen: int) =
   let dt = 1.0 / state.info.sampleRate.float64
@@ -1028,19 +1019,21 @@ proc generateSound(state: var State, track: var Track, sound: var SoundState, bu
     for l in track.sound.layers:
       if l.gain == 0 or l.freqMul == 0:
         break
+      let freq = sound.freq * l.freqMul
+
       case l.wave
       of Sin:
-        state.generateSin(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+        state.generateSin(track, sound, startSample, freq, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       of Saw:
-        state.generateSaw(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+        state.generateSaw(track, sound, startSample, freq, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       of Square:
-        state.generateSquare(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+        state.generateSquare(track, sound, startSample, freq, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       # of Noise:
-      #   state.generateSaw(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+      #   state.generateSaw(track, sound, startSample, freq, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       of Triangle:
-        state.generateTriangle(track, sound, startSample, sound.freq * l.freqMul, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+        state.generateTriangle(track, sound, startSample, freq, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       of Pulse:
-        state.generatePulse(track, sound, startSample, sound.freq * l.freqMul, l.arg1, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
+        state.generatePulse(track, sound, startSample, freq, l.arg1, l.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
       else:
         discard
     state.generateAdsr(track, sound, startSample, 1, sound.gain, cast[ptr UncheckedArray[float32]](tempBuffer[0].addr), samplesToGenerate)
@@ -1367,6 +1360,9 @@ proc handleViewRender(id: int32, data: uint32) {.cdecl.} =
     UI(backgroundColor = clayColor(0.15, 0.15, 0.15), layout = layoutElement, clip = ClayClipElementConfig(vertical: true, childOffset: clay.getScrollOffset())):
       setting("Muted", $state.muted)
       setting("Volume", $state.volume)
+      setting("Time", $(nextAudioSample().float32 / 48000.0))
+      setting("Sample index", $nextAudioSample())
+      setting("Buffer size", $(bufferSize * 48))
       setting("Audio thread ms", $((lastFeedback.dt * 10).int / 10))
       setting("Align", $lastFeedback.alignOffset)
       setting("Sounds", &"{lastFeedback.activeSounds}/{lastFeedback.totalSounds}")
@@ -1508,9 +1504,6 @@ defineCommand(ws"send-audio-event",
     except CatchableError as e:
       log lvlError, &"[guest] err: {e.msg}"
     return ws""
-
-var bufferSize = 25
-var tripleBuffer = false
 
 defineCommand(ws"toggle-triple-buffering",
   active = false,
