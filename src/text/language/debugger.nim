@@ -6,6 +6,7 @@ import text/text_editor
 import platform/platform
 import finder/[previewer, finder, data_previewer]
 import workspaces/workspace, plugin_service, vfs, vfs_service
+import nimsumtree/[rope, buffer]
 
 import chroma
 
@@ -33,6 +34,7 @@ type
     path: string
     enabled: bool = true
     breakpoint: SourceBreakpoint
+    anchor: Anchor
 
   Debugger* = ref object of Service
     platform: Platform
@@ -67,6 +69,7 @@ type
 
     # Data setup in the editor and sent to the server
     breakpoints: Table[string, seq[BreakpointInfo]]
+    editorCallbacks: Table[string, tuple[editor: TextDocumentEditor, document: TextDocument, id: Id]]
 
     # Cached data from server
     threads: seq[ThreadInfo]
@@ -198,10 +201,19 @@ proc getEventHandlers*(inject: Table[string, EventHandler]): seq[EventHandler] =
 
 proc getStateJson*(self: Debugger): JsonNode =
   return %*{
-    "breakpoints": self.breakpoints,
+    # "breakpoints": self.breakpoints,
+    "breakpoints": newJArray(),
   }
 
 proc updateBreakpointsForFile(self: Debugger, path: string) =
+  self.breakpoints.withValue(path, val):
+    for b in val[].mitems:
+      if path in self.editorCallbacks:
+        let editor = self.editorCallbacks[path].editor
+        let resolved = b.anchor.summaryOpt(Point, editor.document.buffer.snapshot)
+        if resolved.isSome:
+          b.breakpoint.line = resolved.get.row.int + 1
+
   if self.layout.tryOpenExisting(path).getSome(editor) and editor of TextDocumentEditor:
     self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
 
@@ -212,6 +224,7 @@ proc updateBreakpointsForFile(self: Debugger, path: string) =
         for b in val[]:
           if b.enabled:
             bs.add b.breakpoint
+
       asyncSpawn client.setBreakpoints(Source(path: self.vfs.localize(path).some), bs)
     else:
       asyncSpawn client.setBreakpoints(Source(path: self.vfs.localize(path).some), @[])
@@ -235,7 +248,8 @@ proc handleSessionRestored(self: Debugger, session: SessionService) =
   try:
     if session.sessionData.isNotNil and session.sessionData.kind == JObject:
       if session.sessionData.fields.contains("breakpoints"):
-        self.breakpoints = session.sessionData["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
+        # self.breakpoints = session.sessionData["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
+        discard
   except:
     discard
 
@@ -1185,12 +1199,23 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
     discard editor.addSign(idNone(), breakpoint.breakpoint.line - 1, sign,
       group = "breakpoints", color = color, width = 2)
 
+proc listenToEditorChanges*(self: Debugger, editorId: EditorId) =
+  if self.editors.getEditorForId(editorId.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
+    let path = editor.TextDocumentEditor.document.filename
+    if path notin self.editorCallbacks:
+      let id = editor.TextDocumentEditor.document.textChanged.subscribe proc(doc: TextDocument) =
+        self.updateBreakpointsForFile(path)
+      self.editorCallbacks[path] = (editor.TextDocumentEditor, editor.TextDocumentEditor.document, id)
+
 proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
   ## Line is 0-based
+  self.listenToEditorChanges(editorId)
   if self.editors.getEditorForId(editorId.EditorIdNew).getSome(editor) and editor of TextDocumentEditor:
     let path = editor.TextDocumentEditor.document.filename
     if not self.breakpoints.contains(path):
       self.breakpoints[path] = @[]
+
+    let snapshot = editor.TextDocumentEditor.document.buffer.snapshot.clone()
 
     for i, breakpoint in self.breakpoints[path]:
       if breakpoint.breakpoint.line == line + 1:
@@ -1202,6 +1227,7 @@ proc toggleBreakpointAt*(self: Debugger, editorId: EditorId, line: int) {.expose
     self.breakpoints[path].add BreakpointInfo(
       path: path,
       breakpoint: SourceBreakpoint(line: line + 1),
+      anchor: snapshot.anchorAfter(point(line, 0))
     )
 
     self.updateBreakpointsForFile(path)
@@ -1328,22 +1354,22 @@ proc editBreakpoints(self: Debugger) {.expose("debugger").} =
 
   builder.customActions["delete-breakpoint"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
     if popup.getSelectedItem().getSome(item):
-      let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
-        log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
-        return
+      # let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
+      #   log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
+      #   return
 
-      self.removeBreakpoint(b.path, b.breakpoint.line)
+      # self.removeBreakpoint(b.path, b.breakpoint.line)
       source.retrigger()
 
     true
 
   builder.customActions["toggle-breakpoint-enabled"] = proc(popup: ISelectorPopup, args: JsonNode): bool {.gcsafe, raises: [].} =
     if popup.getSelectedItem().getSome(item):
-      let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
-        log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
-        return
+      # let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
+      #   log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
+      #   return
 
-      self.toggleBreakpointEnabled(b.path, b.breakpoint.line)
+      # self.toggleBreakpointEnabled(b.path, b.breakpoint.line)
       source.retrigger()
 
     true
