@@ -175,6 +175,87 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   hoverPanel.rawY = cursorBounds.y
   hoverPanel.pivot = vec2(0, 1)
 
+proc createSignatureHelp(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
+  let totalLineHeight = app.platform.totalLineHeight
+  let charWidth = app.platform.charWidth
+
+  let backgroundColor = app.themes.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let borderColor = app.themes.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
+  let inactiveSignatureColor = app.themes.theme.color("editor.foreground", color(1, 1, 1)).darken(0.15)
+  let activeSignatureColor = app.themes.theme.color("editor.foreground", color(1, 1, 1))
+  let activeParamColor = app.themes.theme.color("editor.foreground.highlight", activeSignatureColor.lighten(0.15))
+  let docsColor = app.themes.theme.color("editor.foreground", color(1, 1, 1))
+
+  let numLinesToShow = min(10, self.signatureHelpText.countLines)
+  let (top, bottom) = (
+    cursorBounds.yh.float - floor(builder.charWidth * 0.5),
+    cursorBounds.yh.float + totalLineHeight * numLinesToShow.float - floor(builder.charWidth * 0.5))
+  let height = bottom - top
+
+  const docsWidth = 50.0
+  let totalWidth = charWidth * docsWidth
+  var clampedX = cursorBounds.x
+  if clampedX + totalWidth > builder.root.w:
+    clampedX = max(builder.root.w - totalWidth, 0)
+
+  let border = ceil(builder.charWidth * 0.5)
+
+
+  proc drawSignature(color: Color, sig: lsp_types.SignatureInformation) =
+    let activeParameter = sig.activeParameter.get(self.currentSignatureParam)
+    builder.panel(&{SizeToContentY, SizeToContentX, LayoutHorizontal}):
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = "(", textColor = color)
+      for i, p in sig.parameters:
+        if i > 0:
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = ", ", textColor = color)
+        var paramStr = ""
+        if p.label.kind == JString:
+          paramStr = p.label.getStr
+        else:
+          paramStr = $p.label
+        var paramColor = color
+        if i == activeParameter:
+          paramColor = activeParamColor
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = paramStr, textColor = paramColor)
+
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = ")", textColor = color)
+
+  var signatureHelpPanel: UINode = nil
+  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, DrawBorderTerminal, MouseHover, SnapInitialBounds, LayoutVertical}, x = clampedX, y = top, h = height + border * 2, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.signatureHelpId.newPrimaryId):
+    signatureHelpPanel = currentNode
+
+    for k, sig in self.signatures:
+      if k != self.currentSignature:
+        drawSignature(inactiveSignatureColor, sig)
+
+    if self.currentSignature in 0..self.signatures.high:
+      drawSignature(activeSignatureColor, self.signatures[self.currentSignature])
+      # if self.signatures[self.currentSignature].documentation.isSome:
+      #   echo self.signatures[self.currentSignature].documentation.get
+
+    # var textNode: UINode = nil
+    # builder.panel(&{SizeToContentX}, x = border, y = border, w = 0, h = height):
+    #   # todo: height
+    #   builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.signatureHelpScrollOffset, w = 0, h = 1000, text = self.signatureHelpText, textColor = docsColor):
+    #     textNode = currentNode
+
+    # currentNode.w = currentNode.w + border
+
+    # onScroll:
+    #   let scrollSpeed = self.config.get("text.hover-scroll-speed", 20.0)
+    #   # todo: clamp bottom
+    #   self.signatureHelpScrollOffset = clamp(self.signatureHelpScrollOffset + delta.y * scrollSpeed, -1000, 0)
+    #   self.markDirty()
+
+    # # onBeginHover:
+    # #   self.cancelDelayedHideHover()
+
+    # # onEndHover:
+    # #   self.hideHoverDelayed()
+
+  signatureHelpPanel.rawY = cursorBounds.y
+  signatureHelpPanel.pivot = vec2(0, 1)
+
 proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
@@ -533,6 +614,12 @@ proc drawCursors(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
           self.currentCenterCursor = s.last
           self.currentCenterCursorRelativeYPos = (state.chunkBounds[lastIndexDisplay].bounds.y + builder.textHeight * 0.5) / currentNode.bounds.h
           self.lastHoverLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
+          self.lastSignatureHelpLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
+
+  let dp = self.displayMap.toDisplayPoint(self.signatureHelpLocation.toPoint)
+  let (_, lastIndexDisplay) = state.chunkBounds.binarySearchRange(dp, Bias.Left, cmp)
+  if lastIndexDisplay in 0..<state.chunkBounds.len and dp >= state.chunkBounds[lastIndexDisplay].displayRange.a:
+    self.lastSignatureHelpLocationBounds = (state.chunkBounds[lastIndexDisplay].bounds + currentNode.boundsAbsolute.xy).some
 
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, currentNode: UINode,
     selectionsNode: UINode, lineNumbersNode: UINode, backgroundColor: Color, textColor: Color, sizeToContentX: bool,
@@ -1213,3 +1300,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder): seq[OverlayF
   if self.showHover:
     result.add proc() =
       self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
+
+  if self.showSignatureHelp:
+    result.add proc() =
+      self.createSignatureHelp(builder, app, self.lastSignatureHelpLocationBounds.get(rect(100, 100, 10, 10)))
