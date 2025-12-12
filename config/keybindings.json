@@ -121,7 +121,7 @@
         "<LEADER>am": ["toggle-breakpoints-enabled"],
         "<LEADER>gb": ["show-debugger-view"],
         "<LEADER>al": { "command": ["all", "run-last-configuration", "show-debugger-view"], "description": "Run last configuration" },
-        "<LEADER>av": { "command": ["all", "choose-run-configuration", "show-debugger-view"], "description": "Choose run configuration" },
+        "<LEADER>av": { "command": ["all", "choose-run-configuration"], "description": "Choose run configuration" },
         "<LEADER>ab": { "command": ["toggle-breakpoint"], "description": "Toggle breakpoint" },
 
         "<LEADER>g": { "description": "Global pickers" },
@@ -327,6 +327,8 @@
         "ia": ["(ts 'call.inner') (last) (grow -1) (inclusive)"],
         "aa": ["(ts 'call.inner') (last) (inclusive)"],
         "ic": ["(ts 'call.outer') (last) (inclusive)"],
+        "ie": ["(ts 'parameter.inner') (overlapping) (last) (inclusive)"],
+        "ae": ["(ts 'parameter.inner') (overlapping) (last) (inclusive)"],
 
         "i{": ["(surround \"{\" \"}\" true)"],
         "a{": ["(surround \"{\" \"}\" false)"],
