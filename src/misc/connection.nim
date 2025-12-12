@@ -36,21 +36,24 @@ method send*(connection: ConnectionAsyncProcess, data: string): Future[void] =
 proc asyncVoid() {.async.} =
   discard
 
+proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
+  try:
+    while process.isAlive:
+      let line = await process.recvErrorLine
+      if true:
+        log(lvlDebug, fmt"[server] {line}")
+  except IOError:
+    discard
+
 proc newAsyncProcessConnection*(path: string, args: seq[string]):
     Future[ConnectionAsyncProcess] {.async.} =
 
   log lvlInfo, fmt"Creating async process connection at {path} {args}"
 
-  let process = startAsyncProcess(path, args, autoRestart=false)
+  let process = startAsyncProcess(path, args, autoRestart=false, autoStart=false, killOnExit=true)
+  discard process.start()
+  # asyncSpawn process.logProcessDebugOutput()
 
-  var fut = newFuture[void]("newAsyncProcessConnection")
-  process.onRestarted = proc(): Future[void] =
-    if fut != nil:
-      fut.complete()
-    fut = nil
-    return asyncVoid()
-
-  await fut
   return ConnectionAsyncProcess(process: process)
 
 # todo

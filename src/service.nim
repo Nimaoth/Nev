@@ -111,6 +111,9 @@ proc getService*(self: Services, T: typedesc, state: Option[ServiceState] = Serv
     return service.get.T.some
   return T.none
 
+proc getServiceChecked*(self: Services, T: typedesc, state: Option[ServiceState] = ServiceState.none): T {.gcsafe, raises: [].} =
+  return self.getService(T, state).get
+
 proc getServiceAsync*(self: Services, T: typedesc): Future[Option[T]] {.gcsafe, async: (raises: []).} =
   var service = self.getService(T.serviceName, ServiceState.Running.some)
   if service.isSome and service.get of T:

@@ -13,8 +13,6 @@ type
     mDirty: bool
     onMarkedDirty*: Event[void]
 
-  DebuggerView* = ref object of View
-
 var viewIdCounter: int32 = 1
 
 proc id*(self: View): Id =
