@@ -1,10 +1,84 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, hashes]
+import std/[json, strutils, strformat, macros, options, tables, sets, hashes, genasts, os]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection, async_process]
+import scripting/expose
+from std/logging import nil
 
 {.push gcsafe.}
 {.push raises: [].}
 
-logCategory "dap"
+
+var file {.threadvar.}: syncio.File
+var logFileName {.threadvar.}: string
+var fileLogger {.threadvar.}: logging.FileLogger
+
+let mainThreadId = getThreadId()
+template isMainThread(): untyped = getThreadId() == mainThreadId
+
+proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.used, gcsafe, raises: [].} =
+  var args = args
+  if includeCategory:
+    args.insert(0, newLit("[" & "dap-client" & "] "))
+
+  return genAst(level, args):
+    {.gcsafe.}:
+      if file == nil:
+        try:
+          logFileName = getAppDir() / "logs/dap.log"
+          createDir(getAppDir() / "logs")
+          file = open(logFileName, fmWrite)
+          fileLogger = logging.newFileLogger(file, logging.lvlAll, "", flushThreshold=logging.lvlAll)
+        except IOError, OSError:
+          discard
+
+      {.push warning[BareExcept]:off.}
+      try:
+        if fileLogger != nil:
+          logging.log(fileLogger, level, args)
+        # setLastModificationTime(logFileName, getTime())
+      except Exception:
+        discard
+      {.pop.}
+
+macro log(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
+  return logImpl(level, args, true)
+
+macro logNoCategory(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
+  return logImpl(level, args, false)
+
+template measureBlock(description: string, body: untyped): untyped {.used.} =
+  # todo
+  # let timer = startTimer()
+  body
+  # block:
+  #   let descriptionString = description
+  #   logging.log(lvlInfo, "[" & "lsp" & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
+
+template logScope(level: logging.Level, text: string): untyped {.used.} =
+  # todo
+  let txt = text
+  # logging.log(level, "[" & "lsp" & "] " & txt)
+  # inc logger.indentLevel
+  # let timer = startTimer()
+  # defer:
+  #   block:
+  #     let elapsedMs = timer.elapsed.ms
+  #     let split = elapsedMs.splitDecimal
+  #     let elapsedMsInt = split.intpart.int
+  #     let elapsedUsInt = (split.floatpart * 1000).int
+  #     dec logger.indentLevel
+  #     logging.log(level, "[" & "lsp" & "] " & txt & " finished. (" & $elapsedMsInt & " ms " & $elapsedUsInt & " us)")
+
+macro debug(x: varargs[typed, `$`]): untyped {.used.} =
+  let level = genAst(): lvlDebug
+  let arg = genAst(x):
+    x.join ""
+  return logImpl(level, nnkArgList.newTree(arg), true)
+
+macro debugf(x: static string): untyped {.used.} =
+  let level = genAst(): lvlDebug
+  let arg = genAst(str = x):
+    fmt str
+  return logImpl(level, nnkArgList.newTree(arg), true)
 
 var logVerbose = false
 var logServerDebug = true
@@ -685,7 +759,7 @@ proc initialize*(client: DAPClient) {.async.} =
 
   let args = some %*{
     "adapterID": "test-adapterID",
-    # "pathFormat": "uri", # todo
+    "pathFormat": "path", # todo (uri)
   }
 
   let res = await client.sendRequest("initialize", args)
@@ -799,16 +873,16 @@ proc runAsync*(client: DAPClient) {.async.} =
 proc run*(client: DAPClient) =
   asyncSpawn client.runAsync()
 
-# proc dapLogVerbose*(val: bool) {.expose("dap").} =
-#   debugf"dapLogVerbose {val}"
-#   logVerbose = val
+proc dapLogVerbose*(val: bool) {.expose("dap").} =
+  debugf"dapLogVerbose {val}"
+  logVerbose = val
 
-# proc dapToggleLogServerDebug*() {.expose("dap").} =
-#   logServerDebug = not logServerDebug
-#   debugf"dapToggleLogServerDebug {logServerDebug}"
+proc dapToggleLogServerDebug*() {.expose("dap").} =
+  logServerDebug = not logServerDebug
+  debugf"dapToggleLogServerDebug {logServerDebug}"
 
-# proc dapLogServerDebug*(val: bool) {.expose("dap").} =
-#   debugf"dapLogServerDebug {val}"
-#   logServerDebug = val
+proc dapLogServerDebug*(val: bool) {.expose("dap").} =
+  debugf"dapLogServerDebug {val}"
+  logServerDebug = val
 
 # addActiveDispatchTable "dap", genDispatchTable("dap"), global=true

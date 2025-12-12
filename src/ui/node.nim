@@ -1497,6 +1497,21 @@ proc retain*(builder: UINodeBuilder): bool =
 
   return true
 
+proc currentSizeFlags*(builder: UINodeBuilder): UINodeFlags =
+  let sizeToContentX = SizeToContentX in builder.currentParent.flags
+  let sizeToContentY = SizeToContentY in builder.currentParent.flags
+
+  result = 0.UINodeFlags
+  if sizeToContentX:
+    result.incl SizeToContentX
+  else:
+    result.incl FillX
+
+  if sizeToContentY:
+    result.incl SizeToContentY
+  else:
+    result.incl FillY
+
 proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"

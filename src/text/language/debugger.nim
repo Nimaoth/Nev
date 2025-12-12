@@ -1,11 +1,11 @@
 import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response, jsonex]
 import scripting/[expose]
-import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view, session, document_editor, layout, platform_service
+import dap_client, dispatch_tables, config_provider, service, selector_popup_builder, events, view, session, document_editor, layout, platform_service
 import text/text_editor
 import platform/platform
 import finder/[previewer, finder, data_previewer]
-import workspaces/workspace, plugin_service
+import workspaces/workspace, plugin_service, vfs, vfs_service
 
 import chroma
 
@@ -42,6 +42,7 @@ type
     workspace: Workspace
     editors: DocumentEditorService
     layout: LayoutService
+    vfs: VFS
     client: Option[DapClient]
     lastConfiguration*: Option[string]
     activeView*: ActiveView = ActiveView.Variables
@@ -72,6 +73,93 @@ type
     stackTraces: Table[ThreadId, StackTraceResponse]
     scopes*: Table[(ThreadId, FrameId), Scopes]
     variables*: Table[(ThreadId, FrameId, VariablesReference), Variables]
+
+  DebuggerView* = ref object of View
+    threads*: ThreadsView
+    stacktrace*: StacktraceView
+    variables*: VariablesView
+    output*: OutputView
+
+  ThreadsView* = ref object of View
+  StacktraceView* = ref object of View
+  VariablesView* = ref object of View
+  OutputView* = ref object of View
+  ToolbarView* = ref object of View
+
+method dump*(self: DebuggerView): string = "DebuggerView" & $(self[])
+method dump*(self: ThreadsView): string = "ThreadsView" & $(self[])
+method dump*(self: StacktraceView): string = "StacktraceView" & $(self[])
+method dump*(self: VariablesView): string = "VariablesView" & $(self[])
+method dump*(self: OutputView): string = "OutputView" & $(self[])
+method dump*(self: ToolbarView): string = "ToolbarView" & $(self[])
+
+method kind*(self: ThreadsView): string = "debugger.threads"
+method kind*(self: StacktraceView): string = "debugger.stacktrace"
+method kind*(self: VariablesView): string = "debugger.variables"
+method kind*(self: OutputView): string = "debugger.output"
+method kind*(self: ToolbarView): string = "debugger.toolbar"
+
+method desc*(self: ThreadsView): string = "Threads"
+method desc*(self: StacktraceView): string = "Stacktrace"
+method desc*(self: VariablesView): string = "Variables"
+method desc*(self: OutputView): string = "Output"
+method desc*(self: ToolbarView): string = "Toolbar"
+
+method display*(self: ThreadsView): string = "Threads"
+method display*(self: StacktraceView): string = "Stacktrace"
+method display*(self: VariablesView): string = "Variables"
+method display*(self: OutputView): string = "Output"
+method display*(self: ToolbarView): string = "Toolbar"
+
+method copy*(self: ThreadsView): View = self
+method copy*(self: StacktraceView): View = self
+method copy*(self: VariablesView): View = self
+method copy*(self: OutputView): View = self
+method copy*(self: ToolbarView): View = self
+
+method saveLayout*(self: DebuggerView, discardedViews: HashSet[Id]): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.combined".toJson
+
+method saveLayout*(self: ThreadsView, discardedViews: HashSet[Id]): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.threads".toJson
+
+method saveLayout*(self: StacktraceView, discardedViews: HashSet[Id]): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.stacktrace".toJson
+
+method saveLayout*(self: VariablesView, discardedViews: HashSet[Id]): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.variables".toJson
+
+method saveLayout*(self: OutputView, discardedViews: HashSet[Id]): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.output".toJson
+
+method saveLayout*(self: ToolbarView, discardedViews: HashSet[Id]): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.toolbar".toJson
+
+method saveState*(self: ThreadsView): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.threads".toJson
+
+method saveState*(self: StacktraceView): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.stacktrace".toJson
+
+method saveState*(self: VariablesView): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.variables".toJson
+
+method saveState*(self: OutputView): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.output".toJson
+
+method saveState*(self: ToolbarView): JsonNode =
+  result = newJObject()
+  result["kind"] = "debugger.toolbar".toJson
 
 func serviceName*(_: typedesc[Debugger]): string = "Debugger"
 addBuiltinService(Debugger, SessionService, DocumentEditorService, LayoutService, EventHandlerService, ConfigService)
@@ -124,9 +212,9 @@ proc updateBreakpointsForFile(self: Debugger, path: string) =
         for b in val[]:
           if b.enabled:
             bs.add b.breakpoint
-      asyncSpawn client.setBreakpoints(Source(path: path.some), bs)
+      asyncSpawn client.setBreakpoints(Source(path: self.vfs.localize(path).some), bs)
     else:
-      asyncSpawn client.setBreakpoints(Source(path: path.some), @[])
+      asyncSpawn client.setBreakpoints(Source(path: self.vfs.localize(path).some), @[])
 
 proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
   if not (editor of TextDocumentEditor):
@@ -152,11 +240,11 @@ proc handleSessionRestored(self: Debugger, session: SessionService) =
     discard
 
 proc waitForApp(self: Debugger) {.async: (raises: []).} =
-  while ({.gcsafe.}: gAppInterface).isNil:
-    try:
-      await sleepAsync(10.milliseconds)
-    except CancelledError:
-      discard
+  try:
+    # todo
+    await sleepAsync(10.milliseconds)
+  except CancelledError:
+    discard
 
   let document = newTextDocument(self.services, createLanguageServer=false)
   document.usage = "debugger-output"
@@ -206,6 +294,7 @@ method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: 
   self.collapsedVariables = initHashSet[(ThreadId, FrameId, VariablesReference)]()
   self.editors = self.services.getService(DocumentEditorService).get
   self.layout = self.services.getService(LayoutService).get
+  self.vfs = self.services.getService(VFSService).get.vfs
   self.events = self.services.getService(EventHandlerService).get
   self.config = self.services.getService(ConfigService).get
   self.plugins = self.services.getService(PluginService).get
@@ -216,6 +305,24 @@ method init*(self: Debugger): Future[Result[void, ref CatchableError]] {.async: 
 
   discard self.editors.onEditorRegistered.subscribe (e: DocumentEditor) {.gcsafe, raises: [].} =>
     self.handleEditorRegistered(e)
+
+  self.layout.addViewFactory "debugger.combined", proc(config: JsonNode): View {.raises: [ValueError].} =
+    return DebuggerView()
+
+  self.layout.addViewFactory "debugger.threads", proc(config: JsonNode): View {.raises: [ValueError].} =
+    return ThreadsView()
+
+  self.layout.addViewFactory "debugger.stacktrace", proc(config: JsonNode): View {.raises: [ValueError].} =
+    return StacktraceView()
+
+  self.layout.addViewFactory "debugger.variables", proc(config: JsonNode): View {.raises: [ValueError].} =
+    return VariablesView()
+
+  self.layout.addViewFactory "debugger.output", proc(config: JsonNode): View {.raises: [ValueError].} =
+    return OutputView()
+
+  self.layout.addViewFactory "debugger.toolbar", proc(config: JsonNode): View {.raises: [ValueError].} =
+    return ToolbarView()
 
   asyncSpawn self.waitForApp()
 
@@ -336,6 +443,7 @@ proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCurs
 
 proc reevaluateCurrentCursor*(self: Debugger) =
   self.variablesCursor = self.reevaluateCursorRefs(self.variablesCursor)
+  self.platform.requestRender()
 
 proc clampCursor*(self: Debugger, cursor: VariableCursor): VariableCursor =
   let scopes = self.currentScopes().getOr:
@@ -404,6 +512,7 @@ proc lastChild*(self: Debugger, cursor: VariableCursor): VariableCursor =
 proc selectFirstVariable*(self: Debugger) {.expose("debugger").} =
   self.variablesScrollOffset = 0
   self.variablesCursor = VariableCursor()
+  self.platform.requestRender()
 
 proc selectLastVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
@@ -412,10 +521,12 @@ proc selectLastVariable*(self: Debugger) {.expose("debugger").} =
   if scopes[].scopes.len == 0 or self.variables.len == 0:
     self.variablesScrollOffset = 0
     self.variablesCursor = VariableCursor()
+    self.platform.requestRender()
     return
 
   self.variablesCursor = self.lastChild(VariableCursor(scope: scopes[].scopes.high))
   self.variablesScrollOffset = self.maxVariablesScrollOffset
+  self.platform.requestRender()
 
 proc prevThread*(self: Debugger) {.expose("debugger").} =
   if self.threads.len == 0:
@@ -429,6 +540,7 @@ proc prevThread*(self: Debugger) {.expose("debugger").} =
 
   if self.currentThread().getSome(t) and not self.stackTraces.contains(t.id):
     asyncSpawn self.updateStackTrace(t.id.some)
+  self.platform.requestRender()
 
 proc nextThread*(self: Debugger) {.expose("debugger").} =
   if self.threads.len == 0:
@@ -442,6 +554,7 @@ proc nextThread*(self: Debugger) {.expose("debugger").} =
 
   if self.currentThread().getSome(t) and not self.stackTraces.contains(t.id):
     asyncSpawn self.updateStackTrace(t.id.some)
+  self.platform.requestRender()
 
 proc prevStackFrame*(self: Debugger) {.expose("debugger").} =
   let thread = self.currentThread().getOr:
@@ -460,6 +573,7 @@ proc prevStackFrame*(self: Debugger) {.expose("debugger").} =
 
   if self.currentThread().getSome(t):
     asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
+  self.platform.requestRender()
 
 proc nextStackFrame*(self: Debugger) {.expose("debugger").} =
   let thread = self.currentThread().getOr:
@@ -478,6 +592,7 @@ proc nextStackFrame*(self: Debugger) {.expose("debugger").} =
 
   if self.currentThread().getSome(t):
     asyncSpawn self.updateScopes(t.id, self.currentFrameIndex, force=false)
+  self.platform.requestRender()
 
 proc openFileForCurrentFrame*(self: Debugger, slot: string = "") {.expose("debugger").} =
   if self.currentStackFrame().getSome(frame) and
@@ -764,6 +879,7 @@ proc getStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[Th
       log lvlError, &"Failed to get stacktrace for thread {threadId}: {stackTrace}"
       return ThreadId.none
     self.stackTraces[threadId] = stackTrace.result
+    self.platform.requestRender()
 
     asyncSpawn self.updateScopes(threadId, self.currentFrameIndex, force=false)
 
@@ -779,6 +895,7 @@ proc updateVariables(self: Debugger, variablesReference: VariablesReference, max
       return
 
     self.variables[ids & variablesReference] = variables.result
+    self.platform.requestRender()
     if maxDepth == 0:
       return
 
@@ -805,6 +922,7 @@ proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bo
         scopes.result
       else:
         self.scopes[(threadId, frame.id)]
+      self.platform.requestRender()
 
       let futures = collect:
         for scope in scopes.scopes:
@@ -821,6 +939,7 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   self.threads.setLen 0
   self.stackTraces.clear()
   self.variables.clear()
+  self.platform.requestRender()
 
   if self.client.getSome(client):
     let threads = await client.getThreads
@@ -829,6 +948,7 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
       return
 
     self.threads = threads.result.threads
+    self.platform.requestRender()
 
   if data.threadId.getSome(id):
     let threadIndex = self.threads.findIt(it.id == id)
@@ -842,6 +962,7 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
     self.lastEditor = TextDocumentEditor.none
 
   let threadId = await self.getStackTrace(data.threadId)
+  self.platform.requestRender()
 
   if threadId.getSome(threadId) and self.stackTraces.contains(threadId):
     asyncSpawn self.updateScopes(threadId, self.currentFrameIndex, force=true)
@@ -866,6 +987,7 @@ proc handleContinued(self: Debugger, data: OnContinuedData) =
   self.variables.clear()
   if self.lastEditor.isSome:
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
+  self.platform.requestRender()
 
 proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
   log(lvlInfo, &"onTerminated {data}")
@@ -873,6 +995,7 @@ proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
     self.lastEditor = TextDocumentEditor.none
   self.stopDebugSessionDelayed()
+  self.platform.requestRender()
 
 proc handleOutput(self: Debugger, data: OnOutputData) =
   if self.outputEditor.isNil:
@@ -986,7 +1109,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
 
   let setBreakpointFutures = collect:
     for file, breakpoints in self.breakpoints.pairs:
-      client.setBreakpoints(Source(path: file.some), breakpoints.mapIt(it.breakpoint))
+      client.setBreakpoints(Source(path: self.vfs.localize(file).some), breakpoints.mapIt(it.breakpoint))
 
   for fut in setBreakpointFutures:
     await fut
@@ -1252,6 +1375,94 @@ proc showDebuggerView*(self: Debugger, slot: string = "#debugger") {.expose("deb
   # todo: reuse existing
   self.layout.addView(DebuggerView(), slot)
 
+proc closeAllViews(self: Debugger, T: typedesc) =
+  let existing = self.layout.getViews(T)
+  for v in existing:
+    self.layout.closeView(v, keepHidden = false, restoreHidden = false)
+
+proc toggleView(self: Debugger, T: typedesc, slot: string) =
+  let existing = self.layout.getViews(T)
+  for v in existing:
+    if self.layout.isViewVisible(v):
+      self.layout.closeView(v, keepHidden = false, restoreHidden = false)
+    else:
+      self.layout.showView(v, slot)
+
+  if existing.len == 0:
+    self.layout.addView(T(), slot)
+
+proc closeDebuggerViews*(self: Debugger) {.expose("debugger").} =
+  self.closeAllViews(ThreadsView)
+  self.closeAllViews(StacktraceView)
+  self.closeAllViews(VariablesView)
+  self.closeAllViews(OutputView)
+  self.closeAllViews(ToolbarView)
+
+proc closeDebuggerThreads*(self: Debugger) {.expose("debugger").} =
+  self.closeAllViews(ThreadsView)
+
+proc closeDebuggerStacktrace*(self: Debugger) {.expose("debugger").} =
+  self.closeAllViews(StacktraceView)
+
+proc closeDebuggerVariables*(self: Debugger) {.expose("debugger").} =
+  self.closeAllViews(VariablesView)
+
+proc closeDebuggerOutput*(self: Debugger) {.expose("debugger").} =
+  self.closeAllViews(OutputView)
+
+proc closeDebuggerToolbar*(self: Debugger) {.expose("debugger").} =
+  self.closeAllViews(ToolbarView)
+
+proc showDebuggerThreads*(self: Debugger, slot: string = "#debugger-threads") {.expose("debugger").} =
+  let existing = self.layout.getViews(ThreadsView)
+  if existing.len > 0:
+    self.layout.showView(existing[0], slot)
+  else:
+    self.layout.addView(ThreadsView(), slot)
+
+proc showDebuggerStacktrace*(self: Debugger, slot: string = "#debugger-stacktrace") {.expose("debugger").} =
+  let existing = self.layout.getViews(StacktraceView)
+  if existing.len > 0:
+    self.layout.showView(existing[0], slot)
+  else:
+    self.layout.addView(StacktraceView(), slot)
+
+proc showDebuggerVariables*(self: Debugger, slot: string = "#debugger-variables") {.expose("debugger").} =
+  let existing = self.layout.getViews(VariablesView)
+  if existing.len > 0:
+    self.layout.showView(existing[0], slot)
+  else:
+    self.layout.addView(VariablesView(), slot)
+
+proc showDebuggerOutput*(self: Debugger, slot: string = "#debugger-output") {.expose("debugger").} =
+  let existing = self.layout.getViews(OutputView)
+  if existing.len > 0:
+    self.layout.showView(existing[0], slot)
+  else:
+    self.layout.addView(OutputView(), slot)
+
+proc showDebuggerToolbar*(self: Debugger, slot: string = "#debugger-toolbar") {.expose("debugger").} =
+  let existing = self.layout.getViews(ToolbarView)
+  if existing.len > 0:
+    self.layout.showView(existing[0], slot)
+  else:
+    self.layout.addView(ToolbarView(), slot)
+
+proc toggleDebuggerThreads*(self: Debugger, slot: string = "#debugger-threads") {.expose("debugger").} =
+  self.toggleView(ThreadsView, slot)
+
+proc toggleDebuggerStacktrace*(self: Debugger, slot: string = "#debugger-stacktrace") {.expose("debugger").} =
+  self.toggleView(StacktraceView, slot)
+
+proc toggleDebuggerVariables*(self: Debugger, slot: string = "#debugger-variables") {.expose("debugger").} =
+  self.toggleView(VariablesView, slot)
+
+proc toggleDebuggerOutput*(self: Debugger, slot: string = "#debugger-output") {.expose("debugger").} =
+  self.toggleView(OutputView, slot)
+
+proc toggleDebuggerToolbar*(self: Debugger, slot: string = "#debugger-toolbar") {.expose("debugger").} =
+  self.toggleView(ToolbarView, slot)
+
 genDispatcher("debugger")
 addGlobalDispatchTable "debugger", genDispatchTable("debugger")
 
@@ -1274,6 +1485,31 @@ proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
 
 method getEventHandlers*(view: DebuggerView, inject: Table[string, EventHandler]): seq[EventHandler] =
   debugger.getEventHandlers(inject)
+
+method getEventHandlers*(view: ThreadsView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  let debugger = ({.gcsafe.}: gDebugger)
+  result.add debugger.eventHandler
+  result.add debugger.threadsEventHandler
+
+method getEventHandlers*(view: StacktraceView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  let debugger = ({.gcsafe.}: gDebugger)
+  result.add debugger.eventHandler
+  result.add debugger.stackTraceEventHandler
+
+method getEventHandlers*(view: VariablesView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  let debugger = ({.gcsafe.}: gDebugger)
+  result.add debugger.eventHandler
+  result.add debugger.variablesEventHandler
+
+method getEventHandlers*(view: OutputView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  let debugger = ({.gcsafe.}: gDebugger)
+  result.add debugger.eventHandler
+  if debugger.outputEditor.isNotNil:
+    result.add debugger.outputEditor.getEventHandlers(inject)
+
+method getEventHandlers*(view: ToolbarView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  let debugger = ({.gcsafe.}: gDebugger)
+  result.add debugger.eventHandler
 
 method getActiveEditor*(self: DebuggerView): Option[DocumentEditor] =
   {.gcsafe.}:

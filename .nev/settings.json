@@ -125,7 +125,7 @@
         "+type": {
             "lldb-dap": {
                 "connection": "stdio",
-                "path": "/bin/lldb-dap-18",
+                "path": "lldb-dap",
                 "args": []
             },
             "lldb-dap-tcp-launch": {

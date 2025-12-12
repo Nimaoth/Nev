@@ -1,7 +1,8 @@
 import std/[strformat, strutils, os]
 import misc/[custom_unicode, custom_logger]
-import document, ui/node
+import document, ui/node, view, theme, config_provider, widget_builders_base
 import chroma
+import service
 
 {.push gcsafe.}
 {.push raises: [].}
@@ -182,6 +183,12 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
   discard builder.createLines(previousBaseIndex, scrollOffset, maxLine, float.none, flags,
     backgroundColor, handleScroll, handleLine)
 
+proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, backgroundColor: Color,
+    handleScroll: proc(delta: float) {.gcsafe, raises: [].}, handleLine: proc(line: int, y: float, down: bool) {.gcsafe, raises: [].}) =
+  let sizeFlags = builder.currentSizeFlags
+  discard builder.createLines(previousBaseIndex, scrollOffset, maxLine, float.none, sizeFlags,
+    backgroundColor, handleScroll, handleLine)
+
 proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float,
     lines: int, totalLineHeight: float, targetLine: Option[int], margin: float = 0.0) =
 
@@ -301,3 +308,37 @@ proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: 
     else:
       builder.panel(textFlags, text = text, textColor = color):
         result = currentNode
+
+proc renderView*(self: View, builder: UINodeBuilder,
+    body: proc(): seq[OverlayFunction] {.gcsafe, raises: [].},
+    header: proc(): seq[OverlayFunction] {.gcsafe, raises: [].}): seq[OverlayFunction] =
+  let services = ({.gcsafe.}: gServices)
+  let dirty = self.dirty
+  self.resetDirty()
+
+  let config = services.getServiceChecked(ConfigService).runtime
+  let uiSettings = UISettings.new(config)
+
+  let transparentBackground = config.get("ui.background.transparent", false)
+  let inactiveBrightnessChange = uiSettings.background.inactiveBrightnessChange.get()
+  let textColor = builder.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var backgroundColor = if self.active: builder.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: builder.theme.color("editor.background", color(25/255, 25/255, 25/255)).lighten(inactiveBrightnessChange)
+
+  if transparentBackground:
+    backgroundColor.a = 0
+  else:
+    backgroundColor.a = 1
+
+  let headerColor = if self.active: builder.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: builder.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+
+  let sizeFlags = builder.currentSizeFlags
+
+  builder.panel(&{OverlappingChildren} + sizeFlags):
+    builder.panel(&{LayoutVertical} + sizeFlags):
+      # Header
+      builder.panel(&{FillX, SizeToContentY, FillBackground, MaskContent, LayoutHorizontal}, backgroundColor = headerColor):
+        result.add header()
+
+      # Body
+      builder.panel(sizeFlags + &{FillBackground, MaskContent}, backgroundColor = backgroundColor):
+        result.add body()

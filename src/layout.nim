@@ -62,6 +62,13 @@ var gPushSelectorPopupImpl*: PushSelectorPopupImpl
 proc getView*(self: LayoutService, id: Id): Option[View]
 proc preRender*(self: LayoutService)
 
+proc getViews*(self: LayoutService, T: typedesc): seq[T] =
+  var res = newSeq[T]()
+  for v in self.allViews:
+    if v of T:
+      res.add v.T
+  return res
+
 proc addViewFactory*(self: LayoutService, name: string, create: CreateView, override: bool = false) =
   if not override and name in self.viewFactories:
     log lvlError, &"Trying to define duplicate view factory '{name}'"
@@ -78,6 +85,21 @@ proc getExistingView(self: LayoutService, config: JsonNode): View {.raises: [Val
   log lvlError, &"Missing or invalid id for {config}"
   return nil
 
+proc getOrCreateView(self: LayoutService, config: JsonNode): View =
+  let kind = config["kind"].getStr
+  for v in self.allViews:
+    if v.kind == kind:
+      return v
+
+  if kind in self.viewFactories:
+    try:
+      result = self.viewFactories[kind](config)
+      self.allViews.add result
+      return result
+    except ValueError as e:
+      log lvlError, &"Failed to create view using view factory {kind}: {e.msg}"
+  return nil
+
 method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.base, raises: [ValueError].} =
   if config.kind == JNull:
     return
@@ -86,7 +108,10 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
   proc resolve(id: Id): View =
     return layouts.getView(id).get(nil)
 
-  # debugf"{self.desc}.createViews: {config}"
+  proc createView(config: JsonNode): View =
+    return layouts.getOrCreateView(config)
+
+  # debugf"{self.desc}.createViews {self}\n{config.pretty}"
   if config.hasKey("children"):
     let children = config["children"]
     checkJson children.kind == JArray, "'children' must be an array"
@@ -99,8 +124,11 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
       if i < self.children.len:
         if self.children[i] != nil and self.children[i] of Layout:
           self.children[i].Layout.createViews(c, layouts)
+        elif self.children[i] != nil:
+          # reuse existing child
+          discard
         elif self.childTemplate != nil:
-          let newChild = self.childTemplate.copy()
+          let newChild = self.childTemplate.copy().Layout
           self.children.add(newChild)
           self.activeIndex = self.activeIndex.clamp(0, self.children.high)
           newChild.createViews(c, layouts)
@@ -110,11 +138,11 @@ method createViews(self: Layout, config: JsonNode, layouts: LayoutService) {.bas
             self.children[i] = layouts.getExistingView(c)
             self.activeIndex = self.activeIndex.clamp(0, self.children.high)
       elif c.hasKey("kind"):
-        let subLayout = createLayout(c, resolve)
+        let subLayout = createLayout(c, resolve, createView)
         self.children.add(subLayout)
         self.activeIndex = self.activeIndex.clamp(0, self.children.high)
       elif self.childTemplate != nil:
-        let newChild = self.childTemplate.copy()
+        let newChild = self.childTemplate.copy().Layout
         self.children.add(newChild)
         self.activeIndex = self.activeIndex.clamp(0, self.children.high)
         newChild.createViews(c, layouts)
@@ -148,7 +176,10 @@ method createViews(self: CenterLayout, config: JsonNode, layouts: LayoutService)
   proc resolve(id: Id): View =
     return layouts.getView(id).get(nil)
 
-  # debugf"CenterLayout.createViews: {config}"
+  proc createView(config: JsonNode): View =
+    return layouts.getOrCreateView(config)
+
+  # debugf"{self.desc}.createViews {self}\n{config.pretty}"
   if config.hasKey("children"):
     let children = config["children"]
     checkJson children.kind == JArray, "'children' must be an array"
@@ -160,11 +191,11 @@ method createViews(self: CenterLayout, config: JsonNode, layouts: LayoutService)
         if self.children[i] != nil and self.children[i] of Layout:
           self.children[i].Layout.createViews(c, layouts)
         elif c.hasKey("kind"):
-          let subLayout = createLayout(c, resolve)
+          let subLayout = createLayout(c, resolve, createView)
           self.children[i] = subLayout
           self.activeIndex = i
         elif self.childTemplates[i] != nil:
-          let newChild = self.childTemplates[i].copy()
+          let newChild = self.childTemplates[i].copy().Layout
           self.children[i] = newChild
           self.activeIndex = i
           newChild.createViews(c, layouts)
@@ -193,19 +224,25 @@ proc updateLayoutTree(self: LayoutService) =
 
     var layoutReferences = newSeq[(string, string)]()
 
+    proc createView(config: JsonNode): View =
+      return self.getOrCreateView(config)
+
     for key, value in config.fields.pairs:
       if value.kind == JString:
         layoutReferences.add (key, value.getStr)
       else:
-        let view = createLayout(value.toJson)
-        if view != nil and view of Layout:
-          self.layouts[key] = view.Layout
-        else:
-          self.layouts[key] = AlternatingLayout(children: @[view])
+        let view = createLayout(value.toJson, createView = createView)
+        if view != nil:
+          let l = view.saveLayout(initHashSet[Id]())
+          if view of Layout:
+            self.layouts[key] = view.Layout
+          else:
+            self.layouts[key] = AlternatingLayout(children: @[view])
 
     for (key, target) in layoutReferences:
       if target in self.layouts:
-        let l = self.layouts[target].copy()
+        let l = self.layouts[target].copy().Layout
+
         assert l != nil
         self.layouts[key] = l
       else:
@@ -217,7 +254,7 @@ proc updateLayoutTree(self: LayoutService) =
     if self.layout == nil:
       self.layout = AlternatingLayout(children: @[])
   except Exception as e:
-    log lvlError, &"Failed to create layout from config: {e.msg}"
+    log lvlError, &"[update-layout-tree] Failed to create layout from config: {e.msg}"
 
 func serviceName*(_: typedesc[LayoutService]): string = "LayoutService"
 
@@ -627,6 +664,14 @@ proc getVisibleViews*(self: LayoutService): seq[View] =
   var res = newSeq[View]()
   self.layout.forEachVisibleView proc(v: View): bool =
     res.add(v)
+  return res
+
+proc isViewVisible*(self: LayoutService, view: View): bool =
+  var res = false
+  self.layout.forEachVisibleView proc(v: View): bool =
+    if v == view:
+      res = true
+      return true
   return res
 
 proc getNumVisibleViews*(self: LayoutService): int {.expose("layout").} =
@@ -1104,7 +1149,7 @@ proc wrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**") {.ex
   let newLayout = if layout.kind == JString:
     let name = layout.getStr
     if name in self.layouts:
-      self.layouts[name].copy()
+      self.layouts[name].copy().Layout
     else:
       log lvlError, &"Unknown layout '{name}'"
       return
@@ -1117,7 +1162,7 @@ proc wrapLayout(self: LayoutService, layout: JsonNode, slot: string = "**") {.ex
         log lvlError, &"Not a layout: {layout}"
         return
     except ValueError as e:
-      log lvlError, &"Failed to create layout from config: {e.msg}"
+      log lvlError, &"[wrap-layout] Failed to create layout from config: {e.msg}"
       return
 
   try:
@@ -1170,6 +1215,11 @@ proc chooseLayout(self: LayoutService) {.expose("layout").} =
 
 proc logLayout*(self: LayoutService) {.expose("layout").} =
   log lvlInfo, self.layout.saveLayout(initHashSet[Id]()).pretty
+
+proc logViews*(self: LayoutService) {.expose("layout").} =
+  for v in self.allViews:
+    if v != nil:
+      debugf"{v}"
 
 proc open*(self: LayoutService, path: string, slot: string = "") {.expose("layout").} =
   ## Opens the specified file. Relative paths are relative to the main workspace.
