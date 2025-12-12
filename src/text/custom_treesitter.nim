@@ -713,7 +713,7 @@ proc tsFree(a1: pointer) {.stdcall.} =
 proc enableTreesitterMemoryTracking*() =
   tsSetAllocator(tsMalloc, tsCalloc, tsRealloc, tsFree)
 
-iterator query*(query: TSQuery, tree: TSTree, selection: Selection): tuple[node: TSNode, capture: string] =
+iterator query*(query: TSQuery, tree: TSTree, selection: Selection): seq[tuple[node: TSNode, capture: string]] =
   let range = tsRange(tsPoint(selection.first.line, selection.first.column), tsPoint(selection.last.line, selection.last.column))
   var matches: seq[TSQueryMatch] = query.matches(tree.root, range)
 
@@ -721,6 +721,7 @@ iterator query*(query: TSQuery, tree: TSTree, selection: Selection): tuple[node:
 
   for match in matches:
     let predicates = query.predicatesForPattern(match.pattern)
+    var captures = newSeqOfCap[tuple[node: TSNode, capture: string]](match.captures.len)
     for capture in match.captures:
       let node = capture.node
       var matches = true
@@ -787,4 +788,5 @@ iterator query*(query: TSQuery, tree: TSTree, selection: Selection): tuple[node:
       if not matches:
         continue
 
-      yield (node, capture.name)
+      captures.add (node, capture.name)
+    yield captures

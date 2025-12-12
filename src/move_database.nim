@@ -378,6 +378,15 @@ proc applyMoveImpl(self: MoveDatabase, displayMap: DisplayMap, move: string, sel
   of "norm":
     return selections.mapIt(it.normalized)
 
+  of "combine":
+    if selections.len > 0:
+      var res = selections[0]
+      for s in selections:
+        res = res or s
+      return @[res]
+    else:
+      return @selections
+
   of "overlapping":
     let c = originalSelections.last.last
     for s in selections:

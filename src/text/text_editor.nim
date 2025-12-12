@@ -2900,13 +2900,6 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
           result = val[]
           break
 
-    of "argument-list":
-      if self.document.textObjectsQuery != nil and not self.document.tsTree.isNil:
-        for s in selections:
-          for (node, capture) in self.document.textObjectsQuery.query(self.document.tsTree, s):
-            if capture == "call.inner":
-              result.add node.getRange().toSelection
-
     of "ts-text-object", "ts":
       let capture = if largs.len > 0:
         largs[0].toJson.jsonTo(string)
@@ -2914,9 +2907,18 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
         ""
       if self.document.textObjectsQuery != nil and not self.document.tsTree.isNil:
         for s in selections:
-          for (node, nodeCapture) in self.document.textObjectsQuery.query(self.document.tsTree, s):
-            if capture == "" or capture == nodeCapture:
-              result.add node.getRange().toSelection
+          for captures in self.document.textObjectsQuery.query(self.document.tsTree, s):
+            var selection = (-1, -1).toSelection
+            for (node, nodeCapture) in captures:
+              if capture == "" or capture == nodeCapture:
+                var sel = node.getRange().toSelection
+                if selection.last.line < 0:
+                  selection = sel
+                else:
+                  selection = selection or sel
+
+            if selection.last.line >= 0:
+              result.add selection
 
     else:
       log lvlError, &"Unknown move '{move}'"
