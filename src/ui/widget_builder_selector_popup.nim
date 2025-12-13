@@ -137,11 +137,15 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder): seq[OverlayFuncti
 
                 self.cachedFinderItems.setLen(0)
                 for completionIndex in self.scrollOffset..lastRenderedIndex:
-                  self.cachedFinderItems.add items[completionIndex]
+                  if items.isValidIndex(completionIndex):
+                    self.cachedFinderItems.add items[completionIndex]
                 self.cachedScrollOffset = self.scrollOffset
 
               for i, item in self.cachedFinderItems:
                 let completionIndex = self.cachedScrollOffset + i
+                if not items.isValidIndex(completionIndex):
+                  continue
+
                 let fillBackgroundFlag = if completionIndex == self.selected:
                   &{FillBackground}
                 else:

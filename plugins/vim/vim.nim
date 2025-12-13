@@ -641,6 +641,7 @@ proc deleteLeft*(editor: TextEditor) {.exposeActive(editorContext).} =
   editor.addNextCheckpoint ws"insert"
   let selections = editor.multiMove(editor.getSelections, "(column -1) (join)")
   editor.setSelections editor.edit(selections, @@[ws""], inclusive=false)
+  discard editor.command(ws"auto-show-signature-help", ws("\"\""))
 
 proc deleteRight*(editor: TextEditor) {.exposeActive(editorContext).} =
   yankedLines = editor.vimState.selectLines

@@ -11,7 +11,7 @@ type
     Nil, Number, Bool, Symbol, String, List, Array, Map, Func, Lambda, Macro
 
   Env* = ref object
-    parent*: Env
+    parents*: seq[Env]
     env*: Table[string, LispVal]
     onUndefinedSymbol*: proc(env: Env, name: string): LispVal {.gcsafe, raises: [].}
 
@@ -116,26 +116,35 @@ proc newMacro*(params: seq[string], body: LispVal, env: Env): LispVal =
   LispVal(kind: Macro, params: params, body: body, env: env)
 
 proc createChild*(env: Env): Env =
-  result = Env(parent: env)
+  result = Env(parents: @[env])
 
 proc clear*(env: Env) =
   env.env.clear()
 
-proc `[]`*(env: Env, key: string): LispVal =
+proc parent*(env: Env): Env =
+  if env.parents.len > 0:
+    return env.parents[0]
+  return nil
+
+proc lookup(env: Env, key: string, handleUndefined: bool): LispVal =
   env.env.withValue(key, value):
     return value[]
 
-  if env.parent != nil:
-    result = env.parent[key]
+  let allowParentHandleUndefined = handleUndefined and env.onUndefinedSymbol == nil
+  for parent in env.parents:
+    result = parent.lookup(key, allowParentHandleUndefined)
     if result != nil:
       return
 
-  if env.onUndefinedSymbol != nil:
+  if handleUndefined and env.onUndefinedSymbol != nil:
     result = env.onUndefinedSymbol(env, key)
     if result != nil:
       return
 
   return nil
+
+proc `[]`*(env: Env, key: string): LispVal =
+  return env.lookup(key, handleUndefined = true)
 
 proc `[]=`*(env: Env, key: string, val: LispVal) =
   env.env[key] = val
@@ -145,8 +154,9 @@ proc set*(env: Env, key: string, val: LispVal): bool =
     value[] = val
     return true
 
-  if env.parent != nil:
-    return env.parent.set(key, val)
+  for parent in env.parents:
+    if parent.set(key, val):
+      return
 
   return false
 
