@@ -465,7 +465,7 @@
 
     "vim": {
         "<ESCAPE>": ["vim.normal-mode"],
-        "<C-h>": ["vim.add-cursor-above"],
+        "<CS-f>": ["vim.add-cursor-above"],
         "<C-f>": ["vim.add-cursor-below"],
 
         // special
@@ -603,7 +603,8 @@
         "<C-t>": ["vim.indent"],
         "<C-d>": ["vim.unindent"],
         "<C-r>": ["set-mode", "vim.insert-register"],
-        "<C-k>": ["show-signature-help"],
+        "<C-k>": ["show-hover-for-current"],
+        "<C-h>": ["show-signature-help"],
     },
 
     "vim.visual": {

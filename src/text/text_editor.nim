@@ -204,8 +204,14 @@ declareSettings TextEditorSettings, "text":
   ## Whether inlay hints are enabled.
   declare inlayHintsEnabled, bool, true
 
+  ## Whether signature help is enabled.
+  declare signatureHelpEnabled, bool, true
+
+  ## How often (in milliseconds) to update signature help while typing.
+  declare signatureHelpDelay, int, 200
+
   ## Which move to use to find the beginning of the argument list when showing signature help.
-  declare signatureHelpMove, string, "(ts 'call.inner') (grow -1) (last)"
+  declare signatureHelpMove, string, "(ts 'call.inner') (overlapping) (last)"
 
   ## Which characters trigger signature help when inserted.
   declare signatureHelpTriggerChars, RuneSetSetting, %%*["("]
@@ -1833,7 +1839,7 @@ proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool =
 
   return false
 
-proc autoShowSignatureHelp*(self: TextDocumentEditor, insertedText: string) =
+proc autoShowSignatureHelp*(self: TextDocumentEditor, insertedText: string) {.expose("editor.text").} =
   if self.showSignatureHelp:
     return
 
@@ -1847,7 +1853,7 @@ proc autoShowSignatureHelp*(self: TextDocumentEditor, insertedText: string) =
     if argListRanges.len > 0:
       self.showSignatureHelp()
 
-proc autoShowCompletions*(self: TextDocumentEditor) =
+proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.disableCompletions:
     return
   if self.shouldShowCompletionsAt(self.selection.last):
@@ -2900,20 +2906,27 @@ proc applyMoveFallback(self: TextDocumentEditor, move: string, selections: openA
         largs[0].toJson.jsonTo(string)
       else:
         ""
+      let captureMove = if largs.len > 1:
+        largs[1]
+      else:
+        parseLisp("(combine)")
+
       if self.document.textObjectsQuery != nil and not self.document.tsTree.isNil:
         for s in selections:
           for captures in self.document.textObjectsQuery.query(self.document.tsTree, s):
-            var selection = (-1, -1).toSelection
+            var captureSelections = newSeqOfCap[Selection](captures.len)
+            if self.moveDatabase.debugMoves:
+              echo &"move 'ts' {move}: {captures.len} captures"
             for (node, nodeCapture) in captures:
               if capture == "" or capture == nodeCapture:
                 var sel = node.getRange().toSelection
-                if selection.last.line < 0:
-                  selection = sel
-                else:
-                  selection = selection or sel
+                captureSelections.add sel
+                if self.moveDatabase.debugMoves:
+                  echo &"    {sel}"
 
-            if selection.last.line >= 0:
-              result.add selection
+            let captureSelectionsTransformed = self.moveDatabase.applyMove(self.displayMap, captureMove, captureSelections, env, self.moveFallbacks)
+
+            result.add captureSelectionsTransformed
 
     else:
       log lvlError, &"Unknown move '{move}'"
@@ -2933,6 +2946,8 @@ proc getSelectionsForMove*(self: TextDocumentEditor, selections: openArray[Selec
   env["wrap"] = newBool(wrap)
   env["ts?"] = newBool(not self.document.tsTree.isNil)
   env["ts.to?"] = newBool(self.document.textObjectsQuery != nil and not self.document.tsTree.isNil)
+  defer:
+    env.clear()
 
   proc readOptions(env: var Env, options: JsonNode) =
     if options.kind == JObject:
@@ -3732,51 +3747,64 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
   self.markDirty()
 
 proc showSignatureHelpAsync(self: TextDocumentEditor, cursor: Cursor, hideIfEmpty: bool): Future[void] {.async.} =
+  if not self.settings.signatureHelpEnabled.get():
+    return
+
   let languageServer = self.document.getLanguageServer()
+  if languageServer.isNone:
+    return
+
+  let signatureHelps = await languageServer.get.getSignatureHelp(self.document.filename, cursor)
   if self.document.isNil:
     return
 
-  if languageServer.getSome(ls):
-    let signatureHelps = await ls.getSignatureHelp(self.document.filename, cursor)
-    if self.document.isNil:
-      return
+  if self.selection.last.line != cursor.line:
+    return
 
-    if self.selection.last.line != cursor.line:
-      return
+  if signatureHelps.isSuccess:
+    var numSignatures = 0
+    for res in signatureHelps.result:
+      numSignatures += res.signatures.len
 
-    if signatureHelps.isSuccess:
-      self.showSignatureHelp = true
-      var signatures: seq[lsp_types.SignatureInformation]
-      var signatureIndex = 0
-      var parameterIndex = 0
-      for res in signatureHelps.result:
-        if res.activeSignature.isSome:
-          signatureIndex = res.activeSignature.get()
+    if numSignatures == 0:
+      # If we don't find signatures, check if we're still in the parameter list of the last successful signature help,
+      # and reuse that if so.
+      let move = self.settings.signatureHelpMove.get()
+      let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
+      if argListRanges.len > 0 and self.signatureHelpLocation == argListRanges[0].first:
+        # Argument list still starts at same place, so assume same argument list and show the previous.
+        return
 
-        if res.activeParameter.isSome:
-          parameterIndex = res.activeParameter.get()
+    self.showSignatureHelp = true
+    self.signatures.setLen(0)
+    var signatureIndex = 0
+    var parameterIndex = 0
+    for res in signatureHelps.result:
+      if res.activeSignature.isSome:
+        signatureIndex = res.activeSignature.get()
 
-        for sig in res.signatures:
-          signatures.add sig
+      if res.activeParameter.isSome:
+        parameterIndex = res.activeParameter.get()
 
-      if signatures.len > 0:
-        self.signatures = signatures
-        self.currentSignature = signatureIndex
-        self.currentSignatureParam = parameterIndex
-        self.signatureHelpLocation = cursor
+      for sig in res.signatures:
+        self.signatures.add sig
 
-        let move = self.settings.signatureHelpMove.get()
-        let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
-        if argListRanges.len > 0:
-          self.signatureHelpLocation = argListRanges[0].first
+    self.currentSignature = signatureIndex
+    self.currentSignatureParam = parameterIndex
 
-      else:
-        if hideIfEmpty:
-          self.showSignatureHelp = false
+    if self.signatures.len == 0 and hideIfEmpty:
+      self.showSignatureHelp = false
 
     else:
-      self.showSignatureHelp = false
-      log lvlError, $signatureHelps
+      self.signatureHelpLocation = cursor
+      let move = self.settings.signatureHelpMove.get()
+      let argListRanges = self.getSelectionsForMove(@[cursor.toSelection], move)
+      if argListRanges.len > 0:
+        self.signatureHelpLocation = argListRanges[0].first
+
+  else:
+    self.showSignatureHelp = false
+    log lvlError, $signatureHelps
 
   self.markDirty()
 
@@ -3840,13 +3868,13 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   self.markDirty()
 
 proc showSignatureHelpForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
-  ## Show hover information for the given cursor after a delay.
-  let hoverDelayMs = self.settings.hoverDelay.get()
+  ## Show signature information for the given cursor after a delay.
+  let delayMs = self.settings.signatureHelpDelay.get()
   if self.showSignatureHelpTask.isNil:
-    self.showSignatureHelpTask = startDelayed(hoverDelayMs, repeat=false):
+    self.showSignatureHelpTask = startDelayed(delayMs, repeat=false):
       asyncSpawn self.showSignatureHelpAsync(self.selection.last, hideIfEmpty = true)
   else:
-    self.showSignatureHelpTask.interval = hoverDelayMs
+    self.showSignatureHelpTask.interval = delayMs
     self.showSignatureHelpTask.schedule()
 
   self.markDirty()
@@ -3972,7 +4000,7 @@ proc executeCommandOrCodeAction(self: TextDocumentEditor, commandOrAction: CodeA
         log lvlInfo, &"Run lsp command {command}"
         let res = await ls.executeCommand(command.command, command.arguments)
         if res.isError:
-          log lvlError, &"Failed to execute lsp command '{commandOrAction.command.command}, {commandOrAction.command.arguments}': {res.error}"
+          log lvlError, &"Failed to execute lsp command '{command.command}, {command.arguments}': {res.error}"
 
 proc updateCodeActionAsync(self: TextDocumentEditor, ls: LanguageServer, selection: Selection, versionId: BufferVersionId,
     diagnosticsVersion: int, addSign: bool): Future[void] {.async.} =
